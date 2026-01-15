@@ -161,7 +161,11 @@ def calcular_dados(vendedor, ano_atual, mes_atual):
     # =========================
     # FILTRO POR VENDEDOR
     # =========================
-    df_vend = df[df["VENDEDOR"] == vendedor].copy()
+    vendedor_norm = _normalizar_usuario(vendedor)
+    if 'VENDEDOR' not in df.columns:
+        return None
+    df['VENDEDOR'] = df['VENDEDOR'].astype(str).str.strip().str.upper()
+    df_vend = df[df['VENDEDOR'] == vendedor_norm].copy()
     if df_vend.empty:
         return None
 
@@ -295,6 +299,30 @@ def calcular_dados(vendedor, ano_atual, mes_atual):
         "todos_percentuais": percentual_por_marca,
     }
 
+
+
+def _dados_vazios():
+    # Estrutura padrão para quando não há dados no período ou vendedor não encontrado
+    return {
+        'mix_atual': 0,
+        'mix_ano_passado': 0,
+        'valor_atual': 0.0,
+        'valor_ano_passado': 0.0,
+        'valor_bruto': 0.0,
+        'valor_devolvido': 0.0,
+        'pct_devolucao': 0.0,
+        'top10_devolucao_marcas': pd.Series(dtype='float64'),
+        'crescimento': None,
+        'top10_marcas': pd.Series(dtype='float64'),
+        'ranking_top15_list': [],
+        'ranking_todos_list': [],
+        'todas_marcas': pd.Series(dtype='float64'),
+        'top15_percentual': None,
+        'todos_percentuais': pd.Series(dtype='float64'),
+        'sem_dados': True,
+        'mensagem': 'Nenhum dado encontrado para este vendedor no período selecionado.',
+    }
+
 # =========================
 # ROTAS
 # =========================
@@ -344,6 +372,9 @@ def dashboard():
     mes_atual = int(request.args.get("mes", mes_padrao))
 
     dados = calcular_dados(vendedor, ano_atual, mes_atual)
+    if dados is None:
+        dados = _dados_vazios()
+
 
     return render_template(
         "dashboard.html",
