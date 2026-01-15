@@ -20,6 +20,11 @@ senha_ok = quote_plus(DB_PASSWORD)
 
 DB_URL = f"postgresql+psycopg2://{DB_USER}:{senha_ok}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 
+# Garante SSL para conexões com o Supabase (produção)
+if "sslmode=" not in DB_URL:
+    DB_URL = DB_URL + "?sslmode=require"
+
+
 # ===============================
 # SQLALCHEMY
 # ===============================
