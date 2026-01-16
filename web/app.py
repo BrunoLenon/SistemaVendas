@@ -53,6 +53,25 @@ def get_engine() -> Engine:
 def _normalizar_texto(s: str) -> str:
     return (s or "").strip().upper()
 
+def _to_num_series(s: pd.Series) -> pd.Series:
+    """Converte números aceitando formatos comuns no BR (1.234,56 / 1234,56).
+
+    - Remove R$ e espaços
+    - Se tiver vírgula, assume que é separador decimal e remove pontos de milhar
+    """
+    if s is None:
+        return pd.Series(dtype="float")
+    x = s.astype(str).str.strip()
+    x = x.str.replace("R$", "", regex=False).str.replace("\u00a0", " ", regex=False)
+    x = x.str.replace(" ", "", regex=False)
+
+    # Se existir vírgula em algum lugar, trata como decimal.
+    has_comma = x.str.contains(",", na=False)
+    if has_comma.any():
+        x = x.where(~has_comma, x.str.replace(".", "", regex=False).str.replace(",", ".", regex=False))
+
+    return pd.to_numeric(x, errors="coerce")
+
 def _ler_planilha_vendas(file_path: str) -> pd.DataFrame:
     """Lê Excel/CSV e devolve DataFrame com colunas esperadas."""
     ext = os.path.splitext(file_path)[1].lower()
@@ -91,16 +110,16 @@ def _ler_planilha_vendas(file_path: str) -> pd.DataFrame:
 
     # Datas / números
     df["MOVIMENTO"] = pd.to_datetime(df["MOVIMENTO"], errors="coerce")
-    df["QTDADE_VENDIDA"] = pd.to_numeric(df["QTDADE_VENDIDA"], errors="coerce").fillna(0)
-    df["VALOR_TOTAL"] = pd.to_numeric(df["VALOR_TOTAL"], errors="coerce").fillna(0)
+    df["QTDADE_VENDIDA"] = _to_num_series(df["QTDADE_VENDIDA"]).fillna(0)
+    df["VALOR_TOTAL"] = _to_num_series(df["VALOR_TOTAL"]).fillna(0)
 
     # UNIT e DES são opcionais, mas se vierem, guardamos
     if "UNIT" in df.columns:
-        df["UNIT"] = pd.to_numeric(df["UNIT"], errors="coerce")
+        df["UNIT"] = _to_num_series(df["UNIT"])
     else:
         df["UNIT"] = None
     if "DES" in df.columns:
-        df["DES"] = pd.to_numeric(df["DES"], errors="coerce")
+        df["DES"] = _to_num_series(df["DES"])
     else:
         df["DES"] = None
 
@@ -735,11 +754,13 @@ def admin_importar():
         arq = request.files.get("arquivo")
         if not arq or not arq.filename:
             erro = "Selecione uma planilha (.xlsx) ou arquivo (.csv)."
+            flash(erro, "error")
         else:
             nome = secure_filename(arq.filename)
             ext = os.path.splitext(nome)[1].lower()
             if ext not in [".xlsx", ".xls", ".xlsm", ".csv"]:
                 erro = "Formato inválido. Envie .xlsx ou .csv."
+                flash(erro, "error")
             else:
                 # Salva temporariamente (Render permite /tmp)
                 with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
@@ -762,8 +783,14 @@ def admin_importar():
                         "ignorados": int(ignorados),
                     }
                     ok = "Importação concluída com sucesso!"
+                    flash(f"{ok} Linhas lidas: {resumo['total']:,}. Inseridas: {resumo['inseridos']:,}. Ignoradas: {resumo['ignorados']:,}.", "success")
+
+                    # Log útil no Render
+                    print(f"[IMPORT] total={resumo['total']} inseridos={resumo['inseridos']} ignorados={resumo['ignorados']}")
                 except Exception as e:
                     erro = f"Erro ao importar: {e}"
+                    flash(erro, "error")
+                    print(f"[IMPORT][ERRO] {e}")
                 finally:
                     try:
                         os.remove(tmp_path)
