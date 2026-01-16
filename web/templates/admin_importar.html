@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Importar Vendas</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+  <div class="container py-4" style="max-width: 720px;">
+
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <div>
+        <h4 class="m-0">📥 Importar Vendas</h4>
+        <small class="text-muted">Logado como <strong>{{ usuario }}</strong></small>
+      </div>
+      <div class="d-flex gap-2">
+        <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin_usuarios') }}">Voltar</a>
+        <a class="btn btn-outline-danger btn-sm" href="{{ url_for('logout') }}">Logout</a>
+      </div>
+    </div>
+
+    {% if erro %}
+      <div class="alert alert-danger">{{ erro }}</div>
+    {% endif %}
+
+    {% if ok %}
+      <div class="alert alert-success">{{ ok }}</div>
+    {% endif %}
+
+    {% if resumo %}
+      <div class="card mb-3 shadow-sm">
+        <div class="card-body">
+          <h6 class="card-title mb-3">Resumo</h6>
+          <div class="row g-2">
+            <div class="col-12 col-md-4">
+              <div class="p-2 border rounded bg-white">
+                <div class="text-muted">Linhas lidas</div>
+                <div class="fs-5 fw-bold">{{ resumo.total }}</div>
+              </div>
+            </div>
+            <div class="col-12 col-md-4">
+              <div class="p-2 border rounded bg-white">
+                <div class="text-muted">Inseridas (novas)</div>
+                <div class="fs-5 fw-bold">{{ resumo.inseridos }}</div>
+              </div>
+            </div>
+            <div class="col-12 col-md-4">
+              <div class="p-2 border rounded bg-white">
+                <div class="text-muted">Ignoradas (duplicadas)</div>
+                <div class="fs-5 fw-bold">{{ resumo.ignorados }}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    {% endif %}
+
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <p class="text-muted mb-3">
+          Envie uma planilha <strong>.xlsx</strong> (ou <strong>.csv</strong>) com as colunas:
+          <code>MESTRE</code>, <code>MARCA</code>, <code>MOVIMENTO</code>, <code>MOV_TIPO_MOVTO</code>,
+          <code>VENDEDOR</code>, <code>NOTA</code>, <code>EMP</code>, <code>QTDADE_VENDIDA</code>, <code>VALOR_TOTAL</code>.
+          <br>
+          Duplicados são evitados pelo critério <code>(MESTRE, VENDEDOR, NOTA, EMP)</code>.
+        </p>
+
+        <form method="post" enctype="multipart/form-data">
+          <div class="mb-3">
+            <label class="form-label">Arquivo</label>
+            <input class="form-control" type="file" name="arquivo" accept=".xlsx,.xls,.xlsm,.csv" required>
+          </div>
+
+          <button class="btn btn-primary" type="submit">Importar</button>
+        </form>
+      </div>
+    </div>
+
+    <div class="text-muted mt-3" style="font-size: 0.9rem;">
+      Dica: se você importar o mesmo arquivo mais de uma vez, o sistema não duplica as vendas.
+    </div>
+
+  </div>
+</body>
+</html>

@@ -4,15 +4,183 @@ from datetime import datetime
 import os
 import time
 
+import tempfile
+from typing import Optional, Tuple, List
+
+from werkzeug.utils import secure_filename
+from sqlalchemy import create_engine, text
+from sqlalchemy.engine import Engine
+
 
 from dados_db import carregar_df as carregar_df_db
 import json
 from functools import wraps
 from werkzeug.security import generate_password_hash, check_password_hash
 
+# =========================
+# IMPORTAÇÃO (ADMIN) - conexão direta no DB (Supabase)
+# =========================
+_ENGINE: Optional[Engine] = None
+
+def get_engine() -> Engine:
+    """Cria (uma vez) o engine do SQLAlchemy a partir do DATABASE_URL do ambiente."""
+    global _ENGINE
+    if _ENGINE is not None:
+        return _ENGINE
+
+    db_url = os.environ.get("DATABASE_URL")
+    if not db_url:
+        # Compatibilidade: se você optar por usar variáveis separadas
+        u = os.environ.get("DB_USER")
+        p = os.environ.get("DB_PASSWORD")
+        h = os.environ.get("DB_HOST")
+        pt = os.environ.get("DB_PORT")
+        n = os.environ.get("DB_NAME")
+        if all([u, p, h, pt, n]):
+            # db.py já costuma fazer o escaping/ssl, mas aqui garantimos o mínimo
+            db_url = f"postgresql+psycopg2://{u}:{p}@{h}:{pt}/{n}"  # senha pode conter @, o ideal é usar DATABASE_URL
+        else:
+            raise RuntimeError("DATABASE_URL não está definida no ambiente.")
+
+    # Garantir SSL no Supabase
+    if "sslmode=" not in db_url:
+        sep = "&" if "?" in db_url else "?"
+        db_url = db_url + f"{sep}sslmode=require"
+
+    _ENGINE = create_engine(db_url, pool_pre_ping=True)
+    return _ENGINE
+
+def _normalizar_texto(s: str) -> str:
+    return (s or "").strip().upper()
+
+def _ler_planilha_vendas(file_path: str) -> pd.DataFrame:
+    """Lê Excel/CSV e devolve DataFrame com colunas esperadas."""
+    ext = os.path.splitext(file_path)[1].lower()
+    if ext in [".xlsx", ".xlsm", ".xls"]:
+        df = pd.read_excel(file_path)
+    elif ext == ".csv":
+        df = pd.read_csv(file_path, sep=None, engine="python")
+    else:
+        raise ValueError("Formato não suportado. Envie .xlsx ou .csv")
+
+    # Padroniza nomes das colunas
+    df.columns = [str(c).strip().upper() for c in df.columns]
+
+    obrigatorias = {
+        "MESTRE",
+        "MARCA",
+        "MOVIMENTO",
+        "MOV_TIPO_MOVTO",
+        "VENDEDOR",
+        "NOTA",
+        "EMP",
+        "QTDADE_VENDIDA",
+        "VALOR_TOTAL",
+    }
+    faltando = [c for c in sorted(obrigatorias) if c not in df.columns]
+    if faltando:
+        raise ValueError(f"Faltando coluna(s) obrigatória(s): {', '.join(faltando)}")
+
+    # Normalizações
+    df["VENDEDOR"] = df["VENDEDOR"].astype(str).map(_normalizar_texto)
+    df["MESTRE"] = df["MESTRE"].astype(str).str.strip()
+    df["MARCA"] = df["MARCA"].astype(str).str.strip()
+    df["NOTA"] = df["NOTA"].astype(str).str.strip()
+    df["EMP"] = df["EMP"].astype(str).str.strip()
+    df["MOV_TIPO_MOVTO"] = df["MOV_TIPO_MOVTO"].astype(str).map(_normalizar_texto)
+
+    # Datas / números
+    df["MOVIMENTO"] = pd.to_datetime(df["MOVIMENTO"], errors="coerce")
+    df["QTDADE_VENDIDA"] = pd.to_numeric(df["QTDADE_VENDIDA"], errors="coerce").fillna(0)
+    df["VALOR_TOTAL"] = pd.to_numeric(df["VALOR_TOTAL"], errors="coerce").fillna(0)
+
+    # UNIT e DES são opcionais, mas se vierem, guardamos
+    if "UNIT" in df.columns:
+        df["UNIT"] = pd.to_numeric(df["UNIT"], errors="coerce")
+    else:
+        df["UNIT"] = None
+    if "DES" in df.columns:
+        df["DES"] = pd.to_numeric(df["DES"], errors="coerce")
+    else:
+        df["DES"] = None
+
+    # Remove linhas sem dados mínimos
+    df = df.dropna(subset=["MOVIMENTO"])
+    df = df[df["NOTA"].astype(str).str.len() > 0]
+    df = df[df["VENDEDOR"].astype(str).str.len() > 0]
+    df = df[df["MESTRE"].astype(str).str.len() > 0]
+
+    return df
+
+def inserir_vendas_no_banco(df: pd.DataFrame, chunk_size: int = 5000) -> Tuple[int, int]:
+    """Insere no banco ignorando duplicados (mestre, vendedor, nota, emp). Retorna (inseridos, ignorados)."""
+    engine = get_engine()
+
+    # Monta tuplas para insert
+    cols = [
+        "MESTRE",
+        "MARCA",
+        "VENDEDOR",
+        "MOVIMENTO",
+        "MOV_TIPO_MOVTO",
+        "QTDADE_VENDIDA",
+        "VALOR_TOTAL",
+        "NOTA",
+        "EMP",
+        "UNIT",
+        "DES",
+    ]
+    df2 = df[cols].copy()
+
+    # Converte data para date
+    df2["MOVIMENTO"] = df2["MOVIMENTO"].dt.date
+
+    total = len(df2)
+    inseridos = 0
+
+    insert_sql = text(
+        """
+        insert into public.vendas
+            (mestre, marca, vendedor, data, mov_tipo_movto, qtda_vendida, valor_total, nota, emp, unit, des)
+        values
+            (:mestre, :marca, :vendedor, :data, :mov_tipo_movto, :qtda_vendida, :valor_total, :nota, :emp, :unit, :des)
+        on conflict (mestre, vendedor, nota, emp) do nothing
+        """
+    )
+
+    with engine.begin() as conn:
+        for start in range(0, total, chunk_size):
+            part = df2.iloc[start : start + chunk_size]
+            params = [
+                {
+                    "mestre": str(r.MESTRE),
+                    "marca": str(r.MARCA),
+                    "vendedor": str(r.VENDEDOR),
+                    "data": r.MOVIMENTO,
+                    "mov_tipo_movto": str(r.MOV_TIPO_MOVTO),
+                    "qtda_vendida": float(r.QTDADE_VENDIDA) if pd.notna(r.QTDADE_VENDIDA) else 0.0,
+                    "valor_total": float(r.VALOR_TOTAL) if pd.notna(r.VALOR_TOTAL) else 0.0,
+                    "nota": str(r.NOTA),
+                    "emp": str(r.EMP),
+                    "unit": None if pd.isna(r.UNIT) else float(r.UNIT),
+                    "des": None if pd.isna(r.DES) else float(r.DES),
+                }
+                for r in part.itertuples(index=False)
+            ]
+            res = conn.execute(insert_sql, params)
+            # res.rowcount é a quantidade inserida neste lote
+            if res.rowcount is not None:
+                inseridos += int(res.rowcount)
+
+    ignorados = total - inseridos
+    return inseridos, ignorados
+
 app = Flask(__name__)
 # Em produção, defina FLASK_SECRET_KEY no ambiente.
 app.secret_key = os.environ.get("SECRET_KEY", "sistema-vendas-seguro")
+
+# Limite de upload (ajuste se necessário)
+app.config["MAX_CONTENT_LENGTH"] = int(os.environ.get("MAX_UPLOAD_MB", "30")) * 1024 * 1024
 
 # =========================
 # USUÁRIOS (persistência em JSON, com senha criptografada)
@@ -551,6 +719,64 @@ def admin_usuarios():
     ]
 
     return render_template("admin_usuarios.html", usuarios=lista, erro=erro, ok=ok, usuario=session.get("usuario"))
+
+
+# =========================
+# ADMIN - IMPORTAR VENDAS (Excel/CSV)
+# =========================
+@app.route("/admin/importar", methods=["GET", "POST"])
+@admin_required
+def admin_importar():
+    erro = None
+    ok = None
+    resumo = None
+
+    if request.method == "POST":
+        arq = request.files.get("arquivo")
+        if not arq or not arq.filename:
+            erro = "Selecione uma planilha (.xlsx) ou arquivo (.csv)."
+        else:
+            nome = secure_filename(arq.filename)
+            ext = os.path.splitext(nome)[1].lower()
+            if ext not in [".xlsx", ".xls", ".xlsm", ".csv"]:
+                erro = "Formato inválido. Envie .xlsx ou .csv."
+            else:
+                # Salva temporariamente (Render permite /tmp)
+                with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
+                    tmp_path = tmp.name
+                    arq.save(tmp_path)
+
+                try:
+                    df = _ler_planilha_vendas(tmp_path)
+                    total_linhas = len(df)
+                    inseridos, ignorados = inserir_vendas_no_banco(df)
+
+                    # limpa cache para refletir os dados imediatamente
+                    global _df_cache, _cache_last_check
+                    _df_cache = None
+                    _cache_last_check = 0
+
+                    resumo = {
+                        "total": int(total_linhas),
+                        "inseridos": int(inseridos),
+                        "ignorados": int(ignorados),
+                    }
+                    ok = "Importação concluída com sucesso!"
+                except Exception as e:
+                    erro = f"Erro ao importar: {e}"
+                finally:
+                    try:
+                        os.remove(tmp_path)
+                    except Exception:
+                        pass
+
+    return render_template(
+        "admin_importar.html",
+        erro=erro,
+        ok=ok,
+        resumo=resumo,
+        usuario=session.get("usuario"),
+    )
 
 
 # =========================
