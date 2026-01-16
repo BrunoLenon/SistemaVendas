@@ -1,86 +1,208 @@
 <!doctype html>
 <html lang="pt-br">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Importar Vendas</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-</head>
-<body class="bg-light">
-  <div class="container py-4" style="max-width: 720px;">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Importar Vendas - Admin</title>
 
-    <div class="d-flex justify-content-between align-items-center mb-3">
+  <!-- Bootstrap -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    .dropzone {
+      border: 2px dashed rgba(255,255,255,.25);
+      border-radius: 14px;
+      padding: 22px;
+      background: rgba(255,255,255,.03);
+      transition: .15s ease;
+    }
+    .dropzone.dragover {
+      border-color: rgba(13,110,253,.8);
+      background: rgba(13,110,253,.08);
+    }
+    .small-muted { color: rgba(255,255,255,.65); }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+  </style>
+</head>
+
+<body class="bg-dark text-light">
+  <div class="container py-4" style="max-width: 980px;">
+    <div class="d-flex align-items-center justify-content-between mb-3">
       <div>
-        <h4 class="m-0">📥 Importar Vendas</h4>
-        <small class="text-muted">Logado como <strong>{{ usuario }}</strong></small>
+        <h3 class="mb-0">📥 Importar Vendas</h3>
+        <div class="small-muted">Envie uma planilha (.xlsx) para atualizar as vendas no banco.</div>
       </div>
+
       <div class="d-flex gap-2">
-        <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin_usuarios') }}">Voltar</a>
-        <a class="btn btn-outline-danger btn-sm" href="{{ url_for('logout') }}">Logout</a>
+        <a class="btn btn-outline-light btn-sm" href="/dashboard">Voltar</a>
+        <a class="btn btn-outline-info btn-sm" href="/admin/usuarios">Usuários</a>
       </div>
     </div>
 
-    {% if erro %}
-      <div class="alert alert-danger">{{ erro }}</div>
-    {% endif %}
+    <!-- Flash messages -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div class="mb-3">
+          {% for category, message in messages %}
+            <div class="alert alert-{{ 'danger' if category == 'error' else category }} mb-2" role="alert">
+              {{ message }}
+            </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
 
-    {% if ok %}
-      <div class="alert alert-success">{{ ok }}</div>
-    {% endif %}
+    <div class="row g-3">
+      <div class="col-lg-7">
+        <div class="card bg-black border border-secondary rounded-4 shadow-sm">
+          <div class="card-body p-4">
+            <h5 class="card-title mb-1">Enviar arquivo</h5>
+            <p class="small-muted mb-3">
+              Se possível, use o modelo com as colunas corretas. O sistema vai ignorar duplicidades pelo critério definido.
+            </p>
 
-    {% if resumo %}
-      <div class="card mb-3 shadow-sm">
-        <div class="card-body">
-          <h6 class="card-title mb-3">Resumo</h6>
-          <div class="row g-2">
-            <div class="col-12 col-md-4">
-              <div class="p-2 border rounded bg-white">
-                <div class="text-muted">Linhas lidas</div>
-                <div class="fs-5 fw-bold">{{ resumo.total }}</div>
+            <form action="/admin/importar" method="POST" enctype="multipart/form-data" id="formImport">
+              <div class="dropzone" id="dropzone">
+                <div class="d-flex align-items-start gap-3">
+                  <div class="fs-3">📄</div>
+                  <div class="flex-grow-1">
+                    <div class="fw-semibold">Arraste a planilha aqui</div>
+                    <div class="small-muted">ou clique para selecionar um arquivo .xlsx</div>
+                    <input class="form-control mt-3" type="file" name="arquivo" id="arquivo"
+                           accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required>
+                    <div class="small-muted mt-2" id="fileInfo">Nenhum arquivo selecionado.</div>
+                  </div>
+                </div>
               </div>
-            </div>
-            <div class="col-12 col-md-4">
-              <div class="p-2 border rounded bg-white">
-                <div class="text-muted">Inseridas (novas)</div>
-                <div class="fs-5 fw-bold">{{ resumo.inseridos }}</div>
+
+              <hr class="border-secondary my-4">
+
+              <div class="row g-3">
+                <div class="col-md-6">
+                  <label class="form-label">Modo de importação</label>
+                  <select class="form-select" name="modo">
+                    <option value="ignorar_duplicados" selected>Ignorar duplicados (recomendado)</option>
+                    <option value="atualizar">Atualizar se já existir</option>
+                  </select>
+                  <div class="form-text text-light small-muted">
+                    “Ignorar duplicados” evita repetir vendas já importadas.
+                  </div>
+                </div>
+
+                <div class="col-md-6">
+                  <label class="form-label">Chave anti-duplicidade</label>
+                  <select class="form-select" name="chave">
+                    <option value="mestre_vendedor_nota_emp" selected>MESTRE + VENDEDOR + NOTA + EMP</option>
+                    <option value="mestre_vendedor_nota">MESTRE + VENDEDOR + NOTA</option>
+                  </select>
+                  <div class="form-text text-light small-muted">
+                    Se sua NOTA pode repetir em lojas diferentes, use a opção com EMP.
+                  </div>
+                </div>
               </div>
-            </div>
-            <div class="col-12 col-md-4">
-              <div class="p-2 border rounded bg-white">
-                <div class="text-muted">Ignoradas (duplicadas)</div>
-                <div class="fs-5 fw-bold">{{ resumo.ignorados }}</div>
+
+              <div class="d-flex gap-2 mt-4">
+                <button class="btn btn-primary" type="submit">Importar agora</button>
+                <a class="btn btn-outline-secondary" href="/admin/importar">Limpar</a>
               </div>
-            </div>
+
+              <div class="small-muted mt-3">
+                Dica: se o Render estiver “dormindo”, a primeira importação pode demorar alguns segundos.
+              </div>
+            </form>
           </div>
         </div>
       </div>
-    {% endif %}
 
-    <div class="card shadow-sm">
-      <div class="card-body">
-        <p class="text-muted mb-3">
-          Envie uma planilha <strong>.xlsx</strong> (ou <strong>.csv</strong>) com as colunas:
-          <code>MESTRE</code>, <code>MARCA</code>, <code>MOVIMENTO</code>, <code>MOV_TIPO_MOVTO</code>,
-          <code>VENDEDOR</code>, <code>NOTA</code>, <code>EMP</code>, <code>QTDADE_VENDIDA</code>, <code>VALOR_TOTAL</code>.
-          <br>
-          Duplicados são evitados pelo critério <code>(MESTRE, VENDEDOR, NOTA, EMP)</code>.
-        </p>
+      <div class="col-lg-5">
+        <div class="card bg-black border border-secondary rounded-4 shadow-sm">
+          <div class="card-body p-4">
+            <h5 class="card-title">📌 Formato da planilha</h5>
+            <p class="small-muted mb-3">
+              A planilha deve conter as colunas abaixo (nomes exatamente assim):
+            </p>
 
-        <form method="post" enctype="multipart/form-data">
-          <div class="mb-3">
-            <label class="form-label">Arquivo</label>
-            <input class="form-control" type="file" name="arquivo" accept=".xlsx,.xls,.xlsm,.csv" required>
+            <div class="border border-secondary rounded-3 p-3 mono small">
+              MESTRE<br>
+              MARCA<br>
+              MOVIMENTO<br>
+              MOV_TIPO_MOVTO<br>
+              VENDEDOR<br>
+              NOTA<br>
+              EMP<br>
+              UNIT<br>
+              DES<br>
+              QTDADE_VENDIDA<br>
+              VALOR_TOTAL
+            </div>
+
+            <hr class="border-secondary my-4">
+
+            <h6 class="mb-2">Como você descreveu:</h6>
+            <ul class="small-muted mb-0">
+              <li><span class="mono">MOVIMENTO</span> = data do movimento</li>
+              <li><span class="mono">NOTA</span> pode repetir, mas não para o mesmo vendedor/loja (por isso a chave com EMP é a melhor)</li>
+              <li><span class="mono">VALOR_TOTAL</span> = (UNIT - DES) × QTDADE_VENDIDA</li>
+            </ul>
           </div>
+        </div>
 
-          <button class="btn btn-primary" type="submit">Importar</button>
-        </form>
+        <div class="card bg-black border border-secondary rounded-4 shadow-sm mt-3">
+          <div class="card-body p-4">
+            <h5 class="card-title">✅ Sugestão de fluxo</h5>
+            <ul class="small-muted mb-0">
+              <li>Todo dia o ADMIN importa o arquivo “do dia”.</li>
+              <li>O sistema ignora duplicados e só adiciona o que for novo.</li>
+              <li>Isso mantém o banco sempre atualizado sem precisar do seu PC.</li>
+            </ul>
+          </div>
+        </div>
       </div>
     </div>
 
-    <div class="text-muted mt-3" style="font-size: 0.9rem;">
-      Dica: se você importar o mesmo arquivo mais de uma vez, o sistema não duplica as vendas.
-    </div>
-
+    <footer class="small-muted mt-4">
+      Se quiser, eu também deixo um botão no Dashboard do ADMIN apontando para <span class="mono">/admin/importar</span>.
+    </footer>
   </div>
+
+  <script>
+    const dropzone = document.getElementById("dropzone");
+    const input = document.getElementById("arquivo");
+    const fileInfo = document.getElementById("fileInfo");
+
+    dropzone.addEventListener("click", () => input.click());
+
+    function setInfo() {
+      if (input.files && input.files[0]) {
+        fileInfo.textContent = "Selecionado: " + input.files[0].name;
+      } else {
+        fileInfo.textContent = "Nenhum arquivo selecionado.";
+      }
+    }
+    input.addEventListener("change", setInfo);
+
+    ["dragenter","dragover"].forEach(evt => {
+      dropzone.addEventListener(evt, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dropzone.classList.add("dragover");
+      });
+    });
+    ["dragleave","drop"].forEach(evt => {
+      dropzone.addEventListener(evt, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dropzone.classList.remove("dragover");
+      });
+    });
+
+    dropzone.addEventListener("drop", (e) => {
+      if (e.dataTransfer.files && e.dataTransfer.files.length) {
+        input.files = e.dataTransfer.files;
+        setInfo();
+      }
+    });
+
+    setInfo();
+  </script>
 </body>
 </html>
