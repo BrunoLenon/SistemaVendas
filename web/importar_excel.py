@@ -1,219 +1,202 @@
 """Importacao de vendas via planilha (.xlsx).
 
-Este modulo foi pensado para rodar tanto local quanto no Render.
+Uso no Flask:
+    from importar_excel import importar_planilha
+    resumo = importar_planilha(file_path, modo="ignorar_duplicados")
 
-Uso tipico (no app.py):
-
-    from importar_vendas import importar_vendas_xlsx
-    res = importar_vendas_xlsx(file_stream, modo='ignorar_duplicados', chave='mestre_vendedor_nota_emp')
-
-Retorna um dict com contagens e possiveis avisos.
+Retorna um dict com contagens e erros.
 """
 
 from __future__ import annotations
 
-import io
+import datetime as dt
 from dataclasses import dataclass
-from datetime import date
-from typing import BinaryIO, Dict, Iterable, Optional, Tuple
+from typing import Any, Dict, Iterable, Optional, Tuple
 
 import pandas as pd
-from sqlalchemy import text
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from db import SessionLocal, Venda
 
 
-@dataclass
-class ImportResult:
-    lidas: int
-    inseridas: int
-    ignoradas: int
-    erros: int
-    aviso: Optional[str] = None
-
-    def asdict(self) -> Dict[str, object]:
-        return {
-            "lidas": self.lidas,
-            "inseridas": self.inseridas,
-            "ignoradas": self.ignoradas,
-            "erros": self.erros,
-            "aviso": self.aviso,
-        }
-
-
-COLS_OBRIGATORIAS = {
+REQUIRED_COLS = [
     "MESTRE",
     "MARCA",
     "MOVIMENTO",
     "MOV_TIPO_MOVTO",
     "VENDEDOR",
+    "NOTA",
+    "EMP",
     "UNIT",
     "DES",
     "QTDADE_VENDIDA",
     "VALOR_TOTAL",
-}
-
-COLS_OPCIONAIS = {"NOTA", "EMP"}
+]
 
 
-def _norm_col(c: str) -> str:
-    return str(c).strip().upper()
-
-
-def _to_date(v) -> Optional[date]:
-    if pd.isna(v):
-        return None
-    # pandas pode vir com Timestamp
+def _to_date(value: Any) -> dt.date:
+    if pd.isna(value):
+        raise ValueError("MOVIMENTO vazio")
+    if isinstance(value, dt.date) and not isinstance(value, dt.datetime):
+        return value
+    if isinstance(value, dt.datetime):
+        return value.date()
+    # pandas Timestamp
     try:
-        ts = pd.to_datetime(v, errors="coerce")
-        if pd.isna(ts):
-            return None
-        return ts.date()
+        return pd.to_datetime(value).date()
+    except Exception as e:
+        raise ValueError(f"MOVIMENTO invalido: {value}") from e
+
+
+def _to_float(value: Any) -> Optional[float]:
+    if pd.isna(value):
+        return None
+    try:
+        return float(value)
     except Exception:
         return None
 
 
-def importar_vendas_xlsx(
-    fileobj: BinaryIO | bytes,
-    *,
+def _norm_str(value: Any) -> Optional[str]:
+    if pd.isna(value):
+        return None
+    s = str(value).strip()
+    return s if s else None
+
+
+def importar_planilha(
+    filepath: str,
     modo: str = "ignorar_duplicados",
     chave: str = "mestre_vendedor_nota_emp",
-    sheet: int | str = 0,
-) -> Dict[str, object]:
-    """Importa um XLSX e grava em `vendas`.
+) -> Dict[str, Any]:
+    """Importa vendas no banco.
 
-    - modo:
-        - "ignorar_duplicados": tenta usar ON CONFLICT DO NOTHING (se existir unique index).
-        - "atualizar": (por enquanto) comporta-se como ignorar_duplicados; pode ser evoluido.
+    modo:
+      - ignorar_duplicados (default): ON CONFLICT DO NOTHING
+      - atualizar: ON CONFLICT DO UPDATE (atualiza campos financeiros e data)
 
-    - chave:
-        - "mestre_vendedor_nota_emp" (recomendado)
-        - "mestre_vendedor_nota"
+    chave:
+      - mestre_vendedor_nota_emp (default)
+      - mestre_vendedor_nota
 
-    Observacao: o banco atual (Venda) pode nao ter as colunas NOTA/EMP. Nesse caso,
-    a importacao ainda insere mestre/marca/vendedor/data/mov_tipo/qtda/valor_total.
+    OBS: para a opcao mestre_vendedor_nota, o EMP vira NULL na chave. (Nao recomendado no seu caso.)
     """
 
-    # Lê bytes
-    if isinstance(fileobj, (bytes, bytearray)):
-        bio = io.BytesIO(fileobj)
-    else:
-        bio = io.BytesIO(fileobj.read())
+    df = pd.read_excel(filepath, engine="openpyxl")
 
-    # openpyxl é o engine mais seguro para .xlsx
-    df = pd.read_excel(bio, sheet_name=sheet, engine="openpyxl")
-    df.columns = [_norm_col(c) for c in df.columns]
+    # Normaliza nomes de colunas
+    df.columns = [str(c).strip().upper() for c in df.columns]
 
-    faltando = sorted(list(COLS_OBRIGATORIAS - set(df.columns)))
-    if faltando:
-        return ImportResult(
-            lidas=0,
-            inseridas=0,
-            ignoradas=0,
-            erros=1,
-            aviso=(
-                "Planilha invalida. Colunas obrigatorias faltando: " + ", ".join(faltando)
-            ),
-        ).asdict()
-
-    # Normalizacoes
-    df["VENDEDOR"] = df["VENDEDOR"].astype(str).str.strip().str.upper()
-    df["MESTRE"] = df["MESTRE"].astype(str).str.strip()
-    df["MARCA"] = df["MARCA"].astype(str).str.strip().str.upper()
-    df["MOV_TIPO_MOVTO"] = df["MOV_TIPO_MOVTO"].astype(str).str.strip().str.upper()
-
-    # Datas
-    df["DATA"] = df["MOVIMENTO"].apply(_to_date)
-    df = df.dropna(subset=["DATA", "VENDEDOR", "MOV_TIPO_MOVTO"]).copy()
-
-    # Numericos (garante float)
-    for col in ["QTDADE_VENDIDA", "UNIT", "DES", "VALOR_TOTAL"]:
-        df[col] = pd.to_numeric(df[col], errors="coerce")
-
-    # Se VALOR_TOTAL veio vazio, tenta calcular (UNIT - DES) * QTDADE_VENDIDA
-    mask_total = df["VALOR_TOTAL"].isna() & df["UNIT"].notna() & df["QTDADE_VENDIDA"].notna()
-    if mask_total.any():
-        df.loc[mask_total, "VALOR_TOTAL"] = (
-            (df.loc[mask_total, "UNIT"].fillna(0) - df.loc[mask_total, "DES"].fillna(0))
-            * df.loc[mask_total, "QTDADE_VENDIDA"].fillna(0)
-        )
-
-    df = df.dropna(subset=["VALOR_TOTAL"]).copy()
-
-    lidas = int(len(df))
-    if lidas == 0:
-        return ImportResult(lidas=0, inseridas=0, ignoradas=0, erros=0, aviso="Nada para importar.").asdict()
-
-    # Detecta se colunas NOTA/EMP existem na tabela (para poder usar a chave completa)
-    venda_cols = set(Venda.__table__.columns.keys())
-    tem_nota = "nota" in venda_cols
-    tem_emp = "emp" in venda_cols
-
-    # Monta linhas para insert
-    rows = []
-    for _, r in df.iterrows():
-        row = {
-            "mestre": str(r["MESTRE"]).strip(),
-            "marca": str(r["MARCA"]).strip().upper(),
-            "vendedor": str(r["VENDEDOR"]).strip().upper(),
-            "data": r["DATA"],
-            "mov_tipo_movto": str(r["MOV_TIPO_MOVTO"]).strip().upper(),
-            "qtda_vendida": float(r["QTDADE_VENDIDA"]) if pd.notna(r["QTDADE_VENDIDA"]) else None,
-            "valor_total": float(r["VALOR_TOTAL"]),
+    missing = [c for c in REQUIRED_COLS if c not in df.columns]
+    if missing:
+        return {
+            "ok": False,
+            "msg": "Planilha com colunas faltando.",
+            "faltando": missing,
+            "lidas": list(df.columns),
+            "inseridas": 0,
+            "atualizadas": 0,
+            "ignoradas": 0,
         }
-        if tem_nota and "NOTA" in df.columns:
-            row["nota"] = None if pd.isna(r.get("NOTA")) else str(r.get("NOTA")).strip()
-        if tem_emp and "EMP" in df.columns:
-            try:
-                row["emp"] = None if pd.isna(r.get("EMP")) else int(r.get("EMP"))
-            except Exception:
-                row["emp"] = None
-        rows.append(row)
 
-    inseridas = 0
-    ignoradas = 0
-    erros = 0
-    aviso = None
-
-    # Tenta usar INSERT ... ON CONFLICT para performance e evitar duplicidade.
-    # Para funcionar 100%, crie um UNIQUE INDEX no Supabase (veja SQL sugerido).
-    conflict_clause = ""
-    if chave == "mestre_vendedor_nota_emp" and tem_nota and tem_emp:
-        conflict_clause = "ON CONFLICT (mestre, vendedor, nota, emp) DO NOTHING"
-    elif chave == "mestre_vendedor_nota" and tem_nota:
-        conflict_clause = "ON CONFLICT (mestre, vendedor, nota) DO NOTHING"
-    else:
-        # Sem colunas de chave no banco -> sem ON CONFLICT
-        conflict_clause = ""
-        aviso = "Aviso: sua tabela 'vendas' ainda nao tem NOTA/EMP; deduplicacao fica limitada."
-
-    cols = list(rows[0].keys())
-    col_sql = ",".join(cols)
-    val_sql = ",".join([f":{c}" for c in cols])
-
-    sql = f"INSERT INTO vendas ({col_sql}) VALUES ({val_sql}) {conflict_clause}"
-
-    with SessionLocal() as sess:
+    # Constrói registros
+    records = []
+    erros_linha = 0
+    for _, row in df.iterrows():
         try:
-            res = sess.execute(text(sql), rows)
-            sess.commit()
+            mestre = _norm_str(row.get("MESTRE"))
+            vendedor = _norm_str(row.get("VENDEDOR"))
+            if not mestre or not vendedor:
+                erros_linha += 1
+                continue
 
-            # Quando ON CONFLICT existe, rowcount costuma ser o numero inserido
-            inseridas = int(getattr(res, "rowcount", 0) or 0)
-            ignoradas = lidas - inseridas
+            nota = _norm_str(row.get("NOTA"))
+            emp = _norm_str(row.get("EMP"))
+            if chave == "mestre_vendedor_nota":
+                emp = None
+
+            rec = {
+                "mestre": mestre,
+                "marca": _norm_str(row.get("MARCA")),
+                "data": _to_date(row.get("MOVIMENTO")),
+                "mov_tipo_movto": _norm_str(row.get("MOV_TIPO_MOVTO")) or "",
+                "vendedor": vendedor,
+                "nota": nota,
+                "emp": emp,
+                "unit": _to_float(row.get("UNIT")),
+                "des": _to_float(row.get("DES")),
+                "qtda_vendida": _to_float(row.get("QTDADE_VENDIDA")),
+                "valor_total": _to_float(row.get("VALOR_TOTAL")) or 0.0,
+            }
+            if not rec["mov_tipo_movto"]:
+                erros_linha += 1
+                continue
+            records.append(rec)
         except Exception:
-            sess.rollback()
-            # Fallback: insere linha a linha
-            inseridas = 0
-            ignoradas = 0
-            erros = 0
-            for row in rows:
-                try:
-                    sess.add(Venda(**row))
-                    sess.commit()
-                    inseridas += 1
-                except Exception:
-                    sess.rollback()
-                    erros += 1
+            erros_linha += 1
 
-    return ImportResult(lidas=lidas, inseridas=inseridas, ignoradas=ignoradas, erros=erros, aviso=aviso).asdict()
+    if not records:
+        return {
+            "ok": False,
+            "msg": "Nenhuma linha valida encontrada.",
+            "inseridas": 0,
+            "atualizadas": 0,
+            "ignoradas": 0,
+            "erros_linha": erros_linha,
+        }
+
+    conflict_cols = ["mestre", "vendedor", "nota"]
+    if chave == "mestre_vendedor_nota_emp":
+        conflict_cols.append("emp")
+
+    inserted = 0
+    updated = 0
+
+    db = SessionLocal()
+    try:
+        stmt = pg_insert(Venda.__table__).values(records)
+
+        if modo == "atualizar":
+            update_cols = {
+                "marca": stmt.excluded.marca,
+                "data": stmt.excluded.data,
+                "mov_tipo_movto": stmt.excluded.mov_tipo_movto,
+                "unit": stmt.excluded.unit,
+                "des": stmt.excluded.des,
+                "qtda_vendida": stmt.excluded.qtda_vendida,
+                "valor_total": stmt.excluded.valor_total,
+                "emp": stmt.excluded.emp,
+            }
+            stmt = stmt.on_conflict_do_update(index_elements=conflict_cols, set_=update_cols)
+        else:
+            stmt = stmt.on_conflict_do_nothing(index_elements=conflict_cols)
+
+        result = db.execute(stmt)
+        db.commit()
+
+        # rowcount no DO NOTHING pode ser -1 em alguns drivers; tentamos inferir
+        if result.rowcount and result.rowcount > 0:
+            inserted = int(result.rowcount)
+
+        # Para atualizar: rowcount tende a ser total afetado
+        if modo == "atualizar" and result.rowcount and result.rowcount > 0:
+            updated = int(result.rowcount)
+
+    finally:
+        db.close()
+
+    total = len(records)
+    ignoradas = max(total - inserted, 0) if modo != "atualizar" else max(total - updated, 0)
+
+    return {
+        "ok": True,
+        "msg": "Importacao finalizada.",
+        "total_linhas": int(df.shape[0]),
+        "validas": total,
+        "inseridas": inserted,
+        "atualizadas": updated,
+        "ignoradas": ignoradas,
+        "erros_linha": erros_linha,
+        "modo": modo,
+        "chave": chave,
+    }
