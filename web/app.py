@@ -419,7 +419,7 @@ def create_app() -> Flask:
         return render_template("devolucoes.html", vendedor=vendedor, mes=mes, ano=ano, dados=dados, role=role, emp=emp)
 
 
-    @app.route(\"/senha\", methods=["GET", "POST"])
+    @app.route("/senha", methods=["GET", "POST"])
     def senha():
         red = _login_required()
         if red:
