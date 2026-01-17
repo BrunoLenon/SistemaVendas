@@ -1,7 +1,6 @@
 import os
 import logging
 from datetime import date
-import datetime
 
 import pandas as pd
 from flask import (
@@ -14,7 +13,6 @@ from flask import (
     url_for,
 )
 from werkzeug.security import check_password_hash, generate_password_hash
-from sqlalchemy import text
 
 from dados_db import carregar_df
 from db import SessionLocal, Usuario, criar_tabelas
@@ -47,8 +45,7 @@ def create_app() -> Flask:
         return None
 
     def _admin_required():
-        # Aceita variações de maiúsculas/minúsculas
-        if (_role() or "").lower() != "admin":
+        if _role() != "admin":
             flash("Acesso restrito ao administrador.", "warning")
             return redirect(url_for("dashboard"))
         return None
@@ -74,6 +71,10 @@ def create_app() -> Flask:
         df["MOV_TIPO_MOVTO"] = df["MOV_TIPO_MOVTO"].astype(str).str.strip().str.upper()
         df["MOVIMENTO"] = pd.to_datetime(df["MOVIMENTO"], errors="coerce")
         df["VALOR_TOTAL"] = pd.to_numeric(df["VALOR_TOTAL"], errors="coerce").fillna(0.0)
+
+        # Quantidade (para MIX): DS/CA devem deduzir quantidade também
+        if "QTDADE_VENDIDA" in df.columns:
+            df["QTDADE_VENDIDA"] = pd.to_numeric(df["QTDADE_VENDIDA"], errors="coerce").fillna(0.0)
 
         df_v = df[df["VENDEDOR"] == vendedor.upper()].copy()
         if df_v.empty:
@@ -106,8 +107,19 @@ def create_app() -> Flask:
         def _mix(df_in: pd.DataFrame) -> int:
             if df_in.empty:
                 return 0
-            vendas = df_in[~df_in["MOV_TIPO_MOVTO"].isin(["DS", "CA"])]
-            return int(vendas["MESTRE"].nunique())
+            # MIX = quantidade de produtos (MESTRE) com saldo de quantidade > 0
+            # DS/CA devem deduzir (cancelam/devolvem quantidade).
+            if "QTDADE_VENDIDA" not in df_in.columns:
+                # Fallback (compatibilidade): conta apenas mestres das vendas
+                vendas = df_in[~df_in["MOV_TIPO_MOVTO"].isin(["DS", "CA"])]
+                return int(vendas["MESTRE"].nunique())
+
+            neg = df_in["MOV_TIPO_MOVTO"].isin(["DS", "CA"])
+            qtd_assinada = df_in["QTDADE_VENDIDA"].where(~neg, -df_in["QTDADE_VENDIDA"])
+
+            # Soma por produto (MESTRE) e conta apenas os que ficaram positivos.
+            saldo_por_mestre = qtd_assinada.groupby(df_in["MESTRE"]).sum()
+            return int((saldo_por_mestre > 0).sum())
 
         def _valor_liquido(df_in: pd.DataFrame) -> float:
             if df_in.empty:
@@ -208,14 +220,6 @@ def create_app() -> Flask:
 
     @app.get("/")
     def home():
-        # Se não estiver logado, manda para login
-        if not session.get("usuario"):
-            return redirect(url_for("login"))
-
-        # Admin vai direto para /admin/usuarios
-        if (session.get("role") or "").lower() == "admin":
-            return redirect(url_for("admin_usuarios"))
-
         return redirect(url_for("dashboard"))
 
     @app.route("/login", methods=["GET", "POST"])
@@ -237,10 +241,6 @@ def create_app() -> Flask:
             session["usuario"] = u.username
             session["role"] = u.role
 
-
-        # Direciona conforme perfil
-        if (u.role or "").lower() == "admin":
-            return redirect(url_for("admin_usuarios"))
         return redirect(url_for("dashboard"))
 
     @app.get("/logout")
@@ -254,10 +254,6 @@ def create_app() -> Flask:
         if red:
             return red
 
-        # Admin não usa dashboard (evita cair aqui por link/URL)
-        if (session.get("role") or "").lower() == "admin":
-            return redirect(url_for("admin_usuarios"))
-
         mes, ano = _mes_ano_from_request()
         vendedor = _usuario_logado()
         try:
@@ -267,7 +263,7 @@ def create_app() -> Flask:
             app.logger.exception("Erro ao carregar/calcular dashboard")
             dados = None
 
-        return render_template("dashboard.html", vendedor=vendedor, mes=mes, ano=ano, dados=dados, role=_role())
+        return render_template("dashboard.html", vendedor=vendedor, mes=mes, ano=ano, dados=dados)
 
     @app.get("/percentuais")
     def percentuais():
@@ -511,66 +507,6 @@ def create_app() -> Flask:
                 os.remove(tmp_path)
             except Exception:
                 pass
-
-
-    @app.route("/admin/apagar_vendas", methods=["POST"])
-    def admin_apagar_vendas():
-        red = _login_required()
-        if red:
-            return red
-        red = _admin_required()
-        if red:
-            return red
-
-        tipo = (request.form.get("tipo") or "").strip().lower()
-        valor = (request.form.get("valor") or "").strip()
-
-        if tipo not in ("dia", "mes"):
-            flash("Tipo inválido para apagar vendas.", "danger")
-            return redirect(url_for("admin_importar"))
-
-        if not valor:
-            flash("Informe a data/mês para apagar.", "warning")
-            return redirect(url_for("admin_importar"))
-
-        # Monta intervalo [inicio, fim)
-        try:
-            if tipo == "dia":
-                # YYYY-MM-DD
-                inicio = datetime.date.fromisoformat(valor)
-                fim = inicio + datetime.timedelta(days=1)
-                label = inicio.strftime("%d/%m/%Y")
-            else:
-                # YYYY-MM
-                ano, mes = valor.split("-")
-                ano = int(ano); mes = int(mes)
-                inicio = datetime.date(ano, mes, 1)
-                if mes == 12:
-                    fim = datetime.date(ano + 1, 1, 1)
-                else:
-                    fim = datetime.date(ano, mes + 1, 1)
-                label = inicio.strftime("%m/%Y")
-        except Exception:
-            flash("Data/Mês inválido. Use o seletor do formulário.", "danger")
-            return redirect(url_for("admin_importar"))
-
-        db = SessionLocal()
-        try:
-            res = db.execute(
-                text("DELETE FROM vendas WHERE data >= :ini AND data < :fim"),
-                {"ini": inicio, "fim": fim},
-            )
-            apagadas = res.rowcount or 0
-            db.commit()
-            flash(f"✅ Apagadas {apagadas} vendas do período {label}.", "success")
-        except Exception:
-            db.rollback()
-            app.logger.exception("Erro ao apagar vendas")
-            flash("Erro ao apagar vendas. Veja os logs no Render.", "danger")
-        finally:
-            db.close()
-
-        return redirect(url_for("admin_importar"))
 
     # ------------- Erros -------------
     @app.errorhandler(500)
