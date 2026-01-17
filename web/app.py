@@ -474,6 +474,13 @@ def create_app() -> Flask:
                         if u:
                             u.senha_hash = generate_password_hash(nova_senha)
                             u.role = role
+                            # Salva EMP para supervisor; limpa para outros perfis
+                            if hasattr(u, "emp"):
+                                if role == "supervisor" and emp_supervisor.isdigit():
+                                    u.emp = int(emp_supervisor)
+                                else:
+                                    u.emp = None
+                            db.commit()
                             ok = f"Usuário {novo_usuario} atualizado."
                         else:
                             novo = Usuario(
@@ -525,7 +532,14 @@ def create_app() -> Flask:
             usuarios = (
                 db.query(Usuario).order_by(Usuario.role.desc(), Usuario.username.asc()).all()
             )
-            usuarios_out = [{"usuario": u.username, "role": u.role} for u in usuarios]
+            usuarios_out = [
+                {
+                    "usuario": u.username,
+                    "role": u.role,
+                    "emp": getattr(u, "emp", None),
+                }
+                for u in usuarios
+            ]
 
         return render_template(
             "admin_usuarios.html",

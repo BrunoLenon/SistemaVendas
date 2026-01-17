@@ -88,11 +88,11 @@
                 </select>
               </div>
 
-              <!-- ✅ NOVO: EMP do supervisor (loja) -->
+              <!-- EMP do supervisor -->
               <div class="mb-3" id="empWrap" style="display:none;">
-                <label class="form-label">EMP do supervisor (loja)</label>
-                <input class="form-control" name="emp" id="empInput" placeholder="Ex.: 101" inputmode="numeric">
-                <div class="form-text">Obrigatório apenas para perfil <strong>Supervisor</strong>.</div>
+                <label class="form-label">EMP (loja do supervisor)</label>
+                <input class="form-control" name="emp_supervisor" placeholder="Ex.: 101" inputmode="numeric">
+                <div class="form-text">Somente para <strong>Supervisor</strong>: define qual EMP ele pode visualizar.</div>
               </div>
 
               <button class="btn btn-primary w-100">Salvar</button>
@@ -159,6 +159,7 @@
                   <tr>
                     <th>Usuário</th>
                     <th>Perfil</th>
+                    <th>EMP</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -170,13 +171,11 @@
                           <span class="badge text-bg-dark">admin</span>
                         {% elif u.role == 'supervisor' %}
                           <span class="badge text-bg-primary">supervisor</span>
-                          {% if u.emp %}
-                            <span class="badge text-bg-light border">EMP {{ u.emp }}</span>
-                          {% endif %}
                         {% else %}
                           <span class="badge text-bg-secondary">vendedor</span>
                         {% endif %}
                       </td>
+                      <td class="text-muted">{{ u.emp if u.emp else '-' }}</td>
                     </tr>
                   {% endfor %}
                 </tbody>
@@ -194,21 +193,15 @@
   </div>
 
   <script>
-    (function () {
-      const roleSelect = document.getElementById('roleSelect');
+    (function() {
+      const role = document.getElementById('roleSelect');
       const empWrap = document.getElementById('empWrap');
-      const empInput = document.getElementById('empInput');
-
-      function syncEmp() {
-        const isSup = (roleSelect.value === 'supervisor');
+      function sync() {
+        const isSup = (role.value || '').toLowerCase() === 'supervisor';
         empWrap.style.display = isSup ? 'block' : 'none';
-        // torna obrigatório só para supervisor
-        empInput.required = isSup;
-        if (!isSup) empInput.value = '';
       }
-
-      roleSelect.addEventListener('change', syncEmp);
-      syncEmp();
+      role.addEventListener('change', sync);
+      sync();
     })();
   </script>
 </body>

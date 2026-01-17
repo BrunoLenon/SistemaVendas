@@ -64,6 +64,9 @@ class Usuario(Base):
     username = Column(String(50), unique=True, nullable=False)
     senha_hash = Column(String(255), nullable=False)
     role = Column(String(20), nullable=False, default="vendedor")
+    # Para o perfil "supervisor", define a loja/filial (EMP) que ele pode visualizar.
+    # Para "admin" e "vendedor", pode ficar NULL.
+    emp = Column(Integer, nullable=True)
 
 
 class Venda(Base):
@@ -90,8 +93,17 @@ class Venda(Base):
     __table_args__ = (
         # Performance
         Index("ix_vendas_vendedor_data", "vendedor", "data"),
-        # Anti-duplicidade (o critério mais completo)
-        UniqueConstraint("mestre", "vendedor", "nota", "emp", name="uq_vendas_mestre_vendedor_nota_emp"),
+        # Anti-duplicidade (critério mais completo, inclui tipo de movimento)
+        # Deve bater com o índice/unique do Supabase.
+        UniqueConstraint(
+            "mestre",
+            "data",
+            "vendedor",
+            "nota",
+            "mov_tipo_movto",
+            "emp",
+            name="uq_vendas_mestre_data_vendedor_nota_tipo_emp",
+        ),
     )
 
 
