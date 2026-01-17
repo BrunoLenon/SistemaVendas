@@ -1,4 +1,7 @@
-"""Importacao de vendas via planilha (.xlsx).
+"""Importacao de vendas via planilha (.xlsx) com baixo uso de memoria.
+
+Esta versao evita carregar a planilha inteira com pandas e faz insercoes em lote
+para nao estourar memoria/timeout no Render.
 
 Uso no Flask:
     from importar_excel import importar_planilha
@@ -10,10 +13,10 @@ Retorna um dict com contagens e erros.
 from __future__ import annotations
 
 import datetime as dt
-from dataclasses import dataclass
-from typing import Any, Dict, Iterable, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 import pandas as pd
+from openpyxl import load_workbook
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from db import SessionLocal, Venda
@@ -35,21 +38,18 @@ REQUIRED_COLS = [
 
 
 def _to_date(value: Any) -> dt.date:
-    if pd.isna(value):
+    if value is None or (isinstance(value, float) and pd.isna(value)):
         raise ValueError("MOVIMENTO vazio")
     if isinstance(value, dt.date) and not isinstance(value, dt.datetime):
         return value
     if isinstance(value, dt.datetime):
         return value.date()
-    # pandas Timestamp
-    try:
-        return pd.to_datetime(value).date()
-    except Exception as e:
-        raise ValueError(f"MOVIMENTO invalido: {value}") from e
+    # tenta converter strings / timestamps
+    return pd.to_datetime(value).date()
 
 
 def _to_float(value: Any) -> Optional[float]:
-    if pd.isna(value):
+    if value is None or (isinstance(value, float) and pd.isna(value)):
         return None
     try:
         return float(value)
@@ -58,145 +58,177 @@ def _to_float(value: Any) -> Optional[float]:
 
 
 def _norm_str(value: Any) -> Optional[str]:
-    if pd.isna(value):
+    if value is None or (isinstance(value, float) and pd.isna(value)):
         return None
     s = str(value).strip()
     return s if s else None
+
+
+def _build_stmt(records: List[dict], modo: str, conflict_cols: List[str]):
+    stmt = pg_insert(Venda.__table__).values(records)
+
+    if modo == "atualizar":
+        update_cols = {
+            "marca": stmt.excluded.marca,
+            "data": stmt.excluded.data,
+            "mov_tipo_movto": stmt.excluded.mov_tipo_movto,
+            "unit": stmt.excluded.unit,
+            "des": stmt.excluded.des,
+            "qtda_vendida": stmt.excluded.qtda_vendida,
+            "valor_total": stmt.excluded.valor_total,
+            "emp": stmt.excluded.emp,
+        }
+        stmt = stmt.on_conflict_do_update(index_elements=conflict_cols, set_=update_cols)
+    else:
+        stmt = stmt.on_conflict_do_nothing(index_elements=conflict_cols)
+
+    # returning para contar de forma confiavel por lote
+    return stmt.returning(Venda.id)
 
 
 def importar_planilha(
     filepath: str,
     modo: str = "ignorar_duplicados",
     chave: str = "mestre_vendedor_nota_emp",
+    batch_size: int = 500,
 ) -> Dict[str, Any]:
-    """Importa vendas no banco.
+    """Importa vendas no banco com insercao em lotes.
 
     modo:
       - ignorar_duplicados (default): ON CONFLICT DO NOTHING
-      - atualizar: ON CONFLICT DO UPDATE (atualiza campos financeiros e data)
+      - atualizar: ON CONFLICT DO UPDATE
 
     chave:
       - mestre_vendedor_nota_emp (default)
       - mestre_vendedor_nota
-
-    OBS: para a opcao mestre_vendedor_nota, o EMP vira NULL na chave. (Nao recomendado no seu caso.)
     """
 
-    df = pd.read_excel(filepath, engine="openpyxl")
-
-    # Normaliza nomes de colunas
-    df.columns = [str(c).strip().upper() for c in df.columns]
-
-    missing = [c for c in REQUIRED_COLS if c not in df.columns]
-    if missing:
-        return {
-            "ok": False,
-            "msg": "Planilha com colunas faltando.",
-            "faltando": missing,
-            "lidas": list(df.columns),
-            "inseridas": 0,
-            "atualizadas": 0,
-            "ignoradas": 0,
-        }
-
-    # Constrói registros
-    records = []
-    erros_linha = 0
-    for _, row in df.iterrows():
-        try:
-            mestre = _norm_str(row.get("MESTRE"))
-            vendedor = _norm_str(row.get("VENDEDOR"))
-            if not mestre or not vendedor:
-                erros_linha += 1
-                continue
-
-            nota = _norm_str(row.get("NOTA"))
-            emp = _norm_str(row.get("EMP"))
-            if chave == "mestre_vendedor_nota":
-                emp = None
-
-            rec = {
-                "mestre": mestre,
-                "marca": _norm_str(row.get("MARCA")),
-                "data": _to_date(row.get("MOVIMENTO")),
-                "mov_tipo_movto": _norm_str(row.get("MOV_TIPO_MOVTO")) or "",
-                "vendedor": vendedor,
-                "nota": nota,
-                "emp": emp,
-                "unit": _to_float(row.get("UNIT")),
-                "des": _to_float(row.get("DES")),
-                "qtda_vendida": _to_float(row.get("QTDADE_VENDIDA")),
-                "valor_total": _to_float(row.get("VALOR_TOTAL")) or 0.0,
-            }
-            if not rec["mov_tipo_movto"]:
-                erros_linha += 1
-                continue
-            records.append(rec)
-        except Exception:
-            erros_linha += 1
-
-    if not records:
-        return {
-            "ok": False,
-            "msg": "Nenhuma linha valida encontrada.",
-            "inseridas": 0,
-            "atualizadas": 0,
-            "ignoradas": 0,
-            "erros_linha": erros_linha,
-        }
-
-    conflict_cols = ["mestre", "vendedor", "nota"]
-    if chave == "mestre_vendedor_nota_emp":
-        conflict_cols.append("emp")
-
-    inserted = 0
-    updated = 0
-
-    db = SessionLocal()
+    wb = None
     try:
-        stmt = pg_insert(Venda.__table__).values(records)
+        wb = load_workbook(filepath, read_only=True, data_only=True)
+        ws = wb.active
 
-        if modo == "atualizar":
-            update_cols = {
-                "marca": stmt.excluded.marca,
-                "data": stmt.excluded.data,
-                "mov_tipo_movto": stmt.excluded.mov_tipo_movto,
-                "unit": stmt.excluded.unit,
-                "des": stmt.excluded.des,
-                "qtda_vendida": stmt.excluded.qtda_vendida,
-                "valor_total": stmt.excluded.valor_total,
-                "emp": stmt.excluded.emp,
+        rows = ws.iter_rows(values_only=True)
+        header = next(rows, None)
+        if not header:
+            return {"ok": False, "msg": "Planilha vazia.", "inseridas": 0, "atualizadas": 0, "ignoradas": 0, "erros_linha": 0}
+
+        cols = [str(c).strip().upper() if c is not None else "" for c in header]
+        col_index = {c: i for i, c in enumerate(cols)}
+
+        missing = [c for c in REQUIRED_COLS if c not in col_index]
+        if missing:
+            return {
+                "ok": False,
+                "msg": "Planilha com colunas faltando.",
+                "faltando": missing,
+                "lidas": cols,
+                "inseridas": 0,
+                "atualizadas": 0,
+                "ignoradas": 0,
             }
-            stmt = stmt.on_conflict_do_update(index_elements=conflict_cols, set_=update_cols)
-        else:
-            stmt = stmt.on_conflict_do_nothing(index_elements=conflict_cols)
 
-        result = db.execute(stmt)
-        db.commit()
+        conflict_cols = ["mestre", "vendedor", "nota"]
+        if chave == "mestre_vendedor_nota_emp":
+            conflict_cols.append("emp")
 
-        # rowcount no DO NOTHING pode ser -1 em alguns drivers; tentamos inferir
-        if result.rowcount and result.rowcount > 0:
-            inserted = int(result.rowcount)
+        total_linhas = 0
+        validas = 0
+        erros_linha = 0
+        inseridas = 0
+        atualizadas = 0
 
-        # Para atualizar: rowcount tende a ser total afetado
-        if modo == "atualizar" and result.rowcount and result.rowcount > 0:
-            updated = int(result.rowcount)
+        batch: List[dict] = []
+
+        db = SessionLocal()
+        try:
+            for r in rows:
+                total_linhas += 1
+                try:
+                    def get(col: str):
+                        return r[col_index[col]] if col in col_index else None
+
+                    mestre = _norm_str(get("MESTRE"))
+                    vendedor = _norm_str(get("VENDEDOR"))
+                    if not mestre or not vendedor:
+                        erros_linha += 1
+                        continue
+
+                    nota = _norm_str(get("NOTA"))
+                    emp = _norm_str(get("EMP"))
+                    if chave == "mestre_vendedor_nota":
+                        emp = None
+
+                    mov = _to_date(get("MOVIMENTO"))
+                    mov_tipo = _norm_str(get("MOV_TIPO_MOVTO")) or ""
+                    if not mov_tipo:
+                        erros_linha += 1
+                        continue
+
+                    rec = {
+                        "mestre": mestre,
+                        "marca": _norm_str(get("MARCA")),
+                        "data": mov,
+                        "mov_tipo_movto": mov_tipo,
+                        "vendedor": vendedor,
+                        "nota": nota,
+                        "emp": emp,
+                        "unit": _to_float(get("UNIT")),
+                        "des": _to_float(get("DES")),
+                        "qtda_vendida": _to_float(get("QTDADE_VENDIDA")),
+                        "valor_total": _to_float(get("VALOR_TOTAL")) or 0.0,
+                    }
+
+                    batch.append(rec)
+                    validas += 1
+
+                    if len(batch) >= batch_size:
+                        stmt = _build_stmt(batch, modo, conflict_cols)
+                        res = db.execute(stmt).fetchall()
+                        db.commit()
+                        if modo == "atualizar":
+                            atualizadas += len(res)
+                        else:
+                            inseridas += len(res)
+                        batch.clear()
+
+                except Exception:
+                    erros_linha += 1
+                    continue
+
+            # flush final
+            if batch:
+                stmt = _build_stmt(batch, modo, conflict_cols)
+                res = db.execute(stmt).fetchall()
+                db.commit()
+                if modo == "atualizar":
+                    atualizadas += len(res)
+                else:
+                    inseridas += len(res)
+                batch.clear()
+
+        finally:
+            db.close()
+
+        ignoradas = max(validas - (atualizadas if modo == "atualizar" else inseridas), 0)
+
+        return {
+            "ok": True,
+            "msg": "Importacao finalizada.",
+            "total_linhas": int(total_linhas),
+            "validas": int(validas),
+            "inseridas": int(inseridas),
+            "atualizadas": int(atualizadas),
+            "ignoradas": int(ignoradas),
+            "erros_linha": int(erros_linha),
+            "modo": modo,
+            "chave": chave,
+            "batch_size": int(batch_size),
+        }
 
     finally:
-        db.close()
-
-    total = len(records)
-    ignoradas = max(total - inserted, 0) if modo != "atualizar" else max(total - updated, 0)
-
-    return {
-        "ok": True,
-        "msg": "Importacao finalizada.",
-        "total_linhas": int(df.shape[0]),
-        "validas": total,
-        "inseridas": inserted,
-        "atualizadas": updated,
-        "ignoradas": ignoradas,
-        "erros_linha": erros_linha,
-        "modo": modo,
-        "chave": chave,
-    }
+        try:
+            if wb is not None:
+                wb.close()
+        except Exception:
+            pass
