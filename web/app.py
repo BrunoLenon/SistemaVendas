@@ -246,42 +246,54 @@ def create_app() -> Flask:
         mes, ano = _mes_ano_from_request()
         role = _role()
         emp = _emp()
-
         # Para supervisor, permitir escolher o vendedor e ver exatamente o que ele veria
-        vendedor_logado = _usuario_logado()
+        usuario_logado = _usuario_logado()
         vendedor_selecionado = request.args.get("vendedor", type=str)
+        if vendedor_selecionado:
+            vendedor_selecionado = vendedor_selecionado.strip().upper()
 
         try:
             df = carregar_df()
 
             vendedores_disponiveis = []
-            if role == "supervisor":
-                if emp is not None and "EMP" in df.columns:
-                    df = df[df["EMP"] == emp].copy()
-                # lista de vendedores para o supervisor (na EMP dele)
-                if "VENDEDOR" in df.columns and not df.empty:
-                    vendedores_disponiveis = sorted({str(v).strip() for v in df["VENDEDOR"].dropna().unique() if str(v).strip()})
-                if not vendedor_selecionado and vendedores_disponiveis:
-                    vendedor_selecionado = vendedores_disponiveis[0]
-                vendedor = vendedor_selecionado
-            else:
-                vendedor = vendedor_logado
+            dados = None
 
-            # Se supervisor ainda não escolheu vendedor (ou não há dados), não calcula
-            if not vendedor:
-                dados = None
+            if role == "supervisor":
+                # supervisor enxerga APENAS vendedores da EMP dele
+                if emp is not None and "EMP" in df.columns:
+                    try:
+                        emp_int = int(emp)
+                        df["EMP"] = df["EMP"].astype("Int64")
+                        df = df[df["EMP"] == emp_int].copy()
+                    except Exception:
+                        # se a coluna EMP vier como texto, tenta comparar como string
+                        df = df[df["EMP"].astype(str) == str(emp)].copy()
+
+                if "VENDEDOR" in df.columns and not df.empty:
+                    vendedores_disponiveis = sorted({str(v).strip().upper() for v in df["VENDEDOR"].dropna().unique() if str(v).strip()})
+
+                # Só calcula se o supervisor escolher um vendedor válido
+                if vendedor_selecionado and vendedor_selecionado in vendedores_disponiveis:
+                    dados = _calcular_dados(df, vendedor_selecionado, mes, ano)
+                else:
+                    vendedor_selecionado = None
+
+                vendedor_titulo = usuario_logado
             else:
-                dados = _calcular_dados(df, vendedor, mes, ano)
+                vendedor_titulo = usuario_logado
+                dados = _calcular_dados(df, usuario_logado, mes, ano)
 
         except Exception:
             app.logger.exception("Erro ao carregar/calcular dashboard")
-            dados = None
             vendedores_disponiveis = []
-            vendedor = vendedor_selecionado if role == "supervisor" else vendedor_logado
+            dados = None
+            vendedor_titulo = _usuario_logado()
+            vendedor_selecionado = None
 
         return render_template(
             "dashboard.html",
-            vendedor=vendedor,
+            vendedor=vendedor_titulo,
+            vendedor_selecionado=vendedor_selecionado,
             mes=mes,
             ano=ano,
             dados=dados,
@@ -300,33 +312,34 @@ def create_app() -> Flask:
         role = _role()
         emp = _emp()
         vendedor = _usuario_logado()
+        vendedor_sel = None
         if role == "supervisor":
-            vendedor = request.args.get("vendedor", type=str)
-            if not vendedor:
+            vendedor_sel = request.args.get("vendedor", type=str)
+            if not vendedor_sel:
                 return redirect(url_for("dashboard"))
+            vendedor_sel = vendedor_sel.strip().upper()
+            vendedor = vendedor_sel
 
         try:
             df = carregar_df()
             if role == "supervisor" and emp is not None and "EMP" in df.columns:
-                df = df[df["EMP"] == emp].copy()
+                try:
+                    emp_int = int(emp)
+                    df["EMP"] = df["EMP"].astype("Int64")
+                    df = df[df["EMP"] == emp_int].copy()
+                except Exception:
+                    df = df[df["EMP"].astype(str) == str(emp)].copy()
+                # valida vendedor dentro da EMP
+                if "VENDEDOR" in df.columns and not df.empty:
+                    allowed = {str(v).strip().upper() for v in df["VENDEDOR"].dropna().unique() if str(v).strip()}
+                    if vendedor.strip().upper() not in allowed:
+                        return redirect(url_for("dashboard"))
             dados = _calcular_percentuais(df, vendedor, mes, ano)
         except Exception:
             app.logger.exception("Erro ao calcular percentuais")
             dados = None
 
         return render_template("percentuais.html", vendedor=vendedor, mes=mes, ano=ano, dados=dados, role=role, emp=emp)
-        df = carregar_df()
-        dados = _calcular_dados(df, vendedor, mes, ano) or {}
-        ranking_list = dados.get("ranking_list", [])
-        total = float(dados.get("total_liquido_periodo", 0.0))
-        return render_template(
-            "percentuais.html",
-            vendedor=vendedor,
-            mes=mes,
-            ano=ano,
-            total=total,
-            ranking_list=ranking_list,
-        )
 
     @app.get("/marcas")
     def marcas():
@@ -338,27 +351,34 @@ def create_app() -> Flask:
         role = _role()
         emp = _emp()
         vendedor = _usuario_logado()
+        vendedor_sel = None
         if role == "supervisor":
-            vendedor = request.args.get("vendedor", type=str)
-            if not vendedor:
+            vendedor_sel = request.args.get("vendedor", type=str)
+            if not vendedor_sel:
                 return redirect(url_for("dashboard"))
+            vendedor_sel = vendedor_sel.strip().upper()
+            vendedor = vendedor_sel
 
         try:
             df = carregar_df()
             if role == "supervisor" and emp is not None and "EMP" in df.columns:
-                df = df[df["EMP"] == emp].copy()
+                try:
+                    emp_int = int(emp)
+                    df["EMP"] = df["EMP"].astype("Int64")
+                    df = df[df["EMP"] == emp_int].copy()
+                except Exception:
+                    df = df[df["EMP"].astype(str) == str(emp)].copy()
+                # valida vendedor dentro da EMP
+                if "VENDEDOR" in df.columns and not df.empty:
+                    allowed = {str(v).strip().upper() for v in df["VENDEDOR"].dropna().unique() if str(v).strip()}
+                    if vendedor.strip().upper() not in allowed:
+                        return redirect(url_for("dashboard"))
             dados = _calcular_marcas(df, vendedor, mes, ano)
         except Exception:
             app.logger.exception("Erro ao calcular marcas")
             dados = None
 
         return render_template("marcas.html", vendedor=vendedor, mes=mes, ano=ano, dados=dados, role=role, emp=emp)
-        df = carregar_df()
-
-        # reaproveita cálculo do ranking (líquido por marca)
-        dados = _calcular_dados(df, vendedor, mes, ano) or {}
-        marcas_map = {row["marca"]: row["valor"] for row in dados.get("ranking_list", [])}
-        return render_template("marcas.html", vendedor=vendedor, mes=mes, ano=ano, marcas=marcas_map)
 
     @app.get("/devolucoes")
     def devolucoes():
@@ -370,44 +390,36 @@ def create_app() -> Flask:
         role = _role()
         emp = _emp()
         vendedor = _usuario_logado()
+        vendedor_sel = None
         if role == "supervisor":
-            vendedor = request.args.get("vendedor", type=str)
-            if not vendedor:
+            vendedor_sel = request.args.get("vendedor", type=str)
+            if not vendedor_sel:
                 return redirect(url_for("dashboard"))
+            vendedor_sel = vendedor_sel.strip().upper()
+            vendedor = vendedor_sel
 
         try:
             df = carregar_df()
             if role == "supervisor" and emp is not None and "EMP" in df.columns:
-                df = df[df["EMP"] == emp].copy()
+                try:
+                    emp_int = int(emp)
+                    df_emp = pd.to_numeric(df["EMP"], errors="coerce").astype("Int64")
+                    df = df[df_emp == emp_int].copy()
+                except Exception:
+                    df = df.iloc[0:0].copy()
+            # valida vendedor dentro da EMP
+            vendedores_ok = sorted({str(v).strip().upper() for v in df.get("VENDEDOR", []).dropna().unique() if str(v).strip()}) if not df.empty and "VENDEDOR" in df.columns else []
+            if vendedor not in vendedores_ok:
+                return redirect(url_for("dashboard"))
             dados = _calcular_devolucoes(df, vendedor, mes, ano)
         except Exception:
             app.logger.exception("Erro ao calcular devolucoes")
             dados = None
 
         return render_template("devolucoes.html", vendedor=vendedor, mes=mes, ano=ano, dados=dados, role=role, emp=emp)
-        df = carregar_df()
 
-        if df is None or df.empty:
-            devol = {}
-        else:
-            df = df.copy()
-            df["VENDEDOR"] = df["VENDEDOR"].astype(str).str.strip().str.upper()
-            df["MARCA"] = df["MARCA"].astype(str).str.strip().str.upper()
-            df["MOV_TIPO_MOVTO"] = df["MOV_TIPO_MOVTO"].astype(str).str.strip().str.upper()
-            df["MOVIMENTO"] = pd.to_datetime(df["MOVIMENTO"], errors="coerce")
-            df["VALOR_TOTAL"] = pd.to_numeric(df["VALOR_TOTAL"], errors="coerce").fillna(0.0)
-            df = df[df["VENDEDOR"] == vendedor.upper()]
-            df = df[(df["MOVIMENTO"].dt.year == ano) & (df["MOVIMENTO"].dt.month == mes)]
-            df = df[df["MOV_TIPO_MOVTO"].isin(["DS", "CA"])]
-            devol = (
-                df.groupby("MARCA")["VALOR_TOTAL"].sum().sort_values(ascending=False).to_dict()
-                if not df.empty
-                else {}
-            )
 
-        return render_template("devolucoes.html", vendedor=vendedor, mes=mes, ano=ano, devolucoes=devol)
-
-    @app.route("/senha", methods=["GET", "POST"])
+    @app.route(\"/senha\", methods=["GET", "POST"])
     def senha():
         red = _login_required()
         if red:

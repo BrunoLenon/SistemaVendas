@@ -15,19 +15,19 @@
 
     <div class="d-flex justify-content-between align-items-center mb-3">
       <h3 class="m-0">
-        Dashboard —
-        <span class="text-primary">{{ vendedor }}</span>
-
+        Dashboard — <span class="text-primary">{{ vendedor }}</span>
         {% if role and role|lower == "admin" %}
           <span class="badge text-bg-dark ms-2">ADMIN</span>
         {% elif role and role|lower == "supervisor" %}
           <span class="badge text-bg-primary ms-2">SUPERVISOR</span>
           {% if emp %}
-            <span class="badge text-bg-light border ms-2">EMP {{ emp }}</span>
+            <span class="badge text-bg-light border text-dark ms-1">EMP {{ emp }}</span>
+          {% endif %}
+          {% if vendedor_selecionado %}
+            <span class="badge text-bg-light border text-dark ms-1">Vendo: {{ vendedor_selecionado }}</span>
           {% endif %}
         {% endif %}
       </h3>
-
       <div class="d-flex gap-2">
         {% if role and role|lower == "admin" %}
           <a class="btn btn-outline-dark btn-sm" href="/admin/usuarios">Usuários</a>
@@ -42,10 +42,11 @@
       <div class="alert alert-info shadow-sm">
         Você está logado como <strong>ADMIN</strong>. Use os botões <strong>Usuários</strong> e <strong>Importar</strong> acima para administrar o sistema.
       </div>
-    {% elif role and role|lower == "supervisor" %}
+    {% endif %}
+
+    {% if role and role|lower == "supervisor" %}
       <div class="alert alert-info shadow-sm">
-        Você está logado como <strong>SUPERVISOR</strong>{% if emp %} da <strong>EMP {{ emp }}</strong>{% endif %}.
-        Selecione um vendedor para ver exatamente o mesmo painel que ele vê.
+        Você está logado como <strong>SUPERVISOR</strong>{% if emp %} da <strong>EMP {{ emp }}</strong>{% endif %}. Selecione um vendedor para ver exatamente o mesmo painel que ele vê.
       </div>
     {% endif %}
 
@@ -54,17 +55,17 @@
         <form method="get" action="/dashboard" class="row g-2 align-items-end">
 
           {% if role and role|lower == "supervisor" %}
-            <div class="col-12 col-md-4">
+            <div class="col-12 col-md-5">
               <label class="form-label">Vendedor</label>
               <select class="form-select" name="vendedor" required>
-                {% if vendedores %}
-                  {% for v in vendedores %}
-                    <option value="{{ v }}" {% if vendedor_selecionado == v %}selected{% endif %}>{{ v }}</option>
-                  {% endfor %}
-                {% else %}
-                  <option value="" selected>Nenhum vendedor encontrado para esta EMP</option>
-                {% endif %}
+                <option value="" {% if not vendedor_selecionado %}selected{% endif %} disabled>Selecione um vendedor</option>
+                {% for v in vendedores_disponiveis %}
+                  <option value="{{ v }}" {% if vendedor_selecionado == v %}selected{% endif %}>{{ v }}</option>
+                {% endfor %}
               </select>
+              {% if vendedores_disponiveis is not none and (vendedores_disponiveis|length) == 0 %}
+                <div class="form-text text-muted">Nenhum vendedor encontrado para esta EMP.</div>
+              {% endif %}
             </div>
           {% endif %}
 
@@ -86,7 +87,18 @@
       </div>
     </div>
 
-    {% if dados %}
+    {% if role and role|lower == "supervisor" and not vendedor_selecionado %}
+      <div class="alert alert-warning shadow-sm">
+        Selecione um vendedor acima para visualizar os indicadores.
+      </div>
+    {% endif %}
+
+    {% if role and role|lower == "supervisor" and not vendedor_selecionado %}
+      <div class="alert alert-info shadow-sm">
+        Selecione um <strong>vendedor</strong> da sua EMP para ver o painel dele.
+      </div>
+
+    {% elif dados %}
       <div class="row g-3 mb-3">
         <div class="col-md-6">
           <div class="card shadow-sm">
@@ -218,15 +230,9 @@
       </div>
 
     {% else %}
-      {% if role and role|lower == "supervisor" and vendedores %}
-        <div class="alert alert-warning shadow-sm">
-          Selecione um vendedor e clique em <strong>Atualizar</strong>.
-        </div>
-      {% else %}
-        <div class="alert alert-warning shadow-sm">
-          Nenhum dado encontrado para este vendedor.
-        </div>
-      {% endif %}
+      <div class="alert alert-warning shadow-sm">
+        Nenhum dado encontrado para este vendedor.
+      </div>
     {% endif %}
 
   </div>
