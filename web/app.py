@@ -204,17 +204,17 @@ def create_app() -> Flask:
         return {"ok": True}
 
     @app.get("/")
-    def home():
-        # Se não estiver logado, manda para login
-        if not session.get("usuario"):
-            return redirect(url_for("login"))
+def home():
+    # Se não estiver logado, manda para login
+    if not session.get("usuario"):
+        return redirect(url_for("login"))
 
-        # Se for admin, manda direto para /admin/usuarios
-        if (session.get("role") or "").lower() == "admin":
-            return redirect(url_for("admin_usuarios"))
+    # Se for admin, manda direto para /admin/usuarios
+    if (session.get("role") or "").lower() == "admin":
+        return redirect(url_for("admin_usuarios"))
 
-        # Caso contrário, dashboard normal
-        return redirect(url_for("dashboard"))
+    # Caso contrário, dashboard normal
+    return redirect(url_for("dashboard"))
 @app.route("/login", methods=["GET", "POST"])
     def login():
         if request.method == "GET":
