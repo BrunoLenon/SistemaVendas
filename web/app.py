@@ -68,7 +68,7 @@ def create_app() -> Flask:
         ano = max(2000, min(2100, ano))
         return mes, ano
 
-    def _calcular_dados(df: pd.DataFrame, vendedor: str, mes: int, ano: int):
+    def _calcular_dados(df: pd.DataFrame, vendedor: str | None, mes: int, ano: int):
         """Calcula os números do dashboard a partir do DF carregado do banco."""
         if df is None or df.empty:
             return None
@@ -86,7 +86,12 @@ def create_app() -> Flask:
         if "QTDADE_VENDIDA" in df.columns:
             df["QTDADE_VENDIDA"] = pd.to_numeric(df["QTDADE_VENDIDA"], errors="coerce").fillna(0.0)
 
-        df_v = df[df["VENDEDOR"] == vendedor.upper()].copy()
+        if vendedor:
+            vend = str(vendedor).strip().upper()
+            df_v = df[df["VENDEDOR"] == vend].copy()
+        else:
+            # Supervisor (ou tela agregada): usa o DF já filtrado por EMP na rota
+            df_v = df.copy()
         if df_v.empty:
             return None
 
