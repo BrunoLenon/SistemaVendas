@@ -205,9 +205,17 @@ def create_app() -> Flask:
 
     @app.get("/")
     def home():
-        return redirect(url_for("dashboard"))
+        # Se não estiver logado, manda para login
+        if not session.get("usuario"):
+            return redirect(url_for("login"))
 
-    @app.route("/login", methods=["GET", "POST"])
+        # Se for admin, manda direto para /admin/usuarios
+        if (session.get("role") or "").lower() == "admin":
+            return redirect(url_for("admin_usuarios"))
+
+        # Caso contrário, dashboard normal
+        return redirect(url_for("dashboard"))
+@app.route("/login", methods=["GET", "POST"])
     def login():
         if request.method == "GET":
             return render_template("login.html", erro=None)
@@ -225,6 +233,10 @@ def create_app() -> Flask:
 
             session["usuario"] = u.username
             session["role"] = u.role
+
+        # Se for admin, vai direto para gestão de usuários
+        if (u.role or "").lower() == "admin":
+            return redirect(url_for("admin_usuarios"))
 
         return redirect(url_for("dashboard"))
 
@@ -248,7 +260,7 @@ def create_app() -> Flask:
             app.logger.exception("Erro ao carregar/calcular dashboard")
             dados = None
 
-        return render_template("dashboard.html", vendedor=vendedor, mes=mes, ano=ano, dados=dados)
+        return render_template("dashboard.html", vendedor=vendedor, mes=mes, ano=ano, dados=dados, role=_role())
 
     @app.get("/percentuais")
     def percentuais():
