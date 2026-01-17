@@ -15,7 +15,7 @@ from flask import (
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from dados_db import carregar_df
-from db import SessionLocal, Usuario, criar_tabelas
+from db import SessionLocal, Usuario, Venda, criar_tabelas
 from importar_excel import importar_planilha
 
 
@@ -60,6 +60,26 @@ def create_app() -> Flask:
         mes = max(1, min(12, mes))
         ano = max(2000, min(2100, ano))
         return mes, ano
+
+    def _vendedores_por_emp(emp: int) -> list[str]:
+        """Lista vendedores (USERNAME/coluna VENDEDOR) que possuem vendas na EMP informada."""
+        if not emp:
+            return []
+        emp_str = str(emp)
+        with SessionLocal() as db:
+            rows = (
+                db.query(Venda.vendedor)
+                .filter(Venda.emp == emp_str)
+                .distinct()
+                .order_by(Venda.vendedor)
+                .all()
+            )
+        return [r[0] for r in rows if r and r[0]]
+
+    def _supervisor_pode_ver_vendedor(emp: int, vendedor: str) -> bool:
+        if not emp or not vendedor:
+            return False
+        return vendedor.upper() in set(v.upper() for v in _vendedores_por_emp(emp))
 
     def _calcular_dados(df: pd.DataFrame, vendedor: str, mes: int, ano: int):
         """Calcula os números do dashboard a partir do DF carregado do banco."""
@@ -259,20 +279,24 @@ def create_app() -> Flask:
             dados = None
 
             if role == "supervisor":
-                # supervisor enxerga APENAS vendedores da EMP dele
-                if emp is not None and "EMP" in df.columns:
+                # supervisor enxerga APENAS vendedores da EMP dele (validação via BANCO)
+                try:
+                    emp_int = int(emp) if emp is not None else None
+                except Exception:
+                    emp_int = None
+
+                if emp_int is not None:
+                    vendedores_disponiveis = _vendedores_por_emp(emp_int)
+
+                # também filtra o DF por EMP, se existir, para evitar misturas
+                if emp_int is not None and "EMP" in df.columns:
                     try:
-                        emp_int = int(emp)
                         df["EMP"] = df["EMP"].astype("Int64")
                         df = df[df["EMP"] == emp_int].copy()
                     except Exception:
-                        # se a coluna EMP vier como texto, tenta comparar como string
-                        df = df[df["EMP"].astype(str) == str(emp)].copy()
+                        df = df[df["EMP"].astype(str) == str(emp_int)].copy()
 
-                if "VENDEDOR" in df.columns and not df.empty:
-                    vendedores_disponiveis = sorted({str(v).strip().upper() for v in df["VENDEDOR"].dropna().unique() if str(v).strip()})
-
-                # Só calcula se o supervisor escolher um vendedor válido
+                # Só calcula se o supervisor escolher um vendedor válido (mesma EMP)
                 if vendedor_selecionado and vendedor_selecionado in vendedores_disponiveis:
                     dados = _calcular_dados(df, vendedor_selecionado, mes, ano)
                 else:
@@ -329,11 +353,10 @@ def create_app() -> Flask:
                     df = df[df["EMP"] == emp_int].copy()
                 except Exception:
                     df = df[df["EMP"].astype(str) == str(emp)].copy()
-                # valida vendedor dentro da EMP
-                if "VENDEDOR" in df.columns and not df.empty:
-                    allowed = {str(v).strip().upper() for v in df["VENDEDOR"].dropna().unique() if str(v).strip()}
-                    if vendedor.strip().upper() not in allowed:
-                        return redirect(url_for("dashboard"))
+            if role == "supervisor" and emp is not None:
+                allowed = set(_vendedores_por_emp(int(emp)))
+                if vendedor.strip().upper() not in allowed:
+                    return redirect(url_for("dashboard"))
             dados = _calcular_percentuais(df, vendedor, mes, ano)
         except Exception:
             app.logger.exception("Erro ao calcular percentuais")
@@ -368,11 +391,10 @@ def create_app() -> Flask:
                     df = df[df["EMP"] == emp_int].copy()
                 except Exception:
                     df = df[df["EMP"].astype(str) == str(emp)].copy()
-                # valida vendedor dentro da EMP
-                if "VENDEDOR" in df.columns and not df.empty:
-                    allowed = {str(v).strip().upper() for v in df["VENDEDOR"].dropna().unique() if str(v).strip()}
-                    if vendedor.strip().upper() not in allowed:
-                        return redirect(url_for("dashboard"))
+            if role == "supervisor" and emp is not None:
+                allowed = set(_vendedores_por_emp(int(emp)))
+                if vendedor.strip().upper() not in allowed:
+                    return redirect(url_for("dashboard"))
             dados = _calcular_marcas(df, vendedor, mes, ano)
         except Exception:
             app.logger.exception("Erro ao calcular marcas")
@@ -407,10 +429,12 @@ def create_app() -> Flask:
                     df = df[df_emp == emp_int].copy()
                 except Exception:
                     df = df.iloc[0:0].copy()
-            # valida vendedor dentro da EMP
-            vendedores_ok = sorted({str(v).strip().upper() for v in df.get("VENDEDOR", []).dropna().unique() if str(v).strip()}) if not df.empty and "VENDEDOR" in df.columns else []
-            if vendedor not in vendedores_ok:
-                return redirect(url_for("dashboard"))
+            # valida vendedor dentro da EMP do supervisor (também protege contra URL manual)
+            if role == "supervisor" and emp is not None:
+                vendedores_ok = _vendedores_por_emp(int(emp))
+                if vendedor not in vendedores_ok:
+                    flash("Vendedor inválido para sua EMP.", "warning")
+                    return redirect(url_for("dashboard"))
             dados = _calcular_devolucoes(df, vendedor, mes, ano)
         except Exception:
             app.logger.exception("Erro ao calcular devolucoes")
