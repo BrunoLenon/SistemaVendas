@@ -1,22 +1,26 @@
-"""Importacao de vendas via planilha (.xlsx) com baixo uso de memoria.
+"""Importação de vendas com foco em Render (baixo uso de memória).
 
-Esta versao evita carregar a planilha inteira com pandas e faz insercoes em lote
-para nao estourar memoria/timeout no Render.
+Por que existe:
+  - Arquivos .xlsx grandes podem estourar memória no Render (free) por causa
+    do sharedStrings do Excel. Mesmo em read_only, o openpyxl pode consumir
+    bastante RAM.
+  - CSV permite streaming com chunks e é MUITO mais leve.
 
-Uso no Flask:
-    from importar_excel import importar_planilha
-    resumo = importar_planilha(file_path, modo="ignorar_duplicados")
+Suporta:
+  - .csv (RECOMENDADO para arquivos grandes)  -> streaming por chunks
+  - .xlsx (para arquivos menores)            -> read_only + batches pequenos
 
-Retorna um dict com contagens e erros.
+Retorno:
+  dict com ok/msg e contagens.
 """
 
 from __future__ import annotations
 
 import datetime as dt
+import os
 from typing import Any, Dict, List, Optional
 
 import pandas as pd
-from openpyxl import load_workbook
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from db import SessionLocal, Venda
@@ -37,6 +41,10 @@ REQUIRED_COLS = [
 ]
 
 
+def _norm_cols(cols: List[Any]) -> List[str]:
+    return [str(c).strip().upper() if c is not None else "" for c in cols]
+
+
 def _to_date(value: Any) -> dt.date:
     if value is None or (isinstance(value, float) and pd.isna(value)):
         raise ValueError("MOVIMENTO vazio")
@@ -44,7 +52,6 @@ def _to_date(value: Any) -> dt.date:
         return value
     if isinstance(value, dt.datetime):
         return value.date()
-    # tenta converter strings / timestamps
     return pd.to_datetime(value).date()
 
 
@@ -66,7 +73,6 @@ def _norm_str(value: Any) -> Optional[str]:
 
 def _build_stmt(records: List[dict], modo: str, conflict_cols: List[str]):
     stmt = pg_insert(Venda.__table__).values(records)
-
     if modo == "atualizar":
         update_cols = {
             "marca": stmt.excluded.marca,
@@ -78,70 +84,71 @@ def _build_stmt(records: List[dict], modo: str, conflict_cols: List[str]):
             "valor_total": stmt.excluded.valor_total,
             "emp": stmt.excluded.emp,
         }
-        stmt = stmt.on_conflict_do_update(index_elements=conflict_cols, set_=update_cols)
-    else:
-        stmt = stmt.on_conflict_do_nothing(index_elements=conflict_cols)
-
-    # returning para contar de forma confiavel por lote
-    return stmt.returning(Venda.id)
+        return stmt.on_conflict_do_update(index_elements=conflict_cols, set_=update_cols)
+    return stmt.on_conflict_do_nothing(index_elements=conflict_cols)
 
 
 def importar_planilha(
     filepath: str,
     modo: str = "ignorar_duplicados",
     chave: str = "mestre_vendedor_nota_emp",
-    batch_size: int = 500,
+    batch_size: int = 300,
+    csv_chunksize: int = 3000,
+    xlsx_max_mb: int = 12,
 ) -> Dict[str, Any]:
-    """Importa vendas no banco com insercao em lotes.
+    """Importa vendas no banco com inserção em lotes.
 
-    modo:
-      - ignorar_duplicados (default): ON CONFLICT DO NOTHING
-      - atualizar: ON CONFLICT DO UPDATE
-
-    chave:
-      - mestre_vendedor_nota_emp (default)
-      - mestre_vendedor_nota
+    Dica: se o arquivo .xlsx for grande, exporte para .csv antes de enviar.
     """
+    ext = os.path.splitext(filepath)[1].lower()
 
-    wb = None
-    try:
-        wb = load_workbook(filepath, read_only=True, data_only=True)
-        ws = wb.active
+    conflict_cols = ["mestre", "vendedor", "nota"]
+    if chave == "mestre_vendedor_nota_emp":
+        conflict_cols.append("emp")
 
-        rows = ws.iter_rows(values_only=True)
-        header = next(rows, None)
-        if not header:
-            return {"ok": False, "msg": "Planilha vazia.", "inseridas": 0, "atualizadas": 0, "ignoradas": 0, "erros_linha": 0}
+    if ext == ".xlsx":
+        # Se o arquivo for grande, é mais seguro pedir CSV
+        try:
+            mb = os.path.getsize(filepath) / (1024 * 1024)
+            if mb > float(xlsx_max_mb):
+                return {
+                    "ok": False,
+                    "msg": f"Arquivo XLSX grande ({mb:.1f}MB). Para evitar erro no Render, exporte para CSV e importe o CSV.",
+                    "inseridas": 0,
+                    "atualizadas": 0,
+                    "ignoradas": 0,
+                    "erros_linha": 0,
+                }
+        except Exception:
+            pass
 
-        cols = [str(c).strip().upper() if c is not None else "" for c in header]
-        col_index = {c: i for i, c in enumerate(cols)}
+        # XLSX: usa openpyxl em read_only, mas pode consumir RAM dependendo do arquivo
+        from openpyxl import load_workbook
 
-        missing = [c for c in REQUIRED_COLS if c not in col_index]
-        if missing:
-            return {
-                "ok": False,
-                "msg": "Planilha com colunas faltando.",
-                "faltando": missing,
-                "lidas": cols,
-                "inseridas": 0,
-                "atualizadas": 0,
-                "ignoradas": 0,
-            }
-
-        conflict_cols = ["mestre", "vendedor", "nota"]
-        if chave == "mestre_vendedor_nota_emp":
-            conflict_cols.append("emp")
-
-        total_linhas = 0
-        validas = 0
-        erros_linha = 0
-        inseridas = 0
-        atualizadas = 0
-
-        batch: List[dict] = []
-
+        wb = None
         db = SessionLocal()
         try:
+            wb = load_workbook(filepath, read_only=True, data_only=True)
+            ws = wb.active
+            rows = ws.iter_rows(values_only=True)
+
+            header = next(rows, None)
+            if not header:
+                return {"ok": False, "msg": "Planilha vazia.", "inseridas": 0, "atualizadas": 0, "ignoradas": 0, "erros_linha": 0}
+
+            cols = _norm_cols(list(header))
+            col_index = {c: i for i, c in enumerate(cols)}
+            missing = [c for c in REQUIRED_COLS if c not in col_index]
+            if missing:
+                return {"ok": False, "msg": "Colunas faltando.", "faltando": missing, "lidas": cols}
+
+            total_linhas = 0
+            validas = 0
+            erros_linha = 0
+            inseridas = 0
+            atualizadas = 0
+            batch: List[dict] = []
+
             for r in rows:
                 total_linhas += 1
                 try:
@@ -184,51 +191,159 @@ def importar_planilha(
 
                     if len(batch) >= batch_size:
                         stmt = _build_stmt(batch, modo, conflict_cols)
-                        res = db.execute(stmt).fetchall()
+                        res = db.execute(stmt)
                         db.commit()
                         if modo == "atualizar":
-                            atualizadas += len(res)
+                            atualizadas += int(res.rowcount or 0)
                         else:
-                            inseridas += len(res)
+                            inseridas += int(res.rowcount or 0)
                         batch.clear()
 
                 except Exception:
                     erros_linha += 1
                     continue
 
-            # flush final
             if batch:
                 stmt = _build_stmt(batch, modo, conflict_cols)
-                res = db.execute(stmt).fetchall()
+                res = db.execute(stmt)
                 db.commit()
                 if modo == "atualizar":
-                    atualizadas += len(res)
+                    atualizadas += int(res.rowcount or 0)
                 else:
-                    inseridas += len(res)
+                    inseridas += int(res.rowcount or 0)
                 batch.clear()
 
+            ignoradas = max(validas - (atualizadas if modo == "atualizar" else inseridas), 0)
+
+            return {
+                "ok": True,
+                "msg": "Importação finalizada.",
+                "total_linhas": int(total_linhas),
+                "validas": int(validas),
+                "inseridas": int(inseridas),
+                "atualizadas": int(atualizadas),
+                "ignoradas": int(ignoradas),
+                "erros_linha": int(erros_linha),
+                "modo": modo,
+                "chave": chave,
+                "batch_size": int(batch_size),
+            }
+
         finally:
-            db.close()
+            try:
+                db.close()
+            except Exception:
+                pass
+            try:
+                if wb is not None:
+                    wb.close()
+            except Exception:
+                pass
 
-        ignoradas = max(validas - (atualizadas if modo == "atualizar" else inseridas), 0)
+    # CSV (recomendado): streaming por chunks
+    if ext != ".csv":
+        return {"ok": False, "msg": "Formato não suportado. Use .csv (recomendado) ou .xlsx."}
 
-        return {
-            "ok": True,
-            "msg": "Importacao finalizada.",
-            "total_linhas": int(total_linhas),
-            "validas": int(validas),
-            "inseridas": int(inseridas),
-            "atualizadas": int(atualizadas),
-            "ignoradas": int(ignoradas),
-            "erros_linha": int(erros_linha),
-            "modo": modo,
-            "chave": chave,
-            "batch_size": int(batch_size),
-        }
+    total_linhas = 0
+    validas = 0
+    erros_linha = 0
+    inseridas = 0
+    atualizadas = 0
+
+    db = SessionLocal()
+    try:
+        # read_csv em chunks
+        for chunk in pd.read_csv(filepath, chunksize=csv_chunksize, dtype=str, encoding_errors="ignore"):
+            chunk.columns = _norm_cols(list(chunk.columns))
+            missing = [c for c in REQUIRED_COLS if c not in chunk.columns]
+            if missing:
+                return {"ok": False, "msg": "Colunas faltando.", "faltando": missing, "lidas": list(chunk.columns)}
+
+            # normalizações
+            # MOVIMENTO -> date
+            chunk["MOVIMENTO"] = pd.to_datetime(chunk["MOVIMENTO"], errors="coerce").dt.date
+
+            records: List[dict] = []
+            for _, row in chunk.iterrows():
+                total_linhas += 1
+                try:
+                    mestre = _norm_str(row.get("MESTRE"))
+                    vendedor = _norm_str(row.get("VENDEDOR"))
+                    if not mestre or not vendedor:
+                        erros_linha += 1
+                        continue
+
+                    nota = _norm_str(row.get("NOTA"))
+                    emp = _norm_str(row.get("EMP"))
+                    if chave == "mestre_vendedor_nota":
+                        emp = None
+
+                    mov = row.get("MOVIMENTO")
+                    if mov is None or pd.isna(mov):
+                        erros_linha += 1
+                        continue
+
+                    mov_tipo = _norm_str(row.get("MOV_TIPO_MOVTO")) or ""
+                    if not mov_tipo:
+                        erros_linha += 1
+                        continue
+
+                    rec = {
+                        "mestre": mestre,
+                        "marca": _norm_str(row.get("MARCA")),
+                        "data": mov,
+                        "mov_tipo_movto": mov_tipo,
+                        "vendedor": vendedor,
+                        "nota": nota,
+                        "emp": emp,
+                        "unit": _to_float(row.get("UNIT")),
+                        "des": _to_float(row.get("DES")),
+                        "qtda_vendida": _to_float(row.get("QTDADE_VENDIDA")),
+                        "valor_total": _to_float(row.get("VALOR_TOTAL")) or 0.0,
+                    }
+                    records.append(rec)
+                    validas += 1
+
+                    if len(records) >= batch_size:
+                        stmt = _build_stmt(records, modo, conflict_cols)
+                        res = db.execute(stmt)
+                        db.commit()
+                        if modo == "atualizar":
+                            atualizadas += int(res.rowcount or 0)
+                        else:
+                            inseridas += int(res.rowcount or 0)
+                        records.clear()
+
+                except Exception:
+                    erros_linha += 1
+                    continue
+
+            if records:
+                stmt = _build_stmt(records, modo, conflict_cols)
+                res = db.execute(stmt)
+                db.commit()
+                if modo == "atualizar":
+                    atualizadas += int(res.rowcount or 0)
+                else:
+                    inseridas += int(res.rowcount or 0)
+                records.clear()
 
     finally:
-        try:
-            if wb is not None:
-                wb.close()
-        except Exception:
-            pass
+        db.close()
+
+    ignoradas = max(validas - (atualizadas if modo == "atualizar" else inseridas), 0)
+
+    return {
+        "ok": True,
+        "msg": "Importação finalizada.",
+        "total_linhas": int(total_linhas),
+        "validas": int(validas),
+        "inseridas": int(inseridas),
+        "atualizadas": int(atualizadas),
+        "ignoradas": int(ignoradas),
+        "erros_linha": int(erros_linha),
+        "modo": modo,
+        "chave": chave,
+        "batch_size": int(batch_size),
+        "csv_chunksize": int(csv_chunksize),
+    }
