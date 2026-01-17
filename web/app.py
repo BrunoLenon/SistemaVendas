@@ -1,6 +1,7 @@
 import os
 import logging
 from datetime import date
+import datetime
 
 import pandas as pd
 from flask import (
@@ -13,6 +14,7 @@ from flask import (
     url_for,
 )
 from werkzeug.security import check_password_hash, generate_password_hash
+from sqlalchemy import text
 
 from dados_db import carregar_df
 from db import SessionLocal, Usuario, criar_tabelas
@@ -205,16 +207,8 @@ def create_app() -> Flask:
 
     @app.get("/")
     def home():
-        # Se não estiver logado, manda para login
-        if not session.get("usuario"):
-            return redirect(url_for("login"))
-    
-        # Se for admin, manda direto para /admin/usuarios
-        if (session.get("role") or "").lower() == "admin":
-            return redirect(url_for("admin_usuarios"))
-    
-        # Caso contrário, dashboard normal
         return redirect(url_for("dashboard"))
+
     @app.route("/login", methods=["GET", "POST"])
     def login():
         if request.method == "GET":
@@ -233,10 +227,6 @@ def create_app() -> Flask:
 
             session["usuario"] = u.username
             session["role"] = u.role
-
-        # Se for admin, vai direto para gestão de usuários
-        if (u.role or "").lower() == "admin":
-            return redirect(url_for("admin_usuarios"))
 
         return redirect(url_for("dashboard"))
 
@@ -260,7 +250,7 @@ def create_app() -> Flask:
             app.logger.exception("Erro ao carregar/calcular dashboard")
             dados = None
 
-        return render_template("dashboard.html", vendedor=vendedor, mes=mes, ano=ano, dados=dados, role=_role())
+        return render_template("dashboard.html", vendedor=vendedor, mes=mes, ano=ano, dados=dados)
 
     @app.get("/percentuais")
     def percentuais():
@@ -504,6 +494,66 @@ def create_app() -> Flask:
                 os.remove(tmp_path)
             except Exception:
                 pass
+
+
+    @app.route("/admin/apagar_vendas", methods=["POST"])
+    def admin_apagar_vendas():
+        red = _login_required()
+        if red:
+            return red
+        red = _admin_required()
+        if red:
+            return red
+
+        tipo = (request.form.get("tipo") or "").strip().lower()
+        valor = (request.form.get("valor") or "").strip()
+
+        if tipo not in ("dia", "mes"):
+            flash("Tipo inválido para apagar vendas.", "danger")
+            return redirect(url_for("admin_importar"))
+
+        if not valor:
+            flash("Informe a data/mês para apagar.", "warning")
+            return redirect(url_for("admin_importar"))
+
+        # Monta intervalo [inicio, fim)
+        try:
+            if tipo == "dia":
+                # YYYY-MM-DD
+                inicio = datetime.date.fromisoformat(valor)
+                fim = inicio + datetime.timedelta(days=1)
+                label = inicio.strftime("%d/%m/%Y")
+            else:
+                # YYYY-MM
+                ano, mes = valor.split("-")
+                ano = int(ano); mes = int(mes)
+                inicio = datetime.date(ano, mes, 1)
+                if mes == 12:
+                    fim = datetime.date(ano + 1, 1, 1)
+                else:
+                    fim = datetime.date(ano, mes + 1, 1)
+                label = inicio.strftime("%m/%Y")
+        except Exception:
+            flash("Data/Mês inválido. Use o seletor do formulário.", "danger")
+            return redirect(url_for("admin_importar"))
+
+        db = SessionLocal()
+        try:
+            res = db.execute(
+                text("DELETE FROM vendas WHERE data >= :ini AND data < :fim"),
+                {"ini": inicio, "fim": fim},
+            )
+            apagadas = res.rowcount or 0
+            db.commit()
+            flash(f"✅ Apagadas {apagadas} vendas do período {label}.", "success")
+        except Exception:
+            db.rollback()
+            app.logger.exception("Erro ao apagar vendas")
+            flash("Erro ao apagar vendas. Veja os logs no Render.", "danger")
+        finally:
+            db.close()
+
+        return redirect(url_for("admin_importar"))
 
     # ------------- Erros -------------
     @app.errorhandler(500)
