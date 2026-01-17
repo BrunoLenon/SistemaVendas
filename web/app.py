@@ -220,6 +220,8 @@ def create_app() -> Flask:
 
     @app.get("/")
     def home():
+        if (locals().get("role_local") or "") == "admin":
+            return redirect(url_for("admin_usuarios"))
         return redirect(url_for("dashboard"))
 
     @app.route("/login", methods=["GET", "POST"])
@@ -241,6 +243,10 @@ def create_app() -> Flask:
             session["usuario"] = u.username
             session["role"] = u.role
 
+            role_local = (u.role or "").lower()
+
+        if (locals().get("role_local") or "") == "admin":
+            return redirect(url_for("admin_usuarios"))
         return redirect(url_for("dashboard"))
 
     @app.get("/logout")
@@ -253,6 +259,10 @@ def create_app() -> Flask:
         red = _login_required()
         if red:
             return red
+
+        # Admin nao usa o dashboard de vendedor
+        if _role() == "admin":
+            return redirect(url_for("admin_usuarios"))
 
         mes, ano = _mes_ano_from_request()
         vendedor = _usuario_logado()
