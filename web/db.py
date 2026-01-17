@@ -7,10 +7,11 @@ from sqlalchemy.orm import declarative_base, sessionmaker
 # =====================
 # Config via ENV (Render)
 # =====================
-# Expected on Render:
-# DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD
-# Optional:
-# DB_SSLMODE (default: require)
+# No Render, o mais comum é existir DATABASE_URL.
+# Alternativamente você pode usar DB_HOST/DB_PORT/DB_NAME/DB_USER/DB_PASSWORD.
+# Opcional: DB_SSLMODE (default: require)
+
+DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 
 DB_USER = os.getenv("DB_USER", "postgres")
 DB_PASSWORD_RAW = os.getenv("DB_PASSWORD", "")
@@ -25,11 +26,27 @@ else:
     DB_PASSWORD = ""
 
 # Build URL
-if DB_PASSWORD:
-    DB_URL = f"postgresql+psycopg2://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}?sslmode={DB_SSLMODE}"
+if DATABASE_URL:
+    # Render às vezes fornece "postgres://" (antigo). SQLAlchemy prefere "postgresql://".
+    DB_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+    if "sslmode=" not in DB_URL and DB_SSLMODE:
+        joiner = "&" if "?" in DB_URL else "?"
+        DB_URL = f"{DB_URL}{joiner}sslmode={DB_SSLMODE}"
+    # Garante driver
+    if DB_URL.startswith("postgresql://"):
+        DB_URL = DB_URL.replace("postgresql://", "postgresql+psycopg2://", 1)
 else:
-    # Allow passwordless local dev if user wants
-    DB_URL = f"postgresql+psycopg2://{DB_USER}@{DB_HOST}:{DB_PORT}/{DB_NAME}?sslmode={DB_SSLMODE}"
+    if DB_PASSWORD:
+        DB_URL = (
+            f"postgresql+psycopg2://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+            f"?sslmode={DB_SSLMODE}"
+        )
+    else:
+        # Dev local sem senha
+        DB_URL = (
+            f"postgresql+psycopg2://{DB_USER}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+            f"?sslmode={DB_SSLMODE}"
+        )
 
 engine = create_engine(
     DB_URL,
