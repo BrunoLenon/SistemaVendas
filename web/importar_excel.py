@@ -1,17 +1,23 @@
-"""Importação de vendas com foco em Render (baixo uso de memória).
+"""Importação de vendas (Render-friendly) com deduplicação configurável.
 
-Por que existe:
-  - Arquivos .xlsx grandes podem estourar memória no Render (free) por causa
-    do sharedStrings do Excel. Mesmo em read_only, o openpyxl pode consumir
-    bastante RAM.
-  - CSV permite streaming com chunks e é MUITO mais leve.
+IMPORTANTE:
+- Para o seu caso, o MOV_TIPO_MOVTO (ex: 'DS' / 'CA' / 'OA') DEVE fazer parte
+  da chave de duplicidade, senão DS/CA "somem" do cálculo.
+- Recomendado: criar um índice UNIQUE no Postgres com as colunas da chave,
+  para o ON CONFLICT funcionar.
 
 Suporta:
-  - .csv (RECOMENDADO para arquivos grandes)  -> streaming por chunks
-  - .xlsx (para arquivos menores)            -> read_only + batches pequenos
+  - .csv (recomendado p/ arquivos grandes) -> streaming por chunks
+  - .xlsx (arquivos menores)              -> read_only + batches
 
-Retorno:
-  dict com ok/msg e contagens.
+API:
+  importar_planilha(filepath, modo="ignorar_duplicados", chave=..., ...)
+
+chaves disponíveis:
+  - mestre_vendedor_nota_emp           (antiga)
+  - mestre_data_vendedor_nota_emp      (inclui MOVIMENTO/data)
+  - mestre_data_vendedor_nota_tipo_emp (inclui MOVIMENTO + MOV_TIPO_MOVTO)  <-- RECOMENDADA
+  - mestre_data_vendedor_nota_tipo     (sem EMP, se você não usa EMP na chave)
 """
 
 from __future__ import annotations
@@ -59,6 +65,9 @@ def _to_float(value: Any) -> Optional[float]:
     if value is None or (isinstance(value, float) and pd.isna(value)):
         return None
     try:
+        # troca vírgula por ponto se vier como string brasileira
+        if isinstance(value, str):
+            value = value.replace(".", "").replace(",", ".")
         return float(value)
     except Exception:
         return None
@@ -69,6 +78,19 @@ def _norm_str(value: Any) -> Optional[str]:
         return None
     s = str(value).strip()
     return s if s else None
+
+
+def _conflict_cols_from_key(chave: str) -> List[str]:
+    """Mapeia o nome da chave para colunas do banco."""
+    # nomes da tabela/ORM: mestre, data, vendedor, nota, emp, mov_tipo_movto
+    if chave == "mestre_data_vendedor_nota_tipo_emp":
+        return ["mestre", "data", "vendedor", "nota", "mov_tipo_movto", "emp"]
+    if chave == "mestre_data_vendedor_nota_tipo":
+        return ["mestre", "data", "vendedor", "nota", "mov_tipo_movto"]
+    if chave == "mestre_data_vendedor_nota_emp":
+        return ["mestre", "data", "vendedor", "nota", "emp"]
+    # fallback antigo
+    return ["mestre", "vendedor", "nota", "emp"]
 
 
 def _build_stmt(records: List[dict], modo: str, conflict_cols: List[str]):
@@ -83,6 +105,9 @@ def _build_stmt(records: List[dict], modo: str, conflict_cols: List[str]):
             "qtda_vendida": stmt.excluded.qtda_vendida,
             "valor_total": stmt.excluded.valor_total,
             "emp": stmt.excluded.emp,
+            "nota": stmt.excluded.nota,
+            "vendedor": stmt.excluded.vendedor,
+            "mestre": stmt.excluded.mestre,
         }
         return stmt.on_conflict_do_update(index_elements=conflict_cols, set_=update_cols)
     return stmt.on_conflict_do_nothing(index_elements=conflict_cols)
@@ -91,23 +116,17 @@ def _build_stmt(records: List[dict], modo: str, conflict_cols: List[str]):
 def importar_planilha(
     filepath: str,
     modo: str = "ignorar_duplicados",
-    chave: str = "mestre_vendedor_nota_emp",
+    chave: str = "mestre_data_vendedor_nota_tipo_emp",
     batch_size: int = 300,
     csv_chunksize: int = 3000,
     xlsx_max_mb: int = 12,
 ) -> Dict[str, Any]:
-    """Importa vendas no banco com inserção em lotes.
-
-    Dica: se o arquivo .xlsx for grande, exporte para .csv antes de enviar.
-    """
+    """Importa vendas no banco com inserção em lotes."""
     ext = os.path.splitext(filepath)[1].lower()
 
-    conflict_cols = ["mestre", "vendedor", "nota"]
-    if chave == "mestre_vendedor_nota_emp":
-        conflict_cols.append("emp")
+    conflict_cols = _conflict_cols_from_key(chave)
 
     if ext == ".xlsx":
-        # Se o arquivo for grande, é mais seguro pedir CSV
         try:
             mb = os.path.getsize(filepath) / (1024 * 1024)
             if mb > float(xlsx_max_mb):
@@ -122,7 +141,6 @@ def importar_planilha(
         except Exception:
             pass
 
-        # XLSX: usa openpyxl em read_only, mas pode consumir RAM dependendo do arquivo
         from openpyxl import load_workbook
 
         wb = None
@@ -163,9 +181,6 @@ def importar_planilha(
 
                     nota = _norm_str(get("NOTA"))
                     emp = _norm_str(get("EMP"))
-                    if chave == "mestre_vendedor_nota":
-                        emp = None
-
                     mov = _to_date(get("MOVIMENTO"))
                     mov_tipo = _norm_str(get("MOV_TIPO_MOVTO")) or ""
                     if not mov_tipo:
@@ -213,7 +228,9 @@ def importar_planilha(
                     inseridas += int(res.rowcount or 0)
                 batch.clear()
 
-            ignoradas = max(validas - (atualizadas if modo == "atualizar" else inseridas), 0)
+            # rowcount = quantos foram inseridos/atualizados; o resto são ignorados (duplicados)
+            efetivadas = atualizadas if modo == "atualizar" else inseridas
+            ignoradas = max(validas - efetivadas, 0)
 
             return {
                 "ok": True,
@@ -227,6 +244,7 @@ def importar_planilha(
                 "modo": modo,
                 "chave": chave,
                 "batch_size": int(batch_size),
+                "conflict_cols": conflict_cols,
             }
 
         finally:
@@ -240,7 +258,7 @@ def importar_planilha(
             except Exception:
                 pass
 
-    # CSV (recomendado): streaming por chunks
+    # CSV (recomendado)
     if ext != ".csv":
         return {"ok": False, "msg": "Formato não suportado. Use .csv (recomendado) ou .xlsx."}
 
@@ -252,15 +270,12 @@ def importar_planilha(
 
     db = SessionLocal()
     try:
-        # read_csv em chunks
         for chunk in pd.read_csv(filepath, chunksize=csv_chunksize, dtype=str, encoding_errors="ignore"):
             chunk.columns = _norm_cols(list(chunk.columns))
             missing = [c for c in REQUIRED_COLS if c not in chunk.columns]
             if missing:
                 return {"ok": False, "msg": "Colunas faltando.", "faltando": missing, "lidas": list(chunk.columns)}
 
-            # normalizações
-            # MOVIMENTO -> date
             chunk["MOVIMENTO"] = pd.to_datetime(chunk["MOVIMENTO"], errors="coerce").dt.date
 
             records: List[dict] = []
@@ -275,9 +290,6 @@ def importar_planilha(
 
                     nota = _norm_str(row.get("NOTA"))
                     emp = _norm_str(row.get("EMP"))
-                    if chave == "mestre_vendedor_nota":
-                        emp = None
-
                     mov = row.get("MOVIMENTO")
                     if mov is None or pd.isna(mov):
                         erros_linha += 1
@@ -331,7 +343,8 @@ def importar_planilha(
     finally:
         db.close()
 
-    ignoradas = max(validas - (atualizadas if modo == "atualizar" else inseridas), 0)
+    efetivadas = atualizadas if modo == "atualizar" else inseridas
+    ignoradas = max(validas - efetivadas, 0)
 
     return {
         "ok": True,
@@ -346,4 +359,5 @@ def importar_planilha(
         "chave": chave,
         "batch_size": int(batch_size),
         "csv_chunksize": int(csv_chunksize),
+        "conflict_cols": conflict_cols,
     }
