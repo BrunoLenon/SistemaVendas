@@ -47,7 +47,8 @@ def create_app() -> Flask:
         return None
 
     def _admin_required():
-        if _role() != "admin":
+        # Aceita variações de maiúsculas/minúsculas
+        if (_role() or "").lower() != "admin":
             flash("Acesso restrito ao administrador.", "warning")
             return redirect(url_for("dashboard"))
         return None
@@ -207,6 +208,14 @@ def create_app() -> Flask:
 
     @app.get("/")
     def home():
+        # Se não estiver logado, manda para login
+        if not session.get("usuario"):
+            return redirect(url_for("login"))
+
+        # Admin vai direto para /admin/usuarios
+        if (session.get("role") or "").lower() == "admin":
+            return redirect(url_for("admin_usuarios"))
+
         return redirect(url_for("dashboard"))
 
     @app.route("/login", methods=["GET", "POST"])
@@ -228,6 +237,10 @@ def create_app() -> Flask:
             session["usuario"] = u.username
             session["role"] = u.role
 
+
+        # Direciona conforme perfil
+        if (u.role or "").lower() == "admin":
+            return redirect(url_for("admin_usuarios"))
         return redirect(url_for("dashboard"))
 
     @app.get("/logout")
@@ -241,6 +254,10 @@ def create_app() -> Flask:
         if red:
             return red
 
+        # Admin não usa dashboard (evita cair aqui por link/URL)
+        if (session.get("role") or "").lower() == "admin":
+            return redirect(url_for("admin_usuarios"))
+
         mes, ano = _mes_ano_from_request()
         vendedor = _usuario_logado()
         try:
@@ -250,7 +267,7 @@ def create_app() -> Flask:
             app.logger.exception("Erro ao carregar/calcular dashboard")
             dados = None
 
-        return render_template("dashboard.html", vendedor=vendedor, mes=mes, ano=ano, dados=dados)
+        return render_template("dashboard.html", vendedor=vendedor, mes=mes, ano=ano, dados=dados, role=_role())
 
     @app.get("/percentuais")
     def percentuais():
