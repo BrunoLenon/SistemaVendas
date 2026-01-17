@@ -36,8 +36,18 @@ def create_app() -> Flask:
     def _usuario_logado() -> str | None:
         return session.get("usuario")
 
-    def _role() -> str | None:
-        return session.get("role")
+    def _role() -> str:
+        return (session.get("role") or "vendedor").lower()
+
+    def _emp_scope() -> int | None:
+        """Para perfil supervisor, retorna a EMP (loja) permitida."""
+        try:
+            emp = session.get("emp")
+            if emp in (None, "", "null"):
+                return None
+            return int(emp)
+        except Exception:
+            return None
 
     def _login_required():
         if not _usuario_logado():
@@ -240,13 +250,16 @@ def create_app() -> Flask:
             if not u or not check_password_hash(u.senha_hash, senha):
                 return render_template("login.html", erro="Usuário ou senha inválidos.")
 
+            role_local = (u.role or "vendedor").lower()
             session["usuario"] = u.username
-            session["role"] = u.role
-
-            role_local = (u.role or "").lower()
+            session["role"] = role_local
+            # Para perfil supervisor, guarda a EMP permitida na sessão
+            session["emp"] = getattr(u, "emp", None) if role_local == "supervisor" else None
 
         if (locals().get("role_local") or "") == "admin":
             return redirect(url_for("admin_usuarios"))
+        if (locals().get("role_local") or "") == "supervisor":
+            return redirect(url_for("dashboard"))
         return redirect(url_for("dashboard"))
 
     @app.get("/logout")
@@ -265,15 +278,34 @@ def create_app() -> Flask:
             return redirect(url_for("admin_usuarios"))
 
         mes, ano = _mes_ano_from_request()
-        vendedor = _usuario_logado()
+        role = _role()
+        emp_scope = _emp_scope() if role == "supervisor" else None
+
+        # Para supervisor: permite visualizar tudo da EMP (sem vendedor) ou filtrar por vendedor via querystring
+        vendedor = None
+        if role == "vendedor":
+            vendedor = _usuario_logado()
+        elif role == "supervisor":
+            vendedor_qs = (request.args.get("vendedor") or "").strip() or None
+            vendedor = vendedor_qs  # pode ser None (EMP inteira)
         try:
             df = carregar_df()
+            if emp_scope is not None and "EMP" in df.columns:
+                df = df[df["EMP"].astype(str) == str(emp_scope)]
+            # Se supervisor pediu um vendedor específico, garante que ele existe dentro da EMP
+            if role == "supervisor" and vendedor is not None and "VENDEDOR" in df.columns:
+                if vendedor not in set(df["VENDEDOR"].astype(str)):
+                    vendedor = None
             dados = _calcular_dados(df, vendedor, mes, ano)
         except Exception:
             app.logger.exception("Erro ao carregar/calcular dashboard")
             dados = None
 
-        return render_template("dashboard.html", vendedor=vendedor, mes=mes, ano=ano, dados=dados)
+        vendedor_label = vendedor
+        if role == "supervisor" and vendedor_label is None:
+            vendedor_label = f"EMP {emp_scope}" if emp_scope is not None else "SUPERVISOR"
+
+        return render_template("dashboard.html", vendedor=vendedor_label, mes=mes, ano=ano, dados=dados)
 
     @app.get("/percentuais")
     def percentuais():
@@ -282,8 +314,19 @@ def create_app() -> Flask:
             return red
 
         mes, ano = _mes_ano_from_request()
-        vendedor = _usuario_logado()
+        role = _role()
+        emp_scope = _emp_scope() if role == "supervisor" else None
+
+        vendedor = None
+        if role == "vendedor":
+            vendedor = _usuario_logado()
+        elif role == "supervisor":
+            vendedor = (request.args.get("vendedor") or "").strip() or None
+
         df = carregar_df()
+        if emp_scope is not None and "EMP" in df.columns:
+            df = df[df["EMP"].astype(str) == str(emp_scope)]
+
         dados = _calcular_dados(df, vendedor, mes, ano) or {}
         ranking_list = dados.get("ranking_list", [])
         total = float(dados.get("total_liquido_periodo", 0.0))
@@ -303,13 +346,27 @@ def create_app() -> Flask:
             return red
 
         mes, ano = _mes_ano_from_request()
-        vendedor = _usuario_logado()
+        role = _role()
+        emp_scope = _emp_scope() if role == "supervisor" else None
+
+        vendedor = None
+        if role == "vendedor":
+            vendedor = _usuario_logado()
+        elif role == "supervisor":
+            vendedor = request.args.get("vendedor")
+            vendedor = (vendedor or "").strip().upper() or None
+
         df = carregar_df()
+        if emp_scope is not None and df is not None and not df.empty and "EMP" in df.columns:
+            df = df.copy()
+            df["EMP"] = df["EMP"].astype(str).str.strip()
+            df = df[df["EMP"] == str(emp_scope)]
 
         # reaproveita cálculo do ranking (líquido por marca)
         dados = _calcular_dados(df, vendedor, mes, ano) or {}
         marcas_map = {row["marca"]: row["valor"] for row in dados.get("ranking_list", [])}
-        return render_template("marcas.html", vendedor=vendedor, mes=mes, ano=ano, marcas=marcas_map)
+        vendedor_label = vendedor if vendedor else (f"EMP {emp_scope}" if role == "supervisor" else "")
+        return render_template("marcas.html", vendedor=vendedor_label, mes=mes, ano=ano, marcas=marcas_map)
 
     @app.get("/devolucoes")
     def devolucoes():
@@ -318,8 +375,21 @@ def create_app() -> Flask:
             return red
 
         mes, ano = _mes_ano_from_request()
-        vendedor = _usuario_logado()
+        role = _role()
+        emp_scope = _emp_scope() if role == "supervisor" else None
+
+        vendedor = None
+        if role == "vendedor":
+            vendedor = _usuario_logado()
+        elif role == "supervisor":
+            vendedor = request.args.get("vendedor")
+            vendedor = (vendedor or "").strip().upper() or None
+
         df = carregar_df()
+        if emp_scope is not None and df is not None and not df.empty and "EMP" in df.columns:
+            df = df.copy()
+            df["EMP"] = df["EMP"].astype(str).str.strip()
+            df = df[df["EMP"] == str(emp_scope)]
 
         if df is None or df.empty:
             devol = {}
@@ -330,7 +400,8 @@ def create_app() -> Flask:
             df["MOV_TIPO_MOVTO"] = df["MOV_TIPO_MOVTO"].astype(str).str.strip().str.upper()
             df["MOVIMENTO"] = pd.to_datetime(df["MOVIMENTO"], errors="coerce")
             df["VALOR_TOTAL"] = pd.to_numeric(df["VALOR_TOTAL"], errors="coerce").fillna(0.0)
-            df = df[df["VENDEDOR"] == vendedor.upper()]
+            if vendedor:
+                df = df[df["VENDEDOR"] == vendedor.upper()]
             df = df[(df["MOVIMENTO"].dt.year == ano) & (df["MOVIMENTO"].dt.month == mes)]
             df = df[df["MOV_TIPO_MOVTO"].isin(["DS", "CA"])]
             devol = (
@@ -339,7 +410,10 @@ def create_app() -> Flask:
                 else {}
             )
 
-        return render_template("devolucoes.html", vendedor=vendedor, mes=mes, ano=ano, devolucoes=devol)
+        vendedor_label = vendedor
+        if not vendedor_label and role == "supervisor" and emp_scope is not None:
+            vendedor_label = f"EMP {emp_scope}"
+        return render_template("devolucoes.html", vendedor=vendedor_label, mes=mes, ano=ano, devolucoes=devol)
 
     @app.route("/senha", methods=["GET", "POST"])
     def senha():
@@ -391,9 +465,10 @@ def create_app() -> Flask:
                         novo_usuario = (request.form.get("novo_usuario") or "").strip().upper()
                         nova_senha = request.form.get("nova_senha") or ""
                         role = (request.form.get("role") or "vendedor").strip().lower()
+                        emp_supervisor = (request.form.get("emp") or request.form.get("emp_supervisor") or "").strip()
                         if len(nova_senha) < 4:
                             raise ValueError("Senha muito curta (mín. 4).")
-                        if role not in {"admin", "vendedor"}:
+                        if role not in {"admin", "vendedor", "supervisor"}:
                             role = "vendedor"
                         u = db.query(Usuario).filter(Usuario.username == novo_usuario).first()
                         if u:
@@ -401,13 +476,17 @@ def create_app() -> Flask:
                             u.role = role
                             ok = f"Usuário {novo_usuario} atualizado."
                         else:
-                            db.add(
-                                Usuario(
-                                    username=novo_usuario,
-                                    senha_hash=generate_password_hash(nova_senha),
-                                    role=role,
-                                )
+                            novo = Usuario(
+                                username=novo_usuario,
+                                senha_hash=generate_password_hash(nova_senha),
+                                role=role,
                             )
+                            if hasattr(novo, "emp"):
+                                if role == "supervisor" and emp_supervisor.isdigit():
+                                    novo.emp = int(emp_supervisor)
+                                else:
+                                    novo.emp = None
+                            db.add(novo)
                             db.commit()
                             ok = f"Usuário {novo_usuario} criado."
 
