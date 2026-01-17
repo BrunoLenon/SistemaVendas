@@ -15,11 +15,19 @@
 
     <div class="d-flex justify-content-between align-items-center mb-3">
       <h3 class="m-0">
-        Dashboard — <span class="text-primary">{{ vendedor }}</span>
+        Dashboard —
+        <span class="text-primary">{{ vendedor }}</span>
+
         {% if role and role|lower == "admin" %}
           <span class="badge text-bg-dark ms-2">ADMIN</span>
+        {% elif role and role|lower == "supervisor" %}
+          <span class="badge text-bg-primary ms-2">SUPERVISOR</span>
+          {% if emp %}
+            <span class="badge text-bg-light border ms-2">EMP {{ emp }}</span>
+          {% endif %}
         {% endif %}
       </h3>
+
       <div class="d-flex gap-2">
         {% if role and role|lower == "admin" %}
           <a class="btn btn-outline-dark btn-sm" href="/admin/usuarios">Usuários</a>
@@ -34,11 +42,32 @@
       <div class="alert alert-info shadow-sm">
         Você está logado como <strong>ADMIN</strong>. Use os botões <strong>Usuários</strong> e <strong>Importar</strong> acima para administrar o sistema.
       </div>
+    {% elif role and role|lower == "supervisor" %}
+      <div class="alert alert-info shadow-sm">
+        Você está logado como <strong>SUPERVISOR</strong>{% if emp %} da <strong>EMP {{ emp }}</strong>{% endif %}.
+        Selecione um vendedor para ver exatamente o mesmo painel que ele vê.
+      </div>
     {% endif %}
 
     <div class="card mb-3 shadow-sm">
       <div class="card-body">
         <form method="get" action="/dashboard" class="row g-2 align-items-end">
+
+          {% if role and role|lower == "supervisor" %}
+            <div class="col-12 col-md-4">
+              <label class="form-label">Vendedor</label>
+              <select class="form-select" name="vendedor" required>
+                {% if vendedores %}
+                  {% for v in vendedores %}
+                    <option value="{{ v }}" {% if vendedor_selecionado == v %}selected{% endif %}>{{ v }}</option>
+                  {% endfor %}
+                {% else %}
+                  <option value="" selected>Nenhum vendedor encontrado para esta EMP</option>
+                {% endif %}
+              </select>
+            </div>
+          {% endif %}
+
           <div class="col-auto">
             <label class="form-label">Mês</label>
             <input class="form-control" type="number" name="mes" min="1" max="12" value="{{ mes }}" required>
@@ -141,7 +170,11 @@
         <div class="card-body">
           <div class="d-flex justify-content-between align-items-center">
             <h5 class="m-0">📊 Top 15 marcas — Valor + % do total (líquido)</h5>
-            <a href="/percentuais?mes={{ mes }}&ano={{ ano }}" class="btn btn-sm btn-outline-primary">Ver ranking completo</a>
+            {% if role and role|lower == "supervisor" %}
+              <a href="/percentuais?mes={{ mes }}&ano={{ ano }}&vendedor={{ vendedor_selecionado }}" class="btn btn-sm btn-outline-primary">Ver ranking completo</a>
+            {% else %}
+              <a href="/percentuais?mes={{ mes }}&ano={{ ano }}" class="btn btn-sm btn-outline-primary">Ver ranking completo</a>
+            {% endif %}
           </div>
           <hr class="my-2">
 
@@ -175,14 +208,25 @@
       </div>
 
       <div class="mt-3 d-flex flex-wrap gap-2">
-        <a href="/percentuais?mes={{ mes }}&ano={{ ano }}" class="btn btn-outline-primary">Ver ranking completo</a>
-        <a href="/devolucoes?mes={{ mes }}&ano={{ ano }}" class="btn btn-outline-secondary">Ver devoluções (DS/CA)</a>
+        {% if role and role|lower == "supervisor" %}
+          <a href="/percentuais?mes={{ mes }}&ano={{ ano }}&vendedor={{ vendedor_selecionado }}" class="btn btn-outline-primary">Ver ranking completo</a>
+          <a href="/devolucoes?mes={{ mes }}&ano={{ ano }}&vendedor={{ vendedor_selecionado }}" class="btn btn-outline-secondary">Ver devoluções (DS/CA)</a>
+        {% else %}
+          <a href="/percentuais?mes={{ mes }}&ano={{ ano }}" class="btn btn-outline-primary">Ver ranking completo</a>
+          <a href="/devolucoes?mes={{ mes }}&ano={{ ano }}" class="btn btn-outline-secondary">Ver devoluções (DS/CA)</a>
+        {% endif %}
       </div>
 
     {% else %}
-      <div class="alert alert-warning shadow-sm">
-        Nenhum dado encontrado para este vendedor.
-      </div>
+      {% if role and role|lower == "supervisor" and vendedores %}
+        <div class="alert alert-warning shadow-sm">
+          Selecione um vendedor e clique em <strong>Atualizar</strong>.
+        </div>
+      {% else %}
+        <div class="alert alert-warning shadow-sm">
+          Nenhum dado encontrado para este vendedor.
+        </div>
+      {% endif %}
     {% endif %}
 
   </div>
