@@ -325,7 +325,11 @@ def create_app() -> Flask:
             usuario_logado=usuario_logado,
             role=role,
             emp=emp,
+            # Compatibilidade: templates diferentes já usaram chaves
+            # diferentes para a lista de vendedores.
             vendedores_list=vendedores_list,
+            vendedores=vendedores_list,
+            vendedores_disponiveis=vendedores_list,
             mes=mes,
             ano=ano,
             dados=dados,
