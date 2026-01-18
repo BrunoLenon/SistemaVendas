@@ -1,7 +1,6 @@
 import os
 import logging
-import tempfile
-from datetime import date, datetime
+from datetime import date
 
 import pandas as pd
 from flask import (
@@ -14,7 +13,6 @@ from flask import (
     url_for,
 )
 from werkzeug.security import check_password_hash, generate_password_hash
-from sqlalchemy import text
 
 from dados_db import carregar_df
 from db import SessionLocal, Usuario, criar_tabelas
@@ -32,17 +30,14 @@ def create_app() -> Flask:
     try:
         criar_tabelas()
     except Exception:
-        app.logger.exception("Falha ao criar/verificar tabelas")    # ------------- Helpers -------------
+        app.logger.exception("Falha ao criar/verificar tabelas")
+
+    # ------------- Helpers -------------
     def _usuario_logado() -> str | None:
         return session.get("usuario")
 
-    def _role() -> str:
-        """Role do usuário logado: admin | vendedor | supervisor"""
-        return (session.get("role") or "vendedor").strip().lower()
-
-    def _emp() -> int | None:
-        """EMP (loja) associada ao usuário (ex.: supervisor)."""
-        return session.get("emp")
+    def _role() -> str | None:
+        return session.get("role")
 
     def _login_required():
         if not _usuario_logado():
@@ -212,267 +207,307 @@ def create_app() -> Flask:
     def home():
         return redirect(url_for("dashboard"))
 
+    @app.route("/login", methods=["GET", "POST"])
+    def login():
+        if request.method == "GET":
+            return render_template("login.html", erro=None)
 
-    @app.route('/dashboard')
+        vendedor = (request.form.get("vendedor") or "").strip().upper()
+        senha = request.form.get("senha") or ""
+
+        if not vendedor or not senha:
+            return render_template("login.html", erro="Informe usuário e senha.")
+
+        with SessionLocal() as db:
+            u = db.query(Usuario).filter(Usuario.username == vendedor).first()
+            if not u or not check_password_hash(u.senha_hash, senha):
+                return render_template("login.html", erro="Usuário ou senha inválidos.")
+
+            session["usuario"] = u.username
+            session["role"] = u.role
+
+        return redirect(url_for("dashboard"))
+
+    @app.get("/logout")
+    def logout():
+        session.clear()
+        return redirect(url_for("login"))
+
+    @app.get("/dashboard")
     def dashboard():
-        if not session.get('usuario'):
-            return redirect(url_for('login'))
+        red = _login_required()
+        if red:
+            return red
 
-        usuario_logado = session.get('usuario')
-        role = (session.get('role') or 'vendedor').lower()
-        emp_usuario = session.get('emp')  # pode ser None
-
+        mes, ano = _mes_ano_from_request()
+        vendedor = _usuario_logado()
         try:
-            mes = int(request.args.get('mes', datetime.now().month))
-            ano = int(request.args.get('ano', datetime.now().year))
+            df = carregar_df()
+            dados = _calcular_dados(df, vendedor, mes, ano)
         except Exception:
-            mes = datetime.now().month
-            ano = datetime.now().year
-
-        df = carregar_df()
-
-        # Normaliza EMP, se existir
-        if df is not None and not df.empty and 'EMP' in df.columns:
-            df['EMP'] = pd.to_numeric(df['EMP'], errors='coerce').astype('Int64')
-
-        # Lista de vendedores para selects
-        lista_vendedores = []
-        if df is not None and not df.empty and 'VENDEDOR' in df.columns:
-            if role == 'supervisor' and emp_usuario is not None and 'EMP' in df.columns:
-                lista_vendedores = sorted(
-                    [v for v in df.loc[df['EMP'] == int(emp_usuario), 'VENDEDOR'].dropna().unique().tolist()]
-                )
-            else:
-                lista_vendedores = sorted([v for v in df['VENDEDOR'].dropna().unique().tolist()])
-
-        # Determina alvo (vendedor visualizado)
-        vendedor_alvo = None
-        if role == 'vendedor':
-            vendedor_alvo = usuario_logado
-        elif role == 'supervisor':
-            vendedor_alvo = request.args.get('vendedor') or None
-            if vendedor_alvo:
-                vendedor_alvo = vendedor_alvo.strip()
-                # Restricao por EMP do supervisor
-                if emp_usuario is not None and vendedor_alvo not in lista_vendedores:
-                    flash('Este vendedor nao pertence a sua EMP.', 'warning')
-                    vendedor_alvo = None
-        else:  # admin
-            vendedor_alvo = request.args.get('vendedor') or None
-            if vendedor_alvo:
-                vendedor_alvo = vendedor_alvo.strip()
-
-        dados = None
-        titulo_painel = None
-
-        if df is None or df.empty:
+            app.logger.exception("Erro ao carregar/calcular dashboard")
             dados = None
-        else:
-            if role == 'admin' and not vendedor_alvo:
-                # ADMIN sem vendedor selecionado => painel geral (todos)
-                dados = _calcular_dados(df, None, mes, ano)
-                titulo_painel = 'TODOS'
-            elif vendedor_alvo:
-                dados = _calcular_dados(df, vendedor_alvo, mes, ano)
-                titulo_painel = vendedor_alvo
 
-        return render_template(
-            'dashboard.html',
-            usuario=usuario_logado,
-            vendedor=titulo_painel or vendedor_alvo or usuario_logado,
-            vendedor_selecionado=vendedor_alvo,
-            lista_vendedores=lista_vendedores,
-            role=role,
-            emp=emp_usuario,
-            mes=mes,
-            ano=ano,
-            dados=dados,
-        )
+        return render_template("dashboard.html", vendedor=vendedor, mes=mes, ano=ano, dados=dados)
 
-
-    @app.route('/percentuais')
+    @app.get("/percentuais")
     def percentuais():
-        if not session.get('usuario'):
-            return redirect(url_for('login'))
+        red = _login_required()
+        if red:
+            return red
 
-        usuario_logado = session.get('usuario')
-        role = (session.get('role') or 'vendedor').lower()
-        emp_usuario = session.get('emp')
-
-        try:
-            mes = int(request.args.get('mes', datetime.now().month))
-            ano = int(request.args.get('ano', datetime.now().year))
-        except Exception:
-            mes = datetime.now().month
-            ano = datetime.now().year
-
+        mes, ano = _mes_ano_from_request()
+        vendedor = _usuario_logado()
         df = carregar_df()
-        if df is None or df.empty:
-            return render_template('percentuais.html', vendedor=usuario_logado, mes=mes, ano=ano, ranking=[])
-
-        if 'EMP' in df.columns:
-            df['EMP'] = pd.to_numeric(df['EMP'], errors='coerce').astype('Int64')
-
-        vendedor_alvo = None
-        if role == 'vendedor':
-            vendedor_alvo = usuario_logado
-        elif role == 'supervisor':
-            vendedor_alvo = request.args.get('vendedor') or None
-            if vendedor_alvo and emp_usuario is not None and 'EMP' in df.columns:
-                # valida se vendedor pertence a EMP
-                if vendedor_alvo.strip() not in df.loc[df['EMP'] == int(emp_usuario), 'VENDEDOR'].dropna().unique().tolist():
-                    flash('Este vendedor nao pertence a sua EMP.', 'warning')
-                    vendedor_alvo = None
-        else:  # admin
-            vendedor_alvo = request.args.get('vendedor') or None
-
-        df['DATA_DT'] = pd.to_datetime(df['DATA'], dayfirst=True, errors='coerce')
-        df_mes = df[(df['DATA_DT'].dt.month == mes) & (df['DATA_DT'].dt.year == ano)]
-
-        if role == 'supervisor' and emp_usuario is not None and 'EMP' in df_mes.columns:
-            df_mes = df_mes[df_mes['EMP'] == int(emp_usuario)]
-
-        if vendedor_alvo:
-            df_mes = df_mes[df_mes['VENDEDOR'] == vendedor_alvo.upper()]
-            titulo = vendedor_alvo.upper()
-        else:
-            titulo = 'TODOS' if role == 'admin' else usuario_logado
-
-        # valor liquido considera DS/CA negativo
-        df_mes['VALOR'] = pd.to_numeric(df_mes['VALOR_TOTAL'], errors='coerce').fillna(0.0)
-        if 'MOV_TIPO_MOVTO' in df_mes.columns:
-            mask_neg = df_mes['MOV_TIPO_MOVTO'].astype(str).str.upper().isin(['DS', 'CA'])
-            df_mes.loc[mask_neg, 'VALOR'] = -df_mes.loc[mask_neg, 'VALOR'].abs()
-
-        ranking = (
-            df_mes.groupby('MARCA', dropna=False)['VALOR']
-            .sum()
-            .sort_values(ascending=False)
-            .reset_index()
-        )
-        total = float(ranking['VALOR'].sum()) if len(ranking) else 0.0
-        ranking['PCT'] = ranking['VALOR'].apply(lambda x: (float(x) / total * 100.0) if total else 0.0)
-
-        rows = [
-            {
-                'marca': str(row['MARCA']) if pd.notna(row['MARCA']) else '-',
-                'valor': float(row['VALOR']),
-                'pct': float(row['PCT']),
-            }
-            for _, row in ranking.iterrows()
-        ]
-
+        dados = _calcular_dados(df, vendedor, mes, ano) or {}
+        ranking_list = dados.get("ranking_list", [])
+        total = float(dados.get("total_liquido_periodo", 0.0))
         return render_template(
-            'percentuais.html',
-            vendedor=titulo,
+            "percentuais.html",
+            vendedor=vendedor,
             mes=mes,
             ano=ano,
-            ranking=rows,
-            role=role,
-            emp=emp_usuario,
+            total=total,
+            ranking_list=ranking_list,
         )
 
+    @app.get("/marcas")
+    def marcas():
+        red = _login_required()
+        if red:
+            return red
 
-    @app.route('/admin/apagar_vendas', methods=['POST'])
-    def admin_apagar_vendas():
-        if not session.get('usuario'):
-            return redirect(url_for('login'))
-        if (session.get('role') or '').lower() != 'admin':
-            flash('Acesso negado.', 'danger')
-            return redirect(url_for('dashboard'))
+        mes, ano = _mes_ano_from_request()
+        vendedor = _usuario_logado()
+        df = carregar_df()
 
-        tipo = (request.form.get('tipo') or '').strip().lower()
-        valor = (request.form.get('valor') or '').strip()
-        if tipo not in ['dia', 'mes'] or not valor:
-            flash('Informe o dia ou mes para apagar.', 'warning')
-            return redirect(url_for('admin_importar'))
+        # reaproveita cálculo do ranking (líquido por marca)
+        dados = _calcular_dados(df, vendedor, mes, ano) or {}
+        marcas_map = {row["marca"]: row["valor"] for row in dados.get("ranking_list", [])}
+        return render_template("marcas.html", vendedor=vendedor, mes=mes, ano=ano, marcas=marcas_map)
 
-        # Parse data
-        try:
-            if tipo == 'dia':
-                # esperado YYYY-MM-DD
-                d = datetime.strptime(valor, '%Y-%m-%d').date()
-                dt_ini = d
-                dt_fim = d
-                where_sql = 'data = :d'
-                params = {'d': d}
-                label = d.strftime('%d/%m/%Y')
-            else:
-                # esperado YYYY-MM
-                dt_mes = datetime.strptime(valor + '-01', '%Y-%m-%d').date()
-                dt_ini = dt_mes.replace(day=1)
-                # proximo mes
-                if dt_ini.month == 12:
-                    dt_next = dt_ini.replace(year=dt_ini.year + 1, month=1)
-                else:
-                    dt_next = dt_ini.replace(month=dt_ini.month + 1)
-                where_sql = 'data >= :ini AND data < :fim'
-                params = {'ini': dt_ini, 'fim': dt_next}
-                label = dt_ini.strftime('%m/%Y')
-        except Exception:
-            flash('Data invalida.', 'danger')
-            return redirect(url_for('admin_importar'))
+    @app.get("/devolucoes")
+    def devolucoes():
+        red = _login_required()
+        if red:
+            return red
 
-        sess = SessionLocal()
-        try:
-            res = sess.execute(text(f'DELETE FROM vendas WHERE {where_sql}'), params)
-            sess.commit()
-            apagadas = res.rowcount or 0
-            flash(f'Apagadas {apagadas} vendas do periodo {label}.', 'success')
-        except Exception as e:
-            sess.rollback()
-            flash(f'Erro ao apagar vendas: {e}', 'danger')
-        finally:
-            sess.close()
+        mes, ano = _mes_ano_from_request()
+        vendedor = _usuario_logado()
+        df = carregar_df()
 
-        return redirect(url_for('admin_importar'))
+        if df is None or df.empty:
+            devol = {}
+        else:
+            df = df.copy()
+            df["VENDEDOR"] = df["VENDEDOR"].astype(str).str.strip().str.upper()
+            df["MARCA"] = df["MARCA"].astype(str).str.strip().str.upper()
+            df["MOV_TIPO_MOVTO"] = df["MOV_TIPO_MOVTO"].astype(str).str.strip().str.upper()
+            df["MOVIMENTO"] = pd.to_datetime(df["MOVIMENTO"], errors="coerce")
+            df["VALOR_TOTAL"] = pd.to_numeric(df["VALOR_TOTAL"], errors="coerce").fillna(0.0)
+            df = df[df["VENDEDOR"] == vendedor.upper()]
+            df = df[(df["MOVIMENTO"].dt.year == ano) & (df["MOVIMENTO"].dt.month == mes)]
+            df = df[df["MOV_TIPO_MOVTO"].isin(["DS", "CA"])]
+            devol = (
+                df.groupby("MARCA")["VALOR_TOTAL"].sum().sort_values(ascending=False).to_dict()
+                if not df.empty
+                else {}
+            )
 
+        return render_template("devolucoes.html", vendedor=vendedor, mes=mes, ano=ano, devolucoes=devol)
 
-    # Mantem a rota de importacao como ja estava no arquivo (admin apenas)
-    @app.route('/admin/importar', methods=['GET', 'POST'])
-    def admin_importar():
-        if not session.get('usuario'):
-            return redirect(url_for('login'))
+    @app.route("/senha", methods=["GET", "POST"])
+    def senha():
+        red = _login_required()
+        if red:
+            return red
 
-        if (session.get('role') or '').lower() != 'admin':
-            flash('Acesso negado.', 'danger')
-            return redirect(url_for('dashboard'))
+        vendedor = _usuario_logado()
+        if request.method == "GET":
+            return render_template("senha.html", vendedor=vendedor, erro=None, ok=None)
 
-        if request.method == 'POST':
-            f = request.files.get('arquivo')
-            if not f or f.filename == '':
-                flash('Selecione uma planilha.', 'warning')
-                return redirect(url_for('admin_importar'))
+        senha_atual = request.form.get("senha_atual") or ""
+        nova_senha = request.form.get("nova_senha") or ""
+        confirmar = request.form.get("confirmar") or ""
 
-            modo = request.form.get('modo', 'ignore')
-            chave = request.form.get('chave', 'mestre_vendedor_nota_emp_movtipo')
+        if len(nova_senha) < 4:
+            return render_template("senha.html", vendedor=vendedor, erro="Nova senha muito curta.", ok=None)
+        if nova_senha != confirmar:
+            return render_template("senha.html", vendedor=vendedor, erro="As senhas não conferem.", ok=None)
 
-            try:
-                with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as tmp:
-                    f.save(tmp.name)
-                    tmp_path = tmp.name
+        with SessionLocal() as db:
+            u = db.query(Usuario).filter(Usuario.username == vendedor).first()
+            if not u or not check_password_hash(u.senha_hash, senha_atual):
+                return render_template("senha.html", vendedor=vendedor, erro="Senha atual incorreta.", ok=None)
 
-                resumo = importar_planilha(tmp_path, modo=modo, chave=chave)
-                flash(
-                    f"Importacao concluida. Validas: {resumo.get('validas', 0)} | Inseridas: {resumo.get('inseridas', 0)} | Ignoradas: {resumo.get('ignoradas', 0)} | Erros: {len(resumo.get('erros', []))}",
-                    'success',
-                )
-            except Exception as e:
-                logging.exception('Erro ao importar')
-                flash(f'Erro ao importar: {e}', 'danger')
-            finally:
+            u.senha_hash = generate_password_hash(nova_senha)
+            db.commit()
+
+        return render_template("senha.html", vendedor=vendedor, erro=None, ok="Senha atualizada com sucesso!")
+
+    @app.route("/admin/usuarios", methods=["GET", "POST"])
+    def admin_usuarios():
+        red = _login_required()
+        if red:
+            return red
+        red = _admin_required()
+        if red:
+            return red
+
+        usuario = _usuario_logado()
+        erro = None
+        ok = None
+
+        with SessionLocal() as db:
+            if request.method == "POST":
+                acao = request.form.get("acao")
                 try:
-                    if 'tmp_path' in locals() and os.path.exists(tmp_path):
-                        os.remove(tmp_path)
-                except Exception:
-                    pass
+                    if acao == "criar":
+                        novo_usuario = (request.form.get("novo_usuario") or "").strip().upper()
+                        nova_senha = request.form.get("nova_senha") or ""
+                        role = (request.form.get("role") or "vendedor").strip().lower()
+                        if len(nova_senha) < 4:
+                            raise ValueError("Senha muito curta (mín. 4).")
+                        if role not in {"admin", "vendedor"}:
+                            role = "vendedor"
+                        u = db.query(Usuario).filter(Usuario.username == novo_usuario).first()
+                        if u:
+                            u.senha_hash = generate_password_hash(nova_senha)
+                            u.role = role
+                            ok = f"Usuário {novo_usuario} atualizado."
+                        else:
+                            db.add(
+                                Usuario(
+                                    username=novo_usuario,
+                                    senha_hash=generate_password_hash(nova_senha),
+                                    role=role,
+                                )
+                            )
+                            db.commit()
+                            ok = f"Usuário {novo_usuario} criado."
 
-            return redirect(url_for('admin_importar'))
+                    elif acao == "reset":
+                        alvo = (request.form.get("alvo") or "").strip().upper()
+                        nova_senha = request.form.get("nova_senha") or ""
+                        if alvo == "ADMIN":
+                            raise ValueError("Para o ADMIN, use 'Trocar minha senha'.")
+                        u = db.query(Usuario).filter(Usuario.username == alvo).first()
+                        if not u:
+                            raise ValueError("Usuário não encontrado.")
+                        if len(nova_senha) < 4:
+                            raise ValueError("Senha muito curta (mín. 4).")
+                        u.senha_hash = generate_password_hash(nova_senha)
+                        db.commit()
+                        ok = f"Senha de {alvo} atualizada."
 
-        # GET
-        return render_template('admin_importar.html')
+                    elif acao == "remover":
+                        alvo = (request.form.get("alvo") or "").strip().upper()
+                        if alvo == "ADMIN":
+                            raise ValueError("O usuário ADMIN não pode ser removido.")
+                        u = db.query(Usuario).filter(Usuario.username == alvo).first()
+                        if not u:
+                            raise ValueError("Usuário não encontrado.")
+                        db.delete(u)
+                        db.commit()
+                        ok = f"Usuário {alvo} removido."
+                    else:
+                        raise ValueError("Ação inválida.")
 
+                except Exception as e:
+                    db.rollback()
+                    erro = str(e)
+                    app.logger.exception("Erro na admin/usuarios")
 
-    # Reaproveita /admin/usuarios do arquivo original (esta acima no head)
+            usuarios = (
+                db.query(Usuario).order_by(Usuario.role.desc(), Usuario.username.asc()).all()
+            )
+            usuarios_out = [{"usuario": u.username, "role": u.role} for u in usuarios]
+
+        return render_template(
+            "admin_usuarios.html",
+            usuario=usuario,
+            usuarios=usuarios_out,
+            erro=erro,
+            ok=ok,
+        )
+
+    @app.route("/admin/importar", methods=["GET", "POST"])
+    def admin_importar():
+        red = _login_required()
+        if red:
+            return red
+        red = _admin_required()
+        if red:
+            return red
+
+        if request.method == "GET":
+            return render_template("admin_importar.html")
+
+        arquivo = request.files.get("arquivo")
+        if not arquivo or not arquivo.filename:
+            flash("Selecione um arquivo .xlsx para importar.", "warning")
+            return redirect(url_for("admin_importar"))
+
+        if not arquivo.filename.lower().endswith(".xlsx"):
+            flash("Formato inválido. Envie um arquivo .xlsx.", "danger")
+            return redirect(url_for("admin_importar"))
+
+        modo = request.form.get("modo", "ignorar_duplicados")
+        chave = request.form.get("chave", "mestre_vendedor_nota_emp")
+
+        # Salva temporariamente
+        import tempfile
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
+            arquivo.save(tmp.name)
+            tmp_path = tmp.name
+
+        try:
+            resumo = importar_planilha(tmp_path, modo=modo, chave=chave)
+            if not resumo.get("ok"):
+                faltando = resumo.get("faltando")
+                if faltando:
+                    flash("Colunas faltando: " + ", ".join(faltando), "danger")
+                else:
+                    flash(resumo.get("msg", "Falha ao importar."), "danger")
+                return redirect(url_for("admin_importar"))
+
+            flash(
+                (
+                    f"Importação concluída. Válidas: {resumo['validas']} | "
+                    f"Inseridas: {resumo['inseridas']} | "
+                    f"Ignoradas: {resumo['ignoradas']} | "
+                    f"Erros: {resumo['erros_linha']}"
+                ),
+                "success",
+            )
+            return redirect(url_for("admin_importar"))
+
+        except Exception:
+            app.logger.exception("Erro ao importar planilha")
+            flash("Erro ao importar. Veja os logs no Render.", "danger")
+            return redirect(url_for("admin_importar"))
+        finally:
+            try:
+                os.remove(tmp_path)
+            except Exception:
+                pass
+
+    # ------------- Erros -------------
+    @app.errorhandler(500)
+    def err_500(e):
+        app.logger.exception("Erro 500: %s", e)
+        return (
+            "Erro interno. Verifique os logs no Render (ou fale com o admin).",
+            500,
+        )
 
     return app
+
+
+# Gunicorn no Render esta configurado para iniciar com: `app:app` (com `--chdir web`).
+# Portanto, precisamos expor um objeto WSGI chamado `app` no escopo do modulo.
+app = create_app()
+
+# Alias comum (algumas plataformas esperam `application`)
+application = app
