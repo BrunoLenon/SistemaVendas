@@ -66,28 +66,47 @@ def create_app() -> Flask:
                 pass
 
     def _normalize_cols(df: pd.DataFrame) -> pd.DataFrame:
-        """Garante colunas maiúsculas usadas no sistema, sem quebrar nomes vindos do banco."""
+        """Garante colunas maiúsculas usadas no sistema, sem quebrar nomes vindos do banco.
+
+        Também normaliza datas para datetime (MOVIMENTO).
+        """
         if df is None or df.empty:
             return df
-        rename = {}
+
+        rename: dict[str, str] = {}
         for col in df.columns:
-            low = col.lower()
+            low = str(col).strip().lower()
             if low == "vendedor":
                 rename[col] = "VENDEDOR"
             elif low == "marca":
                 rename[col] = "MARCA"
-            elif low == "data":
-                rename[col] = "DATA"
+            elif low in ("data", "movimento"):
+                # O sistema usa MOVIMENTO para filtros por mês/ano
+                rename[col] = "MOVIMENTO"
             elif low in ("mov_tipo_movto", "mov_tipo_movimento", "mov_tipo_movto "):
                 rename[col] = "MOV_TIPO_MOVTO"
             elif low in ("valor_total", "valor", "total"):
                 rename[col] = "VALOR_TOTAL"
-            elif low in ("mestre",):
+            elif low == "mestre":
                 rename[col] = "MESTRE"
-            elif low in ("emp",):
+            elif low == "emp":
                 rename[col] = "EMP"
+
         if rename:
             df = df.rename(columns=rename)
+
+        # Garante datetime para filtros de período
+        if "MOVIMENTO" in df.columns:
+            df["MOVIMENTO"] = pd.to_datetime(df["MOVIMENTO"], errors="coerce")
+
+        # Normaliza strings principais
+        if "VENDEDOR" in df.columns:
+            df["VENDEDOR"] = df["VENDEDOR"].astype(str).str.strip().str.upper()
+        if "MARCA" in df.columns:
+            df["MARCA"] = df["MARCA"].astype(str).str.strip()
+        if "EMP" in df.columns:
+            df["EMP"] = df["EMP"].astype(str).str.strip()
+
         return df
 
     def _login_required():
@@ -101,14 +120,6 @@ def create_app() -> Flask:
             return redirect(url_for("dashboard"))
         return None
 
-    def _mes_ano_from_request():
-        hoje = date.today()
-        mes = int(request.args.get("mes", hoje.month))
-        ano = int(request.args.get("ano", hoje.year))
-        mes = max(1, min(12, mes))
-        ano = max(2000, min(2100, ano))
-        return mes, ano
-
     def _calcular_dados(df: pd.DataFrame, vendedor: str, mes: int, ano: int):
         """Calcula os números do dashboard a partir do DF carregado do banco."""
         if df is None or df.empty:
@@ -116,6 +127,17 @@ def create_app() -> Flask:
 
         # Normaliza colunas e tipos para suportar variações de schema (ex.: emp/EMP)
         df = _normalize_cols(df)
+        # Checagens básicas para evitar erro silencioso por schema diferente
+        required = {"VENDEDOR", "MOV_TIPO_MOVTO", "VALOR_TOTAL", "MOVIMENTO", "MARCA", "MESTRE"}
+        missing = [c for c in required if c not in df.columns]
+        if missing:
+            app.logger.warning("Colunas faltando para calcular dashboard: %s", ", ".join(missing))
+            return None
+
+        if df["MOVIMENTO"].isna().all():
+            app.logger.warning("Coluna MOVIMENTO não possui datas válidas (tudo NaT).")
+            return None
+
 
         df_v = df[df["VENDEDOR"] == vendedor.upper()].copy()
         if df_v.empty:
@@ -270,7 +292,7 @@ def create_app() -> Flask:
         - aviso é uma mensagem opcional para exibir na tela.
         """
         role = (session.get("role") or "").strip().lower()
-        usuario_logado = (session.get("user") or "").strip().upper()
+        usuario_logado = (session.get("usuario") or "").strip().upper()
         df = _normalize_cols(df)
 
         # Lista base de vendedores (da tabela de vendas, pois a tabela usuarios pode não ter EMP preenchida)
