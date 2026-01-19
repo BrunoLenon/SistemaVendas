@@ -1,10 +1,8 @@
 import os
 import logging
 from datetime import date, datetime
-import calendar
 
 import pandas as pd
-from sqlalchemy import and_
 from flask import (
     Flask,
     flash,
@@ -17,7 +15,7 @@ from flask import (
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from dados_db import carregar_df
-from db import SessionLocal, Usuario, Venda, criar_tabelas
+from db import SessionLocal, Usuario, criar_tabelas
 from importar_excel import importar_planilha
 
 
@@ -670,75 +668,6 @@ def create_app() -> Flask:
         finally:
             try:
                 os.remove(tmp_path)
-            except Exception:
-                pass
-
-    @app.route("/admin/apagar_vendas", methods=["POST"])
-    def admin_apagar_vendas():
-        """Apaga vendas por dia ou por mes.
-
-        Usado pela tela /admin/importar (admin_importar.html).
-        """
-        red = _login_required()
-        if red:
-            return red
-        red = _admin_required()
-        if red:
-            return red
-
-        tipo = (request.form.get("tipo") or "").strip().lower()
-        valor = (request.form.get("valor") or "").strip()
-        if tipo not in {"dia", "mes"}:
-            flash("Tipo invalido para apagar vendas.", "danger")
-            return redirect(url_for("admin_importar"))
-        if not valor:
-            flash("Informe uma data/mes para apagar.", "warning")
-            return redirect(url_for("admin_importar"))
-
-        db = SessionLocal()
-        try:
-            if tipo == "dia":
-                # valor: YYYY-MM-DD
-                try:
-                    dt = datetime.strptime(valor, "%Y-%m-%d").date()
-                except Exception:
-                    flash("Data invalida. Use o seletor de data.", "danger")
-                    return redirect(url_for("admin_importar"))
-
-                q = db.query(Venda).filter(Venda.data == dt)
-                apagadas = q.delete(synchronize_session=False)
-                db.commit()
-                flash(f"Apagadas {apagadas} vendas do dia {dt.strftime('%d/%m/%Y')}.", "success")
-                return redirect(url_for("admin_importar"))
-
-            # tipo == "mes"  valor: YYYY-MM
-            try:
-                ano = int(valor[:4])
-                mes = int(valor[5:7])
-                if mes < 1 or mes > 12:
-                    raise ValueError
-            except Exception:
-                flash("Mes invalido. Use o seletor de mes.", "danger")
-                return redirect(url_for("admin_importar"))
-
-            last_day = calendar.monthrange(ano, mes)[1]
-            d_ini = date(ano, mes, 1)
-            d_fim = date(ano, mes, last_day)
-
-            q = db.query(Venda).filter(and_(Venda.data >= d_ini, Venda.data <= d_fim))
-            apagadas = q.delete(synchronize_session=False)
-            db.commit()
-            flash(f"Apagadas {apagadas} vendas de {mes:02d}/{ano}.", "success")
-            return redirect(url_for("admin_importar"))
-
-        except Exception:
-            db.rollback()
-            app.logger.exception("Erro ao apagar vendas")
-            flash("Erro ao apagar vendas. Veja os logs.", "danger")
-            return redirect(url_for("admin_importar"))
-        finally:
-            try:
-                db.close()
             except Exception:
                 pass
 
