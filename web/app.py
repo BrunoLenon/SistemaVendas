@@ -705,7 +705,7 @@ def create_app() -> Flask:
                     flash("Data invalida. Use o seletor de data.", "danger")
                     return redirect(url_for("admin_importar"))
 
-                q = db.query(Venda).filter(Venda.data == dt)
+                q = db.query(Venda).filter(Venda.movimento == dt)
                 apagadas = q.delete(synchronize_session=False)
                 db.commit()
                 flash(f"Apagadas {apagadas} vendas do dia {dt.strftime('%d/%m/%Y')}.", "success")
@@ -725,7 +725,7 @@ def create_app() -> Flask:
             d_ini = date(ano, mes, 1)
             d_fim = date(ano, mes, last_day)
 
-            q = db.query(Venda).filter(and_(Venda.data >= d_ini, Venda.data <= d_fim))
+            q = db.query(Venda).filter(and_(Venda.movimento >= d_ini, Venda.movimento <= d_fim))
             apagadas = q.delete(synchronize_session=False)
             db.commit()
             flash(f"Apagadas {apagadas} vendas de {mes:02d}/{ano}.", "success")
