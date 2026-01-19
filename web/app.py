@@ -1,6 +1,6 @@
 import os
 import logging
-from datetime import date
+from datetime import date, datetime
 
 import pandas as pd
 from flask import (
