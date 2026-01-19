@@ -102,7 +102,7 @@ def _build_stmt(records: List[dict], modo: str, conflict_cols: List[str]):
             "mov_tipo_movto": stmt.excluded.mov_tipo_movto,
             "unit": stmt.excluded.unit,
             "des": stmt.excluded.des,
-            "qtdade_vendida": stmt.excluded.qtdade_vendida,
+            "qtda_vendida": stmt.excluded.qtda_vendida,
             "valor_total": stmt.excluded.valor_total,
             "emp": stmt.excluded.emp,
             "nota": stmt.excluded.nota,
@@ -198,7 +198,7 @@ def importar_planilha(
                         "emp": emp,
                         "unit": _to_float(get("UNIT")),
                         "des": _to_float(get("DES")),
-                        "qtdade_vendida": _to_float(get("QTDADE_VENDIDA")),
+                        "qtda_vendida": _to_float(get("QTDADE_VENDIDA")),
                         "valor_total": _to_float(get("VALOR_TOTAL")) or 0.0,
                     }
 
@@ -312,7 +312,7 @@ def importar_planilha(
                         "emp": emp,
                         "unit": _to_float(row.get("UNIT")),
                         "des": _to_float(row.get("DES")),
-                        "qtdade_vendida": _to_float(row.get("QTDADE_VENDIDA")),
+                        "qtda_vendida": _to_float(row.get("QTDADE_VENDIDA")),
                         "valor_total": _to_float(row.get("VALOR_TOTAL")) or 0.0,
                     }
                     records.append(rec)
