@@ -10,6 +10,7 @@ def carregar_df():
             data AS "MOVIMENTO",
             mov_tipo_movto AS "MOV_TIPO_MOVTO",
             vendedor AS "VENDEDOR",
+            emp AS "EMP",
             qtda_vendida AS "QTDADE_VENDIDA",
             valor_total AS "VALOR_TOTAL"
         FROM vendas

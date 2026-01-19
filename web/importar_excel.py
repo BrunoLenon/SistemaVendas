@@ -175,6 +175,7 @@ def importar_planilha(
 
                     mestre = _norm_str(get("MESTRE"))
                     vendedor = _norm_str(get("VENDEDOR"))
+                    vendedor = vendedor.upper() if vendedor else None
                     if not mestre or not vendedor:
                         erros_linha += 1
                         continue
@@ -182,7 +183,7 @@ def importar_planilha(
                     nota = _norm_str(get("NOTA"))
                     emp = _norm_str(get("EMP"))
                     mov = _to_date(get("MOVIMENTO"))
-                    mov_tipo = _norm_str(get("MOV_TIPO_MOVTO")) or ""
+                    mov_tipo = (_norm_str(get("MOV_TIPO_MOVTO")) or "").upper()
                     if not mov_tipo:
                         erros_linha += 1
                         continue
@@ -284,6 +285,7 @@ def importar_planilha(
                 try:
                     mestre = _norm_str(row.get("MESTRE"))
                     vendedor = _norm_str(row.get("VENDEDOR"))
+                    vendedor = vendedor.upper() if vendedor else None
                     if not mestre or not vendedor:
                         erros_linha += 1
                         continue
@@ -295,7 +297,7 @@ def importar_planilha(
                         erros_linha += 1
                         continue
 
-                    mov_tipo = _norm_str(row.get("MOV_TIPO_MOVTO")) or ""
+                    mov_tipo = (_norm_str(row.get("MOV_TIPO_MOVTO")) or "").upper()
                     if not mov_tipo:
                         erros_linha += 1
                         continue

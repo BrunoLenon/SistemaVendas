@@ -66,9 +66,11 @@ def create_app() -> Flask:
                 pass
 
     def _normalize_cols(df: pd.DataFrame) -> pd.DataFrame:
-        """Garante colunas maiúsculas usadas no sistema, sem quebrar nomes vindos do banco.
+        """Normaliza nomes/tipos de colunas vindas do banco.
 
-        Também normaliza datas para datetime (MOVIMENTO).
+        Regras do app:
+        - VENDEDOR (str, UPPER) e EMP (str)
+        - MOVIMENTO (datetime) é usado para filtrar mês/ano
         """
         if df is None or df.empty:
             return df
@@ -81,7 +83,7 @@ def create_app() -> Flask:
             elif low == "marca":
                 rename[col] = "MARCA"
             elif low in ("data", "movimento"):
-                # O sistema usa MOVIMENTO para filtros por mês/ano
+                # O app usa MOVIMENTO para filtros de período
                 rename[col] = "MOVIMENTO"
             elif low in ("mov_tipo_movto", "mov_tipo_movimento", "mov_tipo_movto "):
                 rename[col] = "MOV_TIPO_MOVTO"
@@ -95,15 +97,11 @@ def create_app() -> Flask:
         if rename:
             df = df.rename(columns=rename)
 
-        # Garante datetime para filtros de período
+        # Tipos esperados
         if "MOVIMENTO" in df.columns:
             df["MOVIMENTO"] = pd.to_datetime(df["MOVIMENTO"], errors="coerce")
-
-        # Normaliza strings principais
         if "VENDEDOR" in df.columns:
             df["VENDEDOR"] = df["VENDEDOR"].astype(str).str.strip().str.upper()
-        if "MARCA" in df.columns:
-            df["MARCA"] = df["MARCA"].astype(str).str.strip()
         if "EMP" in df.columns:
             df["EMP"] = df["EMP"].astype(str).str.strip()
 
@@ -120,6 +118,9 @@ def create_app() -> Flask:
             return redirect(url_for("dashboard"))
         return None
 
+    # NOTE: existe uma versão tipada desta função mais abaixo.
+    # Mantemos apenas uma definição para evitar confusão/override.
+
     def _calcular_dados(df: pd.DataFrame, vendedor: str, mes: int, ano: int):
         """Calcula os números do dashboard a partir do DF carregado do banco."""
         if df is None or df.empty:
@@ -127,17 +128,6 @@ def create_app() -> Flask:
 
         # Normaliza colunas e tipos para suportar variações de schema (ex.: emp/EMP)
         df = _normalize_cols(df)
-        # Checagens básicas para evitar erro silencioso por schema diferente
-        required = {"VENDEDOR", "MOV_TIPO_MOVTO", "VALOR_TOTAL", "MOVIMENTO", "MARCA", "MESTRE"}
-        missing = [c for c in required if c not in df.columns]
-        if missing:
-            app.logger.warning("Colunas faltando para calcular dashboard: %s", ", ".join(missing))
-            return None
-
-        if df["MOVIMENTO"].isna().all():
-            app.logger.warning("Coluna MOVIMENTO não possui datas válidas (tudo NaT).")
-            return None
-
 
         df_v = df[df["VENDEDOR"] == vendedor.upper()].copy()
         if df_v.empty:
@@ -292,6 +282,7 @@ def create_app() -> Flask:
         - aviso é uma mensagem opcional para exibir na tela.
         """
         role = (session.get("role") or "").strip().lower()
+        # No login o app grava session["usuario"].
         usuario_logado = (session.get("usuario") or "").strip().upper()
         df = _normalize_cols(df)
 
@@ -539,14 +530,26 @@ def create_app() -> Flask:
                         novo_usuario = (request.form.get("novo_usuario") or "").strip().upper()
                         nova_senha = request.form.get("nova_senha") or ""
                         role = (request.form.get("role") or "vendedor").strip().lower()
+                        emp_sup = (request.form.get("emp_supervisor") or "").strip()
                         if len(nova_senha) < 4:
                             raise ValueError("Senha muito curta (mín. 4).")
-                        if role not in {"admin", "vendedor"}:
+                        if role not in {"admin", "supervisor", "vendedor"}:
                             role = "vendedor"
+                        # Supervisor precisa de EMP
+                        emp_val = None
+                        if role == "supervisor":
+                            if not emp_sup:
+                                raise ValueError("Informe a EMP para o supervisor.")
+                            emp_val = emp_sup
                         u = db.query(Usuario).filter(Usuario.username == novo_usuario).first()
                         if u:
                             u.senha_hash = generate_password_hash(nova_senha)
                             u.role = role
+                            # Atualiza EMP quando aplicável
+                            if role == "supervisor":
+                                setattr(u, "emp", emp_val)
+                            else:
+                                setattr(u, "emp", None)
                             ok = f"Usuário {novo_usuario} atualizado."
                         else:
                             db.add(
@@ -554,6 +557,7 @@ def create_app() -> Flask:
                                     username=novo_usuario,
                                     senha_hash=generate_password_hash(nova_senha),
                                     role=role,
+                                    emp=emp_val,
                                 )
                             )
                             db.commit()
@@ -591,10 +595,11 @@ def create_app() -> Flask:
                     erro = str(e)
                     app.logger.exception("Erro na admin/usuarios")
 
-            usuarios = (
-                db.query(Usuario).order_by(Usuario.role.desc(), Usuario.username.asc()).all()
-            )
-            usuarios_out = [{"usuario": u.username, "role": u.role} for u in usuarios]
+            usuarios = db.query(Usuario).order_by(Usuario.role.desc(), Usuario.username.asc()).all()
+            usuarios_out = [
+                {"usuario": u.username, "role": u.role, "emp": getattr(u, "emp", None)}
+                for u in usuarios
+            ]
 
         return render_template(
             "admin_usuarios.html",
