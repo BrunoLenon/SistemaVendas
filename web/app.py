@@ -1,10 +1,8 @@
 import os
 import logging
 from datetime import date, datetime
-import calendar
 
 import pandas as pd
-from sqlalchemy import and_
 from flask import (
     Flask,
     flash,
@@ -17,7 +15,7 @@ from flask import (
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from dados_db import carregar_df
-from db import SessionLocal, Usuario, Venda, criar_tabelas
+from db import SessionLocal, Usuario, criar_tabelas
 from importar_excel import importar_planilha
 
 
@@ -68,45 +66,28 @@ def create_app() -> Flask:
                 pass
 
     def _normalize_cols(df: pd.DataFrame) -> pd.DataFrame:
-        """Normaliza nomes/tipos de colunas vindas do banco.
-
-        Regras do app:
-        - VENDEDOR (str, UPPER) e EMP (str)
-        - MOVIMENTO (datetime) é usado para filtrar mês/ano
-        """
+        """Garante colunas maiúsculas usadas no sistema, sem quebrar nomes vindos do banco."""
         if df is None or df.empty:
             return df
-
-        rename: dict[str, str] = {}
+        rename = {}
         for col in df.columns:
-            low = str(col).strip().lower()
+            low = col.lower()
             if low == "vendedor":
                 rename[col] = "VENDEDOR"
             elif low == "marca":
                 rename[col] = "MARCA"
-            elif low in ("data", "movimento"):
-                # O app usa MOVIMENTO para filtros de período
-                rename[col] = "MOVIMENTO"
+            elif low == "data":
+                rename[col] = "DATA"
             elif low in ("mov_tipo_movto", "mov_tipo_movimento", "mov_tipo_movto "):
                 rename[col] = "MOV_TIPO_MOVTO"
             elif low in ("valor_total", "valor", "total"):
                 rename[col] = "VALOR_TOTAL"
-            elif low == "mestre":
+            elif low in ("mestre",):
                 rename[col] = "MESTRE"
-            elif low == "emp":
+            elif low in ("emp",):
                 rename[col] = "EMP"
-
         if rename:
             df = df.rename(columns=rename)
-
-        # Tipos esperados
-        if "MOVIMENTO" in df.columns:
-            df["MOVIMENTO"] = pd.to_datetime(df["MOVIMENTO"], errors="coerce")
-        if "VENDEDOR" in df.columns:
-            df["VENDEDOR"] = df["VENDEDOR"].astype(str).str.strip().str.upper()
-        if "EMP" in df.columns:
-            df["EMP"] = df["EMP"].astype(str).str.strip()
-
         return df
 
     def _login_required():
@@ -120,8 +101,13 @@ def create_app() -> Flask:
             return redirect(url_for("dashboard"))
         return None
 
-    # NOTE: existe uma versão tipada desta função mais abaixo.
-    # Mantemos apenas uma definição para evitar confusão/override.
+    def _mes_ano_from_request():
+        hoje = date.today()
+        mes = int(request.args.get("mes", hoje.month))
+        ano = int(request.args.get("ano", hoje.year))
+        mes = max(1, min(12, mes))
+        ano = max(2000, min(2100, ano))
+        return mes, ano
 
     def _calcular_dados(df: pd.DataFrame, vendedor: str, mes: int, ano: int):
         """Calcula os números do dashboard a partir do DF carregado do banco."""
@@ -284,8 +270,7 @@ def create_app() -> Flask:
         - aviso é uma mensagem opcional para exibir na tela.
         """
         role = (session.get("role") or "").strip().lower()
-        # No login o app grava session["usuario"].
-        usuario_logado = (session.get("usuario") or "").strip().upper()
+        usuario_logado = (session.get("user") or "").strip().upper()
         df = _normalize_cols(df)
 
         # Lista base de vendedores (da tabela de vendas, pois a tabela usuarios pode não ter EMP preenchida)
@@ -532,26 +517,14 @@ def create_app() -> Flask:
                         novo_usuario = (request.form.get("novo_usuario") or "").strip().upper()
                         nova_senha = request.form.get("nova_senha") or ""
                         role = (request.form.get("role") or "vendedor").strip().lower()
-                        emp_sup = (request.form.get("emp_supervisor") or "").strip()
                         if len(nova_senha) < 4:
                             raise ValueError("Senha muito curta (mín. 4).")
-                        if role not in {"admin", "supervisor", "vendedor"}:
+                        if role not in {"admin", "vendedor"}:
                             role = "vendedor"
-                        # Supervisor precisa de EMP
-                        emp_val = None
-                        if role == "supervisor":
-                            if not emp_sup:
-                                raise ValueError("Informe a EMP para o supervisor.")
-                            emp_val = emp_sup
                         u = db.query(Usuario).filter(Usuario.username == novo_usuario).first()
                         if u:
                             u.senha_hash = generate_password_hash(nova_senha)
                             u.role = role
-                            # Atualiza EMP quando aplicável
-                            if role == "supervisor":
-                                setattr(u, "emp", emp_val)
-                            else:
-                                setattr(u, "emp", None)
                             ok = f"Usuário {novo_usuario} atualizado."
                         else:
                             db.add(
@@ -559,7 +532,6 @@ def create_app() -> Flask:
                                     username=novo_usuario,
                                     senha_hash=generate_password_hash(nova_senha),
                                     role=role,
-                                    emp=emp_val,
                                 )
                             )
                             db.commit()
@@ -597,11 +569,10 @@ def create_app() -> Flask:
                     erro = str(e)
                     app.logger.exception("Erro na admin/usuarios")
 
-            usuarios = db.query(Usuario).order_by(Usuario.role.desc(), Usuario.username.asc()).all()
-            usuarios_out = [
-                {"usuario": u.username, "role": u.role, "emp": getattr(u, "emp", None)}
-                for u in usuarios
-            ]
+            usuarios = (
+                db.query(Usuario).order_by(Usuario.role.desc(), Usuario.username.asc()).all()
+            )
+            usuarios_out = [{"usuario": u.username, "role": u.role} for u in usuarios]
 
         return render_template(
             "admin_usuarios.html",
@@ -670,75 +641,6 @@ def create_app() -> Flask:
         finally:
             try:
                 os.remove(tmp_path)
-            except Exception:
-                pass
-
-    @app.route("/admin/apagar_vendas", methods=["POST"])
-    def admin_apagar_vendas():
-        """Apaga vendas por dia ou por mes.
-
-        Usado pela tela /admin/importar (admin_importar.html).
-        """
-        red = _login_required()
-        if red:
-            return red
-        red = _admin_required()
-        if red:
-            return red
-
-        tipo = (request.form.get("tipo") or "").strip().lower()
-        valor = (request.form.get("valor") or "").strip()
-        if tipo not in {"dia", "mes"}:
-            flash("Tipo invalido para apagar vendas.", "danger")
-            return redirect(url_for("admin_importar"))
-        if not valor:
-            flash("Informe uma data/mes para apagar.", "warning")
-            return redirect(url_for("admin_importar"))
-
-        db = SessionLocal()
-        try:
-            if tipo == "dia":
-                # valor: YYYY-MM-DD
-                try:
-                    dt = datetime.strptime(valor, "%Y-%m-%d").date()
-                except Exception:
-                    flash("Data invalida. Use o seletor de data.", "danger")
-                    return redirect(url_for("admin_importar"))
-
-                q = db.query(Venda).filter(Venda.movimento == dt)
-                apagadas = q.delete(synchronize_session=False)
-                db.commit()
-                flash(f"Apagadas {apagadas} vendas do dia {dt.strftime('%d/%m/%Y')}.", "success")
-                return redirect(url_for("admin_importar"))
-
-            # tipo == "mes"  valor: YYYY-MM
-            try:
-                ano = int(valor[:4])
-                mes = int(valor[5:7])
-                if mes < 1 or mes > 12:
-                    raise ValueError
-            except Exception:
-                flash("Mes invalido. Use o seletor de mes.", "danger")
-                return redirect(url_for("admin_importar"))
-
-            last_day = calendar.monthrange(ano, mes)[1]
-            d_ini = date(ano, mes, 1)
-            d_fim = date(ano, mes, last_day)
-
-            q = db.query(Venda).filter(and_(Venda.movimento >= d_ini, Venda.movimento <= d_fim))
-            apagadas = q.delete(synchronize_session=False)
-            db.commit()
-            flash(f"Apagadas {apagadas} vendas de {mes:02d}/{ano}.", "success")
-            return redirect(url_for("admin_importar"))
-
-        except Exception:
-            db.rollback()
-            app.logger.exception("Erro ao apagar vendas")
-            flash("Erro ao apagar vendas. Veja os logs.", "danger")
-            return redirect(url_for("admin_importar"))
-        finally:
-            try:
-                db.close()
             except Exception:
                 pass
 
