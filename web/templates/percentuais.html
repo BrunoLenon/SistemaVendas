@@ -59,7 +59,7 @@
                   <td class="text-muted"></td>
                   <td>{{ row.marca }}</td>
                   <td class="text-end">R$ {{ row.valor|brl }}</td>
-                  <td class="text-end">{{ row.pct|pct_br }}</td>
+                  <td class="text-end">{{ "%.2f"|format(row.pct) }}%</td>
                 </tr>
                 {% endfor %}
               {% else %}
