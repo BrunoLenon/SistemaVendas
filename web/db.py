@@ -87,7 +87,7 @@ class Venda(Base):
 
     unit = Column(Float, nullable=True)
     des = Column(Float, nullable=True)
-    qtda_vendida = Column(Float, nullable=True)
+    qtdade_vendida = Column(Float, nullable=True)
     valor_total = Column(Float, nullable=False)
 
     __table_args__ = (
