@@ -43,7 +43,7 @@
               <tr>
                 <td class="text-muted"></td>
                 <td>{{ marca }}</td>
-                <td class="text-end">R$ {{ "{:,.2f}".format(valor) }}</td>
+                <td class="text-end">R$ {{ valor|brl }}</td>
               </tr>
               {% endfor %}
             </tbody>

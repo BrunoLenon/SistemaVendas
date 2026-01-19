@@ -34,6 +34,29 @@ def create_app() -> Flask:
     except Exception:
         app.logger.exception("Falha ao criar/verificar tabelas")
 
+    # --------- Filtros de template (Jinja) ---------
+    @app.template_filter("brl")
+    def _fmt_brl(valor) -> str:
+        """Formata número no padrão brasileiro: 21.555.384,00."""
+        if valor is None:
+            return "0,00"
+        try:
+            v = float(valor)
+        except Exception:
+            return str(valor)
+        return f"{v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+    @app.template_filter("pct_br")
+    def _fmt_pct_br(valor) -> str:
+        """Formata percentual com vírgula: 12,34%."""
+        if valor is None:
+            return "—"
+        try:
+            v = float(valor)
+        except Exception:
+            return str(valor)
+        return f"{v:.2f}".replace(".", ",") + "%"
+
     # ------------- Helpers -------------
     def _usuario_logado() -> str | None:
         return session.get("usuario")

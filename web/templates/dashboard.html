@@ -83,8 +83,8 @@
           <div class="card shadow-sm">
             <div class="card-body">
               <div class="text-muted">💰 Valor líquido (com DS/CA)</div>
-              <div class="display-6">R$ {{ "{:,.2f}".format(dados.valor_atual) }}</div>
-              <div class="text-muted mt-1">Ano passado: R$ {{ "{:,.2f}".format(dados.valor_ano_passado) }}</div>
+              <div class="display-6">R$ {{ dados.valor_atual|brl }}</div>
+              <div class="text-muted mt-1">Ano passado (mesmo mês): R$ {{ dados.valor_ano_passado|brl }}</div>
             </div>
           </div>
         </div>
@@ -105,7 +105,7 @@
           <div class="card shadow-sm">
             <div class="card-body">
               <div class="text-muted">🧾 Valor bruto (sem DS/CA)</div>
-              <div class="h3 m-0">R$ {{ "{:,.2f}".format(dados.valor_bruto) }}</div>
+              <div class="h3 m-0">R$ {{ dados.valor_bruto|brl }}</div>
               <div class="text-muted">Somente vendas</div>
             </div>
           </div>
@@ -115,7 +115,7 @@
           <div class="card shadow-sm">
             <div class="card-body">
               <div class="text-muted">↩️ Devoluções/Cancelamentos (DS/CA)</div>
-              <div class="h3 m-0">R$ {{ "{:,.2f}".format(dados.valor_devolvido) }}</div>
+              <div class="h3 m-0">R$ {{ dados.valor_devolvido|brl }}</div>
               <div class="text-muted">Total abatido</div>
             </div>
           </div>
@@ -126,7 +126,7 @@
             <div class="card-body">
               <div class="text-muted">📉 % devolução (sobre bruto)</div>
               {% if dados.pct_devolucao is not none %}
-                <div class="h3 m-0">{{ "%.2f"|format(dados.pct_devolucao) }}%</div>
+                <div class="h3 m-0">{{ dados.pct_devolucao|pct_br }}</div>
               {% else %}
                 <div class="h3 m-0">—</div>
                 <div class="text-muted">Sem base</div>
@@ -146,9 +146,9 @@
           <div class="text-end">
             {% if dados.crescimento is not none %}
               {% if dados.crescimento >= 0 %}
-                <span class="badge text-bg-success fs-6">+{{ "%.2f"|format(dados.crescimento) }}%</span>
+                <span class="badge text-bg-success fs-6">+{{ dados.crescimento|pct_br }}</span>
               {% else %}
-                <span class="badge text-bg-danger fs-6">{{ "%.2f"|format(dados.crescimento) }}%</span>
+                <span class="badge text-bg-danger fs-6">{{ dados.crescimento|pct_br }}</span>
               {% endif %}
             {% else %}
               <span class="badge text-bg-secondary fs-6">Sem base</span>
@@ -181,8 +181,8 @@
                     <tr>
                       <td class="text-muted">{{ loop.index }}</td>
                       <td>{{ row.marca }}</td>
-                      <td class="text-end">R$ {{ "{:,.2f}".format(row.valor) }}</td>
-                      <td class="text-end">{{ "%.2f"|format(row.pct) }}%</td>
+                      <td class="text-end">R$ {{ row.valor|brl }}</td>
+                      <td class="text-end">{{ row.pct|pct_br }}</td>
                     </tr>
                   {% endfor %}
                 </tbody>

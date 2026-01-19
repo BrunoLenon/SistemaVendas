@@ -24,7 +24,7 @@
         <div class="card shadow-sm">
           <div class="card-body">
             <div class="text-muted">Total líquido do período</div>
-            <div class="h3 m-0">R$ {{ "{:,.2f}".format(total) }}</div>
+            <div class="h3 m-0">R$ {{ total|brl }}</div>
           </div>
         </div>
       </div>
@@ -58,8 +58,8 @@
                 <tr>
                   <td class="text-muted"></td>
                   <td>{{ row.marca }}</td>
-                  <td class="text-end">R$ {{ "{:,.2f}".format(row.valor) }}</td>
-                  <td class="text-end">{{ "%.2f"|format(row.pct) }}%</td>
+                  <td class="text-end">R$ {{ row.valor|brl }}</td>
+                  <td class="text-end">{{ row.pct|pct_br }}</td>
                 </tr>
                 {% endfor %}
               {% else %}
