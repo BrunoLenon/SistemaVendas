@@ -1,6 +1,6 @@
 import os
 import logging
-from datetime import date, datetime
+from datetime import date
 
 import pandas as pd
 from flask import (
@@ -39,57 +39,6 @@ def create_app() -> Flask:
     def _role() -> str | None:
         return session.get("role")
 
-    def _emp() -> str | None:
-        """Retorna a EMP do usuário logado (quando existir)."""
-        emp = session.get("emp")
-        if emp is not None and emp != "":
-            return str(emp)
-        uid = session.get("user_id")
-        if not uid:
-            return None
-        try:
-            db = SessionLocal()
-            u = db.query(Usuario).filter(Usuario.id == uid).first()
-            if not u:
-                return None
-            emp_val = getattr(u, "emp", None)
-            if emp_val is None or emp_val == "":
-                return None
-            session["emp"] = str(emp_val)
-            return str(emp_val)
-        except Exception:
-            return None
-        finally:
-            try:
-                db.close()
-            except Exception:
-                pass
-
-    def _normalize_cols(df: pd.DataFrame) -> pd.DataFrame:
-        """Garante colunas maiúsculas usadas no sistema, sem quebrar nomes vindos do banco."""
-        if df is None or df.empty:
-            return df
-        rename = {}
-        for col in df.columns:
-            low = col.lower()
-            if low == "vendedor":
-                rename[col] = "VENDEDOR"
-            elif low == "marca":
-                rename[col] = "MARCA"
-            elif low == "data":
-                rename[col] = "DATA"
-            elif low in ("mov_tipo_movto", "mov_tipo_movimento", "mov_tipo_movto "):
-                rename[col] = "MOV_TIPO_MOVTO"
-            elif low in ("valor_total", "valor", "total"):
-                rename[col] = "VALOR_TOTAL"
-            elif low in ("mestre",):
-                rename[col] = "MESTRE"
-            elif low in ("emp",):
-                rename[col] = "EMP"
-        if rename:
-            df = df.rename(columns=rename)
-        return df
-
     def _login_required():
         if not _usuario_logado():
             return redirect(url_for("login"))
@@ -114,8 +63,14 @@ def create_app() -> Flask:
         if df is None or df.empty:
             return None
 
-        # Normaliza colunas e tipos para suportar variações de schema (ex.: emp/EMP)
-        df = _normalize_cols(df)
+        # Normaliza
+        df = df.copy()
+        df["VENDEDOR"] = df["VENDEDOR"].astype(str).str.strip().str.upper()
+        df["MARCA"] = df["MARCA"].astype(str).str.strip().str.upper()
+        df["MESTRE"] = df["MESTRE"].astype(str).str.strip()
+        df["MOV_TIPO_MOVTO"] = df["MOV_TIPO_MOVTO"].astype(str).str.strip().str.upper()
+        df["MOVIMENTO"] = pd.to_datetime(df["MOVIMENTO"], errors="coerce")
+        df["VALOR_TOTAL"] = pd.to_numeric(df["VALOR_TOTAL"], errors="coerce").fillna(0.0)
 
         df_v = df[df["VENDEDOR"] == vendedor.upper()].copy()
         if df_v.empty:
@@ -146,20 +101,26 @@ def create_app() -> Flask:
         ].copy()
 
         def _mix(df_in: pd.DataFrame) -> int:
-            """Mix de produtos (por MESTRE), abatendo DS/CA e sem ficar negativo.
-
-            Regra:
-            - Movimentos normais contam +1 por MESTRE
-            - DS/CA contam -1 por MESTRE
-            - O mix final é a quantidade de MESTRES com saldo > 0
-            """
             if df_in.empty:
                 return 0
-            tmp = df_in[["MESTRE", "MOV_TIPO_MOVTO"]].copy()
-            tmp["_s"] = 1
-            tmp.loc[tmp["MOV_TIPO_MOVTO"].isin(["DS", "CA"]), "_s"] = -1
-            saldo = tmp.groupby("MESTRE")["_s"].sum()
-            return int((saldo > 0).sum())
+            # MIX líquido: se um produto foi vendido e depois cancelado/devolvido,
+            # ele deve deixar de contar no MIX (sem permitir MIX negativo).
+            # Regra:
+            # - OA conta positivo
+            # - DS/CA contam negativo
+            # - um MESTRE entra no MIX se o saldo de quantidade > 0
+
+            # Usa QTDA_VENDIDA quando existir; caso contrário, assume 1 por linha.
+            if "QTDA_VENDIDA" in df_in.columns:
+                qtd = pd.to_numeric(df_in["QTDA_VENDIDA"], errors="coerce").fillna(0.0)
+            else:
+                qtd = pd.Series(1.0, index=df_in.index)
+
+            neg = df_in["MOV_TIPO_MOVTO"].isin(["DS", "CA"])
+            qtd_assinada = qtd.where(~neg, -qtd)
+
+            saldo_por_mestre = qtd_assinada.groupby(df_in["MESTRE"]).sum()
+            return int((saldo_por_mestre > 0).sum())
 
         def _valor_liquido(df_in: pd.DataFrame) -> float:
             if df_in.empty:
@@ -253,59 +214,6 @@ def create_app() -> Flask:
 
     _bootstrap_admin_if_needed()
 
-    def _mes_ano_from_request() -> tuple[int, int]:
-        mes = int(request.args.get("mes") or datetime.now().month)
-        ano = int(request.args.get("ano") or datetime.now().year)
-        mes = max(1, min(12, mes))
-        ano = max(2000, min(2100, ano))
-        return mes, ano
-
-    def _resolver_vendedor_e_lista(df: pd.DataFrame) -> tuple[str | None, list[str], str | None, str | None]:
-        """Resolve qual vendedor o usuário pode ver.
-
-        Retorna: (vendedor_alvo, lista_vendedores, emp_usuario, aviso)
-        - vendedor_alvo pode ser None quando ADMIN/SUPERVISOR ainda não selecionou.
-        - lista_vendedores é usada no dropdown para ADMIN/SUPERVISOR.
-        - emp_usuario é a EMP do supervisor (quando existir).
-        - aviso é uma mensagem opcional para exibir na tela.
-        """
-        role = (session.get("role") or "").strip().lower()
-        usuario_logado = (session.get("user") or "").strip().upper()
-        df = _normalize_cols(df)
-
-        # Lista base de vendedores (da tabela de vendas, pois a tabela usuarios pode não ter EMP preenchida)
-        if df.empty or "VENDEDOR" not in df.columns:
-            return None, [], _emp(), "Sem dados de vendas para montar a lista de vendedores."
-
-        emp_usuario = _emp()
-        if role == "supervisor":
-            if not emp_usuario:
-                return None, [], None, "Supervisor sem EMP cadastrada. Cadastre a EMP do supervisor na tabela usuarios."
-            df_scope = df[df["EMP"] == str(emp_usuario)] if "EMP" in df.columns else df.iloc[0:0]
-        elif role == "admin":
-            df_scope = df
-        else:
-            # vendedor
-            return usuario_logado, [], emp_usuario, None
-
-        vendedores = (
-            df_scope["VENDEDOR"].dropna().astype(str).str.strip().str.upper().unique().tolist()
-            if not df_scope.empty
-            else []
-        )
-        vendedores = sorted([v for v in vendedores if v])
-
-        vendedor_req = (request.args.get("vendedor") or "").strip().upper() or None
-        vendedor_alvo = vendedor_req if (vendedor_req and vendedor_req in vendedores) else None
-
-        if not vendedores:
-            # Ajuda a diagnosticar: existe EMP no df?
-            if role == "supervisor" and emp_usuario:
-                return None, [], emp_usuario, f"Nenhum vendedor encontrado para EMP {emp_usuario}. Verifique se a coluna EMP na tabela vendas está preenchida com {emp_usuario}."
-            return None, [], emp_usuario, "Nenhum vendedor encontrado."
-
-        return vendedor_alvo, vendedores, emp_usuario, None
-
     # ------------- Rotas -------------
     @app.get("/healthz")
     def healthz():
@@ -331,11 +239,9 @@ def create_app() -> Flask:
             if not u or not check_password_hash(u.senha_hash, senha):
                 return render_template("login.html", erro="Usuário ou senha inválidos.")
 
-            session["user_id"] = u.id
             session["usuario"] = u.username
-            session["role"] = (u.role or "vendedor").strip().lower()
-            # EMP pode não existir em versões antigas do schema
-            session["emp"] = str(getattr(u, "emp", "")) if getattr(u, "emp", None) is not None else ""
+            session["role"] = u.role
+            session["emp"] = u.emp
 
         return redirect(url_for("dashboard"))
 
@@ -351,36 +257,74 @@ def create_app() -> Flask:
             return red
 
         mes, ano = _mes_ano_from_request()
+        usuario = _usuario_logado()
+        role = (session.get("role") or "vendedor").strip().lower()
+        emp = session.get("emp")
+
+        # Para ADMIN/SUPERVISOR: o dashboard mostra o painel do vendedor selecionado.
+        vendedor_param = (request.args.get("vendedor") or "").strip().upper() or None
+        if role == "vendedor":
+            vendedor_selecionado = usuario
+        else:
+            # tenta manter seleção entre atualizações
+            key_sel = "vendedor_admin" if role == "admin" else "vendedor_supervisor"
+            vendedor_selecionado = vendedor_param or session.get(key_sel) or None
 
         try:
             df = carregar_df()
-            df = _normalize_cols(df)
+
+            # lista de vendedores disponíveis
+            vendedores_list: list[str] = []
+            if df is not None and not df.empty and "VENDEDOR" in df.columns:
+                df_aux = df.copy()
+                df_aux["VENDEDOR"] = df_aux["VENDEDOR"].astype(str).str.strip().str.upper()
+                if "EMP" in df_aux.columns:
+                    df_aux["EMP"] = df_aux["EMP"].astype(str).str.strip()
+
+                if role == "admin":
+                    vendedores_list = sorted(v for v in df_aux["VENDEDOR"].dropna().unique() if v)
+                elif role == "supervisor":
+                    emp_str = "" if emp is None else str(emp)
+                    if emp_str:
+                        vendedores_list = sorted(
+                            v
+                            for v in df_aux[df_aux.get("EMP").astype(str) == emp_str]["VENDEDOR"].dropna().unique()
+                            if v
+                        )
+
+            # aplica restrições
+            if role in ("admin", "supervisor"):
+                if vendedor_selecionado and vendedor_selecionado not in set(vendedores_list):
+                    vendedor_selecionado = None
+                if vendedor_selecionado:
+                    key_sel = "vendedor_admin" if role == "admin" else "vendedor_supervisor"
+                    session[key_sel] = vendedor_selecionado
+
+            dados = (
+                _calcular_dados(df, vendedor_selecionado, mes, ano)
+                if vendedor_selecionado
+                else None
+            )
         except Exception:
-            app.logger.exception("Erro ao carregar dados")
-            df = pd.DataFrame()
+            app.logger.exception("Erro ao carregar/calcular dashboard")
+            vendedores_list = []
+            dados = None
 
-        vendedor_alvo, vendedores_lista, emp, msg = _resolver_vendedor_e_lista(df)
-
-        dados = None
-        if vendedor_alvo:
-            try:
-                dados = _calcular_dados(df, vendedor_alvo, mes, ano)
-            except Exception:
-                app.logger.exception("Erro ao carregar/calcular dashboard")
-                dados = None
-
+        # compatibilidade com templates antigos/novos
+        vendedores_objs = [{"vendedor": v} for v in vendedores_list]
         return render_template(
             "dashboard.html",
-            vendedor=vendedor_alvo or "",
-            usuario=_usuario_logado(),
-            role=_role(),
+            vendedor=vendedor_selecionado or usuario,
+            usuario=usuario,
+            role=role,
             emp=emp,
-            vendedores=vendedores_lista,
-            vendedor_selecionado=vendedor_alvo or "",
-            mensagem_role=msg,
             mes=mes,
             ano=ano,
             dados=dados,
+            vendedor_param=vendedor_selecionado or "",
+            vendedores=vendedores_list,
+            vendedores_disponiveis=vendedores_list,
+            vendedores_objs=vendedores_objs,
         )
 
     @app.get("/percentuais")
@@ -390,19 +334,14 @@ def create_app() -> Flask:
             return red
 
         mes, ano = _mes_ano_from_request()
+        vendedor = _usuario_logado()
         df = carregar_df()
-        vendedor_alvo, vendedores_lista, emp, msg = _resolver_vendedor_e_lista(df)
-
-        dados = {}
-        if vendedor_alvo:
-            dados = _calcular_dados(df, vendedor_alvo, mes, ano) or {}
+        dados = _calcular_dados(df, vendedor, mes, ano) or {}
         ranking_list = dados.get("ranking_list", [])
         total = float(dados.get("total_liquido_periodo", 0.0))
         return render_template(
             "percentuais.html",
-            vendedor=vendedor_alvo or "",
-            role=_role(),
-            emp=emp,
+            vendedor=vendedor,
             mes=mes,
             ano=ano,
             total=total,
@@ -416,23 +355,13 @@ def create_app() -> Flask:
             return red
 
         mes, ano = _mes_ano_from_request()
+        vendedor = _usuario_logado()
         df = carregar_df()
-        vendedor_alvo, vendedores_lista, emp, msg = _resolver_vendedor_e_lista(df)
 
         # reaproveita cálculo do ranking (líquido por marca)
-        dados = {}
-        if vendedor_alvo:
-            dados = _calcular_dados(df, vendedor_alvo, mes, ano) or {}
+        dados = _calcular_dados(df, vendedor, mes, ano) or {}
         marcas_map = {row["marca"]: row["valor"] for row in dados.get("ranking_list", [])}
-        return render_template(
-            "marcas.html",
-            vendedor=vendedor_alvo or "",
-            role=_role(),
-            emp=emp,
-            mes=mes,
-            ano=ano,
-            marcas=marcas_map,
-        )
+        return render_template("marcas.html", vendedor=vendedor, mes=mes, ano=ano, marcas=marcas_map)
 
     @app.get("/devolucoes")
     def devolucoes():
@@ -441,14 +370,19 @@ def create_app() -> Flask:
             return red
 
         mes, ano = _mes_ano_from_request()
+        vendedor = _usuario_logado()
         df = carregar_df()
-        vendedor_alvo, vendedores_lista, emp, msg = _resolver_vendedor_e_lista(df)
 
-        if (not vendedor_alvo) or (df is None) or df.empty:
+        if df is None or df.empty:
             devol = {}
         else:
-            df = _normalize_cols(df)
-            df = df[df["VENDEDOR"] == vendedor_alvo.upper()]
+            df = df.copy()
+            df["VENDEDOR"] = df["VENDEDOR"].astype(str).str.strip().str.upper()
+            df["MARCA"] = df["MARCA"].astype(str).str.strip().str.upper()
+            df["MOV_TIPO_MOVTO"] = df["MOV_TIPO_MOVTO"].astype(str).str.strip().str.upper()
+            df["MOVIMENTO"] = pd.to_datetime(df["MOVIMENTO"], errors="coerce")
+            df["VALOR_TOTAL"] = pd.to_numeric(df["VALOR_TOTAL"], errors="coerce").fillna(0.0)
+            df = df[df["VENDEDOR"] == vendedor.upper()]
             df = df[(df["MOVIMENTO"].dt.year == ano) & (df["MOVIMENTO"].dt.month == mes)]
             df = df[df["MOV_TIPO_MOVTO"].isin(["DS", "CA"])]
             devol = (
@@ -457,15 +391,7 @@ def create_app() -> Flask:
                 else {}
             )
 
-        return render_template(
-            "devolucoes.html",
-            vendedor=vendedor_alvo or "",
-            role=_role(),
-            emp=emp,
-            mes=mes,
-            ano=ano,
-            devolucoes=devol,
-        )
+        return render_template("devolucoes.html", vendedor=vendedor, mes=mes, ano=ano, devolucoes=devol)
 
     @app.route("/senha", methods=["GET", "POST"])
     def senha():
@@ -516,15 +442,39 @@ def create_app() -> Flask:
                     if acao == "criar":
                         novo_usuario = (request.form.get("novo_usuario") or "").strip().upper()
                         nova_senha = request.form.get("nova_senha") or ""
-                        role = (request.form.get("role") or "vendedor").strip().lower()
+                        # Compatível com versões antigas do template: role/perfil/profile
+                        role = (
+                            request.form.get("role")
+                            or request.form.get("perfil")
+                            or request.form.get("profile")
+                            or "vendedor"
+                        ).strip().lower()
                         if len(nova_senha) < 4:
                             raise ValueError("Senha muito curta (mín. 4).")
-                        if role not in {"admin", "vendedor"}:
+
+                        if role not in {"admin", "vendedor", "supervisor"}:
                             role = "vendedor"
+
+                        # EMP só faz sentido para SUPERVISOR (pode ser NULL para os demais)
+                        emp_raw = (
+                            request.form.get("emp")
+                            or request.form.get("EMP")
+                            or request.form.get("emp_supervisor")
+                            or ""
+                        ).strip()
+                        emp_val = None
+                        if role == "supervisor":
+                            if not emp_raw:
+                                raise ValueError("Informe a EMP para o perfil SUPERVISOR.")
+                            try:
+                                emp_val = int(emp_raw)
+                            except Exception:
+                                raise ValueError("EMP inválida (use apenas números, ex: 101).")
                         u = db.query(Usuario).filter(Usuario.username == novo_usuario).first()
                         if u:
                             u.senha_hash = generate_password_hash(nova_senha)
                             u.role = role
+                            u.emp = emp_val
                             ok = f"Usuário {novo_usuario} atualizado."
                         else:
                             db.add(
@@ -532,6 +482,7 @@ def create_app() -> Flask:
                                     username=novo_usuario,
                                     senha_hash=generate_password_hash(nova_senha),
                                     role=role,
+                                    emp=emp_val,
                                 )
                             )
                             db.commit()
@@ -572,7 +523,10 @@ def create_app() -> Flask:
             usuarios = (
                 db.query(Usuario).order_by(Usuario.role.desc(), Usuario.username.asc()).all()
             )
-            usuarios_out = [{"usuario": u.username, "role": u.role} for u in usuarios]
+            usuarios_out = [
+                {"usuario": u.username, "role": u.role, "emp": u.emp}
+                for u in usuarios
+            ]
 
         return render_template(
             "admin_usuarios.html",
