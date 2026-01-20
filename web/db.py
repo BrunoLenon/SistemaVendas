@@ -2,7 +2,7 @@ import os
 from urllib.parse import quote_plus
 
 from sqlalchemy import create_engine, Column, Integer, String, Float, Date, Index, UniqueConstraint
-from sqlalchemy.orm import declarative_base, sessionmaker
+from sqlalchemy.orm import declarative_base, sessionmaker, synonym
 
 # =====================
 # Config via ENV (Render)
@@ -78,7 +78,11 @@ class Venda(Base):
     marca = Column(String(120), index=True)
 
     vendedor = Column(String(80), nullable=False, index=True)
-    data = Column(Date, nullable=False, index=True)  # MOVIMENTO
+    # Coluna no banco se chama 'movimento' (planilha: MOVIMENTO)
+    # Mantemos o atributo Python como 'data' por compatibilidade, mas mapeamos para a coluna 'movimento'
+    data = Column('movimento', Date, nullable=False, index=True)
+    # Alias para permitir usar Venda.movimento também
+    movimento = synonym('data')
 
     mov_tipo_movto = Column(String(10), nullable=False)
 
