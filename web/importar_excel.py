@@ -99,13 +99,13 @@ def _norm_str(value: Any) -> Optional[str]:
 
 def _conflict_cols_from_key(chave: str) -> List[str]:
     """Mapeia o nome da chave para colunas do banco."""
-    # nomes da tabela/ORM: mestre, data, vendedor, nota, emp, mov_tipo_movto
-    if chave == "mestre_data_vendedor_nota_tipo_emp":
-        return ["mestre", "data", "vendedor", "nota", "mov_tipo_movto", "emp"]
-    if chave == "mestre_data_vendedor_nota_tipo":
-        return ["mestre", "data", "vendedor", "nota", "mov_tipo_movto"]
-    if chave == "mestre_data_vendedor_nota_emp":
-        return ["mestre", "data", "vendedor", "nota", "emp"]
+    # nomes da tabela/ORM: mestre, movimento, vendedor, nota, emp, mov_tipo_movto
+    if chave == "mestre_movimento_vendedor_nota_tipo_emp":
+        return ["mestre", "movimento", "vendedor", "nota", "mov_tipo_movto", "emp"]
+    if chave == "mestre_movimento_vendedor_nota_tipo":
+        return ["mestre", "movimento", "vendedor", "nota", "mov_tipo_movto"]
+    if chave == "mestre_movimento_vendedor_nota_emp":
+        return ["mestre", "movimento", "vendedor", "nota", "emp"]
     # fallback antigo
     return ["mestre", "vendedor", "nota", "emp"]
 
@@ -115,7 +115,7 @@ def _build_stmt(records: List[dict], modo: str, conflict_cols: List[str]):
     if modo == "atualizar":
         update_cols = {
             "marca": stmt.excluded.marca,
-            "data": stmt.excluded.data,
+            "movimento": stmt.excluded.movimento,
             "mov_tipo_movto": stmt.excluded.mov_tipo_movto,
             "unit": stmt.excluded.unit,
             "des": stmt.excluded.des,
