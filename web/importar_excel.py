@@ -62,12 +62,27 @@ def _to_date(value: Any) -> dt.date:
 
 
 def _to_float(value: Any) -> Optional[float]:
+    """Converte números vindos do Excel/CSV com segurança.
+
+    - Se vier numérico (int/float), retorna float direto.
+    - Se vier string no formato brasileiro (contém vírgula), remove separador de milhar '.' e troca ',' por '.'
+    - Se vier string no formato internacional (somente '.' como decimal), NÃO remove '.' (evita multiplicar por 10/100)
+    """
     if value is None or (isinstance(value, float) and pd.isna(value)):
         return None
     try:
-        # troca vírgula por ponto se vier como string brasileira
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            return float(value)
+
         if isinstance(value, str):
-            value = value.replace(".", "").replace(",", ".")
+            s = value.strip()
+            if not s:
+                return None
+            if "," in s:
+                s = s.replace(".", "").replace(",", ".")
+                return float(s)
+            return float(s)
+
         return float(value)
     except Exception:
         return None
@@ -102,7 +117,7 @@ def _build_stmt(records: List[dict], modo: str, conflict_cols: List[str]):
             "mov_tipo_movto": stmt.excluded.mov_tipo_movto,
             "unit": stmt.excluded.unit,
             "des": stmt.excluded.des,
-            "qtda_vendida": stmt.excluded.qtda_vendida,
+            "qtdade_vendida": stmt.excluded.qtdade_vendida,
             "valor_total": stmt.excluded.valor_total,
             "emp": stmt.excluded.emp,
             "nota": stmt.excluded.nota,
@@ -198,7 +213,7 @@ def importar_planilha(
                         "emp": emp,
                         "unit": _to_float(get("UNIT")),
                         "des": _to_float(get("DES")),
-                        "qtda_vendida": _to_float(get("QTDADE_VENDIDA")),
+                        "qtdade_vendida": _to_float(get("QTDADE_VENDIDA")),
                         "valor_total": _to_float(get("VALOR_TOTAL")) or 0.0,
                     }
 
@@ -312,7 +327,7 @@ def importar_planilha(
                         "emp": emp,
                         "unit": _to_float(row.get("UNIT")),
                         "des": _to_float(row.get("DES")),
-                        "qtda_vendida": _to_float(row.get("QTDADE_VENDIDA")),
+                        "qtdade_vendida": _to_float(row.get("QTDADE_VENDIDA")),
                         "valor_total": _to_float(row.get("VALOR_TOTAL")) or 0.0,
                     }
                     records.append(rec)
