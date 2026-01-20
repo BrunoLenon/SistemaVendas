@@ -5,7 +5,7 @@ from datetime import date, datetime
 import calendar
 
 import pandas as pd
-from sqlalchemy import and_, func
+from sqlalchemy import and_, func, case
 from flask import (
     Flask,
     flash,

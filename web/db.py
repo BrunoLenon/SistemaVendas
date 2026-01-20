@@ -119,11 +119,13 @@ class Venda(Base):
 class DashboardCache(Base):
     __tablename__ = 'dashboard_cache'
 
-    id = Column(Integer, primary_key=True)
-    emp = Column(String(30), nullable=False, index=True)
-    vendedor = Column(String(80), nullable=False, index=True)
-    ano = Column(Integer, nullable=False, index=True)
-    mes = Column(Integer, nullable=False, index=True)
+    # No Supabase, esta tabela foi criada com chave composta (emp, vendedor, ano, mes)
+    # para evitar duplicidade e facilitar consultas rápidas.
+    # NÃO usamos uma coluna `id` aqui, porque a tabela já tem PRIMARY KEY composta.
+    emp = Column(String(30), primary_key=True, nullable=False, index=True)
+    vendedor = Column(String(80), primary_key=True, nullable=False, index=True)
+    ano = Column(Integer, primary_key=True, nullable=False, index=True)
+    mes = Column(Integer, primary_key=True, nullable=False, index=True)
 
     valor_bruto = Column(Float, nullable=False, default=0.0)
     valor_liquido = Column(Float, nullable=False, default=0.0)
@@ -142,7 +144,7 @@ class DashboardCache(Base):
     atualizado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
 
     __table_args__ = (
-        UniqueConstraint('emp', 'vendedor', 'ano', 'mes', name='uq_dashboard_cache_emp_vend_ano_mes'),
+        # Índices para acelerar consultas do dashboard
         Index('ix_dashboard_cache_emp_ano_mes', 'emp', 'ano', 'mes'),
         Index('ix_dashboard_cache_vendedor_ano_mes', 'vendedor', 'ano', 'mes'),
     )
