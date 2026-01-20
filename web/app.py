@@ -655,7 +655,13 @@ def create_app() -> Flask:
             return redirect(url_for("admin_importar"))
 
         modo = request.form.get("modo", "ignorar_duplicados")
-        chave = request.form.get("chave", "mestre_vendedor_nota_emp")
+        # IMPORTANTISSIMO:
+        # A chave de deduplicidade precisa bater com o indice/constraint UNIQUE do banco.
+        # Seu banco foi padronizado com:
+        #   (mestre, marca, vendedor, movimento, mov_tipo_movto, nota, emp)
+        # Se a chave nao incluir MOVIMENTO e MOV_TIPO_MOVTO (DS/CA/OA), o Postgres
+        # pode retornar erro de ON CONFLICT e/ou DS/CA pode ser ignorado.
+        chave = request.form.get("chave", "mestre_movimento_vendedor_nota_tipo_emp")
 
         # Salva temporariamente
         import tempfile
@@ -727,7 +733,7 @@ def create_app() -> Flask:
                     flash("Data invalida. Use o seletor de data.", "danger")
                     return redirect(url_for("admin_importar"))
 
-                q = db.query(Venda).filter(Venda.data == dt)
+                q = db.query(Venda).filter(Venda.movimento == dt)
                 apagadas = q.delete(synchronize_session=False)
                 db.commit()
                 flash(f"Apagadas {apagadas} vendas do dia {dt.strftime('%d/%m/%Y')}.", "success")
@@ -747,7 +753,7 @@ def create_app() -> Flask:
             d_ini = date(ano, mes, 1)
             d_fim = date(ano, mes, last_day)
 
-            q = db.query(Venda).filter(and_(Venda.data >= d_ini, Venda.data <= d_fim))
+            q = db.query(Venda).filter(and_(Venda.movimento >= d_ini, Venda.movimento <= d_fim))
             apagadas = q.delete(synchronize_session=False)
             db.commit()
             flash(f"Apagadas {apagadas} vendas de {mes:02d}/{ano}.", "success")

@@ -131,9 +131,9 @@
               <div class="col-md-6">
                 <label class="form-label">Chave anti-duplicidade (considera MOV_TIPO_MOVTO)</label>
                 <select class="form-select" name="chave">
-                  <option value="mestre_data_vendedor_nota_tipo_emp" selected>MESTRE + MOVIMENTO + VENDEDOR + NOTA + MOV_TIPO_MOVTO + EMP (recomendado)</option>
-                  <option value="mestre_vendedor_nota_emp">MESTRE + VENDEDOR + NOTA + EMP</option>
-                  <option value="mestre_vendedor_nota">MESTRE + VENDEDOR + NOTA</option>
+                  <option value="mestre_movimento_vendedor_nota_tipo_emp" selected>MESTRE + MARCA + MOVIMENTO + VENDEDOR + NOTA + MOV_TIPO_MOVTO + EMP (recomendado)</option>
+                  <option value="mestre_marca_movimento_vendedor_nota_tipo_emp">(mesma chave) Nome explícito com MARCA</option>
+                  <option value="mestre_movimento_vendedor_nota_emp">MESTRE + MARCA + MOVIMENTO + VENDEDOR + NOTA + EMP</option>
                 </select>
                 <div class="form-text small-muted">
                   Se sua NOTA pode repetir em lojas diferentes, use a opção com EMP.
@@ -212,7 +212,7 @@
           <hr class="border-light border-opacity-10 my-4">
 
           <div class="small-muted">
-            <strong>Observação:</strong> o sistema apaga pelo campo <span class="mono">data</span> na tabela <span class="mono">vendas</span>.
+            <strong>Observação:</strong> o sistema apaga pelo campo <span class="mono">movimento</span> na tabela <span class="mono">vendas</span>.
           </div>
         </div>
       </div>
