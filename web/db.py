@@ -149,6 +149,33 @@ class DashboardCache(Base):
         Index('ix_dashboard_cache_vendedor_ano_mes', 'vendedor', 'ano', 'mes'),
     )
 
+class ItemParado(Base):
+    __tablename__ = "itens_parados"
+
+    id = Column(Integer, primary_key=True)
+
+    # Empresa/loja (EMP) a que o relatório pertence
+    emp = Column(String(30), nullable=False, index=True)
+
+    # Código do produto (vamos comparar com Venda.mestre)
+    codigo = Column(String(120), nullable=False, index=True)
+
+    descricao = Column(String(255), nullable=True)
+    quantidade = Column(Integer, nullable=True)
+
+    # Percentual de recompensa (ex: 10 para 10%)
+    recompensa_pct = Column(Float, nullable=False, default=0.0)
+
+    ativo = Column(Integer, nullable=False, default=1)  # 1=ativo, 0=inativo
+
+    criado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
+    atualizado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        Index('ix_itens_parados_emp_codigo', 'emp', 'codigo'),
+    )
+
+
 
 def criar_tabelas():
     Base.metadata.create_all(engine)

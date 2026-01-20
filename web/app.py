@@ -18,7 +18,7 @@ from flask import (
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from dados_db import carregar_df
-from db import SessionLocal, Usuario, Venda, DashboardCache, criar_tabelas
+from db import SessionLocal, Usuario, Venda, DashboardCache, ItemParado, criar_tabelas
 from importar_excel import importar_planilha
 
 
@@ -889,6 +889,96 @@ def create_app() -> Flask:
         )
 
 
+
+
+    @app.get("/itens_parados")
+    def itens_parados():
+        """Relatório de itens parados (liquidação) por EMP.
+
+        Cadastro é feito pelo ADMIN por EMP.
+        O vendedor visualiza os itens da sua EMP e o valor de recompensa aparece
+        somente quando ele vender o produto no período selecionado.
+        """
+        red = _login_required()
+        if red:
+            return red
+
+        mes, ano = _mes_ano_from_request()
+        role = (_role() or '').lower()
+
+        # EMP do usuário (obrigatório para este relatório)
+        emp_usuario = _emp()
+        if not emp_usuario:
+            flash('Seu usuário não possui EMP cadastrada. Solicite ao ADMIN para cadastrar.', 'warning')
+            return redirect(url_for('dashboard'))
+
+        # Vendedor alvo: admin/supervisor podem escolher; vendedor vê o próprio
+        vendedor_alvo = None
+        vendedores_lista = []
+        if role in {'admin', 'supervisor'}:
+            vendedores_lista = _get_vendedores_db(role, emp_usuario if role == 'supervisor' else None)
+            vendedor_req = (request.args.get('vendedor') or '').strip().upper() or None
+            if vendedor_req:
+                # supervisor só consegue escolher dentro da EMP dele
+                if vendedor_req in vendedores_lista:
+                    vendedor_alvo = vendedor_req
+            if not vendedor_alvo and role == 'admin':
+                # admin: se não selecionar, não mostra valores (somente lista)
+                vendedor_alvo = None
+        else:
+            vendedor_alvo = (_usuario_logado() or '').strip().upper()
+
+        with SessionLocal() as db:
+            itens = (
+                db.query(ItemParado)
+                .filter(ItemParado.emp == str(emp_usuario))
+                .filter(ItemParado.ativo == 1)
+                .order_by(ItemParado.codigo.asc())
+                .all()
+            )
+
+        # Mapa de recompensa calculada por codigo
+        recomp_map = {}
+        vendido_total_map = {}
+
+        if vendedor_alvo and itens:
+            codigos = [ (i.codigo or '').strip() for i in itens if (i.codigo or '').strip() ]
+            if codigos:
+                start, end = _month_bounds(ano, mes)
+                with SessionLocal() as db:
+                    q = (
+                        db.query(Venda.mestre, func.coalesce(func.sum(Venda.valor_total), 0.0))
+                        .filter(Venda.emp == str(emp_usuario))
+                        .filter(Venda.vendedor == vendedor_alvo)
+                        .filter(Venda.movimento >= start)
+                        .filter(Venda.movimento < end)
+                        .filter(Venda.mov_tipo_movto == 'OA')
+                        .filter(Venda.mestre.in_(codigos))
+                        .group_by(Venda.mestre)
+                    )
+                    for mestre, total in q.all():
+                        k = (mestre or '').strip()
+                        vendido_total_map[k] = float(total or 0.0)
+
+                # calcula recompensa por item
+                for it in itens:
+                    cod = (it.codigo or '').strip()
+                    total = vendido_total_map.get(cod, 0.0)
+                    pct = float(it.recompensa_pct or 0.0)
+                    valor = total * (pct / 100.0)
+                    recomp_map[cod] = valor
+
+        return render_template(
+            'itens_parados.html',
+            role=_role(),
+            emp=emp_usuario,
+            mes=mes,
+            ano=ano,
+            vendedor=vendedor_alvo or '',
+            vendedores=vendedores_lista,
+            itens=itens,
+            recomp_map=recomp_map,
+        )
     @app.route("/senha", methods=["GET", "POST"])
     def senha():
         red = _login_required()
@@ -1090,6 +1180,91 @@ def create_app() -> Flask:
                 os.remove(tmp_path)
             except Exception:
                 pass
+
+
+
+    @app.route("/admin/itens_parados", methods=["GET", "POST"])
+    def admin_itens_parados():
+        """Cadastro de itens parados (liquidação) por EMP.
+
+        Campos: EMP, Código, Descrição, Quantidade, Recompensa(%).
+        """
+        red = _login_required()
+        if red:
+            return red
+        red = _admin_required()
+        if red:
+            return red
+
+        erro = None
+        ok = None
+
+        with SessionLocal() as db:
+            if request.method == 'POST':
+                acao = (request.form.get('acao') or '').strip().lower()
+                try:
+                    if acao == 'criar':
+                        emp = (request.form.get('emp') or '').strip()
+                        codigo = (request.form.get('codigo') or '').strip()
+                        descricao = (request.form.get('descricao') or '').strip()
+                        quantidade_raw = (request.form.get('quantidade') or '').strip()
+                        recompensa_raw = (request.form.get('recompensa_pct') or '').strip().replace(',', '.')
+
+                        if not emp:
+                            raise ValueError('Informe a EMP.')
+                        if not codigo:
+                            raise ValueError('Informe o CÓDIGO.')
+
+                        quantidade = int(quantidade_raw) if quantidade_raw else None
+                        recompensa_pct = float(recompensa_raw) if recompensa_raw else 0.0
+
+                        db.add(ItemParado(
+                            emp=str(emp),
+                            codigo=str(codigo),
+                            descricao=descricao or None,
+                            quantidade=quantidade,
+                            recompensa_pct=recompensa_pct,
+                            ativo=1,
+                        ))
+                        db.commit()
+                        ok = 'Item cadastrado com sucesso.'
+
+                    elif acao == 'toggle':
+                        item_id = int(request.form.get('item_id') or 0)
+                        it = db.query(ItemParado).filter(ItemParado.id == item_id).first()
+                        if not it:
+                            raise ValueError('Item não encontrado.')
+                        it.ativo = 0 if int(it.ativo or 0) == 1 else 1
+                        it.atualizado_em = datetime.utcnow()
+                        db.commit()
+                        ok = 'Status do item atualizado.'
+
+                    elif acao == 'remover':
+                        item_id = int(request.form.get('item_id') or 0)
+                        it = db.query(ItemParado).filter(ItemParado.id == item_id).first()
+                        if not it:
+                            raise ValueError('Item não encontrado.')
+                        db.delete(it)
+                        db.commit()
+                        ok = 'Item removido.'
+
+                    else:
+                        raise ValueError('Ação inválida.')
+
+                except Exception as e:
+                    db.rollback()
+                    erro = str(e)
+                    app.logger.exception('Erro no cadastro de itens parados')
+
+            itens = db.query(ItemParado).order_by(ItemParado.emp.asc(), ItemParado.codigo.asc()).all()
+
+        return render_template(
+            'admin_itens_parados.html',
+            usuario=_usuario_logado(),
+            itens=itens,
+            erro=erro,
+            ok=ok,
+        )
 
     @app.route("/admin/apagar_vendas", methods=["POST"])
     def admin_apagar_vendas():
