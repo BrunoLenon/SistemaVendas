@@ -156,18 +156,19 @@ def importar_vendas_xlsx(
             "mestre": str(r["MESTRE"]).strip(),
             "marca": str(r["MARCA"]).strip().upper(),
             "vendedor": str(r["VENDEDOR"]).strip().upper(),
-            "data": r["DATA"],
+            # No banco a coluna e' 'movimento' (data da venda)
+            "movimento": r["DATA"],
             "mov_tipo_movto": str(r["MOV_TIPO_MOVTO"]).strip().upper(),
-            "qtda_vendida": float(r["QTDADE_VENDIDA"]) if pd.notna(r["QTDADE_VENDIDA"]) else None,
+            "qtdade_vendida": float(r["QTDADE_VENDIDA"]) if pd.notna(r["QTDADE_VENDIDA"]) else None,
             "valor_total": float(r["VALOR_TOTAL"]),
         }
         if tem_nota and "NOTA" in df.columns:
             row["nota"] = None if pd.isna(r.get("NOTA")) else str(r.get("NOTA")).strip()
+        # No banco, EMP e' armazenado como texto (compatibilidade com Supabase).
+        # Nao converta para int; isso pode quebrar filtros (ex: 101 != '101').
         if tem_emp and "EMP" in df.columns:
-            try:
-                row["emp"] = None if pd.isna(r.get("EMP")) else int(r.get("EMP"))
-            except Exception:
-                row["emp"] = None
+            v = r.get("EMP")
+            row["emp"] = None if pd.isna(v) else str(v).strip()
         rows.append(row)
 
     inseridas = 0
@@ -175,17 +176,10 @@ def importar_vendas_xlsx(
     erros = 0
     aviso = None
 
-    # Tenta usar INSERT ... ON CONFLICT para performance e evitar duplicidade.
-    # Para funcionar 100%, crie um UNIQUE INDEX no Supabase (veja SQL sugerido).
-    conflict_clause = ""
-    if chave == "mestre_vendedor_nota_emp" and tem_nota and tem_emp:
-        conflict_clause = "ON CONFLICT (mestre, vendedor, nota, emp) DO NOTHING"
-    elif chave == "mestre_vendedor_nota" and tem_nota:
-        conflict_clause = "ON CONFLICT (mestre, vendedor, nota) DO NOTHING"
-    else:
-        # Sem colunas de chave no banco -> sem ON CONFLICT
-        conflict_clause = ""
-        aviso = "Aviso: sua tabela 'vendas' ainda nao tem NOTA/EMP; deduplicacao fica limitada."
+    # Deduplicacao idempotente.
+    # Preferimos usar a constraint do banco (mais estavel). Se nao existir,
+    # fazemos fallback para a lista de colunas completa do indice.
+    conflict_clause = "ON CONFLICT ON CONSTRAINT vendas_unique_import DO NOTHING"
 
     cols = list(rows[0].keys())
     col_sql = ",".join(cols)
@@ -201,19 +195,29 @@ def importar_vendas_xlsx(
             # Quando ON CONFLICT existe, rowcount costuma ser o numero inserido
             inseridas = int(getattr(res, "rowcount", 0) or 0)
             ignoradas = lidas - inseridas
-        except Exception:
+        except Exception as e:
             sess.rollback()
-            # Fallback: insere linha a linha
-            inseridas = 0
-            ignoradas = 0
-            erros = 0
-            for row in rows:
-                try:
-                    sess.add(Venda(**row))
-                    sess.commit()
-                    inseridas += 1
-                except Exception:
-                    sess.rollback()
-                    erros += 1
+            # Fallback 1: tentar ON CONFLICT com as colunas do indice (caso a constraint nao exista)
+            try:
+                conflict_cols = "(mestre, marca, vendedor, movimento, mov_tipo_movto, nota, emp)"
+                sql2 = f"INSERT INTO vendas ({col_sql}) VALUES ({val_sql}) ON CONFLICT {conflict_cols} DO NOTHING"
+                res = sess.execute(text(sql2), rows)
+                sess.commit()
+                inseridas = int(getattr(res, "rowcount", 0) or 0)
+                ignoradas = lidas - inseridas
+            except Exception:
+                sess.rollback()
+                # Fallback 2: insere linha a linha (ultima tentativa)
+                inseridas = 0
+                ignoradas = 0
+                erros = 0
+                for row in rows:
+                    try:
+                        sess.add(Venda(**row))
+                        sess.commit()
+                        inseridas += 1
+                    except Exception:
+                        sess.rollback()
+                        erros += 1
 
     return ImportResult(lidas=lidas, inseridas=inseridas, ignoradas=ignoradas, erros=erros, aviso=aviso).asdict()

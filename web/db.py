@@ -100,17 +100,18 @@ class Venda(Base):
 
     __table_args__ = (
         # Performance
-        Index("ix_vendas_vendedor_movimento", "vendedor", "movimento"),
-        # Anti-duplicidade (critério mais completo, inclui tipo de movimento)
-        # Deve bater com o índice/unique do Supabase.
+        Index("ix_vendas_vendedor_data", "vendedor", "movimento"),
+        # Anti-duplicidade (idempotente) - deve bater com o banco (Supabase)
+        # Chave completa: (mestre, marca, vendedor, movimento, mov_tipo_movto, nota, emp)
         UniqueConstraint(
             "mestre",
-            "movimento",
+            "marca",
             "vendedor",
-            "nota",
+            "movimento",
             "mov_tipo_movto",
+            "nota",
             "emp",
-            name="uq_vendas_mestre_movimento_vendedor_nota_tipo_emp",
+            name="vendas_unique_import",
         ),
     )
 
