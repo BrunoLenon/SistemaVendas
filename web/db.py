@@ -78,11 +78,11 @@ class Venda(Base):
     marca = Column(String(120), index=True)
 
     vendedor = Column(String(80), nullable=False, index=True)
-    # Coluna no banco se chama 'movimento' (planilha: MOVIMENTO)
-    # Mantemos o atributo Python como 'data' por compatibilidade, mas mapeamos para a coluna 'movimento'
-    data = Column('movimento', Date, nullable=False, index=True)
-    # Alias para permitir usar Venda.movimento também
-    movimento = synonym('data')
+
+    # No banco a coluna se chama 'movimento' (planilha: MOVIMENTO)
+    movimento = Column(Date, nullable=False, index=True)
+    # Alias para manter compatibilidade com código legado que usa Venda.data
+    data = synonym("movimento")
 
     mov_tipo_movto = Column(String(10), nullable=False)
 
@@ -96,20 +96,19 @@ class Venda(Base):
 
     __table_args__ = (
         # Performance
-        Index("ix_vendas_vendedor_data", "vendedor", "data"),
+        Index("ix_vendas_vendedor_movimento", "vendedor", "movimento"),
         # Anti-duplicidade (critério mais completo, inclui tipo de movimento)
         # Deve bater com o índice/unique do Supabase.
         UniqueConstraint(
             "mestre",
-            "data",
+            "movimento",
             "vendedor",
             "nota",
             "mov_tipo_movto",
             "emp",
-            name="uq_vendas_mestre_data_vendedor_nota_tipo_emp",
+            name="uq_vendas_mestre_movimento_vendedor_nota_tipo_emp",
         ),
     )
-
 
 def criar_tabelas():
     Base.metadata.create_all(engine)

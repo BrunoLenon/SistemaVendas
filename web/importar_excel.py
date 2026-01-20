@@ -62,29 +62,12 @@ def _to_date(value: Any) -> dt.date:
 
 
 def _to_float(value: Any) -> Optional[float]:
-    """Converte números vindos do Excel/CSV com segurança.
-
-    - Se vier numérico (int/float), retorna float direto.
-    - Se vier string no formato brasileiro (contém vírgula), remove separador de milhar '.' e troca ',' por '.'
-    - Se vier string no formato internacional (somente '.' como decimal), NÃO remove '.' (evita multiplicar por 10/100)
-    """
     if value is None or (isinstance(value, float) and pd.isna(value)):
         return None
     try:
-        if isinstance(value, (int, float)) and not isinstance(value, bool):
-            return float(value)
-
+        # troca vírgula por ponto se vier como string brasileira
         if isinstance(value, str):
-            s = value.strip()
-            if not s:
-                return None
-            # formato brasileiro: 1.234,56
-            if "," in s:
-                s = s.replace(".", "").replace(",", ".")
-                return float(s)
-            # formato internacional: 1234.56 (não remover ponto)
-            return float(s)
-
+            value = value.replace(".", "").replace(",", ".")
         return float(value)
     except Exception:
         return None
@@ -99,13 +82,13 @@ def _norm_str(value: Any) -> Optional[str]:
 
 def _conflict_cols_from_key(chave: str) -> List[str]:
     """Mapeia o nome da chave para colunas do banco."""
-    # nomes da tabela/ORM: mestre, movimento, vendedor, nota, emp, mov_tipo_movto
-    if chave == "mestre_movimento_vendedor_nota_tipo_emp":
-        return ["mestre", "movimento", "vendedor", "nota", "mov_tipo_movto", "emp"]
-    if chave == "mestre_movimento_vendedor_nota_tipo":
-        return ["mestre", "movimento", "vendedor", "nota", "mov_tipo_movto"]
-    if chave == "mestre_movimento_vendedor_nota_emp":
-        return ["mestre", "movimento", "vendedor", "nota", "emp"]
+    # nomes da tabela/ORM: mestre, data, vendedor, nota, emp, mov_tipo_movto
+    if chave == "mestre_data_vendedor_nota_tipo_emp":
+        return ["mestre", "data", "vendedor", "nota", "mov_tipo_movto", "emp"]
+    if chave == "mestre_data_vendedor_nota_tipo":
+        return ["mestre", "data", "vendedor", "nota", "mov_tipo_movto"]
+    if chave == "mestre_data_vendedor_nota_emp":
+        return ["mestre", "data", "vendedor", "nota", "emp"]
     # fallback antigo
     return ["mestre", "vendedor", "nota", "emp"]
 
@@ -115,11 +98,11 @@ def _build_stmt(records: List[dict], modo: str, conflict_cols: List[str]):
     if modo == "atualizar":
         update_cols = {
             "marca": stmt.excluded.marca,
-            "movimento": stmt.excluded.movimento,
+            "data": stmt.excluded.data,
             "mov_tipo_movto": stmt.excluded.mov_tipo_movto,
             "unit": stmt.excluded.unit,
             "des": stmt.excluded.des,
-            "qtdade_vendida": stmt.excluded.qtdade_vendida,
+            "qtda_vendida": stmt.excluded.qtda_vendida,
             "valor_total": stmt.excluded.valor_total,
             "emp": stmt.excluded.emp,
             "nota": stmt.excluded.nota,
@@ -208,14 +191,14 @@ def importar_planilha(
                     rec = {
                         "mestre": mestre,
                         "marca": _norm_str(get("MARCA")),
-                        "data": mov,
+                        "movimento": mov,
                         "mov_tipo_movto": mov_tipo,
                         "vendedor": vendedor,
                         "nota": nota,
                         "emp": emp,
                         "unit": _to_float(get("UNIT")),
                         "des": _to_float(get("DES")),
-                        "qtdade_vendida": _to_float(get("QTDADE_VENDIDA")),
+                        "qtda_vendida": _to_float(get("QTDADE_VENDIDA")),
                         "valor_total": _to_float(get("VALOR_TOTAL")) or 0.0,
                     }
 
@@ -322,14 +305,14 @@ def importar_planilha(
                     rec = {
                         "mestre": mestre,
                         "marca": _norm_str(row.get("MARCA")),
-                        "data": mov,
+                        "movimento": mov,
                         "mov_tipo_movto": mov_tipo,
                         "vendedor": vendedor,
                         "nota": nota,
                         "emp": emp,
                         "unit": _to_float(row.get("UNIT")),
                         "des": _to_float(row.get("DES")),
-                        "qtdade_vendida": _to_float(row.get("QTDADE_VENDIDA")),
+                        "qtda_vendida": _to_float(row.get("QTDADE_VENDIDA")),
                         "valor_total": _to_float(row.get("VALOR_TOTAL")) or 0.0,
                     }
                     records.append(rec)

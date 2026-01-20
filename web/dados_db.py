@@ -7,7 +7,7 @@ def carregar_df():
         SELECT
             mestre AS "MESTRE",
             marca AS "MARCA",
-            data AS "MOVIMENTO",
+            movimento AS "MOVIMENTO",
             mov_tipo_movto AS "MOV_TIPO_MOVTO",
             vendedor AS "VENDEDOR",
             emp AS "EMP",
