@@ -31,6 +31,7 @@ import pandas as pd
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from db import SessionLocal, Venda
+from dashboard_cache import refresh_dashboard_cache
 
 
 REQUIRED_COLS = [
@@ -197,6 +198,7 @@ def importar_planilha(
             inseridas = 0
             atualizadas = 0
             batch: List[dict] = []
+            affected_periods = set()
 
             for r in rows:
                 total_linhas += 1
@@ -214,6 +216,9 @@ def importar_planilha(
                     nota = _norm_str(get("NOTA"))
                     emp = _norm_str(get("EMP"))
                     mov = _to_date(get("MOVIMENTO"))
+                    # registra período para atualizar cache depois
+                    if emp:
+                        affected_periods.add((str(emp), int(mov.year), int(mov.month)))
                     mov_tipo = (_norm_str(get("MOV_TIPO_MOVTO")) or "").upper()
                     if not mov_tipo:
                         erros_linha += 1
@@ -264,6 +269,15 @@ def importar_planilha(
             efetivadas = atualizadas if modo == "atualizar" else inseridas
             ignoradas = max(validas - efetivadas, 0)
 
+            # Atualiza cache (dashboard_cache) para os períodos afetados
+            cache_info = []
+            try:
+                for e,a,m in sorted(affected_periods):
+                    cache_info.append({"emp": e, "ano": a, "mes": m, **refresh_dashboard_cache(e,a,m)})
+            except Exception:
+                # Não bloqueia importação se o cache falhar
+                cache_info = []
+
             return {
                 "ok": True,
                 "msg": "Importação finalizada.",
@@ -277,6 +291,7 @@ def importar_planilha(
                 "chave": chave,
                 "batch_size": int(batch_size),
                 "conflict_cols": conflict_cols,
+                "cache": cache_info,
             }
 
         finally:
@@ -299,6 +314,7 @@ def importar_planilha(
     erros_linha = 0
     inseridas = 0
     atualizadas = 0
+    affected_periods = set()
 
     db = SessionLocal()
     try:
@@ -309,6 +325,15 @@ def importar_planilha(
                 return {"ok": False, "msg": "Colunas faltando.", "faltando": missing, "lidas": list(chunk.columns)}
 
             chunk["MOVIMENTO"] = pd.to_datetime(chunk["MOVIMENTO"], errors="coerce").dt.date
+            try:
+                # períodos (emp, ano, mes) presentes no chunk
+                for _emp, _mov in chunk[["EMP","MOVIMENTO"]].dropna().itertuples(index=False, name=None):
+                    _e = str(_emp).strip()
+                    if not _e or not _mov:
+                        continue
+                    affected_periods.add((_e, int(_mov.year), int(_mov.month)))
+            except Exception:
+                pass
 
             records: List[dict] = []
             for _, row in chunk.iterrows():
@@ -379,6 +404,14 @@ def importar_planilha(
     efetivadas = atualizadas if modo == "atualizar" else inseridas
     ignoradas = max(validas - efetivadas, 0)
 
+    # Atualiza cache (dashboard_cache) para os períodos afetados
+    cache_info = []
+    try:
+        for e,a,m in sorted(affected_periods):
+            cache_info.append({"emp": e, "ano": a, "mes": m, **refresh_dashboard_cache(e,a,m)})
+    except Exception:
+        cache_info = []
+
     return {
         "ok": True,
         "msg": "Importação finalizada.",
@@ -393,4 +426,5 @@ def importar_planilha(
         "batch_size": int(batch_size),
         "csv_chunksize": int(csv_chunksize),
         "conflict_cols": conflict_cols,
+        "cache": cache_info,
     }

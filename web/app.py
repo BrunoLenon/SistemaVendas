@@ -1,10 +1,11 @@
 import os
 import logging
+import json
 from datetime import date, datetime
 import calendar
 
 import pandas as pd
-from sqlalchemy import and_
+from sqlalchemy import and_, func
 from flask import (
     Flask,
     flash,
@@ -17,7 +18,7 @@ from flask import (
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from dados_db import carregar_df
-from db import SessionLocal, Usuario, Venda, criar_tabelas
+from db import SessionLocal, Usuario, Venda, DashboardCache, criar_tabelas
 from importar_excel import importar_planilha
 
 
@@ -137,7 +138,114 @@ def create_app() -> Flask:
             return redirect(url_for("dashboard"))
         return None
 
-    # NOTE: existe uma versão tipada desta função mais abaixo.
+    def _get_vendedores_db(role: str, emp_usuario: str | None) -> list[str]:
+        """Lista de vendedores para dropdown sem carregar todas as vendas em memória."""
+        role = (role or "").strip().lower()
+        with SessionLocal() as db:
+            q = db.query(func.distinct(Venda.vendedor))
+            if role == "supervisor":
+                if emp_usuario:
+                    q = q.filter(Venda.emp == str(emp_usuario))
+                else:
+                    return []
+            # admin vê tudo
+            vendedores = [ (r[0] or "").strip().upper() for r in q.all() ]
+        vendedores = sorted([v for v in vendedores if v])
+        return vendedores
+
+    def _fetch_cache_row(vendedor: str, ano: int, mes: int, emp_scope: str | None) -> dict | None:
+        """Busca dados do cache para o vendedor/período.
+
+        - Se emp_scope for None (admin/vendedor), agrega across EMPs (somando valores e juntando ranking por marca).
+        """
+        vendedor = (vendedor or "").strip().upper()
+        if not vendedor:
+            return None
+
+        with SessionLocal() as db:
+            if emp_scope:
+                row = (
+                    db.query(DashboardCache)
+                    .filter(DashboardCache.emp == str(emp_scope), DashboardCache.vendedor == vendedor, DashboardCache.ano == int(ano), DashboardCache.mes == int(mes))
+                    .first()
+                )
+                if not row:
+                    return None
+                ranking_list = json.loads(row.ranking_json or "[]")
+                ranking_top15 = json.loads(row.ranking_top15_json or "[]")
+                return {
+                    "emp": row.emp,
+                    "vendedor": row.vendedor,
+                    "valor_bruto": float(row.valor_bruto or 0.0),
+                    "valor_atual": float(row.valor_liquido or 0.0),
+                    "valor_devolvido": float((row.devolucoes or 0.0) + (row.cancelamentos or 0.0)),
+                    "pct_devolucao": float(row.pct_devolucao or 0.0),
+                    "mix_atual": int(row.mix_produtos or 0),
+                    "mix_marcas": int(row.mix_marcas or 0),
+                    "ranking_list": ranking_list,
+                    "ranking_top15_list": ranking_top15,
+                    "total_liquido_periodo": float(row.total_liquido_periodo or 0.0),
+                }
+
+            # Agrega várias EMPs
+            rows = (
+                db.query(DashboardCache)
+                .filter(DashboardCache.vendedor == vendedor, DashboardCache.ano == int(ano), DashboardCache.mes == int(mes))
+                .all()
+            )
+            if not rows:
+                return None
+
+            valor_bruto = sum(float(r.valor_bruto or 0.0) for r in rows)
+            valor_atual = sum(float(r.valor_liquido or 0.0) for r in rows)
+            devol = sum(float(r.devolucoes or 0.0) for r in rows)
+            canc = sum(float(r.cancelamentos or 0.0) for r in rows)
+            valor_devolvido = devol + canc
+            pct_devolucao = (devol / valor_bruto * 100.0) if valor_bruto else 0.0
+            mix_atual = sum(int(r.mix_produtos or 0) for r in rows)
+            mix_marcas = sum(int(r.mix_marcas or 0) for r in rows)
+
+            # junta ranking por marca (soma por marca)
+            marca_sum = {}
+            for r in rows:
+                try:
+                    lst = json.loads(r.ranking_json or "[]")
+                except Exception:
+                    lst = []
+                for item in lst:
+                    m = str(item.get("marca") or "").strip()
+                    v = float(item.get("valor") or 0.0)
+                    if not m:
+                        continue
+                    marca_sum[m] = marca_sum.get(m, 0.0) + v
+
+            ranking_sorted = sorted(marca_sum.items(), key=lambda kv: kv[1], reverse=True)
+            total = sum(marca_sum.values())
+            ranking_list = [
+                {"marca": m, "valor": float(v), "pct": (float(v)/total*100.0) if total else 0.0}
+                for m, v in ranking_sorted
+            ]
+            ranking_top15 = ranking_list[:15]
+
+            return {
+                "emp": None,
+                "vendedor": vendedor,
+                "valor_bruto": valor_bruto,
+                "valor_atual": valor_atual,
+                "valor_devolvido": valor_devolvido,
+                "pct_devolucao": pct_devolucao,
+                "mix_atual": mix_atual,
+                "mix_marcas": mix_marcas,
+                "ranking_list": ranking_list,
+                "ranking_top15_list": ranking_top15,
+                "total_liquido_periodo": float(total),
+            }
+
+    def _fetch_cache_value(vendedor: str, ano: int, mes: int, emp_scope: str | None) -> float | None:
+        row = _fetch_cache_row(vendedor, ano, mes, emp_scope)
+        return float(row.get("valor_atual")) if row else None
+
+# NOTE: existe uma versão tipada desta função mais abaixo.
     # Mantemos apenas uma definição para evitar confusão/override.
 
     def _calcular_dados(df: pd.DataFrame, vendedor: str, mes: int, ano: int):
@@ -291,7 +399,224 @@ def create_app() -> Flask:
         ano = max(2000, min(2100, ano))
         return mes, ano
 
-    def _resolver_vendedor_e_lista(df: pd.DataFrame) -> tuple[str | None, list[str], str | None, str | None]:
+
+
+    def _periodo_bounds(ano: int, mes: int):
+        """Retorna (inicio, fim) do mês para filtro por intervalo (usa índice)."""
+        mes = max(1, min(12, int(mes)))
+        ano = int(ano)
+        start = date(ano, mes, 1)
+        if mes == 12:
+            end = date(ano + 1, 1, 1)
+        else:
+            end = date(ano, mes + 1, 1)
+        return start, end
+
+    def _vendedores_from_db(role: str, emp_usuario: str | None):
+        """Lista de vendedores disponível para dropdown (sem carregar dataframe inteiro)."""
+        role = (role or '').strip().lower()
+        usuario_logado = (session.get('usuario') or '').strip().upper()
+        if role == 'vendedor':
+            return [usuario_logado] if usuario_logado else []
+
+        with SessionLocal() as db:
+            q = db.query(Venda.vendedor).distinct()
+            if role == 'supervisor':
+                if not emp_usuario:
+                    return []
+                q = q.filter(Venda.emp == str(emp_usuario))
+            vendedores = [ (v[0] or '').strip().upper() for v in q.all() ]
+        vendedores = sorted([v for v in vendedores if v])
+        return vendedores
+
+    def _get_cache_row(vendedor: str, ano: int, mes: int, emp_scope: str | None):
+        vendedor = (vendedor or '').strip().upper()
+        if not vendedor:
+            return None
+        with SessionLocal() as db:
+            if emp_scope:
+                return db.query(DashboardCache).filter(
+                    DashboardCache.emp == str(emp_scope),
+                    DashboardCache.vendedor == vendedor,
+                    DashboardCache.ano == int(ano),
+                    DashboardCache.mes == int(mes),
+                ).first()
+
+            # ADMIN/VENDEDOR sem EMP: soma múltiplas EMPs
+            rows = db.query(DashboardCache).filter(
+                DashboardCache.vendedor == vendedor,
+                DashboardCache.ano == int(ano),
+                DashboardCache.mes == int(mes),
+            ).all()
+            if not rows:
+                return None
+
+            # cria um objeto "fake" com os totais somados
+            agg = DashboardCache(emp='*', vendedor=vendedor, ano=int(ano), mes=int(mes))
+            agg.valor_bruto = sum(r.valor_bruto or 0 for r in rows)
+            agg.valor_liquido = sum(r.valor_liquido or 0 for r in rows)
+            agg.devolucoes = sum(r.devolucoes or 0 for r in rows)
+            agg.cancelamentos = sum(r.cancelamentos or 0 for r in rows)
+            agg.pct_devolucao = (agg.devolucoes / agg.valor_bruto * 100.0) if agg.valor_bruto else 0.0
+            agg.mix_produtos = sum(r.mix_produtos or 0 for r in rows)
+            agg.mix_marcas = sum(r.mix_marcas or 0 for r in rows)
+
+            # agrega ranking por marca somando valores
+            marca_map = {}
+            total = 0.0
+            for r in rows:
+                try:
+                    lst = json.loads(r.ranking_json or '[]')
+                except Exception:
+                    lst = []
+                for it in lst:
+                    m = (it.get('marca') or '').strip()
+                    v = float(it.get('valor') or 0.0)
+                    marca_map[m] = marca_map.get(m, 0.0) + v
+                    total += v
+            ranking = sorted([
+                {'marca': m, 'valor': val, 'pct': (val/total*100.0) if total else 0.0}
+                for m, val in marca_map.items()
+            ], key=lambda x: x['valor'], reverse=True)
+            agg.ranking_json = json.dumps(ranking, ensure_ascii=False)
+            agg.ranking_top15_json = json.dumps(ranking[:15], ensure_ascii=False)
+            agg.total_liquido_periodo = total
+            return agg
+
+    def _dados_from_cache(vendedor: str, mes: int, ano: int, emp_scope: str | None):
+        """Monta o dict usado no template a partir do cache (e cache de meses relacionados)."""
+        row = _get_cache_row(vendedor, ano, mes, emp_scope)
+        if not row:
+            return None
+
+        # comparações via cache (se existir)
+        if mes == 1:
+            mes_ant, ano_ant = 12, ano - 1
+        else:
+            mes_ant, ano_ant = mes - 1, ano
+
+        prev_row = _get_cache_row(vendedor, ano_ant, mes_ant, emp_scope)
+        last_year_row = _get_cache_row(vendedor, ano - 1, mes, emp_scope)
+
+        valor_atual = float(row.valor_liquido or 0.0)
+        valor_mes_anterior = float(prev_row.valor_liquido or 0.0) if prev_row else None
+        valor_ano_passado = float(last_year_row.valor_liquido or 0.0) if last_year_row else None
+
+        crescimento = None
+        if valor_mes_anterior not in (None, 0):
+            crescimento = ((valor_atual - valor_mes_anterior) / abs(valor_mes_anterior)) * 100.0
+
+        try:
+            ranking_list = json.loads(row.ranking_json or '[]')
+        except Exception:
+            ranking_list = []
+        try:
+            ranking_top15_list = json.loads(row.ranking_top15_json or '[]')
+        except Exception:
+            ranking_top15_list = ranking_list[:15]
+
+        valor_bruto = float(row.valor_bruto or 0.0)
+        valor_devolvido = float((row.devolucoes or 0.0) + (row.cancelamentos or 0.0))
+        pct_devolucao = (valor_devolvido / valor_bruto * 100.0) if valor_bruto else None
+
+        mix_atual = int(row.mix_produtos or 0)
+        mix_ano_passado = int(last_year_row.mix_produtos or 0) if last_year_row else None
+
+        return {
+            'valor_atual': valor_atual,
+            'valor_ano_passado': valor_ano_passado,
+            'valor_mes_anterior': valor_mes_anterior,
+            'mix_atual': mix_atual,
+            'mix_ano_passado': mix_ano_passado or 0,
+            'valor_bruto': valor_bruto,
+            'valor_devolvido': valor_devolvido,
+            'pct_devolucao': pct_devolucao,
+            'crescimento': crescimento,
+            'ranking_list': ranking_list,
+            'ranking_top15_list': ranking_top15_list,
+            'total_liquido_periodo': float(getattr(row, 'total_liquido_periodo', 0.0) or 0.0),
+        }
+
+
+    def _dados_ao_vivo(vendedor: str, mes: int, ano: int, emp_scope: str | None):
+        """Calcula o dashboard direto do banco (sem pandas).
+
+        Usado apenas quando o cache ainda não existe para aquele período.
+        """
+        vendedor = (vendedor or '').strip().upper()
+        if not vendedor:
+            return None
+
+        # intervalos
+        start = date(ano, mes, 1)
+        end = date(ano + 1, 1, 1) if mes == 12 else date(ano, mes + 1, 1)
+
+        def _range(ay, mm):
+            s = date(ay, mm, 1)
+            e = date(ay + 1, 1, 1) if mm == 12 else date(ay, mm + 1, 1)
+            return s, e
+
+        if mes == 1:
+            mes_ant, ano_ant = 12, ano - 1
+        else:
+            mes_ant, ano_ant = mes - 1, ano
+
+        s_ant, e_ant = _range(ano_ant, mes_ant)
+        s_ano_passado, e_ano_passado = _range(ano - 1, mes)
+
+        with SessionLocal() as db:
+            base = db.query(Venda).filter(Venda.vendedor == vendedor)
+            if emp_scope:
+                base = base.filter(Venda.emp == str(emp_scope))
+
+            def sums(s, e):
+                q = base.filter(Venda.movimento >= s, Venda.movimento < e)
+                signed = case((Venda.mov_tipo_movto.in_(['DS','CA']), -Venda.valor_total), else_=Venda.valor_total)
+                bruto = func.coalesce(func.sum(case((~Venda.mov_tipo_movto.in_(['DS','CA']), Venda.valor_total), else_=0.0)), 0.0)
+                devol = func.coalesce(func.sum(case((Venda.mov_tipo_movto.in_(['DS','CA']), Venda.valor_total), else_=0.0)), 0.0)
+                liquido = func.coalesce(func.sum(signed), 0.0)
+                mix = func.count(func.distinct(case((~Venda.mov_tipo_movto.in_(['DS','CA']), Venda.mestre), else_=None)))
+                row = db.query(bruto, devol, liquido, mix).select_from(Venda).filter(Venda.vendedor == vendedor)
+                if emp_scope:
+                    row = row.filter(Venda.emp == str(emp_scope))
+                row = row.filter(Venda.movimento >= s, Venda.movimento < e).first()
+                return float(row[0] or 0.0), float(row[1] or 0.0), float(row[2] or 0.0), int(row[3] or 0)
+
+            bruto, devol, liquido, mix = sums(start, end)
+            bruto_ant, devol_ant, liquido_ant, mix_ant = sums(s_ant, e_ant)
+            bruto_ano_pass, devol_ano_pass, liquido_ano_pass, mix_ano_pass = sums(s_ano_passado, e_ano_passado)
+
+            pct_devolucao = (devol / bruto * 100.0) if bruto else None
+            crescimento = ((liquido - liquido_ant) / abs(liquido_ant) * 100.0) if liquido_ant else None
+
+            # ranking por marca (liquido)
+            signed = case((Venda.mov_tipo_movto.in_(['DS','CA']), -Venda.valor_total), else_=Venda.valor_total)
+            q_rank = db.query(Venda.marca, func.coalesce(func.sum(signed), 0.0)).filter(Venda.vendedor == vendedor)
+            if emp_scope:
+                q_rank = q_rank.filter(Venda.emp == str(emp_scope))
+            q_rank = q_rank.filter(Venda.movimento >= start, Venda.movimento < end).group_by(Venda.marca)
+            rows = q_rank.all()
+            ranking = sorted([(str(m or ''), float(v or 0.0)) for m,v in rows], key=lambda x: x[1], reverse=True)
+            total = sum(v for _,v in ranking)
+            ranking_list = [
+                {'marca': m, 'valor': v, 'pct': (v/total*100.0) if total else 0.0}
+                for m,v in ranking
+            ]
+            return {
+                'valor_atual': liquido,
+                'valor_ano_passado': liquido_ano_pass,
+                'valor_mes_anterior': liquido_ant,
+                'mix_atual': mix,
+                'mix_ano_passado': mix_ano_pass,
+                'valor_bruto': bruto,
+                'valor_devolvido': devol,
+                'pct_devolucao': pct_devolucao,
+                'crescimento': crescimento,
+                'ranking_list': ranking_list,
+                'ranking_top15_list': ranking_list[:15],
+                'total_liquido_periodo': total,
+            }
+    def _resolver_vendedor_e_lista(df: pd.DataFrame | None) -> tuple[str | None, list[str], str | None, str | None]:
         """Resolve qual vendedor o usuário pode ver.
 
         Retorna: (vendedor_alvo, lista_vendedores, emp_usuario, aviso)
@@ -306,8 +631,16 @@ def create_app() -> Flask:
         df = _normalize_cols(df)
 
         # Lista base de vendedores (da tabela de vendas, pois a tabela usuarios pode não ter EMP preenchida)
-        if df.empty or "VENDEDOR" not in df.columns:
-            return None, [], _emp(), "Sem dados de vendas para montar a lista de vendedores."
+        if df is None or df.empty or "VENDEDOR" not in df.columns:
+            # fallback leve: busca direto do banco
+            vendedores = _get_vendedores_db(role, _emp())
+            if (role == 'vendedor'):
+                return usuario_logado, [], _emp(), None
+            if not vendedores:
+                return None, [], _emp(), 'Sem dados de vendas para montar a lista de vendedores.'
+            vendedor_req = (request.args.get('vendedor') or '').strip().upper() or None
+            vendedor_alvo = vendedor_req if (vendedor_req and vendedor_req in vendedores) else None
+            return vendedor_alvo, vendedores, _emp(), None
 
         emp_usuario = _emp()
         if role == "supervisor":
@@ -384,29 +717,46 @@ def create_app() -> Flask:
 
         mes, ano = _mes_ano_from_request()
 
-        try:
-            df = carregar_df()
-            df = _normalize_cols(df)
-        except Exception:
-            app.logger.exception("Erro ao carregar dados")
-            df = pd.DataFrame()
+        role = _role() or ""
+        emp_usuario = _emp()
 
-        vendedor_alvo, vendedores_lista, emp, msg = _resolver_vendedor_e_lista(df)
+        # Resolve vendedor alvo + lista para dropdown sem carregar toda a tabela em memória
+        if role == "vendedor":
+            vendedor_alvo = (_usuario_logado() or "").strip().upper()
+            vendedores_lista = []
+            msg = None
+        else:
+            vendedores_lista = _get_vendedores_db(role, emp_usuario)
+            vendedor_req = (request.args.get("vendedor") or "").strip().upper() or None
+            vendedor_alvo = vendedor_req if (vendedor_req and vendedor_req in vendedores_lista) else None
+            msg = None
+            if role == "supervisor" and not emp_usuario:
+                msg = "Supervisor sem EMP cadastrada. Cadastre a EMP do supervisor na tabela usuarios."
 
         dados = None
         if vendedor_alvo:
             try:
-                dados = _calcular_dados(df, vendedor_alvo, mes, ano)
+                emp_scope = emp_usuario if role == "supervisor" else None
+                dados = _dados_from_cache(vendedor_alvo, mes, ano, emp_scope)
             except Exception:
-                app.logger.exception("Erro ao carregar/calcular dashboard")
+                app.logger.exception("Erro ao carregar dashboard do cache")
                 dados = None
+
+            # Fallback: calcula ao vivo (sem pandas) se cache ainda não existe
+            if dados is None:
+                try:
+                    emp_scope = emp_usuario if role == "supervisor" else None
+                    dados = _dados_ao_vivo(vendedor_alvo, mes, ano, emp_scope)
+                except Exception:
+                    app.logger.exception("Erro ao calcular dashboard ao vivo")
+                    dados = None
 
         return render_template(
             "dashboard.html",
             vendedor=vendedor_alvo or "",
             usuario=_usuario_logado(),
             role=_role(),
-            emp=emp,
+            emp=emp_usuario,
             vendedores=vendedores_lista,
             vendedor_selecionado=vendedor_alvo or "",
             mensagem_role=msg,
@@ -415,6 +765,7 @@ def create_app() -> Flask:
             dados=dados,
         )
 
+
     @app.get("/percentuais")
     def percentuais():
         red = _login_required()
@@ -422,24 +773,38 @@ def create_app() -> Flask:
             return red
 
         mes, ano = _mes_ano_from_request()
-        df = carregar_df()
-        vendedor_alvo, vendedores_lista, emp, msg = _resolver_vendedor_e_lista(df)
+        role = (_role() or '').lower()
+        emp_scope = _emp() if role == 'supervisor' else None
 
-        dados = {}
+        # resolve vendedor
+        if role in {'admin', 'supervisor'}:
+            vendedores = _get_vendedores_db(role, emp_scope)
+            vendedor_req = (request.args.get('vendedor') or '').strip().upper() or None
+            vendedor_alvo = vendedor_req if (vendedor_req and vendedor_req in vendedores) else None
+        else:
+            vendedor_alvo = (_usuario_logado() or '').strip().upper()
+
+        dados = None
         if vendedor_alvo:
-            dados = _calcular_dados(df, vendedor_alvo, mes, ano) or {}
-        ranking_list = dados.get("ranking_list", [])
-        total = float(dados.get("total_liquido_periodo", 0.0))
+            dados = _dados_from_cache(vendedor_alvo, mes, ano, emp_scope)
+            if dados is None:
+                dados = _dados_ao_vivo(vendedor_alvo, mes, ano, emp_scope)
+        dados = dados or {}
+
+        ranking_list = dados.get('ranking_list', [])
+        total = float(dados.get('total_liquido_periodo', 0.0))
+
         return render_template(
-            "percentuais.html",
-            vendedor=vendedor_alvo or "",
+            'percentuais.html',
+            vendedor=vendedor_alvo or '',
             role=_role(),
-            emp=emp,
+            emp=emp_scope,
             mes=mes,
             ano=ano,
             total=total,
             ranking_list=ranking_list,
         )
+
 
     @app.get("/marcas")
     def marcas():
@@ -448,23 +813,35 @@ def create_app() -> Flask:
             return red
 
         mes, ano = _mes_ano_from_request()
-        df = carregar_df()
-        vendedor_alvo, vendedores_lista, emp, msg = _resolver_vendedor_e_lista(df)
+        role = (_role() or '').lower()
+        emp_scope = _emp() if role == 'supervisor' else None
 
-        # reaproveita cálculo do ranking (líquido por marca)
-        dados = {}
+        if role in {'admin','supervisor'}:
+            vendedores = _get_vendedores_db(role, emp_scope)
+            vendedor_req = (request.args.get('vendedor') or '').strip().upper() or None
+            vendedor_alvo = vendedor_req if (vendedor_req and vendedor_req in vendedores) else None
+        else:
+            vendedor_alvo = (_usuario_logado() or '').strip().upper()
+
+        dados = None
         if vendedor_alvo:
-            dados = _calcular_dados(df, vendedor_alvo, mes, ano) or {}
-        marcas_map = {row["marca"]: row["valor"] for row in dados.get("ranking_list", [])}
+            dados = _dados_from_cache(vendedor_alvo, mes, ano, emp_scope)
+            if dados is None:
+                dados = _dados_ao_vivo(vendedor_alvo, mes, ano, emp_scope)
+        dados = dados or {}
+
+        marcas_map = {row.get('marca'): row.get('valor') for row in (dados.get('ranking_list') or [])}
+
         return render_template(
-            "marcas.html",
-            vendedor=vendedor_alvo or "",
+            'marcas.html',
+            vendedor=vendedor_alvo or '',
             role=_role(),
-            emp=emp,
+            emp=emp_scope,
             mes=mes,
             ano=ano,
             marcas=marcas_map,
         )
+
 
     @app.get("/devolucoes")
     def devolucoes():
@@ -473,31 +850,44 @@ def create_app() -> Flask:
             return red
 
         mes, ano = _mes_ano_from_request()
-        df = carregar_df()
-        vendedor_alvo, vendedores_lista, emp, msg = _resolver_vendedor_e_lista(df)
+        role = (_role() or '').lower()
+        emp_scope = _emp() if role == 'supervisor' else None
 
-        if (not vendedor_alvo) or (df is None) or df.empty:
+        # resolve vendedor
+        if role in {'admin','supervisor'}:
+            vendedores = _get_vendedores_db(role, emp_scope)
+            vendedor_req = (request.args.get('vendedor') or '').strip().upper() or None
+            vendedor_alvo = vendedor_req if (vendedor_req and vendedor_req in vendedores) else None
+        else:
+            vendedor_alvo = (_usuario_logado() or '').strip().upper()
+
+        if not vendedor_alvo:
             devol = {}
         else:
-            df = _normalize_cols(df)
-            df = df[df["VENDEDOR"] == vendedor_alvo.upper()]
-            df = df[(df["MOVIMENTO"].dt.year == ano) & (df["MOVIMENTO"].dt.month == mes)]
-            df = df[df["MOV_TIPO_MOVTO"].isin(["DS", "CA"])]
-            devol = (
-                df.groupby("MARCA")["VALOR_TOTAL"].sum().sort_values(ascending=False).to_dict()
-                if not df.empty
-                else {}
-            )
+            start, end = _month_bounds(ano, mes)
+            with SessionLocal() as db:
+                q = (
+                    db.query(Venda.marca, func.coalesce(func.sum(Venda.valor_total), 0.0))
+                    .filter(Venda.vendedor == vendedor_alvo)
+                    .filter(Venda.movimento >= start)
+                    .filter(Venda.movimento < end)
+                    .filter(Venda.mov_tipo_movto.in_(['DS','CA']))
+                )
+                if emp_scope:
+                    q = q.filter(Venda.emp == str(emp_scope))
+                q = q.group_by(Venda.marca).order_by(func.sum(Venda.valor_total).desc())
+                devol = {str(m or ''): float(v or 0.0) for m, v in q.all() if m}
 
         return render_template(
-            "devolucoes.html",
-            vendedor=vendedor_alvo or "",
+            'devolucoes.html',
+            vendedor=vendedor_alvo or '',
             role=_role(),
-            emp=emp,
+            emp=emp_scope,
             mes=mes,
             ano=ano,
             devolucoes=devol,
         )
+
 
     @app.route("/senha", methods=["GET", "POST"])
     def senha():

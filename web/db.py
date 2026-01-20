@@ -1,7 +1,8 @@
 import os
+from datetime import datetime
 from urllib.parse import quote_plus
 
-from sqlalchemy import create_engine, Column, Integer, String, Float, Date, Index, UniqueConstraint
+from sqlalchemy import create_engine, Column, Integer, String, Float, Date, DateTime, Text, Index, UniqueConstraint
 from sqlalchemy.orm import declarative_base, sessionmaker, synonym
 
 # =====================
@@ -114,6 +115,38 @@ class Venda(Base):
             name="vendas_unique_import",
         ),
     )
+
+class DashboardCache(Base):
+    __tablename__ = 'dashboard_cache'
+
+    id = Column(Integer, primary_key=True)
+    emp = Column(String(30), nullable=False, index=True)
+    vendedor = Column(String(80), nullable=False, index=True)
+    ano = Column(Integer, nullable=False, index=True)
+    mes = Column(Integer, nullable=False, index=True)
+
+    valor_bruto = Column(Float, nullable=False, default=0.0)
+    valor_liquido = Column(Float, nullable=False, default=0.0)
+    devolucoes = Column(Float, nullable=False, default=0.0)
+    cancelamentos = Column(Float, nullable=False, default=0.0)
+    pct_devolucao = Column(Float, nullable=False, default=0.0)
+
+    mix_produtos = Column(Integer, nullable=False, default=0)
+    mix_marcas = Column(Integer, nullable=False, default=0)
+
+    # Rankings (JSON serializado em texto para simplicidade)
+    ranking_json = Column(Text, nullable=False, default='[]')
+    ranking_top15_json = Column(Text, nullable=False, default='[]')
+    total_liquido_periodo = Column(Float, nullable=False, default=0.0)
+
+    atualizado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint('emp', 'vendedor', 'ano', 'mes', name='uq_dashboard_cache_emp_vend_ano_mes'),
+        Index('ix_dashboard_cache_emp_ano_mes', 'emp', 'ano', 'mes'),
+        Index('ix_dashboard_cache_vendedor_ano_mes', 'vendedor', 'ano', 'mes'),
+    )
+
 
 def criar_tabelas():
     Base.metadata.create_all(engine)
