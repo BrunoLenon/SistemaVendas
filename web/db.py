@@ -66,7 +66,11 @@ class Usuario(Base):
     role = Column(String(20), nullable=False, default="vendedor")
     # Para o perfil "supervisor", define a loja/filial (EMP) que ele pode visualizar.
     # Para "admin" e "vendedor", pode ficar NULL.
-    emp = Column(Integer, nullable=True)
+    #
+    # Importante: já existiram versões do banco onde EMP foi criada como texto.
+    # Para manter compatibilidade (e evitar que o supervisor fique "sem EMP"),
+    # armazenamos como string.
+    emp = Column(String(30), nullable=True)
 
 
 class Venda(Base):

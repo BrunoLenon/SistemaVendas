@@ -559,7 +559,10 @@ def create_app() -> Flask:
                         if role == "supervisor":
                             if not emp_sup:
                                 raise ValueError("Informe a EMP para o supervisor.")
-                            emp_val = emp_sup
+                            # Normaliza EMP como texto (ex.: "101")
+                            emp_val = str(emp_sup).strip()
+                            if not emp_val:
+                                raise ValueError("Informe a EMP para o supervisor.")
                         u = db.query(Usuario).filter(Usuario.username == novo_usuario).first()
                         if u:
                             u.senha_hash = generate_password_hash(nova_senha)
@@ -569,6 +572,8 @@ def create_app() -> Flask:
                                 setattr(u, "emp", emp_val)
                             else:
                                 setattr(u, "emp", None)
+                            # BUGFIX: sem commit, alterações não eram persistidas.
+                            db.commit()
                             ok = f"Usuário {novo_usuario} atualizado."
                         else:
                             db.add(
