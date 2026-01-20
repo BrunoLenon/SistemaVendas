@@ -864,7 +864,8 @@ def create_app() -> Flask:
         if not vendedor_alvo:
             devol = {}
         else:
-            start, end = _month_bounds(ano, mes)
+            # Usa o helper padrão do sistema (intervalo [start, end))
+            start, end = _periodo_bounds(ano, mes)
             with SessionLocal() as db:
                 q = (
                     db.query(Venda.marca, func.coalesce(func.sum(Venda.valor_total), 0.0))
@@ -944,7 +945,8 @@ def create_app() -> Flask:
         if vendedor_alvo and itens:
             codigos = [ (i.codigo or '').strip() for i in itens if (i.codigo or '').strip() ]
             if codigos:
-                start, end = _month_bounds(ano, mes)
+                # Usa o helper padrão do sistema (intervalo [start, end))
+                start, end = _periodo_bounds(ano, mes)
                 with SessionLocal() as db:
                     q = (
                         db.query(Venda.mestre, func.coalesce(func.sum(Venda.valor_total), 0.0))
