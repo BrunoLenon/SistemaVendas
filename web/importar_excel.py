@@ -16,7 +16,8 @@ API:
 chaves disponíveis:
   - mestre_vendedor_nota_emp           (antiga)
   - mestre_movimento_vendedor_nota_emp      (inclui MOVIMENTO/data)
-  - mestre_movimento_vendedor_nota_tipo_emp (inclui MOVIMENTO + MOV_TIPO_MOVTO)  <-- RECOMENDADA
+  - mestre_movimento_vendedor_nota_tipo_emp (inclui MOVIMENTO + MOV_TIPO_MOVTO)  <-- RECOMENDADA (usa índice com MARCA no banco)
+  - mestre_marca_movimento_vendedor_nota_tipo_emp (explicita MARCA no nome; equivalente ao índice atual)
   - mestre_movimento_vendedor_nota_tipo     (sem EMP, se você não usa EMP na chave)
 """
 
@@ -96,16 +97,31 @@ def _norm_str(value: Any) -> Optional[str]:
 
 
 def _conflict_cols_from_key(chave: str) -> List[str]:
-    """Mapeia o nome da chave para colunas do banco."""
-    # nomes da tabela/ORM: mestre, movimento, vendedor, nota, emp, mov_tipo_movto
+    """Mapeia o nome da chave para colunas do banco.
+
+    IMPORTANTE: estas colunas precisam bater 100% com o índice UNIQUE existente,
+    senão o Postgres retorna:
+      'there is no unique or exclusion constraint matching the ON CONFLICT specification'
+
+    Seu índice atual (vendas_unique_import) é:
+      (mestre, marca, vendedor, movimento, mov_tipo_movto, nota, emp)
+    """
+    # nomes da tabela/ORM: mestre, marca, movimento, vendedor, nota, emp, mov_tipo_movto
+    if chave == "mestre_marca_movimento_vendedor_nota_tipo_emp":
+        return ["mestre", "marca", "vendedor", "movimento", "mov_tipo_movto", "nota", "emp"]
+
+    # compatibilidade com a chave antiga (sem 'marca' no nome), mas inclui 'marca' pois é o índice do banco
     if chave == "mestre_movimento_vendedor_nota_tipo_emp":
-        return ["mestre", "movimento", "vendedor", "nota", "mov_tipo_movto", "emp"]
+        return ["mestre", "marca", "vendedor", "movimento", "mov_tipo_movto", "nota", "emp"]
+
     if chave == "mestre_movimento_vendedor_nota_tipo":
-        return ["mestre", "movimento", "vendedor", "nota", "mov_tipo_movto"]
+        return ["mestre", "marca", "vendedor", "movimento", "mov_tipo_movto", "nota"]
+
     if chave == "mestre_movimento_vendedor_nota_emp":
-        return ["mestre", "movimento", "vendedor", "nota", "emp"]
-    # fallback antigo
-    return ["mestre", "vendedor", "nota", "emp"]
+        return ["mestre", "marca", "vendedor", "movimento", "nota", "emp"]
+
+    # fallback antigo: manter, mas alinhado ao índice principal quando possível
+    return ["mestre", "marca", "vendedor", "movimento", "nota", "emp"]
 
 
 def _build_stmt(records: List[dict], modo: str, conflict_cols: List[str]):
