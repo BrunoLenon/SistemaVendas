@@ -54,7 +54,17 @@ engine = create_engine(
     pool_pre_ping=True,
     pool_recycle=1800,
 )
-SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+SessionLocal = sessionmaker(
+    bind=engine,
+    autoflush=False,
+    autocommit=False,
+    # Importante: por padrão o SQLAlchemy "expira" os objetos após commit.
+    # Como o app usa a sessão em um context manager e fecha logo depois,
+    # acessar atributos no template pode disparar refresh e gerar
+    # DetachedInstanceError. Mantendo os valores carregados após commit,
+    # o template consegue renderizar sem precisar da sessão.
+    expire_on_commit=False,
+)
 Base = declarative_base()
 
 
