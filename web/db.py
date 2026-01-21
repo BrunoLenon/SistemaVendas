@@ -176,6 +176,98 @@ class ItemParado(Base):
     )
 
 
+class CampanhaQtd(Base):
+    """Campanhas de recompensa por quantidade (por EMP e opcionalmente por vendedor).
+
+    - produto_prefixo: texto que deve estar no início do campo do item (prefix match)
+    - marca: marca do item
+    - recompensa_unit: valor pago por unidade vendida
+    - qtd_minima: se preenchido, só paga se vender >= qtd_minima
+    - data_inicio/data_fim: período da campanha (inclusive)
+    """
+
+    __tablename__ = "campanhas_qtd"
+
+    id = Column(Integer, primary_key=True)
+
+    emp = Column(String(30), nullable=False, index=True)
+    vendedor = Column(String(80), nullable=True, index=True)  # NULL = todos
+
+    titulo = Column(String(120), nullable=True)
+    produto_prefixo = Column(String(200), nullable=False)
+    marca = Column(String(120), nullable=False)
+
+    recompensa_unit = Column(Float, nullable=False, default=0.0)
+    qtd_minima = Column(Float, nullable=True)
+
+    data_inicio = Column(Date, nullable=False, index=True)
+    data_fim = Column(Date, nullable=False, index=True)
+
+    ativo = Column(Integer, nullable=False, default=1)
+
+    criado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
+    atualizado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        Index("ix_campanhas_qtd_emp_periodo", "emp", "data_inicio", "data_fim"),
+    )
+
+
+class CampanhaQtdResultado(Base):
+    """Snapshot mensal por vendedor/campanha.
+
+    Guardamos os resultados para que continuem visíveis mesmo após o fim da campanha.
+    """
+
+    __tablename__ = "campanhas_qtd_resultados"
+
+    id = Column(Integer, primary_key=True)
+    campanha_id = Column(Integer, nullable=False, index=True)
+
+    # Competência (para relatórios por mês)
+    competencia_ano = Column(Integer, nullable=False, index=True)
+    competencia_mes = Column(Integer, nullable=False, index=True)
+
+    emp = Column(String(30), nullable=False, index=True)
+    vendedor = Column(String(80), nullable=False, index=True)
+
+    # Duplicamos campos da campanha para auditoria
+    titulo = Column(String(120), nullable=True)
+    produto_prefixo = Column(String(200), nullable=False)
+    marca = Column(String(120), nullable=False)
+    recompensa_unit = Column(Float, nullable=False, default=0.0)
+    qtd_minima = Column(Float, nullable=True)
+    data_inicio = Column(Date, nullable=False)
+    data_fim = Column(Date, nullable=False)
+
+    qtd_vendida = Column(Float, nullable=False, default=0.0)
+    valor_vendido = Column(Float, nullable=False, default=0.0)
+    atingiu_minimo = Column(Integer, nullable=False, default=0)
+    valor_recompensa = Column(Float, nullable=False, default=0.0)
+
+    status_pagamento = Column(String(20), nullable=False, default="PENDENTE")
+    pago_em = Column(DateTime, nullable=True)
+
+    atualizado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "campanha_id",
+            "emp",
+            "vendedor",
+            "competencia_ano",
+            "competencia_mes",
+            name="uq_campanha_qtd_resultado",
+        ),
+        Index(
+            "ix_campanha_qtd_resultados_emp_comp",
+            "emp",
+            "competencia_ano",
+            "competencia_mes",
+        ),
+    )
+
+
 
 def criar_tabelas():
     Base.metadata.create_all(engine)
