@@ -28,6 +28,8 @@ from db import (
     ItemParado,
     CampanhaQtd,
     CampanhaQtdResultado,
+    VendasResumoPeriodo,
+    FechamentoMensal,
     criar_tabelas,
 )
 from importar_excel import importar_planilha
@@ -439,6 +441,23 @@ def create_app() -> Flask:
         else:
             end = date(ano, mes + 1, 1)
         return start, end
+
+
+    def _emp_norm(emp: str | None) -> str:
+        """Normaliza EMP para armazenamento ('' quando nulo)."""
+        return (emp or "").strip()
+
+
+    def _mes_fechado(emp: str | None, ano: int, mes: int) -> bool:
+        """Retorna True se o mês estiver marcado como fechado para a EMP."""
+        emp_n = _emp_norm(emp)
+        with SessionLocal() as db:
+            row = (
+                db.query(FechamentoMensal)
+                .filter(FechamentoMensal.emp == emp_n, FechamentoMensal.ano == ano, FechamentoMensal.mes == mes)
+                .first()
+            )
+            return bool(row and row.fechado)
 
     def _vendedores_from_db(role: str, emp_usuario: str | None):
         """Lista de vendedores disponível para dropdown (sem carregar dataframe inteiro)."""
@@ -1840,6 +1859,163 @@ def create_app() -> Flask:
             erro=erro,
             ok=ok,
         )
+
+    @app.route('/admin/resumos_periodo', methods=['GET', 'POST'])
+    def admin_resumos_periodo():
+        _admin_required()
+
+        # filtros
+        emp = _emp_norm(request.values.get('emp', ''))
+        vendedor = (request.values.get('vendedor') or '').strip().upper()
+        ano = int(request.values.get('ano') or datetime.now().year)
+        mes = int(request.values.get('mes') or datetime.now().month)
+
+        msgs: list[str] = []
+
+        acao = (request.form.get('acao') or '').strip().lower()
+        if request.method == 'POST' and acao:
+            if acao in {'salvar', 'excluir'} and _mes_fechado(emp, ano, mes):
+                msgs.append('⚠️ Mês fechado. Reabra o mês para editar os resumos.')
+            else:
+                with SessionLocal() as db:
+                    if acao == 'fechar':
+                        rec = (
+                            db.query(FechamentoMensal)
+                            .filter(
+                                FechamentoMensal.emp == emp,
+                                FechamentoMensal.ano == ano,
+                                FechamentoMensal.mes == mes,
+                            )
+                            .one_or_none()
+                        )
+                        if rec is None:
+                            rec = FechamentoMensal(emp=emp, ano=ano, mes=mes, fechado=True, fechado_em=datetime.utcnow())
+                            db.add(rec)
+                        else:
+                            rec.fechado = True
+                            rec.fechado_em = datetime.utcnow()
+                        db.commit()
+                        msgs.append('✅ Mês fechado. Edição travada.')
+
+                    elif acao == 'reabrir':
+                        rec = (
+                            db.query(FechamentoMensal)
+                            .filter(
+                                FechamentoMensal.emp == emp,
+                                FechamentoMensal.ano == ano,
+                                FechamentoMensal.mes == mes,
+                            )
+                            .one_or_none()
+                        )
+                        if rec is None:
+                            rec = FechamentoMensal(emp=emp, ano=ano, mes=mes, fechado=False)
+                            db.add(rec)
+                        else:
+                            rec.fechado = False
+                        db.commit()
+                        msgs.append('✅ Mês reaberto. Edição liberada.')
+
+                    elif acao == 'salvar':
+                        vend = (request.form.get('vendedor_edit') or '').strip().upper()
+                        if not vend:
+                            msgs.append('⚠️ Informe o vendedor.')
+                        else:
+                            try:
+                                valor_venda = float((request.form.get('valor_venda') or '0').replace(',', '.'))
+                            except Exception:
+                                valor_venda = 0.0
+                            try:
+                                mix_produtos = int(request.form.get('mix_produtos') or 0)
+                            except Exception:
+                                mix_produtos = 0
+
+                            rec = (
+                                db.query(VendasResumoPeriodo)
+                                .filter(
+                                    VendasResumoPeriodo.emp == emp,
+                                    VendasResumoPeriodo.vendedor == vend,
+                                    VendasResumoPeriodo.ano == ano,
+                                    VendasResumoPeriodo.mes == mes,
+                                )
+                                .one_or_none()
+                            )
+                            if rec is None:
+                                rec = VendasResumoPeriodo(
+                                    emp=emp,
+                                    vendedor=vend,
+                                    ano=ano,
+                                    mes=mes,
+                                    valor_venda=valor_venda,
+                                    mix_produtos=mix_produtos,
+                                    created_at=datetime.utcnow(),
+                                    updated_at=datetime.utcnow(),
+                                )
+                                db.add(rec)
+                            else:
+                                rec.valor_venda = valor_venda
+                                rec.mix_produtos = mix_produtos
+                                rec.updated_at = datetime.utcnow()
+                            db.commit()
+                            msgs.append('✅ Resumo salvo.')
+
+                    elif acao == 'excluir':
+                        vend = (request.form.get('vendedor_edit') or '').strip().upper()
+                        if not vend:
+                            msgs.append('⚠️ Informe o vendedor para excluir.')
+                        else:
+                            rec = (
+                                db.query(VendasResumoPeriodo)
+                                .filter(
+                                    VendasResumoPeriodo.emp == emp,
+                                    VendasResumoPeriodo.vendedor == vend,
+                                    VendasResumoPeriodo.ano == ano,
+                                    VendasResumoPeriodo.mes == mes,
+                                )
+                                .one_or_none()
+                            )
+                            if rec is None:
+                                msgs.append('⚠️ Não encontrei esse resumo para excluir.')
+                            else:
+                                db.delete(rec)
+                                db.commit()
+                                msgs.append('✅ Resumo excluído.')
+
+        # carregar lista e status de fechamento
+        fechado = _mes_fechado(emp, ano, mes)
+        with SessionLocal() as db:
+            q = db.query(VendasResumoPeriodo).filter(
+                VendasResumoPeriodo.emp == emp,
+                VendasResumoPeriodo.ano == ano,
+                VendasResumoPeriodo.mes == mes,
+            )
+            if vendedor:
+                q = q.filter(VendasResumoPeriodo.vendedor == vendedor)
+            registros = q.order_by(VendasResumoPeriodo.vendedor.asc()).all()
+
+            # Sugestão rápida de vendedores (com base em vendas do período)
+            # Ajuda o admin a não digitar errado
+            start, end = _periodo_bounds(ano, mes)
+            vendedores_sugeridos = (
+                db.query(Venda.vendedor)
+                .filter(Venda.emp == emp, Venda.movimento >= start, Venda.movimento < end)
+                .distinct()
+                .order_by(Venda.vendedor.asc())
+                .all()
+            )
+            vendedores_sugeridos = [v[0] for v in vendedores_sugeridos if v and v[0]]
+
+        return render_template(
+            'admin_resumos_periodo.html',
+            emp=emp,
+            ano=ano,
+            mes=mes,
+            vendedor_filtro=vendedor,
+            registros=registros,
+            fechado=fechado,
+            vendedores_sugeridos=vendedores_sugeridos,
+            msgs=msgs,
+        )
+
 
     @app.route("/admin/campanhas", methods=["GET", "POST"])
     def admin_campanhas_qtd():

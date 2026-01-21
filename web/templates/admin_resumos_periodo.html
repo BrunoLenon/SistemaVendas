@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h4 class="m-0">📌 Resumos do período (manual/importado)</h4>
+  <div class="d-flex gap-2">
+    <a class="btn btn-outline-secondary btn-sm" href="/dashboard">Voltar</a>
+  </div>
+</div>
+
+{% if msgs and msgs|length %}
+  {% for m in msgs %}
+    <div class="alert alert-{{ m.kind }} py-2">{{ m.text }}</div>
+  {% endfor %}
+{% endif %}
+
+<div class="card shadow-sm mb-3">
+  <div class="card-body">
+    <form method="get" class="row g-2 align-items-end">
+      <div class="col-12 col-md-2">
+        <label class="form-label">EMP</label>
+        <input class="form-control" name="emp" value="{{ emp }}" placeholder="101">
+      </div>
+      <div class="col-12 col-md-3">
+        <label class="form-label">Vendedor (opcional)</label>
+        <input class="form-control" name="vendedor" value="{{ vendedor }}" placeholder="RAFAEL">
+      </div>
+      <div class="col-6 col-md-2">
+        <label class="form-label">Mês</label>
+        <input class="form-control" name="mes" type="number" min="1" max="12" value="{{ mes }}">
+      </div>
+      <div class="col-6 col-md-2">
+        <label class="form-label">Ano</label>
+        <input class="form-control" name="ano" type="number" min="2000" max="2100" value="{{ ano }}">
+      </div>
+      <div class="col-12 col-md-3 d-flex gap-2">
+        <button class="btn btn-primary" type="submit">Filtrar</button>
+      </div>
+    </form>
+
+    <hr>
+
+    <div class="d-flex justify-content-between align-items-center">
+      <div>
+        <span class="badge bg-{{ 'danger' if fechado else 'success' }}">
+          {{ 'MÊS FECHADO' if fechado else 'MÊS ABERTO' }}
+        </span>
+        <small class="text-muted ms-2">Fechamento trava edição de resumos desse mês/EMP.</small>
+      </div>
+      <form method="post" class="d-flex gap-2">
+        <input type="hidden" name="emp" value="{{ emp }}">
+        <input type="hidden" name="mes" value="{{ mes }}">
+        <input type="hidden" name="ano" value="{{ ano }}">
+        {% if not fechado %}
+          <button class="btn btn-outline-danger btn-sm" name="action" value="fechar" type="submit">Fechar mês</button>
+        {% else %}
+          <button class="btn btn-outline-success btn-sm" name="action" value="reabrir" type="submit">Reabrir mês</button>
+        {% endif %}
+      </form>
+    </div>
+  </div>
+</div>
+
+<div class="card shadow-sm">
+  <div class="card-body">
+    <h6 class="mb-3">Adicionar/editar resumo</h6>
+    <form method="post" class="row g-2 align-items-end">
+      <input type="hidden" name="action" value="save">
+      <div class="col-12 col-md-2">
+        <label class="form-label">EMP</label>
+        <input class="form-control" name="emp" value="{{ emp }}" required>
+      </div>
+      <div class="col-12 col-md-3">
+        <label class="form-label">Vendedor</label>
+        <input class="form-control" name="vendedor" value="" placeholder="RAFAEL" required>
+      </div>
+      <div class="col-6 col-md-1">
+        <label class="form-label">Mês</label>
+        <input class="form-control" name="mes" type="number" min="1" max="12" value="{{ mes }}" required>
+      </div>
+      <div class="col-6 col-md-2">
+        <label class="form-label">Ano</label>
+        <input class="form-control" name="ano" type="number" min="2000" max="2100" value="{{ ano }}" required>
+      </div>
+      <div class="col-12 col-md-2">
+        <label class="form-label">Valor venda</label>
+        <input class="form-control" name="valor_venda" type="number" step="0.01" min="0" placeholder="0.00" required>
+      </div>
+      <div class="col-12 col-md-2">
+        <label class="form-label">Mix</label>
+        <input class="form-control" name="mix_produtos" type="number" min="0" placeholder="0" required>
+      </div>
+      <div class="col-12">
+        <button class="btn btn-primary" type="submit" {% if fechado %}disabled{% endif %}>Salvar</button>
+        {% if fechado %}
+          <small class="text-muted ms-2">Para editar, reabra o mês acima.</small>
+        {% endif %}
+      </div>
+    </form>
+
+    <hr>
+
+    <div class="table-responsive">
+      <table class="table table-sm align-middle">
+        <thead>
+          <tr>
+            <th>EMP</th>
+            <th>Vendedor</th>
+            <th>Mês/Ano</th>
+            <th class="text-end">Valor venda</th>
+            <th class="text-end">Mix</th>
+            <th>Atualizado</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in rows %}
+            <tr>
+              <td>{{ r.emp }}</td>
+              <td>{{ r.vendedor }}</td>
+              <td>{{ "%02d"|format(r.mes) }}/{{ r.ano }}</td>
+              <td class="text-end">R$ {{ "%.2f"|format(r.valor_venda or 0) }}</td>
+              <td class="text-end">{{ r.mix_produtos or 0 }}</td>
+              <td>{{ r.updated_at.strftime('%d/%m/%Y %H:%M') if r.updated_at else '-' }}</td>
+              <td class="text-end">
+                <form method="post" class="d-inline">
+                  <input type="hidden" name="action" value="delete">
+                  <input type="hidden" name="row_id" value="{{ r.id }}">
+                  <input type="hidden" name="emp" value="{{ emp }}">
+                  <input type="hidden" name="mes" value="{{ mes }}">
+                  <input type="hidden" name="ano" value="{{ ano }}">
+                  <button class="btn btn-outline-danger btn-sm" type="submit" {% if fechado %}disabled{% endif %}>Excluir</button>
+                </form>
+              </td>
+            </tr>
+          {% else %}
+            <tr><td colspan="7" class="text-muted">Nenhum registro para o filtro atual.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
