@@ -687,7 +687,10 @@ def create_app() -> Flask:
             "mix_atual": mix_atual,
             "valor_mes_anterior": valor_mes_anterior,
             "crescimento_mes_anterior": crescimento_mes_anterior,
+<<<<<<< HEAD
             "crescimento": crescimento_mes_anterior,
+=======
+>>>>>>> 837320467a3d424d80e98a86cca159b4897f330b
             "valor_ano_passado": valor_ano_passado,
             "mix_ano_passado": mix_ano_passado,
             "ranking_list": ranking_list,
