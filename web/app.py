@@ -66,11 +66,19 @@ def create_app() -> Flask:
         app.logger.exception("Falha ao criar/verificar tabelas")
 
     # ------------- Helpers -------------
+    def _normalize_role(r: str | None) -> str:
+        r = (r or '').strip().lower()
+        if r in {'admin', 'administrador'}:
+            return 'admin'
+        if r in {'sup', 'super', 'supervisor'}:
+            return 'supervisor'
+        return 'vendedor'
+
     def _usuario_logado() -> str | None:
         return session.get("usuario")
 
     def _role() -> str | None:
-        return session.get("role")
+        return _normalize_role(session.get("role"))
 
     def _emp() -> str | None:
         """Retorna a EMP do usuário logado (quando existir)."""
@@ -531,89 +539,59 @@ def create_app() -> Flask:
             return agg
 
 
-    def _dados_from_cache(vendedor_alvo, mes, ano, emp_scope):
+    
+    def _ano_passado_valor_mix(vendedor: str, ano: int, mes: int, emp_scope: str | None) -> tuple[float, int]:
+        """Retorna (valor_liquido, mix_produtos) para o mesmo mês do ano anterior.
 
-        """Carrega o dashboard a partir do cache (dashboard_cache) e busca o
+        Regra:
+        1) Se existir venda detalhada em `vendas` para o período (ano-1, mes), usa vendas (fonte real).
+        2) Se não existir, faz fallback para `vendas_resumo_periodo` (cadastro manual/importação consolidada).
 
-        *ano passado* na tabela vendas_resumo_periodo.
-
-
-        Motivo: o valor de "Ano passado" pode vir de cadastro manual/importação
-
-        (vendas_resumo_periodo) e não necessariamente do cache.
-
+        Observação:
+        - Quando emp_scope for None (admin/vendedor), agrega todas as EMPs.
+        - Quando emp_scope existir (supervisor), filtra pela EMP do supervisor.
         """
+        vendedor = (vendedor or '').strip().upper()
+        if not vendedor:
+            return 0.0, 0
 
-        row = _get_cache_row(vendedor_alvo, mes, ano, emp_scope)
-
-        if not row:
-
-            return None
-
-
-        # ---- valores atuais (do cache) ----
-
-        valor_atual = float(getattr(row, 'valor_liquido', 0) or 0)
-
-        valor_bruto = float(getattr(row, 'valor_bruto', 0) or 0)
-
-        devolucoes = float(getattr(row, 'devolucoes', 0) or 0)
-
-        cancelamentos = float(getattr(row, 'cancelamentos', 0) or 0)
-
-        valor_devolvido = devolucoes + cancelamentos
-
-        pct_devolucao = float(getattr(row, 'pct_devolucao', 0) or 0)
-
-        mix_atual = int(getattr(row, 'mix_produtos', 0) or 0)
-
-
-        total_liquido_periodo = float(getattr(row, 'total_liquido_periodo', None) or valor_atual)
-
-
-        # ---- mês anterior (cache) ----
-
-        if mes == 1:
-
-            prev_mes, prev_ano = 12, ano - 1
-
-        else:
-
-            prev_mes, prev_ano = mes - 1, ano
-
-
-        prev_row = _get_cache_row(vendedor_alvo, prev_mes, prev_ano, emp_scope)
-
-        valor_mes_anterior = float(getattr(prev_row, 'valor_liquido', 0) or 0) if prev_row else 0.0
-
-
-        crescimento_mes_anterior = None
-
-        if prev_row and valor_mes_anterior != 0:
-
-            crescimento_mes_anterior = ((valor_atual - valor_mes_anterior) / valor_mes_anterior) * 100.0
-
-
-        # ---- ano passado (tabela de resumos) ----
-
-        valor_ano_passado = 0.0
-
-        mix_ano_passado = 0
+        ano_passado = int(ano) - 1
+        start, end = _periodo_bounds(ano_passado, int(mes))
 
         try:
-
-            # Importante: em alguns cenários o SQLAlchemy pode não "enxergar" a linha
-            # (ex.: emp NULL vs '' ou diferenças de schema). Para garantir, buscamos via SQL bruto.
-
-            ano_passado = ano - 1
-
-            vendedor_norm = (vendedor_alvo or '').strip().upper()
-
-            emp_norm = (str(emp_scope).strip() if emp_scope is not None else '')
-
-
             with SessionLocal() as db:
+                q_cnt = db.query(func.count()).select_from(Venda).filter(
+                    Venda.vendedor == vendedor,
+                    Venda.movimento >= start,
+                    Venda.movimento < end,
+                )
+                if emp_scope:
+                    q_cnt = q_cnt.filter(Venda.emp == str(emp_scope))
+                cnt = int(q_cnt.scalar() or 0)
 
+                if cnt > 0:
+                    signed = case(
+                        (Venda.mov_tipo_movto.in_(['DS', 'CA']), -Venda.valor_total),
+                        else_=Venda.valor_total,
+                    )
+                    liquido = func.coalesce(func.sum(signed), 0.0)
+                    mix = func.count(func.distinct(case((~Venda.mov_tipo_movto.in_(['DS', 'CA']), Venda.mestre), else_=None)))
+
+                    row = (
+                        db.query(liquido, mix)
+                        .select_from(Venda)
+                        .filter(
+                            Venda.vendedor == vendedor,
+                            Venda.movimento >= start,
+                            Venda.movimento < end,
+                        )
+                    )
+                    if emp_scope:
+                        row = row.filter(Venda.emp == str(emp_scope))
+                    r = row.first()
+                    return float(r[0] or 0.0), int(r[1] or 0)
+
+                # Fallback: resumo manual (vendas_resumo_periodo)
                 base_sql = """
                     select
                       coalesce(sum(valor_venda), 0) as valor,
@@ -623,87 +601,99 @@ def create_app() -> Flask:
                       and ano = :ano
                       and mes = :mes
                 """
+                params = {"vendedor": vendedor, "ano": int(ano_passado), "mes": int(mes)}
 
-                params = {"vendedor": vendedor_norm, "ano": ano_passado, "mes": int(mes)}
-
-                if emp_norm:
+                if emp_scope:
                     base_sql += " and coalesce(emp,'') = :emp"
-                    params["emp"] = emp_norm
+                    params["emp"] = str(emp_scope).strip()
 
                 row_sum = db.execute(text(base_sql), params).mappings().first()
-
                 if row_sum:
-                    valor_ano_passado = float(row_sum.get("valor", 0) or 0)
-                    mix_ano_passado = int(row_sum.get("mix", 0) or 0)
+                    return float(row_sum.get('valor', 0) or 0.0), int(row_sum.get('mix', 0) or 0)
 
         except Exception:
-            # Não quebra o dashboard se der qualquer erro no lookup do ano passado
-            # mas deixa rastreável no Render.
             try:
-                app.logger.exception("Erro ao buscar resumo do ano passado em vendas_resumo_periodo")
+                app.logger.exception("Erro ao buscar dados do ano passado")
             except Exception:
                 pass
 
-            valor_ano_passado = 0.0
-            mix_ano_passado = 0
+        return 0.0, 0
 
+    def _dados_from_cache(vendedor_alvo, mes, ano, emp_scope):
+        """Carrega os dados do dashboard a partir do cache (dashboard_cache).
 
+        Regra para *Ano passado*:
+        - Se existir venda detalhada em `vendas` no (ano-1, mesmo mês), usa esse valor (mais fiel).
+        - Se não existir, faz fallback para `vendas_resumo_periodo` (cadastro manual/consolidado).
+        """
+
+        row = _get_cache_row(vendedor_alvo, ano, mes, emp_scope)
+        if not row:
+            return None
+
+        # ---- valores atuais (do cache) ----
+        valor_atual = float(getattr(row, "valor_liquido", 0) or 0)
+        valor_bruto = float(getattr(row, "valor_bruto", 0) or 0)
+
+        devolucoes = float(getattr(row, "devolucoes", 0) or 0)
+        cancelamentos = float(getattr(row, "cancelamentos", 0) or 0)
+        valor_devolvido = devolucoes + cancelamentos
+
+        pct_devolucao = float(getattr(row, "pct_devolucao", 0) or 0)
+        mix_atual = int(getattr(row, "mix_produtos", 0) or 0)
+
+        total_liquido_periodo = float(getattr(row, "total_liquido_periodo", None) or valor_atual)
+
+        # ---- mês anterior (cache) ----
+        if mes == 1:
+            prev_mes, prev_ano = 12, ano - 1
+        else:
+            prev_mes, prev_ano = mes - 1, ano
+
+        prev_row = _get_cache_row(vendedor_alvo, prev_ano, prev_mes, emp_scope)
+        valor_mes_anterior = float(getattr(prev_row, "valor_liquido", 0) or 0) if prev_row else 0.0
+
+        crescimento_mes_anterior = None
+        if prev_row and valor_mes_anterior != 0:
+            crescimento_mes_anterior = ((valor_atual - valor_mes_anterior) / valor_mes_anterior) * 100.0
+
+        # ---- ano passado (vendas real -> fallback resumo_periodo) ----
+        valor_ano_passado, mix_ano_passado = _ano_passado_valor_mix(
+            vendedor_alvo,
+            ano=ano,
+            mes=mes,
+            emp_scope=emp_scope,
+        )
+
+        # ---- ranking ----
         ranking_list = []
-
         ranking_top15_list = []
-
         try:
-
-            if getattr(row, 'ranking_json', None):
-
-                import json
-
+            if getattr(row, "ranking_json", None):
                 ranking_list = json.loads(row.ranking_json) or []
-
         except Exception:
-
             ranking_list = []
-
         try:
-
-            if getattr(row, 'ranking_top15_json', None):
-
-                import json
-
+            if getattr(row, "ranking_top15_json", None):
                 ranking_top15_list = json.loads(row.ranking_top15_json) or []
-
         except Exception:
-
             ranking_top15_list = []
 
-
-        return dict(
-
-            valor_atual=valor_atual,
-
-            valor_bruto=valor_bruto,
-
-            valor_devolvido=valor_devolvido,
-
-            pct_devolucao=pct_devolucao,
-
-            mix_atual=mix_atual,
-
-            valor_mes_anterior=valor_mes_anterior,
-
-            crescimento_mes_anterior=crescimento_mes_anterior,
-
-            valor_ano_passado=valor_ano_passado,
-
-            mix_ano_passado=mix_ano_passado,
-
-            ranking_list=ranking_list,
-
-            ranking_top15_list=ranking_top15_list,
-
-            total_liquido_periodo=total_liquido_periodo,
-
-        )
+        return {
+            "valor_atual": valor_atual,
+            "valor_bruto": valor_bruto,
+            "valor_devolvido": valor_devolvido,
+            "pct_devolucao": pct_devolucao,
+            "mix_atual": mix_atual,
+            "valor_mes_anterior": valor_mes_anterior,
+            "crescimento_mes_anterior": crescimento_mes_anterior,
+            "crescimento": crescimento_mes_anterior,
+            "valor_ano_passado": valor_ano_passado,
+            "mix_ano_passado": mix_ano_passado,
+            "ranking_list": ranking_list,
+            "ranking_top15_list": ranking_top15_list,
+            "total_liquido_periodo": total_liquido_periodo,
+        }
 
     def _dados_ao_vivo(vendedor: str, mes: int, ano: int, emp_scope: str | None):
         """Calcula o dashboard direto do banco (sem pandas).
@@ -756,33 +746,14 @@ def create_app() -> Flask:
             pct_devolucao = (devol / bruto * 100.0) if bruto else None
             crescimento = ((liquido - liquido_ant) / abs(liquido_ant) * 100.0) if liquido_ant else None
 
-            # Se existir resumo manual do ano passado (vendas_resumo_periodo), ele tem prioridade
-            # para alimentar os campos "Ano passado" (valor e mix). Isso permite carregar dados
-            # do ano anterior sem precisar manter a base inteira de vendas.
-            try:
-                if emp_scope:
-                    r = VendasResumoPeriodo.query.filter_by(
-                        emp=str(emp_scope), vendedor=vendedor, ano=ano - 1, mes=mes
-                    ).first()
-                    if r:
-                        liquido_ano_pass = float(r.valor_venda or 0.0)
-                        mix_ano_pass = int(r.mix_produtos or 0)
-                else:
-                    rows_res = (
-                        VendasResumoPeriodo.query
-                        .filter_by(vendedor=vendedor, ano=ano - 1, mes=mes)
-                        .all()
-                    )
-                    if rows_res:
-                        rnull = next((x for x in rows_res if x.emp in (None, '')), None)
-                        if rnull:
-                            liquido_ano_pass = float(rnull.valor_venda or 0.0)
-                            mix_ano_pass = int(rnull.mix_produtos or 0)
-                        else:
-                            liquido_ano_pass = float(sum(float(x.valor_venda or 0.0) for x in rows_res))
-                            mix_ano_pass = int(sum(int(x.mix_produtos or 0) for x in rows_res))
-            except Exception:
-                pass
+            # Ano passado: vendas real (se existir) -> fallback resumo_periodo
+            liquido_ano_pass, mix_ano_pass = _ano_passado_valor_mix(
+                vendedor,
+                ano=ano,
+                mes=mes,
+                emp_scope=emp_scope,
+            )
+
 
             # ranking por marca (liquido)
             signed = case((Venda.mov_tipo_movto.in_(['DS','CA']), -Venda.valor_total), else_=Venda.valor_total)
@@ -893,7 +864,7 @@ def create_app() -> Flask:
 
             session["user_id"] = u.id
             session["usuario"] = u.username
-            session["role"] = (u.role or "vendedor").strip().lower()
+            session["role"] = _normalize_role(getattr(u, "role", None))
             # EMP pode não existir em versões antigas do schema
             session["emp"] = str(getattr(u, "emp", "")) if getattr(u, "emp", None) is not None else ""
 
