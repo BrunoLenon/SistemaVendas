@@ -2,7 +2,7 @@ import os
 from datetime import datetime
 from urllib.parse import quote_plus
 
-from sqlalchemy import create_engine, Column, Integer, String, Float, Date, DateTime, Text, Boolean, Index, UniqueConstraint
+from sqlalchemy import create_engine, Column, Integer, String, Float, Date, DateTime, Text, Boolean, Index, UniqueConstraint, text
 from sqlalchemy.orm import declarative_base, sessionmaker, synonym
 
 # =====================
@@ -326,4 +326,23 @@ class FechamentoMensal(Base):
 
 
 def criar_tabelas():
+    """Cria tabelas e aplica ajustes leves de schema (compatibilidade).
+
+    Observação: isso NÃO substitui migrations (Alembic), mas ajuda a evitar
+    que versões antigas do banco que não tinham colunas (ex.: usuarios.emp)
+    quebrem o sistema ao atualizar o código.
+    """
+    # Cria tabelas que não existirem
     Base.metadata.create_all(engine)
+
+    # Ajustes compatíveis (IF NOT EXISTS) — seguros para rodar em produção
+    try:
+        with engine.begin() as conn:
+            # Usuários: role/emp
+            conn.execute(text("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS role varchar(20);"))
+            conn.execute(text("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS emp varchar(30);"))
+            conn.execute(text("UPDATE usuarios SET role='vendedor' WHERE role IS NULL OR role='' ;"))
+            conn.execute(text("UPDATE usuarios SET role=lower(role) WHERE role IS NOT NULL;"))
+    except Exception:
+        # Se não tiver permissão ou der algum erro, não derruba o app.
+        pass
