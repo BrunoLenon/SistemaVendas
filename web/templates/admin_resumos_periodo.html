@@ -117,6 +117,47 @@
         </table>
       </div>
 
+      {% if resumos_ano_passado is not none %}
+        <div class="mt-4">
+          <h6 class="mb-2">📘 Resumos cadastrados — Ano passado ({{ ano_passado }})</h6>
+          {% if resumos_ano_passado|length == 0 %}
+            <div class="alert alert-secondary py-2 mb-0">
+              Nenhum resumo encontrado para {{ ano_passado }}{% if emp %} na EMP {{ emp }}{% endif %}{% if vendedor_filtro %} para o vendedor {{ vendedor_filtro }}{% endif %}.
+            </div>
+          {% else %}
+            <div class="table-responsive">
+              <table class="table table-sm table-striped align-middle mb-0">
+                <thead>
+                  <tr>
+                    <th>Ano</th>
+                    <th>Mês</th>
+                    <th>EMP</th>
+                    <th>Vendedor</th>
+                    <th class="text-end">Valor venda</th>
+                    <th class="text-end">Mix</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for r in resumos_ano_passado %}
+                    <tr>
+                      <td>{{ r.ano }}</td>
+                      <td>{{ r.mes }}</td>
+                      <td>{{ r.emp or "—" }}</td>
+                      <td>{{ r.vendedor }}</td>
+                      <td class="text-end">R$ {{ '%.2f'|format(r.valor_venda or 0) }}</td>
+                      <td class="text-end">{{ r.mix or 0 }}</td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+            <div class="text-muted small mt-1">
+              Total: {{ resumos_ano_passado|length }} registro(s)
+            </div>
+          {% endif %}
+        </div>
+      {% endif %}
+
       <hr />
 
       <h6 class="mb-2">➕ Novo resumo</h6>

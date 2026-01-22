@@ -687,14 +687,7 @@ def create_app() -> Flask:
             "mix_atual": mix_atual,
             "valor_mes_anterior": valor_mes_anterior,
             "crescimento_mes_anterior": crescimento_mes_anterior,
-<<<<<<< HEAD
             "crescimento": crescimento_mes_anterior,
-=======
-<<<<<<< HEAD
-            "crescimento": crescimento_mes_anterior,
-=======
->>>>>>> 837320467a3d424d80e98a86cca159b4897f330b
->>>>>>> 2e005b222abcf4e6882aceb0509c7ab5896cc175
             "valor_ano_passado": valor_ano_passado,
             "mix_ano_passado": mix_ano_passado,
             "ranking_list": ranking_list,
@@ -2131,6 +2124,21 @@ def create_app() -> Flask:
             )
             vendedores_sugeridos = [v[0] for v in vendedores_sugeridos if v and v[0]]
 
+            # Listagem auxiliar: resumos já cadastrados no ano passado (para auditoria)
+            ano_passado = ano - 1
+            q_ap = db.query(VendasResumoPeriodo).filter(VendasResumoPeriodo.ano == ano_passado)
+            if emp:
+                q_ap = q_ap.filter(VendasResumoPeriodo.emp == emp)
+            if vendedor:
+                q_ap = q_ap.filter(VendasResumoPeriodo.vendedor == vendedor)
+            resumos_ano_passado = (
+                q_ap.order_by(
+                    VendasResumoPeriodo.mes.asc(),
+                    VendasResumoPeriodo.vendedor.asc(),
+                    VendasResumoPeriodo.emp.asc(),
+                ).all()
+            )
+
         return render_template(
             'admin_resumos_periodo.html',
             emp=emp,
@@ -2140,6 +2148,8 @@ def create_app() -> Flask:
             registros=registros,
             fechado=fechado,
             vendedores_sugeridos=vendedores_sugeridos,
+            ano_passado=ano_passado,
+            resumos_ano_passado=resumos_ano_passado,
             msgs=msgs,
         )
 
