@@ -6,7 +6,7 @@ import calendar
 from io import BytesIO
 
 import pandas as pd
-from sqlalchemy import and_, func, case, cast, String
+from sqlalchemy import and_, func, case, cast, String, text
 from flask import (
     Flask,
     flash,
@@ -602,6 +602,9 @@ def create_app() -> Flask:
 
         try:
 
+            # Importante: em alguns cenários o SQLAlchemy pode não "enxergar" a linha
+            # (ex.: emp NULL vs '' ou diferenças de schema). Para garantir, buscamos via SQL bruto.
+
             ano_passado = ano - 1
 
             vendedor_norm = (vendedor_alvo or '').strip().upper()
@@ -611,37 +614,37 @@ def create_app() -> Flask:
 
             with SessionLocal() as db:
 
-                q = db.query(VendasResumoPeriodo).filter(
+                base_sql = """
+                    select
+                      coalesce(sum(valor_venda), 0) as valor,
+                      coalesce(sum(mix_produtos), 0) as mix
+                    from public.vendas_resumo_periodo
+                    where vendedor = :vendedor
+                      and ano = :ano
+                      and mes = :mes
+                """
 
-                    VendasResumoPeriodo.vendedor == vendedor_norm,
-
-                    VendasResumoPeriodo.ano == ano_passado,
-
-                    VendasResumoPeriodo.mes == mes,
-
-                )
-
-                # Se o vendedor tem EMP definida, usa a EMP. Caso contrário, soma tudo do vendedor.
+                params = {"vendedor": vendedor_norm, "ano": ano_passado, "mes": int(mes)}
 
                 if emp_norm:
+                    base_sql += " and coalesce(emp,'') = :emp"
+                    params["emp"] = emp_norm
 
-                    q = q.filter(VendasResumoPeriodo.emp == emp_norm)
+                row_sum = db.execute(text(base_sql), params).mappings().first()
 
-
-                rows = q.all()
-
-                if rows:
-
-                    valor_ano_passado = float(sum((r.valor_venda or 0) for r in rows))
-
-                    mix_ano_passado = int(sum((r.mix_produtos or 0) for r in rows))
+                if row_sum:
+                    valor_ano_passado = float(row_sum.get("valor", 0) or 0)
+                    mix_ano_passado = int(row_sum.get("mix", 0) or 0)
 
         except Exception:
-
             # Não quebra o dashboard se der qualquer erro no lookup do ano passado
+            # mas deixa rastreável no Render.
+            try:
+                app.logger.exception("Erro ao buscar resumo do ano passado em vendas_resumo_periodo")
+            except Exception:
+                pass
 
             valor_ano_passado = 0.0
-
             mix_ano_passado = 0
 
 
