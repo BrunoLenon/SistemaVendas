@@ -530,89 +530,177 @@ def create_app() -> Flask:
             agg.total_liquido_periodo = total
             return agg
 
-    def _dados_from_cache(vendedor: str, mes: int, ano: int, emp_scope: str | None):
-        """Monta o dict usado no template a partir do cache (e cache de meses relacionados)."""
-        row = _get_cache_row(vendedor, ano, mes, emp_scope)
+
+    def _dados_from_cache(vendedor_alvo, mes, ano, emp_scope):
+
+        """Carrega o dashboard a partir do cache (dashboard_cache) e busca o
+
+        *ano passado* na tabela vendas_resumo_periodo.
+
+
+        Motivo: o valor de "Ano passado" pode vir de cadastro manual/importação
+
+        (vendas_resumo_periodo) e não necessariamente do cache.
+
+        """
+
+        row = _get_cache_row(vendedor_alvo, mes, ano, emp_scope)
+
         if not row:
+
             return None
 
-        # comparações via cache (se existir)
+
+        # ---- valores atuais (do cache) ----
+
+        valor_atual = float(getattr(row, 'valor_liquido', 0) or 0)
+
+        valor_bruto = float(getattr(row, 'valor_bruto', 0) or 0)
+
+        devolucoes = float(getattr(row, 'devolucoes', 0) or 0)
+
+        cancelamentos = float(getattr(row, 'cancelamentos', 0) or 0)
+
+        valor_devolvido = devolucoes + cancelamentos
+
+        pct_devolucao = float(getattr(row, 'pct_devolucao', 0) or 0)
+
+        mix_atual = int(getattr(row, 'mix_produtos', 0) or 0)
+
+
+        total_liquido_periodo = float(getattr(row, 'total_liquido_periodo', None) or valor_atual)
+
+
+        # ---- mês anterior (cache) ----
+
         if mes == 1:
-            mes_ant, ano_ant = 12, ano - 1
+
+            prev_mes, prev_ano = 12, ano - 1
+
         else:
-            mes_ant, ano_ant = mes - 1, ano
 
-        prev_row = _get_cache_row(vendedor, ano_ant, mes_ant, emp_scope)
-        last_year_row = _get_cache_row(vendedor, ano - 1, mes, emp_scope)
+            prev_mes, prev_ano = mes - 1, ano
 
-        # Ano passado (resumo manual em vendas_resumo_periodo)
-        # Regra:
-        # - Se emp_scope estiver definido, buscamos o resumo daquela EMP.
-        # - Se emp_scope for None (painel do vendedor sem filtro de EMP), preferimos um resumo "geral" (emp NULL).
-        #   Se não existir, somamos todos os resumos por EMP do vendedor naquele mês/ano.
-        valor_ano_passado = None
-        mix_ano_passado = None
+
+        prev_row = _get_cache_row(vendedor_alvo, prev_mes, prev_ano, emp_scope)
+
+        valor_mes_anterior = float(getattr(prev_row, 'valor_liquido', 0) or 0) if prev_row else 0.0
+
+
+        crescimento_mes_anterior = None
+
+        if prev_row and valor_mes_anterior != 0:
+
+            crescimento_mes_anterior = ((valor_atual - valor_mes_anterior) / valor_mes_anterior) * 100.0
+
+
+        # ---- ano passado (tabela de resumos) ----
+
+        valor_ano_passado = 0.0
+
+        mix_ano_passado = 0
 
         try:
-            # Importante: aqui usamos SQLAlchemy "puro" (SessionLocal). Os models não têm .query.
+
+            ano_passado = ano - 1
+
+            vendedor_norm = (vendedor_alvo or '').strip().upper()
+
+            emp_norm = (str(emp_scope).strip() if emp_scope is not None else '')
+
+
             with SessionLocal() as db:
-                if emp_scope:
-                    r = (
-                        db.query(VendasResumoPeriodo)
-                        .filter(
-                            VendasResumoPeriodo.emp == str(emp_scope),
-                            VendasResumoPeriodo.vendedor == vendedor,
-                            VendasResumoPeriodo.ano == (ano - 1),
-                            VendasResumoPeriodo.mes == mes,
-                        )
-                        .first()
-                    )
-                    if r:
-                        valor_ano_passado = float(r.valor_venda or 0.0)
-                        mix_ano_passado = int(r.mix_produtos or 0)
-                else:
-                    rows = (
-                        db.query(VendasResumoPeriodo)
-                        .filter(
-                            VendasResumoPeriodo.vendedor == vendedor,
-                            VendasResumoPeriodo.ano == (ano - 1),
-                            VendasResumoPeriodo.mes == mes,
-                        )
-                        .all()
-                    )
-                    # "Geral" = emp NULL (ou emp vazio)
-                    rnull = next((x for x in rows if (x.emp is None) or (str(x.emp).strip() == '')), None)
-                    if rnull:
-                        valor_ano_passado = float(rnull.valor_venda or 0.0)
-                        mix_ano_passado = int(rnull.mix_produtos or 0)
-                    elif rows:
-                        valor_ano_passado = float(sum(float(x.valor_venda or 0.0) for x in rows))
-                        mix_ano_passado = int(sum(int(x.mix_produtos or 0) for x in rows))
+
+                q = db.query(VendasResumoPeriodo).filter(
+
+                    VendasResumoPeriodo.vendedor == vendedor_norm,
+
+                    VendasResumoPeriodo.ano == ano_passado,
+
+                    VendasResumoPeriodo.mes == mes,
+
+                )
+
+                # Se o vendedor tem EMP definida, usa a EMP. Caso contrário, soma tudo do vendedor.
+
+                if emp_norm:
+
+                    q = q.filter(VendasResumoPeriodo.emp == emp_norm)
+
+
+                rows = q.all()
+
+                if rows:
+
+                    valor_ano_passado = float(sum((r.valor_venda or 0) for r in rows))
+
+                    mix_ano_passado = int(sum((r.mix_produtos or 0) for r in rows))
+
         except Exception:
-            # Não quebra o dashboard se o resumo manual der erro (cai no cache do ano passado)
-            pass
 
-        # Se não tiver resumo manual, cai para cache do ano passado (se existir)
-        if valor_ano_passado is None:
-            valor_ano_passado = float(last_year_row.valor_liquido or 0.0) if last_year_row else None
-        if mix_ano_passado is None:
-            mix_ano_passado = int(last_year_row.mix_produtos or 0) if last_year_row else None
+            # Não quebra o dashboard se der qualquer erro no lookup do ano passado
 
-        return {
-            'valor_atual': valor_atual,
-            'valor_ano_passado': valor_ano_passado,
-            'valor_mes_anterior': valor_mes_anterior,
-            'mix_atual': mix_atual,
-            'mix_ano_passado': mix_ano_passado or 0,
-            'valor_bruto': valor_bruto,
-            'valor_devolvido': valor_devolvido,
-            'pct_devolucao': pct_devolucao,
-            'crescimento': crescimento,
-            'ranking_list': ranking_list,
-            'ranking_top15_list': ranking_top15_list,
-            'total_liquido_periodo': float(getattr(row, 'total_liquido_periodo', 0.0) or 0.0),
-        }
+            valor_ano_passado = 0.0
 
+            mix_ano_passado = 0
+
+
+        ranking_list = []
+
+        ranking_top15_list = []
+
+        try:
+
+            if getattr(row, 'ranking_json', None):
+
+                import json
+
+                ranking_list = json.loads(row.ranking_json) or []
+
+        except Exception:
+
+            ranking_list = []
+
+        try:
+
+            if getattr(row, 'ranking_top15_json', None):
+
+                import json
+
+                ranking_top15_list = json.loads(row.ranking_top15_json) or []
+
+        except Exception:
+
+            ranking_top15_list = []
+
+
+        return dict(
+
+            valor_atual=valor_atual,
+
+            valor_bruto=valor_bruto,
+
+            valor_devolvido=valor_devolvido,
+
+            pct_devolucao=pct_devolucao,
+
+            mix_atual=mix_atual,
+
+            valor_mes_anterior=valor_mes_anterior,
+
+            crescimento_mes_anterior=crescimento_mes_anterior,
+
+            valor_ano_passado=valor_ano_passado,
+
+            mix_ano_passado=mix_ano_passado,
+
+            ranking_list=ranking_list,
+
+            ranking_top15_list=ranking_top15_list,
+
+            total_liquido_periodo=total_liquido_periodo,
+
+        )
 
     def _dados_ao_vivo(vendedor: str, mes: int, ano: int, emp_scope: str | None):
         """Calcula o dashboard direto do banco (sem pandas).
