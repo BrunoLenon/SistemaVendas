@@ -66,11 +66,19 @@ def create_app() -> Flask:
         app.logger.exception("Falha ao criar/verificar tabelas")
 
     # ------------- Helpers -------------
+    def _normalize_role(r: str | None) -> str:
+        r = (r or '').strip().lower()
+        if r in {'admin', 'administrador'}:
+            return 'admin'
+        if r in {'sup', 'super', 'supervisor'}:
+            return 'supervisor'
+        return 'vendedor'
+
     def _usuario_logado() -> str | None:
         return session.get("usuario")
 
     def _role() -> str | None:
-        return session.get("role")
+        return _normalize_role(session.get("role"))
 
     def _emp() -> str | None:
         """Retorna a EMP do usuário logado (quando existir)."""
@@ -893,7 +901,7 @@ def create_app() -> Flask:
 
             session["user_id"] = u.id
             session["usuario"] = u.username
-            session["role"] = (u.role or "vendedor").strip().lower()
+            session["role"] = _normalize_role(getattr(u, "role", None))
             # EMP pode não existir em versões antigas do schema
             session["emp"] = str(getattr(u, "emp", "")) if getattr(u, "emp", None) is not None else ""
 
