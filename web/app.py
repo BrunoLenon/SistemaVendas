@@ -545,39 +545,49 @@ def create_app() -> Flask:
         prev_row = _get_cache_row(vendedor, ano_ant, mes_ant, emp_scope)
         last_year_row = _get_cache_row(vendedor, ano - 1, mes, emp_scope)
 
-        # Busca sempre o "resumo manual" do ano passado (vendas_resumo_periodo) e dá prioridade a ele.
-        # Isso evita que um cache antigo/zerado do dashboard "mascare" o valor cadastrado manualmente.
+        # Ano passado (resumo manual em vendas_resumo_periodo)
+        # Regra:
+        # - Se emp_scope estiver definido, buscamos o resumo daquela EMP.
+        # - Se emp_scope for None (painel do vendedor sem filtro de EMP), preferimos um resumo "geral" (emp NULL).
+        #   Se não existir, somamos todos os resumos por EMP do vendedor naquele mês/ano.
+        valor_ano_passado = None
+        mix_ano_passado = None
+
         try:
-            last_year_resumo = (
-                VendasResumoPeriodo.query.filter_by(
-                    emp=(emp_scope if emp_scope else None),
+            if emp_scope:
+                r = VendasResumoPeriodo.query.filter_by(
+                    emp=emp_scope,
                     vendedor=vendedor,
                     ano=ano - 1,
                     mes=mes,
                 ).first()
-            )
+                if r:
+                    valor_ano_passado = float(r.valor_venda or 0.0)
+                    mix_ano_passado = int(r.mix_produtos or 0)
+            else:
+                rows = (
+                    VendasResumoPeriodo.query.filter_by(
+                        vendedor=vendedor,
+                        ano=ano - 1,
+                        mes=mes,
+                    ).all()
+                )
+                # "Geral" = emp NULL (ou emp vazio)
+                rnull = next((x for x in rows if (x.emp is None) or (str(x.emp).strip() == '')), None)
+                if rnull:
+                    valor_ano_passado = float(rnull.valor_venda or 0.0)
+                    mix_ano_passado = int(rnull.mix_produtos or 0)
+                elif rows:
+                    valor_ano_passado = float(sum(float(x.valor_venda or 0.0) for x in rows))
+                    mix_ano_passado = int(sum(int(x.mix_produtos or 0) for x in rows))
         except Exception:
-            last_year_resumo = None
+            pass
 
-        if last_year_resumo:
-            valor_ano_passado = float(last_year_resumo.valor_venda or 0.0)
-        elif last_year_row:
-            valor_ano_passado = float(last_year_row.valor_liquido or 0.0)
-        else:
-            valor_ano_passado = None
-
-        if last_year_resumo:
-            mix_ano_passado = int(last_year_resumo.mix_produtos or 0)
-        elif last_year_row:
-            mix_ano_passado = int(last_year_row.mix_produtos or 0)
-        else:
-            mix_ano_passado = None
-
-# Aplica fallback do resumo manual do ano passado, se necessário
-        if (valor_ano_passado is None) and (last_year_resumo is not None):
-            valor_ano_passado = float(last_year_resumo.valor_venda or 0.0)
-        if (mix_ano_passado is None) and (last_year_resumo is not None):
-            mix_ano_passado = int(last_year_resumo.mix_produtos or 0)
+        # Se não tiver resumo manual, cai para cache do ano passado (se existir)
+        if valor_ano_passado is None:
+            valor_ano_passado = float(last_year_row.valor_liquido or 0.0) if last_year_row else None
+        if mix_ano_passado is None:
+            mix_ano_passado = int(last_year_row.mix_produtos or 0) if last_year_row else None
 
         return {
             'valor_atual': valor_atual,
@@ -645,6 +655,34 @@ def create_app() -> Flask:
 
             pct_devolucao = (devol / bruto * 100.0) if bruto else None
             crescimento = ((liquido - liquido_ant) / abs(liquido_ant) * 100.0) if liquido_ant else None
+
+            # Se existir resumo manual do ano passado (vendas_resumo_periodo), ele tem prioridade
+            # para alimentar os campos "Ano passado" (valor e mix). Isso permite carregar dados
+            # do ano anterior sem precisar manter a base inteira de vendas.
+            try:
+                if emp_scope:
+                    r = VendasResumoPeriodo.query.filter_by(
+                        emp=str(emp_scope), vendedor=vendedor, ano=ano - 1, mes=mes
+                    ).first()
+                    if r:
+                        liquido_ano_pass = float(r.valor_venda or 0.0)
+                        mix_ano_pass = int(r.mix_produtos or 0)
+                else:
+                    rows_res = (
+                        VendasResumoPeriodo.query
+                        .filter_by(vendedor=vendedor, ano=ano - 1, mes=mes)
+                        .all()
+                    )
+                    if rows_res:
+                        rnull = next((x for x in rows_res if x.emp in (None, '')), None)
+                        if rnull:
+                            liquido_ano_pass = float(rnull.valor_venda or 0.0)
+                            mix_ano_pass = int(rnull.mix_produtos or 0)
+                        else:
+                            liquido_ano_pass = float(sum(float(x.valor_venda or 0.0) for x in rows_res))
+                            mix_ano_pass = int(sum(int(x.mix_produtos or 0) for x in rows_res))
+            except Exception:
+                pass
 
             # ranking por marca (liquido)
             signed = case((Venda.mov_tipo_movto.in_(['DS','CA']), -Venda.valor_total), else_=Venda.valor_total)
@@ -2025,6 +2063,13 @@ def create_app() -> Flask:
             vendedores_sugeridos=vendedores_sugeridos,
             msgs=msgs,
         )
+
+    # Compatibilidade: algumas telas/atalhos antigos apontavam para /admin/fechamento.
+    # O fechamento mensal hoje é feito dentro da tela de resumos por período.
+    @app.get('/admin/fechamento')
+    def admin_fechamento_redirect():
+        _admin_required()
+        return redirect(url_for('admin_resumos_periodo'))
 
 
     @app.route("/admin/campanhas", methods=["GET", "POST"])
