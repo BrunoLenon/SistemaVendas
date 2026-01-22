@@ -545,47 +545,35 @@ def create_app() -> Flask:
         prev_row = _get_cache_row(vendedor, ano_ant, mes_ant, emp_scope)
         last_year_row = _get_cache_row(vendedor, ano - 1, mes, emp_scope)
 
-        # Fallback: se não existe cache do ano passado (porque não importamos o detalhamento),
-        # tenta buscar na tabela manual de resumos (vendas_resumo_periodo).
-        # emp_scope = None => resumo "geral" (sem EMP).
-        last_year_resumo = None
-        if not last_year_row:
-            q = session.query(VendasResumoPeriodo).filter(
-                VendasResumoPeriodo.vendedor == vendedor,
-                VendasResumoPeriodo.ano == (ano - 1),
-                VendasResumoPeriodo.mes == mes,
+        # Busca sempre o "resumo manual" do ano passado (vendas_resumo_periodo) e dá prioridade a ele.
+        # Isso evita que um cache antigo/zerado do dashboard "mascare" o valor cadastrado manualmente.
+        try:
+            last_year_resumo = (
+                VendasResumoPeriodo.query.filter_by(
+                    emp=(emp_scope if emp_scope else None),
+                    vendedor=vendedor,
+                    ano=ano - 1,
+                    mes=mes,
+                ).first()
             )
-            if emp_scope is None:
-                q = q.filter(or_(VendasResumoPeriodo.emp.is_(None), VendasResumoPeriodo.emp == ''))
-            else:
-                q = q.filter(VendasResumoPeriodo.emp == str(emp_scope))
-            last_year_resumo = q.first()
-
-        valor_atual = float(row.valor_liquido or 0.0)
-        valor_mes_anterior = float(prev_row.valor_liquido or 0.0) if prev_row else None
-        valor_ano_passado = float(last_year_row.valor_liquido or 0.0) if last_year_row else None
-
-        crescimento = None
-        if valor_mes_anterior not in (None, 0):
-            crescimento = ((valor_atual - valor_mes_anterior) / abs(valor_mes_anterior)) * 100.0
-
-        try:
-            ranking_list = json.loads(row.ranking_json or '[]')
         except Exception:
-            ranking_list = []
-        try:
-            ranking_top15_list = json.loads(row.ranking_top15_json or '[]')
-        except Exception:
-            ranking_top15_list = ranking_list[:15]
+            last_year_resumo = None
 
-        valor_bruto = float(row.valor_bruto or 0.0)
-        valor_devolvido = float((row.devolucoes or 0.0) + (row.cancelamentos or 0.0))
-        pct_devolucao = (valor_devolvido / valor_bruto * 100.0) if valor_bruto else None
+        if last_year_resumo:
+            valor_ano_passado = float(last_year_resumo.valor_venda or 0.0)
+        elif last_year_row:
+            valor_ano_passado = float(last_year_row.valor_liquido or 0.0)
+        else:
+            valor_ano_passado = None
 
-        mix_atual = int(row.mix_produtos or 0)
-        mix_ano_passado = int(last_year_row.mix_produtos or 0) if last_year_row else None
+        if last_year_resumo:
+            mix_ano_passado = int(last_year_resumo.mix_produtos or 0)
+        elif last_year_row:
+            mix_ano_passado = int(last_year_row.mix_produtos or 0)
+        else:
+            mix_ano_passado = None
 
-        # Aplica fallback do resumo manual do ano passado, se necessário
+# Aplica fallback do resumo manual do ano passado, se necessário
         if (valor_ano_passado is None) and (last_year_resumo is not None):
             valor_ano_passado = float(last_year_resumo.valor_venda or 0.0)
         if (mix_ano_passado is None) and (last_year_resumo is not None):
