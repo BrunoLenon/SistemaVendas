@@ -545,6 +545,22 @@ def create_app() -> Flask:
         prev_row = _get_cache_row(vendedor, ano_ant, mes_ant, emp_scope)
         last_year_row = _get_cache_row(vendedor, ano - 1, mes, emp_scope)
 
+        # Fallback: se não existe cache do ano passado (porque não importamos o detalhamento),
+        # tenta buscar na tabela manual de resumos (vendas_resumo_periodo).
+        # emp_scope = None => resumo "geral" (sem EMP).
+        last_year_resumo = None
+        if not last_year_row:
+            q = session.query(VendasResumoPeriodo).filter(
+                VendasResumoPeriodo.vendedor == vendedor,
+                VendasResumoPeriodo.ano == (ano - 1),
+                VendasResumoPeriodo.mes == mes,
+            )
+            if emp_scope is None:
+                q = q.filter(or_(VendasResumoPeriodo.emp.is_(None), VendasResumoPeriodo.emp == ''))
+            else:
+                q = q.filter(VendasResumoPeriodo.emp == str(emp_scope))
+            last_year_resumo = q.first()
+
         valor_atual = float(row.valor_liquido or 0.0)
         valor_mes_anterior = float(prev_row.valor_liquido or 0.0) if prev_row else None
         valor_ano_passado = float(last_year_row.valor_liquido or 0.0) if last_year_row else None
@@ -568,6 +584,12 @@ def create_app() -> Flask:
 
         mix_atual = int(row.mix_produtos or 0)
         mix_ano_passado = int(last_year_row.mix_produtos or 0) if last_year_row else None
+
+        # Aplica fallback do resumo manual do ano passado, se necessário
+        if (valor_ano_passado is None) and (last_year_resumo is not None):
+            valor_ano_passado = float(last_year_resumo.valor_venda or 0.0)
+        if (mix_ano_passado is None) and (last_year_resumo is not None):
+            mix_ano_passado = int(last_year_resumo.mix_produtos or 0)
 
         return {
             'valor_atual': valor_atual,
