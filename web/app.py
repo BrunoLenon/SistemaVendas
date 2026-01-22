@@ -6,7 +6,7 @@ import calendar
 from io import BytesIO
 
 import pandas as pd
-from sqlalchemy import and_, func, case
+from sqlalchemy import and_, func, case, cast, String, text
 from flask import (
     Flask,
     flash,
@@ -20,7 +20,18 @@ from flask import (
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from dados_db import carregar_df
-from db import SessionLocal, Usuario, Venda, DashboardCache, ItemParado, criar_tabelas
+from db import (
+    SessionLocal,
+    Usuario,
+    Venda,
+    DashboardCache,
+    ItemParado,
+    CampanhaQtd,
+    CampanhaQtdResultado,
+    VendasResumoPeriodo,
+    FechamentoMensal,
+    criar_tabelas,
+)
 from importar_excel import importar_planilha
 
 
@@ -55,11 +66,19 @@ def create_app() -> Flask:
         app.logger.exception("Falha ao criar/verificar tabelas")
 
     # ------------- Helpers -------------
+    def _normalize_role(r: str | None) -> str:
+        r = (r or '').strip().lower()
+        if r in {'admin', 'administrador'}:
+            return 'admin'
+        if r in {'sup', 'super', 'supervisor'}:
+            return 'supervisor'
+        return 'vendedor'
+
     def _usuario_logado() -> str | None:
         return session.get("usuario")
 
     def _role() -> str | None:
-        return session.get("role")
+        return _normalize_role(session.get("role"))
 
     def _emp() -> str | None:
         """Retorna a EMP do usuário logado (quando existir)."""
@@ -154,6 +173,23 @@ def create_app() -> Flask:
             vendedores = [ (r[0] or "").strip().upper() for r in q.all() ]
         vendedores = sorted([v for v in vendedores if v])
         return vendedores
+
+    def _get_emps_vendedor(username: str) -> list[str]:
+        """Lista de EMPs em que o vendedor possui vendas (para vendedor multi-EMP).
+
+        Regra do sistema: para vendedores, a EMP é inferida da tabela de vendas.
+        """
+        username = (username or "").strip().upper()
+        if not username:
+            return []
+        with SessionLocal() as db:
+            rows = (
+                db.query(func.distinct(Venda.emp))
+                .filter(Venda.vendedor == username)
+                .all()
+            )
+        emps = sorted({str(r[0]).strip() for r in rows if r and r[0] is not None and str(r[0]).strip() != ""})
+        return emps
 
     def _fetch_cache_row(vendedor: str, ano: int, mes: int, emp_scope: str | None) -> dict | None:
         """Busca dados do cache para o vendedor/período.
@@ -414,6 +450,23 @@ def create_app() -> Flask:
             end = date(ano, mes + 1, 1)
         return start, end
 
+
+    def _emp_norm(emp: str | None) -> str:
+        """Normaliza EMP para armazenamento ('' quando nulo)."""
+        return (emp or "").strip()
+
+
+    def _mes_fechado(emp: str | None, ano: int, mes: int) -> bool:
+        """Retorna True se o mês estiver marcado como fechado para a EMP."""
+        emp_n = _emp_norm(emp)
+        with SessionLocal() as db:
+            row = (
+                db.query(FechamentoMensal)
+                .filter(FechamentoMensal.emp == emp_n, FechamentoMensal.ano == ano, FechamentoMensal.mes == mes)
+                .first()
+            )
+            return bool(row and row.fechado)
+
     def _vendedores_from_db(role: str, emp_usuario: str | None):
         """Lista de vendedores disponível para dropdown (sem carregar dataframe inteiro)."""
         role = (role or '').strip().lower()
@@ -485,60 +538,162 @@ def create_app() -> Flask:
             agg.total_liquido_periodo = total
             return agg
 
-    def _dados_from_cache(vendedor: str, mes: int, ano: int, emp_scope: str | None):
-        """Monta o dict usado no template a partir do cache (e cache de meses relacionados)."""
-        row = _get_cache_row(vendedor, ano, mes, emp_scope)
+
+    
+    def _ano_passado_valor_mix(vendedor: str, ano: int, mes: int, emp_scope: str | None) -> tuple[float, int]:
+        """Retorna (valor_liquido, mix_produtos) para o mesmo mês do ano anterior.
+
+        Regra:
+        1) Se existir venda detalhada em `vendas` para o período (ano-1, mes), usa vendas (fonte real).
+        2) Se não existir, faz fallback para `vendas_resumo_periodo` (cadastro manual/importação consolidada).
+
+        Observação:
+        - Quando emp_scope for None (admin/vendedor), agrega todas as EMPs.
+        - Quando emp_scope existir (supervisor), filtra pela EMP do supervisor.
+        """
+        vendedor = (vendedor or '').strip().upper()
+        if not vendedor:
+            return 0.0, 0
+
+        ano_passado = int(ano) - 1
+        start, end = _periodo_bounds(ano_passado, int(mes))
+
+        try:
+            with SessionLocal() as db:
+                q_cnt = db.query(func.count()).select_from(Venda).filter(
+                    Venda.vendedor == vendedor,
+                    Venda.movimento >= start,
+                    Venda.movimento < end,
+                )
+                if emp_scope:
+                    q_cnt = q_cnt.filter(Venda.emp == str(emp_scope))
+                cnt = int(q_cnt.scalar() or 0)
+
+                if cnt > 0:
+                    signed = case(
+                        (Venda.mov_tipo_movto.in_(['DS', 'CA']), -Venda.valor_total),
+                        else_=Venda.valor_total,
+                    )
+                    liquido = func.coalesce(func.sum(signed), 0.0)
+                    mix = func.count(func.distinct(case((~Venda.mov_tipo_movto.in_(['DS', 'CA']), Venda.mestre), else_=None)))
+
+                    row = (
+                        db.query(liquido, mix)
+                        .select_from(Venda)
+                        .filter(
+                            Venda.vendedor == vendedor,
+                            Venda.movimento >= start,
+                            Venda.movimento < end,
+                        )
+                    )
+                    if emp_scope:
+                        row = row.filter(Venda.emp == str(emp_scope))
+                    r = row.first()
+                    return float(r[0] or 0.0), int(r[1] or 0)
+
+                # Fallback: resumo manual (vendas_resumo_periodo)
+                base_sql = """
+                    select
+                      coalesce(sum(valor_venda), 0) as valor,
+                      coalesce(sum(mix_produtos), 0) as mix
+                    from public.vendas_resumo_periodo
+                    where vendedor = :vendedor
+                      and ano = :ano
+                      and mes = :mes
+                """
+                params = {"vendedor": vendedor, "ano": int(ano_passado), "mes": int(mes)}
+
+                if emp_scope:
+                    base_sql += " and coalesce(emp,'') = :emp"
+                    params["emp"] = str(emp_scope).strip()
+
+                row_sum = db.execute(text(base_sql), params).mappings().first()
+                if row_sum:
+                    return float(row_sum.get('valor', 0) or 0.0), int(row_sum.get('mix', 0) or 0)
+
+        except Exception:
+            try:
+                app.logger.exception("Erro ao buscar dados do ano passado")
+            except Exception:
+                pass
+
+        return 0.0, 0
+
+    def _dados_from_cache(vendedor_alvo, mes, ano, emp_scope):
+        """Carrega os dados do dashboard a partir do cache (dashboard_cache).
+
+        Regra para *Ano passado*:
+        - Se existir venda detalhada em `vendas` no (ano-1, mesmo mês), usa esse valor (mais fiel).
+        - Se não existir, faz fallback para `vendas_resumo_periodo` (cadastro manual/consolidado).
+        """
+
+        row = _get_cache_row(vendedor_alvo, ano, mes, emp_scope)
         if not row:
             return None
 
-        # comparações via cache (se existir)
+        # ---- valores atuais (do cache) ----
+        valor_atual = float(getattr(row, "valor_liquido", 0) or 0)
+        valor_bruto = float(getattr(row, "valor_bruto", 0) or 0)
+
+        devolucoes = float(getattr(row, "devolucoes", 0) or 0)
+        cancelamentos = float(getattr(row, "cancelamentos", 0) or 0)
+        valor_devolvido = devolucoes + cancelamentos
+
+        pct_devolucao = float(getattr(row, "pct_devolucao", 0) or 0)
+        mix_atual = int(getattr(row, "mix_produtos", 0) or 0)
+
+        total_liquido_periodo = float(getattr(row, "total_liquido_periodo", None) or valor_atual)
+
+        # ---- mês anterior (cache) ----
         if mes == 1:
-            mes_ant, ano_ant = 12, ano - 1
+            prev_mes, prev_ano = 12, ano - 1
         else:
-            mes_ant, ano_ant = mes - 1, ano
+            prev_mes, prev_ano = mes - 1, ano
 
-        prev_row = _get_cache_row(vendedor, ano_ant, mes_ant, emp_scope)
-        last_year_row = _get_cache_row(vendedor, ano - 1, mes, emp_scope)
+        prev_row = _get_cache_row(vendedor_alvo, prev_ano, prev_mes, emp_scope)
+        valor_mes_anterior = float(getattr(prev_row, "valor_liquido", 0) or 0) if prev_row else 0.0
 
-        valor_atual = float(row.valor_liquido or 0.0)
-        valor_mes_anterior = float(prev_row.valor_liquido or 0.0) if prev_row else None
-        valor_ano_passado = float(last_year_row.valor_liquido or 0.0) if last_year_row else None
+        crescimento_mes_anterior = None
+        if prev_row and valor_mes_anterior != 0:
+            crescimento_mes_anterior = ((valor_atual - valor_mes_anterior) / valor_mes_anterior) * 100.0
 
-        crescimento = None
-        if valor_mes_anterior not in (None, 0):
-            crescimento = ((valor_atual - valor_mes_anterior) / abs(valor_mes_anterior)) * 100.0
+        # ---- ano passado (vendas real -> fallback resumo_periodo) ----
+        valor_ano_passado, mix_ano_passado = _ano_passado_valor_mix(
+            vendedor_alvo,
+            ano=ano_alvo,
+            mes=mes_alvo,
+            emp_scope=emp_scope,
+        )
 
+        # ---- ranking ----
+        ranking_list = []
+        ranking_top15_list = []
         try:
-            ranking_list = json.loads(row.ranking_json or '[]')
+            if getattr(row, "ranking_json", None):
+                ranking_list = json.loads(row.ranking_json) or []
         except Exception:
             ranking_list = []
         try:
-            ranking_top15_list = json.loads(row.ranking_top15_json or '[]')
+            if getattr(row, "ranking_top15_json", None):
+                ranking_top15_list = json.loads(row.ranking_top15_json) or []
         except Exception:
-            ranking_top15_list = ranking_list[:15]
-
-        valor_bruto = float(row.valor_bruto or 0.0)
-        valor_devolvido = float((row.devolucoes or 0.0) + (row.cancelamentos or 0.0))
-        pct_devolucao = (valor_devolvido / valor_bruto * 100.0) if valor_bruto else None
-
-        mix_atual = int(row.mix_produtos or 0)
-        mix_ano_passado = int(last_year_row.mix_produtos or 0) if last_year_row else None
+            ranking_top15_list = []
 
         return {
-            'valor_atual': valor_atual,
-            'valor_ano_passado': valor_ano_passado,
-            'valor_mes_anterior': valor_mes_anterior,
-            'mix_atual': mix_atual,
-            'mix_ano_passado': mix_ano_passado or 0,
-            'valor_bruto': valor_bruto,
-            'valor_devolvido': valor_devolvido,
-            'pct_devolucao': pct_devolucao,
-            'crescimento': crescimento,
-            'ranking_list': ranking_list,
-            'ranking_top15_list': ranking_top15_list,
-            'total_liquido_periodo': float(getattr(row, 'total_liquido_periodo', 0.0) or 0.0),
+            "valor_atual": valor_atual,
+            "valor_bruto": valor_bruto,
+            "valor_devolvido": valor_devolvido,
+            "pct_devolucao": pct_devolucao,
+            "mix_atual": mix_atual,
+            "valor_mes_anterior": valor_mes_anterior,
+            "crescimento_mes_anterior": crescimento_mes_anterior,
+            "crescimento": crescimento_mes_anterior,
+            "valor_ano_passado": valor_ano_passado,
+            "mix_ano_passado": mix_ano_passado,
+            "ranking_list": ranking_list,
+            "ranking_top15_list": ranking_top15_list,
+            "total_liquido_periodo": total_liquido_periodo,
         }
-
 
     def _dados_ao_vivo(vendedor: str, mes: int, ano: int, emp_scope: str | None):
         """Calcula o dashboard direto do banco (sem pandas).
@@ -590,6 +745,15 @@ def create_app() -> Flask:
 
             pct_devolucao = (devol / bruto * 100.0) if bruto else None
             crescimento = ((liquido - liquido_ant) / abs(liquido_ant) * 100.0) if liquido_ant else None
+
+            # Ano passado: vendas real (se existir) -> fallback resumo_periodo
+            liquido_ano_pass, mix_ano_pass = _ano_passado_valor_mix(
+                vendedor,
+                ano=ano_alvo,
+                mes=mes_alvo,
+                emp_scope=emp_scope,
+            )
+
 
             # ranking por marca (liquido)
             signed = case((Venda.mov_tipo_movto.in_(['DS','CA']), -Venda.valor_total), else_=Venda.valor_total)
@@ -700,7 +864,7 @@ def create_app() -> Flask:
 
             session["user_id"] = u.id
             session["usuario"] = u.username
-            session["role"] = (u.role or "vendedor").strip().lower()
+            session["role"] = _normalize_role(getattr(u, "role", None))
             # EMP pode não existir em versões antigas do schema
             session["emp"] = str(getattr(u, "emp", "")) if getattr(u, "emp", None) is not None else ""
 
@@ -762,8 +926,8 @@ def create_app() -> Flask:
             vendedores=vendedores_lista,
             vendedor_selecionado=vendedor_alvo or "",
             mensagem_role=msg,
-            mes=mes,
-            ano=ano,
+            mes=mes_alvo,
+            ano=ano_alvo,
             dados=dados,
         )
 
@@ -801,8 +965,8 @@ def create_app() -> Flask:
             vendedor=vendedor_alvo or '',
             role=_role(),
             emp=emp_scope,
-            mes=mes,
-            ano=ano,
+            mes=mes_alvo,
+            ano=ano_alvo,
             total=total,
             ranking_list=ranking_list,
         )
@@ -839,8 +1003,8 @@ def create_app() -> Flask:
             vendedor=vendedor_alvo or '',
             role=_role(),
             emp=emp_scope,
-            mes=mes,
-            ano=ano,
+            mes=mes_alvo,
+            ano=ano_alvo,
             marcas=marcas_map,
         )
 
@@ -886,8 +1050,8 @@ def create_app() -> Flask:
             vendedor=vendedor_alvo or '',
             role=_role(),
             emp=emp_scope,
-            mes=mes,
-            ano=ano,
+            mes=mes_alvo,
+            ano=ano_alvo,
             devolucoes=devol,
         )
 
@@ -1007,8 +1171,8 @@ def create_app() -> Flask:
         return render_template(
             "itens_parados.html",
             role=role,
-            mes=mes,
-            ano=ano,
+            mes=mes_alvo,
+            ano=ano_alvo,
             emp_param=emp_param,
             emp_scopes=emp_scopes,
             itens_por_emp=itens_por_emp,
@@ -1197,6 +1361,335 @@ def create_app() -> Flask:
         buf.seek(0)
 
         filename = f"itens_parados_{mes:02d}_{ano}.pdf"
+        return send_file(buf, mimetype="application/pdf", as_attachment=True, download_name=filename)
+
+    # ---------------------------------------------------------------------
+    # Campanhas de recompensa por quantidade (prefixo + marca)
+    # ---------------------------------------------------------------------
+    def _campanhas_mes_overlap(ano: int, mes: int, emp: str | None) -> list[CampanhaQtd]:
+        """Retorna campanhas que intersectam o mês (e opcionalmente a EMP)."""
+        inicio_mes, fim_mes = _periodo_bounds(int(ano), int(mes))
+        with SessionLocal() as db:
+            q = db.query(CampanhaQtd).filter(CampanhaQtd.ativo == 1)
+            if emp:
+                q = q.filter(CampanhaQtd.emp == str(emp))
+            # overlap: inicio <= fim_mes AND fim >= inicio_mes
+            q = q.filter(and_(CampanhaQtd.data_inicio <= fim_mes, CampanhaQtd.data_fim >= inicio_mes))
+            return q.order_by(CampanhaQtd.emp.asc(), CampanhaQtd.data_inicio.asc()).all()
+
+    def _upsert_resultado(
+        db,
+        campanha: CampanhaQtd,
+        vendedor: str,
+        emp: str,
+        competencia_ano: int,
+        competencia_mes: int,
+        periodo_ini: date,
+        periodo_fim: date,
+    ) -> CampanhaQtdResultado:
+        """Calcula e grava (upsert) o snapshot do resultado da campanha."""
+        vendedor = (vendedor or "").strip().upper()
+        emp = str(emp)
+
+        # Campo usado para prefix match: por compatibilidade, usamos Venda.mestre
+        # (em muitos cenários ele carrega descrição/identificador do item).
+        prefix = (campanha.produto_prefixo or "").strip()
+        prefix_up = prefix.upper()
+
+        campo_item = func.upper(func.trim(cast(Venda.mestre, String)))
+        cond_prefix = campo_item.like(prefix_up + "%")
+        cond_marca = func.upper(func.trim(cast(Venda.marca, String))) == (campanha.marca or "").strip().upper()
+
+        base = (
+            db.query(
+                func.coalesce(func.sum(Venda.qtdade_vendida), 0.0).label("qtd"),
+                func.coalesce(func.sum(Venda.valor_total), 0.0).label("valor"),
+            )
+            .filter(
+                Venda.emp == emp,
+                Venda.vendedor == vendedor,
+                Venda.movimento >= periodo_ini,
+                Venda.movimento <= periodo_fim,
+                ~Venda.mov_tipo_movto.in_(["DS", "CA"]),
+                cond_prefix,
+                cond_marca,
+            )
+            .first()
+        )
+        qtd_vendida = float(base.qtd or 0.0)
+        valor_vendido = float(base.valor or 0.0)
+
+        minimo = campanha.qtd_minima
+        atingiu = 1
+        if minimo is not None and float(minimo) > 0:
+            atingiu = 1 if qtd_vendida >= float(minimo) else 0
+        valor_recomp = (qtd_vendida * float(campanha.recompensa_unit or 0.0)) if atingiu else 0.0
+
+        # Upsert por chave única
+        res = (
+            db.query(CampanhaQtdResultado)
+            .filter(
+                CampanhaQtdResultado.campanha_id == campanha.id,
+                CampanhaQtdResultado.emp == emp,
+                CampanhaQtdResultado.vendedor == vendedor,
+                CampanhaQtdResultado.competencia_ano == int(competencia_ano),
+                CampanhaQtdResultado.competencia_mes == int(competencia_mes),
+            )
+            .first()
+        )
+        if not res:
+            res = CampanhaQtdResultado(
+                campanha_id=campanha.id,
+                emp=emp_alvo,
+                vendedor=vendedor,
+                competencia_ano=int(competencia_ano),
+                competencia_mes=int(competencia_mes),
+                status_pagamento="PENDENTE",
+            )
+            db.add(res)
+
+        # snapshot
+        res.titulo = campanha.titulo
+        res.produto_prefixo = prefix
+        res.marca = (campanha.marca or "").strip()
+        res.recompensa_unit = float(campanha.recompensa_unit or 0.0)
+        res.qtd_minima = float(minimo) if minimo is not None else None
+        res.data_inicio = campanha.data_inicio
+        res.data_fim = campanha.data_fim
+
+        res.qtd_vendida = qtd_vendida
+        res.valor_vendido = valor_vendido
+        res.atingiu_minimo = int(atingiu)
+        res.valor_recompensa = float(valor_recomp)
+        res.atualizado_em = datetime.utcnow()
+        return res
+
+    def _resolver_emp_scope_para_usuario(vendedor: str, role: str, emp_usuario: str | None) -> list[str]:
+        """Retorna lista de EMPs que o usuário pode visualizar (para campanhas e relatórios)."""
+        role = (role or "").strip().lower()
+        if role == "admin":
+            # Admin: se emp estiver definido via query param, filtra. Caso contrário, pode ver as EMPs do vendedor selecionado
+            return []
+        if role == "supervisor":
+            return [str(emp_usuario)] if emp_usuario else []
+        # vendedor
+        return _get_emps_vendedor(vendedor)
+
+    @app.get("/campanhas")
+    def campanhas_qtd():
+        """Relatório de campanhas de recompensa por quantidade.
+
+        - Vendedor: vê por EMPs inferidas de vendas (multi-EMP)
+        - Supervisor: vê apenas EMP dele
+        - Admin: pode escolher vendedor/EMP
+        """
+        red = _login_required()
+        if red:
+            return red
+
+        role = _role() or ""
+        emp_usuario = _emp()
+
+        # período
+        hoje = date.today()
+        mes = int(request.args.get("mes") or hoje.month)
+        ano = int(request.args.get("ano") or hoje.year)
+
+        # vendedor alvo
+        vendedor_logado = (_usuario_logado() or "").strip().upper()
+        vendedor_sel = (request.args.get("vendedor") or vendedor_logado).strip().upper()
+        if role != "admin" and vendedor_sel != vendedor_logado and role != "supervisor":
+            vendedor_sel = vendedor_logado
+
+        # EMP scope
+        emp_param = (request.args.get("emp") or "").strip()
+        emps_scope: list[str] = []
+        if (role or "").lower() == "admin":
+            if emp_param:
+                emps_scope = [emp_param]
+            else:
+                emps_scope = _get_emps_vendedor(vendedor_sel)
+        else:
+            emps_scope = _resolver_emp_scope_para_usuario(vendedor_sel, role, emp_usuario)
+
+        # Se não temos EMP, não dá pra montar relatório
+        if not emps_scope and (role or "").lower() != "admin":
+            flash("Não foi possível identificar a EMP do vendedor pelas vendas. Verifique se já existem vendas importadas.", "warning")
+
+        inicio_mes, fim_mes = _periodo_bounds(ano, mes)
+
+        # Busca vendedores dropdown
+        vendedores_dropdown = []
+        try:
+            vendedores_dropdown = _get_vendedores_db(role, emp_usuario)
+        except Exception:
+            vendedores_dropdown = []
+
+        # Calcula resultados e agrupa por EMP
+        blocos: list[dict] = []
+        with SessionLocal() as db:
+            for emp in emps_scope or ([emp_param] if emp_param else []):
+                emp = str(emp)
+
+                # campanhas relevantes (overlap do mês)
+                campanhas = _campanhas_mes_overlap(ano, mes, emp)
+
+                # aplica prioridade: regras do vendedor substituem regras gerais
+                # chave: (produto_prefixo, marca)
+                by_key: dict[tuple[str, str], CampanhaQtd] = {}
+                for c in campanhas:
+                    key = ((c.produto_prefixo or "").strip().upper(), (c.marca or "").strip().upper())
+                    if c.vendedor and c.vendedor.strip().upper() == vendedor_sel:
+                        by_key[key] = c
+                    else:
+                        by_key.setdefault(key, c)
+                campanhas_final = list(by_key.values())
+
+                linhas = []
+                total_recomp = 0.0
+
+                for c in campanhas_final:
+                    # interseção do período
+                    periodo_ini = max(c.data_inicio, inicio_mes)
+                    periodo_fim = min(c.data_fim, fim_mes)
+                    res = _upsert_resultado(db, c, vendedor_sel, emp, ano, mes, periodo_ini, periodo_fim)
+                    linhas.append(res)
+                    total_recomp += float(res.valor_recompensa or 0.0)
+
+                db.commit()
+
+                # Recarrega resultados (já persistidos)
+                resultados = (
+                    db.query(CampanhaQtdResultado)
+                    .filter(
+                        CampanhaQtdResultado.emp == emp,
+                        CampanhaQtdResultado.vendedor == vendedor_sel,
+                        CampanhaQtdResultado.competencia_ano == int(ano),
+                        CampanhaQtdResultado.competencia_mes == int(mes),
+                    )
+                    .order_by(CampanhaQtdResultado.valor_recompensa.desc())
+                    .all()
+                )
+
+                blocos.append({
+                    "emp": emp,
+                    "resultados": resultados,
+                    "total": total_recomp,
+                })
+
+        return render_template(
+            "campanhas_qtd.html",
+            role=role,
+            ano=ano_alvo,
+            mes=mes_alvo,
+            vendedor=vendedor_sel,
+            vendedor_logado=vendedor_logado,
+            vendedores=vendedores_dropdown,
+            blocos=blocos,
+            emp_param=emp_param,
+        )
+
+    @app.get("/campanhas/pdf")
+    def campanhas_qtd_pdf():
+        red = _login_required()
+        if red:
+            return red
+
+        role = _role() or ""
+        emp_usuario = _emp()
+        hoje = date.today()
+        mes = int(request.args.get("mes") or hoje.month)
+        ano = int(request.args.get("ano") or hoje.year)
+
+        vendedor_logado = (_usuario_logado() or "").strip().upper()
+        vendedor_sel = (request.args.get("vendedor") or vendedor_logado).strip().upper()
+        if role != "admin" and vendedor_sel != vendedor_logado and role != "supervisor":
+            vendedor_sel = vendedor_logado
+
+        emp_param = (request.args.get("emp") or "").strip()
+        if (role or "").lower() == "admin":
+            emps_scope = [emp_param] if emp_param else _get_emps_vendedor(vendedor_sel)
+        else:
+            emps_scope = _resolver_emp_scope_para_usuario(vendedor_sel, role, emp_usuario)
+
+        from reportlab.lib.pagesizes import A4
+        from reportlab.pdfgen import canvas
+        from reportlab.lib.units import mm
+
+        buf = BytesIO()
+        c = canvas.Canvas(buf, pagesize=A4)
+        width, height = A4
+
+        def _money(v: float) -> str:
+            return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+        y = height - 18 * mm
+        c.setFont("Helvetica-Bold", 14)
+        c.drawString(18 * mm, y, "Campanhas - Recompensa por Quantidade")
+        y -= 7 * mm
+        c.setFont("Helvetica", 10)
+        c.drawString(18 * mm, y, f"Vendedor: {vendedor_sel}   Período: {mes:02d}/{ano}")
+        y -= 10 * mm
+
+        with SessionLocal() as db:
+            for emp in emps_scope:
+                emp = str(emp)
+                resultados = (
+                    db.query(CampanhaQtdResultado)
+                    .filter(
+                        CampanhaQtdResultado.emp == emp,
+                        CampanhaQtdResultado.vendedor == vendedor_sel,
+                        CampanhaQtdResultado.competencia_ano == int(ano),
+                        CampanhaQtdResultado.competencia_mes == int(mes),
+                    )
+                    .order_by(CampanhaQtdResultado.valor_recompensa.desc())
+                    .all()
+                )
+
+                if y < 40 * mm:
+                    c.showPage()
+                    y = height - 18 * mm
+
+                c.setFont("Helvetica-Bold", 12)
+                c.drawString(18 * mm, y, f"EMP {emp}")
+                y -= 6 * mm
+                c.setFont("Helvetica-Bold", 9)
+                c.drawString(18 * mm, y, "PRODUTO")
+                c.drawString(65 * mm, y, "MARCA")
+                c.drawRightString(width - 70 * mm, y, "QTD")
+                c.drawRightString(width - 50 * mm, y, "MÍN")
+                c.drawRightString(width - 18 * mm, y, "VALOR")
+                y -= 4 * mm
+                c.setLineWidth(0.5)
+                c.line(18 * mm, y, width - 18 * mm, y)
+                y -= 5 * mm
+                c.setFont("Helvetica", 9)
+
+                total_emp = 0.0
+                for r in resultados:
+                    if y < 25 * mm:
+                        c.showPage()
+                        y = height - 18 * mm
+                        c.setFont("Helvetica", 9)
+                    minimo_txt = "" if r.qtd_minima is None else f"{float(r.qtd_minima):.0f}"
+                    valor_txt = _money(float(r.valor_recompensa or 0.0)) if float(r.valor_recompensa or 0.0) > 0 else "-"
+                    c.drawString(18 * mm, y, (r.produto_prefixo or "")[:22])
+                    c.drawString(65 * mm, y, (r.marca or "")[:14])
+                    c.drawRightString(width - 70 * mm, y, f"{float(r.qtd_vendida or 0):.0f}")
+                    c.drawRightString(width - 50 * mm, y, minimo_txt)
+                    c.drawRightString(width - 18 * mm, y, valor_txt)
+                    y -= 5 * mm
+                    total_emp += float(r.valor_recompensa or 0.0)
+
+                y -= 2 * mm
+                c.setFont("Helvetica-Bold", 10)
+                c.drawRightString(width - 18 * mm, y, f"Total EMP {emp}: {_money(total_emp)}")
+                y -= 10 * mm
+
+        c.showPage()
+        c.save()
+        buf.seek(0)
+        filename = f"campanhas_{mes:02d}_{ano}.pdf"
         return send_file(buf, mimetype="application/pdf", as_attachment=True, download_name=filename)
 
     @app.route("/senha", methods=["GET", "POST"])
@@ -1421,7 +1914,7 @@ def create_app() -> Flask:
 
         with SessionLocal() as db:
             if request.method == 'POST':
-                acao = (request.form.get('acao') or '').strip().lower()
+                acao = (request.form.get('acao') or request.form.get('action') or '').strip().lower().strip().lower()
                 try:
                     if acao == 'criar':
                         emp = (request.form.get('emp') or '').strip()
@@ -1482,6 +1975,344 @@ def create_app() -> Flask:
             'admin_itens_parados.html',
             usuario=_usuario_logado(),
             itens=itens,
+            erro=erro,
+            ok=ok,
+        )
+
+    @app.route('/admin/resumos_periodo', methods=['GET', 'POST'])
+    def admin_resumos_periodo():
+        _admin_required()
+
+        # filtros
+        emp = _emp_norm(request.values.get('emp', ''))
+        vendedor = (request.values.get('vendedor') or '').strip().upper()
+        ano = int(request.values.get('ano') or datetime.now().year)
+        mes = int(request.values.get('mes') or datetime.now().month)
+
+        msgs: list[str] = []
+
+        # alvo de edição/exclusão (permite editar outro ano/mês sem perder o filtro da tela)
+        emp_alvo = _emp_norm(request.form.get('emp_edit') or emp)
+        try:
+            ano_alvo = int(request.form.get('ano_edit') or ano)
+        except Exception:
+            ano_alvo = ano
+        try:
+            mes_alvo = int(request.form.get('mes_edit') or mes)
+        except Exception:
+            mes_alvo = mes
+
+        acao = (request.form.get('acao') or request.form.get('action') or '').strip().lower().strip().lower()
+        if request.method == 'POST' and acao:
+            if acao in {'salvar', 'excluir'} and _mes_fechado(emp_alvo, ano_alvo, mes_alvo):
+                msgs.append('⚠️ Mês fechado. Reabra o mês para editar os resumos.')
+            else:
+                with SessionLocal() as db:
+                    if acao == 'fechar':
+                        rec = (
+                            db.query(FechamentoMensal)
+                            .filter(
+                                FechamentoMensal.emp == emp,
+                                FechamentoMensal.ano == ano,
+                                FechamentoMensal.mes == mes,
+                            )
+                            .one_or_none()
+                        )
+                        if rec is None:
+                            rec = FechamentoMensal(emp=emp_alvo, ano=ano_alvo, mes=mes_alvo, fechado=True, fechado_em=datetime.utcnow())
+                            db.add(rec)
+                        else:
+                            rec.fechado = True
+                            rec.fechado_em = datetime.utcnow()
+                        db.commit()
+                        msgs.append('✅ Mês fechado. Edição travada.')
+
+                    elif acao == 'reabrir':
+                        rec = (
+                            db.query(FechamentoMensal)
+                            .filter(
+                                FechamentoMensal.emp == emp,
+                                FechamentoMensal.ano == ano,
+                                FechamentoMensal.mes == mes,
+                            )
+                            .one_or_none()
+                        )
+                        if rec is None:
+                            rec = FechamentoMensal(emp=emp_alvo, ano=ano_alvo, mes=mes_alvo, fechado=False)
+                            db.add(rec)
+                        else:
+                            rec.fechado = False
+                        db.commit()
+                        msgs.append('✅ Mês reaberto. Edição liberada.')
+
+                    elif acao == 'salvar':
+                        vend = (request.form.get('vendedor_edit') or request.form.get('vendedor') or '').strip().upper()
+                        if not vend:
+                            msgs.append('⚠️ Informe o vendedor.')
+                        else:
+                            try:
+                                valor_venda = float((request.form.get('valor_venda') or '0').replace(',', '.'))
+                            except Exception:
+                                valor_venda = 0.0
+                            try:
+                                mix_produtos = int(request.form.get('mix_produtos') or 0)
+                            except Exception:
+                                mix_produtos = 0
+
+                            rec = (
+                                db.query(VendasResumoPeriodo)
+                                .filter(
+                                    VendasResumoPeriodo.emp == emp_alvo,
+                                    VendasResumoPeriodo.vendedor == vend,
+                                    VendasResumoPeriodo.ano == ano_alvo,
+                                    VendasResumoPeriodo.mes == mes_alvo,
+                                )
+                                .one_or_none()
+                            )
+                            if rec is None:
+                                rec = VendasResumoPeriodo(
+                                    emp=emp_alvo,
+                                    vendedor=vend,
+                                    ano=ano_alvo,
+                                    mes=mes_alvo,
+                                    valor_venda=valor_venda,
+                                    mix_produtos=mix_produtos,
+                                    created_at=datetime.utcnow(),
+                                    updated_at=datetime.utcnow(),
+                                )
+                                db.add(rec)
+                            else:
+                                rec.valor_venda = valor_venda
+                                rec.mix_produtos = mix_produtos
+                                rec.updated_at = datetime.utcnow()
+                            db.commit()
+                            msgs.append('✅ Resumo salvo.')
+
+                    elif acao == 'excluir':
+                        vend = (request.form.get('vendedor_edit') or request.form.get('vendedor') or '').strip().upper()
+                        if not vend:
+                            msgs.append('⚠️ Informe o vendedor para excluir.')
+                        else:
+                            rec = (
+                                db.query(VendasResumoPeriodo)
+                                .filter(
+                                    VendasResumoPeriodo.emp == emp_alvo,
+                                    VendasResumoPeriodo.vendedor == vend,
+                                    VendasResumoPeriodo.ano == ano_alvo,
+                                    VendasResumoPeriodo.mes == mes_alvo,
+                                )
+                                .one_or_none()
+                            )
+                            if rec is None:
+                                msgs.append('⚠️ Não encontrei esse resumo para excluir.')
+                            else:
+                                db.delete(rec)
+                                db.commit()
+                                msgs.append('✅ Resumo excluído.')
+
+        # carregar lista e status de fechamento
+        fechado = _mes_fechado(emp_alvo, ano_alvo, mes_alvo)
+        with SessionLocal() as db:
+            # EMP e vendedor são opcionais: quando vierem em branco, listamos TODOS.
+            q = db.query(VendasResumoPeriodo).filter(
+                VendasResumoPeriodo.ano == ano_alvo,
+                VendasResumoPeriodo.mes == mes_alvo,
+            )
+            if emp:
+                q = q.filter(VendasResumoPeriodo.emp == emp)
+            if vendedor:
+                q = q.filter(VendasResumoPeriodo.vendedor == vendedor)
+            registros = q.order_by(VendasResumoPeriodo.vendedor.asc()).all()
+
+            # Sugestão rápida de vendedores (com base em vendas do período)
+            # Ajuda o admin a não digitar errado
+            start, end = _periodo_bounds(ano, mes)
+            vs_q = db.query(Venda.vendedor).filter(Venda.movimento >= start, Venda.movimento < end)
+            if emp:
+                vs_q = vs_q.filter(Venda.emp == emp)
+            vendedores_sugeridos = (
+                vs_q.distinct().order_by(Venda.vendedor.asc()).all()
+            )
+            vendedores_sugeridos = [v[0] for v in vendedores_sugeridos if v and v[0]]
+
+            # Listagem auxiliar: resumos já cadastrados no mesmo período do ano passado
+            ano_passado = ano - 1
+            q_ap = db.query(VendasResumoPeriodo).filter(
+                VendasResumoPeriodo.ano == ano_passado,
+                VendasResumoPeriodo.mes == mes_alvo,
+            )
+            if emp:
+                q_ap = q_ap.filter(VendasResumoPeriodo.emp == emp)
+            if vendedor:
+                q_ap = q_ap.filter(VendasResumoPeriodo.vendedor == vendedor)
+            resumos_ano_passado = (
+                q_ap.order_by(
+                    VendasResumoPeriodo.vendedor.asc(),
+                    VendasResumoPeriodo.emp.asc(),
+                ).all()
+            )
+
+            )
+
+        return render_template(
+            'admin_resumos_periodo.html',
+            emp=emp_alvo,
+            ano=ano_alvo,
+            mes=mes_alvo,
+            vendedor_filtro=vendedor,
+            registros=registros,
+            fechado=fechado,
+            vendedores_sugeridos=vendedores_sugeridos,
+            ano_passado=ano_passado,
+            resumos_ano_passado=resumos_ano_passado,
+            msgs=msgs,
+        )
+
+    # Compatibilidade: algumas telas/atalhos antigos apontavam para /admin/fechamento.
+    # O fechamento mensal hoje é feito dentro da tela de resumos por período.
+    @app.get('/admin/fechamento')
+    def admin_fechamento_redirect():
+        _admin_required()
+        return redirect(url_for('admin_resumos_periodo'))
+
+
+    @app.route("/admin/campanhas", methods=["GET", "POST"])
+    def admin_campanhas_qtd():
+        """Cadastro de campanhas de recompensa por quantidade.
+
+        Campos:
+        - EMP (obrigatório)
+        - Vendedor (opcional; vazio = todos da EMP)
+        - Produto prefixo (obrigatório)
+        - Marca (obrigatório)
+        - Recompensa (R$/un)
+        - Quantidade mínima (opcional)
+        - Período (data início/fim)
+        """
+        red = _login_required()
+        if red:
+            return red
+        red = _admin_required()
+        if red:
+            return red
+
+        erro = None
+        ok = None
+
+        hoje = date.today()
+        mes = int(request.values.get("mes") or hoje.month)
+        ano = int(request.values.get("ano") or hoje.year)
+
+        with SessionLocal() as db:
+            if request.method == "POST":
+                acao = (request.form.get("acao") or "").strip().lower()
+                try:
+                    if acao == "criar":
+                        emp = (request.form.get("emp") or "").strip()
+                        vendedor = (request.form.get("vendedor") or "").strip().upper() or None
+                        titulo = (request.form.get("titulo") or "").strip() or None
+                        produto_prefixo = (request.form.get("produto_prefixo") or "").strip()
+                        marca = (request.form.get("marca") or "").strip()
+                        recompensa_raw = (request.form.get("recompensa_unit") or "").strip().replace(",", ".")
+                        qtd_min_raw = (request.form.get("qtd_minima") or "").strip().replace(",", ".")
+                        data_ini_raw = (request.form.get("data_inicio") or "").strip()
+                        data_fim_raw = (request.form.get("data_fim") or "").strip()
+
+                        if not emp:
+                            raise ValueError("Informe a EMP.")
+                        if not produto_prefixo:
+                            raise ValueError("Informe o produto (prefixo).")
+                        if not marca:
+                            raise ValueError("Informe a marca.")
+                        if not recompensa_raw:
+                            raise ValueError("Informe a recompensa (R$/un).")
+                        if not data_ini_raw or not data_fim_raw:
+                            raise ValueError("Informe data início e fim.")
+
+                        recompensa_unit = float(recompensa_raw)
+                        qtd_minima = float(qtd_min_raw) if qtd_min_raw else None
+                        data_inicio = datetime.strptime(data_ini_raw, "%Y-%m-%d").date()
+                        data_fim = datetime.strptime(data_fim_raw, "%Y-%m-%d").date()
+                        if data_fim < data_inicio:
+                            raise ValueError("Data fim não pode ser menor que data início.")
+
+                        db.add(
+                            CampanhaQtd(
+                                emp=str(emp),
+                                vendedor=vendedor,
+                                titulo=titulo,
+                                produto_prefixo=produto_prefixo.upper(),
+                                marca=marca.upper(),
+                                recompensa_unit=recompensa_unit,
+                                qtd_minima=qtd_minima,
+                                data_inicio=data_inicio,
+                                data_fim=data_fim,
+                                ativo=1,
+                            )
+                        )
+                        db.commit()
+                        ok = "Campanha cadastrada com sucesso."
+
+                    elif acao == "toggle":
+                        cid = int(request.form.get("campanha_id") or 0)
+                        c = db.query(CampanhaQtd).filter(CampanhaQtd.id == cid).first()
+                        if not c:
+                            raise ValueError("Campanha não encontrada.")
+                        c.ativo = 0 if int(c.ativo or 0) == 1 else 1
+                        c.atualizado_em = datetime.utcnow()
+                        db.commit()
+                        ok = "Status da campanha atualizado."
+
+                    elif acao == "remover":
+                        cid = int(request.form.get("campanha_id") or 0)
+                        c = db.query(CampanhaQtd).filter(CampanhaQtd.id == cid).first()
+                        if not c:
+                            raise ValueError("Campanha não encontrada.")
+                        db.delete(c)
+                        db.commit()
+                        ok = "Campanha removida."
+
+                    elif acao == "pagar":
+                        rid = int(request.form.get("resultado_id") or 0)
+                        r = db.query(CampanhaQtdResultado).filter(CampanhaQtdResultado.id == rid).first()
+                        if not r:
+                            raise ValueError("Resultado não encontrado.")
+                        if (r.status_pagamento or "PENDENTE") == "PAGO":
+                            r.status_pagamento = "PENDENTE"
+                            r.pago_em = None
+                        else:
+                            r.status_pagamento = "PAGO"
+                            r.pago_em = datetime.utcnow()
+                        r.atualizado_em = datetime.utcnow()
+                        db.commit()
+                        ok = "Status de pagamento atualizado."
+
+                    else:
+                        raise ValueError("Ação inválida.")
+
+                except Exception as e:
+                    db.rollback()
+                    erro = str(e)
+                    app.logger.exception("Erro ao gerenciar campanhas")
+
+            campanhas = db.query(CampanhaQtd).order_by(CampanhaQtd.emp.asc(), CampanhaQtd.data_inicio.desc()).all()
+            resultados = (
+                db.query(CampanhaQtdResultado)
+                .filter(
+                    CampanhaQtdResultado.competencia_ano == int(ano),
+                    CampanhaQtdResultado.competencia_mes == int(mes),
+                )
+                .order_by(CampanhaQtdResultado.valor_recompensa.desc())
+                .all()
+            )
+
+        return render_template(
+            "admin_campanhas_qtd.html",
+            usuario=_usuario_logado(),
+            campanhas=campanhas,
+            resultados=resultados,
+            ano=ano_alvo,
+            mes=mes_alvo,
             erro=erro,
             ok=ok,
         )
