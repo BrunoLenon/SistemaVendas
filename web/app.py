@@ -554,33 +554,42 @@ def create_app() -> Flask:
         mix_ano_passado = None
 
         try:
-            if emp_scope:
-                r = VendasResumoPeriodo.query.filter_by(
-                    emp=emp_scope,
-                    vendedor=vendedor,
-                    ano=ano - 1,
-                    mes=mes,
-                ).first()
-                if r:
-                    valor_ano_passado = float(r.valor_venda or 0.0)
-                    mix_ano_passado = int(r.mix_produtos or 0)
-            else:
-                rows = (
-                    VendasResumoPeriodo.query.filter_by(
-                        vendedor=vendedor,
-                        ano=ano - 1,
-                        mes=mes,
-                    ).all()
-                )
-                # "Geral" = emp NULL (ou emp vazio)
-                rnull = next((x for x in rows if (x.emp is None) or (str(x.emp).strip() == '')), None)
-                if rnull:
-                    valor_ano_passado = float(rnull.valor_venda or 0.0)
-                    mix_ano_passado = int(rnull.mix_produtos or 0)
-                elif rows:
-                    valor_ano_passado = float(sum(float(x.valor_venda or 0.0) for x in rows))
-                    mix_ano_passado = int(sum(int(x.mix_produtos or 0) for x in rows))
+            # Importante: aqui usamos SQLAlchemy "puro" (SessionLocal). Os models não têm .query.
+            with SessionLocal() as db:
+                if emp_scope:
+                    r = (
+                        db.query(VendasResumoPeriodo)
+                        .filter(
+                            VendasResumoPeriodo.emp == str(emp_scope),
+                            VendasResumoPeriodo.vendedor == vendedor,
+                            VendasResumoPeriodo.ano == (ano - 1),
+                            VendasResumoPeriodo.mes == mes,
+                        )
+                        .first()
+                    )
+                    if r:
+                        valor_ano_passado = float(r.valor_venda or 0.0)
+                        mix_ano_passado = int(r.mix_produtos or 0)
+                else:
+                    rows = (
+                        db.query(VendasResumoPeriodo)
+                        .filter(
+                            VendasResumoPeriodo.vendedor == vendedor,
+                            VendasResumoPeriodo.ano == (ano - 1),
+                            VendasResumoPeriodo.mes == mes,
+                        )
+                        .all()
+                    )
+                    # "Geral" = emp NULL (ou emp vazio)
+                    rnull = next((x for x in rows if (x.emp is None) or (str(x.emp).strip() == '')), None)
+                    if rnull:
+                        valor_ano_passado = float(rnull.valor_venda or 0.0)
+                        mix_ano_passado = int(rnull.mix_produtos or 0)
+                    elif rows:
+                        valor_ano_passado = float(sum(float(x.valor_venda or 0.0) for x in rows))
+                        mix_ano_passado = int(sum(int(x.mix_produtos or 0) for x in rows))
         except Exception:
+            # Não quebra o dashboard se o resumo manual der erro (cai no cache do ano passado)
             pass
 
         # Se não tiver resumo manual, cai para cache do ano passado (se existir)
@@ -2031,11 +2040,13 @@ def create_app() -> Flask:
         # carregar lista e status de fechamento
         fechado = _mes_fechado(emp, ano, mes)
         with SessionLocal() as db:
+            # EMP e vendedor são opcionais: quando vierem em branco, listamos TODOS.
             q = db.query(VendasResumoPeriodo).filter(
-                VendasResumoPeriodo.emp == emp,
                 VendasResumoPeriodo.ano == ano,
                 VendasResumoPeriodo.mes == mes,
             )
+            if emp:
+                q = q.filter(VendasResumoPeriodo.emp == emp)
             if vendedor:
                 q = q.filter(VendasResumoPeriodo.vendedor == vendedor)
             registros = q.order_by(VendasResumoPeriodo.vendedor.asc()).all()
@@ -2043,12 +2054,11 @@ def create_app() -> Flask:
             # Sugestão rápida de vendedores (com base em vendas do período)
             # Ajuda o admin a não digitar errado
             start, end = _periodo_bounds(ano, mes)
+            vs_q = db.query(Venda.vendedor).filter(Venda.movimento >= start, Venda.movimento < end)
+            if emp:
+                vs_q = vs_q.filter(Venda.emp == emp)
             vendedores_sugeridos = (
-                db.query(Venda.vendedor)
-                .filter(Venda.emp == emp, Venda.movimento >= start, Venda.movimento < end)
-                .distinct()
-                .order_by(Venda.vendedor.asc())
-                .all()
+                vs_q.distinct().order_by(Venda.vendedor.asc()).all()
             )
             vendedores_sugeridos = [v[0] for v in vendedores_sugeridos if v and v[0]]
 
