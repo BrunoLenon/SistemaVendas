@@ -2,7 +2,7 @@ import os
 from datetime import datetime
 from urllib.parse import quote_plus
 
-from sqlalchemy import create_engine, Column, Integer, String, Float, Date, DateTime, Text, Index, UniqueConstraint
+from sqlalchemy import create_engine, Column, Integer, String, Float, Date, DateTime, Text, Boolean, Index, UniqueConstraint, text
 from sqlalchemy.orm import declarative_base, sessionmaker, synonym
 
 # =====================
@@ -54,7 +54,17 @@ engine = create_engine(
     pool_pre_ping=True,
     pool_recycle=1800,
 )
-SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+SessionLocal = sessionmaker(
+    bind=engine,
+    autoflush=False,
+    autocommit=False,
+    # Importante: por padrão o SQLAlchemy "expira" os objetos após commit.
+    # Como o app usa a sessão em um context manager e fecha logo depois,
+    # acessar atributos no template pode disparar refresh e gerar
+    # DetachedInstanceError. Mantendo os valores carregados após commit,
+    # o template consegue renderizar sem precisar da sessão.
+    expire_on_commit=False,
+)
 Base = declarative_base()
 
 
@@ -268,6 +278,71 @@ class CampanhaQtdResultado(Base):
     )
 
 
+class VendasResumoPeriodo(Base):
+    """Resumo mensal manual/importado (ex.: ano passado) por vendedor e EMP.
+
+    Usado para exibir comparativos (ex.: "Ano passado") sem precisar manter
+    toda a base de vendas antiga no banco.
+    """
+
+    __tablename__ = "vendas_resumo_periodo"
+
+    id = Column(Integer, primary_key=True)
+    emp = Column(String(30), nullable=False, default="", index=True)
+    vendedor = Column(String(80), nullable=False, index=True)
+    ano = Column(Integer, nullable=False, index=True)
+    mes = Column(Integer, nullable=False, index=True)
+
+    valor_venda = Column(Float, nullable=False, default=0.0)
+    mix_produtos = Column(Integer, nullable=False, default=0)
+
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        # O Supabase não permite UNIQUE com expressão diretamente em constraint,
+        # então a deduplicação é feita por UNIQUE INDEX via migration/SQL.
+        Index("ix_resumo_emp_ano_mes", "emp", "ano", "mes"),
+    )
+
+
+class FechamentoMensal(Base):
+    """Controle de fechamento (trava edição) por EMP e competência."""
+
+    __tablename__ = "fechamento_mensal"
+
+    id = Column(Integer, primary_key=True)
+    emp = Column(String(30), nullable=False, default="", index=True)
+    ano = Column(Integer, nullable=False, index=True)
+    mes = Column(Integer, nullable=False, index=True)
+
+    fechado = Column(Boolean, nullable=False, default=True)
+    fechado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("emp", "ano", "mes", name="uq_fechamento_mensal_raw"),
+    )
+
+
 
 def criar_tabelas():
+    """Cria tabelas e aplica ajustes leves de schema (compatibilidade).
+
+    Observação: isso NÃO substitui migrations (Alembic), mas ajuda a evitar
+    que versões antigas do banco que não tinham colunas (ex.: usuarios.emp)
+    quebrem o sistema ao atualizar o código.
+    """
+    # Cria tabelas que não existirem
     Base.metadata.create_all(engine)
+
+    # Ajustes compatíveis (IF NOT EXISTS) — seguros para rodar em produção
+    try:
+        with engine.begin() as conn:
+            # Usuários: role/emp
+            conn.execute(text("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS role varchar(20);"))
+            conn.execute(text("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS emp varchar(30);"))
+            conn.execute(text("UPDATE usuarios SET role='vendedor' WHERE role IS NULL OR role='' ;"))
+            conn.execute(text("UPDATE usuarios SET role=lower(role) WHERE role IS NOT NULL;"))
+    except Exception:
+        # Se não tiver permissão ou der algum erro, não derruba o app.
+        pass
