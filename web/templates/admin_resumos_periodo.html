@@ -89,53 +89,14 @@
                 <td class="text-end">{{ r.created_at.strftime('%d/%m/%Y %H:%M') if r.created_at else '-' }}</td>
                 <td class="text-end">{{ r.updated_at.strftime('%d/%m/%Y %H:%M') if r.updated_at else '-' }}</td>
                 <td class="align-top">
-                  <form method="post" class="vstack gap-2">
-  <input type="hidden" name="id" value="{{ r.id }}" />
-  {# ano/mes do filtro (para voltar após salvar) #}
-  <input type="hidden" name="ano" value="{{ ano }}" />
-  <input type="hidden" name="mes" value="{{ mes }}" />
-
-  <div class="row g-2">
-    <div class="col-6">
-      <label class="form-label small mb-1">Ano do resumo</label>
-      <input class="form-control form-control-sm" type="number" name="ano_edit"
-             value="{{ r.ano }}" min="2000" max="2100" {% if fechado %}disabled{% endif %} />
-    </div>
-    <div class="col-6">
-      <label class="form-label small mb-1">Mês do resumo</label>
-      <input class="form-control form-control-sm" type="number" name="mes_edit"
-             value="{{ r.mes }}" min="1" max="12" {% if fechado %}disabled{% endif %} />
-    </div>
+  <div class="text-muted small">
+    {% if fechado %}
+      🔒 Fechado (valor congelado no fechamento).
+    {% else %}
+      📌 Este período é alimentado por vendas reais e será consolidado no fechamento mensal.
+    {% endif %}
   </div>
-
-  <div class="row g-2">
-    <div class="col-6">
-      <label class="form-label small mb-1">EMP</label>
-      <input class="form-control form-control-sm" type="text" name="emp" value="{{ r.emp or '' }}" {% if fechado %}disabled{% endif %} />
-    </div>
-    <div class="col-6">
-      <label class="form-label small mb-1">Vendedor</label>
-      <input class="form-control form-control-sm" type="text" name="vendedor" value="{{ r.vendedor }}" {% if fechado %}disabled{% endif %} />
-    </div>
-  </div>
-
-  <div class="row g-2">
-    <div class="col-6">
-      <label class="form-label small mb-1">Valor venda</label>
-      <input class="form-control form-control-sm text-end" type="number" step="0.01" name="valor_venda" value="{{ r.valor_venda or 0 }}" {% if fechado %}disabled{% endif %} />
-    </div>
-    <div class="col-6">
-      <label class="form-label small mb-1">Mix</label>
-      <input class="form-control form-control-sm text-end" type="number" name="mix_produtos" value="{{ r.mix_produtos or 0 }}" {% if fechado %}disabled{% endif %} />
-    </div>
-  </div>
-
-  <div class="d-flex gap-2">
-    <button class="btn btn-sm btn-primary" name="acao" value="salvar" type="submit" {% if fechado %}disabled{% endif %}>Salvar</button>
-    <button class="btn btn-sm btn-outline-danger" name="acao" value="excluir" type="submit" {% if fechado %}disabled{% endif %} onclick="return confirm('Excluir este resumo?');">Excluir</button>
-  </div>
-</form>
-                </td>
+</td>
               </tr>
             {% endfor %}
           </tbody>
@@ -208,11 +169,12 @@
 
       <hr />
 
-      <h6 class="mb-2">➕ Novo resumo</h6>
+      <h6 class="mb-1">➕ Novo resumo (Ano passado)</h6>
+      <div class="text-muted small mb-2">Este cadastro é destinado ao <b>ano passado ({{ ano_passado }})</b>, para meses sem base detalhada. O ano/mês são definidos automaticamente.</div>
       <form method="post" class="row g-2">
         <input type="hidden" name="id" value="" />
         <input type="hidden" name="ano" value="{{ ano }}" />
-                    <input type="hidden" name="ano_edit" value="{{ ano }}" />
+                    <input type="hidden" name="ano_edit" value="{{ ano_passado }}" />
         <input type="hidden" name="mes" value="{{ mes }}" />
                     <input type="hidden" name="mes_edit" value="{{ mes }}" />
 

@@ -2004,6 +2004,12 @@ def create_app() -> Flask:
             except Exception:
                 mes_alvo = mes
 
+            ano_passado = ano - 1
+            # Regra de negócio: cadastro/edição manual é destinado ao ano passado (ano-1) para meses sem base detalhada.
+            if acao in {'salvar', 'excluir'} and ano_alvo != ano_passado:
+                msgs.append(f'⚠️ Edição manual permitida apenas para o ano passado ({ano_passado}).')
+                acao = ''
+
             if acao in {'salvar', 'excluir'} and _mes_fechado(emp_alvo, ano_alvo, mes_alvo):
                 msgs.append('⚠️ Mês fechado. Reabra o mês para editar os resumos.')
             else:
