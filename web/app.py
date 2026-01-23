@@ -2267,14 +2267,15 @@ def create_app() -> Flask:
 
 
 
+    
     @app.get("/relatorios/cidades-clientes")
     def relatorio_cidades_clientes():
-        """Relatório por cidade e clientes (mês/ano).
+        """Relatórios por EMP (Cidades e Clientes) — mês/ano.
 
         Permissões:
         - ADMIN: todas as EMPs (pode filtrar por EMP e vendedor)
-        - SUPERVISOR: apenas EMP vinculada
-        - VENDEDOR: apenas o próprio vendedor
+        - SUPERVISOR: apenas EMP vinculada (pode filtrar por vendedor)
+        - VENDEDOR: apenas o próprio vendedor (agrupado por EMP)
         """
         red = _login_required()
         if red:
@@ -2282,6 +2283,7 @@ def create_app() -> Flask:
 
         role = (_role() or "").strip().lower()
         emp_usuario = _emp()
+        vendedor_logado = (_usuario_logado() or "").strip().upper()
 
         hoje = date.today()
         mes = int(request.args.get("mes") or hoje.month)
@@ -2290,22 +2292,14 @@ def create_app() -> Flask:
         emp_filtro = (request.args.get("emp") or "").strip()
         vendedor_filtro = (request.args.get("vendedor") or "").strip().upper()
 
-        vendedor_logado = (_usuario_logado() or "").strip().upper()
-
         # janela do período
         inicio = date(ano, mes, 1)
-        if mes == 12:
-            fim = date(ano + 1, 1, 1)
-        else:
-            fim = date(ano, mes + 1, 1)
+        fim = date(ano + 1, 1, 1) if mes == 12 else date(ano, mes + 1, 1)
 
         db = SessionLocal()
         try:
-            # escopo sem filtro de data (para identificar clientes novos/recorrentes)
-            base_all = db.query(Venda).filter(Venda.movimento.isnot(None))
-
-            # escopo do período
             base = db.query(Venda).filter(Venda.movimento >= inicio, Venda.movimento < fim)
+            base_hist = db.query(Venda).filter(Venda.movimento.isnot(None))
 
             escopo_label = None
             pode_filtrar_emp = False
@@ -2316,123 +2310,186 @@ def create_app() -> Flask:
                 pode_filtrar_vendedor = True
                 if emp_filtro:
                     base = base.filter(Venda.emp == emp_filtro)
-                    base_all = base_all.filter(Venda.emp == emp_filtro)
+                    base_hist = base_hist.filter(Venda.emp == emp_filtro)
                     escopo_label = f"EMP {emp_filtro}"
                 if vendedor_filtro:
                     base = base.filter(func.upper(Venda.vendedor) == vendedor_filtro)
-                    base_all = base_all.filter(func.upper(Venda.vendedor) == vendedor_filtro)
+                    base_hist = base_hist.filter(func.upper(Venda.vendedor) == vendedor_filtro)
                     escopo_label = (escopo_label + " • " if escopo_label else "") + f"Vendedor {vendedor_filtro}"
 
             elif role == "supervisor":
-                # supervisor só vê a EMP dele
                 base = base.filter(Venda.emp == emp_usuario)
-                base_all = base_all.filter(Venda.emp == emp_usuario)
+                base_hist = base_hist.filter(Venda.emp == emp_usuario)
                 escopo_label = f"EMP {emp_usuario}"
                 pode_filtrar_vendedor = True
                 if vendedor_filtro:
                     base = base.filter(func.upper(Venda.vendedor) == vendedor_filtro)
-                    base_all = base_all.filter(func.upper(Venda.vendedor) == vendedor_filtro)
+                    base_hist = base_hist.filter(func.upper(Venda.vendedor) == vendedor_filtro)
                     escopo_label += f" • Vendedor {vendedor_filtro}"
 
             else:
-                # vendedor: só ele
                 base = base.filter(func.upper(Venda.vendedor) == vendedor_logado)
-                base_all = base_all.filter(func.upper(Venda.vendedor) == vendedor_logado)
+                base_hist = base_hist.filter(func.upper(Venda.vendedor) == vendedor_logado)
                 escopo_label = f"Vendedor {vendedor_logado}"
 
-            # Totais básicos
-            total_valor = (base.with_entities(func.coalesce(func.sum(Venda.valor_total), 0.0)).scalar() or 0.0)
-            total_clientes = (base.with_entities(func.count(func.distinct(Venda.cliente_id_norm))).scalar() or 0)
-            total_cidades = (base.with_entities(func.count(func.distinct(Venda.cidade_norm))).scalar() or 0)
-            total_vendedores = (base.with_entities(func.count(func.distinct(func.upper(Venda.vendedor)))).scalar() or 0)
+            # EMPs no período
+            emps = [str(e[0]) for e in base.with_entities(Venda.emp).distinct().order_by(Venda.emp).all() if e[0] is not None]
 
-            # Clientes novos vs recorrentes (no escopo do usuário)
-            clientes_periodo = base.with_entities(func.distinct(Venda.cliente_id_norm).label('cid')).filter(Venda.cliente_id_norm.isnot(None)).subquery()
-            min_datas = (
-                db.query(
-                    Venda.cliente_id_norm.label("cid"),
-                    func.min(Venda.movimento).label("min_data")
-                )
-                
-                .filter(Venda.cliente_id_norm.isnot(None))
-                .group_by(Venda.cliente_id_norm)
-                .subquery()
-            )
-            # join manual
-            novos = db.query(func.count()).select_from(clientes_periodo.join(min_datas, clientes_periodo.c.cid == min_datas.c.cid)).filter(min_datas.c.min_data >= inicio).scalar() or 0
-            recorr = db.query(func.count()).select_from(clientes_periodo.join(min_datas, clientes_periodo.c.cid == min_datas.c.cid)).filter(min_datas.c.min_data < inicio).scalar() or 0
-
-            totais = {
-                "valor_total": float(total_valor),
-                "clientes_unicos": int(total_clientes),
-                "cidades": int(total_cidades),
-                "vendedores": int(total_vendedores),
-                "clientes_novos": int(novos),
-                "clientes_recorrentes": int(recorr),
-            }
-
-            # Ranking de cidades
-            cidades_rows = (
+            # Totais por EMP
+            totais_rows = (
                 base.with_entities(
+                    Venda.emp.label("emp"),
+                    func.coalesce(func.sum(Venda.valor_total), 0.0).label("valor_total"),
+                    func.coalesce(func.sum(Venda.qtdade_vendida), 0.0).label("qtd_total"),
+                    func.count(func.distinct(func.upper(Venda.vendedor))).label("vendedores"),
+                    func.count(func.distinct(Venda.cliente_id_norm)).label("clientes_unicos"),
+                    func.count(func.distinct(Venda.cidade_norm)).label("cidades"),
+                )
+                .group_by(Venda.emp)
+                .all()
+            )
+            totais_map = {str(r.emp): {
+                "valor_total": float(r.valor_total or 0.0),
+                "qtd_total": float(r.qtd_total or 0.0),
+                "vendedores": int(r.vendedores or 0),
+                "clientes_unicos": int(r.clientes_unicos or 0),
+                "cidades": int(r.cidades or 0),
+            } for r in totais_rows}
+
+            # Ranking de cidades por EMP
+            city_rows = (
+                base.with_entities(
+                    Venda.emp.label("emp"),
                     func.coalesce(Venda.cidade_norm, "sem_cidade").label("cidade_norm"),
                     func.coalesce(func.sum(Venda.valor_total), 0.0).label("valor_total"),
                     func.coalesce(func.sum(Venda.qtdade_vendida), 0.0).label("qtd_total"),
                     func.count(func.distinct(Venda.cliente_id_norm)).label("clientes_unicos"),
-                    func.count(func.distinct(func.upper(Venda.vendedor))).label("vendedores"),
                 )
-                .group_by(func.coalesce(Venda.cidade_norm, "sem_cidade"))
-                .order_by(func.sum(Venda.valor_total).desc())
-                .limit(50)
+                .group_by(Venda.emp, func.coalesce(Venda.cidade_norm, "sem_cidade"))
+                .order_by(Venda.emp, func.sum(Venda.valor_total).desc())
                 .all()
             )
 
-            cidades = []
-            for r in cidades_rows:
-                label = "SEM CIDADE" if (r.cidade_norm in (None, "", "sem_cidade")) else str(r.cidade_norm).upper()
-                cidades.append({
-                    "cidade_norm": r.cidade_norm,
+            cidades_por_emp = {}
+            for r in city_rows:
+                emp = str(r.emp)
+                total_emp = (totais_map.get(emp, {}) or {}).get("valor_total", 0.0) or 0.0
+                cidade_norm = r.cidade_norm
+                label = "SEM CIDADE" if (cidade_norm in (None, "", "sem_cidade")) else str(cidade_norm).upper()
+                valor = float(r.valor_total or 0.0)
+                pct = (valor / total_emp * 100.0) if total_emp > 0 else 0.0
+                cidades_por_emp.setdefault(emp, []).append({
+                    "cidade_norm": cidade_norm,
                     "cidade_label": label,
-                    "valor_total": float(r.valor_total or 0.0),
+                    "valor_total": valor,
+                    "pct": pct,
                     "qtd_total": float(r.qtd_total or 0.0),
                     "clientes_unicos": int(r.clientes_unicos or 0),
-                    "vendedores": int(r.vendedores or 0),
                 })
 
-            # Clientes por vendedor
-            vendedores_rows = (
+            # Top clientes por EMP (por valor no período)
+            cliente_rows = (
                 base.with_entities(
-                    func.upper(Venda.vendedor).label("vendedor"),
+                    Venda.emp.label("emp"),
+                    func.coalesce(Venda.razao_norm, "sem_cliente").label("razao_norm"),
+                    func.coalesce(func.max(Venda.razao), "").label("razao_label"),
                     func.coalesce(func.sum(Venda.valor_total), 0.0).label("valor_total"),
-                    func.count(func.distinct(Venda.cliente_id_norm)).label("clientes_unicos"),
-                    func.count(func.distinct(Venda.cidade_norm)).label("cidades"),
+                    func.coalesce(func.sum(Venda.qtdade_vendida), 0.0).label("qtd_total"),
                 )
-                .group_by(func.upper(Venda.vendedor))
-                .order_by(func.sum(Venda.valor_total).desc())
+                .filter(Venda.cliente_id_norm.isnot(None))
+                .group_by(Venda.emp, func.coalesce(Venda.razao_norm, "sem_cliente"))
+                .order_by(Venda.emp, func.sum(Venda.valor_total).desc())
                 .all()
             )
-            vendedores = [{
-                "vendedor": r.vendedor,
-                "valor_total": float(r.valor_total or 0.0),
-                "clientes_unicos": int(r.clientes_unicos or 0),
-                "cidades": int(r.cidades or 0),
-            } for r in vendedores_rows]
+
+            clientes_por_emp = {}
+            for r in cliente_rows:
+                emp = str(r.emp)
+                label = (r.razao_label or "").strip()
+                if not label:
+                    label = "SEM CLIENTE" if (r.razao_norm in (None, "", "sem_cliente")) else str(r.razao_norm).upper()
+                clientes_por_emp.setdefault(emp, []).append({
+                    "razao_norm": r.razao_norm,
+                    "razao_label": label,
+                    "valor_total": float(r.valor_total or 0.0),
+                    "qtd_total": float(r.qtd_total or 0.0),
+                })
+
+            # Clientes novos vs recorrentes por EMP
+            clientes_periodo = (
+                base.with_entities(
+                    Venda.emp.label("emp"),
+                    Venda.cliente_id_norm.label("cid"),
+                )
+                .filter(Venda.cliente_id_norm.isnot(None))
+                .distinct()
+                .subquery()
+            )
+
+            min_datas = (
+                base_hist.with_entities(
+                    Venda.emp.label("emp"),
+                    Venda.cliente_id_norm.label("cid"),
+                    func.min(Venda.movimento).label("min_data"),
+                )
+                .filter(Venda.cliente_id_norm.isnot(None))
+                .group_by(Venda.emp, Venda.cliente_id_norm)
+                .subquery()
+            )
+
+            novos_rows = (
+                db.query(clientes_periodo.c.emp.label("emp"), func.count().label("qtd"))
+                .select_from(clientes_periodo.join(min_datas, (clientes_periodo.c.emp == min_datas.c.emp) & (clientes_periodo.c.cid == min_datas.c.cid)))
+                .filter(min_datas.c.min_data >= inicio)
+                .group_by(clientes_periodo.c.emp)
+                .all()
+            )
+            recorr_rows = (
+                db.query(clientes_periodo.c.emp.label("emp"), func.count().label("qtd"))
+                .select_from(clientes_periodo.join(min_datas, (clientes_periodo.c.emp == min_datas.c.emp) & (clientes_periodo.c.cid == min_datas.c.cid)))
+                .filter(min_datas.c.min_data < inicio)
+                .group_by(clientes_periodo.c.emp)
+                .all()
+            )
+            novos_map = {str(r.emp): int(r.qtd or 0) for r in novos_rows}
+            recorr_map = {str(r.emp): int(r.qtd or 0) for r in recorr_rows}
+
+            # Cards por EMP (preview + detalhe)
+            emp_cards = []
+            for emp in emps:
+                t = totais_map.get(emp) or {"valor_total": 0.0, "qtd_total": 0.0, "vendedores": 0, "clientes_unicos": 0, "cidades": 0}
+                cities_full = cidades_por_emp.get(emp, [])
+                clients_full = clientes_por_emp.get(emp, [])
+
+                emp_cards.append({
+                    "emp": emp,
+                    "image_url": None,  # preparado para imagem da loja futuramente
+                    "totais": {
+                        **t,
+                        "clientes_novos": novos_map.get(emp, 0),
+                        "clientes_recorrentes": recorr_map.get(emp, 0),
+                    },
+                    "cidades_preview": cities_full[:5],
+                    "cidades_full": cities_full[:50],
+                    "clientes_preview": clients_full[:5],
+                    "clientes_full": clients_full[:50],
+                })
 
             return render_template(
                 "relatorio_cidades_clientes.html",
-                role=role,
-                ano=ano,
                 mes=mes,
-                emp_filtro=emp_filtro,
-                vendedor_filtro=vendedor_filtro,
+                ano=ano,
                 escopo_label=escopo_label,
                 pode_filtrar_emp=pode_filtrar_emp,
                 pode_filtrar_vendedor=pode_filtrar_vendedor,
-                totais=type("Obj", (), totais),
-                cidades=cidades,
-                vendedores=vendedores,
+                emp_filtro=emp_filtro,
+                vendedor_filtro=vendedor_filtro,
+                emp_cards=emp_cards,
             )
         finally:
             db.close()
+
+
 
     @app.route("/senha", methods=["GET", "POST"])
     def senha():
