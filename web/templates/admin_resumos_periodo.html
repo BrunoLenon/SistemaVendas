@@ -91,10 +91,15 @@
                 <td>
                   <form method="post" class="row g-2">
                     <input type="hidden" name="id" value="{{ r.id }}" />
-                    <input type="hidden" name="ano" value="{{ ano }}" />
-                    <input type="hidden" name="ano_edit" value="{{ ano }}" />
-                    <input type="hidden" name="mes" value="{{ mes }}" />
-                    <input type="hidden" name="mes_edit" value="{{ mes }}" />
+                    <input type="hidden" name="ano" value="{{ ano }}" />                    <input type="hidden" name="mes" value="{{ mes }}" />
+        <div class="col-6 col-md-2">
+          <label class="form-label">Ano do resumo</label>
+          <input class="form-control" type="number" name="ano_edit" value="{{ ano }}" min="2000" max="2100" required {% if fechado %}disabled{% endif %} />
+        </div>
+        <div class="col-6 col-md-2">
+          <label class="form-label">Mês do resumo</label>
+          <input class="form-control" type="number" name="mes_edit" value="{{ mes }}" min="1" max="12" required {% if fechado %}disabled{% endif %} />
+        </div>
                     <div class="col-12 col-md-4">
                       <input class="form-control form-control-sm" type="text" name="emp_edit" value="{{ r.emp or '' }}" placeholder="EMP" {% if fechado %}disabled{% endif %} />
                     </div>
