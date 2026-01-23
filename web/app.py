@@ -1670,13 +1670,30 @@ def create_app() -> Flask:
         vendedor = (vendedor or "").strip().upper()
         emp = str(emp)
 
-        # Campo usado para prefix match: por compatibilidade, usamos Venda.mestre
-        # (em muitos cenários ele carrega descrição/identificador do item).
-        prefix = (campanha.produto_prefixo or "").strip()
-        prefix_up = prefix.upper()
+        # Campo usado para match do item:
+        # - campo_match='codigo'   -> prefixo em Venda.mestre (compatibilidade com base antiga)
+        # - campo_match='descricao'-> prefixo em Venda.descricao_norm (novo)
+        campo_match = (getattr(campanha, "campo_match", None) or "codigo").strip().lower()
 
-        campo_item = func.upper(func.trim(cast(Venda.mestre, String)))
-        cond_prefix = campo_item.like(prefix_up + "%")
+        def _norm_prefix(s: str) -> str:
+            import unicodedata, re
+            s = (s or "").strip()
+            s = "".join(c for c in unicodedata.normalize("NFKD", s) if not unicodedata.combining(c))
+            s = re.sub(r"\s+", " ", s).strip().lower()
+            return s
+
+        if campo_match == "descricao":
+            prefix = _norm_prefix(getattr(campanha, "descricao_prefixo", "") or "")
+            # fallback: se não preencher descricao_prefixo, usa produto_prefixo como prefixo de descrição
+            if not prefix:
+                prefix = _norm_prefix((campanha.produto_prefixo or ""))
+            campo_item = func.coalesce(Venda.descricao_norm, "")
+            cond_prefix = campo_item.like(prefix + "%")
+        else:
+            prefix = (campanha.produto_prefixo or "").strip()
+            prefix_up = prefix.upper()
+            campo_item = func.upper(func.trim(cast(Venda.mestre, String)))
+            cond_prefix = campo_item.like(prefix_up + "%")
         cond_marca = func.upper(func.trim(cast(Venda.marca, String))) == (campanha.marca or "").strip().upper()
 
         base = (
@@ -2247,6 +2264,175 @@ def create_app() -> Flask:
             emps_data=emps_data,
             vendedor=vendedor_logado,
         )
+
+
+
+    @app.get("/relatorios/cidades-clientes")
+    def relatorio_cidades_clientes():
+        """Relatório por cidade e clientes (mês/ano).
+
+        Permissões:
+        - ADMIN: todas as EMPs (pode filtrar por EMP e vendedor)
+        - SUPERVISOR: apenas EMP vinculada
+        - VENDEDOR: apenas o próprio vendedor
+        """
+        red = _login_required()
+        if red:
+            return red
+
+        role = (_role() or "").strip().lower()
+        emp_usuario = _emp()
+
+        hoje = date.today()
+        mes = int(request.args.get("mes") or hoje.month)
+        ano = int(request.args.get("ano") or hoje.year)
+
+        emp_filtro = (request.args.get("emp") or "").strip()
+        vendedor_filtro = (request.args.get("vendedor") or "").strip().upper()
+
+        vendedor_logado = (_usuario_logado() or "").strip().upper()
+
+        # janela do período
+        inicio = date(ano, mes, 1)
+        if mes == 12:
+            fim = date(ano + 1, 1, 1)
+        else:
+            fim = date(ano, mes + 1, 1)
+
+        db = SessionLocal()
+        try:
+            # escopo sem filtro de data (para identificar clientes novos/recorrentes)
+            base_all = db.query(Venda).filter(Venda.movimento.isnot(None))
+
+            # escopo do período
+            base = db.query(Venda).filter(Venda.movimento >= inicio, Venda.movimento < fim)
+
+            escopo_label = None
+            pode_filtrar_emp = False
+            pode_filtrar_vendedor = False
+
+            if role == "admin":
+                pode_filtrar_emp = True
+                pode_filtrar_vendedor = True
+                if emp_filtro:
+                    base = base.filter(Venda.emp == emp_filtro)
+                    base_all = base_all.filter(Venda.emp == emp_filtro)
+                    escopo_label = f"EMP {emp_filtro}"
+                if vendedor_filtro:
+                    base = base.filter(func.upper(Venda.vendedor) == vendedor_filtro)
+                    base_all = base_all.filter(func.upper(Venda.vendedor) == vendedor_filtro)
+                    escopo_label = (escopo_label + " • " if escopo_label else "") + f"Vendedor {vendedor_filtro}"
+
+            elif role == "supervisor":
+                # supervisor só vê a EMP dele
+                base = base.filter(Venda.emp == emp_usuario)
+                base_all = base_all.filter(Venda.emp == emp_usuario)
+                escopo_label = f"EMP {emp_usuario}"
+                pode_filtrar_vendedor = True
+                if vendedor_filtro:
+                    base = base.filter(func.upper(Venda.vendedor) == vendedor_filtro)
+                    base_all = base_all.filter(func.upper(Venda.vendedor) == vendedor_filtro)
+                    escopo_label += f" • Vendedor {vendedor_filtro}"
+
+            else:
+                # vendedor: só ele
+                base = base.filter(func.upper(Venda.vendedor) == vendedor_logado)
+                base_all = base_all.filter(func.upper(Venda.vendedor) == vendedor_logado)
+                escopo_label = f"Vendedor {vendedor_logado}"
+
+            # Totais básicos
+            total_valor = (base.with_entities(func.coalesce(func.sum(Venda.valor_total), 0.0)).scalar() or 0.0)
+            total_clientes = (base.with_entities(func.count(func.distinct(Venda.cliente_id_norm))).scalar() or 0)
+            total_cidades = (base.with_entities(func.count(func.distinct(Venda.cidade_norm))).scalar() or 0)
+            total_vendedores = (base.with_entities(func.count(func.distinct(func.upper(Venda.vendedor)))).scalar() or 0)
+
+            # Clientes novos vs recorrentes (no escopo do usuário)
+            clientes_periodo = base.with_entities(func.distinct(Venda.cliente_id_norm).label('cid')).filter(Venda.cliente_id_norm.isnot(None)).subquery()
+            min_datas = (
+                db.query(
+                    Venda.cliente_id_norm.label("cid"),
+                    func.min(Venda.movimento).label("min_data")
+                )
+                
+                .filter(Venda.cliente_id_norm.isnot(None))
+                .group_by(Venda.cliente_id_norm)
+                .subquery()
+            )
+            # join manual
+            novos = db.query(func.count()).select_from(clientes_periodo.join(min_datas, clientes_periodo.c.cid == min_datas.c.cid)).filter(min_datas.c.min_data >= inicio).scalar() or 0
+            recorr = db.query(func.count()).select_from(clientes_periodo.join(min_datas, clientes_periodo.c.cid == min_datas.c.cid)).filter(min_datas.c.min_data < inicio).scalar() or 0
+
+            totais = {
+                "valor_total": float(total_valor),
+                "clientes_unicos": int(total_clientes),
+                "cidades": int(total_cidades),
+                "vendedores": int(total_vendedores),
+                "clientes_novos": int(novos),
+                "clientes_recorrentes": int(recorr),
+            }
+
+            # Ranking de cidades
+            cidades_rows = (
+                base.with_entities(
+                    func.coalesce(Venda.cidade_norm, "sem_cidade").label("cidade_norm"),
+                    func.coalesce(func.sum(Venda.valor_total), 0.0).label("valor_total"),
+                    func.coalesce(func.sum(Venda.qtdade_vendida), 0.0).label("qtd_total"),
+                    func.count(func.distinct(Venda.cliente_id_norm)).label("clientes_unicos"),
+                    func.count(func.distinct(func.upper(Venda.vendedor))).label("vendedores"),
+                )
+                .group_by(func.coalesce(Venda.cidade_norm, "sem_cidade"))
+                .order_by(func.sum(Venda.valor_total).desc())
+                .limit(50)
+                .all()
+            )
+
+            cidades = []
+            for r in cidades_rows:
+                label = "SEM CIDADE" if (r.cidade_norm in (None, "", "sem_cidade")) else str(r.cidade_norm).upper()
+                cidades.append({
+                    "cidade_norm": r.cidade_norm,
+                    "cidade_label": label,
+                    "valor_total": float(r.valor_total or 0.0),
+                    "qtd_total": float(r.qtd_total or 0.0),
+                    "clientes_unicos": int(r.clientes_unicos or 0),
+                    "vendedores": int(r.vendedores or 0),
+                })
+
+            # Clientes por vendedor
+            vendedores_rows = (
+                base.with_entities(
+                    func.upper(Venda.vendedor).label("vendedor"),
+                    func.coalesce(func.sum(Venda.valor_total), 0.0).label("valor_total"),
+                    func.count(func.distinct(Venda.cliente_id_norm)).label("clientes_unicos"),
+                    func.count(func.distinct(Venda.cidade_norm)).label("cidades"),
+                )
+                .group_by(func.upper(Venda.vendedor))
+                .order_by(func.sum(Venda.valor_total).desc())
+                .all()
+            )
+            vendedores = [{
+                "vendedor": r.vendedor,
+                "valor_total": float(r.valor_total or 0.0),
+                "clientes_unicos": int(r.clientes_unicos or 0),
+                "cidades": int(r.cidades or 0),
+            } for r in vendedores_rows]
+
+            return render_template(
+                "relatorio_cidades_clientes.html",
+                role=role,
+                ano=ano,
+                mes=mes,
+                emp_filtro=emp_filtro,
+                vendedor_filtro=vendedor_filtro,
+                escopo_label=escopo_label,
+                pode_filtrar_emp=pode_filtrar_emp,
+                pode_filtrar_vendedor=pode_filtrar_vendedor,
+                totais=type("Obj", (), totais),
+                cidades=cidades,
+                vendedores=vendedores,
+            )
+        finally:
+            db.close()
 
     @app.route("/senha", methods=["GET", "POST"])
     def senha():

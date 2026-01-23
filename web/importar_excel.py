@@ -49,6 +49,14 @@ REQUIRED_COLS = [
 ]
 
 
+OPTIONAL_COLS = [
+    "DESCRICAO",
+    "RAZAO",
+    "CIDADE",
+    "CNPJ_CPF",
+]
+
+
 def _norm_cols(cols: List[Any]) -> List[str]:
     return [str(c).strip().upper() if c is not None else "" for c in cols]
 
@@ -97,6 +105,38 @@ def _norm_str(value: Any) -> Optional[str]:
     return s if s else None
 
 
+
+def _norm_text(value: Any) -> Optional[str]:
+    """Normaliza texto para comparações estáveis (lowercase, sem acento, espaços colapsados)."""
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return None
+    s = str(value).strip()
+    if not s:
+        return None
+    # remove acentos
+    import unicodedata, re
+    s = "".join(c for c in unicodedata.normalize("NFKD", s) if not unicodedata.combining(c))
+    s = re.sub(r"\s+", " ", s).strip().lower()
+    return s if s else None
+
+
+def _client_id_norm(cnpj_cpf: Any, razao: Any) -> Optional[str]:
+    """Gera um identificador estável do cliente.
+
+    Preferência: CNPJ/CPF (normalizado, só dígitos). Fallback: hash da razão social normalizada.
+    """
+    import hashlib, re
+    c = _norm_str(cnpj_cpf)
+    if c:
+        digits = re.sub(r"\D+", "", c)
+        if digits:
+            return f"doc:{digits}"
+    r = _norm_text(razao)
+    if r:
+        h = hashlib.sha256(r.encode("utf-8")).hexdigest()
+        return f"razao:{h}"
+    return None
+
 def _conflict_cols_from_key(chave: str) -> List[str]:
     """Mapeia o nome da chave para colunas do banco.
 
@@ -140,6 +180,14 @@ def _build_stmt(records: List[dict], modo: str, conflict_cols: List[str]):
             "nota": stmt.excluded.nota,
             "vendedor": stmt.excluded.vendedor,
             "mestre": stmt.excluded.mestre,
+            "descricao": stmt.excluded.descricao,
+            "razao": stmt.excluded.razao,
+            "cidade": stmt.excluded.cidade,
+            "cnpj_cpf": stmt.excluded.cnpj_cpf,
+            "descricao_norm": stmt.excluded.descricao_norm,
+            "razao_norm": stmt.excluded.razao_norm,
+            "cidade_norm": stmt.excluded.cidade_norm,
+            "cliente_id_norm": stmt.excluded.cliente_id_norm,
         }
         return stmt.on_conflict_do_update(index_elements=conflict_cols, set_=update_cols)
     return stmt.on_conflict_do_nothing(index_elements=conflict_cols)
@@ -236,6 +284,14 @@ def importar_planilha(
                         "des": _to_float(get("DES")),
                         "qtdade_vendida": _to_float(get("QTDADE_VENDIDA")),
                         "valor_total": _to_float(get("VALOR_TOTAL")) or 0.0,
+                        "descricao": _norm_str(get("DESCRICAO")),
+                        "razao": _norm_str(get("RAZAO")),
+                        "cidade": _norm_str(get("CIDADE")),
+                        "cnpj_cpf": _norm_str(get("CNPJ_CPF")),
+                        "descricao_norm": _norm_text(get("DESCRICAO")),
+                        "razao_norm": _norm_text(get("RAZAO")),
+                        "cidade_norm": _norm_text(get("CIDADE")),
+                        "cliente_id_norm": _client_id_norm(get("CNPJ_CPF"), get("RAZAO")),
                     }
 
                     batch.append(rec)
@@ -370,6 +426,22 @@ def importar_planilha(
                         "des": _to_float(row.get("DES")),
                         "qtdade_vendida": _to_float(row.get("QTDADE_VENDIDA")),
                         "valor_total": _to_float(row.get("VALOR_TOTAL")) or 0.0,
+                        "descricao": _norm_str(row.get("DESCRICAO")),
+                        "razao": _norm_str(row.get("RAZAO")),
+                        "cidade": _norm_str(row.get("CIDADE")),
+                        "cnpj_cpf": _norm_str(row.get("CNPJ_CPF")),
+                        "descricao_norm": _norm_text(row.get("DESCRICAO")),
+                        "razao_norm": _norm_text(row.get("RAZAO")),
+                        "cidade_norm": _norm_text(row.get("CIDADE")),
+                        "cliente_id_norm": _client_id_norm(row.get("CNPJ_CPF"), row.get("RAZAO")),
+                        "descricao": _norm_str(row.get("DESCRICAO")),
+                        "razao": _norm_str(row.get("RAZAO")),
+                        "cidade": _norm_str(row.get("CIDADE")),
+                        "cnpj_cpf": _norm_str(row.get("CNPJ_CPF")),
+                        "descricao_norm": _norm_text(row.get("DESCRICAO")),
+                        "razao_norm": _norm_text(row.get("RAZAO")),
+                        "cidade_norm": _norm_text(row.get("CIDADE")),
+                        "cliente_id_norm": _client_id_norm(row.get("CNPJ_CPF"), row.get("RAZAO")),
                     }
                     records.append(rec)
                     validas += 1

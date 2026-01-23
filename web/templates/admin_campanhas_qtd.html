@@ -52,10 +52,29 @@
             <input class="form-control" type="text" name="titulo" placeholder="ex: Semana do Pneu">
           </div>
 
-          <div class="col-md-3">
-            <label class="form-label">Produto (prefixo) *</label>
-            <input class="form-control" type="text" name="produto_prefixo" placeholder="ex: PNEU ou LAMPADA DO FAROL" required>
+          
+          <div class="col-md-2">
+            <label class="form-label">Base da campanha *</label>
+            <select class="form-select" name="campo_match" id="campo_match">
+              <option value="codigo" selected>Código / Prefixo (MESTRE)</option>
+              <option value="descricao">Descrição (começa com...)</option>
+            </select>
           </div>
+
+          <div class="col-md-3">
+            <label class="form-label">Produto (prefixo)</label>
+            <input class="form-control" type="text" name="produto_prefixo" id="produto_prefixo"
+                   placeholder="ex: 406 ou PNEU" >
+            <div class="form-text">Usado quando a base for "Código/Prefixo".</div>
+          </div>
+
+          <div class="col-md-3">
+            <label class="form-label">Descrição (início)</label>
+            <input class="form-control" type="text" name="descricao_prefixo" id="descricao_prefixo"
+                   placeholder="ex: PNEU DIANT" >
+            <div class="form-text">Usado quando a base for "Descrição". O sistema busca itens cuja descrição <b>começa</b> com este texto.</div>
+          </div>
+
 
           <div class="col-md-2">
             <label class="form-label">Marca *</label>
@@ -212,5 +231,32 @@
     </div>
 
   </div>
+
+<script>
+(function(){
+  function toggleMatchFields() {
+    var sel = document.getElementById('campo_match');
+    var tipo = (sel && sel.value) ? sel.value : 'codigo';
+    var cod = document.getElementById('produto_prefixo');
+    var desc = document.getElementById('descricao_prefixo');
+    if(!cod || !desc) return;
+    if(tipo === 'descricao'){
+      desc.required = true;
+      cod.required = false;
+      cod.placeholder = "desativado (use descrição)";
+    } else {
+      cod.required = true;
+      desc.required = false;
+      desc.placeholder = "desativado (use prefixo/código)";
+    }
+  }
+  document.addEventListener('change', function(e){
+    if(e.target && e.target.id === 'campo_match') toggleMatchFields();
+  });
+  document.addEventListener('DOMContentLoaded', toggleMatchFields);
+  toggleMatchFields();
+})();
+</script>
+
 </body>
 </html>

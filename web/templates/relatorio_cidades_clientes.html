@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8">
+  <title>Relatório - Cidades e Clientes</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+<div class="container py-3">
+
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+      <h4 class="m-0">🌎 Relatório - Cidades & Clientes</h4>
+      <div class="text-muted small">Período: {{ "%02d"|format(mes) }}/{{ ano }}{% if escopo_label %} • {{ escopo_label }}{% endif %}</div>
+    </div>
+    <div class="d-flex gap-2">
+      <a class="btn btn-outline-secondary btn-sm" href="/dashboard">Voltar</a>
+    </div>
+  </div>
+
+  <div class="card shadow-sm mb-3">
+    <div class="card-body">
+      <form class="row g-2 align-items-end" method="get">
+        <div class="col-6 col-md-2">
+          <label class="form-label">Mês</label>
+          <input class="form-control form-control-sm" type="number" min="1" max="12" name="mes" value="{{ mes }}">
+        </div>
+        <div class="col-6 col-md-2">
+          <label class="form-label">Ano</label>
+          <input class="form-control form-control-sm" type="number" min="2000" max="2100" name="ano" value="{{ ano }}">
+        </div>
+
+        {% if pode_filtrar_emp %}
+        <div class="col-12 col-md-3">
+          <label class="form-label">EMP (loja)</label>
+          <input class="form-control form-control-sm" type="text" name="emp" value="{{ emp_filtro or '' }}" placeholder="ex: 101">
+        </div>
+        {% endif %}
+
+        {% if pode_filtrar_vendedor %}
+        <div class="col-12 col-md-3">
+          <label class="form-label">Vendedor</label>
+          <input class="form-control form-control-sm" type="text" name="vendedor" value="{{ vendedor_filtro or '' }}" placeholder="ex: LUCAS">
+        </div>
+        {% endif %}
+
+        <div class="col-12 col-md-2">
+          <button class="btn btn-primary btn-sm w-100" type="submit">Aplicar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="row g-3 mb-3">
+    <div class="col-md-3">
+      <div class="card shadow-sm">
+        <div class="card-body">
+          <div class="text-muted small">Valor total</div>
+          <div class="fs-5 fw-semibold">R$ {{ "{:,.2f}".format(totais.valor_total).replace(",", "X").replace(".", ",").replace("X", ".") }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card shadow-sm">
+        <div class="card-body">
+          <div class="text-muted small">Clientes únicos</div>
+          <div class="fs-5 fw-semibold">{{ totais.clientes_unicos }}</div>
+          <div class="text-muted small">Novos: {{ totais.clientes_novos }} • Recorrentes: {{ totais.clientes_recorrentes }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card shadow-sm">
+        <div class="card-body">
+          <div class="text-muted small">Cidades atendidas</div>
+          <div class="fs-5 fw-semibold">{{ totais.cidades }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card shadow-sm">
+        <div class="card-body">
+          <div class="text-muted small">Vendedores ativos</div>
+          <div class="fs-5 fw-semibold">{{ totais.vendedores }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card shadow-sm mb-3">
+    <div class="card-header bg-white">
+      <div class="fw-semibold">🏙️ Ranking de cidades (Top 50)</div>
+      <div class="text-muted small">Valor total, quantidade, clientes únicos e vendedores que atuaram na cidade.</div>
+    </div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-sm table-striped mb-0 align-middle">
+          <thead class="table-light">
+            <tr>
+              <th style="width:34%">Cidade</th>
+              <th class="text-end">Valor</th>
+              <th class="text-end">Qtd</th>
+              <th class="text-end">Clientes</th>
+              <th class="text-end">Vendedores</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for c in cidades %}
+            <tr>
+              <td>{{ c.cidade_label }}</td>
+              <td class="text-end">R$ {{ "{:,.2f}".format(c.valor_total).replace(",", "X").replace(".", ",").replace("X", ".") }}</td>
+              <td class="text-end">{{ "{:,.0f}".format(c.qtd_total).replace(",", ".") }}</td>
+              <td class="text-end">{{ c.clientes_unicos }}</td>
+              <td class="text-end">{{ c.vendedores }}</td>
+            </tr>
+            {% endfor %}
+            {% if not cidades %}
+            <tr><td colspan="5" class="text-center text-muted py-3">Sem dados no período.</td></tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="card shadow-sm">
+    <div class="card-header bg-white">
+      <div class="fw-semibold">👥 Clientes atendidos por vendedor</div>
+    </div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-sm table-striped mb-0 align-middle">
+          <thead class="table-light">
+            <tr>
+              <th>Vendedor</th>
+              <th class="text-end">Valor</th>
+              <th class="text-end">Clientes únicos</th>
+              <th class="text-end">Cidades</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for v in vendedores %}
+            <tr>
+              <td>{{ v.vendedor }}</td>
+              <td class="text-end">R$ {{ "{:,.2f}".format(v.valor_total).replace(",", "X").replace(".", ",").replace("X", ".") }}</td>
+              <td class="text-end">{{ v.clientes_unicos }}</td>
+              <td class="text-end">{{ v.cidades }}</td>
+            </tr>
+            {% endfor %}
+            {% if not vendedores %}
+            <tr><td colspan="4" class="text-center text-muted py-3">Sem dados no período.</td></tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

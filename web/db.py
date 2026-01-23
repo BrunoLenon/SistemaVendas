@@ -109,9 +109,24 @@ class Venda(Base):
     qtdade_vendida = Column(Float, nullable=True)
     valor_total = Column(Float, nullable=False)
 
+    # === Novos campos para relatórios e campanhas por descrição (opcionais) ===
+    descricao = Column(Text, nullable=True)        # DESCRICAO
+    razao = Column(Text, nullable=True)            # RAZAO
+    cidade = Column(String(120), nullable=True)    # CIDADE
+    cnpj_cpf = Column(String(40), nullable=True)   # CNPJ_CPF
+
+    # Normalizados (para busca eficiente e contagens)
+    descricao_norm = Column(Text, nullable=True, index=True)
+    razao_norm = Column(Text, nullable=True, index=True)
+    cidade_norm = Column(String(120), nullable=True, index=True)
+    cliente_id_norm = Column(String(64), nullable=True, index=True)
+
     __table_args__ = (
         # Performance
         Index("ix_vendas_vendedor_data", "vendedor", "movimento"),
+        Index("ix_vendas_emp_data", "emp", "movimento"),
+        Index("ix_vendas_cidade_data", "cidade_norm", "movimento"),
+        Index("ix_vendas_cliente_data", "cliente_id_norm", "movimento"),
         # Anti-duplicidade (idempotente) - deve bater com o banco (Supabase)
         # Chave completa: (mestre, marca, vendedor, movimento, mov_tipo_movto, nota, emp)
         UniqueConstraint(
@@ -206,6 +221,10 @@ class CampanhaQtd(Base):
     titulo = Column(String(120), nullable=True)
     produto_prefixo = Column(String(200), nullable=False)
     marca = Column(String(120), nullable=False)
+
+    # Novo: campanhas por descrição (prefixo no início). Se campo_match='descricao', usa Venda.descricao_norm.
+    campo_match = Column(String(20), nullable=False, default='codigo')  # 'codigo' ou 'descricao'
+    descricao_prefixo = Column(String(200), nullable=True)
 
     recompensa_unit = Column(Float, nullable=False, default=0.0)
     qtd_minima = Column(Float, nullable=True)
@@ -372,6 +391,27 @@ def criar_tabelas():
             conn.execute(text("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS emp varchar(30);"))
             conn.execute(text("UPDATE usuarios SET role='vendedor' WHERE role IS NULL OR role='' ;"))
             conn.execute(text("UPDATE usuarios SET role=lower(role) WHERE role IS NOT NULL;"))
+            # Vendas: novos campos para relatórios (IF NOT EXISTS)
+            conn.execute(text("ALTER TABLE vendas ADD COLUMN IF NOT EXISTS descricao text;"))
+            conn.execute(text("ALTER TABLE vendas ADD COLUMN IF NOT EXISTS razao text;"))
+            conn.execute(text("ALTER TABLE vendas ADD COLUMN IF NOT EXISTS cidade varchar(120);"))
+            conn.execute(text("ALTER TABLE vendas ADD COLUMN IF NOT EXISTS cnpj_cpf varchar(40);"))
+            conn.execute(text("ALTER TABLE vendas ADD COLUMN IF NOT EXISTS descricao_norm text;"))
+            conn.execute(text("ALTER TABLE vendas ADD COLUMN IF NOT EXISTS razao_norm text;"))
+            conn.execute(text("ALTER TABLE vendas ADD COLUMN IF NOT EXISTS cidade_norm varchar(120);"))
+            conn.execute(text("ALTER TABLE vendas ADD COLUMN IF NOT EXISTS cliente_id_norm varchar(64);"))
+
+            # Índices (seguros)
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_vendas_emp_data ON vendas (emp, movimento);"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_vendas_cidade_data ON vendas (cidade_norm, movimento);"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_vendas_cliente_data ON vendas (cliente_id_norm, movimento);"))
+
+            # Campanhas: suporte a match por descrição
+            conn.execute(text("ALTER TABLE campanhas_qtd ADD COLUMN IF NOT EXISTS campo_match varchar(20) DEFAULT 'codigo';"))
+            conn.execute(text("ALTER TABLE campanhas_qtd ADD COLUMN IF NOT EXISTS descricao_prefixo varchar(200);"))
+            conn.execute(text("UPDATE campanhas_qtd SET campo_match='codigo' WHERE campo_match IS NULL OR campo_match='';"))
+
+
     except Exception:
         # Se não tiver permissão ou der algum erro, não derruba o app.
         pass
