@@ -9,7 +9,7 @@ from io import BytesIO
 
 import pandas as pd
 import requests
-from sqlalchemy import and_, func, case, cast, String, text
+from sqlalchemy import and_, or_, func, case, cast, String, text
 from flask import (
     Flask,
     flash,
@@ -1649,7 +1649,9 @@ def create_app() -> Flask:
         with SessionLocal() as db:
             q = db.query(CampanhaQtd).filter(CampanhaQtd.ativo == 1)
             if emp:
-                q = q.filter(CampanhaQtd.emp == str(emp))
+                emp_str = str(emp)
+                # suporta campanhas globais (emp = 'ALL'/'*'/'') e campanhas específicas da EMP
+                q = q.filter(or_(CampanhaQtd.emp == emp_str, CampanhaQtd.emp.in_(['ALL', '*', ''])))
             # overlap: inicio <= fim_mes AND fim >= inicio_mes
             q = q.filter(and_(CampanhaQtd.data_inicio <= fim_mes, CampanhaQtd.data_fim >= inicio_mes))
             return q.order_by(CampanhaQtd.emp.asc(), CampanhaQtd.data_inicio.asc()).all()
@@ -1968,6 +1970,283 @@ def create_app() -> Flask:
         buf.seek(0)
         filename = f"campanhas_{mes:02d}_{ano}.pdf"
         return send_file(buf, mimetype="application/pdf", as_attachment=True, download_name=filename)
+
+    # ---------------------------------------------------------------------
+    # Relatórios (Campanhas) - visão por EMP -> vendedores -> campanhas
+    # ---------------------------------------------------------------------
+    def _get_emps_com_vendas_no_periodo(ano: int, mes: int) -> list[str]:
+        inicio_mes, fim_mes = _periodo_bounds(int(ano), int(mes))
+        with SessionLocal() as db:
+            rows = (
+                db.query(func.distinct(Venda.emp))
+                .filter(Venda.movimento >= inicio_mes, Venda.movimento <= fim_mes)
+                .all()
+            )
+        emps = sorted({str(r[0]).strip() for r in rows if r and r[0] is not None and str(r[0]).strip() != ""})
+        return emps
+
+    def _get_vendedores_emp_no_periodo(emp: str, ano: int, mes: int) -> list[str]:
+        inicio_mes, fim_mes = _periodo_bounds(int(ano), int(mes))
+        emp = str(emp)
+        with SessionLocal() as db:
+            rows = (
+                db.query(func.distinct(Venda.vendedor))
+                .filter(Venda.emp == emp, Venda.movimento >= inicio_mes, Venda.movimento <= fim_mes)
+                .all()
+            )
+        vendedores = sorted({(r[0] or '').strip().upper() for r in rows if r and (r[0] or '').strip()})
+        return vendedores
+
+    def _calc_vendas_por_vendedor_para_campanha(db, emp: str, campanha: CampanhaQtd, periodo_ini: date, periodo_fim: date) -> dict[str, tuple[float, float]]:
+        """Retorna dict vendedor -> (qtd_vendida, valor_vendido) para uma campanha no período (já considerando EMP e filtros da campanha)."""
+        emp = str(emp)
+        prefix = (campanha.produto_prefixo or '').strip()
+        prefix_up = prefix.upper()
+
+        campo_item = func.upper(func.trim(cast(Venda.mestre, String)))
+        cond_prefix = campo_item.like(prefix_up + "%")
+        cond_marca = func.upper(func.trim(cast(Venda.marca, String))) == (campanha.marca or "").strip().upper()
+
+        q = (
+            db.query(
+                func.upper(func.trim(cast(Venda.vendedor, String))).label("vendedor"),
+                func.coalesce(func.sum(Venda.qtdade_vendida), 0.0).label("qtd"),
+                func.coalesce(func.sum(Venda.valor_total), 0.0).label("valor"),
+            )
+            .filter(
+                Venda.emp == emp,
+                Venda.movimento >= periodo_ini,
+                Venda.movimento <= periodo_fim,
+                ~Venda.mov_tipo_movto.in_(["DS", "CA"]),
+                cond_prefix,
+                cond_marca,
+            )
+            .group_by(func.upper(func.trim(cast(Venda.vendedor, String))))
+        )
+        rows = q.all()
+        out: dict[str, tuple[float, float]] = {}
+        for r in rows:
+            v = (r.vendedor or '').strip().upper()
+            if not v:
+                continue
+            out[v] = (float(r.qtd or 0.0), float(r.valor or 0.0))
+        return out
+
+    def _build_campanhas_escolhidas_por_vendedor(campanhas: list[CampanhaQtd], vendedores: list[str]) -> dict[str, list[CampanhaQtd]]:
+        """Aplica a regra de prioridade por chave (prefixo+marca): campanha do vendedor substitui campanha geral."""
+        # geral: vendedor NULL
+        geral_by_key: dict[tuple[str, str], CampanhaQtd] = {}
+        especificas: dict[str, dict[tuple[str, str], CampanhaQtd]] = {}
+        for c in campanhas:
+            key = ((c.produto_prefixo or "").strip().upper(), (c.marca or "").strip().upper())
+            if c.vendedor and c.vendedor.strip():
+                vend = c.vendedor.strip().upper()
+                especificas.setdefault(vend, {})[key] = c
+            else:
+                geral_by_key.setdefault(key, c)
+
+        escolhidas: dict[str, list[CampanhaQtd]] = {}
+        for v in vendedores:
+            base = dict(geral_by_key)
+            if v in especificas:
+                base.update(especificas[v])
+            escolhidas[v] = list(base.values())
+        return escolhidas
+
+    def _recalcular_resultados_campanhas_para_scope(ano: int, mes: int, emps: list[str], vendedores_por_emp: dict[str, list[str]]) -> None:
+        """Recalcula (upsert) snapshots em campanhas_qtd_resultados para o escopo informado.
+        Focado em desempenho: faz agregação por campanha com group_by vendedor e só grava para vendedores no escopo.
+        """
+        inicio_mes, fim_mes = _periodo_bounds(int(ano), int(mes))
+        with SessionLocal() as db:
+            for emp in emps:
+                emp = str(emp)
+
+                vendedores_emp = [v.strip().upper() for v in (vendedores_por_emp.get(emp) or []) if (v or '').strip()]
+                if not vendedores_emp:
+                    continue
+
+                # campanhas que intersectam o mês (inclui globais se houver)
+                campanhas = _campanhas_mes_overlap(int(ano), int(mes), emp)
+
+                # campanhas escolhidas por vendedor (aplica override)
+                escolhidas_por_vendedor = _build_campanhas_escolhidas_por_vendedor(campanhas, vendedores_emp)
+
+                # União de campanhas realmente usadas
+                campanhas_usadas: dict[int, CampanhaQtd] = {}
+                for v, lst in escolhidas_por_vendedor.items():
+                    for c in lst:
+                        campanhas_usadas[c.id] = c
+
+                # Pré-calcula vendas por vendedor para cada campanha
+                vendas_por_campanha: dict[int, dict[str, tuple[float, float]]] = {}
+                for cid, c in campanhas_usadas.items():
+                    periodo_ini = max(c.data_inicio, inicio_mes)
+                    periodo_fim = min(c.data_fim, fim_mes)
+                    vendas_por_campanha[cid] = _calc_vendas_por_vendedor_para_campanha(db, emp, c, periodo_ini, periodo_fim)
+
+                # Apaga resultados existentes do escopo (para evitar conflito e garantir consistência)
+                # (apenas para a EMP e competência; é rápido pois tem índice)
+                db.query(CampanhaQtdResultado).filter(
+                    CampanhaQtdResultado.emp == emp,
+                    CampanhaQtdResultado.competencia_ano == int(ano),
+                    CampanhaQtdResultado.competencia_mes == int(mes),
+                ).delete(synchronize_session=False)
+
+                # Insere novos snapshots
+                novos = []
+                for v in vendedores_emp:
+                    for c in escolhidas_por_vendedor.get(v, []):
+                        qtd, valor = vendas_por_campanha.get(c.id, {}).get(v, (0.0, 0.0))
+                        minimo = c.qtd_minima
+                        atingiu = 1
+                        if minimo is not None and float(minimo) > 0:
+                            atingiu = 1 if float(qtd) >= float(minimo) else 0
+                        valor_recomp = (float(qtd) * float(c.recompensa_unit or 0.0)) if atingiu else 0.0
+
+                        novos.append(CampanhaQtdResultado(
+                            campanha_id=c.id,
+                            competencia_ano=int(ano),
+                            competencia_mes=int(mes),
+                            emp=emp,
+                            vendedor=v,
+                            titulo=c.titulo,
+                            produto_prefixo=(c.produto_prefixo or "").strip(),
+                            marca=(c.marca or "").strip(),
+                            recompensa_unit=float(c.recompensa_unit or 0.0),
+                            qtd_minima=float(minimo) if minimo is not None else None,
+                            data_inicio=c.data_inicio,
+                            data_fim=c.data_fim,
+                            qtd_vendida=float(qtd),
+                            valor_vendido=float(valor),
+                            atingiu_minimo=int(atingiu),
+                            valor_recompensa=float(valor_recomp),
+                            status_pagamento="PENDENTE",
+                            atualizado_em=datetime.utcnow(),
+                        ))
+                if novos:
+                    db.bulk_save_objects(novos)
+                db.commit()
+
+    @app.get("/relatorios/campanhas")
+    def relatorio_campanhas():
+        """Relatório gerencial de campanhas por EMP -> vendedores -> campanhas (mês/ano).
+
+        - ADMIN: todas as EMPs (ou filtra por emp)
+        - SUPERVISOR: apenas EMP vinculada ao supervisor
+        - VENDEDOR: apenas ele (suas EMPs)
+        """
+        red = _login_required()
+        if red:
+            return red
+
+        role = (_role() or "").strip().lower()
+        emp_usuario = _emp()
+
+        hoje = date.today()
+        mes = int(request.args.get("mes") or hoje.month)
+        ano = int(request.args.get("ano") or hoje.year)
+
+        emp_param = (request.args.get("emp") or "").strip()
+
+        vendedor_logado = (_usuario_logado() or "").strip().upper()
+        vendedor_param = (request.args.get("vendedor") or "").strip().upper()
+
+        # Define escopo de EMPs e vendedores
+        emps_scope: list[str] = []
+        vendedores_por_emp: dict[str, list[str]] = {}
+
+        if role == "admin":
+            if emp_param:
+                emps_scope = [emp_param]
+            else:
+                emps_scope = _get_emps_com_vendas_no_periodo(ano, mes)
+        elif role == "supervisor":
+            if not emp_usuario:
+                flash("Supervisor sem EMP cadastrada. Ajuste o usuário do supervisor.", "warning")
+                emps_scope = []
+            else:
+                emps_scope = [str(emp_usuario)]
+        else:
+            # vendedor
+            emps_scope = _get_emps_vendedor(vendedor_logado)
+            if not emps_scope:
+                flash("Não foi possível identificar a EMP do vendedor pelas vendas.", "warning")
+
+        # Vendedores por EMP (limitado por role)
+        for emp in emps_scope:
+            emp = str(emp)
+            if role == "admin":
+                # admin: todos os vendedores que venderam no período na EMP
+                vendedores = _get_vendedores_emp_no_periodo(emp, ano, mes)
+                # se admin passar vendedor, filtra (útil para testar)
+                if vendedor_param:
+                    vendedores = [vendedor_param] if vendedor_param in vendedores else [vendedor_param]
+            elif role == "supervisor":
+                vendedores = _get_vendedores_emp_no_periodo(emp, ano, mes)
+            else:
+                vendedores = [vendedor_logado]
+            vendedores_por_emp[emp] = vendedores
+
+        # Recalcula snapshots do escopo para garantir relatório correto
+        try:
+            _recalcular_resultados_campanhas_para_scope(ano, mes, emps_scope, vendedores_por_emp)
+        except Exception as e:
+            print(f"[RELATORIO_CAMPANHAS] erro ao recalcular snapshots: {e}")
+            flash("Não foi possível recalcular os resultados das campanhas agora. Exibindo dados já salvos.", "warning")
+
+        # Carrega resultados e organiza para o template
+        emps_data = []
+        with SessionLocal() as db:
+            for emp in emps_scope:
+                emp = str(emp)
+                vendedores = vendedores_por_emp.get(emp) or []
+                if not vendedores:
+                    continue
+
+                resultados = (
+                    db.query(CampanhaQtdResultado)
+                    .filter(
+                        CampanhaQtdResultado.emp == emp,
+                        CampanhaQtdResultado.competencia_ano == int(ano),
+                        CampanhaQtdResultado.competencia_mes == int(mes),
+                        CampanhaQtdResultado.vendedor.in_([v.strip().upper() for v in vendedores]),
+                    )
+                    .order_by(CampanhaQtdResultado.vendedor.asc(), CampanhaQtdResultado.valor_recompensa.desc())
+                    .all()
+                )
+
+                # agrupa por vendedor
+                by_vend: dict[str, list[CampanhaQtdResultado]] = {}
+                for r in resultados:
+                    by_vend.setdefault((r.vendedor or "").strip().upper(), []).append(r)
+
+                vendedores_data = []
+                for v in vendedores:
+                    lst = by_vend.get(v.strip().upper(), [])
+                    total = sum(float(x.valor_recompensa or 0.0) for x in lst)
+                    vendedores_data.append({
+                        "vendedor": v.strip().upper(),
+                        "total_recompensa": float(total),
+                        "campanhas": lst,
+                    })
+
+                total_emp = sum(float(vd["total_recompensa"] or 0.0) for vd in vendedores_data)
+                emps_data.append({
+                    "emp": emp,
+                    "total_emp": float(total_emp),
+                    "vendedores": vendedores_data,
+                })
+
+        return render_template(
+            "relatorio_campanhas.html",
+            role=role,
+            ano=ano,
+            mes=mes,
+            emp_param=emp_param,
+            emps_data=emps_data,
+            vendedor=vendedor_logado,
+        )
 
     @app.route("/senha", methods=["GET", "POST"])
     def senha():
