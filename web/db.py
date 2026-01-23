@@ -325,6 +325,35 @@ class FechamentoMensal(Base):
 
 
 
+
+class AppSetting(Base):
+    __tablename__ = "app_settings"
+
+    id = Column(Integer, primary_key=True)
+    key = Column(String(120), unique=True, nullable=False, index=True)
+    value = Column(Text, nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class BrandingTheme(Base):
+    __tablename__ = "branding_themes"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String(120), nullable=False)
+    start_date = Column(Date, nullable=False)
+    end_date = Column(Date, nullable=False)
+    logo_url = Column(Text, nullable=True)
+    favicon_url = Column(Text, nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False)
+
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        Index("ix_branding_themes_active_dates", "is_active", "start_date", "end_date"),
+    )
+
+
 def criar_tabelas():
     """Cria tabelas e aplica ajustes leves de schema (compatibilidade).
 

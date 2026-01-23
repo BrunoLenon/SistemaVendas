@@ -4,6 +4,9 @@
   <meta charset="utf-8">
   <title>Dashboard - {{ vendedor or usuario }}</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  {% if branding and branding.favicon_url %}
+    <link rel="icon" href="{{ branding.favicon_url }}{% if branding.version %}?v={{ branding.version }}{% endif %}">
+  {% endif %}
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <style>
     .table-sm td, .table-sm th { padding: .55rem; }
@@ -34,6 +37,9 @@
         <a class="btn btn-outline-dark btn-sm" href="/itens_parados">Itens parados</a>
         <a class="btn btn-outline-dark btn-sm" href="/campanhas">Campanhas</a>
         <a class="btn btn-outline-primary btn-sm" href="/senha">Trocar senha</a>
+        {% if role and role|lower in ['admin', 'administrador'] %}
+        <a class="btn btn-outline-success btn-sm" href="/admin/configuracoes">Configurações</a>
+        {% endif %}
         <a class="btn btn-outline-secondary btn-sm" href="/logout">Sair</a>
       </div>
     </div>
