@@ -1993,7 +1993,18 @@ def create_app() -> Flask:
 
         acao = (request.form.get('acao') or '').strip().lower()
         if request.method == 'POST' and acao:
-            if acao in {'salvar', 'excluir'} and _mes_fechado(emp, ano, mes):
+            # alvo do POST (permite editar/cadastrar resumos em um período diferente do filtro)
+            emp_alvo = _emp_norm(request.form.get('emp_edit') or emp)
+            try:
+                ano_alvo = int(request.form.get('ano_edit') or ano)
+            except Exception:
+                ano_alvo = ano
+            try:
+                mes_alvo = int(request.form.get('mes_edit') or mes)
+            except Exception:
+                mes_alvo = mes
+
+            if acao in {'salvar', 'excluir'} and _mes_fechado(emp_alvo, ano_alvo, mes_alvo):
                 msgs.append('⚠️ Mês fechado. Reabra o mês para editar os resumos.')
             else:
                 with SessionLocal() as db:
@@ -2051,19 +2062,19 @@ def create_app() -> Flask:
                             rec = (
                                 db.query(VendasResumoPeriodo)
                                 .filter(
-                                    VendasResumoPeriodo.emp == emp,
+                                    VendasResumoPeriodo.emp == emp_alvo,
                                     VendasResumoPeriodo.vendedor == vend,
-                                    VendasResumoPeriodo.ano == ano,
-                                    VendasResumoPeriodo.mes == mes,
+                                    VendasResumoPeriodo.ano == ano_alvo,
+                                    VendasResumoPeriodo.mes == mes_alvo,
                                 )
                                 .one_or_none()
                             )
                             if rec is None:
                                 rec = VendasResumoPeriodo(
-                                    emp=emp,
+                                    emp=emp_alvo,
                                     vendedor=vend,
-                                    ano=ano,
-                                    mes=mes,
+                                    ano=ano_alvo,
+                                    mes=mes_alvo,
                                     valor_venda=valor_venda,
                                     mix_produtos=mix_produtos,
                                     created_at=datetime.utcnow(),
@@ -2085,10 +2096,10 @@ def create_app() -> Flask:
                             rec = (
                                 db.query(VendasResumoPeriodo)
                                 .filter(
-                                    VendasResumoPeriodo.emp == emp,
+                                    VendasResumoPeriodo.emp == emp_alvo,
                                     VendasResumoPeriodo.vendedor == vend,
-                                    VendasResumoPeriodo.ano == ano,
-                                    VendasResumoPeriodo.mes == mes,
+                                    VendasResumoPeriodo.ano == ano_alvo,
+                                    VendasResumoPeriodo.mes == mes_alvo,
                                 )
                                 .one_or_none()
                             )
@@ -2113,6 +2124,18 @@ def create_app() -> Flask:
                 q = q.filter(VendasResumoPeriodo.vendedor == vendedor)
             registros = q.order_by(VendasResumoPeriodo.vendedor.asc()).all()
 
+            # Resumos do mesmo período no ano passado (ano-1) para conferência/edição rápida
+            ano_passado = ano - 1
+            q2 = db.query(VendasResumoPeriodo).filter(
+                VendasResumoPeriodo.ano == ano_passado,
+                VendasResumoPeriodo.mes == mes,
+            )
+            if emp:
+                q2 = q2.filter(VendasResumoPeriodo.emp == emp)
+            if vendedor:
+                q2 = q2.filter(VendasResumoPeriodo.vendedor == vendedor)
+            resumos_ano_passado = q2.order_by(VendasResumoPeriodo.vendedor.asc()).all()
+
             # Sugestão rápida de vendedores (com base em vendas do período)
             # Ajuda o admin a não digitar errado
             start, end = _periodo_bounds(ano, mes)
@@ -2131,6 +2154,10 @@ def create_app() -> Flask:
             mes=mes,
             vendedor_filtro=vendedor,
             registros=registros,
+            rows=registros,
+            vendedor=vendedor,
+            ano_passado=ano_passado,
+            resumos_ano_passado=resumos_ano_passado,
             fechado=fechado,
             vendedores_sugeridos=vendedores_sugeridos,
             msgs=msgs,
