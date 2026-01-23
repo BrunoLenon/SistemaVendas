@@ -92,7 +92,9 @@
                   <form method="post" class="row g-2">
                     <input type="hidden" name="id" value="{{ r.id }}" />
                     <input type="hidden" name="ano" value="{{ ano }}" />
+                    <input type="hidden" name="ano_edit" value="{{ ano }}" />
                     <input type="hidden" name="mes" value="{{ mes }}" />
+                    <input type="hidden" name="mes_edit" value="{{ mes }}" />
                     <div class="col-12 col-md-4">
                       <input class="form-control form-control-sm" type="text" name="emp_edit" value="{{ r.emp or '' }}" placeholder="EMP" {% if fechado %}disabled{% endif %} />
                     </div>
@@ -143,6 +145,8 @@
                         <form method="post" class="row g-2 align-items-end">
                           <input type="hidden" name="ano" value="{{ ano }}" />
                           <input type="hidden" name="mes" value="{{ mes }}" />
+                          <input type="hidden" name="ano_edit" value="{{ ano_passado }}" />
+                          <input type="hidden" name="mes_edit" value="{{ mes }}" />
 
                           <div class="col-12 col-md-2">
                             <label class="form-label small mb-1">EMP</label>
@@ -178,8 +182,6 @@
         </div>
       {% endif %}
 
-        </div>
-      {% endif %}
 
       <hr />
 
@@ -187,18 +189,9 @@
       <form method="post" class="row g-2">
         <input type="hidden" name="id" value="" />
         <input type="hidden" name="ano" value="{{ ano }}" />
+                    <input type="hidden" name="ano_edit" value="{{ ano }}" />
         <input type="hidden" name="mes" value="{{ mes }}" />
-
-        <div class="col-6 col-md-2">
-          <label class="form-label">Ano do resumo</label>
-          <input class="form-control" type="number" name="ano_ref" value="{{ ano }}" {% if fechado %}disabled{% endif %} />
-          <div class="form-text">Para ano passado, use {{ ano_passado }}.</div>
-        </div>
-        <div class="col-6 col-md-2">
-          <label class="form-label">Mês do resumo</label>
-          <input class="form-control" type="number" min="1" max="12" name="mes_ref" value="{{ mes }}" {% if fechado %}disabled{% endif %} />
-        </div>
-
+                    <input type="hidden" name="mes_edit" value="{{ mes }}" />
 
         <div class="col-12 col-md-2">
           <label class="form-label">EMP (opcional)</label>

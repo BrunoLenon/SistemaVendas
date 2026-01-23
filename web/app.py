@@ -1979,8 +1979,7 @@ def create_app() -> Flask:
             ok=ok,
         )
 
-    @app.route('/admin/resumos_periodo', methods=['GET', 'POST'], strict_slashes=False)
-    @app.route('/admin/resumos_periodo/', methods=['GET', 'POST'], strict_slashes=False)
+    @app.route('/admin/resumos_periodo', methods=['GET', 'POST'])
     def admin_resumos_periodo():
         _admin_required()
 
@@ -1994,13 +1993,7 @@ def create_app() -> Flask:
 
         acao = (request.form.get('acao') or '').strip().lower()
         if request.method == 'POST' and acao:
-            # Período alvo pode ser diferente do filtro (ex.: editar/criar ano passado)
-            alvo_ano = int(request.form.get('ano_edit') or request.form.get('ano_ref') or ano)
-            alvo_mes = int(request.form.get('mes_edit') or request.form.get('mes_ref') or mes)
-            # EMP alvo pode vir da linha (emp_edit) ou do filtro
-            emp_alvo = _emp_norm(request.form.get('emp_edit') or emp)
-
-            if acao in {'salvar', 'excluir'} and _mes_fechado(emp_alvo, alvo_ano, alvo_mes):
+            if acao in {'salvar', 'excluir'} and _mes_fechado(emp, ano, mes):
                 msgs.append('⚠️ Mês fechado. Reabra o mês para editar os resumos.')
             else:
                 with SessionLocal() as db:
@@ -2042,7 +2035,7 @@ def create_app() -> Flask:
                         msgs.append('✅ Mês reaberto. Edição liberada.')
 
                     elif acao == 'salvar':
-                        vend = (request.form.get('vendedor_edit') or request.form.get('vendedor') or '').strip().upper()
+                        vend = (request.form.get('vendedor_edit') or '').strip().upper()
                         if not vend:
                             msgs.append('⚠️ Informe o vendedor.')
                         else:
@@ -2051,26 +2044,26 @@ def create_app() -> Flask:
                             except Exception:
                                 valor_venda = 0.0
                             try:
-                                mix_produtos = int(request.form.get('mix_produtos') or request.form.get('mix_produtos_edit') or 0)
+                                mix_produtos = int(request.form.get('mix_produtos') or 0)
                             except Exception:
                                 mix_produtos = 0
 
                             rec = (
                                 db.query(VendasResumoPeriodo)
                                 .filter(
-                                    VendasResumoPeriodo.emp == emp_alvo,
+                                    VendasResumoPeriodo.emp == emp,
                                     VendasResumoPeriodo.vendedor == vend,
-                                    VendasResumoPeriodo.ano == alvo_ano,
-                                    VendasResumoPeriodo.mes == alvo_mes,
+                                    VendasResumoPeriodo.ano == ano,
+                                    VendasResumoPeriodo.mes == mes,
                                 )
                                 .one_or_none()
                             )
                             if rec is None:
                                 rec = VendasResumoPeriodo(
-                                    emp=emp_alvo,
+                                    emp=emp,
                                     vendedor=vend,
-                                    ano=alvo_ano,
-                                    mes=alvo_mes,
+                                    ano=ano,
+                                    mes=mes,
                                     valor_venda=valor_venda,
                                     mix_produtos=mix_produtos,
                                     created_at=datetime.utcnow(),
@@ -2092,10 +2085,10 @@ def create_app() -> Flask:
                             rec = (
                                 db.query(VendasResumoPeriodo)
                                 .filter(
-                                    VendasResumoPeriodo.emp == emp_alvo,
+                                    VendasResumoPeriodo.emp == emp,
                                     VendasResumoPeriodo.vendedor == vend,
-                                    VendasResumoPeriodo.ano == alvo_ano,
-                                    VendasResumoPeriodo.mes == alvo_mes,
+                                    VendasResumoPeriodo.ano == ano,
+                                    VendasResumoPeriodo.mes == mes,
                                 )
                                 .one_or_none()
                             )
@@ -2105,6 +2098,7 @@ def create_app() -> Flask:
                                 db.delete(rec)
                                 db.commit()
                                 msgs.append('✅ Resumo excluído.')
+
         # carregar lista e status de fechamento
         fechado = _mes_fechado(emp, ano, mes)
         with SessionLocal() as db:
@@ -2130,18 +2124,6 @@ def create_app() -> Flask:
             )
             vendedores_sugeridos = [v[0] for v in vendedores_sugeridos if v and v[0]]
 
-            # Resumos do mesmo período do ano passado (ano-1, mesmo mês)
-            ano_passado = ano - 1
-            q_ap = db.query(VendasResumoPeriodo).filter(
-                VendasResumoPeriodo.ano == ano_passado,
-                VendasResumoPeriodo.mes == mes,
-            )
-            if emp:
-                q_ap = q_ap.filter(VendasResumoPeriodo.emp == emp)
-            if vendedor:
-                q_ap = q_ap.filter(VendasResumoPeriodo.vendedor == vendedor)
-            resumos_ano_passado = q_ap.order_by(VendasResumoPeriodo.emp.asc(), VendasResumoPeriodo.vendedor.asc()).all()
-
         return render_template(
             'admin_resumos_periodo.html',
             emp=emp,
@@ -2151,9 +2133,6 @@ def create_app() -> Flask:
             registros=registros,
             fechado=fechado,
             vendedores_sugeridos=vendedores_sugeridos,
-            vendedor=vendedor,
-            ano_passado=ano_passado,
-            resumos_ano_passado=resumos_ano_passado,
             msgs=msgs,
         )
 
