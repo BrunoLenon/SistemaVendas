@@ -15,6 +15,33 @@
     .card { border-radius:16px; }
     .btn { border-radius:12px; }
   </style>
+
+<style>
+  .brand-preview {
+    border: 1px dashed #cfd8dc;
+    background: #f8fafc;
+    border-radius: 12px;
+    padding: 10px;
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    margin-top: 8px;
+  }
+  .brand-preview img {
+    max-height: 56px;
+    max-width: 220px;
+    object-fit: contain;
+    background: white;
+    border: 1px solid #e9ecef;
+    border-radius: 10px;
+    padding: 6px;
+  }
+  .brand-preview .hint {
+    font-size: .9rem;
+    color: #6c757d;
+  }
+</style>
+
 </head>
 <body class="bg-light">
   <div class="container py-4" style="max-width:1100px;">
@@ -74,11 +101,21 @@
               <input type="hidden" name="acao" value="upload_default">
               <div class="col-12">
                 <label class="form-label">Logo (PNG/JPG/WEBP/SVG, até 2MB)</label>
-                <input class="form-control" type="file" name="default_logo" accept=".png,.jpg,.jpeg,.webp,.svg">
+                <input class="form-control" type="file" name="default_logo" accept=".png,.jpg,.jpeg,.webp,.svg" id="default_logo_file">
+              <div class="brand-preview" id="preview_default_logo_box" style="display:none;">
+                <img id="preview_default_logo_img" alt="Prévia da logo">
+                <div class="hint">Prévia da logo selecionada (antes de salvar).</div>
+              </div>
+
               </div>
               <div class="col-12">
                 <label class="form-label">Favicon (ICO/PNG/JPG/WEBP/SVG, até 400KB)</label>
-                <input class="form-control" type="file" name="default_favicon" accept=".ico,.png,.jpg,.jpeg,.webp,.svg">
+                <input class="form-control" type="file" name="default_favicon" accept=".ico,.png,.jpg,.jpeg,.webp,.svg" id="default_favicon_file">
+              <div class="brand-preview" id="preview_default_favicon_box" style="display:none;">
+                <img id="preview_default_favicon_img" alt="Prévia do favicon">
+                <div class="hint">Prévia do favicon selecionado (antes de salvar).</div>
+              </div>
+
               </div>
               <div class="col-12 d-flex justify-content-end">
                 <button class="btn btn-primary">Salvar</button>
@@ -113,11 +150,21 @@
               </div>
               <div class="col-12">
                 <label class="form-label">Logo do tema (opcional)</label>
-                <input class="form-control" type="file" name="theme_logo" accept=".png,.jpg,.jpeg,.webp,.svg">
+                <input class="form-control" type="file" name="theme_logo" accept=".png,.jpg,.jpeg,.webp,.svg" id="create_theme_logo_file">
+              <div class="brand-preview" id="preview_create_theme_logo_box" style="display:none;">
+                <img id="preview_create_theme_logo_img" alt="Prévia da logo do tema">
+                <div class="hint">Prévia da logo do tema selecionada (antes de criar).</div>
+              </div>
+
               </div>
               <div class="col-12">
                 <label class="form-label">Favicon do tema (opcional)</label>
-                <input class="form-control" type="file" name="theme_favicon" accept=".ico,.png,.jpg,.jpeg,.webp,.svg">
+                <input class="form-control" type="file" name="theme_favicon" accept=".ico,.png,.jpg,.jpeg,.webp,.svg" id="create_theme_favicon_file">
+              <div class="brand-preview" id="preview_create_theme_favicon_box" style="display:none;">
+                <img id="preview_create_theme_favicon_img" alt="Prévia do favicon do tema">
+                <div class="hint">Prévia do favicon do tema selecionado (antes de criar).</div>
+              </div>
+
               </div>
               <div class="col-12 d-flex justify-content-end">
                 <button class="btn btn-success">Criar</button>
@@ -217,5 +264,58 @@
     </div>
 
   </div>
+
+<script>
+(function () {
+  function previewFile(input, imgEl, boxEl) {
+    if (!input || !imgEl) return;
+    const file = input.files && input.files[0];
+    if (!file) {
+      if (boxEl) boxEl.style.display = "none";
+      imgEl.style.display = "none";
+      imgEl.removeAttribute("src");
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    imgEl.onload = () => URL.revokeObjectURL(url);
+    imgEl.src = url;
+    imgEl.style.display = "inline-block";
+    if (boxEl) boxEl.style.display = "flex";
+  }
+
+  // Branding padrão
+  const defaultLogoInput = document.getElementById("default_logo_file");
+  const defaultLogoImg = document.getElementById("preview_default_logo_img");
+  const defaultLogoBox = document.getElementById("preview_default_logo_box");
+  if (defaultLogoInput) defaultLogoInput.addEventListener("change", () => previewFile(defaultLogoInput, defaultLogoImg, defaultLogoBox));
+
+  const defaultFavInput = document.getElementById("default_favicon_file");
+  const defaultFavImg = document.getElementById("preview_default_favicon_img");
+  const defaultFavBox = document.getElementById("preview_default_favicon_box");
+  if (defaultFavInput) defaultFavInput.addEventListener("change", () => previewFile(defaultFavInput, defaultFavImg, defaultFavBox));
+
+  // Tema sazonal (criar)
+  const cThemeLogoInput = document.getElementById("create_theme_logo_file");
+  const cThemeLogoImg = document.getElementById("preview_create_theme_logo_img");
+  const cThemeLogoBox = document.getElementById("preview_create_theme_logo_box");
+  if (cThemeLogoInput) cThemeLogoInput.addEventListener("change", () => previewFile(cThemeLogoInput, cThemeLogoImg, cThemeLogoBox));
+
+  const cThemeFavInput = document.getElementById("create_theme_favicon_file");
+  const cThemeFavImg = document.getElementById("preview_create_theme_favicon_img");
+  const cThemeFavBox = document.getElementById("preview_create_theme_favicon_box");
+  if (cThemeFavInput) cThemeFavInput.addEventListener("change", () => previewFile(cThemeFavInput, cThemeFavImg, cThemeFavBox));
+
+  // Tema sazonal (editar na lista)
+  document.querySelectorAll('tr form input[type="file"]').forEach((inp) => {
+    inp.addEventListener("change", () => {
+      const tr = inp.closest("tr");
+      if (!tr) return;
+      const img = tr.querySelector(inp.name === "theme_logo" ? 'img[data-role="tema_logo_preview"]' : 'img[data-role="tema_favicon_preview"]');
+      if (img) previewFile(inp, img, null);
+    });
+  });
+})();
+</script>
+
 </body>
 </html>
