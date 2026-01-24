@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8">
+  <title>{% block title %}Sistema de Vendas{% endblock %}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  {% if branding and branding.favicon_url %}
+    <link rel="icon" href="{{ branding.favicon_url }}{% if branding.version %}?v={{ branding.version }}{% endif %}">
+  {% endif %}
+
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}{% if branding and branding.version %}?v={{ branding.version }}{% endif %}">
+  {% block extra_head %}{% endblock %}
+</head>
+
+<body class="bg-light">
+  {% set r = (role|default('')|lower) %}
+  {% set is_logged = (r in ['admin','supervisor','vendedor']) %}
+
+  <nav class="navbar navbar-dark bg-dark sticky-top border-bottom border-dark-subtle">
+    <div class="container-fluid">
+      {% if is_logged %}
+        <button class="btn btn-outline-light d-lg-none me-2" type="button" data-bs-toggle="offcanvas" data-bs-target="#offcanvasMenu" aria-controls="offcanvasMenu">
+          ☰
+        </button>
+      {% endif %}
+
+      <a class="navbar-brand d-flex align-items-center gap-2" href="{{ url_for('dashboard') if is_logged else url_for('login') }}">
+        {% if branding and branding.logo_url %}
+          <img src="{{ branding.logo_url }}{% if branding.version %}?v={{ branding.version }}{% endif %}" alt="Logo" height="28" class="rounded">
+        {% else %}
+          <span class="d-inline-block rounded bg-white bg-opacity-10" style="width:28px;height:28px;"></span>
+        {% endif %}
+        <span class="fw-semibold">Sistema de Vendas</span>
+      </a>
+
+      <div class="ms-auto d-flex align-items-center gap-2">
+        {% if emp %}
+          <span class="badge text-bg-secondary d-none d-md-inline">EMP {{ emp }}</span>
+        {% endif %}
+        {% if usuario %}
+          <span class="text-white-50 small d-none d-sm-inline">{{ usuario }}</span>
+        {% endif %}
+        {% if r %}
+          <span class="badge text-bg-light text-uppercase">{{ r }}</span>
+        {% endif %}
+        {% if is_logged %}
+          <a class="btn btn-sm btn-outline-light" href="{{ url_for('logout') }}">Sair</a>
+        {% endif %}
+      </div>
+    </div>
+  </nav>
+
+  {% if is_logged %}
+    <div class="offcanvas offcanvas-start" tabindex="-1" id="offcanvasMenu" aria-labelledby="offcanvasMenuLabel">
+      <div class="offcanvas-header">
+        <h6 class="offcanvas-title" id="offcanvasMenuLabel">Menu</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Fechar"></button>
+      </div>
+      <div class="offcanvas-body p-0">
+        {% include "partials/sidebar.html" %}
+      </div>
+    </div>
+
+    <div class="container-fluid">
+      <div class="row">
+        <aside class="col-lg-2 col-xl-2 d-none d-lg-block app-sidebar py-3">
+          {% include "partials/sidebar.html" %}
+        </aside>
+
+        <main class="col-12 col-lg-10 col-xl-10 py-3">
+          <div class="app-page">
+            {% block content %}{% endblock %}
+          </div>
+        </main>
+      </div>
+    </div>
+  {% else %}
+    <main class="container py-4" style="max-width:980px;">
+      {% block content %}{% endblock %}
+    </main>
+  {% endif %}
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  {% block extra_scripts %}{% endblock %}
+</body>
+</html>
