@@ -3,6 +3,7 @@ import re
 import mimetypes
 import logging
 import json
+from functools import wraps
 from datetime import date, datetime, timedelta
 import calendar
 from io import BytesIO
@@ -428,6 +429,17 @@ def create_app() -> Flask:
         if not _usuario_logado():
             return redirect(url_for("login"))
         return None
+
+
+    def require_login(fn):
+        """Decorator: exige sessão válida (login) antes de acessar a rota."""
+        @wraps(fn)
+        def _wrapped(*args, **kwargs):
+            resp = _login_required()
+            if resp is not None:
+                return resp
+            return fn(*args, **kwargs)
+        return _wrapped
 
     def _admin_required():
         if _role() != "admin":
