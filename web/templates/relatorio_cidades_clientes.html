@@ -131,7 +131,7 @@
                     {% for r in c.cidades_preview %}
                     <tr>
                       <td class="text-muted">{{ loop.index }}</td>
-                      <td class="fw-semibold"><button type="button" class="btn btn-link p-0 text-decoration-none city-link" data-emp="{{ c.emp }}" data-cidade="{{ r.cidade_norm }}">{{ r.cidade_label }}</button></td>
+                      <td class="fw-semibold">{{ r.cidade_label }}</td>
                       <td class="text-end">R$ {{ "{:,.2f}".format(r.valor_total).replace(",", "X").replace(".", ",").replace("X", ".") }}</td>
                       <td class="text-end">{{ "{:.1f}%".format(r.pct) }}</td>
                     </tr>
@@ -161,7 +161,7 @@
                       {% for r in c.cidades_full %}
                       <tr>
                         <td class="text-muted">{{ loop.index }}</td>
-                        <td class="fw-semibold"><button type="button" class="btn btn-link p-0 text-decoration-none city-link" data-emp="{{ c.emp }}" data-cidade="{{ r.cidade_norm }}">{{ r.cidade_label }}</button></td>
+                        <td class="fw-semibold">{{ r.cidade_label }}</td>
                         <td class="text-end">R$ {{ "{:,.2f}".format(r.valor_total).replace(",", "X").replace(".", ",").replace("X", ".") }}</td>
                         <td class="text-end">{{ "{:.1f}%".format(r.pct) }}</td>
                         <td class="text-end">{{ "{:,.0f}".format(r.mix_itens).replace(",", ".") }}</td>
@@ -225,44 +225,7 @@
           </div>
 
           <div class="d-flex justify-content-between align-items-center mb-2">
-            <div class="fw-semibold">
-        {% if c.clientes_destaque and c.clientes_destaque|length %}
-        <div class="mt-3">
-          <div class="d-flex align-items-center justify-content-between">
-            <div class="fw-semibold">⭐ Clientes destaque (crescimento vs mês anterior)</div>
-            <small class="text-muted">top 5</small>
-          </div>
-          <div class="table-responsive mt-2">
-            <table class="table table-sm align-middle mb-0">
-              <thead>
-                <tr>
-                  <th>Cliente</th>
-                  <th class="text-end">Δ</th>
-                  <th class="text-end">%</th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for d in c.clientes_destaque %}
-                <tr>
-                  <td>
-                    <button type="button" class="btn btn-link p-0 text-decoration-none cliente-link"
-                      data-emp="{{ c.emp }}" data-razao="{{ d.cliente|e }}">
-                      {{ d.cliente }}
-                    </button>
-                  </td>
-                  <td class="text-end text-success fw-semibold">{{ d.delta|brl }}</td>
-                  <td class="text-end">
-                    {% if d.pct is not none %}{{ d.pct }}%{% else %}<span class="text-muted">novo</span>{% endif %}
-                  </td>
-                </tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
-        </div>
-        {% endif %}
-
-Top clientes (preview)</div>
+            <div class="fw-semibold">Top clientes (preview)</div>
             <button class="btn btn-sm btn-ghost" type="button" data-bs-toggle="collapse" data-bs-target="#clientes-{{ loop.index }}" aria-expanded="false">
               Ver detalhes
             </button>
@@ -333,41 +296,6 @@ Top clientes (preview)</div>
 </div>
 
 
-
-<!-- Modal: Clientes da cidade -->
-<div class="modal fade" id="cityModal" tabindex="-1" aria-labelledby="cityModalLabel" aria-hidden="true">
-  <div class="modal-dialog modal-lg modal-dialog-scrollable">
-    <div class="modal-content">
-      <div class="modal-header">
-        <div>
-          <h5 class="modal-title" id="cityModalLabel">Clientes da cidade</h5>
-          <div class="text-muted small" id="cityModalSub"></div>
-        </div>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
-      </div>
-      <div class="modal-body">
-        <div id="cityModalLoading" class="text-center text-muted py-4">Carregando…</div>
-        <div class="table-responsive d-none" id="cityModalTableWrap">
-          <table class="table table-sm align-middle">
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>Cliente</th>
-                <th class="text-end">Valor</th>
-                <th class="text-end">Mix</th>
-                <th class="text-end">%</th>
-              </tr>
-            </thead>
-            <tbody id="cityModalTbody"></tbody>
-          </table>
-          <div class="text-muted small">Dica: clique no cliente para ver % por marca.</div>
-        </div>
-        <div id="cityModalError" class="alert alert-danger d-none mb-0"></div>
-      </div>
-    </div>
-  </div>
-</div>
-
 <!-- Modal: Detalhes do cliente -->
 <div class="modal fade" id="clientModal" tabindex="-1" aria-labelledby="clientModalLabel" aria-hidden="true">
   <div class="modal-dialog modal-lg modal-dialog-scrollable">
@@ -419,10 +347,6 @@ Top clientes (preview)</div>
 
 <script>
 (function(){
-    window.__ANO__ = {{ ano }};
-    window.__MES__ = {{ mes }};
-    window.__VENDEDOR__ = "{{ vendedor|e }}";
-
   const modalEl = document.getElementById('clientModal');
   const modal = modalEl ? new bootstrap.Modal(modalEl) : null;
 
@@ -509,106 +433,6 @@ Top clientes (preview)</div>
       openForRow(row);
     }
   });
-
-    // Clique no nome do cliente (clientes destaque) → abre modal de marcas
-    document.addEventListener("click", (ev) => {
-      const btn = ev.target.closest(".cliente-link");
-      if (!btn) return;
-      ev.preventDefault();
-      const emp = btn.getAttribute("data-emp") || "";
-      const razao = btn.getAttribute("data-razao") || "";
-      if (emp && razao) openClienteMarcas(emp, razao);
-    });
-
-    // Clique na cidade → abre modal (cidade → clientes)
-    const cityModalEl = document.getElementById("cityModal");
-    const cityModal = cityModalEl ? new bootstrap.Modal(cityModalEl) : null;
-
-    async function openCidadeClientes(emp, cidadeNorm) {
-      if (!cityModal) return;
-      const loading = document.getElementById("cityModalLoading");
-      const tableWrap = document.getElementById("cityModalTableWrap");
-      const tbody = document.getElementById("cityModalTbody");
-      const err = document.getElementById("cityModalError");
-      const sub = document.getElementById("cityModalSub");
-
-      loading.classList.remove("d-none");
-      tableWrap.classList.add("d-none");
-      err.classList.add("d-none");
-      err.textContent = "";
-      tbody.innerHTML = "";
-      sub.textContent = `EMP ${emp} • ${cidadeNorm}`;
-
-      cityModal.show();
-
-      const url = new URL("/relatorios/cidade-clientes", window.location.origin);
-      url.searchParams.set("ano", String(window.__ANO__));
-      url.searchParams.set("mes", String(window.__MES__));
-      url.searchParams.set("emp", String(emp));
-      url.searchParams.set("cidade", String(cidadeNorm));
-
-      const v = (window.__VENDEDOR__ || "").trim();
-      if (v) url.searchParams.set("vendedor", v);
-
-      try {
-        const res = await fetch(url.toString(), { headers: { "Accept": "application/json" } });
-        const data = await res.json();
-        if (!data.ok) throw new Error(data.error || "Falha ao carregar");
-        const payload = data.data || {};
-        const clientes = payload.clientes || [];
-
-        clientes.forEach((c, i) => {
-          const tr = document.createElement("tr");
-
-          const tdIdx = document.createElement("td");
-          tdIdx.textContent = String(i + 1);
-
-          const tdCli = document.createElement("td");
-          const btn = document.createElement("button");
-          btn.type = "button";
-          btn.className = "btn btn-link p-0 text-decoration-none";
-          btn.textContent = c.cliente || "—";
-          btn.addEventListener("click", () => openClienteMarcas(emp, c.cliente || ""));
-          tdCli.appendChild(btn);
-
-          const tdVal = document.createElement("td");
-          tdVal.className = "text-end";
-          tdVal.textContent = brl(c.valor || 0);
-
-          const tdMix = document.createElement("td");
-          tdMix.className = "text-end";
-          tdMix.textContent = String(c.mix_itens || 0);
-
-          const tdPct = document.createElement("td");
-          tdPct.className = "text-end text-muted";
-          tdPct.textContent = (c.pct != null ? String(c.pct) : "0") + "%";
-
-          tr.appendChild(tdIdx);
-          tr.appendChild(tdCli);
-          tr.appendChild(tdVal);
-          tr.appendChild(tdMix);
-          tr.appendChild(tdPct);
-          tbody.appendChild(tr);
-        });
-
-        loading.classList.add("d-none");
-        tableWrap.classList.remove("d-none");
-      } catch (e) {
-        loading.classList.add("d-none");
-        err.classList.remove("d-none");
-        err.textContent = e?.message || "Erro ao carregar";
-      }
-    }
-
-    document.addEventListener("click", (ev) => {
-      const btn = ev.target.closest(".city-link");
-      if (!btn) return;
-      ev.preventDefault();
-      const emp = btn.getAttribute("data-emp") || "";
-      const cidadeNorm = btn.getAttribute("data-cidade") || "";
-      if (emp && cidadeNorm) openCidadeClientes(emp, cidadeNorm);
-    });
-
 })();
 </script>
 

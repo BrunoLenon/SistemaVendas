@@ -167,11 +167,10 @@ class DashboardCache(Base):
     total_liquido_periodo = Column(Float, nullable=False, default=0.0)
 
     atualizado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
-    # --- v2: cache para relatórios (cidades/clientes/drill-down) ---
-    emp_scope = Column(String(30), nullable=True, index=True)  # ex: '101' ou 'ALL'
-    vendedor_alvo = Column(String(80), nullable=True, index=True)  # ex: 'JOAO' ou '*'
-    tipo = Column(String(60), nullable=True, index=True)  # ex: 'relatorio_clientes', 'cliente_marcas'
-    payload_json = Column(Text, nullable=True)  # JSON serializado
+
+    # Compatibilidade: algumas rotas usam o nome "updated_at".
+    # Usamos synonym para funcionar em filtros e order_by.
+    updated_at = synonym("atualizado_em")
 
     __table_args__ = (
         # Índices para acelerar consultas do dashboard
