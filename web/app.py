@@ -19,6 +19,7 @@ from flask import (
     session,
     url_for,
     send_file,
+    jsonify,
 )
 from werkzeug.security import check_password_hash, generate_password_hash
 
@@ -2341,6 +2342,7 @@ def create_app() -> Flask:
                     Venda.emp.label("emp"),
                     func.coalesce(func.sum(Venda.valor_total), 0.0).label("valor_total"),
                     func.coalesce(func.sum(Venda.qtdade_vendida), 0.0).label("qtd_total"),
+                    func.coalesce(func.count(func.distinct(Venda.mestre)), 0).label("mix_itens"),
                     func.count(func.distinct(func.upper(Venda.vendedor))).label("vendedores"),
                     func.count(func.distinct(Venda.cliente_id_norm)).label("clientes_unicos"),
                     func.count(func.distinct(Venda.cidade_norm)).label("cidades"),
@@ -2351,6 +2353,7 @@ def create_app() -> Flask:
             totais_map = {str(r.emp): {
                 "valor_total": float(r.valor_total or 0.0),
                 "qtd_total": float(r.qtd_total or 0.0),
+                    "mix_itens": int(getattr(r, "mix_itens", 0) or 0),
                 "vendedores": int(r.vendedores or 0),
                 "clientes_unicos": int(r.clientes_unicos or 0),
                 "cidades": int(r.cidades or 0),
@@ -2363,6 +2366,7 @@ def create_app() -> Flask:
                     func.coalesce(Venda.cidade_norm, "sem_cidade").label("cidade_norm"),
                     func.coalesce(func.sum(Venda.valor_total), 0.0).label("valor_total"),
                     func.coalesce(func.sum(Venda.qtdade_vendida), 0.0).label("qtd_total"),
+                    func.coalesce(func.count(func.distinct(Venda.mestre)), 0).label("mix_itens"),
                     func.count(func.distinct(Venda.cliente_id_norm)).label("clientes_unicos"),
                 )
                 .group_by(Venda.emp, func.coalesce(Venda.cidade_norm, "sem_cidade"))
@@ -2384,6 +2388,7 @@ def create_app() -> Flask:
                     "valor_total": valor,
                     "pct": pct,
                     "qtd_total": float(r.qtd_total or 0.0),
+                    "mix_itens": int(getattr(r, "mix_itens", 0) or 0),
                     "clientes_unicos": int(r.clientes_unicos or 0),
                 })
 
@@ -2395,6 +2400,7 @@ def create_app() -> Flask:
                     func.coalesce(func.max(Venda.razao), "").label("razao_label"),
                     func.coalesce(func.sum(Venda.valor_total), 0.0).label("valor_total"),
                     func.coalesce(func.sum(Venda.qtdade_vendida), 0.0).label("qtd_total"),
+                    func.coalesce(func.count(func.distinct(Venda.mestre)), 0).label("mix_itens"),
                 )
                 .filter(Venda.cliente_id_norm.isnot(None))
                 .group_by(Venda.emp, func.coalesce(Venda.razao_norm, "sem_cliente"))
@@ -2413,6 +2419,7 @@ def create_app() -> Flask:
                     "razao_label": label,
                     "valor_total": float(r.valor_total or 0.0),
                     "qtd_total": float(r.qtd_total or 0.0),
+                    "mix_itens": int(getattr(r, "mix_itens", 0) or 0),
                 })
 
             # Clientes novos vs recorrentes por EMP
@@ -2489,6 +2496,78 @@ def create_app() -> Flask:
         finally:
             db.close()
 
+
+
+
+@app.route("/relatorios/cliente-marcas")
+def relatorio_cliente_marcas():
+    # API: detalhamento por marca do cliente (modal no relatório)
+    red = _required()
+    if red:
+        return red
+
+    role = _role()
+    emp_user = _emp()
+    vendedor_logado = (_usuario_logado() or "").strip().upper()
+
+    try:
+        ano = int(request.args.get("ano") or 0)
+        mes = int(request.args.get("mes") or 0)
+    except Exception:
+        return jsonify({"error": "Parametros invalidos"}), 400
+
+    emp = (request.args.get("emp") or "").strip()
+    vendedor = (request.args.get("vendedor") or "").strip().upper()
+    razao_norm = (request.args.get("razao_norm") or "").strip().upper()
+
+    if not (ano and mes and razao_norm):
+        return jsonify({"error": "Parametros obrigatorios: ano, mes, razao_norm"}), 400
+
+    # Escopo por perfil
+    if role == "vendedor":
+        vendedor = vendedor_logado
+        if emp_user and not emp:
+            emp = str(emp_user)
+    elif role == "supervisor":
+        if emp_user and not emp:
+            emp = str(emp_user)
+
+    q = (
+        db.session.query(
+            Venda.marca.label("marca"),
+            func.coalesce(func.sum(Venda.valor_total), 0.0).label("valor_total"),
+            func.coalesce(func.count(func.distinct(Venda.mestre)), 0).label("mix_itens"),
+        )
+        .filter(func.extract("year", Venda.movimento) == ano)
+        .filter(func.extract("month", Venda.movimento) == mes)
+        .filter(Venda.cliente_id_norm.isnot(None))
+        .filter(Venda.razao_norm == razao_norm)
+    )
+
+    if emp:
+        q = q.filter(Venda.emp == int(emp))
+    if vendedor:
+        q = q.filter(Venda.vendedor == vendedor)
+
+    rows = q.group_by(Venda.marca).order_by(func.sum(Venda.valor_total).desc()).all()
+
+    total = float(sum((r.valor_total or 0.0) for r in rows) or 0.0)
+    mix_total = int(sum((r.mix_itens or 0) for r in rows) or 0)
+
+    marcas = []
+    for r in rows:
+        v = float(r.valor_total or 0.0)
+        p = (v / total * 100.0) if total else 0.0
+        marcas.append(
+            {
+                "marca": (r.marca or "SEM MARCA"),
+                "valor_total": v,
+                "percent": p,
+                "mix_itens": int(r.mix_itens or 0),
+            }
+        )
+
+    return jsonify({"total": total, "mix_itens": mix_total, "marcas": marcas})
 
 
     @app.route("/senha", methods=["GET", "POST"])

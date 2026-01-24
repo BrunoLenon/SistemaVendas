@@ -164,7 +164,7 @@
                         <td class="fw-semibold">{{ r.cidade_label }}</td>
                         <td class="text-end">R$ {{ "{:,.2f}".format(r.valor_total).replace(",", "X").replace(".", ",").replace("X", ".") }}</td>
                         <td class="text-end">{{ "{:.1f}%".format(r.pct) }}</td>
-                        <td class="text-end">{{ "{:,.0f}".format(r.qtd_total).replace(",", ".") }}</td>
+                        <td class="text-end">{{ "{:,.0f}".format(r.mix_itens).replace(",", ".") }}</td>
                         <td class="text-end">{{ r.clientes_unicos }}</td>
                       </tr>
                       {% endfor %}
@@ -247,7 +247,7 @@
                   <td class="text-muted">{{ loop.index }}</td>
                   <td class="fw-semibold">{{ r.razao_label }}</td>
                   <td class="text-end">R$ {{ "{:,.2f}".format(r.valor_total).replace(",", "X").replace(".", ",").replace("X", ".") }}</td>
-                  <td class="text-end">{{ "{:,.0f}".format(r.qtd_total).replace(",", ".") }}</td>
+                  <td class="text-end">{{ "{:,.0f}".format(r.mix_itens).replace(",", ".") }}</td>
                 </tr>
                 {% endfor %}
                 {% if c.clientes_preview|length == 0 %}
@@ -275,7 +275,7 @@
                     <td class="text-muted">{{ loop.index }}</td>
                     <td class="fw-semibold">{{ r.razao_label }}</td>
                     <td class="text-end">R$ {{ "{:,.2f}".format(r.valor_total).replace(",", "X").replace(".", ",").replace("X", ".") }}</td>
-                    <td class="text-end">{{ "{:,.0f}".format(r.qtd_total).replace(",", ".") }}</td>
+                    <td class="text-end">{{ "{:,.0f}".format(r.mix_itens).replace(",", ".") }}</td>
                   </tr>
                   {% endfor %}
                   {% if c.clientes_full|length == 0 %}
@@ -295,6 +295,146 @@
 
 </div>
 
+
+<!-- Modal: Detalhes do cliente -->
+<div class="modal fade" id="clientModal" tabindex="-1" aria-labelledby="clientModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div>
+          <h5 class="modal-title" id="clientModalLabel">Detalhes do cliente</h5>
+          <div class="small text-muted" id="clientModalSub">—</div>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+      </div>
+      <div class="modal-body">
+        <div class="d-flex flex-wrap gap-2 mb-3">
+          <span class="badge text-bg-primary" id="clientTotalBadge">Total: —</span>
+          <span class="badge text-bg-secondary" id="clientMixBadge">Mix itens: —</span>
+        </div>
+
+        <div class="alert alert-info py-2 d-none" id="clientModalLoading">Carregando…</div>
+        <div class="alert alert-danger py-2 d-none" id="clientModalError">Falha ao carregar detalhes.</div>
+
+        <div class="table-responsive">
+          <table class="table table-sm align-middle">
+            <thead>
+              <tr>
+                <th>Marca</th>
+                <th class="text-end">Valor</th>
+                <th class="text-end">%</th>
+                <th class="text-end">Mix</th>
+              </tr>
+            </thead>
+            <tbody id="clientBrandsBody">
+              <tr><td class="text-muted" colspan="4">—</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="small text-muted mt-2">
+          Dica: % = participação da marca no total do cliente no período filtrado.
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline-secondary" data-bs-dismiss="modal">Fechar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+
+<script>
+(function(){
+  const modalEl = document.getElementById('clientModal');
+  const modal = modalEl ? new bootstrap.Modal(modalEl) : null;
+
+  const elLabel = document.getElementById('clientModalLabel');
+  const elSub = document.getElementById('clientModalSub');
+  const elTotal = document.getElementById('clientTotalBadge');
+  const elMix = document.getElementById('clientMixBadge');
+  const elBody = document.getElementById('clientBrandsBody');
+  const elLoading = document.getElementById('clientModalLoading');
+  const elError = document.getElementById('clientModalError');
+
+  function brl(v){
+    try{
+      return new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(v||0);
+    }catch(e){
+      return 'R$ ' + (v||0);
+    }
+  }
+  function pct(v){ return (v||0).toFixed(1) + '%'; }
+  function show(el, on){ if(!el) return; el.classList.toggle('d-none', !on); }
+
+  async function loadClient(emp, razao){
+    const mes = document.getElementById('mes')?.value || '';
+    const ano = document.getElementById('ano')?.value || '';
+    const vendedor = document.getElementById('vendedor')?.value || '';
+
+    show(elError,false);
+    show(elLoading,true);
+    elBody.innerHTML = '<tr><td class="text-muted" colspan="4">Carregando…</td></tr>';
+
+    const params = new URLSearchParams({emp: emp, razao_norm: razao, mes: mes, ano: ano, vendedor: vendedor});
+    const resp = await fetch('/relatorios/cliente-marcas?' + params.toString(), {headers: {'Accept':'application/json'}});
+    if(!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+
+    elTotal.textContent = 'Total: ' + brl(data.total || 0);
+    elMix.textContent = 'Mix itens: ' + (data.mix_itens || 0);
+
+    if(!data.marcas || !data.marcas.length){
+      elBody.innerHTML = '<tr><td class="text-muted" colspan="4">Sem dados.</td></tr>';
+      return;
+    }
+
+    elBody.innerHTML = data.marcas.map(m => `
+      <tr>
+        <td>${(m.marca || 'SEM MARCA')}</td>
+        <td class="text-end">${brl(m.valor_total||0)}</td>
+        <td class="text-end">${pct(m.percent||0)}</td>
+        <td class="text-end">${m.mix_itens||0}</td>
+      </tr>
+    `).join('');
+  }
+
+  function openForRow(row){
+    if(!modal) return;
+    const emp = row.getAttribute('data-emp') || '';
+    const razao = row.getAttribute('data-razao') || '';
+    const valor = parseFloat(row.getAttribute('data-valor') || '0') || 0;
+
+    elLabel.textContent = razao || 'Detalhes do cliente';
+    elSub.textContent = `EMP ${emp} • Total (cliente): ${brl(valor)}`;
+    elTotal.textContent = 'Total: —';
+    elMix.textContent = 'Mix itens: —';
+
+    modal.show();
+
+    loadClient(emp, razao).then(()=>show(elLoading,false)).catch(err=>{
+      console.error(err);
+      show(elLoading,false);
+      show(elError,true);
+      elBody.innerHTML = '<tr><td class="text-muted" colspan="4">Falha ao carregar.</td></tr>';
+    });
+  }
+
+  document.addEventListener('click', (e)=>{
+    const row = e.target.closest('.client-row');
+    if(row) openForRow(row);
+  });
+  document.addEventListener('keydown', (e)=>{
+    const row = e.target.closest && e.target.closest('.client-row');
+    if(!row) return;
+    if(e.key === 'Enter' || e.key === ' '){
+      e.preventDefault();
+      openForRow(row);
+    }
+  });
+})();
+</script>
+
 </body>
 </html>
