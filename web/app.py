@@ -2298,7 +2298,41 @@ def create_app() -> Flask:
         fim = date(ano + 1, 1, 1) if mes == 12 else date(ano, mes + 1, 1)
 
         db = SessionLocal()
+
+        cache_ttl_min = int(os.getenv("RELATORIO_CACHE_TTL_MIN", "30"))
+        cache_key = "__REL_CIDADES_CLIENTES_V2__"
+        cache_scope = f"EMP:{emp_filtro or 'ALL'}|VEND:{vendedor_filtro or 'ALL'}"
+        cache_hit = False
+        cache_age_min = None
         try:
+            # Cache inteligente (por mês/EMP/vendedor) para abrir instantâneo no celular
+            cache_row = (
+                db.query(DashboardCache)
+                .filter(
+                    DashboardCache.ano == ano,
+                    DashboardCache.mes == mes,
+                    DashboardCache.emp_scope == cache_scope,
+                    DashboardCache.vendedor_alvo == cache_key,
+                )
+                .order_by(DashboardCache.updated_at.desc())
+                .first()
+            )
+            if cache_row and cache_row.insights_json:
+                try:
+                    age = (datetime.utcnow() - cache_row.updated_at.replace(tzinfo=None)).total_seconds() / 60.0
+                    if age <= cache_ttl_min:
+                        emp_cards = json.loads(cache_row.insights_json)
+                        cache_hit = True
+                        cache_age_min = int(age)
+                        return render_template(
+                            "relatorio_cidades_clientes.html",
+                            ano=ano, mes=mes, emp=emp_filtro or "", vendedor=vendedor_filtro or "",
+                            role=role, emp_cards=emp_cards,
+                            cache_hit=cache_hit, cache_age_min=cache_age_min,
+                        )
+                except Exception:
+                    pass
+
             base = db.query(Venda).filter(Venda.movimento >= inicio, Venda.movimento < fim)
             base_hist = db.query(Venda).filter(Venda.movimento.isnot(None))
 
@@ -2468,6 +2502,43 @@ def create_app() -> Flask:
                 cities_full = cidades_por_emp.get(emp, [])
                 clients_full = clientes_por_emp.get(emp, [])
 
+
+                # ⭐ Clientes destaque (crescimento vs mês anterior)
+                prev_ano, prev_mes = (ano, mes - 1) if mes > 1 else (ano - 1, 12)
+                prev_q = base_q.filter(
+                    extract("year", Venda.movimento) == prev_ano,
+                    extract("month", Venda.movimento) == prev_mes,
+                )
+                prev_rows = (
+                    prev_q.with_entities(
+                        func.coalesce(Venda.razao, ""),
+                        func.sum(signed_val),
+                    )
+                    .group_by(func.coalesce(Venda.razao, ""))
+                    .all()
+                )
+                prev_map = {}
+                for _rz, _vv in prev_rows:
+                    _k = (_rz or "").strip().upper()
+                    prev_map[_k] = float(_vv or 0.0)
+                clientes_destaque = []
+                for _row in clients_full:
+                    _k = (_row.get("razao") or "").strip().upper()
+                    _prev = float(prev_map.get(_k, 0.0) or 0.0)
+                    _cur = float(_row.get("valor") or 0.0)
+                    _delta = _cur - _prev
+                    if _delta > 0:
+                        _pct = (_delta / _prev * 100.0) if _prev > 0 else None
+                        clientes_destaque.append({
+                            "cliente": _row.get("razao") or "—",
+                            "cnpj_cpf": _row.get("cnpj_cpf") or "",
+                            "atual": round(_cur, 2),
+                            "anterior": round(_prev, 2),
+                            "delta": round(_delta, 2),
+                            "pct": round(_pct, 1) if _pct is not None else None,
+                        })
+                clientes_destaque.sort(key=lambda x: x["delta"], reverse=True)
+                clientes_destaque = clientes_destaque[:5]
                 emp_cards.append({
                     "emp": emp,
                     "image_url": None,  # preparado para imagem da loja futuramente
@@ -2480,8 +2551,36 @@ def create_app() -> Flask:
                     "cidades_full": cities_full[:50],
                     "clientes_preview": clients_full[:5],
                     "clientes_full": clients_full[:50],
+                    "clientes_destaque": clientes_destaque,
                 })
 
+
+            # Salva/atualiza cache (best-effort)
+            try:
+                payload = json.dumps(emp_cards, ensure_ascii=False)
+                row = (
+                    db.query(DashboardCache)
+                    .filter(
+                        DashboardCache.ano == ano,
+                        DashboardCache.mes == mes,
+                        DashboardCache.emp_scope == cache_scope,
+                        DashboardCache.vendedor_alvo == cache_key,
+                    )
+                    .first()
+                )
+                if not row:
+                    row = DashboardCache(
+                        ano=ano, mes=mes, emp_scope=cache_scope, vendedor_alvo=cache_key,
+                        total_liquido_periodo=0, total_bruto_periodo=0,
+                        total_qtd_produtos=0, total_mix_produtos=0,
+                        updated_at=datetime.utcnow(),
+                    )
+                    db.add(row)
+                row.insights_json = payload
+                row.updated_at = datetime.utcnow()
+                db.commit()
+            except Exception:
+                db.rollback()
             return render_template(
                 "relatorio_cidades_clientes.html",
                 mes=mes,
@@ -2492,6 +2591,7 @@ def create_app() -> Flask:
                 emp_filtro=emp_filtro,
                 vendedor_filtro=vendedor_filtro,
                 emp_cards=emp_cards,
+                cache_hit=cache_hit, cache_age_min=cache_age_min,
             )
         finally:
             db.close()
@@ -2565,6 +2665,138 @@ def create_app() -> Flask:
         })
 
     @app.route("/senha", methods=["GET", "POST"])
+
+    @app.get("/relatorios/cidade-clientes")
+    @require_login
+    def relatorio_cidade_clientes_api():
+        """Drill-down: cidade → clientes (e depois cliente → % por marca no modal existente)."""
+        usuario = session.get("usuario")
+        role = (usuario or {}).get("role") if usuario else None
+        if role not in ("ADMIN", "SUPERVISOR", "VENDEDOR"):
+            return jsonify({"ok": False, "error": "unauthorized"}), 403
+
+        try:
+            ano = int(request.args.get("ano"))
+            mes = int(request.args.get("mes"))
+        except Exception:
+            return jsonify({"ok": False, "error": "parametros_invalidos"}), 400
+
+        emp = (request.args.get("emp") or "").strip()
+        cidade_norm = (request.args.get("cidade") or "").strip().upper()
+        vendedor = (request.args.get("vendedor") or "").strip()
+
+        if not emp or not cidade_norm:
+            return jsonify({"ok": False, "error": "emp_e_cidade_obrigatorios"}), 400
+
+        if role == "SUPERVISOR":
+            emp_sup = str((usuario or {}).get("emp") or "").strip()
+            if emp_sup and emp_sup != emp:
+                return jsonify({"ok": False, "error": "forbidden"}), 403
+
+        if role == "VENDEDOR":
+            vend_self = str((usuario or {}).get("vendedor") or "").strip()
+            emp_self = str((usuario or {}).get("emp") or "").strip()
+            if vend_self:
+                vendedor = vend_self
+            if emp_self and emp_self != emp:
+                return jsonify({"ok": False, "error": "forbidden"}), 403
+
+        cache_ttl_min = int(os.getenv("RELATORIO_CACHE_TTL_MIN", "30"))
+        cache_key = "__API_CIDADE_CLIENTES_V1__"
+        cache_scope = f"EMP:{emp}|CIDADE:{cidade_norm}|VEND:{vendedor.upper() if vendedor else 'ALL'}"
+
+        db = SessionLocal()
+        try:
+            row = (
+                db.query(DashboardCache)
+                .filter(
+                    DashboardCache.ano == ano,
+                    DashboardCache.mes == mes,
+                    DashboardCache.emp_scope == cache_scope,
+                    DashboardCache.vendedor_alvo == cache_key,
+                )
+                .order_by(DashboardCache.updated_at.desc())
+                .first()
+            )
+            if row and row.insights_json:
+                try:
+                    age = (datetime.utcnow() - row.updated_at.replace(tzinfo=None)).total_seconds() / 60.0
+                    if age <= cache_ttl_min:
+                        return jsonify({"ok": True, "from_cache": True, "data": json.loads(row.insights_json)})
+                except Exception:
+                    pass
+
+            ini = datetime(ano, mes, 1)
+            fim = datetime(ano + 1, 1, 1) if mes == 12 else datetime(ano, mes + 1, 1)
+
+            signed_val = case((Venda.tipo == "DEV", -Venda.valor_total), else_=Venda.valor_total)
+            q = db.query(Venda).filter(Venda.movimento >= ini, Venda.movimento < fim)
+            q = q.filter(Venda.emp == int(emp))
+            q = q.filter(func.upper(func.coalesce(Venda.cidade, "")) == cidade_norm)
+            if vendedor:
+                q = q.filter(func.upper(func.coalesce(Venda.vendedor, "")) == vendedor.upper())
+
+            rows = (
+                q.with_entities(
+                    func.coalesce(Venda.razao, "").label("razao"),
+                    func.coalesce(Venda.cnpj_cpf, "").label("cnpj_cpf"),
+                    func.sum(signed_val).label("valor"),
+                    func.count(func.distinct(Venda.mestre)).label("mix_itens"),
+                )
+                .group_by(func.coalesce(Venda.razao, ""), func.coalesce(Venda.cnpj_cpf, ""))
+                .order_by(func.sum(signed_val).desc())
+                .limit(50)
+                .all()
+            )
+
+            total = float(sum(float(r.valor or 0.0) for r in rows) or 0.0)
+            clientes = []
+            for r in rows:
+                v = float(r.valor or 0.0)
+                clientes.append({
+                    "cliente": (r.razao or "—"),
+                    "cnpj_cpf": (r.cnpj_cpf or ""),
+                    "valor": v,
+                    "mix_itens": int(r.mix_itens or 0),
+                    "pct": round((v / total * 100.0), 1) if total > 0 else 0.0,
+                })
+
+            payload = {
+                "emp": emp, "cidade": cidade_norm, "ano": ano, "mes": mes,
+                "vendedor": vendedor, "total": total, "clientes": clientes,
+            }
+
+            # salva cache
+            try:
+                txt = json.dumps(payload, ensure_ascii=False)
+                cache_row = (
+                    db.query(DashboardCache)
+                    .filter(
+                        DashboardCache.ano == ano,
+                        DashboardCache.mes == mes,
+                        DashboardCache.emp_scope == cache_scope,
+                        DashboardCache.vendedor_alvo == cache_key,
+                    )
+                    .first()
+                )
+                if not cache_row:
+                    cache_row = DashboardCache(
+                        ano=ano, mes=mes, emp_scope=cache_scope, vendedor_alvo=cache_key,
+                        total_liquido_periodo=0, total_bruto_periodo=0,
+                        total_qtd_produtos=0, total_mix_produtos=0,
+                        updated_at=datetime.utcnow(),
+                    )
+                    db.add(cache_row)
+                cache_row.insights_json = txt
+                cache_row.updated_at = datetime.utcnow()
+                db.commit()
+            except Exception:
+                db.rollback()
+
+            return jsonify({"ok": True, "from_cache": False, "data": payload})
+        finally:
+            db.close()
+
     def senha():
         red = _login_required()
         if red:
