@@ -2499,76 +2499,70 @@ def create_app() -> Flask:
 
 
 
-@app.route("/relatorios/cliente-marcas")
-def relatorio_cliente_marcas():
-    # API: detalhamento por marca do cliente (modal no relatório)
-    red = _required()
-    if red:
-        return red
-
-    role = _role()
-    emp_user = _emp()
-    vendedor_logado = (_usuario_logado() or "").strip().upper()
-
-    try:
-        ano = int(request.args.get("ano") or 0)
+    ## Relatório (AJAX): cliente -> marcas (modal)
+    @app.get("/relatorios/cliente-marcas")
+    def relatorio_cliente_marcas_api():
+        """Retorna JSON com participação por marca para um cliente (RAZAO_NORM) no período."""
+        emp = (request.args.get("emp") or "").strip()
+        razao_norm = (request.args.get("razao_norm") or "").strip()
         mes = int(request.args.get("mes") or 0)
-    except Exception:
-        return jsonify({"error": "Parametros invalidos"}), 400
+        ano = int(request.args.get("ano") or 0)
+        vendedor = (request.args.get("vendedor") or "").strip().upper()
 
-    emp = (request.args.get("emp") or "").strip()
-    vendedor = (request.args.get("vendedor") or "").strip().upper()
-    razao_norm = (request.args.get("razao_norm") or "").strip().upper()
+        if not emp or not razao_norm or not mes or not ano:
+            return jsonify({"error":"Parâmetros inválidos"}), 400
 
-    if not (ano and mes and razao_norm):
-        return jsonify({"error": "Parametros obrigatorios: ano, mes, razao_norm"}), 400
+        try:
+            emp_int = int(emp)
+        except Exception:
+            return jsonify({"error":"EMP inválida"}), 400
 
-    # Escopo por perfil
-    if role == "vendedor":
-        vendedor = vendedor_logado
-        if emp_user and not emp:
-            emp = str(emp_user)
-    elif role == "supervisor":
-        if emp_user and not emp:
-            emp = str(emp_user)
+        base = db.session.query(Venda).filter(
+            Venda.emp == emp_int,
+            Venda.razao_norm == razao_norm,
+            extract("month", Venda.movimento) == mes,
+            extract("year", Venda.movimento) == ano,
+        )
+        if vendedor:
+            base = base.filter(Venda.vendedor == vendedor)
 
-    q = (
-        db.session.query(
+        signed_val = case(
+            (Venda.mov_tipo_movto.in_(["DS", "CA"]), -Venda.valor_total),
+            else_=Venda.valor_total,
+        )
+
+        total = base.with_entities(func.coalesce(func.sum(signed_val), 0)).scalar() or 0
+        total = float(total)
+
+        # Mix de itens do cliente (quantidade de itens únicos)
+        mix_itens = base.with_entities(func.count(func.distinct(Venda.mestre))).scalar() or 0
+        mix_itens = int(mix_itens)
+
+        marcas_rows = base.with_entities(
             Venda.marca.label("marca"),
-            func.coalesce(func.sum(Venda.valor_total), 0.0).label("valor_total"),
-            func.coalesce(func.count(func.distinct(Venda.mestre)), 0).label("mix_itens"),
-        )
-        .filter(func.extract("year", Venda.movimento) == ano)
-        .filter(func.extract("month", Venda.movimento) == mes)
-        .filter(Venda.cliente_id_norm.isnot(None))
-        .filter(Venda.razao_norm == razao_norm)
-    )
+            func.coalesce(func.sum(signed_val), 0).label("valor_total"),
+            func.count(func.distinct(Venda.mestre)).label("mix_itens"),
+        ).group_by(Venda.marca).order_by(func.coalesce(func.sum(signed_val), 0).desc()).all()
 
-    if emp:
-        q = q.filter(Venda.emp == int(emp))
-    if vendedor:
-        q = q.filter(Venda.vendedor == vendedor)
-
-    rows = q.group_by(Venda.marca).order_by(func.sum(Venda.valor_total).desc()).all()
-
-    total = float(sum((r.valor_total or 0.0) for r in rows) or 0.0)
-    mix_total = int(sum((r.mix_itens or 0) for r in rows) or 0)
-
-    marcas = []
-    for r in rows:
-        v = float(r.valor_total or 0.0)
-        p = (v / total * 100.0) if total else 0.0
-        marcas.append(
-            {
-                "marca": (r.marca or "SEM MARCA"),
+        marcas = []
+        for r in marcas_rows:
+            v = float(r.valor_total or 0)
+            marcas.append({
+                "marca": r.marca or "SEM MARCA",
                 "valor_total": v,
-                "percent": p,
                 "mix_itens": int(r.mix_itens or 0),
-            }
-        )
+                "percent": (v / total * 100.0) if total else 0.0,
+            })
 
-    return jsonify({"total": total, "mix_itens": mix_total, "marcas": marcas})
-
+        return jsonify({
+            "emp": emp_int,
+            "razao_norm": razao_norm,
+            "ano": ano,
+            "mes": mes,
+            "total": total,
+            "mix_itens": mix_itens,
+            "marcas": marcas,
+        })
 
     @app.route("/senha", methods=["GET", "POST"])
     def senha():
