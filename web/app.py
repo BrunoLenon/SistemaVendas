@@ -9,7 +9,7 @@ from io import BytesIO
 
 import pandas as pd
 import requests
-from sqlalchemy import and_, or_, func, case, cast, String, text
+from sqlalchemy import and_, or_, func, case, cast, String, text, extract
 from flask import (
     Flask,
     flash,
