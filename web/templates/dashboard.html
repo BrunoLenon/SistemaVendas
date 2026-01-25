@@ -61,6 +61,49 @@
     </div>
   </div>
 
+
+{% if insights and insights.clientes_destaque %}
+<div class="row g-3 mb-3">
+  <div class="col-12 col-md-6">
+    <div class="card shadow-sm border-0 h-100">
+      <div class="card-body">
+        <div class="small text-muted">⭐ Cliente destaque (↑ vs mês anterior)</div>
+        {% set c = (insights.clientes_destaque.crescimento[0] if insights.clientes_destaque.crescimento and insights.clientes_destaque.crescimento|length>0 else None) %}
+        {% if c %}
+          <div class="fw-bold fs-5">{{ c.cliente }}</div>
+          <div class="text-success fw-semibold">
+            + R$ {{ c.delta|round(2) }}{% if c.pct is not none %} ({{ c.pct|round(1) }}%) {% endif %}
+          </div>
+          <div class="text-muted small">Atual: R$ {{ c.atual|round(2) }} • Anterior: R$ {{ c.anterior|round(2) }}</div>
+        {% else %}
+          <div class="fw-bold fs-5">—</div>
+          <div class="text-muted">Sem base comparativa</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12 col-md-6">
+    <div class="card shadow-sm border-0 h-100">
+      <div class="card-body">
+        <div class="small text-muted">⚠️ Cliente em queda (↓ vs mês anterior)</div>
+        {% set q = (insights.clientes_destaque.queda[0] if insights.clientes_destaque.queda and insights.clientes_destaque.queda|length>0 else None) %}
+        {% if q %}
+          <div class="fw-bold fs-5">{{ q.cliente }}</div>
+          <div class="text-danger fw-semibold">
+            R$ {{ q.delta|round(2) }}{% if q.pct is not none %} ({{ q.pct|round(1) }}%) {% endif %}
+          </div>
+          <div class="text-muted small">Atual: R$ {{ q.atual|round(2) }} • Anterior: R$ {{ q.anterior|round(2) }}</div>
+        {% else %}
+          <div class="fw-bold fs-5">—</div>
+          <div class="text-muted">Sem base comparativa</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
 </div>
 {% endif %}
 

@@ -52,6 +52,10 @@ app.permanent_session_lifetime = timedelta(hours=1)
 # Detecta produção (Render/FLASK_ENV)
 IS_PROD = bool(os.getenv("RENDER")) or (os.getenv("FLASK_ENV") == "production")
 
+# Cache TTL (horas) - se o cache estiver mais velho que isso, recalcula ao vivo
+CACHE_TTL_HOURS = float(os.getenv("CACHE_TTL_HOURS", "12") or 12)
+
+
 # Respeitar X-Forwarded-* (https/ip real) atrás do Render
 try:
     from werkzeug.middleware.proxy_fix import ProxyFix
@@ -618,6 +622,9 @@ def _fetch_cache_row(vendedor: str, ano: int, mes: int, emp_scope: str | None) -
         )
         if not rows:
             return None
+        # se qualquer linha do período estiver expirada, força recálculo ao vivo
+        if any((not _cache_is_fresh(r)) for r in rows):
+            return None
 
         valor_bruto = sum(float(r.valor_bruto or 0.0) for r in rows)
         valor_atual = sum(float(r.valor_liquido or 0.0) for r in rows)
@@ -869,18 +876,36 @@ def _vendedores_from_db(role: str, emp_usuario: str | None):
     vendedores = sorted([v for v in vendedores if v])
     return vendedores
 
+
+def _cache_is_fresh(row: DashboardCache) -> bool:
+    """Retorna True se a linha do cache ainda está dentro do TTL."""
+    try:
+        ts = getattr(row, "atualizado_em", None) or getattr(row, "updated_at", None)
+        if not ts:
+            return False
+        # ts pode vir timezone-aware ou naive; normaliza pra naive UTC
+        if getattr(ts, "tzinfo", None) is not None:
+            ts = ts.replace(tzinfo=None)
+        limite = datetime.utcnow() - timedelta(hours=float(CACHE_TTL_HOURS or 0))
+        return ts >= limite
+    except Exception:
+        return False
+
 def _get_cache_row(vendedor: str, ano: int, mes: int, emp_scope: str | None):
     vendedor = (vendedor or '').strip().upper()
     if not vendedor:
         return None
     with SessionLocal() as db:
         if emp_scope:
-            return db.query(DashboardCache).filter(
+            row = db.query(DashboardCache).filter(
                 DashboardCache.emp == str(emp_scope),
                 DashboardCache.vendedor == vendedor,
                 DashboardCache.ano == int(ano),
                 DashboardCache.mes == int(mes),
             ).first()
+            if not row or not _cache_is_fresh(row):
+                return None
+            return row
 
         # ADMIN/VENDEDOR sem EMP: soma múltiplas EMPs
         rows = db.query(DashboardCache).filter(
@@ -1279,6 +1304,212 @@ def logout():
     session.clear()
     return redirect(url_for("login"))
 
+
+def _periodo_prev(ano: int, mes: int) -> tuple[int, int]:
+    if int(mes) == 1:
+        return int(ano) - 1, 12
+    return int(ano), int(mes) - 1
+
+def _signed_expr():
+    return case((Venda.mov_tipo_movto.in_(["DS", "CA"]), -Venda.valor_total), else_=Venda.valor_total)
+
+def _clientes_destaque(vendedor: str, ano: int, mes: int, emp_scope: str | None, topn: int = 5) -> dict:
+    """Top clientes por crescimento/queda vs mês anterior (ΔR$ e Δ%)."""
+    vendedor = (vendedor or "").strip().upper()
+    if not vendedor:
+        return {"crescimento": [], "queda": []}
+
+    ano_prev, mes_prev = _periodo_prev(ano, mes)
+    start, end = _periodo_bounds(int(ano), int(mes))
+    start_prev, end_prev = _periodo_bounds(int(ano_prev), int(mes_prev))
+    signed = _signed_expr()
+
+    with SessionLocal() as db:
+        base_cur = db.query(Venda).filter(
+            func.upper(Venda.vendedor) == vendedor,
+            Venda.movimento >= start,
+            Venda.movimento < end,
+            Venda.cliente_id_norm.isnot(None),
+        )
+        base_prev = db.query(Venda).filter(
+            func.upper(Venda.vendedor) == vendedor,
+            Venda.movimento >= start_prev,
+            Venda.movimento < end_prev,
+            Venda.cliente_id_norm.isnot(None),
+        )
+        if emp_scope:
+            base_cur = base_cur.filter(Venda.emp == str(emp_scope))
+            base_prev = base_prev.filter(Venda.emp == str(emp_scope))
+
+        cur_rows = (
+            base_cur.with_entities(
+                Venda.cliente_id_norm.label("cid"),
+                func.coalesce(func.max(Venda.razao), "").label("label"),
+                func.coalesce(func.sum(signed), 0.0).label("total"),
+            )
+            .group_by(Venda.cliente_id_norm)
+            .all()
+        )
+        prev_rows = (
+            base_prev.with_entities(
+                Venda.cliente_id_norm.label("cid"),
+                func.coalesce(func.max(Venda.razao), "").label("label"),
+                func.coalesce(func.sum(signed), 0.0).label("total"),
+            )
+            .group_by(Venda.cliente_id_norm)
+            .all()
+        )
+
+    cur = {str(r.cid): {"label": (r.label or "").strip(), "total": float(r.total or 0.0)} for r in cur_rows}
+    prev = {str(r.cid): {"label": (r.label or "").strip(), "total": float(r.total or 0.0)} for r in prev_rows}
+
+    all_ids = set(cur.keys()) | set(prev.keys())
+    items = []
+    for cid in all_ids:
+        c = cur.get(cid, {"label": "", "total": 0.0})
+        p = prev.get(cid, {"label": "", "total": 0.0})
+        atual = float(c["total"] or 0.0)
+        ant = float(p["total"] or 0.0)
+        delta = atual - ant
+        # label: prefere atual, senão anterior, senão cid
+        label = c["label"] or p["label"] or cid
+        pct = None
+        if ant != 0:
+            pct = (delta / ant) * 100.0
+        elif atual != 0:
+            pct = 100.0
+        items.append({
+            "cliente_id": cid,
+            "cliente": label,
+            "atual": atual,
+            "anterior": ant,
+            "delta": delta,
+            "pct": pct,
+        })
+
+    crescimento = sorted([x for x in items if x["delta"] > 0], key=lambda x: x["delta"], reverse=True)[:topn]
+    queda = sorted([x for x in items if x["delta"] < 0], key=lambda x: x["delta"])[:topn]
+
+    return {"crescimento": crescimento, "queda": queda}
+
+def _dashboard_insights(vendedor: str, ano: int, mes: int, emp_scope: str | None) -> dict | None:
+    """Insights leves para cards do dashboard (cidade/cliente destaque e novos/recorrentes)."""
+    vendedor = (vendedor or "").strip().upper()
+    if not vendedor:
+        return None
+
+    signed = _signed_expr()
+    start, end = _periodo_bounds(int(ano), int(mes))
+    ano_prev, mes_prev = _periodo_prev(ano, mes)
+    start_prev, end_prev = _periodo_bounds(int(ano_prev), int(mes_prev))
+
+    with SessionLocal() as db:
+        base = db.query(Venda).filter(
+            func.upper(Venda.vendedor) == vendedor,
+            Venda.movimento >= start,
+            Venda.movimento < end,
+        )
+        base_prev = db.query(Venda).filter(
+            func.upper(Venda.vendedor) == vendedor,
+            Venda.movimento >= start_prev,
+            Venda.movimento < end_prev,
+        )
+        base_hist = db.query(Venda).filter(func.upper(Venda.vendedor) == vendedor, Venda.movimento.isnot(None))
+
+        if emp_scope:
+            base = base.filter(Venda.emp == str(emp_scope))
+            base_prev = base_prev.filter(Venda.emp == str(emp_scope))
+            base_hist = base_hist.filter(Venda.emp == str(emp_scope))
+
+        # Cidade destaque (por valor líquido)
+        city_cur = (
+            base.with_entities(
+                func.coalesce(Venda.cidade_norm, "sem_cidade").label("cidade_norm"),
+                func.coalesce(func.sum(signed), 0.0).label("total"),
+            )
+            .group_by(func.coalesce(Venda.cidade_norm, "sem_cidade"))
+            .order_by(func.coalesce(func.sum(signed), 0.0).desc())
+            .first()
+        )
+        cidade_destaque = None
+        if city_cur:
+            cidade_destaque = {"cidade_norm": (city_cur.cidade_norm or "SEM CIDADE").upper(), "total_vendido": float(city_cur.total or 0.0)}
+
+        # Cidade em queda (variação vs mês anterior)
+        prev_map_rows = (
+            base_prev.with_entities(
+                func.coalesce(Venda.cidade_norm, "sem_cidade").label("cidade_norm"),
+                func.coalesce(func.sum(signed), 0.0).label("total"),
+            )
+            .group_by(func.coalesce(Venda.cidade_norm, "sem_cidade"))
+            .all()
+        )
+        prev_map = {str(r.cidade_norm): float(r.total or 0.0) for r in prev_map_rows}
+        queda_item = None
+        if city_cur:
+            # computa variações para cidades com base anterior
+            cur_rows = (
+                base.with_entities(
+                    func.coalesce(Venda.cidade_norm, "sem_cidade").label("cidade_norm"),
+                    func.coalesce(func.sum(signed), 0.0).label("total"),
+                )
+                .group_by(func.coalesce(Venda.cidade_norm, "sem_cidade"))
+                .all()
+            )
+            variacoes = []
+            for r in cur_rows:
+                k = str(r.cidade_norm)
+                ant = prev_map.get(k, 0.0)
+                if ant == 0:
+                    continue
+                curv = float(r.total or 0.0)
+                variacoes.append({"cidade_norm": (k or "sem_cidade").upper(), "variacao": curv - ant})
+            variacoes = sorted(variacoes, key=lambda x: x["variacao"])
+            if variacoes and variacoes[0]["variacao"] < 0:
+                queda_item = variacoes[0]
+
+        # Clientes novos vs recorrentes (pelo 1º movimento do cliente)
+        clientes_periodo = (
+            base.with_entities(Venda.cliente_id_norm.label("cid"))
+            .filter(Venda.cliente_id_norm.isnot(None))
+            .distinct()
+            .subquery()
+        )
+        min_datas = (
+            base_hist.with_entities(
+                Venda.cliente_id_norm.label("cid"),
+                func.min(Venda.movimento).label("min_data"),
+            )
+            .filter(Venda.cliente_id_norm.isnot(None))
+            .group_by(Venda.cliente_id_norm)
+            .subquery()
+        )
+
+        novos = (
+            db.query(func.count())
+            .select_from(clientes_periodo.join(min_datas, clientes_periodo.c.cid == min_datas.c.cid))
+            .filter(min_datas.c.min_data >= start)
+            .scalar()
+        ) or 0
+        recorr = (
+            db.query(func.count())
+            .select_from(clientes_periodo.join(min_datas, clientes_periodo.c.cid == min_datas.c.cid))
+            .filter(min_datas.c.min_data < start)
+            .scalar()
+        ) or 0
+
+    clientes_destaque = _clientes_destaque(vendedor, ano, mes, emp_scope, topn=3)
+
+    return {
+        "cidade_destaque": cidade_destaque or {"cidade_norm": "—", "total_vendido": 0.0},
+        "cidade_queda": queda_item,
+        "clientes_novos": int(novos),
+        "clientes_recorrentes": int(recorr),
+        "clientes_destaque": clientes_destaque,
+    }
+
+
+
 @app.get("/dashboard")
 def dashboard():
     red = _login_required()
@@ -1321,8 +1552,18 @@ def dashboard():
                 app.logger.exception("Erro ao calcular dashboard ao vivo")
                 dados = None
 
+    insights = None
+    if vendedor_alvo:
+        try:
+            emp_scope = emp_usuario if role == "supervisor" else None
+            insights = _dashboard_insights(vendedor_alvo, ano=ano, mes=mes, emp_scope=emp_scope)
+        except Exception:
+            app.logger.exception("Erro ao calcular insights do dashboard")
+            insights = None
+
     return render_template(
         "dashboard.html",
+        insights=insights,
         vendedor=vendedor_alvo or "",
         usuario=_usuario_logado(),
         role=_role(),
@@ -2625,6 +2866,95 @@ def relatorio_cidades_clientes():
 
 
 
+
+## Relatório (AJAX): cidade -> clientes (modal)
+@app.get("/relatorios/cidade-clientes")
+def relatorio_cidade_clientes_api():
+    """Retorna JSON com ranking de clientes dentro de uma cidade no período.
+
+    Parâmetros:
+      - emp (obrigatório)
+      - cidade_norm (obrigatório; use 'sem_cidade' para vazio)
+      - mes, ano (obrigatórios)
+      - vendedor (opcional, ADMIN/SUPERVISOR)
+    """
+    red = _login_required()
+    if red:
+        return red
+
+    role = (_role() or "").strip().lower()
+    emp_usuario = _emp()
+    vendedor_logado = (_usuario_logado() or "").strip().upper()
+
+    emp = (request.args.get("emp") or "").strip()
+    cidade_norm = (request.args.get("cidade_norm") or "").strip()
+    mes = int(request.args.get("mes") or 0)
+    ano = int(request.args.get("ano") or 0)
+    vendedor = (request.args.get("vendedor") or "").strip().upper()
+
+    if not emp or not cidade_norm or not mes or not ano:
+        return jsonify({"error": "Parâmetros inválidos"}), 400
+
+    # Permissões
+    if role == "supervisor":
+        if str(emp_usuario or "").strip() and str(emp) != str(emp_usuario):
+            return jsonify({"error": "Acesso negado"}), 403
+    elif role == "vendedor":
+        vendedor = vendedor_logado
+
+    inicio = date(int(ano), int(mes), 1)
+    fim = date(int(ano) + 1, 1, 1) if int(mes) == 12 else date(int(ano), int(mes) + 1, 1)
+
+    signed_val = case(
+        (Venda.mov_tipo_movto.in_(["DS", "CA"]), -Venda.valor_total),
+        else_=Venda.valor_total,
+    )
+
+    with SessionLocal() as db:
+        base = db.query(Venda).filter(
+            Venda.emp == str(emp),
+            Venda.movimento >= inicio,
+            Venda.movimento < fim,
+        )
+
+        if cidade_norm == "sem_cidade":
+            base = base.filter(or_(Venda.cidade_norm.is_(None), Venda.cidade_norm == "", Venda.cidade_norm == "sem_cidade"))
+        else:
+            base = base.filter(Venda.cidade_norm == cidade_norm)
+
+        if vendedor:
+            base = base.filter(func.upper(Venda.vendedor) == vendedor)
+
+        rows = (
+            base.with_entities(
+                Venda.cliente_id_norm.label("cliente_id"),
+                func.coalesce(func.max(Venda.razao), "").label("cliente"),
+                func.coalesce(func.sum(signed_val), 0.0).label("valor_total"),
+                func.coalesce(func.sum(Venda.qtdade_vendida), 0.0).label("qtd_total"),
+                func.count(func.distinct(Venda.mestre)).label("mix_itens"),
+            )
+            .filter(Venda.cliente_id_norm.isnot(None))
+            .group_by(Venda.cliente_id_norm)
+            .order_by(func.coalesce(func.sum(signed_val), 0.0).desc())
+            .limit(50)
+            .all()
+        )
+
+    out = []
+    for r in rows:
+        label = (r.cliente or "").strip() or str(r.cliente_id)
+        out.append({
+            "cliente_id": str(r.cliente_id),
+            "cliente": label,
+            "valor_total": float(r.valor_total or 0.0),
+            "qtd_total": float(r.qtd_total or 0.0),
+            "mix_itens": int(r.mix_itens or 0),
+        })
+
+    return jsonify({"emp": emp, "cidade_norm": cidade_norm, "ano": ano, "mes": mes, "clientes": out})
+
+
+
 ## Relatório (AJAX): cliente -> marcas (modal)
 @app.get("/relatorios/cliente-marcas")
 def relatorio_cliente_marcas_api():
@@ -2639,6 +2969,7 @@ def relatorio_cliente_marcas_api():
 
     emp = (request.args.get("emp") or "").strip()
     razao_norm = (request.args.get("razao_norm") or "").strip()
+    cidade_norm = (request.args.get("cidade_norm") or "").strip()
     mes = int(request.args.get("mes") or 0)
     ano = int(request.args.get("ano") or 0)
     vendedor = (request.args.get("vendedor") or "").strip().upper()
@@ -2660,6 +2991,11 @@ def relatorio_cliente_marcas_api():
             extract("month", Venda.movimento) == mes,
             extract("year", Venda.movimento) == ano,
         )
+        if cidade_norm:
+            if cidade_norm == "sem_cidade":
+                base = base.filter(or_(Venda.cidade_norm.is_(None), Venda.cidade_norm == "", Venda.cidade_norm == "sem_cidade"))
+            else:
+                base = base.filter(Venda.cidade_norm == cidade_norm)
         if vendedor:
             base = base.filter(func.upper(Venda.vendedor) == vendedor)
 
@@ -2929,6 +3265,37 @@ def admin_usuarios():
         erro=erro,
         ok=ok,
     )
+
+
+@app.get("/admin/cache/refresh")
+def admin_cache_refresh():
+    """Recalcula o cache do dashboard para um EMP/mês/ano (ADMIN).
+
+    Exemplo:
+      /admin/cache/refresh?emp=101&ano=2026&mes=1
+    """
+    red = _login_required()
+    if red:
+        return red
+    red2 = _admin_required()
+    if red2:
+        return red2
+
+    emp = (request.args.get("emp") or "").strip()
+    ano = int(request.args.get("ano") or datetime.now().year)
+    mes = int(request.args.get("mes") or datetime.now().month)
+
+    if not emp:
+        return jsonify({"ok": False, "error": "Parâmetro 'emp' é obrigatório."}), 400
+
+    try:
+        from dashboard_cache import refresh_dashboard_cache
+        info = refresh_dashboard_cache(emp, ano, mes)
+        return jsonify({"ok": True, "emp": emp, "ano": ano, "mes": mes, **info})
+    except Exception as e:
+        app.logger.exception("Falha ao atualizar cache")
+        return jsonify({"ok": False, "error": str(e)}), 500
+
 
 @app.route("/admin/importar", methods=["GET", "POST"])
 def admin_importar():

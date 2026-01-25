@@ -1,6 +1,204 @@
 {% extends "base.html" %}
 
-{% block title %}Relatórios - Cidades e Clientes{% endblock %}
+{% block title %}Relatórios - Cidades e Clientes
+<!-- Modal: Cidade -> Clientes -->
+<div class="modal fade" id="cityClientsModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">🏙️ Clientes da cidade</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+      </div>
+      <div class="modal-body">
+        <div id="cityClientsMeta" class="text-muted small mb-2"></div>
+        <div id="cityClientsLoading" class="text-muted">Carregando...</div>
+        <div class="table-responsive d-none d-md-block">
+          <table class="table table-sm align-middle mb-0" id="cityClientsTable" style="display:none;">
+            <thead>
+              <tr class="text-muted small">
+                <th>#</th>
+                <th>Cliente</th>
+                <th class="text-end">Valor</th>
+                <th class="text-end">Mix</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+
+        <div class="mobile-list d-md-none" id="cityClientsMobile" style="display:none;"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Cliente -> Marcas -->
+<div class="modal fade" id="clienteMarcasModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">🏷️ Marcas do cliente</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+      </div>
+      <div class="modal-body">
+        <div id="clienteMarcasMeta" class="text-muted small mb-2"></div>
+        <div id="clienteMarcasLoading" class="text-muted">Carregando...</div>
+        <div class="table-responsive">
+          <table class="table table-sm align-middle mb-0" id="clienteMarcasTable" style="display:none;">
+            <thead>
+              <tr class="text-muted small">
+                <th>#</th>
+                <th>Marca</th>
+                <th class="text-end">Valor</th>
+                <th class="text-end">% do cliente</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  function brl(v){
+    try{
+      return new Intl.NumberFormat('pt-BR', {style:'currency', currency:'BRL'}).format(v || 0);
+    }catch(e){
+      return 'R$ ' + (v||0).toFixed(2);
+    }
+  }
+
+  const mes = "{{ mes }}";
+  const ano = "{{ ano }}";
+  const vendedor = "{{ vendedor_filtro or '' }}";
+  const empFiltro = "{{ emp_filtro or '' }}";
+
+  let lastCityCtx = null;
+
+  async function openCityClients(emp, cidade_norm, cidade_label){
+    lastCityCtx = {emp, cidade_norm, cidade_label};
+    const modalEl = document.getElementById('cityClientsModal');
+    const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+    document.getElementById('cityClientsMeta').textContent = `EMP ${emp} • ${cidade_label} • ${mes}/${ano}`;
+    document.getElementById('cityClientsLoading').style.display = '';
+    document.getElementById('cityClientsTable').style.display = 'none';
+    document.getElementById('cityClientsMobile').style.display = 'none';
+    document.querySelector('#cityClientsTable tbody').innerHTML = '';
+    document.getElementById('cityClientsMobile').innerHTML = '';
+    modal.show();
+
+    const qs = new URLSearchParams({emp, cidade_norm, mes, ano});
+    if (vendedor) qs.set('vendedor', vendedor);
+    const resp = await fetch('/relatorios/cidade-clientes?' + qs.toString());
+    const data = await resp.json();
+    document.getElementById('cityClientsLoading').style.display = 'none';
+
+    if (!resp.ok || data.error){
+      document.getElementById('cityClientsMeta').textContent = (data && data.error) ? data.error : 'Erro ao carregar';
+      return;
+    }
+
+    const rows = data.clientes || [];
+    // desktop table
+    const tbody = document.querySelector('#cityClientsTable tbody');
+    rows.forEach((r, idx) => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td class="text-muted">${idx+1}</td>
+        <td><a href="#" class="js-client link-primary text-decoration-none" data-razao="${r.cliente_id}" data-label="${(r.cliente||'').replace(/"/g,'&quot;')}">${r.cliente}</a></td>
+        <td class="text-end">${brl(r.valor_total)}</td>
+        <td class="text-end">${r.mix_itens || 0}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+    document.getElementById('cityClientsTable').style.display = '';
+    // mobile cards
+    const mob = document.getElementById('cityClientsMobile');
+    rows.forEach((r, idx) => {
+      const div = document.createElement('div');
+      div.className = 'mitem mb-2';
+      div.innerHTML = `
+        <div class="d-flex justify-content-between align-items-start gap-2">
+          <div class="title">${idx+1}. <a href="#" class="js-client link-primary text-decoration-none" data-razao="${r.cliente_id}" data-label="${(r.cliente||'').replace(/"/g,'&quot;')}">${r.cliente}</a></div>
+          <div class="text-end fw-semibold">${brl(r.valor_total)}</div>
+        </div>
+        <div class="kv mt-2"><div><span class="k">Mix</span></div><div class="fw-semibold">${r.mix_itens || 0}</div></div>
+      `;
+      mob.appendChild(div);
+    });
+    mob.style.display = '';
+  }
+
+  async function openClienteMarcas(emp, razao_norm, cliente_label){
+    const ctx = lastCityCtx || {cidade_norm: ''};
+    const cidade_norm = ctx.cidade_norm || '';
+    const modalEl = document.getElementById('clienteMarcasModal');
+    const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+    document.getElementById('clienteMarcasMeta').textContent = `EMP ${emp} • ${cliente_label} • ${mes}/${ano}` + (cidade_norm ? ` • ${ctx.cidade_label}` : '');
+    document.getElementById('clienteMarcasLoading').style.display = '';
+    document.getElementById('clienteMarcasTable').style.display = 'none';
+    document.querySelector('#clienteMarcasTable tbody').innerHTML = '';
+    modal.show();
+
+    const qs = new URLSearchParams({emp, razao_norm, mes, ano});
+    if (vendedor) qs.set('vendedor', vendedor);
+    if (cidade_norm) qs.set('cidade_norm', cidade_norm);
+    const resp = await fetch('/relatorios/cliente-marcas?' + qs.toString());
+    const data = await resp.json();
+    document.getElementById('clienteMarcasLoading').style.display = 'none';
+
+    if (!resp.ok || data.error){
+      document.getElementById('clienteMarcasMeta').textContent = (data && data.error) ? data.error : 'Erro ao carregar';
+      return;
+    }
+
+    const rows = data.marcas || [];
+    const tbody = document.querySelector('#clienteMarcasTable tbody');
+    rows.forEach((r, idx) => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td class="text-muted">${idx+1}</td>
+        <td class="fw-semibold">${r.marca}</td>
+        <td class="text-end">${brl(r.valor_total)}</td>
+        <td class="text-end">${(r.percent || 0).toFixed(1)}%</td>
+      `;
+      tbody.appendChild(tr);
+    });
+    document.getElementById('clienteMarcasTable').style.display = '';
+  }
+
+  // click cidade
+  document.addEventListener('click', function(ev){
+    const a = ev.target.closest('a.js-city');
+    if (a){
+      ev.preventDefault();
+      const emp = a.getAttribute('data-emp');
+      const cidade_norm = a.getAttribute('data-cidade');
+      const label = a.textContent.trim();
+      openCityClients(emp, cidade_norm, label);
+      return;
+    }
+    const c = ev.target.closest('a.js-client');
+    if (c){
+      ev.preventDefault();
+      const emp = (lastCityCtx && lastCityCtx.emp) ? lastCityCtx.emp : (empFiltro || '');
+      const razao_norm = c.getAttribute('data-razao');
+      const label = c.getAttribute('data-label') || c.textContent.trim();
+      if (!emp){
+        return;
+      }
+      openClienteMarcas(emp, razao_norm, label);
+      return;
+    }
+  });
+})();
+</script>
+
+
+{% endblock %}
 
 {% block extra_head %}
 <style>
@@ -25,6 +223,204 @@
 [data-theme="dark"] .mobile-list .kv .k{color: rgba(255,255,255,.65);}
 
 </style>
+
+<!-- Modal: Cidade -> Clientes -->
+<div class="modal fade" id="cityClientsModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">🏙️ Clientes da cidade</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+      </div>
+      <div class="modal-body">
+        <div id="cityClientsMeta" class="text-muted small mb-2"></div>
+        <div id="cityClientsLoading" class="text-muted">Carregando...</div>
+        <div class="table-responsive d-none d-md-block">
+          <table class="table table-sm align-middle mb-0" id="cityClientsTable" style="display:none;">
+            <thead>
+              <tr class="text-muted small">
+                <th>#</th>
+                <th>Cliente</th>
+                <th class="text-end">Valor</th>
+                <th class="text-end">Mix</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+
+        <div class="mobile-list d-md-none" id="cityClientsMobile" style="display:none;"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Cliente -> Marcas -->
+<div class="modal fade" id="clienteMarcasModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">🏷️ Marcas do cliente</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+      </div>
+      <div class="modal-body">
+        <div id="clienteMarcasMeta" class="text-muted small mb-2"></div>
+        <div id="clienteMarcasLoading" class="text-muted">Carregando...</div>
+        <div class="table-responsive">
+          <table class="table table-sm align-middle mb-0" id="clienteMarcasTable" style="display:none;">
+            <thead>
+              <tr class="text-muted small">
+                <th>#</th>
+                <th>Marca</th>
+                <th class="text-end">Valor</th>
+                <th class="text-end">% do cliente</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  function brl(v){
+    try{
+      return new Intl.NumberFormat('pt-BR', {style:'currency', currency:'BRL'}).format(v || 0);
+    }catch(e){
+      return 'R$ ' + (v||0).toFixed(2);
+    }
+  }
+
+  const mes = "{{ mes }}";
+  const ano = "{{ ano }}";
+  const vendedor = "{{ vendedor_filtro or '' }}";
+  const empFiltro = "{{ emp_filtro or '' }}";
+
+  let lastCityCtx = null;
+
+  async function openCityClients(emp, cidade_norm, cidade_label){
+    lastCityCtx = {emp, cidade_norm, cidade_label};
+    const modalEl = document.getElementById('cityClientsModal');
+    const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+    document.getElementById('cityClientsMeta').textContent = `EMP ${emp} • ${cidade_label} • ${mes}/${ano}`;
+    document.getElementById('cityClientsLoading').style.display = '';
+    document.getElementById('cityClientsTable').style.display = 'none';
+    document.getElementById('cityClientsMobile').style.display = 'none';
+    document.querySelector('#cityClientsTable tbody').innerHTML = '';
+    document.getElementById('cityClientsMobile').innerHTML = '';
+    modal.show();
+
+    const qs = new URLSearchParams({emp, cidade_norm, mes, ano});
+    if (vendedor) qs.set('vendedor', vendedor);
+    const resp = await fetch('/relatorios/cidade-clientes?' + qs.toString());
+    const data = await resp.json();
+    document.getElementById('cityClientsLoading').style.display = 'none';
+
+    if (!resp.ok || data.error){
+      document.getElementById('cityClientsMeta').textContent = (data && data.error) ? data.error : 'Erro ao carregar';
+      return;
+    }
+
+    const rows = data.clientes || [];
+    // desktop table
+    const tbody = document.querySelector('#cityClientsTable tbody');
+    rows.forEach((r, idx) => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td class="text-muted">${idx+1}</td>
+        <td><a href="#" class="js-client link-primary text-decoration-none" data-razao="${r.cliente_id}" data-label="${(r.cliente||'').replace(/"/g,'&quot;')}">${r.cliente}</a></td>
+        <td class="text-end">${brl(r.valor_total)}</td>
+        <td class="text-end">${r.mix_itens || 0}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+    document.getElementById('cityClientsTable').style.display = '';
+    // mobile cards
+    const mob = document.getElementById('cityClientsMobile');
+    rows.forEach((r, idx) => {
+      const div = document.createElement('div');
+      div.className = 'mitem mb-2';
+      div.innerHTML = `
+        <div class="d-flex justify-content-between align-items-start gap-2">
+          <div class="title">${idx+1}. <a href="#" class="js-client link-primary text-decoration-none" data-razao="${r.cliente_id}" data-label="${(r.cliente||'').replace(/"/g,'&quot;')}">${r.cliente}</a></div>
+          <div class="text-end fw-semibold">${brl(r.valor_total)}</div>
+        </div>
+        <div class="kv mt-2"><div><span class="k">Mix</span></div><div class="fw-semibold">${r.mix_itens || 0}</div></div>
+      `;
+      mob.appendChild(div);
+    });
+    mob.style.display = '';
+  }
+
+  async function openClienteMarcas(emp, razao_norm, cliente_label){
+    const ctx = lastCityCtx || {cidade_norm: ''};
+    const cidade_norm = ctx.cidade_norm || '';
+    const modalEl = document.getElementById('clienteMarcasModal');
+    const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+    document.getElementById('clienteMarcasMeta').textContent = `EMP ${emp} • ${cliente_label} • ${mes}/${ano}` + (cidade_norm ? ` • ${ctx.cidade_label}` : '');
+    document.getElementById('clienteMarcasLoading').style.display = '';
+    document.getElementById('clienteMarcasTable').style.display = 'none';
+    document.querySelector('#clienteMarcasTable tbody').innerHTML = '';
+    modal.show();
+
+    const qs = new URLSearchParams({emp, razao_norm, mes, ano});
+    if (vendedor) qs.set('vendedor', vendedor);
+    if (cidade_norm) qs.set('cidade_norm', cidade_norm);
+    const resp = await fetch('/relatorios/cliente-marcas?' + qs.toString());
+    const data = await resp.json();
+    document.getElementById('clienteMarcasLoading').style.display = 'none';
+
+    if (!resp.ok || data.error){
+      document.getElementById('clienteMarcasMeta').textContent = (data && data.error) ? data.error : 'Erro ao carregar';
+      return;
+    }
+
+    const rows = data.marcas || [];
+    const tbody = document.querySelector('#clienteMarcasTable tbody');
+    rows.forEach((r, idx) => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td class="text-muted">${idx+1}</td>
+        <td class="fw-semibold">${r.marca}</td>
+        <td class="text-end">${brl(r.valor_total)}</td>
+        <td class="text-end">${(r.percent || 0).toFixed(1)}%</td>
+      `;
+      tbody.appendChild(tr);
+    });
+    document.getElementById('clienteMarcasTable').style.display = '';
+  }
+
+  // click cidade
+  document.addEventListener('click', function(ev){
+    const a = ev.target.closest('a.js-city');
+    if (a){
+      ev.preventDefault();
+      const emp = a.getAttribute('data-emp');
+      const cidade_norm = a.getAttribute('data-cidade');
+      const label = a.textContent.trim();
+      openCityClients(emp, cidade_norm, label);
+      return;
+    }
+    const c = ev.target.closest('a.js-client');
+    if (c){
+      ev.preventDefault();
+      const emp = (lastCityCtx && lastCityCtx.emp) ? lastCityCtx.emp : (empFiltro || '');
+      const razao_norm = c.getAttribute('data-razao');
+      const label = c.getAttribute('data-label') || c.textContent.trim();
+      if (!emp){
+        return;
+      }
+      openClienteMarcas(emp, razao_norm, label);
+      return;
+    }
+  });
+})();
+</script>
+
+
 {% endblock %}
 
 {% block content %}
@@ -160,7 +556,7 @@
                     {% for r in c.cidades_preview %}
                     <tr>
                       <td class="text-muted">{{ loop.index }}</td>
-                      <td class="fw-semibold">{{ r.cidade_label }}</td>
+                      <td class="fw-semibold"><a href="#" class="link-primary text-decoration-none js-city" data-emp="{{ c.emp }}" data-cidade="{{ r.cidade_norm or 'sem_cidade' }}">{{ r.cidade_label }}</a></td>
                       <td class="text-end">R$ {{ "{:,.2f}".format(r.valor_total).replace(",", "X").replace(".", ",").replace("X", ".") }}</td>
                       <td class="text-end">{{ "{:.1f}%".format(r.pct) }}</td>
                     </tr>
@@ -207,7 +603,7 @@
                       {% for r in c.cidades_full %}
                       <tr>
                         <td class="text-muted">{{ loop.index }}</td>
-                        <td class="fw-semibold">{{ r.cidade_label }}</td>
+                        <td class="fw-semibold"><a href="#" class="link-primary text-decoration-none js-city" data-emp="{{ c.emp }}" data-cidade="{{ r.cidade_norm or 'sem_cidade' }}">{{ r.cidade_label }}</a></td>
                         <td class="text-end">R$ {{ "{:,.2f}".format(r.valor_total).replace(",", "X").replace(".", ",").replace("X", ".") }}</td>
                         <td class="text-end">{{ "{:.1f}%".format(r.pct) }}</td>
                         <td class="text-end">{{ "{:,.0f}".format(r.mix_itens).replace(",", ".") }}</td>
@@ -514,4 +910,202 @@
   });
 })();
 </script>
+
+<!-- Modal: Cidade -> Clientes -->
+<div class="modal fade" id="cityClientsModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">🏙️ Clientes da cidade</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+      </div>
+      <div class="modal-body">
+        <div id="cityClientsMeta" class="text-muted small mb-2"></div>
+        <div id="cityClientsLoading" class="text-muted">Carregando...</div>
+        <div class="table-responsive d-none d-md-block">
+          <table class="table table-sm align-middle mb-0" id="cityClientsTable" style="display:none;">
+            <thead>
+              <tr class="text-muted small">
+                <th>#</th>
+                <th>Cliente</th>
+                <th class="text-end">Valor</th>
+                <th class="text-end">Mix</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+
+        <div class="mobile-list d-md-none" id="cityClientsMobile" style="display:none;"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Cliente -> Marcas -->
+<div class="modal fade" id="clienteMarcasModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">🏷️ Marcas do cliente</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+      </div>
+      <div class="modal-body">
+        <div id="clienteMarcasMeta" class="text-muted small mb-2"></div>
+        <div id="clienteMarcasLoading" class="text-muted">Carregando...</div>
+        <div class="table-responsive">
+          <table class="table table-sm align-middle mb-0" id="clienteMarcasTable" style="display:none;">
+            <thead>
+              <tr class="text-muted small">
+                <th>#</th>
+                <th>Marca</th>
+                <th class="text-end">Valor</th>
+                <th class="text-end">% do cliente</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  function brl(v){
+    try{
+      return new Intl.NumberFormat('pt-BR', {style:'currency', currency:'BRL'}).format(v || 0);
+    }catch(e){
+      return 'R$ ' + (v||0).toFixed(2);
+    }
+  }
+
+  const mes = "{{ mes }}";
+  const ano = "{{ ano }}";
+  const vendedor = "{{ vendedor_filtro or '' }}";
+  const empFiltro = "{{ emp_filtro or '' }}";
+
+  let lastCityCtx = null;
+
+  async function openCityClients(emp, cidade_norm, cidade_label){
+    lastCityCtx = {emp, cidade_norm, cidade_label};
+    const modalEl = document.getElementById('cityClientsModal');
+    const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+    document.getElementById('cityClientsMeta').textContent = `EMP ${emp} • ${cidade_label} • ${mes}/${ano}`;
+    document.getElementById('cityClientsLoading').style.display = '';
+    document.getElementById('cityClientsTable').style.display = 'none';
+    document.getElementById('cityClientsMobile').style.display = 'none';
+    document.querySelector('#cityClientsTable tbody').innerHTML = '';
+    document.getElementById('cityClientsMobile').innerHTML = '';
+    modal.show();
+
+    const qs = new URLSearchParams({emp, cidade_norm, mes, ano});
+    if (vendedor) qs.set('vendedor', vendedor);
+    const resp = await fetch('/relatorios/cidade-clientes?' + qs.toString());
+    const data = await resp.json();
+    document.getElementById('cityClientsLoading').style.display = 'none';
+
+    if (!resp.ok || data.error){
+      document.getElementById('cityClientsMeta').textContent = (data && data.error) ? data.error : 'Erro ao carregar';
+      return;
+    }
+
+    const rows = data.clientes || [];
+    // desktop table
+    const tbody = document.querySelector('#cityClientsTable tbody');
+    rows.forEach((r, idx) => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td class="text-muted">${idx+1}</td>
+        <td><a href="#" class="js-client link-primary text-decoration-none" data-razao="${r.cliente_id}" data-label="${(r.cliente||'').replace(/"/g,'&quot;')}">${r.cliente}</a></td>
+        <td class="text-end">${brl(r.valor_total)}</td>
+        <td class="text-end">${r.mix_itens || 0}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+    document.getElementById('cityClientsTable').style.display = '';
+    // mobile cards
+    const mob = document.getElementById('cityClientsMobile');
+    rows.forEach((r, idx) => {
+      const div = document.createElement('div');
+      div.className = 'mitem mb-2';
+      div.innerHTML = `
+        <div class="d-flex justify-content-between align-items-start gap-2">
+          <div class="title">${idx+1}. <a href="#" class="js-client link-primary text-decoration-none" data-razao="${r.cliente_id}" data-label="${(r.cliente||'').replace(/"/g,'&quot;')}">${r.cliente}</a></div>
+          <div class="text-end fw-semibold">${brl(r.valor_total)}</div>
+        </div>
+        <div class="kv mt-2"><div><span class="k">Mix</span></div><div class="fw-semibold">${r.mix_itens || 0}</div></div>
+      `;
+      mob.appendChild(div);
+    });
+    mob.style.display = '';
+  }
+
+  async function openClienteMarcas(emp, razao_norm, cliente_label){
+    const ctx = lastCityCtx || {cidade_norm: ''};
+    const cidade_norm = ctx.cidade_norm || '';
+    const modalEl = document.getElementById('clienteMarcasModal');
+    const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+    document.getElementById('clienteMarcasMeta').textContent = `EMP ${emp} • ${cliente_label} • ${mes}/${ano}` + (cidade_norm ? ` • ${ctx.cidade_label}` : '');
+    document.getElementById('clienteMarcasLoading').style.display = '';
+    document.getElementById('clienteMarcasTable').style.display = 'none';
+    document.querySelector('#clienteMarcasTable tbody').innerHTML = '';
+    modal.show();
+
+    const qs = new URLSearchParams({emp, razao_norm, mes, ano});
+    if (vendedor) qs.set('vendedor', vendedor);
+    if (cidade_norm) qs.set('cidade_norm', cidade_norm);
+    const resp = await fetch('/relatorios/cliente-marcas?' + qs.toString());
+    const data = await resp.json();
+    document.getElementById('clienteMarcasLoading').style.display = 'none';
+
+    if (!resp.ok || data.error){
+      document.getElementById('clienteMarcasMeta').textContent = (data && data.error) ? data.error : 'Erro ao carregar';
+      return;
+    }
+
+    const rows = data.marcas || [];
+    const tbody = document.querySelector('#clienteMarcasTable tbody');
+    rows.forEach((r, idx) => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td class="text-muted">${idx+1}</td>
+        <td class="fw-semibold">${r.marca}</td>
+        <td class="text-end">${brl(r.valor_total)}</td>
+        <td class="text-end">${(r.percent || 0).toFixed(1)}%</td>
+      `;
+      tbody.appendChild(tr);
+    });
+    document.getElementById('clienteMarcasTable').style.display = '';
+  }
+
+  // click cidade
+  document.addEventListener('click', function(ev){
+    const a = ev.target.closest('a.js-city');
+    if (a){
+      ev.preventDefault();
+      const emp = a.getAttribute('data-emp');
+      const cidade_norm = a.getAttribute('data-cidade');
+      const label = a.textContent.trim();
+      openCityClients(emp, cidade_norm, label);
+      return;
+    }
+    const c = ev.target.closest('a.js-client');
+    if (c){
+      ev.preventDefault();
+      const emp = (lastCityCtx && lastCityCtx.emp) ? lastCityCtx.emp : (empFiltro || '');
+      const razao_norm = c.getAttribute('data-razao');
+      const label = c.getAttribute('data-label') || c.textContent.trim();
+      if (!emp){
+        return;
+      }
+      openClienteMarcas(emp, razao_norm, label);
+      return;
+    }
+  });
+})();
+</script>
+
+
 {% endblock %}
