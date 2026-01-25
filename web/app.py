@@ -1220,9 +1220,23 @@ def _security_headers(resp):
     def healthz():
         return {"ok": True}
 
-    @app.get("/")
+    @app.route("/", methods=["GET", "HEAD"])
     def home():
-        return redirect(url_for("dashboard"))
+        # Render/health-check friendly: return 200 for HEAD (and for Go-http-client probes)
+        ua = (request.headers.get("User-Agent") or "").lower()
+        if request.method == "HEAD" or "go-http-client" in ua:
+            return ("OK", 200)
+
+        # Browser/users: redirect to the right place
+        if session.get("vendedor") and session.get("role"):
+            return redirect(url_for("dashboard"))
+        return redirect(url_for("login"))
+
+    @app.get("/favicon.ico")
+    def favicon():
+        # Avoid noisy 404s in logs
+        return ("", 204)
+
 
     @app.route("/login", methods=["GET", "POST"])
     def login():
@@ -3463,5 +3477,4 @@ def _security_headers(resp):
         )
 
     return app
-
 
