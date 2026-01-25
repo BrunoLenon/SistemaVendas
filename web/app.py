@@ -3488,5 +3488,4 @@ def err_500(e):
         500,
     )
 
-return app
 
