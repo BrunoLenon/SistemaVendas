@@ -2653,7 +2653,7 @@ def create_app() -> Flask:
         })
 
 @app.route("/senha", methods=["GET", "POST"])
-    def senha():
+def senha():
         red = _login_required()
         if red:
             return red
