@@ -9,13 +9,13 @@
   --bg-soft: #f1f5f9;
   --border: rgba(15, 23, 42, .12);
 
-  --text-main: #2e2e2e;
+  --text-main: #0f172a;
   --text-muted: #475569;
 
-  --topbar-bg: #b3bac9;
+  --topbar-bg: #0b1220;
   --topbar-border: rgba(255,255,255,.08);
 
-  --sidebar-bg: #0c56eb;
+  --sidebar-bg: #0b1220;
   --sidebar-text: rgba(255,255,255,.82);
   --sidebar-muted: rgba(255,255,255,.60);
   --sidebar-hover: rgba(255,255,255,.08);
@@ -24,7 +24,7 @@
 }
 
 [data-theme="dark"]{
-  --bg-main: #d8f7dd;
+  --bg-main: #0b1220;
   --bg-card: #0f172a;
   --bg-soft: #111827;
   --border: rgba(255,255,255,.10);
@@ -32,13 +32,13 @@
   --text-main: #e5e7eb;
   --text-muted: #9ca3af;
 
-  --topbar-bg: #ffffff;
+  --topbar-bg: #0b1220;
   --topbar-border: rgba(255,255,255,.10);
 
-  --sidebar-bg: #854d05;
+  --sidebar-bg: #0b1220;
   --sidebar-text: rgba(255,255,255,.86);
   --sidebar-muted: rgba(255,255,255,.62);
-  --sidebar-hover: rgba(10, 255, 30, 0.1);
+  --sidebar-hover: rgba(255,255,255,.10);
 
   --primary: #3b82f6;
 }
@@ -194,7 +194,7 @@ body{
   height: 38px;
   object-fit: contain;
   border-radius: 10px;
-  background: rgba(255,255,255,.06);
+  background: rgba(250, 0, 0, 0.06);
   padding: 6px;
 }
 
