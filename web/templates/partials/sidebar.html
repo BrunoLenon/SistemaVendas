@@ -4,13 +4,23 @@
 {% set is_supervisor = (r == 'supervisor') %}
 {% set is_vendedor = (r == 'vendedor') %}
 
-<div class="p-3 border-bottom">
-  {% if emp %}
-    <div class="small text-muted">EMP</div>
-    <div class="fw-semibold">Loja {{ emp }}</div>
+<div class="sidebar-brand px-3 py-3">
+  {% if branding and branding.logo_url %}
+    <img
+      src="{{ branding.logo_url }}{% if branding.version %}?v={{ branding.version }}{% endif %}"
+      alt="Logo"
+      class="sidebar-logo"
+    >
   {% else %}
-    <div class="fw-semibold">Menu</div>
+    <div class="sidebar-logo-fallback">SV</div>
   {% endif %}
+
+  <div class="sidebar-title">
+    {{ branding.system_name if branding and branding.system_name else "SistemaVendas" }}
+    {% if emp %}
+      <div class="sidebar-subtitle">EMP {{ emp }}</div>
+    {% endif %}
+  </div>
 </div>
 
 <nav class="nav flex-column p-2">
@@ -20,7 +30,7 @@
   <a class="nav-link {% if path.startswith('/campanhas') and not path.startswith('/relatorios') %}active{% endif %}" href="{{ url_for('campanhas_qtd') }}">⭐ Campanhas (Qtd)</a>
   <a class="nav-link {% if path.startswith('/itens_parados') %}active{% endif %}" href="{{ url_for('itens_parados') }}">🧾 Itens Parados</a>
 
-  <div class="my-2 border-top"></div>
+  <div class="my-2 border-top border-light-subtle"></div>
 
   <a class="nav-link {% if path.startswith('/senha') %}active{% endif %}" href="{{ url_for('senha') }}">🔑 Trocar senha</a>
 
@@ -35,6 +45,6 @@
     <a class="nav-link {% if path.startswith('/admin/fechamento') %}active{% endif %}" href="{{ url_for('admin_fechamento_redirect') }}">✅ Fechamento</a>
   {% endif %}
 
-  <div class="my-2 border-top"></div>
+  <div class="my-2 border-top border-light-subtle"></div>
   <a class="nav-link text-danger" href="{{ url_for('logout') }}">🚪 Sair</a>
 </nav>
