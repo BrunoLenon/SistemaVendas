@@ -24,8 +24,8 @@
 }
 
 [data-theme="dark"]{
-  --bg-main: #0b1220;
-  --bg-card: #0f172a;
+  --bg-main: #00ff2a;
+  --bg-card: #ff00f2;
   --bg-soft: #111827;
   --border: rgba(255,255,255,.10);
 
