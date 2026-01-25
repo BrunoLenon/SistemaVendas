@@ -1,34 +1,144 @@
 
-:root {
-  --bg-main: #f5f7fa;
+/* =========================
+   Tema (Light/Dark) via CSS Variables
+   ========================= */
+
+:root{
+  --bg-main: #f6f7fb;
   --bg-card: #ffffff;
-  --text-main: #1f2933;
-  --text-muted: #6b7280;
+  --bg-soft: #f1f5f9;
+  --border: rgba(15, 23, 42, .12);
+
+  --text-main: #0f172a;
+  --text-muted: #475569;
+
+  --topbar-bg: #0b1220;
+  --topbar-border: rgba(255,255,255,.08);
+
+  --sidebar-bg: #0b1220;
+  --sidebar-text: rgba(255,255,255,.82);
+  --sidebar-muted: rgba(255,255,255,.60);
+  --sidebar-hover: rgba(255,255,255,.08);
+
   --primary: #2563eb;
 }
 
-[data-theme="dark"] {
-  --bg-main: #0f172a;
-  --bg-card: #111827;
+[data-theme="dark"]{
+  --bg-main: #0b1220;
+  --bg-card: #0f172a;
+  --bg-soft: #111827;
+  --border: rgba(255,255,255,.10);
+
   --text-main: #e5e7eb;
   --text-muted: #9ca3af;
+
+  --topbar-bg: #0b1220;
+  --topbar-border: rgba(255,255,255,.10);
+
+  --sidebar-bg: #0b1220;
+  --sidebar-text: rgba(255,255,255,.86);
+  --sidebar-muted: rgba(255,255,255,.62);
+  --sidebar-hover: rgba(255,255,255,.10);
+
   --primary: #3b82f6;
 }
 
-body {
-  background-color: var(--bg-main);
+html, body{
+  height: 100%;
+}
+
+body{
+  background: var(--bg-main) !important;
   color: var(--text-main);
 }
 
-.card {
-  background-color: var(--bg-card);
+/* topbar */
+.app-topbar{
+  background: var(--topbar-bg) !important;
+  border-bottom: 1px solid var(--topbar-border);
 }
 
-.text-muted {
+.app-brand-dot{
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--primary);
+  display: inline-block;
+}
+
+/* layout */
+.app-page{
+  max-width: 1200px;
+}
+
+/* sidebar (partials/sidebar.html usa classes do bootstrap; garantimos contraste) */
+.app-sidebar{
+  background: var(--sidebar-bg);
+  border-right: 1px solid var(--topbar-border);
+  min-height: calc(100vh - 56px);
+  border-radius: 14px;
+}
+
+.app-sidebar a,
+.app-sidebar .nav-link{
+  color: var(--sidebar-text) !important;
+}
+
+.app-sidebar .text-muted,
+.app-sidebar small,
+.app-sidebar .small{
+  color: var(--sidebar-muted) !important;
+}
+
+.app-sidebar .nav-link:hover{
+  background: var(--sidebar-hover);
+  border-radius: 10px;
+}
+
+/* cards / tables */
+.card, .modal-content, .dropdown-menu{
+  background: var(--bg-card) !important;
+  color: var(--text-main);
+  border-color: var(--border) !important;
+  border-radius: 14px;
+}
+
+.table{
+  color: var(--text-main);
+}
+
+.table thead th{
+  color: var(--text-muted);
+  border-bottom-color: var(--border) !important;
+}
+
+.table td, .table th{
+  border-top-color: var(--border) !important;
+}
+
+/* texto auxiliar (corrige "sumindo" no fundo escuro) */
+.text-muted, .text-secondary{
   color: var(--text-muted) !important;
 }
 
-.btn-primary {
-  background-color: var(--primary);
+/* inputs */
+.form-control, .form-select{
+  background: var(--bg-card);
+  color: var(--text-main);
+  border-color: var(--border);
+}
+.form-control::placeholder{
+  color: var(--text-muted);
+  opacity: .9;
+}
+
+/* botões */
+.btn-primary{
+  background: var(--primary);
   border-color: var(--primary);
+}
+
+/* badges/pills comuns */
+.badge, .btn, .nav-pills .nav-link{
+  border-radius: 999px;
 }
