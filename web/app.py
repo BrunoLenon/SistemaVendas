@@ -256,20 +256,11 @@ def inject_branding():
 
 # -------------------- Configurações / Branding (ADMIN) --------------------
 
-@app.get('/')
-def index():
-    # Página inicial: se estiver logado vai para o dashboard, senão vai para o login
-    if session.get('user_id') or session.get('role'):
-        return redirect(url_for('dashboard'))
-    return redirect(url_for('login'))
-
-@app.get('/healthz')
-def healthz():
-    return {'status': 'ok'}
-
 @app.route('/admin/configuracoes', methods=['GET', 'POST'])
 def admin_configuracoes():
-    _admin_required()
+    red = _admin_required()
+    if red:
+        return red
 
     msgs: list[str] = []
     today = date.today()
@@ -543,10 +534,14 @@ def _login_required():
     return None
 
 def _admin_required():
+    """Garante acesso ADMIN.
+
+    Retorna um redirect quando não for admin; caso contrário retorna None.
+    """
     if _role() != "admin":
         flash("Acesso restrito ao administrador.", "warning")
-        audit("login_success", user_id=u.id)
-    return redirect(url_for("dashboard"))
+        audit("admin_forbidden")
+        return redirect(url_for("dashboard"))
     return None
 
 def _get_vendedores_db(role: str, emp_usuario: str | None) -> list[str]:
@@ -2634,6 +2629,14 @@ def relatorio_cidades_clientes():
 @app.get("/relatorios/cliente-marcas")
 def relatorio_cliente_marcas_api():
     """Retorna JSON com participação por marca para um cliente (RAZAO_NORM) no período."""
+    red = _login_required()
+    if red:
+        return red
+
+    role = (_role() or "").strip().lower()
+    emp_usuario = _emp()
+    vendedor_logado = (_usuario_logado() or "").strip().upper()
+
     emp = (request.args.get("emp") or "").strip()
     razao_norm = (request.args.get("razao_norm") or "").strip()
     mes = int(request.args.get("mes") or 0)
@@ -2641,59 +2644,68 @@ def relatorio_cliente_marcas_api():
     vendedor = (request.args.get("vendedor") or "").strip().upper()
 
     if not emp or not razao_norm or not mes or not ano:
-        return jsonify({"error":"Parâmetros inválidos"}), 400
+        return jsonify({"error": "Parâmetros inválidos"}), 400
 
-    try:
-        emp_int = int(emp)
-    except Exception:
-        return jsonify({"error":"EMP inválida"}), 400
+    # Permissões
+    if role == "supervisor":
+        if str(emp_usuario or "").strip() and str(emp) != str(emp_usuario):
+            return jsonify({"error": "Acesso negado"}), 403
+    elif role == "vendedor":
+        vendedor = vendedor_logado  # vendedor não pode consultar outro vendedor
 
-    base = db.session.query(Venda).filter(
-        Venda.emp == emp_int,
-        Venda.razao_norm == razao_norm,
-        extract("month", Venda.movimento) == mes,
-        extract("year", Venda.movimento) == ano,
-    )
-    if vendedor:
-        base = base.filter(Venda.vendedor == vendedor)
+    with SessionLocal() as db:
+        base = db.query(Venda).filter(
+            Venda.emp == str(emp),
+            Venda.razao_norm == razao_norm,
+            extract("month", Venda.movimento) == mes,
+            extract("year", Venda.movimento) == ano,
+        )
+        if vendedor:
+            base = base.filter(func.upper(Venda.vendedor) == vendedor)
 
-    signed_val = case(
-        (Venda.mov_tipo_movto.in_(["DS", "CA"]), -Venda.valor_total),
-        else_=Venda.valor_total,
-    )
+        signed_val = case(
+            (Venda.mov_tipo_movto.in_(["DS", "CA"]), -Venda.valor_total),
+            else_=Venda.valor_total,
+        )
 
-    total = base.with_entities(func.coalesce(func.sum(signed_val), 0)).scalar() or 0
-    total = float(total)
+        total = float(base.with_entities(func.coalesce(func.sum(signed_val), 0)).scalar() or 0.0)
 
-    # Mix de itens do cliente (quantidade de itens únicos)
-    mix_itens = base.with_entities(func.count(func.distinct(Venda.mestre))).scalar() or 0
-    mix_itens = int(mix_itens)
+        mix_itens = int(base.with_entities(func.count(func.distinct(Venda.mestre))).scalar() or 0)
 
-    marcas_rows = base.with_entities(
-        Venda.marca.label("marca"),
-        func.coalesce(func.sum(signed_val), 0).label("valor_total"),
-        func.count(func.distinct(Venda.mestre)).label("mix_itens"),
-    ).group_by(Venda.marca).order_by(func.coalesce(func.sum(signed_val), 0).desc()).all()
+        marcas_rows = (
+            base.with_entities(
+                Venda.marca.label("marca"),
+                func.coalesce(func.sum(signed_val), 0).label("valor_total"),
+                func.count(func.distinct(Venda.mestre)).label("mix_itens"),
+            )
+            .group_by(Venda.marca)
+            .order_by(func.coalesce(func.sum(signed_val), 0).desc())
+            .all()
+        )
 
     marcas = []
     for r in marcas_rows:
-        v = float(r.valor_total or 0)
-        marcas.append({
-            "marca": r.marca or "SEM MARCA",
-            "valor_total": v,
-            "mix_itens": int(r.mix_itens or 0),
-            "percent": (v / total * 100.0) if total else 0.0,
-        })
+        v = float(r.valor_total or 0.0)
+        marcas.append(
+            {
+                "marca": r.marca or "SEM MARCA",
+                "valor_total": v,
+                "mix_itens": int(r.mix_itens or 0),
+                "percent": (v / total * 100.0) if total else 0.0,
+            }
+        )
 
-    return jsonify({
-        "emp": emp_int,
-        "razao_norm": razao_norm,
-        "ano": ano,
-        "mes": mes,
-        "total": total,
-        "mix_itens": mix_itens,
-        "marcas": marcas,
-    })
+    return jsonify(
+        {
+            "emp": str(emp),
+            "razao_norm": razao_norm,
+            "ano": ano,
+            "mes": mes,
+            "total": total,
+            "mix_itens": mix_itens,
+            "marcas": marcas,
+        }
+    )
 
 
 
@@ -3073,7 +3085,9 @@ def admin_itens_parados():
 
 @app.route('/admin/resumos_periodo', methods=['GET', 'POST'])
 def admin_resumos_periodo():
-    _admin_required()
+    red = _admin_required()
+    if red:
+        return red
 
     # filtros
     emp = _emp_norm(request.values.get('emp', ''))
@@ -3265,7 +3279,9 @@ def admin_resumos_periodo():
 # O fechamento mensal hoje é feito dentro da tela de resumos por período.
 @app.get('/admin/fechamento')
 def admin_fechamento_redirect():
-    _admin_required()
+    red = _admin_required()
+    if red:
+        return red
     return redirect(url_for('admin_resumos_periodo'))
 
 
