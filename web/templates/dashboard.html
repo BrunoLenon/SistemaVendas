@@ -65,34 +65,99 @@
 {% endif %}
 
 
-    <div class="d-flex justify-content-between align-items-center mb-3">
-      <h3 class="m-0">
-        Dashboard — <span class="text-primary">{{ vendedor or usuario }}</span>
-        {% if role %}
-          <span class="badge text-bg-dark ms-2">{{ role|upper }}</span>
-        {% endif %}
-        {% if role and role|lower == "supervisor" and emp %}
-          <span class="badge text-bg-secondary ms-2">EMP {{ emp }}</span>
-        {% endif %}
-      </h3>
-      <div class="d-flex flex-wrap gap-2 mt-2">
-        {% if role and role|lower == "admin" %}
-          <a class="btn btn-sm app-action" href="/admin/usuarios">Usuários</a>
-          <a class="btn btn-sm app-action" href="/admin/importar">Importar</a>
-          <a class="btn btn-sm app-action" href="/admin/itens_parados">Itens parados (Admin)</a>
-          <a class="btn btn-sm app-action" href="/admin/resumos_periodo">Resumos (Ano passado)</a>
-          <a class="btn btn-sm app-action" href="/admin/campanhas">Campanhas (Admin)</a>
-        {% endif %}
-        <a class="btn btn-sm app-action" href="/itens_parados">Itens parados</a>
-        <a class="btn btn-sm app-action" href="/campanhas">Campanhas</a>
-        <a class="btn btn-sm app-action" href="/relatorios/campanhas">Relatório Campanhas</a>
-        <a class="btn btn-sm app-action" href="/relatorios/cidades-clientes">Cidades & Clientes</a>
-        <a class="btn btn-outline-primary btn-sm" href="/senha">Trocar senha</a>
-        {% if role and role|lower in ['admin', 'administrador'] %}
-        <a class="btn btn-outline-success btn-sm" href="/admin/configuracoes">Configurações</a>
-        {% endif %}
-        <a class="btn btn-outline-secondary btn-sm" href="/logout">Sair</a>
+    <div class="app-page-header d-flex flex-wrap align-items-start justify-content-between gap-3 mb-3">
+  <div>
+    <div class="d-flex align-items-center flex-wrap gap-2">
+      <h1 class="h3 m-0">Dashboard</h1>
+      {% if role %}<span class="badge text-bg-dark">{{ role|upper }}</span>{% endif %}
+      {% if role and role|lower == "supervisor" and emp %}<span class="badge text-bg-secondary">EMP {{ emp }}</span>{% endif %}
+    </div>
+    <div class="text-muted mt-1">
+      Visualizando: <strong class="text-body">{{ vendedor or usuario }}</strong>
+      <span class="mx-1">•</span>
+      Período: <strong class="text-body">{{ "%02d"|format(mes) }}/{{ ano }}</strong>
+    </div>
+    {% if mensagem_role %}
+      <div class="alert alert-warning py-2 px-3 mt-2 mb-0">{{ mensagem_role }}</div>
+    {% endif %}
+  </div>
+  <div class="d-flex align-items-center gap-2">
+    <div class="dropdown">
+  <button class="btn btn-sm btn-primary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+    ⚡ Ações rápidas
+  </button>
+  <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+    {% if role and role|lower == "admin" %}
+      <li><h6 class="dropdown-header">Admin</h6></li>
+      <li><a class="dropdown-item" href="/admin/usuarios">👥 Usuários</a></li>
+      <li><a class="dropdown-item" href="/admin/importar">📥 Importar vendas</a></li>
+      <li><a class="dropdown-item" href="/admin/itens_parados">🧊 Itens parados (Admin)</a></li>
+      <li><a class="dropdown-item" href="/admin/resumos_periodo">🗓️ Resumos (Ano passado)</a></li>
+      <li><a class="dropdown-item" href="/admin/campanhas">🎯 Campanhas (Admin)</a></li>
+      <li><hr class="dropdown-divider"></li>
+    {% endif %}
+    <li><a class="dropdown-item" href="/itens_parados">🧊 Itens parados</a></li>
+    <li><a class="dropdown-item" href="/campanhas">🎯 Campanhas</a></li>
+    <li><a class="dropdown-item" href="/relatorios/campanhas">📊 Relatório Campanhas</a></li>
+    <li><a class="dropdown-item" href="/relatorios/cidades-clientes">🏙️ Cidades &amp; Clientes</a></li>
+    <li><hr class="dropdown-divider"></li>
+    <li><a class="dropdown-item" href="/senha">🔑 Trocar senha</a></li>
+    {% if role and role|lower == "admin" %}
+      <li><a class="dropdown-item" href="/admin/configuracoes">⚙️ Configurações</a></li>
+    {% endif %}
+    <li><a class="dropdown-item text-danger" href="/logout">🚪 Sair</a></li>
+  </ul>
+</div>
+  </div>
+</div>
+
+{% if dados %}
+  <div class="row g-3 mb-4">
+    <div class="col-12 col-sm-6 col-lg-3">
+      <div class="card shadow-sm border-0 h-100">
+        <div class="card-body">
+          <div class="text-muted small">💰 Valor líquido</div>
+          <div class="fs-4 fw-bold">R$ {{ dados.valor_atual|brl }}</div>
+          <div class="text-muted small mt-1">Mês anterior: R$ {{ dados.valor_mes_anterior|brl }}</div>
+        </div>
       </div>
+    </div>
+    <div class="col-12 col-sm-6 col-lg-3">
+      <div class="card shadow-sm border-0 h-100">
+        <div class="card-body">
+          <div class="text-muted small">📈 Crescimento</div>
+          <div class="fs-4 fw-bold">
+            {% if dados.crescimento is not none %}
+              {{ (dados.crescimento*100)|round(2) }}%
+            {% else %}
+              —
+            {% endif %}
+          </div>
+          <div class="text-muted small mt-1">Ano passado: R$ {{ dados.valor_ano_passado|brl }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-12 col-sm-6 col-lg-3">
+      <div class="card shadow-sm border-0 h-100">
+        <div class="card-body">
+          <div class="text-muted small">🧺 Mix (itens)</div>
+          <div class="fs-4 fw-bold">{{ dados.mix_atual|default(0) }}</div>
+          <div class="text-muted small mt-1">Ano passado: {{ dados.mix_ano_passado|default(0) }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-12 col-sm-6 col-lg-3">
+      <div class="card shadow-sm border-0 h-100">
+        <div class="card-body">
+          <div class="text-muted small">↩️ Devolução</div>
+          <div class="fs-4 fw-bold">{{ dados.pct_devolucao|default(0)|round(2) }}%</div>
+          <div class="text-muted small mt-1">Devolvido: R$ {{ dados.valor_devolvido|brl }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+{% endif %}
+</div>
     </div>
 
     {% if role and role|lower == "admin" %}

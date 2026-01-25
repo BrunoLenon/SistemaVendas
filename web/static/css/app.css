@@ -209,3 +209,8 @@ body{
   color: #fff;
   background: rgba(59,130,246,.25);
 }
+
+
+/* Page header */
+.app-page-header{padding-bottom:.25rem;}
+.app-page-header .badge{text-transform:uppercase; letter-spacing:.04em;}

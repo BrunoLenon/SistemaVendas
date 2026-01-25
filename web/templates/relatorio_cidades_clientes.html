@@ -14,6 +14,16 @@
     .rank{width:42px}
     .pct{min-width:88px}
     .btn-ghost{background:rgba(0,0,0,.03);border:1px solid rgba(0,0,0,.08)}
+
+.mobile-list .mitem{border:1px solid rgba(0,0,0,.08); border-radius:14px; padding:.75rem .85rem; background:var(--bg-card);}
+[data-theme="dark"] .mobile-list .mitem{border-color: rgba(255,255,255,.10);}
+.mobile-list .mitem .title{font-weight:700;}
+.mobile-list .mitem .meta{font-size:.85rem; color:rgba(0,0,0,.58);}
+[data-theme="dark"] .mobile-list .mitem .meta{color: rgba(255,255,255,.65);}
+.mobile-list .kv{display:flex; justify-content:space-between; gap:.75rem; font-size:.9rem;}
+.mobile-list .kv .k{color:rgba(0,0,0,.58);}
+[data-theme="dark"] .mobile-list .kv .k{color: rgba(255,255,255,.65);}
+
 </style>
 {% endblock %}
 
@@ -116,7 +126,27 @@
                 </button>
               </div>
 
-              <div class="table-responsive">
+              
+<!-- Mobile cards (Top cidades) -->
+<div class="mobile-list d-md-none">
+  {% for r in c.cidades_preview %}
+    <div class="mitem mb-2">
+      <div class="d-flex justify-content-between align-items-start gap-2">
+        <div>
+          <div class="title">{{ loop.index }}. {{ r.cidade }}</div>
+        </div>
+        <div class="text-end fw-semibold">R$ {{ r.valor|brl }}</div>
+      </div>
+      <div class="kv mt-2">
+        <div><span class="k">% EMP</span></div>
+        <div class="fw-semibold">{{ r.pct|round(2) }}%</div>
+      </div>
+    </div>
+  {% endfor %}
+</div>
+
+<div class="table-responsive d-none d-md-block">
+
                 <table class="table table-sm align-middle mb-0">
                   <thead>
                     <tr class="text-muted small">
@@ -144,7 +174,24 @@
 
               <div class="collapse mt-3" id="cidades-{{ loop.index }}">
                 <div class="fw-semibold mb-2">Ranking completo (até 50)</div>
-                <div class="table-responsive">
+                
+<!-- Mobile cards (Ranking cidades) -->
+<div class="mobile-list d-md-none">
+  {% for r in c.cidades_full %}
+    <div class="mitem mb-2">
+      <div class="d-flex justify-content-between align-items-start gap-2">
+        <div class="title">{{ loop.index }}. {{ r.cidade }}</div>
+        <div class="text-end fw-semibold">R$ {{ r.valor|brl }}</div>
+      </div>
+      <div class="kv mt-2">
+        <div><span class="k">% EMP</span></div>
+        <div class="fw-semibold">{{ r.pct|round(2) }}%</div>
+      </div>
+    </div>
+  {% endfor %}
+</div>
+
+<div class="table-responsive d-none d-md-block">
                   <table class="table table-sm align-middle">
                     <thead>
                       <tr class="text-muted small">
@@ -230,7 +277,24 @@
             </button>
           </div>
 
-          <div class="table-responsive">
+          
+<!-- Mobile cards (Top clientes) -->
+<div class="mobile-list d-md-none">
+  {% for r in c.clientes_preview %}
+    <div class="mitem mb-2">
+      <div class="d-flex justify-content-between align-items-start gap-2">
+        <div class="title">{{ loop.index }}. {{ r.cliente }}</div>
+        <div class="text-end fw-semibold">R$ {{ r.valor|brl }}</div>
+      </div>
+      <div class="kv mt-2">
+        <div><span class="k">Qtd</span></div>
+        <div class="fw-semibold">{{ r.qtd }}</div>
+      </div>
+    </div>
+  {% endfor %}
+</div>
+
+<div class="table-responsive d-none d-md-block">
             <table class="table table-sm align-middle mb-0">
               <thead>
                 <tr class="text-muted small">
@@ -258,7 +322,27 @@
 
           <div class="collapse mt-3" id="clientes-{{ loop.index }}">
             <div class="fw-semibold mb-2">Ranking completo (até 50)</div>
-            <div class="table-responsive">
+            
+<!-- Mobile cards (Ranking clientes) -->
+<div class="mobile-list d-md-none">
+  {% for r in c.clientes_full %}
+    <div class="mitem mb-2">
+      <div class="d-flex justify-content-between align-items-start gap-2">
+        <div class="title">{{ loop.index }}. {{ r.cliente }}</div>
+        <div class="text-end fw-semibold">R$ {{ r.valor|brl }}</div>
+      </div>
+      <div class="kv mt-2">
+        <div><span class="k">Qtd</span></div>
+        <div class="fw-semibold">{{ r.qtd }}</div>
+      </div>
+      <div class="mt-2">
+        <button class="btn btn-sm btn-outline-primary" type="button" onclick="openClienteModal('{{ c.emp }}','{{ r.cliente|e }}','{{ mes }}','{{ ano }}')">Ver marcas</button>
+      </div>
+    </div>
+  {% endfor %}
+</div>
+
+<div class="table-responsive d-none d-md-block">
               <table class="table table-sm align-middle">
                 <thead>
                   <tr class="text-muted small">
