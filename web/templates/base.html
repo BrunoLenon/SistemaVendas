@@ -73,24 +73,33 @@
     </div>
   </nav>
 
+  {#
+    IMPORTANTE: o Jinja NÃO permite definir o mesmo block duas vezes.
+    Então abrimos os wrappers (layout logado vs. público) e colocamos o
+    {% block content %} apenas UMA vez, no meio.
+  #}
+
   {% if is_logged %}
     <div class="container-fluid">
       <div class="row">
         <aside class="col-lg-2 col-xl-2 d-none d-lg-block app-sidebar py-3">
           {% include "partials/sidebar.html" %}
         </aside>
-
         <main class="col-12 col-lg-10 col-xl-10 py-3">
           <div class="app-page">
-            {% block content %}{% endblock %}
+  {% else %}
+    <main class="py-4">
+      <div class="container" style="max-width:980px;">
+  {% endif %}
+
+  {% block content %}{% endblock %}
+
+  {% if is_logged %}
           </div>
         </main>
       </div>
     </div>
   {% else %}
-    <main class="py-4">
-      <div class="container" style="max-width:980px;">
-        {% block content %}{% endblock %}
       </div>
     </main>
   {% endif %}
