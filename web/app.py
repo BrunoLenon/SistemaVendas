@@ -2602,37 +2602,38 @@ def create_app() -> Flask:
             vendedor = vendedor_logado
 
         # Query base
-        base = db.session.query(Venda).filter(
-            Venda.emp == str(emp),
-            Venda.razao_norm == razao_norm,
-            extract("month", Venda.movimento) == mes,
-            extract("year", Venda.movimento) == ano,
-        )
-        if vendedor:
-            base = base.filter(func.upper(Venda.vendedor) == vendedor)
-
-        signed_val = case(
-            (Venda.mov_tipo_movto.in_(["DS", "CA"]), -Venda.valor_total),
-            else_=Venda.valor_total,
-        )
-
-        total = base.with_entities(func.coalesce(func.sum(signed_val), 0)).scalar() or 0
-        total = float(total)
-
-        itens_unicos = base.with_entities(func.count(func.distinct(Venda.mestre))).scalar() or 0
-        itens_unicos = int(itens_unicos)
-
-        itens_rows = (
-            base.with_entities(
-                Venda.mestre.label("mestre"),
-                Venda.descricao.label("descricao"),
-                func.coalesce(func.sum(signed_val), 0).label("valor_total"),
+        with SessionLocal() as db:
+            base = db.query(Venda).filter(
+                Venda.emp == str(emp),
+                Venda.razao_norm == razao_norm,
+                extract("month", Venda.movimento) == mes,
+                extract("year", Venda.movimento) == ano,
             )
-            .group_by(Venda.mestre, Venda.descricao)
-            .order_by(func.coalesce(func.sum(signed_val), 0).desc())
-            .limit(200)
-            .all()
-        )
+            if vendedor:
+                base = base.filter(func.upper(Venda.vendedor) == vendedor)
+
+            signed_val = case(
+                (Venda.mov_tipo_movto.in_(["DS", "CA"]), -Venda.valor_total),
+                else_=Venda.valor_total,
+            )
+
+            total = base.with_entities(func.coalesce(func.sum(signed_val), 0)).scalar() or 0
+            total = float(total)
+
+            itens_unicos = base.with_entities(func.count(func.distinct(Venda.mestre))).scalar() or 0
+            itens_unicos = int(itens_unicos)
+
+            itens_rows = (
+                base.with_entities(
+                    Venda.mestre.label("mestre"),
+                    Venda.descricao.label("descricao"),
+                    func.coalesce(func.sum(signed_val), 0).label("valor_total"),
+                )
+                .group_by(Venda.mestre, Venda.descricao)
+                .order_by(func.coalesce(func.sum(signed_val), 0).desc())
+                .limit(200)
+                .all()
+            )
 
         itens = []
         for r in itens_rows:
