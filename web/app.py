@@ -47,6 +47,109 @@ def create_app() -> Flask:
     # Sessão expira após 1h sem atividade
     app.permanent_session_lifetime = timedelta(hours=1)
 
+
+# ==============================
+# Segurança & Performance (base)
+# ==============================
+# Detecta produção (Render/FLASK_ENV)
+IS_PROD = bool(os.getenv("RENDER")) or (os.getenv("FLASK_ENV") == "production")
+
+# Respeitar X-Forwarded-* (https/ip real) atrás do Render
+try:
+    from werkzeug.middleware.proxy_fix import ProxyFix
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+except Exception:
+    pass
+
+# Cookies de sessão mais seguros
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_SECURE=IS_PROD,  # em dev/local pode ser False
+)
+
+# Rate limit simples (memória) para reduzir brute-force/abuso
+from collections import defaultdict
+_rl_store: dict[str, list[float]] = defaultdict(list)
+
+def _client_ip() -> str:
+    # ProxyFix + X-Forwarded-For
+    xff = (request.headers.get("X-Forwarded-For") or "").split(",")[0].strip()
+    return xff or (request.remote_addr or "unknown")
+
+def _rate_limit(bucket: str, limit: int, window_sec: int) -> bool:
+    """Retorna True se pode seguir, False se estourou."""
+    now = datetime.utcnow().timestamp()
+    key = f"{bucket}:{_client_ip()}"
+    arr = _rl_store[key]
+    # remove entradas fora da janela
+    cutoff = now - window_sec
+    i = 0
+    while i < len(arr) and arr[i] < cutoff:
+        i += 1
+    if i:
+        del arr[:i]
+    if len(arr) >= limit:
+        return False
+    arr.append(now)
+    return True
+
+def audit(event: str, **data):
+    """Log estruturado (vai para os logs do Render)."""
+    payload = {
+        "event": event,
+        "ts": datetime.utcnow().isoformat() + "Z",
+        "ip": _client_ip(),
+        "user": session.get("usuario"),
+        "role": session.get("role"),
+        **data,
+    }
+    try:
+        app.logger.info(json.dumps(payload, ensure_ascii=False))
+    except Exception:
+        app.logger.info(str(payload))
+
+@app.before_request
+def _security_rate_limits():
+    # limita tentativas de login (POST)
+    if request.path == "/login" and request.method == "POST":
+        if not _rate_limit("login", limit=8, window_sec=60):
+            audit("login_rate_limited")
+            return render_template("login.html", erro="Muitas tentativas. Aguarde 1 minuto e tente novamente."), 429
+
+    # limita endpoints de relatórios (evita abuso e picos)
+    if request.path.startswith("/relatorios/"):
+        if not _rate_limit("reports", limit=120, window_sec=60):
+            audit("reports_rate_limited", path=request.path)
+            return ("Muitas requisições. Aguarde um pouco e tente novamente.", 429)
+
+@app.after_request
+def _security_headers(resp):
+    # headers de segurança básicos
+    resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+    resp.headers.setdefault("X-Frame-Options", "DENY")
+    resp.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    resp.headers.setdefault("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
+
+    # CSP simples (compatível com Bootstrap CDN + inline styles/scripts existentes)
+    csp = (
+        "default-src 'self'; "
+        "base-uri 'self'; "
+        "frame-ancestors 'none'; "
+        "form-action 'self'; "
+        "img-src 'self' data: https:; "
+        "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+        "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+        "connect-src 'self' https:; "
+        "font-src 'self' https://cdn.jsdelivr.net data:;"
+    )
+    resp.headers.setdefault("Content-Security-Policy", csp)
+
+    # HSTS somente em produção
+    if IS_PROD:
+        resp.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+    return resp
+
     # --------------------------
     # Filtro Jinja: formato brasileiro
     # --------------------------
@@ -432,7 +535,8 @@ def create_app() -> Flask:
     def _admin_required():
         if _role() != "admin":
             flash("Acesso restrito ao administrador.", "warning")
-            return redirect(url_for("dashboard"))
+            audit("login_success", user_id=u.id)
+        return redirect(url_for("dashboard"))
         return None
 
     def _get_vendedores_db(role: str, emp_usuario: str | None) -> list[str]:
@@ -1131,11 +1235,13 @@ def create_app() -> Flask:
         senha = request.form.get("senha") or ""
 
         if not vendedor or not senha:
+            audit("login_failed", reason="missing_fields", username=vendedor)
             return render_template("login.html", erro="Informe usuário e senha.")
 
         with SessionLocal() as db:
             u = db.query(Usuario).filter(Usuario.username == vendedor).first()
             if not u or not check_password_hash(u.senha_hash, senha):
+                audit("login_failed", reason="invalid_credentials", username=vendedor)
                 return render_template("login.html", erro="Usuário ou senha inválidos.")
 
             session["user_id"] = u.id
@@ -1150,6 +1256,7 @@ def create_app() -> Flask:
 
     @app.get("/logout")
     def logout():
+        audit("logout")
         session.clear()
         return redirect(url_for("login"))
 
