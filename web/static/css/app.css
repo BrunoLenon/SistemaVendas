@@ -69,6 +69,7 @@ body{
 /* layout */
 .app-page{
   max-width: 1200px;
+  margin: 0 auto;
 }
 
 /* sidebar (partials/sidebar.html usa classes do bootstrap; garantimos contraste) */
@@ -139,6 +140,28 @@ body{
 }
 
 /* badges/pills comuns */
-.badge, .btn, .nav-pills .nav-link{
-  border-radius: 999px;
+.badge{border-radius:999px;}
+.btn{border-radius:12px;}
+.nav-pills .nav-link{border-radius:999px;}
+
+
+/* Modern action chips (atalhos) */
+.app-action{
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text-main) !important;
+  padding: .4rem .75rem;
+}
+.app-action:hover{
+  filter: brightness(0.98);
+}
+
+[data-theme="dark"] .btn-outline-dark,
+[data-theme="dark"] .btn-outline-secondary{
+  color: var(--text-main) !important;
+  border-color: var(--border) !important;
+}
+[data-theme="dark"] .btn-outline-dark:hover,
+[data-theme="dark"] .btn-outline-secondary:hover{
+  background: var(--bg-soft) !important;
 }

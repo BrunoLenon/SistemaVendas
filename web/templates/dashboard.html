@@ -75,18 +75,18 @@
           <span class="badge text-bg-secondary ms-2">EMP {{ emp }}</span>
         {% endif %}
       </h3>
-      <div class="d-flex gap-2">
+      <div class="d-flex flex-wrap gap-2 mt-2">
         {% if role and role|lower == "admin" %}
-          <a class="btn btn-outline-dark btn-sm" href="/admin/usuarios">Usuários</a>
-          <a class="btn btn-outline-dark btn-sm" href="/admin/importar">Importar</a>
-          <a class="btn btn-outline-dark btn-sm" href="/admin/itens_parados">Itens parados (Admin)</a>
-          <a class="btn btn-outline-dark btn-sm" href="/admin/resumos_periodo">Resumos (Ano passado)</a>
-          <a class="btn btn-outline-dark btn-sm" href="/admin/campanhas">Campanhas (Admin)</a>
+          <a class="btn btn-sm app-action" href="/admin/usuarios">Usuários</a>
+          <a class="btn btn-sm app-action" href="/admin/importar">Importar</a>
+          <a class="btn btn-sm app-action" href="/admin/itens_parados">Itens parados (Admin)</a>
+          <a class="btn btn-sm app-action" href="/admin/resumos_periodo">Resumos (Ano passado)</a>
+          <a class="btn btn-sm app-action" href="/admin/campanhas">Campanhas (Admin)</a>
         {% endif %}
-        <a class="btn btn-outline-dark btn-sm" href="/itens_parados">Itens parados</a>
-        <a class="btn btn-outline-dark btn-sm" href="/campanhas">Campanhas</a>
-        <a class="btn btn-outline-dark btn-sm" href="/relatorios/campanhas">Relatório Campanhas</a>
-        <a class="btn btn-outline-dark btn-sm" href="/relatorios/cidades-clientes">Cidades & Clientes</a>
+        <a class="btn btn-sm app-action" href="/itens_parados">Itens parados</a>
+        <a class="btn btn-sm app-action" href="/campanhas">Campanhas</a>
+        <a class="btn btn-sm app-action" href="/relatorios/campanhas">Relatório Campanhas</a>
+        <a class="btn btn-sm app-action" href="/relatorios/cidades-clientes">Cidades & Clientes</a>
         <a class="btn btn-outline-primary btn-sm" href="/senha">Trocar senha</a>
         {% if role and role|lower in ['admin', 'administrador'] %}
         <a class="btn btn-outline-success btn-sm" href="/admin/configuracoes">Configurações</a>

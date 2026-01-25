@@ -147,7 +147,7 @@
                     <form method="post" class="d-inline">
                       <input type="hidden" name="acao" value="toggle">
                       <input type="hidden" name="campanha_id" value="{{ c.id }}">
-                      <button class="btn btn-outline-dark btn-sm" type="submit">Ativar/Desativar</button>
+                      <button class="btn btn-sm app-action" type="submit">Ativar/Desativar</button>
                     </form>
                     <form method="post" class="d-inline" onsubmit="return confirm('Remover esta campanha?');">
                       <input type="hidden" name="acao" value="remover">
@@ -215,7 +215,7 @@
                     <form method="post" class="d-inline">
                       <input type="hidden" name="acao" value="pagar">
                       <input type="hidden" name="resultado_id" value="{{ r.id }}">
-                      <button class="btn btn-outline-dark btn-sm" type="submit">Marcar Pago/Pendente</button>
+                      <button class="btn btn-sm app-action" type="submit">Marcar Pago/Pendente</button>
                     </form>
                   </td>
                 </tr>
