@@ -40,13 +40,11 @@ from db import (
 )
 from importar_excel import importar_planilha
 
-
-def create_app() -> Flask:
-    app = Flask(__name__, template_folder="templates")
-    app.secret_key = os.getenv("SECRET_KEY", "dev")
-    # Sessão expira após 1h sem atividade
-    app.permanent_session_lifetime = timedelta(hours=1)
-
+# Flask app (Render/Gunicorn expects `app` at module level: web/app.py -> app:app)
+app = Flask(__name__, template_folder="templates")
+app.secret_key = os.getenv("SECRET_KEY", "dev")
+# Sessão expira após 1h sem atividade
+app.permanent_session_lifetime = timedelta(hours=1)
 
 # ==============================
 # Segurança & Performance (base)
@@ -3467,4 +3465,3 @@ def _security_headers(resp):
     return app
 
 
-app = create_app()
