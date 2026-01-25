@@ -9,7 +9,7 @@
   --bg-soft: #f1f5f9;
   --border: rgba(15, 23, 42, .12);
 
-  --text-main: #0f172a;
+  --text-main: #d47201;
   --text-muted: #475569;
 
   --topbar-bg: #b3bac9;
@@ -24,8 +24,8 @@
 }
 
 [data-theme="dark"]{
-  --bg-main: #00ff2a;
-  --bg-card: #ff00f2;
+  --bg-main: #d8f7dd;
+  --bg-card: #0f172a;
   --bg-soft: #111827;
   --border: rgba(255,255,255,.10);
 
@@ -38,7 +38,7 @@
   --sidebar-bg: #854d05;
   --sidebar-text: rgba(255,255,255,.86);
   --sidebar-muted: rgba(255,255,255,.62);
-  --sidebar-hover: rgba(255,255,255,.10);
+  --sidebar-hover: rgba(0, 255, 21, 0.1);
 
   --primary: #3b82f6;
 }
