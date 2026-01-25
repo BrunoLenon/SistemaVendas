@@ -283,7 +283,7 @@
   {% for r in c.clientes_preview %}
     <div class="mitem mb-2">
       <div class="d-flex justify-content-between align-items-start gap-2">
-        <div class="title">{{ loop.index }}. {{ r.cliente }}</div>
+        <div class="title"><a href="javascript:void(0)" class="client-row text-decoration-none" tabindex="0" data-emp="{{ c.emp }}" data-razao="{{ r.razao_norm }}" data-label="{{ r.razao_label }}" data-valor="{{ r.valor_total }}">{{ loop.index }}. {{ r.razao_label }}</a></div>
         <div class="text-end fw-semibold">R$ {{ r.valor|brl }}</div>
       </div>
       <div class="kv mt-2">
@@ -308,7 +308,7 @@
                 {% for r in c.clientes_preview %}
                 <tr>
                   <td class="text-muted">{{ loop.index }}</td>
-                  <td class="fw-semibold">{{ r.razao_label }}</td>
+                  <td class="fw-semibold"><a href="javascript:void(0)" class="client-row text-decoration-none" tabindex="0" data-emp="{{ c.emp }}" data-razao="{{ r.razao_norm }}" data-label="{{ r.razao_label }}" data-valor="{{ r.valor_total }}">{{ r.razao_label }}</a></td>
                   <td class="text-end">R$ {{ "{:,.2f}".format(r.valor_total).replace(",", "X").replace(".", ",").replace("X", ".") }}</td>
                   <td class="text-end">{{ "{:,.0f}".format(r.mix_itens).replace(",", ".") }}</td>
                 </tr>
@@ -328,15 +328,12 @@
   {% for r in c.clientes_full %}
     <div class="mitem mb-2">
       <div class="d-flex justify-content-between align-items-start gap-2">
-        <div class="title">{{ loop.index }}. {{ r.cliente }}</div>
+        <div class="title"><a href="javascript:void(0)" class="client-row text-decoration-none" tabindex="0" data-emp="{{ c.emp }}" data-razao="{{ r.razao_norm }}" data-label="{{ r.razao_label }}" data-valor="{{ r.valor_total }}">{{ loop.index }}. {{ r.razao_label }}</a></div>
         <div class="text-end fw-semibold">R$ {{ r.valor|brl }}</div>
       </div>
       <div class="kv mt-2">
         <div><span class="k">Qtd</span></div>
         <div class="fw-semibold">{{ r.qtd }}</div>
-      </div>
-      <div class="mt-2">
-        <button class="btn btn-sm btn-outline-primary" type="button" onclick="openClienteModal('{{ c.emp }}','{{ r.cliente|e }}','{{ mes }}','{{ ano }}')">Ver marcas</button>
       </div>
     </div>
   {% endfor %}
@@ -356,7 +353,7 @@
                   {% for r in c.clientes_full %}
                   <tr>
                     <td class="text-muted">{{ loop.index }}</td>
-                    <td class="fw-semibold">{{ r.razao_label }}</td>
+                    <td class="fw-semibold"><a href="javascript:void(0)" class="client-row text-decoration-none" tabindex="0" data-emp="{{ c.emp }}" data-razao="{{ r.razao_norm }}" data-label="{{ r.razao_label }}" data-valor="{{ r.valor_total }}">{{ r.razao_label }}</a></td>
                     <td class="text-end">R$ {{ "{:,.2f}".format(r.valor_total).replace(",", "X").replace(".", ",").replace("X", ".") }}</td>
                     <td class="text-end">{{ "{:,.0f}".format(r.mix_itens).replace(",", ".") }}</td>
                   </tr>
@@ -393,7 +390,7 @@
       <div class="modal-body">
         <div class="d-flex flex-wrap gap-2 mb-3">
           <span class="badge text-bg-primary" id="clientTotalBadge">Total: —</span>
-          <span class="badge text-bg-secondary" id="clientMixBadge">Mix itens: —</span>
+          <span class="badge text-bg-secondary" id="clientMixBadge">Itens únicos: —</span>
         </div>
 
         <div class="alert alert-info py-2 d-none" id="clientModalLoading">Carregando…</div>
@@ -403,20 +400,19 @@
           <table class="table table-sm align-middle">
             <thead>
               <tr>
-                <th>Marca</th>
-                <th class="text-end">Valor</th>
-                <th class="text-end">%</th>
-                <th class="text-end">Mix</th>
+                <th style="width:120px">Mestre</th>
+                <th>Descrição</th>
+                <th class="text-end" style="width:140px">Valor</th>
               </tr>
             </thead>
-            <tbody id="clientBrandsBody">
-              <tr><td class="text-muted" colspan="4">—</td></tr>
+            <tbody id="clientItemsBody">
+              <tr><td class="text-muted" colspan="3">—</td></tr>
             </tbody>
           </table>
         </div>
 
         <div class="small text-muted mt-2">
-          Dica: % = participação da marca no total do cliente no período filtrado.
+          Dica: lista de itens únicos comprados pelo cliente no período filtrado.
         </div>
       </div>
       <div class="modal-footer">
@@ -437,7 +433,7 @@
   const elSub = document.getElementById('clientModalSub');
   const elTotal = document.getElementById('clientTotalBadge');
   const elMix = document.getElementById('clientMixBadge');
-  const elBody = document.getElementById('clientBrandsBody');
+  const elBody = document.getElementById('clientItemsBody');
   const elLoading = document.getElementById('clientModalLoading');
   const elError = document.getElementById('clientModalError');
 
@@ -458,27 +454,26 @@
 
     show(elError,false);
     show(elLoading,true);
-    elBody.innerHTML = '<tr><td class="text-muted" colspan="4">Carregando…</td></tr>';
+    elBody.innerHTML = '<tr><td class="text-muted" colspan="3">Carregando…</td></tr>';
 
     const params = new URLSearchParams({emp: emp, razao_norm: razao, mes: mes, ano: ano, vendedor: vendedor});
-    const resp = await fetch('/relatorios/cliente-marcas?' + params.toString(), {headers: {'Accept':'application/json'}});
+    const resp = await fetch('/relatorios/cliente-itens?' + params.toString(), {headers: {'Accept':'application/json'}});
     if(!resp.ok) throw new Error('HTTP ' + resp.status);
     const data = await resp.json();
 
     elTotal.textContent = 'Total: ' + brl(data.total || 0);
-    elMix.textContent = 'Mix itens: ' + (data.mix_itens || 0);
+    elMix.textContent = 'Itens únicos: ' + (data.itens_unicos || 0);
 
-    if(!data.marcas || !data.marcas.length){
-      elBody.innerHTML = '<tr><td class="text-muted" colspan="4">Sem dados.</td></tr>';
+    if(!data.itens || !data.itens.length){
+      elBody.innerHTML = '<tr><td class="text-muted" colspan="3">Sem dados.</td></tr>';
       return;
     }
 
-    elBody.innerHTML = data.marcas.map(m => `
+    elBody.innerHTML = data.itens.map(it => `
       <tr>
-        <td>${(m.marca || 'SEM MARCA')}</td>
-        <td class="text-end">${brl(m.valor_total||0)}</td>
-        <td class="text-end">${pct(m.percent||0)}</td>
-        <td class="text-end">${m.mix_itens||0}</td>
+        <td class="fw-semibold">${(it.mestre || '')}</td>
+        <td>${(it.descricao || '')}</td>
+        <td class="text-end">${brl(it.valor_total||0)}</td>
       </tr>
     `).join('');
   }
@@ -487,12 +482,13 @@
     if(!modal) return;
     const emp = row.getAttribute('data-emp') || '';
     const razao = row.getAttribute('data-razao') || '';
+    const label = row.getAttribute('data-label') || '';
     const valor = parseFloat(row.getAttribute('data-valor') || '0') || 0;
 
-    elLabel.textContent = razao || 'Detalhes do cliente';
+    elLabel.textContent = label || 'Detalhes do cliente';
     elSub.textContent = `EMP ${emp} • Total (cliente): ${brl(valor)}`;
     elTotal.textContent = 'Total: —';
-    elMix.textContent = 'Mix itens: —';
+    elMix.textContent = 'Itens únicos: —';
 
     modal.show();
 
@@ -500,7 +496,7 @@
       console.error(err);
       show(elLoading,false);
       show(elError,true);
-      elBody.innerHTML = '<tr><td class="text-muted" colspan="4">Falha ao carregar.</td></tr>';
+      elBody.innerHTML = '<tr><td class="text-muted" colspan="3">Falha ao carregar.</td></tr>';
     });
   }
 

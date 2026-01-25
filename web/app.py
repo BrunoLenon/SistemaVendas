@@ -2564,7 +2564,95 @@ def create_app() -> Flask:
             "marcas": marcas,
         })
 
-    @app.route("/senha", methods=["GET", "POST"])
+    
+
+    ## Relatório (AJAX): cliente -> itens (modal)
+    @app.get("/relatorios/cliente-itens")
+    def relatorio_cliente_itens_api():
+        """Retorna JSON com itens únicos comprados por um cliente (RAZAO_NORM) no período.
+
+        Retorna:
+        - total: soma (com sinal) do valor_total no período
+        - itens_unicos: quantidade de itens únicos (distinct mestre)
+        - itens: lista de {mestre, descricao, valor_total}
+        """
+        red = _login_required()
+        if red:
+            return red
+
+        role = (_role() or "").strip().lower()
+        emp_usuario = _emp()
+        vendedor_logado = (_usuario_logado() or "").strip().upper()
+
+        emp = (request.args.get("emp") or "").strip()
+        razao_norm = (request.args.get("razao_norm") or "").strip()
+        mes = int(request.args.get("mes") or 0)
+        ano = int(request.args.get("ano") or 0)
+        vendedor = (request.args.get("vendedor") or "").strip().upper()
+
+        if not emp or not razao_norm or not mes or not ano:
+            return jsonify({"error": "Parâmetros inválidos"}), 400
+
+        # Permissões por perfil
+        if role == "supervisor":
+            if str(emp_usuario or "").strip() and str(emp) != str(emp_usuario):
+                return jsonify({"error": "Acesso negado"}), 403
+        elif role == "vendedor":
+            # vendedor só pode ver os próprios dados (e não pode trocar vendedor via query)
+            vendedor = vendedor_logado
+
+        # Query base
+        base = db.session.query(Venda).filter(
+            Venda.emp == str(emp),
+            Venda.razao_norm == razao_norm,
+            extract("month", Venda.movimento) == mes,
+            extract("year", Venda.movimento) == ano,
+        )
+        if vendedor:
+            base = base.filter(func.upper(Venda.vendedor) == vendedor)
+
+        signed_val = case(
+            (Venda.mov_tipo_movto.in_(["DS", "CA"]), -Venda.valor_total),
+            else_=Venda.valor_total,
+        )
+
+        total = base.with_entities(func.coalesce(func.sum(signed_val), 0)).scalar() or 0
+        total = float(total)
+
+        itens_unicos = base.with_entities(func.count(func.distinct(Venda.mestre))).scalar() or 0
+        itens_unicos = int(itens_unicos)
+
+        itens_rows = (
+            base.with_entities(
+                Venda.mestre.label("mestre"),
+                Venda.descricao.label("descricao"),
+                func.coalesce(func.sum(signed_val), 0).label("valor_total"),
+            )
+            .group_by(Venda.mestre, Venda.descricao)
+            .order_by(func.coalesce(func.sum(signed_val), 0).desc())
+            .limit(200)
+            .all()
+        )
+
+        itens = []
+        for r in itens_rows:
+            itens.append({
+                "mestre": (r.mestre or "").strip(),
+                "descricao": (r.descricao or "").strip(),
+                "valor_total": float(r.valor_total or 0.0),
+            })
+
+        return jsonify({
+            "emp": emp,
+            "razao_norm": razao_norm,
+            "ano": ano,
+            "mes": mes,
+            "total": total,
+            "itens_unicos": itens_unicos,
+            "itens": itens,
+        })
+
+@app.route("/senha", methods=["GET", "POST"])
     def senha():
         red = _login_required()
         if red:
