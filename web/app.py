@@ -3374,23 +3374,40 @@ def admin_usuarios_emp():
             try:
                 if acao == 'add':
                     user_id = int(request.form.get('user_id') or 0)
-                    emp = (request.form.get('emp') or '').strip()
-                    if not user_id or not emp:
-                        raise ValueError('Informe usuário e EMP.')
+                    # Aceita múltiplas EMPs no mesmo envio (separadas por vírgula, espaço ou quebra de linha)
+                    emps_raw = (request.form.get('emp') or '').strip()
+                    emps_multi = request.form.getlist('emps_multi') or []
+                    emps: list[str] = []
+                    if emps_raw:
+                        parts = re.split(r"[\s,;]+", emps_raw)
+                        emps.extend([p.strip() for p in parts if p and p.strip()])
+                    if emps_multi:
+                        emps.extend([str(e).strip() for e in emps_multi if str(e).strip()])
+                    # normaliza/únicos
+                    emps = sorted(set([e for e in emps if e]))
+
+                    if not user_id or not emps:
+                        raise ValueError('Informe usuário e ao menos 1 EMP.')
                     u = db.query(Usuario).filter(Usuario.id == user_id).first()
                     if not u:
                         raise ValueError('Usuário não encontrado.')
                     role = (getattr(u, 'role', '') or '').lower()
                     if role not in {'vendedor', 'supervisor'}:
                         raise ValueError('Somente vendedor/supervisor podem ter vínculo por EMP.')
-                    # upsert simples
-                    row = db.query(UsuarioEmp).filter(UsuarioEmp.usuario_id == user_id, UsuarioEmp.emp == emp).first()
-                    if row:
-                        row.ativo = True
-                    else:
-                        db.add(UsuarioEmp(usuario_id=user_id, emp=str(emp), ativo=True))
+
+                    # upsert simples (1..N EMPs)
+                    added = 0
+                    for emp in emps:
+                        row = db.query(UsuarioEmp).filter(UsuarioEmp.usuario_id == user_id, UsuarioEmp.emp == str(emp)).first()
+                        if row:
+                            if not row.ativo:
+                                row.ativo = True
+                                added += 1
+                        else:
+                            db.add(UsuarioEmp(usuario_id=user_id, emp=str(emp), ativo=True))
+                            added += 1
                     db.commit()
-                    ok = 'Vínculo adicionado.'
+                    ok = f'Vínculo(s) adicionado(s): {added}.'
 
                 elif acao == 'remove':
                     link_id = int(request.form.get('link_id') or 0)
@@ -3431,7 +3448,16 @@ def admin_usuarios_emp():
             for u in users
         ]
 
-    return render_template('admin_usuarios_emp.html', usuarios=usuarios_out, links=links_out, erro=erro, ok=ok)
+        # sugere EMPs existentes (para facilitar multi-vínculo)
+        emps_exist = (
+            db.query(func.distinct(Venda.emp))
+            .filter(Venda.emp.isnot(None))
+            .order_by(func.distinct(Venda.emp).asc())
+            .all()
+        )
+        emps_existentes = [str(x[0]).strip() for x in emps_exist if x and x[0] is not None and str(x[0]).strip()]
+
+    return render_template('admin_usuarios_emp.html', usuarios=usuarios_out, links=links_out, emps_existentes=emps_existentes, erro=erro, ok=ok)
 
 
 @app.get("/admin/cache/refresh")

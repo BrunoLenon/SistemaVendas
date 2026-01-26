@@ -33,10 +33,20 @@
         </select>
       </div>
       <div class="col-12 col-md-3">
-        <label class="form-label">EMP</label>
-        <input class="form-control" name="emp" placeholder="Ex: 101" required>
+        <label class="form-label">EMP(s)</label>
+        <input class="form-control" name="emp" placeholder="Ex: 101, 102, 103">
+        <div class="form-text">Você pode informar uma ou várias EMPs separadas por vírgula/space/linha.</div>
       </div>
       <div class="col-12 col-md-4">
+        <label class="form-label">Selecionar EMPs existentes (opcional)</label>
+        <select class="form-select" name="emps_multi" multiple size="3">
+          {% for e in (emps_existentes or []) %}
+            <option value="{{ e }}">{{ e }}</option>
+          {% endfor %}
+        </select>
+        <div class="form-text">Dica: use Ctrl/⌘ para selecionar mais de uma.</div>
+      </div>
+      <div class="col-12 col-md-12">
         <button class="btn btn-primary w-100" type="submit">Vincular</button>
       </div>
     </form>
