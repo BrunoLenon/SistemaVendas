@@ -3858,17 +3858,16 @@ def admin_resumos_periodo():
             q = q.filter(VendasResumoPeriodo.vendedor == vendedor)
         registros = q.order_by(VendasResumoPeriodo.vendedor.asc()).all()
 
-        # Resumos do mesmo período no ano passado (ano-1) para conferência/edição rápida
+        # Resumos do ano passado (ano-1) para conferência/edição rápida (TODOS os meses)
         ano_passado = ano - 1
         q2 = db.query(VendasResumoPeriodo).filter(
             VendasResumoPeriodo.ano == ano_passado,
-            VendasResumoPeriodo.mes == mes,
         )
         if emp:
             q2 = q2.filter(VendasResumoPeriodo.emp == emp)
         if vendedor:
             q2 = q2.filter(VendasResumoPeriodo.vendedor == vendedor)
-        resumos_ano_passado = q2.order_by(VendasResumoPeriodo.vendedor.asc()).all()
+        resumos_ano_passado = q2.order_by(VendasResumoPeriodo.mes.asc(), VendasResumoPeriodo.vendedor.asc()).all()
 
         # Sugestão rápida de vendedores (com base em vendas do período)
         # Ajuda o admin a não digitar errado
