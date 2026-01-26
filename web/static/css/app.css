@@ -214,3 +214,71 @@ body{
 /* Page header */
 .app-page-header{padding-bottom:.25rem;}
 .app-page-header .badge{text-transform:uppercase; letter-spacing:.04em;}
+
+
+
+/* =========================
+   Ajustes Mobile (pente fino)
+   ========================= */
+@media (max-width: 576px){
+  /* espaçamento geral */
+  .container, .container-fluid{
+    padding-left: 12px !important;
+    padding-right: 12px !important;
+  }
+
+  /* evita zoom em iOS e melhora toque */
+  .form-control, .form-select, .btn{
+    font-size: 16px;
+  }
+
+  /* headers e cards mais compactos */
+  h1{ font-size: 1.35rem; }
+  h2{ font-size: 1.20rem; }
+  h3{ font-size: 1.10rem; }
+  h4{ font-size: 1.00rem; }
+
+  .card-body{ padding: .85rem; }
+  .card-header{ padding: .75rem .85rem; }
+
+  /* layouts flex: quebra linha ao invés de estourar */
+  .d-flex{ flex-wrap: wrap; gap: .5rem; }
+  .btn-group{ flex-wrap: wrap; gap: .5rem; }
+  .btn-toolbar{ flex-wrap: wrap; gap: .5rem; }
+
+  /* botões e inputs em grupos */
+  .input-group{ flex-wrap: wrap; }
+  .input-group > .form-control,
+  .input-group > .form-select{
+    flex: 1 0 100%;
+    width: 100%;
+    border-radius: .5rem !important;
+    margin-bottom: .5rem;
+  }
+  .input-group > .btn{
+    width: 100%;
+    border-radius: .5rem !important;
+  }
+
+  /* tabelas: menores e sem estourar largura */
+  .table{ font-size: .85rem; }
+  .table thead th{ white-space: nowrap; }
+  .table td, .table th{ padding: .45rem .5rem; vertical-align: middle; }
+  .table-responsive{
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    border-radius: 12px;
+  }
+
+  /* modal ocupa melhor a tela */
+  .modal-dialog{ margin: .75rem; }
+  .modal-content{ border-radius: 14px; }
+}
+
+/* Ajuste médio (tablets) */
+@media (max-width: 992px){
+  .table-responsive{
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+}
