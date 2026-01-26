@@ -14,10 +14,13 @@
   </div>
 
   {% if msgs and msgs|length %}
-    <div class="alert alert-info">
-      {% for m in msgs %}<div>{{ m }}</div>{% endfor %}
-    </div>
-  {% endif %}
+  <div class="alert alert-info">
+    <div class="fw-semibold mb-1">Avisos</div>
+    <ul class="mb-0">
+      {% for m in msgs %}<li>{{ m }}</li>{% endfor %}
+    </ul>
+  </div>
+{% endif %}
 
   <div class="card shadow-sm mb-3">
     <div class="card-body">
@@ -127,14 +130,7 @@
                           <input type="hidden" name="ano" value="{{ ano }}" />
                           <input type="hidden" name="mes" value="{{ mes }}" />
                           <input type="hidden" name="ano_edit" value="{{ ano_passado }}" />
-              <div class="col-12 col-md-2">
-          <label class="form-label">Mês referência</label>
-          <select class="form-select" name="mes_edit" {% if fechado %}disabled{% endif %}>
-            {% for m in range(1,13) %}
-              <option value="{{ m }}" {% if m == mes %}selected{% endif %}>{{ "%02d"|format(m) }}</option>
-            {% endfor %}
-          </select>
-        </div>
+                          <input type="hidden" name="mes_edit" value="{{ mes }}" />
 
                           <div class="col-12 col-md-2">
                             <label class="form-label small mb-1">EMP</label>
@@ -173,71 +169,85 @@
 
       <hr />
 
-      <h6 class="mb-1">➕ Novo resumo (Ano passado)</h6>
-      <div class="text-muted small mb-2">Este cadastro é destinado ao <b>ano passado ({{ ano_passado }})</b>, para meses sem base detalhada. Você pode escolher o <b>mês de referência</b> para cadastrar vários meses do ano passado.</div>
-      <form method="post" class="row g-2">
-        <input type="hidden" name="id" value="" />
-        <input type="hidden" name="ano" value="{{ ano }}" />
-                    <input type="hidden" name="ano_edit" value="{{ ano_passado }}" />
-        <input type="hidden" name="mes" value="{{ mes }}" />
-        <div class="col-12 col-md-2">
-          <label class="form-label">Mês referência</label>
-          <select class="form-select" name="mes_edit" {% if fechado %}disabled{% endif %}>
-            {% for m in range(1,13) %}
-              <option value="{{ m }}" {% if m == mes %}selected{% endif %}>{{ "%02d"|format(m) }}</option>
-            {% endfor %}
-          </select>
-        </div>
-
-        <div class="col-12 col-md-2">
-          <label class="form-label">EMP (opcional)</label>
-          <input class="form-control" type="text" name="emp_edit" value="{{ emp or '' }}" placeholder="ex: 101" {% if fechado %}disabled{% endif %} />
-        </div>
-        <div class="col-12 col-md-4">
-          <label class="form-label">Vendedor</label>
-          <input class="form-control" type="text" name="vendedor_edit" placeholder="ex: RAFAEL" required {% if fechado %}disabled{% endif %} />
-        </div>
-        <div class="col-12 col-md-3">
-          <label class="form-label">Valor venda</label>
-          <input class="form-control" type="number" step="0.01" name="valor_venda" value="0" {% if fechado %}disabled{% endif %} />
-        </div>
-        <div class="col-12 col-md-3">
-          <label class="form-label">Mix</label>
-          <input class="form-control" type="number" name="mix_produtos" value="0" {% if fechado %}disabled{% endif %} />
-        </div>
-        <div class="col-12">
-          <button class="btn btn-success" name="acao" value="salvar" type="submit" {% if fechado %}disabled{% endif %}>Criar</button>
-        </div>
-
-        {% if fechado %}
-          <div class="col-12">
-            <div class="alert alert-warning mb-0">
-              Este mês está <b>fechado</b>. Para liberar edição, reabra o mês em <b>Fechamento mensal</b>.
-            </div>
-          </div>
-        {% endif %}
-      </form>
-      <hr class="my-4"/>
-
-      <h6 class="mb-1">⬆️ Importar resumos (Excel/CSV)</h6>
+      
+      <h6 class="mb-2">➕ Cadastro rápido (Ano passado)</h6>
       <div class="text-muted small mb-2">
-        Use para cadastrar rapidamente vários vendedores/meses do <b>ano passado ({{ ano_passado }})</b>.
-        Colunas esperadas: <code>EMP</code> (opcional), <code>VENDEDOR</code>, <code>MES</code>, <code>VALOR_VENDA</code>, <code>MIX</code>.
-        <a href="/admin/resumos_periodo/template" class="ms-1">Baixar modelo</a>.
+        Cadastre até <b>10 linhas</b> de uma vez para o <b>ano passado ({{ ano_passado }})</b>. Informe <b>Vendedor</b>, <b>Mês</b>, <b>Valor</b> e <b>Mix</b>.
+        <span class="d-block">Dica: deixe linhas em branco para ignorar. Meses fechados não serão alterados.</span>
       </div>
 
-      <form method="post" enctype="multipart/form-data" class="row g-2 align-items-end">
+      <datalist id="vendedoresSug">
+        {% for v in vendedores_sugeridos %}<option value="{{ v }}"></option>{% endfor %}
+      </datalist>
+
+      <form method="post" class="card border-0 shadow-sm p-3 mb-3">
         <input type="hidden" name="ano" value="{{ ano }}" />
         <input type="hidden" name="mes" value="{{ mes }}" />
-        <div class="col-12 col-md-6">
-          <input class="form-control" type="file" name="arquivo" accept=".xlsx,.xls,.csv" {% if fechado %}disabled{% endif %} required />
+        <input type="hidden" name="ano_edit" value="{{ ano_passado }}" />
+
+        <div class="row g-2 align-items-end mb-2">
+          <div class="col-12 col-md-3">
+            <label class="form-label mb-1">EMP (opcional)</label>
+            <input class="form-control" type="text" name="emp_edit" value="{{ emp or '' }}" placeholder="ex: 101" {% if fechado %}disabled{% endif %} />
+            <div class="form-text">Aplica para todas as linhas.</div>
+          </div>
+          <div class="col-12 col-md-9 d-flex gap-2 justify-content-md-end">
+            <button class="btn btn-success" name="acao" value="salvar_lote" type="submit" {% if fechado %}disabled{% endif %}>
+              Salvar lote (10 linhas)
+            </button>
+            {% if fechado %}
+              <a class="btn btn-outline-warning" href="/admin/fechamento">Reabrir mês</a>
+            {% endif %}
+          </div>
         </div>
-        <div class="col-12 col-md-3">
-          <input class="form-control" type="text" name="emp_import" placeholder="EMP fixa (opcional)" {% if fechado %}disabled{% endif %} />
-          <div class="form-text">Se preencher, aplica para todas as linhas sem EMP.</div>
+
+        <div class="table-responsive">
+          <table class="table table-sm align-middle mb-0">
+            <thead class="table-light">
+              <tr>
+                <th style="width:42px;">#</th>
+                <th>Vendedor</th>
+                <th style="width:140px;">Mês ref.</th>
+                <th class="text-end" style="width:180px;">Valor venda</th>
+                <th class="text-end" style="width:120px;">Mix</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for i in range(10) %}
+              <tr>
+                <td class="text-muted">{{ i+1 }}</td>
+                <td>
+                  <input class="form-control form-control-sm" type="text" name="vendedor_lote" list="vendedoresSug"
+                         placeholder="ex: RAFAEL" {% if fechado %}disabled{% endif %} />
+                </td>
+                <td>
+                  <select class="form-select form-select-sm" name="mes_ref" {% if fechado %}disabled{% endif %}>
+                    {% for m in range(1,13) %}
+                      <option value="{{ m }}" {% if m == mes %}selected{% endif %}>{{ "%02d"|format(m) }}</option>
+                    {% endfor %}
+                  </select>
+                </td>
+                <td>
+                  <input class="form-control form-control-sm text-end" type="number" step="0.01" name="valor_venda_lote"
+                         value="" placeholder="0,00" {% if fechado %}disabled{% endif %} />
+                </td>
+                <td>
+                  <input class="form-control form-control-sm text-end" type="number" name="mix_produtos_lote"
+                         value="" placeholder="0" {% if fechado %}disabled{% endif %} />
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
         </div>
-        <div class="col-12 col-md-3">
-          <button class="btn btn-outline-primary w-100" type="submit" name="acao" value="importar" {% if fechado %}disabled{% endif %}>Importar</button>
+
+        <div class="d-flex flex-column flex-md-row justify-content-between mt-2">
+          <div class="small text-muted">
+            O ano é fixo em <b>{{ ano_passado }}</b>. O mês é o “mês de referência” informado em cada linha.
+          </div>
+          <div class="small text-muted">
+            Formato: valor em <b>R$</b> (ex: 1234.56). Também aceita vírgula.
+          </div>
         </div>
       </form>
 
