@@ -3264,6 +3264,37 @@ def admin_usuarios():
                     db.delete(u)
                     db.commit()
                     ok = f"Usuário {alvo} removido."
+                elif acao == "set_emps":
+                    alvo = (request.form.get("alvo") or "").strip().upper()
+                    emps_raw = (request.form.get("emps") or "")
+                    emps = []
+                    for part in re.split(r"[\s,;]+", emps_raw.strip()):
+                        if part:
+                            emps.append(str(part).strip())
+                    if not alvo:
+                        raise ValueError("Informe o usuário.")
+                    u = db.query(Usuario).filter(Usuario.username == alvo).first()
+                    if not u:
+                        raise ValueError("Usuário não encontrado.")
+                    if u.role not in ('vendedor', 'supervisor'):
+                        raise ValueError("Apenas VENDEDOR ou SUPERVISOR podem ter múltiplas EMPs vinculadas.")
+                    desired = set([e for e in emps if e])
+                    links = db.query(UsuarioEmp).filter(UsuarioEmp.usuario_id == u.id).all()
+                    current = {lk.emp: lk for lk in links}
+                    # desativa o que não está no desired
+                    for emp, lk in current.items():
+                        should_active = (emp in desired)
+                        if lk.ativo != should_active:
+                            lk.ativo = should_active
+                    # cria/ativa os que faltam
+                    for emp in desired:
+                        lk = current.get(emp)
+                        if lk is None:
+                            db.add(UsuarioEmp(usuario_id=u.id, emp=emp, ativo=True))
+                        elif not lk.ativo:
+                            lk.ativo = True
+                    db.commit()
+                    ok = "EMPs do usuário %s atualizadas: %s" % (alvo, (", ".join(sorted(desired)) if desired else "nenhuma"))
                 elif acao == "vincular_emps":
                     alvo = (request.form.get("alvo") or "").strip().upper()
                     emps_raw = (request.form.get("emps") or "")
@@ -3956,4 +3987,3 @@ def err_500(e):
         "Erro interno. Verifique os logs no Render (ou fale com o admin).",
         500,
     )
-
