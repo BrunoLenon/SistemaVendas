@@ -106,7 +106,30 @@
       {% if resumos_ano_passado_por_mes is not none %}
         <div class="mt-4">
           <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
-            <h6 class="m-0">📘 Ano passado ({{ ano_passado }}) — selecionar mês</h6>
+            <h6 class="m-0">📘 
+    <div class="card shadow-sm mb-3">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+          <div>
+            <div class="fw-semibold">📥 Importar resumos por Excel</div>
+            <div class="text-muted small">Arquivo .xlsx ou .csv com colunas: <b>ANO</b>, <b>MES</b>, <b>VENDEDOR</b>, <b>VALOR_VENDA</b> (ou VALOR), <b>MIX</b> (opcional) e <b>EMP</b> (opcional).</div>
+          </div>
+        </div>
+        <form method="post" enctype="multipart/form-data" class="mt-2">
+          <input type="hidden" name="acao" value="importar_xlsx">
+          <div class="row g-2 align-items-end">
+            <div class="col-12 col-md-6">
+              <input class="form-control" type="file" name="arquivo" accept=".xlsx,.csv">
+            </div>
+            <div class="col-12 col-md-auto">
+              <button class="btn btn-outline-primary" type="submit">Importar</button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+
+Ano passado ({{ ano_passado }}) — selecionar mês</h6>
             <div class="text-muted small">EMP: {% if emp %}{{ emp }}{% else %}Todas{% endif %}</div>
           </div>
 
@@ -167,7 +190,16 @@
                               <input type="hidden" name="acao" value="salvar">
                               <input type="hidden" name="emp_edit" value="{{ r.emp or '' }}">
                               <input type="hidden" name="vendedor_edit" value="{{ r.vendedor }}">
-                              <input type="hidden" name="ano_edit" value="{{ ano_passado }}">
+                              <div class="row g-2 mb-2">
+  <div class="col-6 col-md-4">
+    <label class="form-label small mb-1">Ano referência</label>
+    <input class="form-control form-control-sm" name="ano_edit" value="{{ ano_passado }}" inputmode="numeric" placeholder="ex: 2025">
+  </div>
+  <div class="col-6 col-md-4">
+    <label class="form-label small mb-1">Mês</label>
+    <input class="form-control form-control-sm" value="{{ "%02d"|format(m) }}" disabled>
+  </div>
+</div>
                               <input type="hidden" name="mes_edit" value="{{ m }}">
                               <input class="form-control form-control-sm text-end" style="width:160px;" name="valor_venda" value="{{ "%.2f"|format(r.valor_venda or 0) }}">
                           </td>
@@ -181,7 +213,16 @@
                               <input type="hidden" name="acao" value="excluir">
                               <input type="hidden" name="emp_edit" value="{{ r.emp or '' }}">
                               <input type="hidden" name="vendedor_edit" value="{{ r.vendedor }}">
-                              <input type="hidden" name="ano_edit" value="{{ ano_passado }}">
+                              <div class="row g-2 mb-2">
+  <div class="col-6 col-md-4">
+    <label class="form-label small mb-1">Ano referência</label>
+    <input class="form-control form-control-sm" name="ano_edit" value="{{ ano_passado }}" inputmode="numeric" placeholder="ex: 2025">
+  </div>
+  <div class="col-6 col-md-4">
+    <label class="form-label small mb-1">Mês</label>
+    <input class="form-control form-control-sm" value="{{ "%02d"|format(m) }}" disabled>
+  </div>
+</div>
                               <input type="hidden" name="mes_edit" value="{{ m }}">
                               <button class="btn btn-sm btn-outline-danger" type="submit">Excluir</button>
                             </form>
@@ -207,7 +248,16 @@
                           <input type="hidden" name="acao" value="salvar">
                           <input type="hidden" name="emp_edit" value="{{ r.emp or '' }}">
                           <input type="hidden" name="vendedor_edit" value="{{ r.vendedor }}">
-                          <input type="hidden" name="ano_edit" value="{{ ano_passado }}">
+                          <div class="row g-2 mb-2">
+  <div class="col-6 col-md-4">
+    <label class="form-label small mb-1">Ano referência</label>
+    <input class="form-control form-control-sm" name="ano_edit" value="{{ ano_passado }}" inputmode="numeric" placeholder="ex: 2025">
+  </div>
+  <div class="col-6 col-md-4">
+    <label class="form-label small mb-1">Mês</label>
+    <input class="form-control form-control-sm" value="{{ "%02d"|format(m) }}" disabled>
+  </div>
+</div>
                           <input type="hidden" name="mes_edit" value="{{ m }}">
 
                           <div class="row g-2">
@@ -228,7 +278,16 @@
                           <input type="hidden" name="acao" value="excluir">
                           <input type="hidden" name="emp_edit" value="{{ r.emp or '' }}">
                           <input type="hidden" name="vendedor_edit" value="{{ r.vendedor }}">
-                          <input type="hidden" name="ano_edit" value="{{ ano_passado }}">
+                          <div class="row g-2 mb-2">
+  <div class="col-6 col-md-4">
+    <label class="form-label small mb-1">Ano referência</label>
+    <input class="form-control form-control-sm" name="ano_edit" value="{{ ano_passado }}" inputmode="numeric" placeholder="ex: 2025">
+  </div>
+  <div class="col-6 col-md-4">
+    <label class="form-label small mb-1">Mês</label>
+    <input class="form-control form-control-sm" value="{{ "%02d"|format(m) }}" disabled>
+  </div>
+</div>
                           <input type="hidden" name="mes_edit" value="{{ m }}">
                           <button class="btn btn-sm btn-outline-danger" type="submit">Excluir</button>
                         </form>
@@ -249,7 +308,16 @@
                 <form method="post">
                   <input type="hidden" name="acao" value="salvar_lote">
                   <input type="hidden" name="emp_edit" value="{{ emp or '' }}">
-                  <input type="hidden" name="ano_edit" value="{{ ano_passado }}">
+                  <div class="row g-2 mb-2">
+  <div class="col-6 col-md-4">
+    <label class="form-label small mb-1">Ano referência</label>
+    <input class="form-control form-control-sm" name="ano_edit" value="{{ ano_passado }}" inputmode="numeric" placeholder="ex: 2025">
+  </div>
+  <div class="col-6 col-md-4">
+    <label class="form-label small mb-1">Mês</label>
+    <input class="form-control form-control-sm" value="{{ "%02d"|format(m) }}" disabled>
+  </div>
+</div>
                   <input type="hidden" name="mes_edit" value="{{ m }}">
 
                   <div class="table-responsive">

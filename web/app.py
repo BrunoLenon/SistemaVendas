@@ -863,6 +863,38 @@ def _periodo_bounds(ano: int, mes: int):
     return start, end
 
 
+
+def _parse_num_ptbr(val: str | None) -> float:
+    """Parseia número em formatos comuns PT-BR:
+    - '118589,72'
+    - '118.589,72'
+    - '118589.72'
+    - 'R$ 118.589,72'
+    """
+    if val is None:
+        return 0.0
+    s = str(val).strip()
+    if not s:
+        return 0.0
+    # remove moeda e espaços
+    s = re.sub(r'[^0-9,\.-]', '', s)
+    if not s:
+        return 0.0
+
+    # Se tiver vírgula e ponto, assume ponto milhar e vírgula decimal (PT-BR)
+    if ',' in s and '.' in s:
+        # remove separador de milhar
+        s = s.replace('.', '')
+        s = s.replace(',', '.')
+    elif ',' in s:
+        s = s.replace(',', '.')
+    # senão: já está em formato com ponto decimal ou inteiro
+    try:
+        return float(s)
+    except Exception:
+        return 0.0
+
+
 def _emp_norm(emp: str | None) -> str:
     """Normaliza EMP para armazenamento ('' quando nulo)."""
     return (emp or "").strip()
@@ -3649,9 +3681,9 @@ def admin_resumos_periodo():
             mes_alvo = mes
 
         ano_passado = ano - 1
-        # Regra de negócio: cadastro/edição manual é destinado ao ano passado (ano-1) para meses sem base detalhada.
-        if acao in {'salvar', 'excluir', 'salvar_lote'} and ano_alvo != ano_passado:
-            msgs.append(f'⚠️ Edição manual permitida apenas para o ano passado ({ano_passado}).')
+        # Regra: permitir edição/importação manual apenas para anos anteriores ao ano filtrado.
+        if acao in {'salvar', 'excluir', 'salvar_lote', 'importar_xlsx'} and ano_alvo >= ano:
+            msgs.append('⚠️ Edição/importação manual permitida apenas para anos anteriores ao ano filtrado.')
             acao = ''
 
         if acao in {'salvar', 'excluir'} and _mes_fechado(emp_alvo, ano_alvo, mes_alvo):
@@ -3701,7 +3733,7 @@ def admin_resumos_periodo():
                         msgs.append('⚠️ Informe o vendedor.')
                     else:
                         try:
-                            valor_venda = float((request.form.get('valor_venda') or '0').replace(',', '.'))
+                            valor_venda = _parse_num_ptbr(request.form.get('valor_venda'))
                         except Exception:
                             valor_venda = 0.0
                         try:
@@ -3743,7 +3775,7 @@ def admin_resumos_periodo():
                     # Cadastro em lote destinado ao ano passado (ano-1), permitindo informar MÊS por linha.
                     # Campos esperados: vendedor_lote, mes_ref, valor_venda_lote, mix_produtos_lote (listas)
                     emp_lote = _emp_norm(request.form.get('emp_edit') or emp)
-                    ano_lote = ano_passado
+                    ano_lote = ano_alvo
 
                     vendedores_l = [ (v or '').strip().upper() for v in request.form.getlist('vendedor_lote') ]
                     meses_l = request.form.getlist('mes_ref')
@@ -3782,7 +3814,7 @@ def admin_resumos_periodo():
                             continue
 
                         try:
-                            valor_venda = float(str(_get(valores_l, i, '0')).replace(',', '.'))
+                            valor_venda = _parse_num_ptbr(str(_get(valores_l, i, '0')))
                         except Exception:
                             valor_venda = 0.0
                         try:
@@ -3822,7 +3854,120 @@ def admin_resumos_periodo():
                     if fechados:
                         msgs.append(f'⚠️ {fechados} linha(s) não foram salvas porque o mês está fechado.')
                     msgs.append(f'✅ Lote concluído: {salvos} salvo(s), {pulados} linha(s) em branco/ inválida(s).')
-                elif acao == 'excluir':
+                
+                elif acao == 'importar_xlsx':
+                    # Importação de resumos por Excel (.xlsx) / CSV
+                    # Colunas aceitas (case-insensitive):
+                    # ANO, MES, EMP(opcional), VENDEDOR, VALOR_VENDA/VALOR, MIX
+                    file = request.files.get('arquivo')
+                    if not file or not getattr(file, 'filename', ''):
+                        msgs.append('⚠️ Selecione um arquivo .xlsx ou .csv para importar.')
+                    else:
+                        filename = (file.filename or '').lower()
+                        try:
+                            if filename.endswith('.csv'):
+                                df = pd.read_csv(file, dtype=str)
+                            else:
+                                df = pd.read_excel(file, dtype=str)
+                        except Exception as e:
+                            msgs.append('❌ Não consegui ler o arquivo. Verifique se é um .xlsx válido.')
+                            df = None
+
+                        if df is not None:
+                            # normaliza colunas
+                            cols = {c.strip().upper(): c for c in df.columns}
+                            def _col(*names):
+                                for n in names:
+                                    if n in cols:
+                                        return cols[n]
+                                return None
+
+                            c_ano = _col('ANO')
+                            c_mes = _col('MES', 'MÊS')
+                            c_emp = _col('EMP')
+                            c_vend = _col('VENDEDOR', 'VEND', 'VENDEDOR_NOME')
+                            c_val = _col('VALOR_VENDA', 'VALOR', 'VALORVENDA')
+                            c_mix = _col('MIX')
+
+                            if not c_ano or not c_mes or not c_vend or not c_val:
+                                msgs.append('❌ Colunas obrigatórias: ANO, MES, VENDEDOR, VALOR_VENDA (ou VALOR).')
+                            else:
+                                total = 0
+                                salvos = 0
+                                pulados = 0
+                                fechados = 0
+                                erros = 0
+
+                                for _, row in df.iterrows():
+                                    total += 1
+                                    try:
+                                        ano_ref = int(str(row.get(c_ano, '')).strip())
+                                        mes_ref = int(str(row.get(c_mes, '')).strip())
+                                    except Exception:
+                                        pulados += 1
+                                        continue
+                                    if mes_ref < 1 or mes_ref > 12:
+                                        pulados += 1
+                                        continue
+
+                                    vend = str(row.get(c_vend, '')).strip().upper()
+                                    if not vend:
+                                        pulados += 1
+                                        continue
+
+                                    emp_ref = emp  # padrão do filtro, se vier em branco
+                                    if c_emp:
+                                        emp_ref = _emp_norm(str(row.get(c_emp, '')).strip() or emp)
+
+                                    # regra: não permite importar para ano atual/futuro
+                                    if ano_ref >= ano:
+                                        pulados += 1
+                                        continue
+
+                                    if _mes_fechado(emp_ref, ano_ref, mes_ref):
+                                        fechados += 1
+                                        continue
+
+                                    valor_venda = _parse_num_ptbr(str(row.get(c_val, '0')))
+                                    try:
+                                        mix_produtos = int(str(row.get(c_mix, '0')).strip() or 0) if c_mix else 0
+                                    except Exception:
+                                        mix_produtos = 0
+
+                                    rec = (
+                                        db.query(VendasResumoPeriodo)
+                                        .filter(
+                                            VendasResumoPeriodo.emp == emp_ref,
+                                            VendasResumoPeriodo.vendedor == vend,
+                                            VendasResumoPeriodo.ano == ano_ref,
+                                            VendasResumoPeriodo.mes == mes_ref,
+                                        )
+                                        .one_or_none()
+                                    )
+                                    if rec is None:
+                                        rec = VendasResumoPeriodo(
+                                            emp=emp_ref,
+                                            vendedor=vend,
+                                            ano=ano_ref,
+                                            mes=mes_ref,
+                                            valor_venda=valor_venda,
+                                            mix_produtos=mix_produtos,
+                                            created_at=datetime.utcnow(),
+                                            updated_at=datetime.utcnow(),
+                                        )
+                                        db.add(rec)
+                                    else:
+                                        rec.valor_venda = valor_venda
+                                        rec.mix_produtos = mix_produtos
+                                        rec.updated_at = datetime.utcnow()
+                                    salvos += 1
+
+                                db.commit()
+                                if fechados:
+                                    msgs.append(f'⚠️ {fechados} linha(s) não importadas: mês fechado.')
+                                msgs.append(f'✅ Importação concluída: {salvos} salvo(s) de {total} linha(s). {pulados} pulada(s).')
+
+elif acao == 'excluir':
                     vend = (request.form.get('vendedor_edit') or '').strip().upper()
                     if not vend:
                         msgs.append('⚠️ Informe o vendedor para excluir.')
