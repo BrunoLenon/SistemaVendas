@@ -3967,7 +3967,7 @@ def admin_resumos_periodo():
                                     msgs.append(f'⚠️ {fechados} linha(s) não importadas: mês fechado.')
                                 msgs.append(f'✅ Importação concluída: {salvos} salvo(s) de {total} linha(s). {pulados} pulada(s).')
 
-elif acao == 'excluir':
+                elif acao == 'excluir':
                     vend = (request.form.get('vendedor_edit') or '').strip().upper()
                     if not vend:
                         msgs.append('⚠️ Informe o vendedor para excluir.')
