@@ -129,11 +129,11 @@
       </div>
     </div>
 
-Ano passado ({{ ano_passado }}) — selecionar mês</h6>
+<h6 class="mb-1">📅 Ano passado ({{ ano_passado }}) — selecionar mês</h6>
             <div class="text-muted small">EMP: {% if emp %}{{ emp }}{% else %}Todas{% endif %}</div>
           </div>
 
-          <div class="d-flex flex-wrap gap-2">
+          <div class="d-flex flex-wrap gap-2 month-chips">
             {% for m in range(1,13) %}
               {% set c = counts_ano_passado.get(m, 0) %}
               <button type="button"

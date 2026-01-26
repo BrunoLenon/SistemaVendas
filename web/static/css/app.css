@@ -214,3 +214,18 @@ body{
 /* Page header */
 .app-page-header{padding-bottom:.25rem;}
 .app-page-header .badge{text-transform:uppercase; letter-spacing:.04em;}
+
+
+/* Resumos por período - meses (chips) */
+.month-chips .btn{
+  padding: .25rem .6rem;
+  font-weight: 600;
+}
+.month-chips .badge{
+  border-radius: 999px;
+}
+/* Modal resumos - melhor mobile */
+@media (max-width: 576px){
+  .modal-dialog.modal-xl{ max-width: 98vw; margin: .5rem auto; }
+  .table-responsive{ border: 0; }
+}

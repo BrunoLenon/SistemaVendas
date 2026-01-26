@@ -3917,7 +3917,10 @@ def admin_resumos_periodo():
 
                                     emp_ref = emp  # padrão do filtro, se vier em branco
                                     if c_emp:
-                                        emp_ref = _emp_norm(str(row.get(c_emp, '')).strip() or emp)
+                                        raw_emp = str(row.get(c_emp, '')).strip()
+                                        if raw_emp.lower() in {'nan', 'none', 'null'}:
+                                            raw_emp = ''
+                                        emp_ref = _emp_norm(raw_emp) or emp
 
                                     # regra: não permite importar para ano atual/futuro
                                     if ano_ref >= ano:
@@ -3930,7 +3933,18 @@ def admin_resumos_periodo():
 
                                     valor_venda = _parse_num_ptbr(str(row.get(c_val, '0')))
                                     try:
-                                        mix_produtos = int(str(row.get(c_mix, '0')).strip() or 0) if c_mix else 0
+                                        if c_mix:
+                                            raw_mix = str(row.get(c_mix, '')).strip()
+                                            if raw_mix.lower() in {'', 'nan', 'none', 'null'}:
+                                                mix_produtos = 0
+                                            else:
+                                                try:
+                                                    mix_produtos = int(float(raw_mix.replace(',', '.')))
+                                                except Exception:
+                                                    mix_produtos = 0
+                                        else:
+                                            mix_produtos = 0
+
                                     except Exception:
                                         mix_produtos = 0
 
