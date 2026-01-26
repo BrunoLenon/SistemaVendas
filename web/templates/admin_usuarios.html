@@ -245,6 +245,7 @@
                                   data-bs-toggle="modal" data-bs-target="#empModal"
                                   data-usuario="{{ u.usuario }}"
                                   data-role="{{ u.role }}"
+                                  data-emp-legado="{{ u.emp if u.emp else '' }}"
                                   data-emps="{{ emps_btn|join(', ') }}">
                             <strong>{{ u.usuario }}</strong>
                           </button>
@@ -291,7 +292,7 @@
     <div class="modal-dialog modal-lg modal-dialog-scrollable">
       <div class="modal-content">
         <form method="post">
-          <input type="hidden" name="acao" value="set_emps">
+          <input type="hidden" name="acao" value="set_emp_e_emps">
           <input type="hidden" name="alvo" id="empModalUser" value="">
           <div class="modal-header">
             <h5 class="modal-title" id="empModalLabel">🏢 EMPs do usuário</h5>
@@ -306,6 +307,12 @@
             <div class="alert alert-warning py-2 small mb-3">
               Dica: informe as EMPs separadas por vírgula. Ex.: <strong>101,102,103</strong>.
               Ao salvar, a lista será <strong>substituída</strong> pelas EMPs informadas.
+            </div>
+
+            <div class="mb-3">
+              <label class="form-label">EMP (legado / padrão)</label>
+              <input class="form-control" name="emp_legado" id="empModalEmpLegado" placeholder="Ex.: 101">
+              <div class="form-text">Atual: <span id="empModalEmpLegadoCurrent" class="text-muted">-</span>. Se deixar vazio e existir EMP vinculada, o sistema usa a 1ª como padrão.</div>
             </div>
 
             <div class="mb-3">
@@ -355,6 +362,8 @@
       const userHidden = document.getElementById('empModalUser');
       const userLabel = document.getElementById('empModalUserLabel');
       const roleBadge = document.getElementById('empModalRole');
+      const empLegadoInput = document.getElementById('empModalEmpLegado');
+      const empLegadoCurrent = document.getElementById('empModalEmpLegadoCurrent');
       const empsInput = document.getElementById('empModalEmps');
       const currentSpan = document.getElementById('empModalCurrent');
       const sel = document.getElementById('empModalSelect');
@@ -370,10 +379,13 @@
         btn.addEventListener('click', () => {
           const usuario = btn.getAttribute('data-usuario') || '';
           const role = btn.getAttribute('data-role') || '';
+          const empLegado = btn.getAttribute('data-emp-legado') || '';
           const emps = btn.getAttribute('data-emps') || '';
           userHidden.value = usuario;
           userLabel.textContent = usuario || '-';
           roleBadge.textContent = role || '-';
+          if (empLegadoInput) empLegadoInput.value = empLegado || '';
+          if (empLegadoCurrent) empLegadoCurrent.textContent = empLegado || '-';
           currentSpan.textContent = emps || '-';
           empsInput.value = emps || '';
 

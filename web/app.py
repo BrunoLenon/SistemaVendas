@@ -3295,6 +3295,60 @@ def admin_usuarios():
                             lk.ativo = True
                     db.commit()
                     ok = "EMPs do usuário %s atualizadas: %s" % (alvo, (", ".join(sorted(desired)) if desired else "nenhuma"))
+
+                elif acao == "set_emp_e_emps":
+                    """Atualiza EMP legado (Usuario.emp) e vínculos multi-EMP (UsuarioEmp).
+
+                    Regras:
+                    - Aceita EMP legado vazia (remove), mas para SUPERVISOR exige ao menos 1 EMP válida (legado ou vinculada).
+                    - Se EMP legado vier vazia e houver EMPs vinculadas, define legado como a primeira (mantém compatibilidade).
+                    """
+                    alvo = (request.form.get("alvo") or "").strip().upper()
+                    emp_legado_raw = (request.form.get("emp_legado") or "").strip()
+                    emps_raw = (request.form.get("emps") or "")
+
+                    if not alvo:
+                        raise ValueError("Informe o usuário.")
+                    u = db.query(Usuario).filter(Usuario.username == alvo).first()
+                    if not u:
+                        raise ValueError("Usuário não encontrado.")
+                    if u.role not in ("vendedor", "supervisor"):
+                        raise ValueError("Apenas VENDEDOR ou SUPERVISOR podem ser vinculados a EMPs.")
+
+                    # Normaliza lista de EMPs vinculadas
+                    emps = []
+                    for part in re.split(r"[\s,;]+", emps_raw.strip()):
+                        if part:
+                            emps.append(str(part).strip())
+                    desired = set([e for e in emps if e])
+
+                    # Atualiza vínculos (substitui lista)
+                    links = db.query(UsuarioEmp).filter(UsuarioEmp.usuario_id == u.id).all()
+                    current = {lk.emp: lk for lk in links}
+                    for emp, lk in current.items():
+                        should_active = (emp in desired)
+                        if lk.ativo != should_active:
+                            lk.ativo = should_active
+                    for emp in desired:
+                        lk = current.get(emp)
+                        if lk is None:
+                            db.add(UsuarioEmp(usuario_id=u.id, emp=emp, ativo=True))
+                        elif not lk.ativo:
+                            lk.ativo = True
+
+                    # Atualiza EMP legado
+                    emp_legado = str(emp_legado_raw).strip() if emp_legado_raw else None
+                    if not emp_legado and desired:
+                        # Mantém compatibilidade: define a primeira EMP vinculada como padrão
+                        emp_legado = sorted(desired)[0]
+
+                    if u.role == "supervisor" and not emp_legado and not desired:
+                        raise ValueError("Supervisor precisa ter ao menos 1 EMP (legado ou vinculada).")
+
+                    setattr(u, "emp", emp_legado)
+                    db.commit()
+                    ok = f"Atualizado: {alvo} | EMP legado: {emp_legado or '-'} | EMPs vinculadas: {( ', '.join(sorted(desired)) if desired else '-') }"
+
                 elif acao == "vincular_emps":
                     alvo = (request.form.get("alvo") or "").strip().upper()
                     emps_raw = (request.form.get("emps") or "")
