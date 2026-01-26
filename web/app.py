@@ -3858,7 +3858,7 @@ def admin_resumos_periodo():
             q = q.filter(VendasResumoPeriodo.vendedor == vendedor)
         registros = q.order_by(VendasResumoPeriodo.vendedor.asc()).all()
 
-        # Resumos do ano passado (ano-1) para conferência/edição rápida (TODOS os meses)
+        # Resumos do mesmo período no ano passado (ano-1) para conferência/edição rápida
         ano_passado = ano - 1
         q2 = db.query(VendasResumoPeriodo).filter(
             VendasResumoPeriodo.ano == ano_passado,
@@ -3867,7 +3867,19 @@ def admin_resumos_periodo():
             q2 = q2.filter(VendasResumoPeriodo.emp == emp)
         if vendedor:
             q2 = q2.filter(VendasResumoPeriodo.vendedor == vendedor)
-        resumos_ano_passado = q2.order_by(VendasResumoPeriodo.mes.asc(), VendasResumoPeriodo.vendedor.asc()).all()
+
+        # Carrega TODOS os meses do ano passado (ano-1) para permitir cadastro/edição independente do mês atual.
+        _res_all = q2.order_by(VendasResumoPeriodo.mes.asc(), VendasResumoPeriodo.vendedor.asc()).all()
+
+        resumos_ano_passado_por_mes = {m: [] for m in range(1, 13)}
+        for r in _res_all:
+            try:
+                resumos_ano_passado_por_mes[int(r.mes)].append(r)
+            except Exception:
+                pass
+
+        # contagem por mês (para renderizar os "chips")
+        counts_ano_passado = {m: len(resumos_ano_passado_por_mes.get(m, [])) for m in range(1, 13)}
 
         # Sugestão rápida de vendedores (com base em vendas do período)
         # Ajuda o admin a não digitar errado
@@ -3890,7 +3902,9 @@ def admin_resumos_periodo():
         rows=registros,
         vendedor=vendedor,
         ano_passado=ano_passado,
-        resumos_ano_passado=resumos_ano_passado,
+        resumos_ano_passado_por_mes=resumos_ano_passado_por_mes,
+        counts_ano_passado=counts_ano_passado,
+        
         fechado=fechado,
         vendedores_sugeridos=vendedores_sugeridos,
         msgs=msgs,
