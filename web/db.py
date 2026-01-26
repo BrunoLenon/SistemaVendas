@@ -247,6 +247,7 @@ class CampanhaQtd(Base):
 
     recompensa_unit = Column(Float, nullable=False, default=0.0)
     qtd_minima = Column(Float, nullable=True)
+    valor_minimo = Column(Float, nullable=True)
 
     data_inicio = Column(Date, nullable=False, index=True)
     data_fim = Column(Date, nullable=False, index=True)
@@ -442,6 +443,7 @@ def criar_tabelas():
             # Campanhas: suporte a match por descrição
             conn.execute(text("ALTER TABLE campanhas_qtd ADD COLUMN IF NOT EXISTS campo_match varchar(20) DEFAULT 'codigo';"))
             conn.execute(text("ALTER TABLE campanhas_qtd ADD COLUMN IF NOT EXISTS descricao_prefixo varchar(200);"))
+            conn.execute(text("ALTER TABLE campanhas_qtd ADD COLUMN IF NOT EXISTS valor_minimo double precision;"))
             conn.execute(text("UPDATE campanhas_qtd SET campo_match='codigo' WHERE campo_match IS NULL OR campo_match='';"))
 
 

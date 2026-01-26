@@ -88,6 +88,11 @@
           </div>
 
           <div class="col-md-2">
+            <label class="form-label">Valor mínimo (opcional)</label>
+            <input class="form-control" type="text" name="valor_minimo" placeholder="1000,00">
+          </div>
+
+          <div class="col-md-2">
             <label class="form-label">Início *</label>
             <input class="form-control" type="date" name="data_inicio" required>
           </div>
@@ -115,7 +120,7 @@
                 <th>EMP</th>
                 <th>Vendedor</th>
                 <th>Título</th>
-                <th>Produto</th>
+                <th>Base</th><th>Produto/Descrição</th>
                 <th>Marca</th>
                 <th class="text-end">R$/un</th>
                 <th class="text-end">Mín</th>
@@ -131,7 +136,16 @@
                   <td>{{ c.emp }}</td>
                   <td>{{ c.vendedor or 'TODOS' }}</td>
                   <td>{{ c.titulo or '-' }}</td>
-                  <td>{{ c.produto_prefixo }}</td>
+                  <td>
+                    {% if (c.campo_match or 'codigo') == 'descricao' %}Descrição{% else %}Código{% endif %}
+                  </td>
+                  <td>
+                    {% if (c.campo_match or 'codigo') == 'descricao' %}
+                      {{ c.descricao_prefixo or c.produto_prefixo }}
+                    {% else %}
+                      {{ c.produto_prefixo }}
+                    {% endif %}
+                  </td>
                   <td>{{ c.marca }}</td>
                   <td class="text-end">R$ {{ c.recompensa_unit|brl }}</td>
                   <td class="text-end">{% if c.qtd_minima is not none %}{{ c.qtd_minima|int }}{% else %}-{% endif %}</td>

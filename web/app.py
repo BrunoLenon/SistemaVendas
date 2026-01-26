@@ -2135,11 +2135,17 @@ def _upsert_resultado(
     qtd_vendida = float(base.qtd or 0.0)
     valor_vendido = float(base.valor or 0.0)
 
-    minimo = campanha.qtd_minima
+    min_qtd = getattr(campanha, "qtd_minima", None)
+    min_val = getattr(campanha, "valor_minimo", None)
+
     atingiu = 1
-    if minimo is not None and float(minimo) > 0:
-        atingiu = 1 if qtd_vendida >= float(minimo) else 0
+    if min_qtd is not None and float(min_qtd) > 0:
+        atingiu = 1 if qtd_vendida >= float(min_qtd) else 0
+    if atingiu and min_val is not None and float(min_val) > 0:
+        atingiu = 1 if valor_vendido >= float(min_val) else 0
+
     valor_recomp = (qtd_vendida * float(campanha.recompensa_unit or 0.0)) if atingiu else 0.0
+(qtd_vendida * float(campanha.recompensa_unit or 0.0)) if atingiu else 0.0
 
     # Upsert por chave única
     res = (
@@ -4114,17 +4120,30 @@ def admin_campanhas_qtd():
                     emp = (request.form.get("emp") or "").strip()
                     vendedor = (request.form.get("vendedor") or "").strip().upper() or None
                     titulo = (request.form.get("titulo") or "").strip() or None
+
+                    campo_match = (request.form.get("campo_match") or "codigo").strip().lower()
+                    if campo_match not in {"codigo", "descricao"}:
+                        campo_match = "codigo"
+
                     produto_prefixo = (request.form.get("produto_prefixo") or "").strip()
+                    descricao_prefixo = (request.form.get("descricao_prefixo") or "").strip()
                     marca = (request.form.get("marca") or "").strip()
+
                     recompensa_raw = (request.form.get("recompensa_unit") or "").strip().replace(",", ".")
                     qtd_min_raw = (request.form.get("qtd_minima") or "").strip().replace(",", ".")
+                    valor_min_raw = (request.form.get("valor_minimo") or "").strip().replace(",", ".")
+
                     data_ini_raw = (request.form.get("data_inicio") or "").strip()
                     data_fim_raw = (request.form.get("data_fim") or "").strip()
 
                     if not emp:
                         raise ValueError("Informe a EMP.")
-                    if not produto_prefixo:
-                        raise ValueError("Informe o produto (prefixo).")
+                    if campo_match == "descricao":
+                        if not descricao_prefixo and not produto_prefixo:
+                            raise ValueError("Informe a descrição (início).")
+                    else:
+                        if not produto_prefixo:
+                            raise ValueError("Informe o código/prefixo do produto.")
                     if not marca:
                         raise ValueError("Informe a marca.")
                     if not recompensa_raw:
@@ -4134,6 +4153,7 @@ def admin_campanhas_qtd():
 
                     recompensa_unit = float(recompensa_raw)
                     qtd_minima = float(qtd_min_raw) if qtd_min_raw else None
+                    valor_minimo = float(valor_min_raw) if valor_min_raw else None
                     data_inicio = datetime.strptime(data_ini_raw, "%Y-%m-%d").date()
                     data_fim = datetime.strptime(data_fim_raw, "%Y-%m-%d").date()
                     if data_fim < data_inicio:
@@ -4144,10 +4164,13 @@ def admin_campanhas_qtd():
                             emp=str(emp),
                             vendedor=vendedor,
                             titulo=titulo,
-                            produto_prefixo=produto_prefixo.upper(),
+                            produto_prefixo=(produto_prefixo or '').upper(),
+                            descricao_prefixo=(descricao_prefixo or '').strip(),
+                            campo_match=campo_match,
                             marca=marca.upper(),
                             recompensa_unit=recompensa_unit,
                             qtd_minima=qtd_minima,
+                            valor_minimo=valor_minimo,
                             data_inicio=data_inicio,
                             data_fim=data_fim,
                             ativo=1,
