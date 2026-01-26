@@ -2174,7 +2174,7 @@ def _upsert_resultado(
     res.produto_prefixo = prefix
     res.marca = (campanha.marca or "").strip()
     res.recompensa_unit = float(campanha.recompensa_unit or 0.0)
-    res.qtd_minima = float(minimo) if minimo is not None else None
+    res.qtd_minima = float(min_qtd) if (min_qtd is not None and float(min_qtd) > 0) else None
     res.data_inicio = campanha.data_inicio
     res.data_fim = campanha.data_fim
 
