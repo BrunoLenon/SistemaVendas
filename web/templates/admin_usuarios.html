@@ -154,7 +154,32 @@
               </div>
             </form>
 
-            <hr class="my-3">
+            
+            <div class="alert alert-info py-2 small mt-3">
+              <strong>EMP do usuário (legado/padrão):</strong>
+              use para definir a <em>EMP padrão</em> (quando houver múltiplas EMPs vinculadas) e para o perfil <em>supervisor</em>.
+            </div>
+
+            <form method="post" class="row g-2">
+              <input type="hidden" name="acao" value="alterar_emp">
+
+              <div class="col-7">
+                <label class="form-label">Usuário</label>
+                <input class="form-control" name="alvo" placeholder="Ex.: LUCAS" required>
+              </div>
+
+              <div class="col-5">
+                <label class="form-label">EMP</label>
+                <input class="form-control" name="emp_novo" placeholder="Ex.: 101">
+                <div class="form-text">Deixe vazio para remover.</div>
+              </div>
+
+              <div class="col-12 d-grid">
+                <button class="btn btn-outline-success">Atualizar EMP</button>
+              </div>
+            </form>
+
+<hr class="my-3">
 
             <form method="post" class="row g-2">
               <input type="hidden" name="acao" value="remover_emp">

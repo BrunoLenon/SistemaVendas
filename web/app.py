@@ -405,6 +405,25 @@ def admin_configuracoes():
                     db.delete(t)
                     db.commit()
                     msgs.append("Tema removido.")
+
+                elif acao == "alterar_emp":
+                    # Atualiza o campo EMP "legado/padrão" do usuário (util para supervisor e como EMP padrão para multi-EMP)
+                    alvo = (request.form.get("alvo") or "").strip().upper()
+                    emp_novo = (request.form.get("emp_novo") or "").strip()
+                    if not alvo:
+                        raise ValueError("Informe o usuário para alterar EMP.")
+                    u = db.query(Usuario).filter(Usuario.username == alvo).first()
+                    if not u:
+                        raise ValueError("Usuário não encontrado.")
+                    # Admin pode alterar EMP de qualquer role (inclusive limpar)
+                    if emp_novo == "":
+                        setattr(u, "emp", None)
+                        db.commit()
+                        ok = f"EMP do usuário {alvo} removida."
+                    else:
+                        setattr(u, "emp", str(emp_novo))
+                        db.commit()
+                        ok = f"EMP do usuário {alvo} atualizada para {emp_novo}."
                 else:
                     raise ValueError("Ação inválida.")
             except Exception as e:
