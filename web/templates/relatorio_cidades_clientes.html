@@ -529,9 +529,9 @@
     <div class="mitem mb-2">
       <div class="d-flex justify-content-between align-items-start gap-2">
         <div>
-          <div class="title">{{ loop.index }}. {{ r.cidade }}</div>
+          <div class="title">{{ loop.index }}. {{ r.cidade_label or (r.cidade_norm|default('')) or '—' }}</div>
         </div>
-        <div class="text-end fw-semibold">R$ {{ r.valor|brl }}</div>
+        <div class="text-end fw-semibold">R$ {{ r.valor_total|brl }}</div>
       </div>
       <div class="kv mt-2">
         <div><span class="k">% EMP</span></div>
@@ -576,8 +576,8 @@
   {% for r in c.cidades_full %}
     <div class="mitem mb-2">
       <div class="d-flex justify-content-between align-items-start gap-2">
-        <div class="title">{{ loop.index }}. {{ r.cidade }}</div>
-        <div class="text-end fw-semibold">R$ {{ r.valor|brl }}</div>
+        <div class="title">{{ loop.index }}. {{ r.cidade_label or (r.cidade_norm|default('')) or '—' }}</div>
+        <div class="text-end fw-semibold">R$ {{ r.valor_total|brl }}</div>
       </div>
       <div class="kv mt-2">
         <div><span class="k">% EMP</span></div>
@@ -680,7 +680,7 @@
     <div class="mitem mb-2">
       <div class="d-flex justify-content-between align-items-start gap-2">
         <div class="title"><a href="javascript:void(0)" class="client-row text-decoration-none" tabindex="0" data-emp="{{ c.emp }}" data-razao="{{ r.razao_norm }}" data-label="{{ r.razao_label }}" data-valor="{{ r.valor_total }}">{{ loop.index }}. {{ r.razao_label }}</a></div>
-        <div class="text-end fw-semibold">R$ {{ r.valor|brl }}</div>
+        <div class="text-end fw-semibold">R$ {{ r.valor_total|brl }}</div>
       </div>
       <div class="kv mt-2">
         <div><span class="k">Qtd</span></div>
@@ -725,7 +725,7 @@
     <div class="mitem mb-2">
       <div class="d-flex justify-content-between align-items-start gap-2">
         <div class="title"><a href="javascript:void(0)" class="client-row text-decoration-none" tabindex="0" data-emp="{{ c.emp }}" data-razao="{{ r.razao_norm }}" data-label="{{ r.razao_label }}" data-valor="{{ r.valor_total }}">{{ loop.index }}. {{ r.razao_label }}</a></div>
-        <div class="text-end fw-semibold">R$ {{ r.valor|brl }}</div>
+        <div class="text-end fw-semibold">R$ {{ r.valor_total|brl }}</div>
       </div>
       <div class="kv mt-2">
         <div><span class="k">Qtd</span></div>
