@@ -2145,7 +2145,6 @@ def _upsert_resultado(
         atingiu = 1 if valor_vendido >= float(min_val) else 0
 
     valor_recomp = (qtd_vendida * float(campanha.recompensa_unit or 0.0)) if atingiu else 0.0
-(qtd_vendida * float(campanha.recompensa_unit or 0.0)) if atingiu else 0.0
 
     # Upsert por chave única
     res = (
