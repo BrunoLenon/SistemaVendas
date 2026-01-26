@@ -63,6 +63,15 @@
             🌙
           </button>
 
+          {% if emp_choices and (emp_choices|length > 1) %}
+            <select class="form-select form-select-sm" style="width:auto;" aria-label="Selecionar EMP"
+                    onchange="window.location.href='{{ url_for('set_emp') }}?emp=' + encodeURIComponent(this.value)">
+              {% for e in emp_choices %}
+                <option value="{{ e }}" {% if (emp_active|string) == (e|string) %}selected{% endif %}>EMP {{ e }}</option>
+              {% endfor %}
+            </select>
+          {% endif %}
+
           {% if session.get('usuario_nome') %}
             <span class="d-none d-md-inline small text-white-50">{{ session.get('usuario_nome') }}</span>
           {% endif %}

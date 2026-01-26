@@ -84,6 +84,30 @@ class Usuario(Base):
     emp = Column(String(30), nullable=True)
 
 
+class UsuarioEmp(Base):
+    """Vínculo N:N entre usuários (vendedor/supervisor) e EMPs.
+
+    - ADMIN continua com acesso total.
+    - SUPERVISOR/VENDEDOR podem estar em 1 ou mais EMP.
+    - Mantemos compatibilidade com `usuarios.emp` (legado). Se não houver
+      vínculos em `usuario_emp`, o sistema pode cair no comportamento antigo.
+    """
+
+    __tablename__ = "usuario_emp"
+
+    id = Column(Integer, primary_key=True)
+    usuario_id = Column(Integer, nullable=False, index=True)
+    emp = Column(String(30), nullable=False, index=True)
+    ativo = Column(Boolean, nullable=False, default=True)
+    criado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("usuario_id", "emp", name="uq_usuario_emp"),
+        Index("ix_usuario_emp_usuario", "usuario_id"),
+        Index("ix_usuario_emp_emp", "emp"),
+    )
+
+
 class Venda(Base):
     __tablename__ = "vendas"
 
@@ -414,6 +438,20 @@ def criar_tabelas():
             conn.execute(text("ALTER TABLE campanhas_qtd ADD COLUMN IF NOT EXISTS campo_match varchar(20) DEFAULT 'codigo';"))
             conn.execute(text("ALTER TABLE campanhas_qtd ADD COLUMN IF NOT EXISTS descricao_prefixo varchar(200);"))
             conn.execute(text("UPDATE campanhas_qtd SET campo_match='codigo' WHERE campo_match IS NULL OR campo_match='';"))
+
+            # Vínculo usuário x EMP (multi-EMP)
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS usuario_emp (
+                    id serial PRIMARY KEY,
+                    usuario_id integer NOT NULL,
+                    emp varchar(30) NOT NULL,
+                    ativo boolean NOT NULL DEFAULT true,
+                    criado_em timestamp NOT NULL DEFAULT now(),
+                    CONSTRAINT uq_usuario_emp UNIQUE (usuario_id, emp)
+                );
+            """))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_usuario_emp_usuario ON usuario_emp (usuario_id);"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_usuario_emp_emp ON usuario_emp (emp);"))
 
 
     except Exception:

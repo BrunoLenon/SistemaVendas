@@ -37,6 +37,7 @@
   {% if is_admin %}
     <div class="mt-2 mb-1 px-2 text-uppercase text-muted small">Admin</div>
     <a class="nav-link {% if path.startswith('/admin/usuarios') %}active{% endif %}" href="{{ url_for('admin_usuarios') }}">👤 Usuários</a>
+    <a class="nav-link {% if path.startswith('/admin/usuarios-emp') %}active{% endif %}" href="{{ url_for('admin_usuarios_emp') }}">🏢 Usuários × EMP</a>
     <a class="nav-link {% if path.startswith('/admin/importar') %}active{% endif %}" href="{{ url_for('admin_importar') }}">📥 Importar vendas</a>
     <a class="nav-link {% if path.startswith('/admin/resumos_periodo') %}active{% endif %}" href="{{ url_for('admin_resumos_periodo') }}">📆 Resumos por período</a>
     <a class="nav-link {% if path.startswith('/admin/campanhas') %}active{% endif %}" href="{{ url_for('admin_campanhas_qtd') }}">🎯 Campanhas</a>

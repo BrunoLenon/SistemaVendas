@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+
+{% block title %}Usuários × EMP{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <div>
+    <h4 class="m-0">🏢 Usuários × EMP</h4>
+    <div class="text-muted small">Vincule vendedores e supervisores em uma ou mais EMPs (centros/lojas).</div>
+  </div>
+  <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('admin_usuarios') }}">← Usuários</a>
+</div>
+
+{% if erro %}
+  <div class="alert alert-danger">{{ erro }}</div>
+{% endif %}
+{% if ok %}
+  <div class="alert alert-success">{{ ok }}</div>
+{% endif %}
+
+<div class="card shadow-sm mb-4">
+  <div class="card-body">
+    <h6 class="mb-3">Adicionar vínculo</h6>
+    <form method="post" class="row g-2 align-items-end">
+      <input type="hidden" name="acao" value="add">
+      <div class="col-12 col-md-5">
+        <label class="form-label">Usuário</label>
+        <select class="form-select" name="user_id" required>
+          <option value="">Selecione...</option>
+          {% for u in usuarios %}
+            <option value="{{ u.id }}">{{ u.usuario }} ({{ u.role }}){% if u.emp_legado %} • legado EMP {{ u.emp_legado }}{% endif %}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-12 col-md-3">
+        <label class="form-label">EMP</label>
+        <input class="form-control" name="emp" placeholder="Ex: 101" required>
+      </div>
+      <div class="col-12 col-md-4">
+        <button class="btn btn-primary w-100" type="submit">Vincular</button>
+      </div>
+    </form>
+    <div class="text-muted small mt-2">
+      Dica: para supervisor multi-EMP, você pode deixar o campo <b>EMP legado</b> vazio em <b>Admin → Usuários</b> e cadastrar aqui.
+    </div>
+  </div>
+</div>
+
+<div class="card shadow-sm">
+  <div class="card-body">
+    <h6 class="mb-3">Vínculos ativos</h6>
+    {% if not links %}
+      <div class="text-muted">Nenhum vínculo cadastrado ainda.</div>
+    {% else %}
+      <div class="table-responsive">
+        <table class="table table-sm align-middle">
+          <thead>
+            <tr>
+              <th>Usuário</th>
+              <th>Role</th>
+              <th>EMP</th>
+              <th class="text-end">Ações</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for l in links %}
+              <tr>
+                <td>{{ l.usuario }}</td>
+                <td>{{ l.role }}</td>
+                <td>{{ l.emp }}</td>
+                <td class="text-end">
+                  <form method="post" style="display:inline;">
+                    <input type="hidden" name="acao" value="remove">
+                    <input type="hidden" name="link_id" value="{{ l.id }}">
+                    <button class="btn btn-sm btn-outline-danger" type="submit" onclick="return confirm('Remover vínculo?');">Remover</button>
+                  </form>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

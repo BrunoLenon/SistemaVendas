@@ -27,6 +27,7 @@ from dados_db import carregar_df
 from db import (
     SessionLocal,
     Usuario,
+    UsuarioEmp,
     Venda,
     DashboardCache,
     ItemParado,
@@ -258,6 +259,24 @@ def inject_branding():
         b = {"logo_url": None, "favicon_url": None, "theme_name": "default", "version": ""}
     return {"branding": b}
 
+
+@app.context_processor
+def inject_emp_context():
+    """Injeta EMP ativa e lista de EMPs permitidas no contexto dos templates."""
+    try:
+        role = (_role() or '').lower()
+        if role in {'supervisor', 'vendedor'}:
+            emps = _emps_usuario()
+            return {
+                'emp_choices': emps,
+                'emp_active': _emp(),
+                # compatibilidade: alguns templates usam `emp`
+                'emp': _emp(),
+            }
+    except Exception:
+        pass
+    return {'emp_choices': [], 'emp_active': None}
+
 # -------------------- Configurações / Branding (ADMIN) --------------------
 
 @app.route('/admin/configuracoes', methods=['GET', 'POST'])
@@ -465,30 +484,80 @@ def _role() -> str | None:
     return _normalize_role(session.get("role"))
 
 def _emp() -> str | None:
-    """Retorna a EMP do usuário logado (quando existir)."""
-    emp = session.get("emp")
-    if emp is not None and emp != "":
-        return str(emp)
-    uid = session.get("user_id")
-    if not uid:
+    """Retorna a EMP ativa do usuário logado (quando aplicável).
+
+    - ADMIN: normalmente não possui EMP fixa (retorna None).
+    - SUPERVISOR/VENDEDOR: pode ter 1..N EMPs em `usuario_emp`.
+      Se tiver múltiplas, o usuário escolhe uma "EMP ativa".
+    - Compatibilidade: se não houver vínculos em `usuario_emp`, cai no legado:
+      * supervisor: usa `usuarios.emp`
+      * vendedor: usa EMPs derivadas das vendas (distinct vendas.emp)
+    """
+    role = (_role() or '').lower()
+    if role == 'admin':
         return None
+
+    emp_ativa = (session.get('emp_ativa') or '').strip()
+    # valida se a EMP ativa ainda é permitida
+    allowed = _emps_usuario()
+    if emp_ativa and (emp_ativa in allowed):
+        return emp_ativa
+
+    # escolhe a primeira EMP permitida como padrão
+    if allowed:
+        session['emp_ativa'] = allowed[0]
+        return allowed[0]
+    return None
+
+
+def _emps_usuario() -> list[str]:
+    """Lista de EMPs permitidas para o usuário logado (supervisor/vendedor).
+
+    Ordem:
+    1) usuario_emp (ativo)
+    2) legado usuarios.emp (supervisor)
+    3) legado vendas.emp distinct (vendedor)
+    """
+    uid = session.get('user_id')
+    role = (_role() or '').lower()
+    username = (_usuario_logado() or '').strip().upper()
+    if not uid or role == 'admin':
+        return []
+
+    emps: list[str] = []
     try:
-        db = SessionLocal()
-        u = db.query(Usuario).filter(Usuario.id == uid).first()
-        if not u:
-            return None
-        emp_val = getattr(u, "emp", None)
-        if emp_val is None or emp_val == "":
-            return None
-        session["emp"] = str(emp_val)
-        return str(emp_val)
+        with SessionLocal() as db:
+            rows = (
+                db.query(UsuarioEmp.emp)
+                .filter(UsuarioEmp.usuario_id == int(uid))
+                .filter(UsuarioEmp.ativo == True)
+                .order_by(UsuarioEmp.emp.asc())
+                .all()
+            )
+            emps = [str(r[0]).strip() for r in rows if r and r[0] is not None and str(r[0]).strip()]
+
+            if emps:
+                return sorted(set(emps))
+
+            # --- fallback legado ---
+            u = db.query(Usuario).filter(Usuario.id == int(uid)).first()
+            emp_legado = (getattr(u, 'emp', None) or '').strip() if u else ''
+            if role == 'supervisor' and emp_legado:
+                return [str(emp_legado)]
+
+            if role == 'vendedor' and username:
+                rows2 = (
+                    db.query(func.distinct(Venda.emp))
+                    .filter(func.upper(Venda.vendedor) == username)
+                    .all()
+                )
+                emps2 = [str(x[0]).strip() for x in rows2 if x and x[0] is not None and str(x[0]).strip()]
+                return sorted(set(emps2))
+
     except Exception:
-        return None
-    finally:
-        try:
-            db.close()
-        except Exception:
-            pass
+        return []
+
+    return []
 
 def _normalize_cols(df: pd.DataFrame) -> pd.DataFrame:
     """Normaliza nomes/tipos de colunas vindas do banco.
@@ -1221,7 +1290,7 @@ def _resolver_vendedor_e_lista(df: pd.DataFrame | None) -> tuple[str | None, lis
     emp_usuario = _emp()
     if role == "supervisor":
         if not emp_usuario:
-            return None, [], None, "Supervisor sem EMP cadastrada. Cadastre a EMP do supervisor na tabela usuarios."
+            return None, [], None, "Supervisor sem EMP vinculada. Vincule em /admin/usuarios-emp (Usuários × EMP) ou preencha EMP legado no cadastro do usuário."
         df_scope = df[df["EMP"] == str(emp_usuario)] if "EMP" in df.columns else df.iloc[0:0]
     elif role == "admin":
         df_scope = df
@@ -1293,6 +1362,15 @@ def login():
         session["role"] = _normalize_role(getattr(u, "role", None))
         # EMP pode não existir em versões antigas do schema
         session["emp"] = str(getattr(u, "emp", "")) if getattr(u, "emp", None) is not None else ""
+        # EMP ativa (multi-EMP). Se não existir vínculo, cai no legado.
+        try:
+            emps = _emps_usuario()
+            if emps:
+                session['emp_ativa'] = emps[0]
+            else:
+                session.pop('emp_ativa', None)
+        except Exception:
+            session.pop('emp_ativa', None)
         session.permanent = True
         session["last_activity"] = datetime.utcnow().isoformat()
 
@@ -1303,6 +1381,21 @@ def logout():
     audit("logout")
     session.clear()
     return redirect(url_for("login"))
+
+
+@app.get("/set_emp")
+def set_emp():
+    """Define a EMP ativa do usuário (quando multi-EMP)."""
+    red = _login_required()
+    if red:
+        return red
+    emp = (request.args.get('emp') or '').strip()
+    allowed = _emps_usuario()
+    if emp and emp in allowed:
+        session['emp_ativa'] = emp
+    # volta para a página anterior, ou dashboard
+    ref = request.headers.get('Referer') or url_for('dashboard')
+    return redirect(ref)
 
 
 def _periodo_prev(ano: int, mes: int) -> tuple[int, int]:
@@ -1532,7 +1625,7 @@ def dashboard():
         vendedor_alvo = vendedor_req if (vendedor_req and vendedor_req in vendedores_lista) else None
         msg = None
         if role == "supervisor" and not emp_usuario:
-            msg = "Supervisor sem EMP cadastrada. Cadastre a EMP do supervisor na tabela usuarios."
+            msg = "Supervisor sem EMP vinculada. Vincule em /admin/usuarios-emp (Usuários × EMP) ou preencha EMP legado no cadastro do usuário."
 
     dados = None
     if vendedor_alvo:
@@ -1726,7 +1819,7 @@ def itens_parados():
     if role in {'admin', 'supervisor'}:
         emp_supervisor = _emp() if role == 'supervisor' else None
         if role == 'supervisor' and not emp_supervisor:
-            flash('Seu usuário supervisor não possui EMP cadastrada. Solicite ao ADMIN para cadastrar.', 'warning')
+            flash('Seu usuário supervisor não possui EMP vinculada. Solicite ao ADMIN para vincular em Usuários × EMP.', 'warning')
             return redirect(url_for('dashboard'))
 
         vendedores_lista = _get_vendedores_db(role, emp_supervisor)
@@ -2548,7 +2641,7 @@ def relatorio_campanhas():
             emps_scope = _get_emps_com_vendas_no_periodo(ano, mes)
     elif role == "supervisor":
         if not emp_usuario:
-            flash("Supervisor sem EMP cadastrada. Ajuste o usuário do supervisor.", "warning")
+            flash("Supervisor sem EMP vinculada. Ajuste em Usuários × EMP ou EMP legado.", "warning")
             emps_scope = []
         else:
             emps_scope = [str(emp_usuario)]
@@ -3187,15 +3280,10 @@ def admin_usuarios():
                         raise ValueError("Senha muito curta (mín. 4).")
                     if role not in {"admin", "supervisor", "vendedor"}:
                         role = "vendedor"
-                    # Supervisor precisa de EMP
+                    # EMP legado (compatibilidade). Para multi-EMP use /admin/usuarios-emp.
                     emp_val = None
                     if role == "supervisor":
-                        if not emp_sup:
-                            raise ValueError("Informe a EMP para o supervisor.")
-                        # Normaliza EMP como texto (ex.: "101")
-                        emp_val = str(emp_sup).strip()
-                        if not emp_val:
-                            raise ValueError("Informe a EMP para o supervisor.")
+                        emp_val = str(emp_sup).strip() if emp_sup else None
                     u = db.query(Usuario).filter(Usuario.username == novo_usuario).first()
                     if u:
                         u.senha_hash = generate_password_hash(nova_senha)
@@ -3265,6 +3353,85 @@ def admin_usuarios():
         erro=erro,
         ok=ok,
     )
+
+
+@app.route("/admin/usuarios-emp", methods=["GET", "POST"])
+def admin_usuarios_emp():
+    """Vincula vendedores/supervisores em 1..N EMP (ADMIN)."""
+    red = _login_required()
+    if red:
+        return red
+    red2 = _admin_required()
+    if red2:
+        return red2
+
+    erro = None
+    ok = None
+
+    with SessionLocal() as db:
+        if request.method == "POST":
+            acao = (request.form.get('acao') or '').strip()
+            try:
+                if acao == 'add':
+                    user_id = int(request.form.get('user_id') or 0)
+                    emp = (request.form.get('emp') or '').strip()
+                    if not user_id or not emp:
+                        raise ValueError('Informe usuário e EMP.')
+                    u = db.query(Usuario).filter(Usuario.id == user_id).first()
+                    if not u:
+                        raise ValueError('Usuário não encontrado.')
+                    role = (getattr(u, 'role', '') or '').lower()
+                    if role not in {'vendedor', 'supervisor'}:
+                        raise ValueError('Somente vendedor/supervisor podem ter vínculo por EMP.')
+                    # upsert simples
+                    row = db.query(UsuarioEmp).filter(UsuarioEmp.usuario_id == user_id, UsuarioEmp.emp == emp).first()
+                    if row:
+                        row.ativo = True
+                    else:
+                        db.add(UsuarioEmp(usuario_id=user_id, emp=str(emp), ativo=True))
+                    db.commit()
+                    ok = 'Vínculo adicionado.'
+
+                elif acao == 'remove':
+                    link_id = int(request.form.get('link_id') or 0)
+                    if not link_id:
+                        raise ValueError('Vínculo inválido.')
+                    row = db.query(UsuarioEmp).filter(UsuarioEmp.id == link_id).first()
+                    if not row:
+                        raise ValueError('Vínculo não encontrado.')
+                    db.delete(row)
+                    db.commit()
+                    ok = 'Vínculo removido.'
+                else:
+                    raise ValueError('Ação inválida.')
+            except Exception as e:
+                db.rollback()
+                erro = str(e)
+
+        # lista usuários alvo
+        users = db.query(Usuario).filter(func.lower(Usuario.role).in_(['vendedor','supervisor'])).order_by(Usuario.role.desc(), Usuario.username.asc()).all()
+        user_map = {u.id: u for u in users}
+
+        links = db.query(UsuarioEmp).filter(UsuarioEmp.ativo == True).order_by(UsuarioEmp.emp.asc(), UsuarioEmp.usuario_id.asc()).all()
+        links_out = []
+        for l in links:
+            u = user_map.get(l.usuario_id)
+            if not u:
+                continue
+            links_out.append({
+                'id': l.id,
+                'usuario_id': l.usuario_id,
+                'usuario': u.username,
+                'role': (u.role or ''),
+                'emp': l.emp,
+            })
+
+        usuarios_out = [
+            {'id': u.id, 'usuario': u.username, 'role': (u.role or ''), 'emp_legado': getattr(u, 'emp', None)}
+            for u in users
+        ]
+
+    return render_template('admin_usuarios_emp.html', usuarios=usuarios_out, links=links_out, erro=erro, ok=ok)
 
 
 @app.get("/admin/cache/refresh")
