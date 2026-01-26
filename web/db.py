@@ -84,15 +84,8 @@ class Usuario(Base):
     emp = Column(String(30), nullable=True)
 
 
+
 class UsuarioEmp(Base):
-    """Vínculo N:N entre usuários (vendedor/supervisor) e EMPs.
-
-    - ADMIN continua com acesso total.
-    - SUPERVISOR/VENDEDOR podem estar em 1 ou mais EMP.
-    - Mantemos compatibilidade com `usuarios.emp` (legado). Se não houver
-      vínculos em `usuario_emp`, o sistema pode cair no comportamento antigo.
-    """
-
     __tablename__ = "usuario_emp"
 
     id = Column(Integer, primary_key=True)
@@ -102,11 +95,9 @@ class UsuarioEmp(Base):
     criado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
 
     __table_args__ = (
-        UniqueConstraint("usuario_id", "emp", name="uq_usuario_emp"),
-        Index("ix_usuario_emp_usuario", "usuario_id"),
-        Index("ix_usuario_emp_emp", "emp"),
+        UniqueConstraint("usuario_id", "emp", name="uq_usuario_emp_usuario_emp"),
+        Index("ix_usuario_emp_ativo", "ativo"),
     )
-
 
 class Venda(Base):
     __tablename__ = "vendas"
@@ -417,6 +408,20 @@ def criar_tabelas():
             # Usuários: role/emp
             conn.execute(text("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS role varchar(20);"))
             conn.execute(text("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS emp varchar(30);"))
+    # Tabela de vínculo multi-EMP por usuário (vendedor/supervisor)
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS usuario_emp (
+                    id SERIAL PRIMARY KEY,
+                    usuario_id INTEGER NOT NULL,
+                    emp VARCHAR(30) NOT NULL,
+                    ativo BOOLEAN NOT NULL DEFAULT TRUE,
+                    criado_em TIMESTAMP NOT NULL DEFAULT NOW(),
+                    CONSTRAINT uq_usuario_emp_usuario_emp UNIQUE (usuario_id, emp)
+                );
+            """))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_usuario_emp_usuario_id ON usuario_emp (usuario_id);"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_usuario_emp_emp ON usuario_emp (emp);"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_usuario_emp_ativo ON usuario_emp (ativo);"))
             conn.execute(text("UPDATE usuarios SET role='vendedor' WHERE role IS NULL OR role='' ;"))
             conn.execute(text("UPDATE usuarios SET role=lower(role) WHERE role IS NOT NULL;"))
             # Vendas: novos campos para relatórios (IF NOT EXISTS)
@@ -438,20 +443,6 @@ def criar_tabelas():
             conn.execute(text("ALTER TABLE campanhas_qtd ADD COLUMN IF NOT EXISTS campo_match varchar(20) DEFAULT 'codigo';"))
             conn.execute(text("ALTER TABLE campanhas_qtd ADD COLUMN IF NOT EXISTS descricao_prefixo varchar(200);"))
             conn.execute(text("UPDATE campanhas_qtd SET campo_match='codigo' WHERE campo_match IS NULL OR campo_match='';"))
-
-            # Vínculo usuário x EMP (multi-EMP)
-            conn.execute(text("""
-                CREATE TABLE IF NOT EXISTS usuario_emp (
-                    id serial PRIMARY KEY,
-                    usuario_id integer NOT NULL,
-                    emp varchar(30) NOT NULL,
-                    ativo boolean NOT NULL DEFAULT true,
-                    criado_em timestamp NOT NULL DEFAULT now(),
-                    CONSTRAINT uq_usuario_emp UNIQUE (usuario_id, emp)
-                );
-            """))
-            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_usuario_emp_usuario ON usuario_emp (usuario_id);"))
-            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_usuario_emp_emp ON usuario_emp (emp);"))
 
 
     except Exception:
