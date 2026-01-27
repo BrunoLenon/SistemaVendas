@@ -149,61 +149,102 @@
             </div>
           </div>
 
-          <div class="table-responsive">
-            <table class="table table-sm align-middle mb-0">
-              <thead class="table-light">
-                <tr>
-                  <th>#</th>
-                  <th>EMP</th>
-                  <th>Título</th>
-                  <th>Vendedor</th>
-                  <th>Base</th>
-                  <th>Marca</th>
-                  <th class="text-end">Qtd mín</th>
-                  <th class="text-end">Valor mín</th>
-                  <th class="text-end">R$/un</th>
-                  <th>Vigência</th>
-                  <th class="text-end">Ações</th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for c in campanhas %}
-                <tr>
-                  <td class="mono">{{ c.id }}</td>
-                  <td class="mono">{{ c.emp }}</td>
-                  <td class="text-truncate" style="max-width:180px">{{ c.titulo or '-' }}</td>
-                  <td>{{ c.vendedor or 'TODOS' }}</td>
-                  <td>
-                    {% if c.descricao_prefixo %}
-                      <span class="badge text-bg-info">Descrição</span>
-                      <div class="small text-muted text-truncate" style="max-width:210px">{{ c.descricao_prefixo }}</div>
-                    {% else %}
-                      <span class="badge text-bg-primary">Código</span>
-                      <div class="small text-muted">{{ c.produto_prefixo }}</div>
-                    {% endif %}
-                  </td>
-                  <td class="text-truncate" style="max-width:120px">{{ c.marca }}</td>
-                  <td class="text-end mono">{{ c.qtd_minima|int }}</td>
-                  <td class="text-end mono">{{ (c.valor_minimo or 0)|brl }}</td>
-                  <td class="text-end mono">{{ c.recompensa_unit|brl }}</td>
-                  <td class="small">
-                    {{ c.data_inicio.strftime('%d/%m/%Y') }}<br><span class="text-muted">até</span> {{ c.data_fim.strftime('%d/%m/%Y') }}
-                  </td>
-                  <td class="text-end">
-                    <form method="post" class="d-inline">
-                      <input type="hidden" name="acao" value="excluir">
-                      <input type="hidden" name="id" value="{{ c.id }}">
-                      <button class="btn btn-outline-danger btn-sm" type="submit" onclick="return confirm('Excluir esta campanha?')">Excluir</button>
-                    </form>
-                  </td>
-                </tr>
-                {% endfor %}
-                {% if campanhas|length == 0 %}
-                <tr><td colspan="11" class="text-center text-muted py-4">Nenhuma campanha cadastrada.</td></tr>
-                {% endif %}
-              </tbody>
-            </table>
+          {% set grouped = campanhas|groupby('emp') %}
+{% if campanhas|length == 0 %}
+  <div class="text-center text-muted py-4">Nenhuma campanha cadastrada.</div>
+{% else %}
+
+  <div class="d-flex flex-wrap gap-2 mb-3">
+    {% for g in grouped %}
+      {% set empv = g.grouper %}
+      {% set emp_label = empv if empv else 'SEM EMP' %}
+      <button class="btn btn-sm btn-outline-primary rounded-pill"
+              type="button"
+              data-bs-toggle="collapse"
+              data-bs-target="#emp-collapse-{{ loop.index }}"
+              aria-expanded="false"
+              aria-controls="emp-collapse-{{ loop.index }}">
+        EMP {{ emp_label }} <span class="badge text-bg-primary ms-1">{{ g.list|length }}</span>
+      </button>
+    {% endfor %}
+  </div>
+
+  <div class="accordion" id="accEmpCampanhas">
+    {% for g in grouped %}
+      {% set empv = g.grouper %}
+      {% set emp_label = empv if empv else 'SEM EMP' %}
+      <div class="accordion-item">
+        <h2 class="accordion-header" id="emp-heading-{{ loop.index }}">
+          <button class="accordion-button collapsed" type="button"
+                  data-bs-toggle="collapse"
+                  data-bs-target="#emp-collapse-{{ loop.index }}"
+                  aria-expanded="false"
+                  aria-controls="emp-collapse-{{ loop.index }}">
+            <span class="fw-semibold">EMP {{ emp_label }}</span>
+            <span class="ms-2 badge text-bg-secondary">{{ g.list|length }} campanha(s)</span>
+          </button>
+        </h2>
+        <div id="emp-collapse-{{ loop.index }}" class="accordion-collapse collapse"
+             aria-labelledby="emp-heading-{{ loop.index }}" data-bs-parent="#accEmpCampanhas">
+          <div class="accordion-body p-0">
+            <div class="table-responsive">
+              <table class="table table-sm align-middle mb-0">
+                <thead class="table-light">
+                  <tr>
+                    <th>#</th>
+                    <th>Título</th>
+                    <th>Vendedor</th>
+                    <th>Base</th>
+                    <th>Marca</th>
+                    <th class="text-end">Qtd mín</th>
+                    <th class="text-end">Valor mín</th>
+                    <th class="text-end">R$/un</th>
+                    <th>Vigência</th>
+                    <th class="text-end">Ações</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for c in g.list %}
+                  <tr>
+                    <td class="mono">{{ c.id }}</td>
+                    <td class="text-truncate" style="max-width:260px" title="{{ c.titulo or '' }}">{{ c.titulo or '-' }}</td>
+                    <td>{{ c.vendedor or 'TODOS' }}</td>
+                    <td>
+                      {% if c.campo_match == 'codigo' %}
+                        <span class="chip">Código</span>
+                        <div class="small text-muted mono">{{ c.produto_prefixo or '-' }}</div>
+                      {% else %}
+                        <span class="chip">Descrição</span>
+                        <div class="small text-muted text-truncate" style="max-width:220px" title="{{ c.descricao_prefixo or '' }}">{{ c.descricao_prefixo or '-' }}</div>
+                      {% endif %}
+                    </td>
+                    <td class="mono">{{ c.marca or '-' }}</td>
+                    <td class="text-end mono">{{ (c.qtd_minima or 0) }}</td>
+                    <td class="text-end mono">{{ 'R$ ' ~ '%.2f'|format(c.valor_minimo or 0) }}</td>
+                    <td class="text-end mono">{{ 'R$ ' ~ '%.2f'|format(c.recompensa_unit or 0) }}</td>
+                    <td class="small">
+                      {{ c.data_inicio.strftime('%d/%m/%Y') if c.data_inicio else '-' }}<br>
+                      {{ c.data_fim.strftime('%d/%m/%Y') if c.data_fim else '-' }}
+                    </td>
+                    <td class="text-end">
+                      <form method="post" class="d-inline">
+                        <input type="hidden" name="acao" value="excluir">
+                        <input type="hidden" name="id" value="{{ c.id }}">
+                        <button class="btn btn-sm btn-outline-danger">Excluir</button>
+                      </form>
+                    </td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
           </div>
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+
+{% endif %}</div>
 
         </div>
       </div>
