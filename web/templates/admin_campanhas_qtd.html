@@ -10,6 +10,12 @@
   .table thead th{white-space:nowrap}
   .mono{font-variant-numeric: tabular-nums;}
   .sticky-actions{position:sticky; top:.75rem}
+  .emp-chipbar{overflow:auto; padding-bottom:.25rem; -webkit-overflow-scrolling:touch}
+  .emp-chipbar .btn{flex:0 0 auto; white-space:nowrap}
+  .emp-chipbar::-webkit-scrollbar{height:6px}
+  .emp-chipbar::-webkit-scrollbar-thumb{background:rgba(0,0,0,.12); border-radius:999px}
+  .accordion-body .table-responsive{max-height:60vh; overflow:auto}
+  .accordion-button{gap:.5rem}
   @media (max-width: 768px){
     .sticky-actions{position:static}
     .table-responsive{border-radius: .75rem}
@@ -154,7 +160,7 @@
   <div class="text-center text-muted py-4">Nenhuma campanha cadastrada.</div>
 {% else %}
 
-  <div class="d-flex flex-wrap gap-2 mb-3">
+  <div class="d-flex flex-nowrap gap-2 mb-3 emp-chipbar">
     {% for g in grouped %}
       {% set empv = g.grouper %}
       {% set emp_label = empv if empv else 'SEM EMP' %}
@@ -244,7 +250,7 @@
     {% endfor %}
   </div>
 
-{% endif %}</div>
+{% endif %}
 
         </div>
       </div>
