@@ -26,8 +26,8 @@
       </div>
     </div>
     <div class="d-flex gap-2">
-      <a class="btn btn-outline-secondary btn-sm" href="/dashboard">Voltar</a>
-      <a class="btn btn-outline-secondary btn-sm" href="/logout">Sair</a>
+      <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('dashboard') }}">Voltar</a>
+      <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('auth.logout') }}">Sair</a>
     </div>
   </div>
 
@@ -135,8 +135,8 @@
                 </div>
                 <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Fechar</button>
               </div>
-              <div class="modal-body">
 
+              <div class="modal-body">
                 <div class="d-flex flex-wrap gap-2 mb-3">
                   <span class="badge text-bg-light border mono">Total recompensa: {{ e.total_emp|brl }}</span>
                   <span class="badge text-bg-light border mono">{{ vend_ct }} vendedor(es)</span>
@@ -155,16 +155,22 @@
                     <tbody>
                       {% for v in e.vendedores %}
                         {% set vid = emp_id ~ '_v' ~ loop.index %}
+
                         <tr>
                           <td><strong>{{ v.vendedor }}</strong></td>
                           <td class="text-end mono">{{ v.total_recompensa|brl }}</td>
                           <td class="text-end mono">{{ v.campanhas|length }}</td>
                           <td class="text-end">
-                            <button class="btn btn-sm btn-outline-primary" type="button" data-bs-toggle="collapse" data-bs-target="#d{{ mid }}_{{ vid }}" aria-expanded="false" aria-controls="d{{ mid }}_{{ vid }}">
+                            <button class="btn btn-sm btn-outline-primary" type="button"
+                                    data-bs-toggle="collapse"
+                                    data-bs-target="#d{{ mid }}_{{ vid }}"
+                                    aria-expanded="false"
+                                    aria-controls="d{{ mid }}_{{ vid }}">
                               Ver campanhas
                             </button>
                           </td>
                         </tr>
+
                         <tr class="collapse" id="d{{ mid }}_{{ vid }}">
                           <td colspan="4">
                             {% if not v.campanhas or (v.campanhas|length) == 0 %}
@@ -186,11 +192,15 @@
                                   <tbody>
                                     {% for c in v.campanhas %}
                                       <tr>
-                                        <td class="text-truncate" style="max-width:240px">{{ c.titulo or ('Campanha #' ~ c.campanha_id) }}</td>
+                                        <td class="text-truncate" style="max-width:240px">
+                                          {{ c.titulo or ('Campanha #' ~ c.campanha_id) }}
+                                        </td>
                                         <td class="mono small">{{ c.produto_prefixo }}</td>
                                         <td>{{ c.marca }}</td>
                                         <td class="text-end mono">{{ (c.qtd_vendida or 0)|int }}</td>
-                                        <td class="text-end mono">{% if c.qtd_minima is not none %}{{ c.qtd_minima|int }}{% else %}-{% endif %}</td>
+                                        <td class="text-end mono">
+                                          {% if c.qtd_minima is not none %}{{ c.qtd_minima|int }}{% else %}-{% endif %}
+                                        </td>
                                         <td class="text-end mono">{{ (c.recompensa_unit or 0)|brl }}</td>
                                         <td class="text-end mono">
                                           {% if c.valor_recompensa and c.valor_recompensa > 0 %}
@@ -207,6 +217,7 @@
                             {% endif %}
                           </td>
                         </tr>
+
                       {% endfor %}
                     </tbody>
                   </table>
@@ -216,27 +227,8 @@
             </div>
           </div>
         </div>
+        <!-- /Modal EMP -->
 
-      {% endfor %}
-    </div>
-  {% endif %}
-                                      </td>
-                                    </tr>
-                                  {% endfor %}
-                                </tbody>
-                              </table>
-                            </div>
-                          {% endif %}
-                        </td>
-                      </tr>
-                    {% endfor %}
-                  </tbody>
-                </table>
-              </div>
-
-            </div>
-          </div>
-        </div>
       {% endfor %}
     </div>
   {% endif %}
