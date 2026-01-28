@@ -8,6 +8,24 @@
 </style>
 {% endblock %}
 
+{% block extra_scripts %}
+<script>
+  // UX: evita cliques repetidos e mostra spinner ao atualizar filtros
+  (function(){
+    const form = document.getElementById('filtersForm');
+    const btn = document.getElementById('filtersSubmit');
+    if (!form || !btn) return;
+    form.addEventListener('submit', function(){
+      btn.disabled = true;
+      const sp = btn.querySelector('.spinner-border');
+      const lb = btn.querySelector('.btn-label');
+      if (lb) lb.textContent = 'Carregando...';
+      if (sp) sp.classList.remove('d-none');
+    });
+  })();
+</script>
+{% endblock %}
+
 {% block content %}
 <div class="container py-4">
 <!-- INSIGHTS PARCIAIS -->
@@ -215,7 +233,7 @@
 
     <div class="card mb-3 shadow-sm">
       <div class="card-body">
-        <form method="get" action="{{ url_for('dashboard') }}" class="row g-2 align-items-end">
+        <form id="filtersForm" method="get" action="{{ url_for('dashboard') }}" class="row g-2 align-items-end">
 
           {% if role and role|lower in ["admin", "supervisor"] %}
             <div class="col-md-4">
@@ -238,7 +256,10 @@
             <input class="form-control" type="number" name="ano" min="2000" max="2100" value="{{ ano }}" required>
           </div>
           <div class="col-auto">
-            <button class="btn btn-primary" type="submit">Atualizar</button>
+            <button id="filtersSubmit" class="btn btn-primary" type="submit">
+              <span class="btn-label">Atualizar</span>
+              <span class="spinner-border spinner-border-sm ms-2 d-none" role="status" aria-hidden="true"></span>
+            </button>
           </div>
           <div class="col">
             <div class="text-end text-muted">Período selecionado: <strong>{{ mes }}/{{ ano }}</strong></div>

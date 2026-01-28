@@ -23,7 +23,7 @@ from flask import (
 )
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from dados_db import carregar_df
+from dados_db import carregar_df, limpar_cache_df
 from db import (
     SessionLocal,
     Usuario,
@@ -3491,6 +3491,11 @@ def admin_importar():
             ),
             "success",
         )
+        # Limpa cache do DataFrame para refletir novos dados imediatamente
+        try:
+            limpar_cache_df()
+        except Exception:
+            pass
         return redirect(url_for("admin_importar"))
 
     except Exception:
@@ -4207,6 +4212,10 @@ def admin_apagar_vendas():
             q = db.query(Venda).filter(Venda.movimento == dt)
             apagadas = q.delete(synchronize_session=False)
             db.commit()
+            try:
+                limpar_cache_df()
+            except Exception:
+                pass
             flash(f"Apagadas {apagadas} vendas do dia {dt.strftime('%d/%m/%Y')}.", "success")
             return redirect(url_for("admin_importar"))
 
@@ -4227,6 +4236,10 @@ def admin_apagar_vendas():
         q = db.query(Venda).filter(and_(Venda.movimento >= d_ini, Venda.movimento <= d_fim))
         apagadas = q.delete(synchronize_session=False)
         db.commit()
+        try:
+            limpar_cache_df()
+        except Exception:
+            pass
         flash(f"Apagadas {apagadas} vendas de {mes:02d}/{ano}.", "success")
         return redirect(url_for("admin_importar"))
 
