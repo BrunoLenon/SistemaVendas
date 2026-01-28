@@ -89,23 +89,28 @@
               </div>
 
               <div class="mb-3">
-                <label class="form-label">EMP(s) do usuário</label>
+                <label class="form-label">Empresas do usuário</label>
 
                 {% if emps_cadastradas and emps_cadastradas|length > 0 %}
-                  <select class="form-select" name="emps_multi" multiple size="6">
+                  <div class="border rounded p-2" style="max-height: 220px; overflow:auto;">
                     {% for e in emps_cadastradas %}
                       {% if e.ativo %}
-                        <option value="{{ e.codigo }}">{{ e.codigo }} — {{ e.nome }}{% if e.cidade %} ({{ e.cidade }}{% if e.uf %}/{{ e.uf }}{% endif %}){% endif %}</option>
+                        <div class="form-check">
+                          <input class="form-check-input" type="checkbox" name="emps_multi" id="emp_new_{{ e.codigo }}" value="{{ e.codigo }}">
+                          <label class="form-check-label" for="emp_new_{{ e.codigo }}">
+                            {{ emp_labels.get(e.codigo|string, e.codigo) if emp_labels else (e.codigo ~ ' — ' ~ e.nome) }}
+                          </label>
+                        </div>
                       {% endif %}
                     {% endfor %}
-                  </select>
+                  </div>
                   <div class="form-text">
-                    Selecione 1+ EMPs. <strong>Vendedor/Supervisor</strong> precisam de ao menos 1 EMP ativa. <strong>Admin</strong> é opcional.
+                    Marque 1+ empresas. <strong>Vendedor/Supervisor</strong> precisam de ao menos 1 empresa ativa. <strong>Admin</strong> é opcional.
                   </div>
                 {% else %}
                   <input class="form-control" name="emps_text" placeholder="Ex.: 101, 102, 103">
                   <div class="form-text">
-                    Ainda não há EMPs cadastradas. Você pode cadastrar em <a href="/admin/emps">Cadastro de EMPs</a>. Por enquanto, informe os códigos separados por vírgula.
+                    Ainda não há empresas cadastradas. Cadastre em <a href="/admin/emps">Empresas</a>. Por enquanto, informe os códigos separados por vírgula.
                   </div>
                 {% endif %}
               </div>
@@ -144,14 +149,13 @@
 
         <div class="card shadow-sm mt-3">
           <div class="card-body">
-            <h5 class="card-title mb-2">🏢 Vínculo de EMP (multi)</h5>
+            <h5 class="card-title mb-2">🏢 Empresas do usuário</h5>
             <div class="text-muted small mb-3">
-              Vincule <strong>vendedor</strong> ou <strong>supervisor</strong> a uma ou mais EMPs. 
-              Use vírgula para separar (ex.: <code>101,102,103</code>). Isso habilita a seleção de EMP ativa no sistema.
+              Selecione as <strong>empresas (lojas)</strong> que o usuário pode visualizar. A permissão oficial é pela tabela <code>usuario_emps</code>.
             </div>
 
             <form method="post" class="row g-2">
-              <input type="hidden" name="acao" value="vincular_emps">
+              <input type="hidden" name="acao" value="set_emps">
 
               <div class="col-12">
                 <label class="form-label">Usuário</label>
@@ -159,57 +163,33 @@
               </div>
 
               <div class="col-12">
-                <label class="form-label">EMP(s)</label>
-                <input class="form-control" name="emps" placeholder="Ex.: 101, 102, 103" required>
-                {% if emps_disponiveis %}
-                  <div class="form-text">EMPs encontradas nas vendas: {{ emps_disponiveis|join(', ') }}</div>
+                <label class="form-label">Empresas (marque 1+)</label>
+                {% if emps_cadastradas and emps_cadastradas|length > 0 %}
+                  <div class="border rounded p-2" style="max-height: 220px; overflow:auto;">
+                    {% for e in emps_cadastradas %}
+                      {% if e.ativo %}
+                        <div class="form-check">
+                          <input class="form-check-input" type="checkbox" name="emps_multi" id="emp_set_{{ e.codigo }}" value="{{ e.codigo }}">
+                          <label class="form-check-label" for="emp_set_{{ e.codigo }}">
+                            {{ emp_labels.get(e.codigo|string, e.codigo) if emp_labels else (e.codigo ~ ' — ' ~ e.nome) }}
+                          </label>
+                        </div>
+                      {% endif %}
+                    {% endfor %}
+                  </div>
+                  <div class="form-text">
+                    <strong>Vendedor/Supervisor</strong> precisam de ao menos 1 empresa ativa. <strong>Admin</strong> é opcional.
+                  </div>
+                {% else %}
+                  <input class="form-control" name="emps" placeholder="Ex.: 101, 102, 103" required>
+                  <div class="form-text">
+                    Ainda não há empresas cadastradas. Cadastre em <a href="/admin/emps">Empresas</a>. Por enquanto, informe os códigos separados por vírgula.
+                  </div>
                 {% endif %}
               </div>
 
               <div class="col-12 d-grid">
-                <button class="btn btn-outline-primary">Salvar vínculo</button>
-              </div>
-            </form>
-
-            
-            <div class="alert alert-info py-2 small mt-3">
-              <strong>EMP do usuário (legado/padrão):</strong>
-              use para definir a <em>EMP padrão</em> (quando houver múltiplas EMPs vinculadas) e para o perfil <em>supervisor</em>.
-            </div>
-
-            <form method="post" class="row g-2">
-              <input type="hidden" name="acao" value="alterar_emp">
-
-              <div class="col-7">
-                <label class="form-label">Usuário</label>
-                <input class="form-control" name="alvo" placeholder="Ex.: LUCAS" required>
-              </div>
-
-              <div class="col-5">
-                <label class="form-label">EMP</label>
-                <input class="form-control" name="emp_novo" placeholder="Ex.: 101">
-                <div class="form-text">Deixe vazio para remover.</div>
-              </div>
-
-              <div class="col-12 d-grid">
-                <button class="btn btn-outline-success">Atualizar EMP</button>
-              </div>
-            </form>
-
-<hr class="my-3">
-
-            <form method="post" class="row g-2">
-              <input type="hidden" name="acao" value="remover_emp">
-              <div class="col-7">
-                <label class="form-label">Usuário</label>
-                <input class="form-control" name="alvo" placeholder="Ex.: LUCAS" required>
-              </div>
-              <div class="col-5">
-                <label class="form-label">EMP</label>
-                <input class="form-control" name="emp" placeholder="Ex.: 101" required>
-              </div>
-              <div class="col-12 d-grid">
-                <button class="btn btn-outline-danger">Remover EMP do usuário</button>
+                <button class="btn btn-outline-primary">Salvar empresas</button>
               </div>
             </form>
           </div>
@@ -248,28 +228,13 @@
                   <tr>
                     <th>Usuário</th>
                     <th>Perfil</th>
-                    <th>EMP (legado)</th>
-                    <th>EMPs vinculadas</th>
+                    <th>Empresas</th>
                   </tr>
                 </thead>
                 <tbody>
                   {% for u in usuarios %}
                     <tr>
-                      <td>
-                        {% if u.role in ["vendedor","supervisor"] %}
-                          {% set emps_btn = (vinculos.get(u.usuario) or []) %}
-                          <button type="button" class="btn btn-link p-0 emp-edit-btn"
-                                  data-bs-toggle="modal" data-bs-target="#empModal"
-                                  data-usuario="{{ u.usuario }}"
-                                  data-role="{{ u.role }}"
-                                  data-emp-legado="{{ u.emp if u.emp else '' }}"
-                                  data-emps="{{ emps_btn|join(', ') }}">
-                            <strong>{{ u.usuario }}</strong>
-                          </button>
-                        {% else %}
-                          <strong>{{ u.usuario }}</strong>
-                        {% endif %}
-                      </td>
+                      <td><strong>{{ u.usuario }}</strong></td>
                       <td>
                         {% if u.role == 'admin' %}
                           <span class="badge text-bg-dark">admin</span>
@@ -279,11 +244,14 @@
                           <span class="badge text-bg-secondary">vendedor</span>
                         {% endif %}
                       </td>
-                      <td class="text-muted">{{ u.emp if u.emp else '-' }}</td>
                       <td>
                         {% set emps = vinculos.get(u.usuario) %}
                         {% if emps %}
-                          <span class="text-muted">{{ emps|join(', ') }}</span>
+                          <span class="text-muted">
+                            {% for code in emps %}
+                              {{ emp_labels.get(code|string, code) if emp_labels else code }}{% if not loop.last %}, {% endif %}
+                            {% endfor %}
+                          </span>
                         {% else %}
                           <span class="text-muted">-</span>
                         {% endif %}
@@ -304,125 +272,4 @@
 
   </div>
 
-    <!-- Modal: editar EMPs vinculadas -->
-  <div class="modal fade" id="empModal" tabindex="-1" aria-labelledby="empModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-lg modal-dialog-scrollable">
-      <div class="modal-content">
-        <form method="post">
-          <input type="hidden" name="acao" value="set_emp_e_emps">
-          <input type="hidden" name="alvo" id="empModalUser" value="">
-          <div class="modal-header">
-            <h5 class="modal-title" id="empModalLabel">🏢 EMPs do usuário</h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
-          </div>
-          <div class="modal-body">
-            <div class="mb-2">
-              <div class="text-muted">Usuário selecionado:</div>
-              <div class="fs-5"><strong id="empModalUserLabel">-</strong> <span class="badge text-bg-light border ms-2" id="empModalRole">-</span></div>
-            </div>
-
-            <div class="alert alert-warning py-2 small mb-3">
-              Dica: informe as EMPs separadas por vírgula. Ex.: <strong>101,102,103</strong>.
-              Ao salvar, a lista será <strong>substituída</strong> pelas EMPs informadas.
-            </div>
-
-            <div class="mb-3">
-              <label class="form-label">EMP (legado / padrão)</label>
-              <input class="form-control" name="emp_legado" id="empModalEmpLegado" placeholder="Ex.: 101">
-              <div class="form-text">Atual: <span id="empModalEmpLegadoCurrent" class="text-muted">-</span>. Se deixar vazio e existir EMP vinculada, o sistema usa a 1ª como padrão.</div>
-            </div>
-
-            <div class="mb-3">
-              <label class="form-label">EMPs vinculadas (editar)</label>
-              <input class="form-control" name="emps" id="empModalEmps" placeholder="Ex.: 101,102,103">
-              <div class="form-text">EMPs atuais: <span id="empModalCurrent" class="text-muted">-</span></div>
-            </div>
-
-            {% if emps_disponiveis and emps_disponiveis|length > 0 %}
-            <div class="mb-2">
-              <label class="form-label">Selecionar EMPs existentes (opcional)</label>
-              <select class="form-select" id="empModalSelect" multiple size="6">
-                {% for e in emps_disponiveis %}
-                  <option value="{{ e }}">{{ e }}</option>
-                {% endfor %}
-              </select>
-              <div class="form-text">
-                Dica: selecione múltiplas com <strong>Ctrl</strong>/<strong>⌘</strong>. Ao selecionar aqui, o campo acima será preenchido automaticamente.
-              </div>
-            </div>
-            {% endif %}
-          </div>
-          <div class="modal-footer">
-            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
-            <button type="submit" class="btn btn-primary">Salvar EMPs</button>
-          </div>
-        </form>
-      </div>
-    </div>
-  </div>
-
-<script>
-    (function() {
-      const role = document.getElementById('roleSelect');
-      const empWrap = document.getElementById('empWrap');
-      function sync() {
-        const isSup = (role.value || '').toLowerCase() === 'supervisor';
-        empWrap.style.display = isSup ? 'block' : 'none';
-      }
-      role.addEventListener('change', sync);
-      sync();
-    })();
-
-    // Modal: preencher usuário e EMPs atuais
-    (function() {
-      const buttons = document.querySelectorAll('.emp-edit-btn');
-      const userHidden = document.getElementById('empModalUser');
-      const userLabel = document.getElementById('empModalUserLabel');
-      const roleBadge = document.getElementById('empModalRole');
-      const empLegadoInput = document.getElementById('empModalEmpLegado');
-      const empLegadoCurrent = document.getElementById('empModalEmpLegadoCurrent');
-      const empsInput = document.getElementById('empModalEmps');
-      const currentSpan = document.getElementById('empModalCurrent');
-      const sel = document.getElementById('empModalSelect');
-
-      function normalizeEmps(s) {
-        return (s || '')
-          .split(/[,;\s]+/g)
-          .map(x => (x || '').trim())
-          .filter(Boolean);
-      }
-
-      buttons.forEach(btn => {
-        btn.addEventListener('click', () => {
-          const usuario = btn.getAttribute('data-usuario') || '';
-          const role = btn.getAttribute('data-role') || '';
-          const empLegado = btn.getAttribute('data-emp-legado') || '';
-          const emps = btn.getAttribute('data-emps') || '';
-          userHidden.value = usuario;
-          userLabel.textContent = usuario || '-';
-          roleBadge.textContent = role || '-';
-          if (empLegadoInput) empLegadoInput.value = empLegado || '';
-          if (empLegadoCurrent) empLegadoCurrent.textContent = empLegado || '-';
-          currentSpan.textContent = emps || '-';
-          empsInput.value = emps || '';
-
-          if (sel) {
-            const desired = new Set(normalizeEmps(emps));
-            Array.from(sel.options).forEach(opt => {
-              opt.selected = desired.has(opt.value);
-            });
-          }
-        });
-      });
-
-      if (sel) {
-        sel.addEventListener('change', () => {
-          const vals = Array.from(sel.selectedOptions).map(o => o.value);
-          if (vals.length) {
-            empsInput.value = vals.join(',');
-          }
-        });
-      }
-    })();
-  </script>
 {% endblock %}

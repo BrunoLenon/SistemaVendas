@@ -3371,17 +3371,15 @@ def admin_usuarios():
                     if role in {"vendedor", "supervisor"} and not desired_emps:
                         raise ValueError("Selecione ao menos 1 EMP para vendedor/supervisor.")
 
-                    # EMP legado (usuarios.emp) é a EMP padrão. Mantemos por compatibilidade.
-                    emp_val = desired_emps[0] if desired_emps else None
+                    # EMP legado (usuarios.emp) não é mais usado na UI/regra de permissão.
+                    # A fonte oficial agora é usuario_emps.
+                    emp_val = None
                     u = db.query(Usuario).filter(Usuario.username == novo_usuario).first()
                     if u:
                         u.senha_hash = generate_password_hash(nova_senha)
                         u.role = role
-                        # Atualiza EMP legado (padrão) — admin pode ficar sem
-                        if role in {"vendedor", "supervisor"}:
-                            setattr(u, "emp", emp_val)
-                        else:
-                            setattr(u, "emp", None)
+                        # Não mantém EMP legado para evitar duplicidade/confusão visual
+                        setattr(u, "emp", None)
 
                         # Atualiza vínculos multi-EMP (usuario_emps)
                         if desired_emps:
@@ -3405,7 +3403,7 @@ def admin_usuarios():
                             username=novo_usuario,
                             senha_hash=generate_password_hash(nova_senha),
                             role=role,
-                            emp=(emp_val if role in {"vendedor", "supervisor"} else None),
+                            emp=None,
                         )
                         db.add(u_new)
                         db.commit()  # precisa do id
@@ -3443,19 +3441,23 @@ def admin_usuarios():
                     ok = f"Usuário {alvo} removido."
                 elif acao == "set_emps":
                     alvo = (request.form.get("alvo") or "").strip().upper()
+                    # Aceita lista via checkbox/multi (emps_multi) ou texto (compatibilidade)
+                    emps_sel = [str(x).strip() for x in (request.form.getlist("emps_multi") or []) if str(x).strip()]
                     emps_raw = (request.form.get("emps") or "")
-                    emps = []
-                    for part in re.split(r"[\s,;]+", emps_raw.strip()):
-                        if part:
-                            emps.append(str(part).strip())
+                    if emps_raw.strip():
+                        for part in re.split(r"[\s,;]+", emps_raw.strip()):
+                            if part:
+                                emps_sel.append(str(part).strip())
+                    emps = sorted({e for e in emps_sel if e})
                     if not alvo:
                         raise ValueError("Informe o usuário.")
                     u = db.query(Usuario).filter(Usuario.username == alvo).first()
                     if not u:
                         raise ValueError("Usuário não encontrado.")
-                    if u.role not in ('vendedor', 'supervisor'):
-                        raise ValueError("Apenas VENDEDOR ou SUPERVISOR podem ter múltiplas EMPs vinculadas.")
-                    desired = set([e for e in emps if e])
+                    # Admin pode ter 0+ vínculos (opcional). Vendedor/Supervisor precisam de 1+.
+                    if u.role in ("vendedor", "supervisor") and not emps:
+                        raise ValueError("Vendedor/Supervisor precisam ter ao menos 1 EMP.")
+                    desired = set(emps)
                     links = db.query(UsuarioEmp).filter(UsuarioEmp.usuario_id == u.id).all()
                     current = {lk.emp: lk for lk in links}
                     # desativa o que não está no desired
@@ -3579,7 +3581,7 @@ def admin_usuarios():
 
         usuarios = db.query(Usuario).order_by(Usuario.role.desc(), Usuario.username.asc()).all()
         usuarios_out = [
-            {"usuario": u.username, "role": u.role, "emp": getattr(u, "emp", None)}
+            {"usuario": u.username, "role": u.role}
             for u in usuarios
         ]
 
@@ -3608,6 +3610,27 @@ def admin_usuarios():
         except Exception:
             emps_cadastradas = []
 
+        # Labels para exibir EMP de forma amigável (código — nome (cidade/UF))
+        emp_labels: dict[str, str] = {}
+        for e in emps_cadastradas or []:
+            try:
+                code = str(e.codigo).strip()
+                if not code:
+                    continue
+                extra = ""
+                if getattr(e, "cidade", None) or getattr(e, "uf", None):
+                    c = (getattr(e, "cidade", None) or "").strip()
+                    uf = (getattr(e, "uf", None) or "").strip()
+                    if c and uf:
+                        extra = f" ({c}/{uf})"
+                    elif c:
+                        extra = f" ({c})"
+                    elif uf:
+                        extra = f" ({uf})"
+                emp_labels[code] = f"{code} — {(getattr(e, 'nome', '') or '').strip()}{extra}".strip()
+            except Exception:
+                continue
+
         try:
             emps_disponiveis = [str(r[0]) for r in db.query(Venda.emp).distinct().order_by(Venda.emp.asc()).all() if r[0] is not None]
         except Exception:
@@ -3622,6 +3645,7 @@ def admin_usuarios():
         ok=ok,
         vinculos=vinculos,
         emps_cadastradas=emps_cadastradas,
+        emp_labels=emp_labels,
         emps_disponiveis=emps_disponiveis,
     )
 
