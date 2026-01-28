@@ -24,6 +24,8 @@
         <!-- ✅ NOVO: botão de importação -->
         <a class="btn btn-primary btn-sm" href="/admin/importar">📥 Importar Vendas</a>
 
+        <a class="btn btn-outline-secondary btn-sm" href="/admin/emps">🏢 EMPs</a>
+
         <a class="btn btn-outline-primary btn-sm" href="/senha">Trocar minha senha</a>
         <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('dashboard') }}">Dashboard</a>
         <a class="btn btn-outline-danger btn-sm" href="{{ url_for('auth.logout') }}">Sair</a>
@@ -86,11 +88,26 @@
                 </select>
               </div>
 
-              <!-- EMP do supervisor -->
-              <div class="mb-3" id="empWrap" style="display:none;">
-                <label class="form-label">EMP (loja do supervisor)</label>
-                <input class="form-control" name="emp_supervisor" placeholder="Ex.: 101" inputmode="numeric">
-                <div class="form-text">Somente para <strong>Supervisor</strong>: define qual EMP ele pode visualizar.</div>
+              <div class="mb-3">
+                <label class="form-label">EMP(s) do usuário</label>
+
+                {% if emps_cadastradas and emps_cadastradas|length > 0 %}
+                  <select class="form-select" name="emps_multi" multiple size="6">
+                    {% for e in emps_cadastradas %}
+                      {% if e.ativo %}
+                        <option value="{{ e.codigo }}">{{ e.codigo }} — {{ e.nome }}{% if e.cidade %} ({{ e.cidade }}{% if e.uf %}/{{ e.uf }}{% endif %}){% endif %}</option>
+                      {% endif %}
+                    {% endfor %}
+                  </select>
+                  <div class="form-text">
+                    Selecione 1+ EMPs. <strong>Vendedor/Supervisor</strong> precisam de ao menos 1 EMP ativa. <strong>Admin</strong> é opcional.
+                  </div>
+                {% else %}
+                  <input class="form-control" name="emps_text" placeholder="Ex.: 101, 102, 103">
+                  <div class="form-text">
+                    Ainda não há EMPs cadastradas. Você pode cadastrar em <a href="/admin/emps">Cadastro de EMPs</a>. Por enquanto, informe os códigos separados por vírgula.
+                  </div>
+                {% endif %}
               </div>
 
               <button class="btn btn-primary w-100">Salvar</button>

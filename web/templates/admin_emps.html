@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+
+{% block title %}Administrador - EMPs{% endblock %}
+
+{% block extra_head %}
+<style>
+.page-wrap { max-width: 1100px; }
+.card { border-radius: 14px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container py-4 page-wrap">
+
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+      <h3 class="m-0">🏢 Cadastro de EMPs</h3>
+      <div class="text-muted">Logado como <strong>{{ usuario }}</strong></div>
+    </div>
+    <div class="d-flex gap-2 flex-wrap justify-content-end">
+      <a class="btn btn-outline-secondary btn-sm" href="/admin/usuarios">Usuários</a>
+      <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('dashboard') }}">Dashboard</a>
+      <a class="btn btn-outline-danger btn-sm" href="{{ url_for('auth.logout') }}">Sair</a>
+    </div>
+  </div>
+
+  {% if erro %}
+    <div class="alert alert-danger py-2">{{ erro }}</div>
+  {% endif %}
+  {% if ok %}
+    <div class="alert alert-success py-2">{{ ok }}</div>
+  {% endif %}
+
+  <div class="row g-3">
+    <div class="col-lg-4">
+      <div class="card shadow-sm">
+        <div class="card-body">
+          <h5 class="card-title mb-3">➕ Criar / Atualizar EMP</h5>
+          <form method="post" class="vstack gap-2">
+            <input type="hidden" name="acao" value="criar">
+
+            <div>
+              <label class="form-label">Código (EMP)</label>
+              <input class="form-control" name="codigo" placeholder="Ex.: 101" required>
+            </div>
+            <div>
+              <label class="form-label">Nome</label>
+              <input class="form-control" name="nome" placeholder="Ex.: Veipecas" required>
+            </div>
+            <div>
+              <label class="form-label">Cidade</label>
+              <input class="form-control" name="cidade" placeholder="Ex.: Goiânia">
+            </div>
+            <div>
+              <label class="form-label">UF</label>
+              <input class="form-control" name="uf" placeholder="Ex.: GO" maxlength="2">
+            </div>
+            <div class="form-check mt-1">
+              <input class="form-check-input" type="checkbox" value="1" id="ativoChk" name="ativo" checked>
+              <label class="form-check-label" for="ativoChk">Ativa</label>
+            </div>
+
+            <button class="btn btn-primary">Salvar</button>
+            <div class="text-muted small">Dica: se o código já existir, ele será atualizado.</div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-8">
+      <div class="card shadow-sm">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <h5 class="card-title m-0">EMPs cadastradas</h5>
+            <span class="badge text-bg-light">{{ emps|length }} EMPs</span>
+          </div>
+          <div class="table-responsive">
+            <table class="table table-sm align-middle">
+              <thead>
+                <tr>
+                  <th>Código</th>
+                  <th>Nome</th>
+                  <th>Cidade/UF</th>
+                  <th>Status</th>
+                  <th class="text-end">Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for e in emps %}
+                  <tr>
+                    <td><strong>{{ e.codigo }}</strong></td>
+                    <td>{{ e.nome }}</td>
+                    <td>
+                      {{ e.cidade or '-' }}{% if e.uf %}/{{ e.uf }}{% endif %}
+                    </td>
+                    <td>
+                      {% if e.ativo %}
+                        <span class="badge text-bg-success">ativa</span>
+                      {% else %}
+                        <span class="badge text-bg-secondary">inativa</span>
+                      {% endif %}
+                    </td>
+                    <td class="text-end">
+                      <form method="post" style="display:inline">
+                        <input type="hidden" name="acao" value="toggle">
+                        <input type="hidden" name="codigo" value="{{ e.codigo }}">
+                        <button class="btn btn-outline-secondary btn-sm">
+                          {% if e.ativo %}Desativar{% else %}Ativar{% endif %}
+                        </button>
+                      </form>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+
+          <div class="text-muted small">
+            As EMPs inativas não somem do histórico de vendas, mas podem ser ocultadas de seleções e cadastros.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

@@ -30,6 +30,7 @@ from db import (
     SessionLocal,
     Usuario,
     UsuarioEmp,
+    Emp,
     Venda,
     DashboardCache,
     ItemParado,
@@ -3350,42 +3351,70 @@ def admin_usuarios():
                     novo_usuario = (request.form.get("novo_usuario") or "").strip().upper()
                     nova_senha = request.form.get("nova_senha") or ""
                     role = (request.form.get("role") or "vendedor").strip().lower()
-                    emp_sup = (request.form.get("emp_supervisor") or "").strip()
+
+                    # EMPs vinculadas (preferencialmente via multi-select). Aceita também texto (compatibilidade).
+                    emps_sel = [str(x).strip() for x in (request.form.getlist("emps_multi") or []) if str(x).strip()]
+                    emps_raw = (request.form.get("emps_text") or request.form.get("emps") or "").strip()
+                    if emps_raw:
+                        for part in re.split(r"[\s,;]+", emps_raw):
+                            if part:
+                                emps_sel.append(str(part).strip())
+                    # normaliza e remove duplicadas
+                    desired_emps = sorted({e for e in emps_sel if e})
                     if len(nova_senha) < 4:
                         raise ValueError("Senha muito curta (mín. 4).")
                     if role not in {"admin", "supervisor", "vendedor"}:
                         role = "vendedor"
-                    # Supervisor precisa de EMP
-                    emp_val = None
-                    if role == "supervisor":
-                        if not emp_sup:
-                            raise ValueError("Informe a EMP para o supervisor.")
-                        # Normaliza EMP como texto (ex.: "101")
-                        emp_val = str(emp_sup).strip()
-                        if not emp_val:
-                            raise ValueError("Informe a EMP para o supervisor.")
+                    # Regras:
+                    # - Vendedor/Supervisor: precisam ter ao menos 1 EMP ativa
+                    # - Admin: EMP é opcional
+                    if role in {"vendedor", "supervisor"} and not desired_emps:
+                        raise ValueError("Selecione ao menos 1 EMP para vendedor/supervisor.")
+
+                    # EMP legado (usuarios.emp) é a EMP padrão. Mantemos por compatibilidade.
+                    emp_val = desired_emps[0] if desired_emps else None
                     u = db.query(Usuario).filter(Usuario.username == novo_usuario).first()
                     if u:
                         u.senha_hash = generate_password_hash(nova_senha)
                         u.role = role
-                        # Atualiza EMP quando aplicável
-                        if role == "supervisor":
+                        # Atualiza EMP legado (padrão) — admin pode ficar sem
+                        if role in {"vendedor", "supervisor"}:
                             setattr(u, "emp", emp_val)
                         else:
                             setattr(u, "emp", None)
-                        # BUGFIX: sem commit, alterações não eram persistidas.
+
+                        # Atualiza vínculos multi-EMP (usuario_emps)
+                        if desired_emps:
+                            links = db.query(UsuarioEmp).filter(UsuarioEmp.usuario_id == u.id).all()
+                            current = {lk.emp: lk for lk in links}
+                            for emp, lk in current.items():
+                                lk.ativo = (emp in desired_emps)
+                            for emp in desired_emps:
+                                if emp not in current:
+                                    db.add(UsuarioEmp(usuario_id=u.id, emp=emp, ativo=True))
+                        else:
+                            # Admin: desativa qualquer vínculo existente (opcional)
+                            links = db.query(UsuarioEmp).filter(UsuarioEmp.usuario_id == u.id).all()
+                            for lk in links:
+                                lk.ativo = False
+
                         db.commit()
                         ok = f"Usuário {novo_usuario} atualizado."
                     else:
-                        db.add(
-                            Usuario(
-                                username=novo_usuario,
-                                senha_hash=generate_password_hash(nova_senha),
-                                role=role,
-                                emp=emp_val,
-                            )
+                        u_new = Usuario(
+                            username=novo_usuario,
+                            senha_hash=generate_password_hash(nova_senha),
+                            role=role,
+                            emp=(emp_val if role in {"vendedor", "supervisor"} else None),
                         )
-                        db.commit()
+                        db.add(u_new)
+                        db.commit()  # precisa do id
+
+                        if desired_emps:
+                            for emp in desired_emps:
+                                db.add(UsuarioEmp(usuario_id=u_new.id, emp=emp, ativo=True))
+                            db.commit()
+
                         ok = f"Usuário {novo_usuario} criado."
 
                 elif acao == "reset":
@@ -3568,7 +3597,17 @@ def admin_usuarios():
         except Exception:
             vinculos = {}
 
-        # EMPs conhecidas (para ajudar no cadastro) - vindas de vendas
+        # EMPs cadastradas (profissional). Se ainda não tiver, cai para EMPs vistas em vendas.
+        emps_cadastradas = []
+        try:
+            emps_cadastradas = (
+                db.query(Emp)
+                .order_by(Emp.codigo.asc())
+                .all()
+            )
+        except Exception:
+            emps_cadastradas = []
+
         try:
             emps_disponiveis = [str(r[0]) for r in db.query(Venda.emp).distinct().order_by(Venda.emp.asc()).all() if r[0] is not None]
         except Exception:
@@ -3582,7 +3621,93 @@ def admin_usuarios():
         erro=erro,
         ok=ok,
         vinculos=vinculos,
+        emps_cadastradas=emps_cadastradas,
         emps_disponiveis=emps_disponiveis,
+    )
+
+
+@app.route("/admin/emps", methods=["GET", "POST"])
+def admin_emps():
+    """Cadastro de EMPs (ADMIN).
+
+    Permite cadastrar nome/cidade/UF para cada código EMP (loja/filial).
+    """
+    red = _login_required()
+    if red:
+        return red
+    red = _admin_required()
+    if red:
+        return red
+
+    usuario = _usuario_logado()
+    erro = None
+    ok = None
+
+    with SessionLocal() as db:
+        if request.method == "POST":
+            acao = (request.form.get("acao") or "").strip()
+            try:
+                codigo = (request.form.get("codigo") or "").strip()
+                nome = (request.form.get("nome") or "").strip()
+                cidade = (request.form.get("cidade") or "").strip()
+                uf = (request.form.get("uf") or "").strip().upper()
+                ativo_raw = (request.form.get("ativo") or "1").strip()
+                ativo = ativo_raw in {"1", "true", "True", "on", "SIM", "sim"}
+
+                if acao in {"criar", "atualizar"}:
+                    if not codigo:
+                        raise ValueError("Informe o código EMP (ex.: 101).")
+                    if not nome:
+                        raise ValueError("Informe o nome da EMP.")
+                    if uf and len(uf) != 2:
+                        raise ValueError("UF inválida (use 2 letras, ex.: SP).")
+
+                    emp = db.query(Emp).filter(Emp.codigo == codigo).first()
+                    if emp:
+                        emp.nome = nome
+                        emp.cidade = cidade or None
+                        emp.uf = uf or None
+                        emp.ativo = ativo
+                        emp.updated_at = datetime.utcnow()
+                        ok = f"EMP {codigo} atualizada."
+                    else:
+                        db.add(
+                            Emp(
+                                codigo=codigo,
+                                nome=nome,
+                                cidade=cidade or None,
+                                uf=uf or None,
+                                ativo=ativo,
+                            )
+                        )
+                        ok = f"EMP {codigo} criada."
+                    db.commit()
+
+                elif acao == "toggle":
+                    if not codigo:
+                        raise ValueError("Informe o código EMP.")
+                    emp = db.query(Emp).filter(Emp.codigo == codigo).first()
+                    if not emp:
+                        raise ValueError("EMP não encontrada.")
+                    emp.ativo = not bool(emp.ativo)
+                    emp.updated_at = datetime.utcnow()
+                    db.commit()
+                    ok = f"EMP {codigo} agora está {'ATIVA' if emp.ativo else 'INATIVA'}."
+                else:
+                    raise ValueError("Ação inválida.")
+            except Exception as e:
+                db.rollback()
+                erro = str(e)
+                app.logger.exception("Erro na admin/emps")
+
+        emps = db.query(Emp).order_by(Emp.ativo.desc(), Emp.codigo.asc()).all()
+
+    return render_template(
+        "admin_emps.html",
+        usuario=usuario,
+        erro=erro,
+        ok=ok,
+        emps=emps,
     )
 
 

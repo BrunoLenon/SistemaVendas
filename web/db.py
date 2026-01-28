@@ -98,6 +98,29 @@ class UsuarioEmp(Base):
         UniqueConstraint("usuario_id", "emp", name="uq_usuario_emps_usuario_emp"),
     )
 
+
+class Emp(Base):
+    """Cadastro de EMP (loja/filial).
+
+    `codigo` é o identificador que também aparece nas vendas e nos vínculos de usuário.
+    """
+
+    __tablename__ = "emps"
+
+    id = Column(Integer, primary_key=True)
+    codigo = Column(String(30), nullable=False, unique=True, index=True)
+    nome = Column(String(120), nullable=False)
+    cidade = Column(String(120), nullable=True)
+    uf = Column(String(2), nullable=True)
+    ativo = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        Index("ix_emps_uf", "uf"),
+        Index("ix_emps_cidade", "cidade"),
+    )
+
 class Venda(Base):
     __tablename__ = "vendas"
 
@@ -405,6 +428,23 @@ def criar_tabelas():
     # Ajustes compatíveis (IF NOT EXISTS) — seguros para rodar em produção
     try:
         with engine.begin() as conn:
+            # Cadastro de EMPs (lojas/filiais)
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS emps (
+                    id SERIAL PRIMARY KEY,
+                    codigo VARCHAR(30) NOT NULL UNIQUE,
+                    nome VARCHAR(120) NOT NULL,
+                    cidade VARCHAR(120),
+                    uf VARCHAR(2),
+                    ativo BOOLEAN NOT NULL DEFAULT TRUE,
+                    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+                );
+            """))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_emps_codigo ON emps (codigo);"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_emps_uf ON emps (uf);"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_emps_cidade ON emps (cidade);"))
+
             # Usuários: role/emp
             conn.execute(text("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS role varchar(20);"))
             conn.execute(text("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS emp varchar(30);"))
