@@ -1,24 +1,20 @@
 {% extends "base.html" %}
 
-{% block title %}Admin - Campanhas{% endblock %}
+{% block title %}Admin — Campanhas{% endblock %}
 
 {% block extra_head %}
 <style>
   .page-title{font-weight:700; letter-spacing:-.3px}
   .subtitle{color:var(--bs-secondary-color)}
-  .chip{display:inline-flex; align-items:center; gap:.35rem; padding:.25rem .6rem; border-radius:999px; background:rgba(13,110,253,.08); color:#0d6efd; font-size:.85rem}
-  .table thead th{white-space:nowrap}
   .mono{font-variant-numeric: tabular-nums;}
-  .sticky-actions{position:sticky; top:.75rem}
-  .emp-chipbar{overflow:auto; padding-bottom:.25rem; -webkit-overflow-scrolling:touch}
-  .emp-chipbar .btn{flex:0 0 auto; white-space:nowrap}
-  .emp-chipbar::-webkit-scrollbar{height:6px}
-  .emp-chipbar::-webkit-scrollbar-thumb{background:rgba(0,0,0,.12); border-radius:999px}
-  .accordion-body .table-responsive{max-height:60vh; overflow:auto}
-  .accordion-button{gap:.5rem}
-  @media (max-width: 768px){
-    .sticky-actions{position:static}
-    .table-responsive{border-radius: .75rem}
+  .kpi{display:inline-flex; align-items:center; gap:.4rem; padding:.35rem .65rem; border-radius:999px; background:rgba(13,110,253,.08); color:#0d6efd; font-size:.85rem}
+  .card-soft{border-radius:1rem}
+  .sticky-col{position:sticky; top:1rem}
+  .table thead th{white-space:nowrap}
+  .truncate{max-width:280px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  @media (max-width: 991px){
+    .sticky-col{position:static}
+    .truncate{max-width:220px}
   }
 </style>
 {% endblock %}
@@ -28,13 +24,15 @@
 
   <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
     <div>
-      <div class="d-flex align-items-center gap-2">
-        <h3 class="m-0 page-title">Campanhas (Admin)</h3>
-        <span class="chip">Qtd / Recompensa</span>
+      <div class="d-flex flex-wrap align-items-center gap-2">
+        <h3 class="m-0 page-title">Campanhas</h3>
+        <span class="kpi">Admin • Qtd / Recompensa</span>
       </div>
-      <div class="subtitle mt-1">Crie campanhas por <b>código (prefixo)</b> ou por <b>descrição (começa com)</b>. Marca entra como filtro junto com quantidade/valor mínimo.</div>
+      <div class="subtitle mt-1">
+        Crie campanhas por <b>código (prefixo)</b> ou por <b>descrição (começa com)</b>. A <b>marca</b> é sempre obrigatória.
+      </div>
     </div>
-    <div class="d-flex gap-2 sticky-actions">
+    <div class="d-flex gap-2">
       <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('dashboard') }}">Voltar</a>
       <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('auth.logout') }}">Sair</a>
     </div>
@@ -48,219 +46,247 @@
   {% endif %}
 
   <div class="row g-3">
+
+    <!-- COLUNA ESQUERDA: CRIAR -->
     <div class="col-lg-5">
-      <div class="card shadow-sm">
-        <div class="card-body">
-          <div class="d-flex justify-content-between align-items-center mb-2">
-            <div>
-              <div class="fw-semibold">Nova campanha</div>
-              <div class="subtitle small">Preencha o básico e clique em <b>Salvar</b>.</div>
+      <div class="sticky-col">
+
+        <div class="card shadow-sm card-soft">
+          <div class="card-body">
+            <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+              <div>
+                <div class="fw-semibold">Nova campanha</div>
+                <div class="subtitle small">Preencha e clique em <b>Salvar</b>. Campos com * são obrigatórios.</div>
+              </div>
+              <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#tipsCollapse" aria-expanded="false">
+                Dicas
+              </button>
             </div>
+
+            <div class="collapse" id="tipsCollapse">
+              <div class="alert alert-light border small mb-3">
+                <div class="fw-semibold mb-1">Boas práticas</div>
+                <ul class="mb-0">
+                  <li><b>Código</b>: use prefixo (ex.: <code>406</code>) para pegar todos os códigos que começam com isso.</li>
+                  <li><b>Descrição</b>: use o início exato (ex.: <code>JOGO JUNTA</code>) e selecione a marca.</li>
+                  <li><b>Qtd/Valor mínimo</b>: opcionais. Se preencher os dois, ambos serão exigidos.</li>
+                </ul>
+              </div>
+            </div>
+
+            <form method="post" class="row g-2" id="frmCampanha">
+              <input type="hidden" name="acao" value="criar">
+
+              <div class="col-6">
+                <label class="form-label">EMP *</label>
+                <input class="form-control" type="text" name="emp" placeholder="ex: 101" required>
+              </div>
+
+              <div class="col-6">
+                <label class="form-label">Vendedor</label>
+                <input class="form-control" type="text" name="vendedor" placeholder="vazio = todos">
+                <div class="form-text">Opcional • se vazio, vale para todos da EMP.</div>
+              </div>
+
+              <div class="col-12">
+                <label class="form-label">Título</label>
+                <input class="form-control" type="text" name="titulo" placeholder="ex: Semana do Pneu">
+              </div>
+
+              <div class="col-12">
+                <label class="form-label">Base *</label>
+                <select class="form-select" name="campo_match" id="campo_match">
+                  <option value="codigo" selected>Código / Prefixo</option>
+                  <option value="descricao">Descrição (começa com...)</option>
+                </select>
+                <div class="form-text">Escolha <b>uma</b> base. O outro campo será desativado automaticamente.</div>
+              </div>
+
+              <div class="col-12">
+                <label class="form-label">Produto (prefixo)</label>
+                <input class="form-control" type="text" name="produto_prefixo" id="produto_prefixo" placeholder="ex: 406">
+              </div>
+
+              <div class="col-12">
+                <label class="form-label">Descrição (início)</label>
+                <input class="form-control" type="text" name="descricao_prefixo" id="descricao_prefixo" placeholder="ex: JOGO JUNTA">
+              </div>
+
+              <div class="col-6">
+                <label class="form-label">Marca *</label>
+                <input class="form-control" type="text" name="marca" placeholder="ex: COFAP" required>
+              </div>
+
+              <div class="col-6">
+                <label class="form-label">Recompensa (R$/un) *</label>
+                <input class="form-control" type="text" name="recompensa_unit" placeholder="1,00" required>
+              </div>
+
+              <div class="col-6">
+                <label class="form-label">Qtd mínima</label>
+                <input class="form-control" type="text" name="qtd_minima" inputmode="numeric" placeholder="ex: 50">
+              </div>
+
+              <div class="col-6">
+                <label class="form-label">Valor mínimo</label>
+                <input class="form-control" type="text" name="valor_minimo" placeholder="ex: 1000,00">
+              </div>
+
+              <div class="col-6">
+                <label class="form-label">Início *</label>
+                <input class="form-control" type="date" name="data_inicio" required>
+              </div>
+
+              <div class="col-6">
+                <label class="form-label">Fim *</label>
+                <input class="form-control" type="date" name="data_fim" required>
+              </div>
+
+              <div class="col-12 d-grid mt-2">
+                <button class="btn btn-primary" type="submit" id="btnSalvar">
+                  <span class="spinner-border spinner-border-sm d-none" id="spSalvar" role="status" aria-hidden="true"></span>
+                  <span id="txSalvar">Salvar campanha</span>
+                </button>
+              </div>
+            </form>
+
           </div>
-
-          <form method="post" class="row g-2">
-            <input type="hidden" name="acao" value="criar">
-
-            <div class="col-6">
-              <label class="form-label">EMP *</label>
-              <input class="form-control" type="text" name="emp" placeholder="ex: 101" required>
-            </div>
-
-            <div class="col-6">
-              <label class="form-label">Vendedor (opcional)</label>
-              <input class="form-control" type="text" name="vendedor" placeholder="ex: BRUNO">
-              <div class="form-text">Vazio = vale para todos da EMP</div>
-            </div>
-
-            <div class="col-12">
-              <label class="form-label">Título (opcional)</label>
-              <input class="form-control" type="text" name="titulo" placeholder="ex: Semana do Pneu">
-            </div>
-
-            <div class="col-12">
-              <label class="form-label">Base da campanha *</label>
-              <select class="form-select" name="campo_match" id="campo_match">
-                <option value="codigo" selected>Código / Prefixo</option>
-                <option value="descricao">Descrição (começa com...)</option>
-              </select>
-              <div class="form-text">Código: considera todos os itens cujo código <b>começa</b> com o prefixo. Descrição: considera itens cuja descrição <b>começa</b> com o texto.</div>
-            </div>
-
-            <div class="col-12">
-              <label class="form-label">Produto (prefixo)</label>
-              <input class="form-control" type="text" name="produto_prefixo" id="produto_prefixo" placeholder="ex: 406" >
-            </div>
-
-            <div class="col-12">
-              <label class="form-label">Descrição (início)</label>
-              <input class="form-control" type="text" name="descricao_prefixo" id="descricao_prefixo" placeholder="ex: JOGO JUNTA" >
-            </div>
-
-            <div class="col-6">
-              <label class="form-label">Marca *</label>
-              <input class="form-control" type="text" name="marca" placeholder="ex: COFAP" required>
-            </div>
-
-            <div class="col-6">
-              <label class="form-label">Recompensa (R$/un) *</label>
-              <input class="form-control" type="text" name="recompensa_unit" placeholder="1,00" required>
-            </div>
-
-            <div class="col-6">
-              <label class="form-label">Qtd mínima (opcional)</label>
-              <input class="form-control" type="text" name="qtd_minima" placeholder="ex: 50">
-            </div>
-
-            <div class="col-6">
-              <label class="form-label">Valor mínimo (opcional)</label>
-              <input class="form-control" type="text" name="valor_minimo" placeholder="ex: 1000,00">
-            </div>
-
-            <div class="col-6">
-              <label class="form-label">Início *</label>
-              <input class="form-control" type="date" name="data_inicio" required>
-            </div>
-
-            <div class="col-6">
-              <label class="form-label">Fim *</label>
-              <input class="form-control" type="date" name="data_fim" required>
-            </div>
-
-            <div class="col-12 d-grid mt-2">
-              <button class="btn btn-primary" type="submit">Salvar campanha</button>
-            </div>
-          </form>
         </div>
-      </div>
 
-      <div class="card shadow-sm mt-3">
-        <div class="card-body">
-          <div class="fw-semibold mb-1">Dicas rápidas</div>
-          <ul class="mb-0 small subtitle">
-            <li><b>Código</b>: use prefixo (ex.: <code>406</code>) para pegar todos os códigos que começam com isso.</li>
-            <li><b>Descrição</b>: use o início exato (ex.: <code>JOGO JUNTA</code>) e selecione a marca.</li>
-            <li>Qtd/Valor mínimo são opcionais. Se preencher os dois, ambos serão exigidos.</li>
-          </ul>
-        </div>
       </div>
     </div>
 
+    <!-- COLUNA DIREITA: LISTA -->
     <div class="col-lg-7">
-      <div class="card shadow-sm">
+      <div class="card shadow-sm card-soft">
         <div class="card-body">
-          <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+          <div class="d-flex flex-wrap justify-content-between align-items-end gap-2 mb-3">
             <div>
               <div class="fw-semibold">Campanhas cadastradas</div>
-              <div class="subtitle small">Edite ou exclua abaixo.</div>
+              <div class="subtitle small">Filtre rapidamente e gerencie abaixo.</div>
+            </div>
+
+            <div class="d-flex flex-wrap gap-2">
+              <div class="input-group input-group-sm" style="min-width:240px">
+                <span class="input-group-text">🔎</span>
+                <input type="text" class="form-control" id="qSearch" placeholder="Buscar (título, vendedor, marca...)">
+              </div>
+
+              <select class="form-select form-select-sm" id="empFilter" style="width:auto; min-width:140px">
+                <option value="ALL" selected>Todas EMP</option>
+                {% set grouped_emps = campanhas|groupby('emp') %}
+                {% for g in grouped_emps %}
+                  {% if g.grouper %}
+                    <option value="{{ g.grouper }}">EMP {{ g.grouper }}</option>
+                  {% endif %}
+                {% endfor %}
+              </select>
             </div>
           </div>
 
-          {% set grouped = campanhas|groupby('emp') %}
-{% if campanhas|length == 0 %}
-  <div class="text-center text-muted py-4">Nenhuma campanha cadastrada.</div>
-{% else %}
-
-  <div class="d-flex flex-nowrap gap-2 mb-3 emp-chipbar">
-    {% for g in grouped %}
-      {% set empv = g.grouper %}
-      {% set emp_label = empv if empv else 'SEM EMP' %}
-      <button class="btn btn-sm btn-outline-primary rounded-pill"
-              type="button"
-              data-bs-toggle="collapse"
-              data-bs-target="#emp-collapse-{{ loop.index }}"
-              aria-expanded="false"
-              aria-controls="emp-collapse-{{ loop.index }}">
-        EMP {{ emp_label }} <span class="badge text-bg-primary ms-1">{{ g.list|length }}</span>
-      </button>
-    {% endfor %}
-  </div>
-
-  <div class="accordion" id="accEmpCampanhas">
-    {% for g in grouped %}
-      {% set empv = g.grouper %}
-      {% set emp_label = empv if empv else 'SEM EMP' %}
-      <div class="accordion-item">
-        <h2 class="accordion-header" id="emp-heading-{{ loop.index }}">
-          <button class="accordion-button collapsed" type="button"
-                  data-bs-toggle="collapse"
-                  data-bs-target="#emp-collapse-{{ loop.index }}"
-                  aria-expanded="false"
-                  aria-controls="emp-collapse-{{ loop.index }}">
-            <span class="fw-semibold">EMP {{ emp_label }}</span>
-            <span class="ms-2 badge text-bg-secondary">{{ g.list|length }} campanha(s)</span>
-          </button>
-        </h2>
-        <div id="emp-collapse-{{ loop.index }}" class="accordion-collapse collapse"
-             aria-labelledby="emp-heading-{{ loop.index }}" data-bs-parent="#accEmpCampanhas">
-          <div class="accordion-body p-0">
+          {% if campanhas|length == 0 %}
+            <div class="text-center text-muted py-4">Nenhuma campanha cadastrada.</div>
+          {% else %}
             <div class="table-responsive">
-              <table class="table table-sm align-middle mb-0">
+              <table class="table table-sm align-middle mb-0" id="tblCampanhas">
                 <thead class="table-light">
                   <tr>
                     <th>#</th>
-                    <th>Título</th>
+                    <th>EMP</th>
+                    <th>Título / Base</th>
                     <th>Vendedor</th>
-                    <th>Base</th>
                     <th>Marca</th>
-                    <th class="text-end">Qtd mín</th>
-                    <th class="text-end">Valor mín</th>
+                    <th class="text-end">Mínimos</th>
                     <th class="text-end">R$/un</th>
                     <th>Vigência</th>
                     <th class="text-end">Ações</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {% for c in g.list %}
-                  <tr>
-                    <td class="mono">{{ c.id }}</td>
-                    <td class="text-truncate" style="max-width:260px" title="{{ c.titulo or '' }}">{{ c.titulo or '-' }}</td>
-                    <td>{{ c.vendedor or 'TODOS' }}</td>
-                    <td>
-                      {% if c.campo_match == 'codigo' %}
-                        <span class="chip">Código</span>
-                        <div class="small text-muted mono">{{ c.produto_prefixo or '-' }}</div>
-                      {% else %}
-                        <span class="chip">Descrição</span>
-                        <div class="small text-muted text-truncate" style="max-width:220px" title="{{ c.descricao_prefixo or '' }}">{{ c.descricao_prefixo or '-' }}</div>
-                      {% endif %}
-                    </td>
-                    <td class="mono">{{ c.marca or '-' }}</td>
-                    <td class="text-end mono">{{ (c.qtd_minima or 0) }}</td>
-                    <td class="text-end mono">{{ 'R$ ' ~ '%.2f'|format(c.valor_minimo or 0) }}</td>
-                    <td class="text-end mono">{{ 'R$ ' ~ '%.2f'|format(c.recompensa_unit or 0) }}</td>
-                    <td class="small">
-                      {{ c.data_inicio.strftime('%d/%m/%Y') if c.data_inicio else '-' }}<br>
-                      {{ c.data_fim.strftime('%d/%m/%Y') if c.data_fim else '-' }}
-                    </td>
-                    <td class="text-end">
-                      <form method="post" class="d-inline">
-                        <input type="hidden" name="acao" value="excluir">
-                        <input type="hidden" name="id" value="{{ c.id }}">
-                        <button class="btn btn-sm btn-outline-danger">Excluir</button>
-                      </form>
-                    </td>
-                  </tr>
+                  {% for c in campanhas %}
+                    <tr data-emp="{{ c.emp or '' }}" data-search="{{ (c.titulo or '') ~ ' ' ~ (c.vendedor or '') ~ ' ' ~ (c.marca or '') ~ ' ' ~ (c.produto_prefixo or '') ~ ' ' ~ (c.descricao_prefixo or '') }}">
+                      <td class="mono">{{ c.id }}</td>
+                      <td class="mono">{{ c.emp or '-' }}</td>
+                      <td>
+                        <div class="fw-semibold truncate" title="{{ c.titulo or '' }}">{{ c.titulo or '-' }}</div>
+                        <div class="small text-muted">
+                          {% if c.campo_match == 'codigo' %}
+                            <span class="badge text-bg-light border">Código</span>
+                            <span class="mono">{{ c.produto_prefixo or '-' }}</span>
+                          {% else %}
+                            <span class="badge text-bg-light border">Descrição</span>
+                            <span class="truncate d-inline-block" style="vertical-align:bottom" title="{{ c.descricao_prefixo or '' }}">{{ c.descricao_prefixo or '-' }}</span>
+                          {% endif %}
+                        </div>
+                      </td>
+                      <td>{{ c.vendedor or 'TODOS' }}</td>
+                      <td class="mono">{{ c.marca or '-' }}</td>
+                      <td class="text-end mono">
+                        {% if c.qtd_minima %}{{ c.qtd_minima }}{% else %}-{% endif %}
+                        <span class="text-muted">/</span>
+                        {% if c.valor_minimo %}R$ {{ '%.2f'|format(c.valor_minimo) }}{% else %}-{% endif %}
+                      </td>
+                      <td class="text-end mono">R$ {{ '%.2f'|format(c.recompensa_unit or 0) }}</td>
+                      <td class="small">
+                        {{ c.data_inicio.strftime('%d/%m/%Y') if c.data_inicio else '-' }}<br>
+                        {{ c.data_fim.strftime('%d/%m/%Y') if c.data_fim else '-' }}
+                      </td>
+                      <td class="text-end">
+                        <button class="btn btn-sm btn-outline-danger" type="button"
+                                data-bs-toggle="modal" data-bs-target="#delModal"
+                                data-id="{{ c.id }}" data-title="{{ c.titulo or ('Campanha #' ~ c.id) }}">
+                          Excluir
+                        </button>
+                      </td>
+                    </tr>
                   {% endfor %}
                 </tbody>
               </table>
             </div>
-          </div>
-        </div>
-      </div>
-    {% endfor %}
-  </div>
 
-{% endif %}
+            <div class="subtitle small mt-2">
+              Mostrando <span class="mono" id="rowCount">{{ campanhas|length }}</span> campanha(s).
+            </div>
+          {% endif %}
 
         </div>
       </div>
     </div>
-  </div>
 
+  </div>
+</div>
+
+<!-- Modal excluir -->
+<div class="modal fade" id="delModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content" style="border-radius:1rem">
+      <div class="modal-header">
+        <div>
+          <div class="fw-semibold">Confirmar exclusão</div>
+          <div class="subtitle small" id="delTitle">Campanha</div>
+        </div>
+        <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Fechar</button>
+      </div>
+      <div class="modal-body">
+        <div class="alert alert-warning mb-0">
+          Essa ação não pode ser desfeita.
+        </div>
+      </div>
+      <div class="modal-footer">
+        <form method="post" id="delForm" class="m-0">
+          <input type="hidden" name="acao" value="excluir">
+          <input type="hidden" name="id" id="delId" value="">
+          <button class="btn btn-outline-secondary" type="button" data-bs-dismiss="modal">Cancelar</button>
+          <button class="btn btn-danger" type="submit">Excluir</button>
+        </form>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script>
 (function(){
+  // Toggle campos por base
   function toggleMatchFields() {
     var sel = document.getElementById('campo_match');
     var tipo = (sel && sel.value) ? sel.value : 'codigo';
@@ -276,6 +302,7 @@
       cod.classList.add('bg-light');
       desc.disabled = false;
       desc.classList.remove('bg-light');
+      desc.focus();
     } else {
       cod.required = true;
       desc.required = false;
@@ -284,12 +311,64 @@
       desc.classList.add('bg-light');
       cod.disabled = false;
       cod.classList.remove('bg-light');
+      cod.focus();
     }
   }
   document.addEventListener('change', function(e){
     if(e && e.target && e.target.id === 'campo_match') toggleMatchFields();
   });
   toggleMatchFields();
+
+  // UX: botão salvar loading
+  var frm = document.getElementById('frmCampanha');
+  if(frm){
+    frm.addEventListener('submit', function(){
+      var b = document.getElementById('btnSalvar');
+      var sp = document.getElementById('spSalvar');
+      var tx = document.getElementById('txSalvar');
+      if(b){ b.disabled = true; }
+      if(sp){ sp.classList.remove('d-none'); }
+      if(tx){ tx.textContent = 'Salvando...'; }
+    });
+  }
+
+  // Modal excluir
+  var delModal = document.getElementById('delModal');
+  if(delModal){
+    delModal.addEventListener('show.bs.modal', function(event){
+      var btn = event.relatedTarget;
+      var id = btn.getAttribute('data-id');
+      var title = btn.getAttribute('data-title');
+      document.getElementById('delId').value = id;
+      document.getElementById('delTitle').textContent = title;
+    });
+  }
+
+  // Filtro client-side
+  function applyFilters(){
+    var q = (document.getElementById('qSearch')?.value || '').toLowerCase().trim();
+    var emp = document.getElementById('empFilter')?.value || 'ALL';
+    var rows = document.querySelectorAll('#tblCampanhas tbody tr');
+    var shown = 0;
+
+    rows.forEach(function(r){
+      var okEmp = (emp === 'ALL') || (String(r.getAttribute('data-emp')||'') === String(emp));
+      var hay = String(r.getAttribute('data-search')||'').toLowerCase();
+      var okQ = (!q) || (hay.indexOf(q) >= 0);
+      var show = okEmp && okQ;
+      r.style.display = show ? '' : 'none';
+      if(show) shown++;
+    });
+
+    var rc = document.getElementById('rowCount');
+    if(rc) rc.textContent = shown;
+  }
+
+  var qs = document.getElementById('qSearch');
+  var ef = document.getElementById('empFilter');
+  if(qs){ qs.addEventListener('input', applyFilters); }
+  if(ef){ ef.addEventListener('change', applyFilters); }
+  applyFilters();
 })();
 </script>
 {% endblock %}
