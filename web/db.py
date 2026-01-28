@@ -91,6 +91,7 @@ class UsuarioEmp(Base):
     id = Column(Integer, primary_key=True)
     usuario_id = Column(Integer, nullable=False, index=True)
     emp = Column(String(30), nullable=False, index=True)
+    ativo = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
     __table_args__ = (
@@ -407,20 +408,38 @@ def criar_tabelas():
             # Usuários: role/emp
             conn.execute(text("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS role varchar(20);"))
             conn.execute(text("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS emp varchar(30);"))
-    # Tabela de vínculo multi-EMP por usuário (vendedor/supervisor)
+            # Tabela de vínculo multi-EMP por usuário (vendedor/supervisor)
             conn.execute(text("""
-                CREATE TABLE IF NOT EXISTS usuario_emp (
+                CREATE TABLE IF NOT EXISTS usuario_emps (
                     id SERIAL PRIMARY KEY,
                     usuario_id INTEGER NOT NULL,
                     emp VARCHAR(30) NOT NULL,
                     ativo BOOLEAN NOT NULL DEFAULT TRUE,
-                    criado_em TIMESTAMP NOT NULL DEFAULT NOW(),
-                    CONSTRAINT uq_usuario_emp_usuario_emp UNIQUE (usuario_id, emp)
+                    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                    CONSTRAINT uq_usuario_emps_usuario_emp UNIQUE (usuario_id, emp)
                 );
             """))
-            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_usuario_emp_usuario_id ON usuario_emp (usuario_id);"))
-            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_usuario_emp_emp ON usuario_emp (emp);"))
-            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_usuario_emp_ativo ON usuario_emp (ativo);"))
+            # Garantir colunas/índices (compatibilidade com bancos antigos)
+            conn.execute(text("ALTER TABLE usuario_emps ADD COLUMN IF NOT EXISTS ativo BOOLEAN NOT NULL DEFAULT TRUE;"))
+            conn.execute(text("ALTER TABLE usuario_emps ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT NOW();"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_usuario_emps_usuario_id ON usuario_emps (usuario_id);"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_usuario_emps_emp ON usuario_emps (emp);"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_usuario_emps_ativo ON usuario_emps (ativo);"))
+            # Compatibilidade: se existir tabela antiga usuario_emp, copia vínculos (não derruba se falhar)
+            conn.execute(text("""
+                DO $$
+                BEGIN
+                    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='usuario_emp') THEN
+                        INSERT INTO usuario_emps (usuario_id, emp, ativo, created_at)
+                        SELECT usuario_id, emp, COALESCE(ativo, TRUE), NOW()
+                        FROM usuario_emp
+                        ON CONFLICT (usuario_id, emp) DO UPDATE SET ativo = EXCLUDED.ativo;
+                    END IF;
+                EXCEPTION WHEN others THEN
+                    -- ignora erros de permissão/DDL
+                    NULL;
+                END $$;
+            """))
             conn.execute(text("UPDATE usuarios SET role='vendedor' WHERE role IS NULL OR role='' ;"))
             conn.execute(text("UPDATE usuarios SET role=lower(role) WHERE role IS NOT NULL;"))
             # Vendas: novos campos para relatórios (IF NOT EXISTS)

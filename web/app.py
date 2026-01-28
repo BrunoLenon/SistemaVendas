@@ -3554,10 +3554,10 @@ def admin_usuarios():
             for u in usuarios
         ]
 
-        # Vínculos multi-EMP (usuario_emp)
+        # Vínculos multi-EMP (usuario_emps)
         vinculos = {}
         try:
-            links = db.query(UsuarioEmp).order_by(UsuarioEmp.emp.asc()).all()
+            links = db.query(UsuarioEmp).filter(UsuarioEmp.ativo == True).order_by(UsuarioEmp.emp.asc()).all()
             # map usuario_id -> username
             id_to_user = {u.id: u.username for u in usuarios}
             for lk in links:
