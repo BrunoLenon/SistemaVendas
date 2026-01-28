@@ -2586,11 +2586,12 @@ def _build_campanhas_escolhidas_por_vendedor(campanhas: list[CampanhaQtd], vende
     especificas: dict[str, dict[tuple[str, str], CampanhaQtd]] = {}
     for c in campanhas:
         campo_match = (getattr(c, "campo_match", None) or "codigo").strip().lower()
-                    if campo_match == "descricao":
-                        pref = (getattr(c, "descricao_prefixo", "") or "").strip() or (c.produto_prefixo or "").strip()
-                        key = ("descricao", pref.lower().strip(), (c.marca or "").strip().upper())
-                    else:
-                        key = ("codigo", (c.produto_prefixo or "").strip().upper(), (c.marca or "").strip().upper())
+        if campo_match == "descricao":
+            pref = (getattr(c, "descricao_prefixo", "") or "").strip() or (c.produto_prefixo or "").strip()
+            key = ("descricao", pref.lower().strip(), (c.marca or "").strip().upper())
+        else:
+            key = ("codigo", (c.produto_prefixo or "").strip().upper(), (c.marca or "").strip().upper())
+
         if c.vendedor and c.vendedor.strip():
             vend = c.vendedor.strip().upper()
             especificas.setdefault(vend, {})[key] = c
