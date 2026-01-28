@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Em manutenção{% endblock %}
+{% block content %}
+<div class="container py-5" style="max-width:720px;">
+  <div class="card shadow-sm" style="border-radius:1rem;">
+    <div class="card-body p-4">
+      <h3 class="mb-2">🛠️ Sistema em manutenção</h3>
+      <p class="text-muted mb-3">Estamos realizando atualizações. Por favor, tente novamente em alguns minutos.</p>
+      <a class="btn btn-outline-secondary" href="{{ url_for('auth.login') }}">Ir para o login</a>
+    </div>
+  </div>
+</div>
+{% endblock %}

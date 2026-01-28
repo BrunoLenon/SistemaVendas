@@ -14,11 +14,6 @@
 
   .form-grid .form-control, .form-grid .form-select{border-radius:.75rem}
   .table td, .table th{vertical-align:middle}
-
-  .admin-campanhas-table{table-layout:fixed;}
-  .admin-campanhas-table th,.admin-campanhas-table td{white-space:nowrap;}
-  .admin-campanhas-table td.col-base{white-space:normal;}
-
   .col-base{min-width:260px}
   .col-vendedor{min-width:140px}
   .col-marca{min-width:140px}
@@ -34,7 +29,7 @@
 {% endblock %}
 
 {% block content %}
-<div class="container-fluid py-4 px-2">
+<div class="container-fluid py-4">
 
   <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
     <div>
@@ -197,7 +192,7 @@
             <div class="text-center text-muted py-4">Nenhuma campanha cadastrada.</div>
           {% else %}
             <div class="table-responsive">
-              <table class="table table-sm align-middle mb-0 w-100 admin-campanhas-table" id="tblCampanhas">
+              <table class="table table-sm align-middle mb-0" id="tblCampanhas">
                 <thead class="table-light">
                   <tr>
                     <th>#</th>

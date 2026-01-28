@@ -38,8 +38,12 @@ def login():
         session.permanent = True
         session["last_activity"] = datetime.utcnow().isoformat()
 
+        # Redireciona para a melhor primeira tela por perfil
+    r = normalize_role(getattr(u, "role", None))
+    # (Vendedor/Supervisor) começam em Itens Parados
+    if r in ("vendedor", "supervisor"):
+        return redirect(url_for("itens_parados"))
     return redirect(url_for("dashboard"))
-
 
 @bp.get("/logout", endpoint="logout")
 def logout():

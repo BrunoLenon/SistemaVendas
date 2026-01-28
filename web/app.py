@@ -171,6 +171,39 @@ try:
 except Exception:
     app.logger.exception("Falha ao registrar blueprint de auth")
 
+
+# -------------------- Modo Manutenção (bloqueia não-admin) --------------------
+@app.before_request
+def _maintenance_guard():
+    # Permite assets e healthz
+    if request.endpoint == "static" or request.path.startswith("/static"):
+        return None
+    if request.path.startswith("/healthz"):
+        return None
+
+    # Sempre permitir login/logout
+    if request.path.startswith("/login") or request.path.startswith("/logout"):
+        return None
+
+    # Flag via ENV tem prioridade; senão, usa AppSetting
+    flag = (os.getenv("MAINTENANCE_MODE") or "").strip().lower()
+
+    if not flag:
+        try:
+            with SessionLocal() as db:
+                flag = (_get_setting(db, "maintenance_mode", "off") or "off").strip().lower()
+        except Exception:
+            # Se falhar leitura, não bloqueia (fail-open)
+            return None
+
+    if flag in ("1", "true", "on", "yes", "y"):
+        r = _role() or ""
+        if r != "admin":
+            return render_template("maintenance.html"), 503
+
+    return None
+
+
 # ------------- Helpers -------------
 def _normalize_role(r: str | None) -> str:
     # Compatibilidade: o sistema historicamente usa `_normalize_role`.
@@ -236,6 +269,23 @@ def admin_configuracoes():
     today = date.today()
 
     with SessionLocal() as db:
+
+        # Modo manutenção (admin-only)
+        maintenance_mode = (_get_setting(db, "maintenance_mode", "off") or "off").strip().lower()
+
+        if request.method == 'POST' and (request.form.get('acao') or '') == 'toggle_maintenance':
+            # toggle on/off
+            try:
+                new_val = (request.form.get('maintenance_mode') or '').strip().lower()
+                if new_val not in ('on','off'):
+                    new_val = 'off'
+                _set_setting(db, 'maintenance_mode', new_val)
+                db.commit()
+                maintenance_mode = new_val
+                msgs.append('Modo manutenção atualizado.')
+            except Exception:
+                db.rollback()
+                msgs.append('Falha ao atualizar modo manutenção.')
         # Upload padrão (sempre disponível)
         if request.method == 'POST' and (request.form.get('acao') or '') == 'upload_default':
             try:
