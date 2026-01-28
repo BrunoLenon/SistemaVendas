@@ -150,7 +150,7 @@ def _idle_timeout():
             if now - last_dt > timedelta(hours=1):
                 session.clear()
                 flash("Sua sessão expirou por inatividade. Faça login novamente.", "warning")
-                return redirect(url_for("login"))
+                return redirect(url_for("auth.login"))
         except Exception:
             # Se estiver inválido, reseta
             pass
@@ -519,7 +519,7 @@ def _normalize_cols(df: pd.DataFrame) -> pd.DataFrame:
 
 def _login_required():
     if not _usuario_logado():
-        return redirect(url_for("login"))
+        return redirect(url_for("auth.login"))
     return None
 
 def _admin_required():
@@ -1279,7 +1279,7 @@ def home():
     # Browser/users: redirect to the right place
     if session.get("vendedor") and session.get("role"):
         return redirect(url_for("dashboard"))
-    return redirect(url_for("login"))
+    return redirect(url_for("auth.login"))
 
 @app.get("/favicon.ico")
 def favicon():

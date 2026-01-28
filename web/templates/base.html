@@ -52,7 +52,7 @@
         </button>
       {% endif %}
 
-      <a class="navbar-brand d-flex align-items-center gap-2" href="{{ url_for('dashboard') if is_logged else url_for('login') }}">
+      <a class="navbar-brand d-flex align-items-center gap-2" href="{{ url_for('dashboard') if is_logged else url_for('auth.login') }}">
         <span class="app-brand-dot"></span>
         <span>SistemaVendas</span>
       </a>
@@ -67,7 +67,7 @@
             <span class="d-none d-md-inline small text-white-50">{{ session.get('usuario_nome') }}</span>
           {% endif %}
 
-          <a class="btn btn-sm btn-outline-danger" href="{{ url_for('logout') }}">Sair</a>
+          <a class="btn btn-sm btn-outline-danger" href="{{ url_for('auth.logout') }}">Sair</a>
         {% endif %}
       </div>
     </div>
