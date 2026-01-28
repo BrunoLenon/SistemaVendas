@@ -79,13 +79,22 @@
             <span class="badge text-bg-success">DESATIVADO</span>
           {% endif %}
 
-          <form method="post" class="m-0">
-            <input type="hidden" name="acao" value="toggle_maintenance">
-            <input type="hidden" name="maintenance_mode" value="{{ 'off' if mm in ['on','true','1','yes','y'] else 'on' }}">
-            <button class="btn btn-outline-primary">
-              {{ 'Desativar' if mm in ['on','true','1','yes','y'] else 'Ativar' }}
-            </button>
-          </form>
+          
+          <div class="d-flex gap-2">
+            <form method="post" class="m-0">
+              <input type="hidden" name="acao" value="maintenance_on">
+              <button class="btn btn-sm {% if mm in ['on','true','1','yes','y'] %}btn-outline-secondary{% else %}btn-primary{% endif %}">
+                Ativar
+              </button>
+            </form>
+            <form method="post" class="m-0">
+              <input type="hidden" name="acao" value="maintenance_off">
+              <button class="btn btn-sm {% if mm in ['on','true','1','yes','y'] %}btn-danger{% else %}btn-outline-secondary{% endif %}">
+                Desativar
+              </button>
+            </form>
+          </div>
+
         </div>
       </div>
     </div>

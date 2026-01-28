@@ -273,19 +273,28 @@ def admin_configuracoes():
         # Modo manutenção (admin-only)
         maintenance_mode = (_get_setting(db, "maintenance_mode", "off") or "off").strip().lower()
 
-        if request.method == 'POST' and (request.form.get('acao') or '') == 'toggle_maintenance':
-            # toggle on/off
-            try:
-                new_val = (request.form.get('maintenance_mode') or '').strip().lower()
-                if new_val not in ('on','off'):
-                    new_val = 'off'
-                _set_setting(db, 'maintenance_mode', new_val)
-                db.commit()
-                maintenance_mode = new_val
-                msgs.append('Modo manutenção atualizado.')
-            except Exception:
-                db.rollback()
-                msgs.append('Falha ao atualizar modo manutenção.')
+        if request.method == 'POST':
+            acao = (request.form.get('acao') or '').strip()
+
+            if acao in ('toggle_maintenance', 'maintenance_on', 'maintenance_off'):
+                try:
+                    if acao == 'maintenance_on':
+                        new_val = 'on'
+                    elif acao == 'maintenance_off':
+                        new_val = 'off'
+                    else:
+                        # toggle on/off (compatibilidade)
+                        new_val = (request.form.get('maintenance_mode') or '').strip().lower()
+                        if new_val not in ('on', 'off'):
+                            new_val = 'off'
+
+                    _set_setting(db, 'maintenance_mode', new_val)
+                    db.commit()
+                    maintenance_mode = new_val
+                    msgs.append(f"Modo manutenção {'ativado' if new_val == 'on' else 'desativado'}.")
+                except Exception:
+                    db.rollback()
+                    msgs.append('Falha ao atualizar modo manutenção.')
         # Upload padrão (sempre disponível)
         if request.method == 'POST' and (request.form.get('acao') or '') == 'upload_default':
             try:
