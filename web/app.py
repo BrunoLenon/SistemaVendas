@@ -547,6 +547,12 @@ def _allowed_emps() -> list[str]:
         return []
 
     emps = session.get("allowed_emps")
+    # compat: versões antigas podem ter salvo como string (ex: "1001 / 4001" ou "1001,4001")
+    if isinstance(emps, str) and emps.strip():
+        import re as _re
+        parts = _re.split(r"[,/\s]+", emps.replace(";", ",").replace("|", "/"))
+        emps = [p.strip() for p in parts if p and p.strip() and p.strip() != "-"]
+        session["allowed_emps"] = emps
     if isinstance(emps, list) and emps:
         return [str(e).strip() for e in emps if e is not None and str(e).strip()]
 
@@ -1280,7 +1286,7 @@ def _dados_ao_vivo(vendedor: str, mes: int, ano: int, emp_scope: str | list[str]
         bruto_ant, devol_ant, liquido_ant, mix_ant = sums(s_ant, e_ant)
         bruto_ano_pass, devol_ano_pass, liquido_ano_pass, mix_ano_pass = sums(s_ano_passado, e_ano_passado)
 
-        pct_devolucao = (devol / bruto * 100.0) if bruto else None
+        pct_devolucao = (devol / bruto * 100.0) if bruto else 0.0
         crescimento = ((liquido - liquido_ant) / abs(liquido_ant) * 100.0) if liquido_ant else None
 
         # Ano passado: vendas real (se existir) -> fallback resumo_periodo
@@ -1637,7 +1643,13 @@ def dashboard():
     dados = None
     if vendedor_alvo:
         try:
-            emp_scope = (allowed_emps if (role or '').lower() in ['supervisor','vendedor'] else None)
+            # Para supervisor/vendedor: restringe por EMPs vinculadas (multi-EMP)
+            if (role or '').lower() in ['supervisor','vendedor']:
+                emp_scope = [str(e).strip() for e in (allowed_emps or []) if e is not None and str(e).strip() and str(e).strip() != '-']
+                if not emp_scope and emp_usuario:
+                    emp_scope = [str(emp_usuario).strip()]
+            else:
+                emp_scope = None
             dados = _dados_from_cache(vendedor_alvo, mes, ano, emp_scope)
         except Exception:
             app.logger.exception("Erro ao carregar dashboard do cache")
