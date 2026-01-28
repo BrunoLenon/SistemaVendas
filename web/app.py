@@ -3405,7 +3405,7 @@ def admin_usuarios():
                     for emp in desired:
                         lk = current.get(emp)
                         if lk is None:
-                            db.add(UsuarioEmp(usuario_id=u.id, emp=emp, ativo=True))
+                            db.add(UsuarioEmp(usuario_id=u.id, emp=emp))
                         elif not lk.ativo:
                             lk.ativo = True
                     db.commit()
@@ -3447,7 +3447,7 @@ def admin_usuarios():
                     for emp in desired:
                         lk = current.get(emp)
                         if lk is None:
-                            db.add(UsuarioEmp(usuario_id=u.id, emp=emp, ativo=True))
+                            db.add(UsuarioEmp(usuario_id=u.id, emp=emp))
                         elif not lk.ativo:
                             lk.ativo = True
 
@@ -3487,7 +3487,7 @@ def admin_usuarios():
                                 link.ativo = True
                                 added += 1
                         else:
-                            db.add(UsuarioEmp(usuario_id=u.id, emp=emp, ativo=True))
+                            db.add(UsuarioEmp(usuario_id=u.id, emp=emp))
                             added += 1
                     db.commit()
                     ok = f"Vínculo atualizado: {alvo} agora está em {added} EMP(s) adicionada(s)/reativada(s)."
@@ -3524,7 +3524,7 @@ def admin_usuarios():
         # Vínculos multi-EMP (usuario_emp)
         vinculos = {}
         try:
-            links = db.query(UsuarioEmp).filter(UsuarioEmp.ativo == True).order_by(UsuarioEmp.emp.asc()).all()
+            links = db.query(UsuarioEmp).order_by(UsuarioEmp.emp.asc()).all()
             # map usuario_id -> username
             id_to_user = {u.id: u.username for u in usuarios}
             for lk in links:
