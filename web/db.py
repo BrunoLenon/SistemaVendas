@@ -86,17 +86,15 @@ class Usuario(Base):
 
 
 class UsuarioEmp(Base):
-    __tablename__ = "usuario_emp"
+    __tablename__ = "usuario_emps"
 
     id = Column(Integer, primary_key=True)
     usuario_id = Column(Integer, nullable=False, index=True)
     emp = Column(String(30), nullable=False, index=True)
-    ativo = Column(Boolean, nullable=False, default=True)
-    criado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
     __table_args__ = (
-        UniqueConstraint("usuario_id", "emp", name="uq_usuario_emp_usuario_emp"),
-        Index("ix_usuario_emp_ativo", "ativo"),
+        UniqueConstraint("usuario_id", "emp", name="uq_usuario_emps_usuario_emp"),
     )
 
 class Venda(Base):

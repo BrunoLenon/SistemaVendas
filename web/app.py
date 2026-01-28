@@ -534,6 +534,40 @@ def _emp() -> str | None:
         except Exception:
             pass
 
+
+
+def _allowed_emps() -> list[str]:
+    """Lista de EMPs permitidas para o usuário logado via tabela usuario_emps.
+
+    - Admin (recomendado): acesso total (retorna []) e usa flag session['admin_all_emps'].
+    - Supervisor/Vendedor: retorna session['allowed_emps'] ou carrega do banco.
+    """
+    role = (_role() or "").lower()
+    if role == "admin" and session.get("admin_all_emps"):
+        return []
+
+    emps = session.get("allowed_emps")
+    if isinstance(emps, list) and emps:
+        return [str(e).strip() for e in emps if e is not None and str(e).strip()]
+
+    uid = session.get("user_id")
+    if not uid:
+        return []
+
+    try:
+        with SessionLocal() as db:
+            rows = db.query(UsuarioEmp.emp).filter(UsuarioEmp.usuario_id == uid).all()
+            emps_db = sorted({str(r[0]).strip() for r in rows if r and r[0] is not None and str(r[0]).strip()})
+            # fallback: usa emp do usuário, se existir
+            if not emps_db:
+                emp_single = _emp()
+                if emp_single:
+                    emps_db = [str(emp_single).strip()]
+            session["allowed_emps"] = emps_db
+            return emps_db
+    except Exception:
+        return []
+
 def _normalize_cols(df: pd.DataFrame) -> pd.DataFrame:
     """Normaliza nomes/tipos de colunas vindas do banco.
 
@@ -598,23 +632,35 @@ def _get_vendedores_db(role: str, emp_usuario: str | None) -> list[str]:
     with SessionLocal() as db:
         q = db.query(func.distinct(Venda.vendedor))
         if role == "supervisor":
-            if emp_usuario:
+            emps = _allowed_emps()
+            if emps:
+                q = q.filter(Venda.emp.in_(emps))
+            elif emp_usuario:
                 q = q.filter(Venda.emp == str(emp_usuario))
             else:
                 return []
-        # admin vê tudo
-        vendedores = [ (r[0] or "").strip().upper() for r in q.all() ]
+        # admin vê tudo; vendedor usa o próprio (não usa dropdown normalmente)
+        vendedores = [(r[0] or "").strip().upper() for r in q.all()]
     vendedores = sorted([v for v in vendedores if v])
     return vendedores
 
 def _get_emps_vendedor(username: str) -> list[str]:
-    """Lista de EMPs em que o vendedor possui vendas (para vendedor multi-EMP).
+    """Lista de EMPs que o vendedor pode acessar.
 
-    Regra do sistema: para vendedores, a EMP é inferida da tabela de vendas.
+    Regra nova (recomendada): usa tabela usuario_emps para controlar permissão.
+    Fallback (para não travar migração): se não houver vínculo ainda, infere pelas vendas.
     """
     username = (username or "").strip().upper()
     if not username:
         return []
+
+    # Primeiro tenta permissão via usuário_emps (quando o vendedor está logado)
+    if (_usuario_logado() or "").strip().upper() == username:
+        emps = _allowed_emps()
+        if emps:
+            return sorted({str(e).strip() for e in emps if e is not None and str(e).strip()})
+
+    # Fallback: inferir pelas vendas (compatibilidade)
     with SessionLocal() as db:
         rows = (
             db.query(func.distinct(Venda.emp))
@@ -1793,12 +1839,17 @@ def itens_parados():
                 emp_scopes = [str(x[0]) for x in db.query(ItemParado.emp).filter(ItemParado.ativo == 1).distinct().all()]
 
     elif role == 'supervisor':
-        emp_scopes = [str(_emp())]
+        emps = _allowed_emps()
+        emp_scopes = emps if emps else ([str(_emp())] if _emp() else [])
 
     else:
-        # vendedor: EMP(s) derivadas das vendas
-        with SessionLocal() as db:
-            emp_scopes = [str(x[0]) for x in db.query(Venda.emp).filter(Venda.vendedor == vendedor_alvo).distinct().all()]
+        # vendedor: EMP(s) via usuario_emps (recomendado); fallback = derivadas das vendas
+        emps = _allowed_emps()
+        if emps:
+            emp_scopes = emps
+        else:
+            with SessionLocal() as db:
+                emp_scopes = [str(x[0]) for x in db.query(Venda.emp).filter(Venda.vendedor == vendedor_alvo).distinct().all()]
 
     emp_scopes = sorted({e.strip() for e in emp_scopes if e and str(e).strip()})
     if not emp_scopes:
@@ -1907,10 +1958,11 @@ def itens_parados_pdf():
             with SessionLocal() as db:
                 emp_scopes = [str(x[0]) for x in db.query(ItemParado.emp).filter(ItemParado.ativo == 1).distinct().all()]
     elif role == 'supervisor':
-        emp_scopes = [str(_emp())]
+        emps = _allowed_emps()
+        emp_scopes = emps if emps else ([str(_emp())] if _emp() else [])
     else:
         with SessionLocal() as db:
-            emp_scopes = [str(x[0]) for x in db.query(Venda.emp).filter(Venda.vendedor == vendedor_alvo).distinct().all()]
+                emp_scopes = [str(x[0]) for x in db.query(Venda.emp).filter(Venda.vendedor == vendedor_alvo).distinct().all()]
 
     emp_scopes = sorted({e.strip() for e in emp_scopes if e and str(e).strip()})
     if not emp_scopes:
@@ -2175,14 +2227,24 @@ def _upsert_resultado(
     return res
 
 def _resolver_emp_scope_para_usuario(vendedor: str, role: str, emp_usuario: str | None) -> list[str]:
-    """Retorna lista de EMPs que o usuário pode visualizar (para campanhas e relatórios)."""
+    """Retorna lista de EMPs que o usuário pode visualizar (para campanhas e relatórios).
+
+    Regra nova (recomendada):
+    - Supervisor/Vendedor: usa usuario_emps (session['allowed_emps']) quando disponível.
+    - Fallback: supervisor usa emp_usuario; vendedor infere pelas vendas.
+    """
     role = (role or "").strip().lower()
     if role == "admin":
-        # Admin: se emp estiver definido via query param, filtra. Caso contrário, pode ver as EMPs do vendedor selecionado
         return []
+
+    if role in ("supervisor", "vendedor"):
+        emps = _allowed_emps()
+        if emps:
+            return emps
+
     if role == "supervisor":
         return [str(emp_usuario)] if emp_usuario else []
-    # vendedor
+
     return _get_emps_vendedor(vendedor)
 
 @app.get("/campanhas")
