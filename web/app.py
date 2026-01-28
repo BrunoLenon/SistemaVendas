@@ -1227,7 +1227,7 @@ def _dados_from_cache(vendedor_alvo, mes, ano, emp_scope):
         "total_liquido_periodo": total_liquido_periodo,
     }
 
-def _dados_ao_vivo(vendedor: str, mes: int, ano: int, emp_scope: str | None):
+def _dados_ao_vivo(vendedor: str, mes: int, ano: int, emp_scope: str | list[str] | None):
     """Calcula o dashboard direto do banco (sem pandas).
 
     Usado apenas quando o cache ainda não existe para aquele período.
@@ -1256,7 +1256,12 @@ def _dados_ao_vivo(vendedor: str, mes: int, ano: int, emp_scope: str | None):
     with SessionLocal() as db:
         base = db.query(Venda).filter(Venda.vendedor == vendedor)
         if emp_scope:
-            base = base.filter(Venda.emp == str(emp_scope))
+            if isinstance(emp_scope, (list, tuple, set)):
+                emps = [str(e).strip() for e in emp_scope if e is not None and str(e).strip()]
+                if emps:
+                    base = base.filter(Venda.emp.in_(emps))
+            else:
+                base = base.filter(Venda.emp == str(emp_scope))
 
         def sums(s, e):
             q = base.filter(Venda.movimento >= s, Venda.movimento < e)
@@ -1479,7 +1484,7 @@ def _clientes_destaque(vendedor: str, ano: int, mes: int, emp_scope: str | None,
 
     return {"crescimento": crescimento, "queda": queda}
 
-def _dashboard_insights(vendedor: str, ano: int, mes: int, emp_scope: str | None) -> dict | None:
+def _dashboard_insights(vendedor: str, ano: int, mes: int, emp_scope: str | list[str] | None) -> dict | None:
     """Insights leves para cards do dashboard (cidade/cliente destaque e novos/recorrentes)."""
     vendedor = (vendedor or "").strip().upper()
     if not vendedor:
@@ -1504,9 +1509,16 @@ def _dashboard_insights(vendedor: str, ano: int, mes: int, emp_scope: str | None
         base_hist = db.query(Venda).filter(func.upper(Venda.vendedor) == vendedor, Venda.movimento.isnot(None))
 
         if emp_scope:
-            base = base.filter(Venda.emp == str(emp_scope))
-            base_prev = base_prev.filter(Venda.emp == str(emp_scope))
-            base_hist = base_hist.filter(Venda.emp == str(emp_scope))
+            if isinstance(emp_scope, (list, tuple, set)):
+                emps = [str(e).strip() for e in emp_scope if e is not None and str(e).strip()]
+                if emps:
+                    base = base.filter(Venda.emp.in_(emps))
+                    base_prev = base_prev.filter(Venda.emp.in_(emps))
+                    base_hist = base_hist.filter(Venda.emp.in_(emps))
+            else:
+                base = base.filter(Venda.emp == str(emp_scope))
+                base_prev = base_prev.filter(Venda.emp == str(emp_scope))
+                base_hist = base_hist.filter(Venda.emp == str(emp_scope))
 
         # Cidade destaque (por valor líquido)
         city_cur = (
@@ -1607,6 +1619,7 @@ def dashboard():
 
     role = _role() or ""
     emp_usuario = _emp()
+    allowed_emps = _allowed_emps()
 
     # Resolve vendedor alvo + lista para dropdown sem carregar toda a tabela em memória
     if role == "vendedor":
@@ -1618,13 +1631,13 @@ def dashboard():
         vendedor_req = (request.args.get("vendedor") or "").strip().upper() or None
         vendedor_alvo = vendedor_req if (vendedor_req and vendedor_req in vendedores_lista) else None
         msg = None
-        if role == "supervisor" and not emp_usuario:
-            msg = "Supervisor sem EMP cadastrada. Cadastre a EMP do supervisor na tabela usuarios."
+        if role == "supervisor" and not allowed_emps:
+            msg = "Supervisor sem EMP vinculada. Cadastre EMPs do supervisor em usuario_emps."
 
     dados = None
     if vendedor_alvo:
         try:
-            emp_scope = emp_usuario if role == "supervisor" else None
+            emp_scope = (allowed_emps if (role or '').lower() in ['supervisor','vendedor'] else None)
             dados = _dados_from_cache(vendedor_alvo, mes, ano, emp_scope)
         except Exception:
             app.logger.exception("Erro ao carregar dashboard do cache")
@@ -1633,7 +1646,7 @@ def dashboard():
         # Fallback: calcula ao vivo (sem pandas) se cache ainda não existe
         if dados is None:
             try:
-                emp_scope = emp_usuario if role == "supervisor" else None
+                emp_scope = (allowed_emps if (role or '').lower() in ['supervisor','vendedor'] else None)
                 dados = _dados_ao_vivo(vendedor_alvo, mes, ano, emp_scope)
             except Exception:
                 app.logger.exception("Erro ao calcular dashboard ao vivo")
@@ -1642,7 +1655,7 @@ def dashboard():
     insights = None
     if vendedor_alvo:
         try:
-            emp_scope = emp_usuario if role == "supervisor" else None
+            emp_scope = (allowed_emps if (role or '').lower() in ['supervisor','vendedor'] else None)
             insights = _dashboard_insights(vendedor_alvo, ano=ano, mes=mes, emp_scope=emp_scope)
         except Exception:
             app.logger.exception("Erro ao calcular insights do dashboard")
@@ -1654,7 +1667,7 @@ def dashboard():
         vendedor=vendedor_alvo or "",
         usuario=_usuario_logado(),
         role=_role(),
-        emp=emp_usuario,
+        emp=(" / ".join(allowed_emps) if (role or '').lower()=="supervisor" and allowed_emps else emp_usuario),
         vendedores=vendedores_lista,
         vendedor_selecionado=vendedor_alvo or "",
         mensagem_role=msg,
@@ -3386,38 +3399,41 @@ def admin_usuarios():
                     for part in re.split(r"[\s,;]+", emps_raw.strip()):
                         if part:
                             emps.append(str(part).strip())
-
                     if not alvo:
                         raise ValueError("Informe o usuário.")
                     u = db.query(Usuario).filter(Usuario.username == alvo).first()
                     if not u:
                         raise ValueError("Usuário não encontrado.")
-                    if u.role not in ("vendedor", "supervisor"):
+                    if u.role not in ('vendedor', 'supervisor'):
                         raise ValueError("Apenas VENDEDOR ou SUPERVISOR podem ter múltiplas EMPs vinculadas.")
-
-                    desired = sorted(set([e for e in emps if e]))
-
-                    db.query(UsuarioEmp).filter(UsuarioEmp.usuario_id == u.id).delete(synchronize_session=False)
+                    desired = set([e for e in emps if e])
+                    links = db.query(UsuarioEmp).filter(UsuarioEmp.usuario_id == u.id).all()
+                    current = {lk.emp: lk for lk in links}
+                    # desativa o que não está no desired
+                    for emp, lk in current.items():
+                        should_active = (emp in desired)
+                        if lk.ativo != should_active:
+                            lk.ativo = should_active
+                    # cria/ativa os que faltam
                     for emp in desired:
-                        db.add(UsuarioEmp(usuario_id=u.id, emp=str(emp)))
-
+                        lk = current.get(emp)
+                        if lk is None:
+                            db.add(UsuarioEmp(usuario_id=u.id, emp=emp))
+                        elif not lk.ativo:
+                            lk.ativo = True
                     db.commit()
-                    ok = f"EMPs do usuário {alvo} atualizadas: {(', '.join(desired) if desired else 'nenhuma')}"
+                    ok = "EMPs do usuário %s atualizadas: %s" % (alvo, (", ".join(sorted(desired)) if desired else "nenhuma"))
 
                 elif acao == "set_emp_e_emps":
                     """Atualiza EMP legado (Usuario.emp) e vínculos multi-EMP (UsuarioEmp).
+
                     Regras:
-                    - Admin pode editar qualquer usuário.
-                    - Apenas VENDEDOR/SUPERVISOR podem ter EMPs vinculadas.
-                    - Supervisor precisa ter ao menos 1 EMP (legado ou vinculada) no final.
+                    - Aceita EMP legado vazia (remove), mas para SUPERVISOR exige ao menos 1 EMP válida (legado ou vinculada).
+                    - Se EMP legado vier vazia e houver EMPs vinculadas, define legado como a primeira (mantém compatibilidade).
                     """
                     alvo = (request.form.get("alvo") or "").strip().upper()
-                    emp_legado = (request.form.get("emp") or "").strip()
+                    emp_legado_raw = (request.form.get("emp_legado") or "").strip()
                     emps_raw = (request.form.get("emps") or "")
-                    emps = []
-                    for part in re.split(r"[\s,;]+", emps_raw.strip()):
-                        if part:
-                            emps.append(str(part).strip())
 
                     if not alvo:
                         raise ValueError("Informe o usuário.")
@@ -3427,26 +3443,43 @@ def admin_usuarios():
                     if u.role not in ("vendedor", "supervisor"):
                         raise ValueError("Apenas VENDEDOR ou SUPERVISOR podem ser vinculados a EMPs.")
 
-                    desired = sorted(set([e for e in emps if e]))
+                    # Normaliza lista de EMPs vinculadas
+                    emps = []
+                    for part in re.split(r"[\s,;]+", emps_raw.strip()):
+                        if part:
+                            emps.append(str(part).strip())
+                    desired = set([e for e in emps if e])
 
-                    u.emp = emp_legado or None
-
-                    db.query(UsuarioEmp).filter(UsuarioEmp.usuario_id == u.id).delete(synchronize_session=False)
+                    # Atualiza vínculos (substitui lista)
+                    links = db.query(UsuarioEmp).filter(UsuarioEmp.usuario_id == u.id).all()
+                    current = {lk.emp: lk for lk in links}
+                    for emp, lk in current.items():
+                        should_active = (emp in desired)
+                        if lk.ativo != should_active:
+                            lk.ativo = should_active
                     for emp in desired:
-                        db.add(UsuarioEmp(usuario_id=u.id, emp=str(emp)))
+                        lk = current.get(emp)
+                        if lk is None:
+                            db.add(UsuarioEmp(usuario_id=u.id, emp=emp))
+                        elif not lk.ativo:
+                            lk.ativo = True
 
-                    if (not u.emp) and desired:
-                        u.emp = desired[0]
+                    # Atualiza EMP legado
+                    emp_legado = str(emp_legado_raw).strip() if emp_legado_raw else None
+                    if not emp_legado and desired:
+                        # Mantém compatibilidade: define a primeira EMP vinculada como padrão
+                        emp_legado = sorted(desired)[0]
 
-                    if u.role == "supervisor" and not u.emp and not desired:
+                    if u.role == "supervisor" and not emp_legado and not desired:
                         raise ValueError("Supervisor precisa ter ao menos 1 EMP (legado ou vinculada).")
 
+                    setattr(u, "emp", emp_legado)
                     db.commit()
-                    ok = f"Atualizado: {alvo} | EMP legado: {(u.emp or '-')} | EMPs vinculadas: {( ', '.join(desired) if desired else '-')}"
+                    ok = f"Atualizado: {alvo} | EMP legado: {emp_legado or '-'} | EMPs vinculadas: {( ', '.join(sorted(desired)) if desired else '-') }"
 
                 elif acao == "vincular_emps":
                     alvo = (request.form.get("alvo") or "").strip().upper()
-                    emps_raw = (request.form.get("emps") or request.form.get("emp") or "")
+                    emps_raw = (request.form.get("emps") or "")
                     emps = []
                     for part in re.split(r"[\s,;]+", emps_raw.strip()):
                         if part:
@@ -3456,32 +3489,39 @@ def admin_usuarios():
                     u = db.query(Usuario).filter(Usuario.username == alvo).first()
                     if not u:
                         raise ValueError("Usuário não encontrado.")
-                    if u.role not in ("vendedor", "supervisor"):
+                    if u.role not in {"vendedor", "supervisor"}:
                         raise ValueError("Apenas VENDEDOR ou SUPERVISOR podem ter múltiplas EMPs vinculadas.")
-
                     added = 0
                     for emp in sorted(set(emps)):
-                        exists = db.query(UsuarioEmp).filter(UsuarioEmp.usuario_id == u.id, UsuarioEmp.emp == emp).first()
-                        if not exists:
+                        # upsert simples: tenta buscar, senão cria
+                        link = db.query(UsuarioEmp).filter(UsuarioEmp.usuario_id == u.id, UsuarioEmp.emp == emp).first()
+                        if link:
+                            if not link.ativo:
+                                link.ativo = True
+                                added += 1
+                        else:
                             db.add(UsuarioEmp(usuario_id=u.id, emp=emp))
                             added += 1
                     db.commit()
-                    ok = f"Vínculo atualizado: {alvo} agora está em {added} EMP(s) adicionada(s)."
+                    ok = f"Vínculo atualizado: {alvo} agora está em {added} EMP(s) adicionada(s)/reativada(s)."
 
                 elif acao == "remover_emp":
                     alvo = (request.form.get("alvo") or "").strip().upper()
                     emp = (request.form.get("emp") or "").strip()
                     if not alvo or not emp:
-                        raise ValueError("Informe usuário e EMP.")
+                        raise ValueError("Informe o usuário e a EMP para remover.")
                     u = db.query(Usuario).filter(Usuario.username == alvo).first()
                     if not u:
                         raise ValueError("Usuário não encontrado.")
-                    if u.role not in ("vendedor", "supervisor"):
-                        raise ValueError("Apenas VENDEDOR ou SUPERVISOR podem ter múltiplas EMPs vinculadas.")
-
-                    db.query(UsuarioEmp).filter(UsuarioEmp.usuario_id == u.id, UsuarioEmp.emp == emp).delete(synchronize_session=False)
+                    link = db.query(UsuarioEmp).filter(UsuarioEmp.usuario_id == u.id, UsuarioEmp.emp == emp).first()
+                    if not link:
+                        raise ValueError("Vínculo usuário×EMP não encontrado.")
+                    link.ativo = False
                     db.commit()
                     ok = f"EMP {emp} removida do usuário {alvo}."
+
+                else:
+                    raise ValueError("Ação inválida.")
 
             except Exception as e:
                 db.rollback()
