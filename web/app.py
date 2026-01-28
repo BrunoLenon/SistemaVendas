@@ -2207,9 +2207,14 @@ def campanhas_qtd():
 
     # vendedor alvo
     vendedor_logado = (_usuario_logado() or "").strip().upper()
-    vendedor_sel = (request.args.get("vendedor") or vendedor_logado).strip().upper()
-    if role != "admin" and vendedor_sel != vendedor_logado and role != "supervisor":
-        vendedor_sel = vendedor_logado
+
+    # Supervisor pode ver "a loja toda" (comparação entre vendedores)
+    if (role or "").lower() == "supervisor":
+        vendedor_sel = (request.args.get("vendedor") or "__ALL__").strip().upper()
+    else:
+        vendedor_sel = (request.args.get("vendedor") or vendedor_logado).strip().upper()
+        if (role or "").lower() != "admin" and vendedor_sel != vendedor_logado:
+            vendedor_sel = vendedor_logado
 
     # EMP scope
     emp_param = (request.args.get("emp") or "").strip()
@@ -2235,64 +2240,77 @@ def campanhas_qtd():
     except Exception:
         vendedores_dropdown = []
 
+    # Supervisor: opção para visualizar a loja inteira (comparação)
+    if (role or "").lower() == "supervisor":
+        vendedores_dropdown = ["__ALL__"] + [v for v in vendedores_dropdown if (v or "").strip().upper() != "__ALL__"]
+
     # Calcula resultados e agrupa por EMP
     blocos: list[dict] = []
     with SessionLocal() as db:
+        # Para supervisor, permitir comparar a loja inteira (todos os vendedores da EMP)
+        if (role or "").lower() == "supervisor" and (vendedor_sel or "").upper() == "__ALL__":
+            vendedores_alvo = [v for v in vendedores_dropdown if (v or "").strip().upper() != "__ALL__"]
+        else:
+            vendedores_alvo = [vendedor_sel]
+
         for emp in emps_scope or ([emp_param] if emp_param else []):
             emp = str(emp)
 
             # campanhas relevantes (overlap do mês)
             campanhas = _campanhas_mes_overlap(ano, mes, emp)
 
-            # aplica prioridade: regras do vendedor substituem regras gerais
-            # chave: (produto_prefixo, marca)
-            by_key: dict[tuple[str, str], CampanhaQtd] = {}
-            for c in campanhas:
-                key = ((c.produto_prefixo or "").strip().upper(), (c.marca or "").strip().upper())
-                if c.vendedor and c.vendedor.strip().upper() == vendedor_sel:
-                    by_key[key] = c
-                else:
-                    by_key.setdefault(key, c)
-            campanhas_final = list(by_key.values())
+            for vend in vendedores_alvo:
+                vend = (vend or "").strip().upper()
+                if not vend:
+                    continue
 
-            linhas = []
-            total_recomp = 0.0
+                # aplica prioridade: regras do vendedor substituem regras gerais
+                # chave: (produto_prefixo, marca)
+                by_key: dict[tuple[str, str], CampanhaQtd] = {}
+                for c in campanhas:
+                    key = ((c.produto_prefixo or "").strip().upper(), (c.marca or "").strip().upper())
+                    if c.vendedor and c.vendedor.strip().upper() == vend:
+                        by_key[key] = c
+                    else:
+                        by_key.setdefault(key, c)
+                campanhas_final = list(by_key.values())
 
-            for c in campanhas_final:
-                # interseção do período
-                periodo_ini = max(c.data_inicio, inicio_mes)
-                periodo_fim = min(c.data_fim, fim_mes)
-                res = _upsert_resultado(db, c, vendedor_sel, emp, ano, mes, periodo_ini, periodo_fim)
-                linhas.append(res)
-                total_recomp += float(res.valor_recompensa or 0.0)
+                total_recomp = 0.0
+                for c in campanhas_final:
+                    # interseção do período
+                    periodo_ini = max(c.data_inicio, inicio_mes)
+                    periodo_fim = min(c.data_fim, fim_mes)
+                    res = _upsert_resultado(db, c, vend, emp, ano, mes, periodo_ini, periodo_fim)
+                    total_recomp += float(res.valor_recompensa or 0.0)
 
-            db.commit()
+                db.commit()
 
-            # Recarrega resultados (já persistidos)
-            resultados = (
-                db.query(CampanhaQtdResultado)
-                .filter(
-                    CampanhaQtdResultado.emp == emp,
-                    CampanhaQtdResultado.vendedor == vendedor_sel,
-                    CampanhaQtdResultado.competencia_ano == int(ano),
-                    CampanhaQtdResultado.competencia_mes == int(mes),
+                # Recarrega resultados (já persistidos)
+                resultados = (
+                    db.query(CampanhaQtdResultado)
+                    .filter(
+                        CampanhaQtdResultado.emp == emp,
+                        CampanhaQtdResultado.vendedor == vend,
+                        CampanhaQtdResultado.competencia_ano == int(ano),
+                        CampanhaQtdResultado.competencia_mes == int(mes),
+                    )
+                    .order_by(CampanhaQtdResultado.valor_recompensa.desc())
+                    .all()
                 )
-                .order_by(CampanhaQtdResultado.valor_recompensa.desc())
-                .all()
-            )
 
-            blocos.append({
-                "emp": emp,
-                "resultados": resultados,
-                "total": total_recomp,
-            })
-
+                blocos.append({
+                    "emp": emp,
+                    "vendedor": vend,
+                    "resultados": resultados,
+                    "total": total_recomp,
+                })
     return render_template(
         "campanhas_qtd.html",
         role=role,
         ano=ano,
         mes=mes,
         vendedor=vendedor_sel,
+        vendedor_display=("LOJA TODA" if (vendedor_sel or "").upper() == "__ALL__" else vendedor_sel),
         vendedor_logado=vendedor_logado,
         vendedores=vendedores_dropdown,
         blocos=blocos,
@@ -2312,9 +2330,18 @@ def campanhas_qtd_pdf():
     ano = int(request.args.get("ano") or hoje.year)
 
     vendedor_logado = (_usuario_logado() or "").strip().upper()
-    vendedor_sel = (request.args.get("vendedor") or vendedor_logado).strip().upper()
-    if role != "admin" and vendedor_sel != vendedor_logado and role != "supervisor":
-        vendedor_sel = vendedor_logado
+    if (role or "").lower() == "supervisor":
+        vendedor_sel = (request.args.get("vendedor") or "__ALL__").strip().upper()
+        if vendedor_sel == "__ALL__":
+            try:
+                vs = _get_vendedores_db(role, emp_usuario)
+                vendedor_sel = (vs[0] if vs else vendedor_logado).strip().upper()
+            except Exception:
+                vendedor_sel = vendedor_logado
+    else:
+        vendedor_sel = (request.args.get("vendedor") or vendedor_logado).strip().upper()
+        if (role or "").lower() != "admin" and vendedor_sel != vendedor_logado:
+            vendedor_sel = vendedor_logado
 
     emp_param = (request.args.get("emp") or "").strip()
     if (role or "").lower() == "admin":
@@ -4187,6 +4214,10 @@ def admin_campanhas_qtd():
                     c = db.query(CampanhaQtd).filter(CampanhaQtd.id == cid).first()
                     if not c:
                         raise ValueError("Campanha não encontrada.")
+
+                    # Remove também o histórico/snapshot mensal dessa campanha
+                    db.query(CampanhaQtdResultado).filter(CampanhaQtdResultado.campanha_id == cid).delete(synchronize_session=False)
+
                     db.delete(c)
                     db.commit()
                     ok = "Campanha removida."

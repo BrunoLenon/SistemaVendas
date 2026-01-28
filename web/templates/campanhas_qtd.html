@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Campanhas - {{ vendedor }}{% endblock %}
+{% block title %}Campanhas - {{ vendedor_display or vendedor }}{% endblock %}
 
 {% block extra_head %}
 <style>
@@ -47,7 +47,9 @@
             <label class="form-label">Vendedor</label>
             <select class="form-select" name="vendedor">
               {% for v in vendedores %}
-                <option value="{{ v }}" {% if vendedor == v %}selected{% endif %}>{{ v }}</option>
+                <option value="{{ v }}" {% if vendedor == v %}selected{% endif %}>
+                  {% if v == '__ALL__' %}LOJA TODA{% else %}{{ v }}{% endif %}
+                </option>
               {% endfor %}
             </select>
           </div>
@@ -95,6 +97,9 @@
                 <div>
                   <div class="subtitle small">Loja</div>
                   <div class="h5 m-0 fw-bold">EMP {{ b.emp }}</div>
+                  {% if role and role|lower == "supervisor" and vendedor == "__ALL__" %}
+                    <div class="subtitle small mt-1">Vendedor: <strong>{{ b.vendedor }}</strong></div>
+                  {% endif %}
                 </div>
                 <span class="badge text-bg-light border mono">Total {{ b.total|brl }}</span>
               </div>
