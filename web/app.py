@@ -547,12 +547,6 @@ def _allowed_emps() -> list[str]:
         return []
 
     emps = session.get("allowed_emps")
-    # compat: versões antigas podem ter salvo como string (ex: "1001 / 4001" ou "1001,4001")
-    if isinstance(emps, str) and emps.strip():
-        import re as _re
-        parts = _re.split(r"[,/\s]+", emps.replace(";", ",").replace("|", "/"))
-        emps = [p.strip() for p in parts if p and p.strip() and p.strip() != "-"]
-        session["allowed_emps"] = emps
     if isinstance(emps, list) and emps:
         return [str(e).strip() for e in emps if e is not None and str(e).strip()]
 
@@ -1268,7 +1262,6 @@ def _dados_ao_vivo(vendedor: str, mes: int, ano: int, emp_scope: str | list[str]
                     base = base.filter(Venda.emp.in_(emps))
             else:
                 base = base.filter(Venda.emp == str(emp_scope))
-
         def sums(s, e):
             q = base.filter(Venda.movimento >= s, Venda.movimento < e)
             signed = case((Venda.mov_tipo_movto.in_(['DS','CA']), -Venda.valor_total), else_=Venda.valor_total)
@@ -1276,17 +1269,15 @@ def _dados_ao_vivo(vendedor: str, mes: int, ano: int, emp_scope: str | list[str]
             devol = func.coalesce(func.sum(case((Venda.mov_tipo_movto.in_(['DS','CA']), Venda.valor_total), else_=0.0)), 0.0)
             liquido = func.coalesce(func.sum(signed), 0.0)
             mix = func.count(func.distinct(case((~Venda.mov_tipo_movto.in_(['DS','CA']), Venda.mestre), else_=None)))
-            row = db.query(bruto, devol, liquido, mix).select_from(Venda).filter(Venda.vendedor == vendedor)
-            if emp_scope:
-                row = row.filter(Venda.emp == str(emp_scope))
-            row = row.filter(Venda.movimento >= s, Venda.movimento < e).first()
+
+            row = q.with_entities(bruto, devol, liquido, mix).first()
             return float(row[0] or 0.0), float(row[1] or 0.0), float(row[2] or 0.0), int(row[3] or 0)
 
         bruto, devol, liquido, mix = sums(start, end)
         bruto_ant, devol_ant, liquido_ant, mix_ant = sums(s_ant, e_ant)
         bruto_ano_pass, devol_ano_pass, liquido_ano_pass, mix_ano_pass = sums(s_ano_passado, e_ano_passado)
 
-        pct_devolucao = (devol / bruto * 100.0) if bruto else 0.0
+        pct_devolucao = (devol / bruto * 100.0) if bruto else None
         crescimento = ((liquido - liquido_ant) / abs(liquido_ant) * 100.0) if liquido_ant else None
 
         # Ano passado: vendas real (se existir) -> fallback resumo_periodo
@@ -1296,14 +1287,11 @@ def _dados_ao_vivo(vendedor: str, mes: int, ano: int, emp_scope: str | list[str]
             mes=mes,
             emp_scope=emp_scope,
         )
-
-
-        # ranking por marca (liquido)
+        # ranking por marca (líquido)
         signed = case((Venda.mov_tipo_movto.in_(['DS','CA']), -Venda.valor_total), else_=Venda.valor_total)
-        q_rank = db.query(Venda.marca, func.coalesce(func.sum(signed), 0.0)).filter(Venda.vendedor == vendedor)
-        if emp_scope:
-            q_rank = q_rank.filter(Venda.emp == str(emp_scope))
-        q_rank = q_rank.filter(Venda.movimento >= start, Venda.movimento < end).group_by(Venda.marca)
+        q_rank = base.filter(Venda.movimento >= start, Venda.movimento < end)\
+            .with_entities(Venda.marca, func.coalesce(func.sum(signed), 0.0))\
+            .group_by(Venda.marca)
         rows = q_rank.all()
         ranking = sorted([(str(m or ''), float(v or 0.0)) for m,v in rows], key=lambda x: x[1], reverse=True)
         total = sum(v for _,v in ranking)
@@ -1643,13 +1631,7 @@ def dashboard():
     dados = None
     if vendedor_alvo:
         try:
-            # Para supervisor/vendedor: restringe por EMPs vinculadas (multi-EMP)
-            if (role or '').lower() in ['supervisor','vendedor']:
-                emp_scope = [str(e).strip() for e in (allowed_emps or []) if e is not None and str(e).strip() and str(e).strip() != '-']
-                if not emp_scope and emp_usuario:
-                    emp_scope = [str(emp_usuario).strip()]
-            else:
-                emp_scope = None
+            emp_scope = (allowed_emps if (role or '').lower() in ['supervisor','vendedor'] else None)
             dados = _dados_from_cache(vendedor_alvo, mes, ano, emp_scope)
         except Exception:
             app.logger.exception("Erro ao carregar dashboard do cache")
