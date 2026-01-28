@@ -35,8 +35,8 @@
       <div class="subtitle mt-1">Crie campanhas por <b>código (prefixo)</b> ou por <b>descrição (começa com)</b>. Marca entra como filtro junto com quantidade/valor mínimo.</div>
     </div>
     <div class="d-flex gap-2 sticky-actions">
-      <a class="btn btn-outline-secondary btn-sm" href="/dashboard">Voltar</a>
-      <a class="btn btn-outline-secondary btn-sm" href="/logout">Sair</a>
+      <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('dashboard') }}">Voltar</a>
+      <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('auth.logout') }}">Sair</a>
     </div>
   </div>
 

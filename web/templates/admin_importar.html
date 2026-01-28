@@ -56,21 +56,10 @@
         <div class="muted">Envie a planilha (.xlsx). O sistema ignora duplicados e mantém histórico.</div>
       </div>
       <div class="d-flex gap-2">
-        <a class="btn btn-outline-secondary btn-sm" href="/dashboard">Voltar</a>
+        <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('dashboard') }}">Voltar</a>
       </div>
     </div>
-
-    {% with messages = get_flashed_messages(with_categories=true) %}
-      {% if messages %}
-        <div class="mb-3">
-          {% for category, message in messages %}
-            <div class="alert alert-{{ category }} mb-2" role="alert">{{ message }}</div>
-          {% endfor %}
-        </div>
-      {% endif %}
-    {% endwith %}
-
-    <div class="row g-3">
+<div class="row g-3">
       <!-- COLUNA ESQUERDA -->
       <div class="col-lg-7">
 

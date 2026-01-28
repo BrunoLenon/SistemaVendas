@@ -31,14 +31,6 @@
     </div>
   </div>
 
-  {% with msgs = get_flashed_messages(with_categories=true) %}
-    {% if msgs %}
-      {% for cat, msg in msgs %}
-        <div class="alert alert-{{ 'warning' if cat == 'warning' else 'info' }} shadow-sm">{{ msg }}</div>
-      {% endfor %}
-    {% endif %}
-  {% endwith %}
-
   <div class="card shadow-sm mb-3">
     <div class="card-body">
       <div class="fw-semibold mb-2">Filtros</div>

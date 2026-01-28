@@ -92,6 +92,8 @@
       <div class="container" style="max-width:980px;">
   {% endif %}
 
+  {% include "partials/flashes.html" %}
+
   {% block content %}{% endblock %}
 
   {% if is_logged %}

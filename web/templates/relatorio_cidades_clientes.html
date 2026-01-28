@@ -432,7 +432,7 @@
       <div class="muted">Cidades e Clientes • Período: <b>{{ "%02d"|format(mes) }}/{{ ano }}</b>{% if escopo_label %} • <span class="pill">{{ escopo_label }}</span>{% endif %}</div>
     </div>
     <div class="d-flex gap-2">
-      <a class="btn btn-outline-secondary btn-sm" href="/dashboard">Voltar</a>
+      <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('dashboard') }}">Voltar</a>
     </div>
   </div>
 

@@ -25,8 +25,8 @@
         <a class="btn btn-primary btn-sm" href="/admin/importar">📥 Importar Vendas</a>
 
         <a class="btn btn-outline-primary btn-sm" href="/senha">Trocar minha senha</a>
-        <a class="btn btn-outline-secondary btn-sm" href="/dashboard">Dashboard</a>
-        <a class="btn btn-outline-danger btn-sm" href="/logout">Sair</a>
+        <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('dashboard') }}">Dashboard</a>
+        <a class="btn btn-outline-danger btn-sm" href="{{ url_for('auth.logout') }}">Sair</a>
       </div>
     </div>
 
@@ -53,7 +53,7 @@
             <div class="d-grid gap-2">
               <a class="btn btn-primary" href="/admin/importar">📥 Importar Vendas por Planilha</a>
               <a class="btn btn-outline-primary" href="/senha">🔑 Trocar minha senha</a>
-              <a class="btn btn-outline-secondary" href="/dashboard">📊 Voltar ao Dashboard</a>
+              <a class="btn btn-outline-secondary" href="{{ url_for('dashboard') }}">📊 Voltar ao Dashboard</a>
             </div>
           </div>
         </div>

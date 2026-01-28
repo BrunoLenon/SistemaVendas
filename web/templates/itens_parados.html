@@ -11,19 +11,10 @@
         <div class="text-muted">Lista por EMP. O valor de recompensa só aparece quando houver venda no período selecionado.</div>
       </div>
       <div class="d-flex gap-2">
-        <a class="btn btn-outline-secondary" href="/dashboard">Voltar</a>
+        <a class="btn btn-outline-secondary" href="{{ url_for('dashboard') }}">Voltar</a>
       </div>
     </div>
-
-    {% with messages = get_flashed_messages(with_categories=true) %}
-      {% if messages %}
-        {% for category, message in messages %}
-          <div class="alert alert-{{ category }} py-2">{{ message }}</div>
-        {% endfor %}
-      {% endif %}
-    {% endwith %}
-
-    <div class="card shadow-sm mb-3">
+<div class="card shadow-sm mb-3">
       <div class="card-body">
         <form class="row g-2 align-items-end" method="get" action="/itens_parados">
           <div class="col-12 col-md-2">

@@ -148,7 +148,7 @@
     {% if role and role|lower == "admin" %}
       <li><a class="dropdown-item" href="/admin/configuracoes">⚙️ Configurações</a></li>
     {% endif %}
-    <li><a class="dropdown-item text-danger" href="/logout">🚪 Sair</a></li>
+    <li><a class="dropdown-item text-danger" href="{{ url_for('auth.logout') }}">🚪 Sair</a></li>
   </ul>
 </div>
   </div>
@@ -215,7 +215,7 @@
 
     <div class="card mb-3 shadow-sm">
       <div class="card-body">
-        <form method="get" action="/dashboard" class="row g-2 align-items-end">
+        <form method="get" action="{{ url_for('dashboard') }}" class="row g-2 align-items-end">
 
           {% if role and role|lower in ["admin", "supervisor"] %}
             <div class="col-md-4">
