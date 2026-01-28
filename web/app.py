@@ -3380,150 +3380,859 @@ def admin_usuarios():
                     db.commit()
                     ok = f"Usuário {alvo} removido."
                 elif acao == "set_emps":
-alvo = (request.form.get("alvo") or "").strip().upper()
-emps_raw = (request.form.get("emps") or "")
-emps = []
-for part in re.split(r"[\s,;]+", emps_raw.strip()):
-    if part:
-        emps.append(str(part).strip())
-if not alvo:
-    raise ValueError("Informe o usuário.")
-u = db.query(Usuario).filter(Usuario.username == alvo).first()
-if not u:
-    raise ValueError("Usuário não encontrado.")
-if u.role not in ('vendedor', 'supervisor'):
-    raise ValueError("Apenas VENDEDOR ou SUPERVISOR podem ter múltiplas EMPs vinculadas.")
+                    alvo = (request.form.get("alvo") or "").strip().upper()
+                    emps_raw = (request.form.get("emps") or "")
+                    emps = []
+                    for part in re.split(r"[\s,;]+", emps_raw.strip()):
+                        if part:
+                            emps.append(str(part).strip())
 
-desired = set([e for e in emps if e])
-links = db.query(UsuarioEmp).filter(UsuarioEmp.usuario_id == u.id).all()
-current = {lk.emp: lk for lk in links}
+                    if not alvo:
+                        raise ValueError("Informe o usuário.")
+                    u = db.query(Usuario).filter(Usuario.username == alvo).first()
+                    if not u:
+                        raise ValueError("Usuário não encontrado.")
+                    if u.role not in ("vendedor", "supervisor"):
+                        raise ValueError("Apenas VENDEDOR ou SUPERVISOR podem ter múltiplas EMPs vinculadas.")
 
-# Remove/desativa vínculos que não estão no desired
-for emp, lk in list(current.items()):
-    if emp not in desired:
-        if hasattr(lk, "ativo"):
-            lk.ativo = False
-        else:
-            db.delete(lk)
+                    desired = sorted(set([e for e in emps if e]))
 
-# Cria/ativa os que faltam
-for emp in desired:
-    lk = current.get(emp)
-    if lk is None:
-        db.add(UsuarioEmp(usuario_id=u.id, emp=emp))
-    else:
-        if hasattr(lk, "ativo") and not bool(lk.ativo):
-            lk.ativo = True
+                    db.query(UsuarioEmp).filter(UsuarioEmp.usuario_id == u.id).delete(synchronize_session=False)
+                    for emp in desired:
+                        db.add(UsuarioEmp(usuario_id=u.id, emp=str(emp)))
 
-db.commit()
-ok = "EMPs do usuário %s atualizadas: %s" % (alvo, (", ".join(sorted(desired)) if desired else "nenhuma"))
-
+                    db.commit()
+                    ok = f"EMPs do usuário {alvo} atualizadas: {(', '.join(desired) if desired else 'nenhuma')}"
 
                 elif acao == "set_emp_e_emps":
-"""Atualiza EMP legado (Usuario.emp) e vínculos multi-EMP (UsuarioEmp).
+                    """Atualiza EMP legado (Usuario.emp) e vínculos multi-EMP (UsuarioEmp).
+                    Regras:
+                    - Admin pode editar qualquer usuário.
+                    - Apenas VENDEDOR/SUPERVISOR podem ter EMPs vinculadas.
+                    - Supervisor precisa ter ao menos 1 EMP (legado ou vinculada) no final.
+                    """
+                    alvo = (request.form.get("alvo") or "").strip().upper()
+                    emp_legado = (request.form.get("emp") or "").strip()
+                    emps_raw = (request.form.get("emps") or "")
+                    emps = []
+                    for part in re.split(r"[\s,;]+", emps_raw.strip()):
+                        if part:
+                            emps.append(str(part).strip())
 
-Regras:
-- Aceita EMP legado vazia (remove), mas para SUPERVISOR exige ao menos 1 EMP válida (legado ou vinculada).
-- Se EMP legado vier vazia e houver EMPs vinculadas, define legado como a primeira (mantém compatibilidade).
-"""
-alvo = (request.form.get("alvo") or "").strip().upper()
-emp_legado_raw = (request.form.get("emp_legado") or "").strip()
-emps_raw = (request.form.get("emps") or "")
+                    if not alvo:
+                        raise ValueError("Informe o usuário.")
+                    u = db.query(Usuario).filter(Usuario.username == alvo).first()
+                    if not u:
+                        raise ValueError("Usuário não encontrado.")
+                    if u.role not in ("vendedor", "supervisor"):
+                        raise ValueError("Apenas VENDEDOR ou SUPERVISOR podem ser vinculados a EMPs.")
 
-if not alvo:
-    raise ValueError("Informe o usuário.")
-u = db.query(Usuario).filter(Usuario.username == alvo).first()
-if not u:
-    raise ValueError("Usuário não encontrado.")
-if u.role not in ("vendedor", "supervisor"):
-    raise ValueError("Apenas VENDEDOR ou SUPERVISOR podem ser vinculados a EMPs.")
+                    desired = sorted(set([e for e in emps if e]))
 
-# Normaliza lista de EMPs vinculadas
-emps = []
-for part in re.split(r"[\s,;]+", emps_raw.strip()):
-    if part:
-        emps.append(str(part).strip())
-desired = set([e for e in emps if e])
+                    u.emp = emp_legado or None
 
-# Atualiza vínculos (substitui lista)
-links = db.query(UsuarioEmp).filter(UsuarioEmp.usuario_id == u.id).all()
-current = {lk.emp: lk for lk in links}
+                    db.query(UsuarioEmp).filter(UsuarioEmp.usuario_id == u.id).delete(synchronize_session=False)
+                    for emp in desired:
+                        db.add(UsuarioEmp(usuario_id=u.id, emp=str(emp)))
 
-for emp, lk in list(current.items()):
-    if emp not in desired:
-        if hasattr(lk, "ativo"):
-            lk.ativo = False
-        else:
-            db.delete(lk)
+                    if (not u.emp) and desired:
+                        u.emp = desired[0]
 
-for emp in desired:
-    lk = current.get(emp)
-    if lk is None:
-        db.add(UsuarioEmp(usuario_id=u.id, emp=emp))
-    else:
-        if hasattr(lk, "ativo") and not bool(lk.ativo):
-            lk.ativo = True
+                    if u.role == "supervisor" and not u.emp and not desired:
+                        raise ValueError("Supervisor precisa ter ao menos 1 EMP (legado ou vinculada).")
 
-# Atualiza EMP legado
-emp_legado = str(emp_legado_raw).strip() if emp_legado_raw else None
-if not emp_legado and desired:
-    # Mantém compatibilidade: define a primeira EMP vinculada como padrão
-    emp_legado = sorted(desired)[0]
-
-if u.role == "supervisor" and not emp_legado and not desired:
-    raise ValueError("Supervisor precisa ter ao menos 1 EMP (legado ou vinculada).")
-
-setattr(u, "emp", emp_legado)
-db.commit()
-ok = f"Atualizado: {alvo} | EMP legado: {emp_legado or '-'} | EMPs vinculadas: {( ', '.join(sorted(desired)) if desired else '-') }"
-
+                    db.commit()
+                    ok = f"Atualizado: {alvo} | EMP legado: {(u.emp or '-')} | EMPs vinculadas: {( ', '.join(desired) if desired else '-')}"
 
                 elif acao == "vincular_emps":
-alvo = (request.form.get("alvo") or "").strip().upper()
-emps_raw = (request.form.get("emps") or "")
-emps = []
-for part in re.split(r"[\s,;]+", emps_raw.strip()):
-    if part:
-        emps.append(str(part).strip())
-if not alvo or not emps:
-    raise ValueError("Informe o usuário e uma ou mais EMPs (ex.: 101,102).")
-u = db.query(Usuario).filter(Usuario.username == alvo).first()
-if not u:
-    raise ValueError("Usuário não encontrado.")
-if u.role not in {"vendedor", "supervisor"}:
-    raise ValueError("Apenas VENDEDOR ou SUPERVISOR podem ter múltiplas EMPs vinculadas.")
-added = 0
-for emp in sorted(set(emps)):
-    link = db.query(UsuarioEmp).filter(UsuarioEmp.usuario_id == u.id, UsuarioEmp.emp == emp).first()
-    if link:
-        if hasattr(link, "ativo") and not bool(link.ativo):
-            link.ativo = True
-            added += 1
-    else:
-        db.add(UsuarioEmp(usuario_id=u.id, emp=emp))
-        added += 1
-db.commit()
-ok = f"Vínculo atualizado: {alvo} agora está em {added} EMP(s) adicionada(s)/reativada(s)."
+                    alvo = (request.form.get("alvo") or "").strip().upper()
+                    emps_raw = (request.form.get("emps") or request.form.get("emp") or "")
+                    emps = []
+                    for part in re.split(r"[\s,;]+", emps_raw.strip()):
+                        if part:
+                            emps.append(str(part).strip())
+                    if not alvo or not emps:
+                        raise ValueError("Informe o usuário e uma ou mais EMPs (ex.: 101,102).")
+                    u = db.query(Usuario).filter(Usuario.username == alvo).first()
+                    if not u:
+                        raise ValueError("Usuário não encontrado.")
+                    if u.role not in ("vendedor", "supervisor"):
+                        raise ValueError("Apenas VENDEDOR ou SUPERVISOR podem ter múltiplas EMPs vinculadas.")
 
+                    added = 0
+                    for emp in sorted(set(emps)):
+                        exists = db.query(UsuarioEmp).filter(UsuarioEmp.usuario_id == u.id, UsuarioEmp.emp == emp).first()
+                        if not exists:
+                            db.add(UsuarioEmp(usuario_id=u.id, emp=emp))
+                            added += 1
+                    db.commit()
+                    ok = f"Vínculo atualizado: {alvo} agora está em {added} EMP(s) adicionada(s)."
 
                 elif acao == "remover_emp":
-alvo = (request.form.get("alvo") or "").strip().upper()
-emp = (request.form.get("emp") or "").strip()
-if not alvo or not emp:
-    raise ValueError("Informe o usuário e a EMP para remover.")
-u = db.query(Usuario).filter(Usuario.username == alvo).first()
-if not u:
-    raise ValueError("Usuário não encontrado.")
-link = db.query(UsuarioEmp).filter(UsuarioEmp.usuario_id == u.id, UsuarioEmp.emp == emp).first()
-if not link:
-    raise ValueError("Vínculo usuário×EMP não encontrado.")
-if hasattr(link, "ativo"):
-    link.ativo = False
-else:
-    db.delete(link)
-db.commit()
-ok = f"EMP {emp} removida do usuário {alvo}."
+                    alvo = (request.form.get("alvo") or "").strip().upper()
+                    emp = (request.form.get("emp") or "").strip()
+                    if not alvo or not emp:
+                        raise ValueError("Informe usuário e EMP.")
+                    u = db.query(Usuario).filter(Usuario.username == alvo).first()
+                    if not u:
+                        raise ValueError("Usuário não encontrado.")
+                    if u.role not in ("vendedor", "supervisor"):
+                        raise ValueError("Apenas VENDEDOR ou SUPERVISOR podem ter múltiplas EMPs vinculadas.")
 
+                    db.query(UsuarioEmp).filter(UsuarioEmp.usuario_id == u.id, UsuarioEmp.emp == emp).delete(synchronize_session=False)
+                    db.commit()
+                    ok = f"EMP {emp} removida do usuário {alvo}."
+
+            except Exception as e:
+                db.rollback()
+                erro = str(e)
+                app.logger.exception("Erro na admin/usuarios")
+
+        usuarios = db.query(Usuario).order_by(Usuario.role.desc(), Usuario.username.asc()).all()
+        usuarios_out = [
+            {"usuario": u.username, "role": u.role, "emp": getattr(u, "emp", None)}
+            for u in usuarios
+        ]
+
+        # Vínculos multi-EMP (usuario_emp)
+        vinculos = {}
+        try:
+            links = db.query(UsuarioEmp).order_by(UsuarioEmp.emp.asc()).all()
+            # map usuario_id -> username
+            id_to_user = {u.id: u.username for u in usuarios}
+            for lk in links:
+                uname = id_to_user.get(lk.usuario_id)
+                if not uname:
+                    continue
+                vinculos.setdefault(uname, []).append(lk.emp)
+        except Exception:
+            vinculos = {}
+
+        # EMPs conhecidas (para ajudar no cadastro) - vindas de vendas
+        try:
+            emps_disponiveis = [str(r[0]) for r in db.query(Venda.emp).distinct().order_by(Venda.emp.asc()).all() if r[0] is not None]
+        except Exception:
+            emps_disponiveis = []
+
+
+    return render_template(
+        "admin_usuarios.html",
+        usuario=usuario,
+        usuarios=usuarios_out,
+        erro=erro,
+        ok=ok,
+        vinculos=vinculos,
+        emps_disponiveis=emps_disponiveis,
+    )
+
+
+@app.get("/admin/cache/refresh")
+def admin_cache_refresh():
+    """Recalcula o cache do dashboard para um EMP/mês/ano (ADMIN).
+
+    Exemplo:
+      /admin/cache/refresh?emp=101&ano=2026&mes=1
+    """
+    red = _login_required()
+    if red:
+        return red
+    red2 = _admin_required()
+    if red2:
+        return red2
+
+    emp = (request.args.get("emp") or "").strip()
+    ano = int(request.args.get("ano") or datetime.now().year)
+    mes = int(request.args.get("mes") or datetime.now().month)
+
+    if not emp:
+        return jsonify({"ok": False, "error": "Parâmetro 'emp' é obrigatório."}), 400
+
+    try:
+        from dashboard_cache import refresh_dashboard_cache
+        info = refresh_dashboard_cache(emp, ano, mes)
+        return jsonify({"ok": True, "emp": emp, "ano": ano, "mes": mes, **info})
+    except Exception as e:
+        app.logger.exception("Falha ao atualizar cache")
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/admin/importar", methods=["GET", "POST"])
+def admin_importar():
+    red = _login_required()
+    if red:
+        return red
+    red = _admin_required()
+    if red:
+        return red
+
+    if request.method == "GET":
+        return render_template("admin_importar.html")
+
+    arquivo = request.files.get("arquivo")
+    if not arquivo or not arquivo.filename:
+        flash("Selecione um arquivo .xlsx para importar.", "warning")
+        return redirect(url_for("admin_importar"))
+
+    if not arquivo.filename.lower().endswith(".xlsx"):
+        flash("Formato inválido. Envie um arquivo .xlsx.", "danger")
+        return redirect(url_for("admin_importar"))
+
+    modo = request.form.get("modo", "ignorar_duplicados")
+    # IMPORTANTISSIMO:
+    # A chave de deduplicidade precisa bater com o indice/constraint UNIQUE do banco.
+    # Seu banco foi padronizado com:
+    #   (mestre, marca, vendedor, movimento, mov_tipo_movto, nota, emp)
+    # Se a chave nao incluir MOVIMENTO e MOV_TIPO_MOVTO (DS/CA/OA), o Postgres
+    # pode retornar erro de ON CONFLICT e/ou DS/CA pode ser ignorado.
+    chave = request.form.get("chave", "mestre_movimento_vendedor_nota_tipo_emp")
+
+    # Salva temporariamente
+    import tempfile
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
+        arquivo.save(tmp.name)
+        tmp_path = tmp.name
+
+    try:
+        resumo = importar_planilha(tmp_path, modo=modo, chave=chave)
+        if not resumo.get("ok"):
+            faltando = resumo.get("faltando")
+            if faltando:
+                flash("Colunas faltando: " + ", ".join(faltando), "danger")
+            else:
+                flash(resumo.get("msg", "Falha ao importar."), "danger")
+            return redirect(url_for("admin_importar"))
+
+        flash(
+            (
+                f"Importação concluída. Válidas: {resumo['validas']} | "
+                f"Inseridas: {resumo['inseridas']} | "
+                f"Ignoradas: {resumo['ignoradas']} | "
+                f"Erros: {resumo['erros_linha']}"
+            ),
+            "success",
+        )
+        # Limpa cache do DataFrame para refletir novos dados imediatamente
+        try:
+            limpar_cache_df()
+        except Exception:
+            pass
+        return redirect(url_for("admin_importar"))
+
+    except Exception:
+        app.logger.exception("Erro ao importar planilha")
+        flash("Erro ao importar. Veja os logs no Render.", "danger")
+        return redirect(url_for("admin_importar"))
+    finally:
+        try:
+            os.remove(tmp_path)
+        except Exception:
+            pass
+
+
+
+@app.route("/admin/itens_parados", methods=["GET", "POST"])
+def admin_itens_parados():
+    """Cadastro de itens parados (liquidação) por EMP.
+
+    Campos: EMP, Código, Descrição, Quantidade, Recompensa(%).
+    """
+    red = _login_required()
+    if red:
+        return red
+    red = _admin_required()
+    if red:
+        return red
+
+    erro = None
+    ok = None
+
+    with SessionLocal() as db:
+        if request.method == 'POST':
+            acao = (request.form.get('acao') or '').strip().lower()
+            try:
+                if acao == 'criar':
+                    emp = (request.form.get('emp') or '').strip()
+                    codigo = (request.form.get('codigo') or '').strip()
+                    descricao = (request.form.get('descricao') or '').strip()
+                    quantidade_raw = (request.form.get('quantidade') or '').strip()
+                    recompensa_raw = (request.form.get('recompensa_pct') or '').strip().replace(',', '.')
+
+                    if not emp:
+                        raise ValueError('Informe a EMP.')
+                    if not codigo:
+                        raise ValueError('Informe o CÓDIGO.')
+
+                    quantidade = int(quantidade_raw) if quantidade_raw else None
+                    recompensa_pct = float(recompensa_raw) if recompensa_raw else 0.0
+
+                    db.add(ItemParado(
+                        emp=str(emp),
+                        codigo=str(codigo),
+                        descricao=descricao or None,
+                        quantidade=quantidade,
+                        recompensa_pct=recompensa_pct,
+                        ativo=1,
+                    ))
+                    db.commit()
+                    ok = 'Item cadastrado com sucesso.'
+
+                elif acao == 'toggle':
+                    item_id = int(request.form.get('item_id') or 0)
+                    it = db.query(ItemParado).filter(ItemParado.id == item_id).first()
+                    if not it:
+                        raise ValueError('Item não encontrado.')
+                    it.ativo = 0 if int(it.ativo or 0) == 1 else 1
+                    it.atualizado_em = datetime.utcnow()
+                    db.commit()
+                    ok = 'Status do item atualizado.'
+
+                elif acao == 'remover':
+                    item_id = int(request.form.get('item_id') or 0)
+                    it = db.query(ItemParado).filter(ItemParado.id == item_id).first()
+                    if not it:
+                        raise ValueError('Item não encontrado.')
+                    db.delete(it)
+                    db.commit()
+                    ok = 'Item removido.'
+
+                else:
+                    raise ValueError('Ação inválida.')
+
+            except Exception as e:
+                db.rollback()
+                erro = str(e)
+                app.logger.exception('Erro no cadastro de itens parados')
+
+        itens = db.query(ItemParado).order_by(ItemParado.emp.asc(), ItemParado.codigo.asc()).all()
+
+    return render_template(
+        'admin_itens_parados.html',
+        usuario=_usuario_logado(),
+        itens=itens,
+        erro=erro,
+        ok=ok,
+    )
+
+@app.route('/admin/resumos_periodo', methods=['GET', 'POST'])
+def admin_resumos_periodo():
+    red = _admin_required()
+    if red:
+        return red
+
+    # filtros
+    emp = _emp_norm(request.values.get('emp', ''))
+    vendedor = (request.values.get('vendedor') or '').strip().upper()
+    ano = int(request.values.get('ano') or datetime.now().year)
+    mes = int(request.values.get('mes') or datetime.now().month)
+
+    msgs: list[str] = []
+
+    acao = (request.form.get('acao') or '').strip().lower()
+    if request.method == 'POST' and acao:
+        # alvo do POST (permite editar/cadastrar resumos em um período diferente do filtro)
+        emp_alvo = _emp_norm(request.form.get('emp_edit') or emp)
+        try:
+            ano_alvo = int(request.form.get('ano_edit') or ano)
+        except Exception:
+            ano_alvo = ano
+        try:
+            mes_alvo = int(request.form.get('mes_edit') or mes)
+        except Exception:
+            mes_alvo = mes
+
+        ano_passado = ano - 1
+        # Regra: permitir edição/importação manual apenas para anos anteriores ao ano filtrado.
+        if acao in {'salvar', 'excluir', 'salvar_lote', 'importar_xlsx'} and ano_alvo >= ano:
+            msgs.append('⚠️ Edição/importação manual permitida apenas para anos anteriores ao ano filtrado.')
+            acao = ''
+
+        if acao in {'salvar', 'excluir'} and _mes_fechado(emp_alvo, ano_alvo, mes_alvo):
+            msgs.append('⚠️ Mês fechado. Reabra o mês para editar os resumos.')
+        else:
+            with SessionLocal() as db:
+                if acao == 'fechar':
+                    rec = (
+                        db.query(FechamentoMensal)
+                        .filter(
+                            FechamentoMensal.emp == emp,
+                            FechamentoMensal.ano == ano,
+                            FechamentoMensal.mes == mes,
+                        )
+                        .one_or_none()
+                    )
+                    if rec is None:
+                        rec = FechamentoMensal(emp=emp, ano=ano, mes=mes, fechado=True, fechado_em=datetime.utcnow())
+                        db.add(rec)
+                    else:
+                        rec.fechado = True
+                        rec.fechado_em = datetime.utcnow()
+                    db.commit()
+                    msgs.append('✅ Mês fechado. Edição travada.')
+
+                elif acao == 'reabrir':
+                    rec = (
+                        db.query(FechamentoMensal)
+                        .filter(
+                            FechamentoMensal.emp == emp,
+                            FechamentoMensal.ano == ano,
+                            FechamentoMensal.mes == mes,
+                        )
+                        .one_or_none()
+                    )
+                    if rec is None:
+                        rec = FechamentoMensal(emp=emp, ano=ano, mes=mes, fechado=False)
+                        db.add(rec)
+                    else:
+                        rec.fechado = False
+                    db.commit()
+                    msgs.append('✅ Mês reaberto. Edição liberada.')
+
+                elif acao == 'salvar':
+                    vend = (request.form.get('vendedor_edit') or '').strip().upper()
+                    if not vend:
+                        msgs.append('⚠️ Informe o vendedor.')
+                    else:
+                        try:
+                            valor_venda = _parse_num_ptbr(request.form.get('valor_venda'))
+                        except Exception:
+                            valor_venda = 0.0
+                        try:
+                            mix_produtos = int(request.form.get('mix_produtos') or 0)
+                        except Exception:
+                            mix_produtos = 0
+
+                        rec = (
+                            db.query(VendasResumoPeriodo)
+                            .filter(
+                                VendasResumoPeriodo.emp == emp_alvo,
+                                VendasResumoPeriodo.vendedor == vend,
+                                VendasResumoPeriodo.ano == ano_alvo,
+                                VendasResumoPeriodo.mes == mes_alvo,
+                            )
+                            .one_or_none()
+                        )
+                        if rec is None:
+                            rec = VendasResumoPeriodo(
+                                emp=emp_alvo,
+                                vendedor=vend,
+                                ano=ano_alvo,
+                                mes=mes_alvo,
+                                valor_venda=valor_venda,
+                                mix_produtos=mix_produtos,
+                                created_at=datetime.utcnow(),
+                                updated_at=datetime.utcnow(),
+                            )
+                            db.add(rec)
+                        else:
+                            rec.valor_venda = valor_venda
+                            rec.mix_produtos = mix_produtos
+                            rec.updated_at = datetime.utcnow()
+                        db.commit()
+                        msgs.append('✅ Resumo salvo.')
+
+
+                elif acao == 'salvar_lote':
+                    # Cadastro em lote destinado ao ano passado (ano-1), permitindo informar MÊS por linha.
+                    # Campos esperados: vendedor_lote, mes_ref, valor_venda_lote, mix_produtos_lote (listas)
+                    emp_lote = _emp_norm(request.form.get('emp_edit') or emp)
+                    ano_lote = ano_alvo
+
+                    vendedores_l = [ (v or '').strip().upper() for v in request.form.getlist('vendedor_lote') ]
+                    meses_l = request.form.getlist('mes_ref')
+                    valores_l = request.form.getlist('valor_venda_lote')
+                    mix_l = request.form.getlist('mix_produtos_lote')
+
+                    total_linhas = max(len(vendedores_l), len(meses_l), len(valores_l), len(mix_l))
+                    # Normaliza tamanhos
+                    def _get(lst, i, default=''):
+                        try:
+                            return lst[i]
+                        except Exception:
+                            return default
+
+                    salvos = 0
+                    pulados = 0
+                    fechados = 0
+
+                    for i in range(total_linhas):
+                        vend = _get(vendedores_l, i, '').strip().upper()
+                        if not vend:
+                            pulados += 1
+                            continue
+                        try:
+                            mes_ref = int(str(_get(meses_l, i, mes)).strip() or mes)
+                        except Exception:
+                            mes_ref = mes
+                        if mes_ref < 1 or mes_ref > 12:
+                            msgs.append(f'⚠️ Linha {i+1}: mês inválido ({_get(meses_l, i, "")}).')
+                            pulados += 1
+                            continue
+
+                        # Mês fechado? trava edição para aquele mês
+                        if _mes_fechado(emp_lote, ano_lote, mes_ref):
+                            fechados += 1
+                            continue
+
+                        try:
+                            valor_venda = _parse_num_ptbr(str(_get(valores_l, i, '0')))
+                        except Exception:
+                            valor_venda = 0.0
+                        try:
+                            mix_produtos = int(str(_get(mix_l, i, '0')).strip() or 0)
+                        except Exception:
+                            mix_produtos = 0
+
+                        rec = (
+                            db.query(VendasResumoPeriodo)
+                            .filter(
+                                VendasResumoPeriodo.emp == emp_lote,
+                                VendasResumoPeriodo.vendedor == vend,
+                                VendasResumoPeriodo.ano == ano_lote,
+                                VendasResumoPeriodo.mes == mes_ref,
+                            )
+                            .one_or_none()
+                        )
+                        if rec is None:
+                            rec = VendasResumoPeriodo(
+                                emp=emp_lote,
+                                vendedor=vend,
+                                ano=ano_lote,
+                                mes=mes_ref,
+                                valor_venda=valor_venda,
+                                mix_produtos=mix_produtos,
+                                created_at=datetime.utcnow(),
+                                updated_at=datetime.utcnow(),
+                            )
+                            db.add(rec)
+                        else:
+                            rec.valor_venda = valor_venda
+                            rec.mix_produtos = mix_produtos
+                            rec.updated_at = datetime.utcnow()
+                        salvos += 1
+
+                    db.commit()
+                    if fechados:
+                        msgs.append(f'⚠️ {fechados} linha(s) não foram salvas porque o mês está fechado.')
+                    msgs.append(f'✅ Lote concluído: {salvos} salvo(s), {pulados} linha(s) em branco/ inválida(s).')
+                
+                elif acao == 'importar_xlsx':
+                    # Importação de resumos por Excel (.xlsx) / CSV
+                    # Colunas aceitas (case-insensitive):
+                    # ANO, MES, EMP(opcional), VENDEDOR, VALOR_VENDA/VALOR, MIX
+                    file = request.files.get('arquivo')
+                    if not file or not getattr(file, 'filename', ''):
+                        msgs.append('⚠️ Selecione um arquivo .xlsx ou .csv para importar.')
+                    else:
+                        filename = (file.filename or '').lower()
+                        try:
+                            if filename.endswith('.csv'):
+                                df = pd.read_csv(file, dtype=str)
+                            else:
+                                df = pd.read_excel(file, dtype=str)
+                        except Exception as e:
+                            msgs.append('❌ Não consegui ler o arquivo. Verifique se é um .xlsx válido.')
+                            df = None
+
+                        if df is not None:
+                            # normaliza colunas
+                            cols = {c.strip().upper(): c for c in df.columns}
+                            def _col(*names):
+                                for n in names:
+                                    if n in cols:
+                                        return cols[n]
+                                return None
+
+                            c_ano = _col('ANO')
+                            c_mes = _col('MES', 'MÊS')
+                            c_emp = _col('EMP')
+                            c_vend = _col('VENDEDOR', 'VEND', 'VENDEDOR_NOME')
+                            c_val = _col('VALOR_VENDA', 'VALOR', 'VALORVENDA')
+                            c_mix = _col('MIX')
+
+                            if not c_ano or not c_mes or not c_vend or not c_val:
+                                msgs.append('❌ Colunas obrigatórias: ANO, MES, VENDEDOR, VALOR_VENDA (ou VALOR).')
+                            else:
+                                total = 0
+                                salvos = 0
+                                pulados = 0
+                                fechados = 0
+                                erros = 0
+
+                                for _, row in df.iterrows():
+                                    total += 1
+                                    try:
+                                        ano_ref = int(str(row.get(c_ano, '')).strip())
+                                        mes_ref = int(str(row.get(c_mes, '')).strip())
+                                    except Exception:
+                                        pulados += 1
+                                        continue
+                                    if mes_ref < 1 or mes_ref > 12:
+                                        pulados += 1
+                                        continue
+
+                                    vend = str(row.get(c_vend, '')).strip().upper()
+                                    if not vend:
+                                        pulados += 1
+                                        continue
+
+                                    emp_ref = emp  # padrão do filtro, se vier em branco
+                                    if c_emp:
+                                        raw_emp = str(row.get(c_emp, '')).strip()
+                                        if raw_emp.lower() in {'nan', 'none', 'null'}:
+                                            raw_emp = ''
+                                        emp_ref = _emp_norm(raw_emp) or emp
+
+                                    # regra: não permite importar para ano atual/futuro
+                                    if ano_ref >= ano:
+                                        pulados += 1
+                                        continue
+
+                                    if _mes_fechado(emp_ref, ano_ref, mes_ref):
+                                        fechados += 1
+                                        continue
+
+                                    valor_venda = _parse_num_ptbr(str(row.get(c_val, '0')))
+                                    try:
+                                        if c_mix:
+                                            raw_mix = str(row.get(c_mix, '')).strip()
+                                            if raw_mix.lower() in {'', 'nan', 'none', 'null'}:
+                                                mix_produtos = 0
+                                            else:
+                                                try:
+                                                    mix_produtos = int(float(raw_mix.replace(',', '.')))
+                                                except Exception:
+                                                    mix_produtos = 0
+                                        else:
+                                            mix_produtos = 0
+
+                                    except Exception:
+                                        mix_produtos = 0
+
+                                    rec = (
+                                        db.query(VendasResumoPeriodo)
+                                        .filter(
+                                            VendasResumoPeriodo.emp == emp_ref,
+                                            VendasResumoPeriodo.vendedor == vend,
+                                            VendasResumoPeriodo.ano == ano_ref,
+                                            VendasResumoPeriodo.mes == mes_ref,
+                                        )
+                                        .one_or_none()
+                                    )
+                                    if rec is None:
+                                        rec = VendasResumoPeriodo(
+                                            emp=emp_ref,
+                                            vendedor=vend,
+                                            ano=ano_ref,
+                                            mes=mes_ref,
+                                            valor_venda=valor_venda,
+                                            mix_produtos=mix_produtos,
+                                            created_at=datetime.utcnow(),
+                                            updated_at=datetime.utcnow(),
+                                        )
+                                        db.add(rec)
+                                    else:
+                                        rec.valor_venda = valor_venda
+                                        rec.mix_produtos = mix_produtos
+                                        rec.updated_at = datetime.utcnow()
+                                    salvos += 1
+
+                                db.commit()
+                                if fechados:
+                                    msgs.append(f'⚠️ {fechados} linha(s) não importadas: mês fechado.')
+                                msgs.append(f'✅ Importação concluída: {salvos} salvo(s) de {total} linha(s). {pulados} pulada(s).')
+
+                elif acao == 'excluir':
+                    vend = (request.form.get('vendedor_edit') or '').strip().upper()
+                    if not vend:
+                        msgs.append('⚠️ Informe o vendedor para excluir.')
+                    else:
+                        rec = (
+                            db.query(VendasResumoPeriodo)
+                            .filter(
+                                VendasResumoPeriodo.emp == emp_alvo,
+                                VendasResumoPeriodo.vendedor == vend,
+                                VendasResumoPeriodo.ano == ano_alvo,
+                                VendasResumoPeriodo.mes == mes_alvo,
+                            )
+                            .one_or_none()
+                        )
+                        if rec is None:
+                            msgs.append('⚠️ Não encontrei esse resumo para excluir.')
+                        else:
+                            db.delete(rec)
+                            db.commit()
+                            msgs.append('✅ Resumo excluído.')
+
+    # carregar lista e status de fechamento
+    fechado = _mes_fechado(emp, ano, mes)
+    with SessionLocal() as db:
+        # EMP e vendedor são opcionais: quando vierem em branco, listamos TODOS.
+        q = db.query(VendasResumoPeriodo).filter(
+            VendasResumoPeriodo.ano == ano,
+            VendasResumoPeriodo.mes == mes,
+        )
+        if emp:
+            q = q.filter(VendasResumoPeriodo.emp == emp)
+        if vendedor:
+            q = q.filter(VendasResumoPeriodo.vendedor == vendedor)
+        registros = q.order_by(VendasResumoPeriodo.vendedor.asc()).all()
+
+        # Resumos do mesmo período no ano passado (ano-1) para conferência/edição rápida
+        ano_passado = ano - 1
+        q2 = db.query(VendasResumoPeriodo).filter(
+            VendasResumoPeriodo.ano == ano_passado,
+        )
+        if emp:
+            q2 = q2.filter(VendasResumoPeriodo.emp == emp)
+        if vendedor:
+            q2 = q2.filter(VendasResumoPeriodo.vendedor == vendedor)
+
+        # Carrega TODOS os meses do ano passado (ano-1) para permitir cadastro/edição independente do mês atual.
+        _res_all = q2.order_by(VendasResumoPeriodo.mes.asc(), VendasResumoPeriodo.vendedor.asc()).all()
+
+        resumos_ano_passado_por_mes = {m: [] for m in range(1, 13)}
+        for r in _res_all:
+            try:
+                resumos_ano_passado_por_mes[int(r.mes)].append(r)
+            except Exception:
+                pass
+
+        # contagem por mês (para renderizar os "chips")
+        counts_ano_passado = {m: len(resumos_ano_passado_por_mes.get(m, [])) for m in range(1, 13)}
+
+        # Sugestão rápida de vendedores (com base em vendas do período)
+        # Ajuda o admin a não digitar errado
+        start, end = _periodo_bounds(ano, mes)
+        vs_q = db.query(Venda.vendedor).filter(Venda.movimento >= start, Venda.movimento < end)
+        if emp:
+            vs_q = vs_q.filter(Venda.emp == emp)
+        vendedores_sugeridos = (
+            vs_q.distinct().order_by(Venda.vendedor.asc()).all()
+        )
+        vendedores_sugeridos = [v[0] for v in vendedores_sugeridos if v and v[0]]
+
+    return render_template(
+        'admin_resumos_periodo.html',
+        emp=emp,
+        ano=ano,
+        mes=mes,
+        vendedor_filtro=vendedor,
+        registros=registros,
+        rows=registros,
+        vendedor=vendedor,
+        ano_passado=ano_passado,
+        resumos_ano_passado_por_mes=resumos_ano_passado_por_mes,
+        counts_ano_passado=counts_ano_passado,
+        
+        fechado=fechado,
+        vendedores_sugeridos=vendedores_sugeridos,
+        msgs=msgs,
+    )
+
+# Compatibilidade: algumas telas/atalhos antigos apontavam para /admin/fechamento.
+# O fechamento mensal hoje é feito dentro da tela de resumos por período.
+@app.get('/admin/fechamento')
+def admin_fechamento_redirect():
+    red = _admin_required()
+    if red:
+        return red
+    return redirect(url_for('admin_resumos_periodo'))
+
+
+@app.route("/admin/campanhas", methods=["GET", "POST"])
+def admin_campanhas_qtd():
+    """Cadastro de campanhas de recompensa por quantidade.
+
+    Campos:
+    - EMP (obrigatório)
+    - Vendedor (opcional; vazio = todos da EMP)
+    - Produto prefixo (obrigatório)
+    - Marca (obrigatório)
+    - Recompensa (R$/un)
+    - Quantidade mínima (opcional)
+    - Período (data início/fim)
+    """
+    red = _login_required()
+    if red:
+        return red
+    red = _admin_required()
+    if red:
+        return red
+
+    erro = None
+    ok = None
+
+    hoje = date.today()
+    mes = int(request.values.get("mes") or hoje.month)
+    ano = int(request.values.get("ano") or hoje.year)
+
+    with SessionLocal() as db:
+        if request.method == "POST":
+            acao = (request.form.get("acao") or "").strip().lower()
+            try:
+                if acao == "criar":
+                    emp = (request.form.get("emp") or "").strip()
+                    vendedor = (request.form.get("vendedor") or "").strip().upper() or None
+                    titulo = (request.form.get("titulo") or "").strip() or None
+
+                    campo_match = (request.form.get("campo_match") or "codigo").strip().lower()
+                    if campo_match not in {"codigo", "descricao"}:
+                        campo_match = "codigo"
+
+                    produto_prefixo = (request.form.get("produto_prefixo") or "").strip()
+                    descricao_prefixo = (request.form.get("descricao_prefixo") or "").strip()
+                    marca = (request.form.get("marca") or "").strip()
+
+                    recompensa_raw = (request.form.get("recompensa_unit") or "").strip().replace(",", ".")
+                    qtd_min_raw = (request.form.get("qtd_minima") or "").strip().replace(",", ".")
+                    valor_min_raw = (request.form.get("valor_minimo") or "").strip().replace(",", ".")
+
+                    data_ini_raw = (request.form.get("data_inicio") or "").strip()
+                    data_fim_raw = (request.form.get("data_fim") or "").strip()
+
+                    if not emp:
+                        raise ValueError("Informe a EMP.")
+                    if campo_match == "descricao":
+                        if not descricao_prefixo and not produto_prefixo:
+                            raise ValueError("Informe a descrição (início).")
+                    else:
+                        if not produto_prefixo:
+                            raise ValueError("Informe o código/prefixo do produto.")
+                    if not marca:
+                        raise ValueError("Informe a marca.")
+                    if not recompensa_raw:
+                        raise ValueError("Informe a recompensa (R$/un).")
+                    if not data_ini_raw or not data_fim_raw:
+                        raise ValueError("Informe data início e fim.")
+
+                    recompensa_unit = float(recompensa_raw)
+                    qtd_minima = float(qtd_min_raw) if qtd_min_raw else None
+                    valor_minimo = float(valor_min_raw) if valor_min_raw else None
+                    data_inicio = datetime.strptime(data_ini_raw, "%Y-%m-%d").date()
+                    data_fim = datetime.strptime(data_fim_raw, "%Y-%m-%d").date()
+                    if data_fim < data_inicio:
+                        raise ValueError("Data fim não pode ser menor que data início.")
+
+                    db.add(
+                        CampanhaQtd(
+                            emp=str(emp),
+                            vendedor=vendedor,
+                            titulo=titulo,
+                            produto_prefixo=(produto_prefixo or '').upper(),
+                            descricao_prefixo=(descricao_prefixo or '').strip(),
+                            campo_match=campo_match,
+                            marca=marca.upper(),
+                            recompensa_unit=recompensa_unit,
+                            qtd_minima=qtd_minima,
+                            valor_minimo=valor_minimo,
+                            data_inicio=data_inicio,
+                            data_fim=data_fim,
+                            ativo=1,
+                        )
+                    )
+                    db.commit()
+                    ok = "Campanha cadastrada com sucesso."
 
                 elif acao == "toggle":
                     cid = int(request.form.get("campanha_id") or 0)
