@@ -7,6 +7,8 @@ from datetime import date, datetime, timedelta
 import calendar
 from io import BytesIO
 
+from decimal import Decimal, ROUND_HALF_UP
+
 import pandas as pd
 import requests
 from sqlalchemy import and_, or_, func, case, cast, String, text, extract
@@ -2151,14 +2153,17 @@ def _upsert_resultado(
         return s
 
     if campo_match == "descricao":
-        prefix = _norm_prefix(getattr(campanha, "descricao_prefixo", "") or "")
+        prefix_raw = (getattr(campanha, "descricao_prefixo", "") or "").strip()
         # fallback: se não preencher descricao_prefixo, usa produto_prefixo como prefixo de descrição
-        if not prefix:
-            prefix = _norm_prefix((campanha.produto_prefixo or ""))
-        campo_item = func.coalesce(Venda.descricao_norm, "")
+        if not prefix_raw:
+            prefix_raw = (campanha.produto_prefixo or "").strip()
+        prefix = _norm_prefix(prefix_raw)
+        # descricao_norm já é esperado estar normalizado; garantimos lower/trim para evitar mismatch
+        campo_item = func.lower(func.trim(func.coalesce(Venda.descricao_norm, "")))
         cond_prefix = campo_item.like(prefix + "%")
     else:
-        prefix = (campanha.produto_prefixo or "").strip()
+        prefix_raw = (campanha.produto_prefixo or "").strip()
+        prefix = prefix_raw
         prefix_up = prefix.upper()
         campo_item = func.upper(func.trim(cast(Venda.mestre, String)))
         cond_prefix = campo_item.like(prefix_up + "%")
@@ -2192,7 +2197,17 @@ def _upsert_resultado(
     if atingiu and min_val is not None and float(min_val) > 0:
         atingiu = 1 if valor_vendido >= float(min_val) else 0
 
-    valor_recomp = (qtd_vendida * float(campanha.recompensa_unit or 0.0)) if atingiu else 0.0
+    try:
+        recompensa_unit_dec = Decimal(str(campanha.recompensa_unit or 0))
+    except Exception:
+        recompensa_unit_dec = Decimal("0")
+
+    if atingiu:
+        valor_recomp_dec = (Decimal(str(qtd_vendida)) * recompensa_unit_dec)
+        # arredondamento monetário
+        valor_recomp = float(valor_recomp_dec.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+    else:
+        valor_recomp = 0.0
 
     # Upsert por chave única
     res = (
@@ -2219,7 +2234,7 @@ def _upsert_resultado(
 
     # snapshot
     res.titulo = campanha.titulo
-    res.produto_prefixo = prefix
+    res.produto_prefixo = (locals().get('prefix_raw') or prefix)
     res.marca = (campanha.marca or "").strip()
     res.recompensa_unit = float(campanha.recompensa_unit or 0.0)
     res.qtd_minima = float(min_qtd) if (min_qtd is not None and float(min_qtd) > 0) else None
@@ -2335,9 +2350,14 @@ def campanhas_qtd():
 
                 # aplica prioridade: regras do vendedor substituem regras gerais
                 # chave: (produto_prefixo, marca)
-                by_key: dict[tuple[str, str], CampanhaQtd] = {}
+                by_key: dict[tuple[str, str, str], CampanhaQtd] = {}
                 for c in campanhas:
-                    key = ((c.produto_prefixo or "").strip().upper(), (c.marca or "").strip().upper())
+                    campo_match = (getattr(c, "campo_match", None) or "codigo").strip().lower()
+                    if campo_match == "descricao":
+                        pref = (getattr(c, "descricao_prefixo", "") or "").strip() or (c.produto_prefixo or "").strip()
+                        key = ("descricao", pref.lower().strip(), (c.marca or "").strip().upper())
+                    else:
+                        key = ("codigo", (c.produto_prefixo or "").strip().upper(), (c.marca or "").strip().upper())
                     if c.vendedor and c.vendedor.strip().upper() == vend:
                         by_key[key] = c
                     else:
@@ -2562,10 +2582,15 @@ def _calc_vendas_por_vendedor_para_campanha(db, emp: str, campanha: CampanhaQtd,
 def _build_campanhas_escolhidas_por_vendedor(campanhas: list[CampanhaQtd], vendedores: list[str]) -> dict[str, list[CampanhaQtd]]:
     """Aplica a regra de prioridade por chave (prefixo+marca): campanha do vendedor substitui campanha geral."""
     # geral: vendedor NULL
-    geral_by_key: dict[tuple[str, str], CampanhaQtd] = {}
+    geral_by_key: dict[tuple[str, str, str], CampanhaQtd] = {}
     especificas: dict[str, dict[tuple[str, str], CampanhaQtd]] = {}
     for c in campanhas:
-        key = ((c.produto_prefixo or "").strip().upper(), (c.marca or "").strip().upper())
+        campo_match = (getattr(c, "campo_match", None) or "codigo").strip().lower()
+                    if campo_match == "descricao":
+                        pref = (getattr(c, "descricao_prefixo", "") or "").strip() or (c.produto_prefixo or "").strip()
+                        key = ("descricao", pref.lower().strip(), (c.marca or "").strip().upper())
+                    else:
+                        key = ("codigo", (c.produto_prefixo or "").strip().upper(), (c.marca or "").strip().upper())
         if c.vendedor and c.vendedor.strip():
             vend = c.vendedor.strip().upper()
             especificas.setdefault(vend, {})[key] = c
@@ -4240,9 +4265,30 @@ def admin_campanhas_qtd():
                     if not data_ini_raw or not data_fim_raw:
                         raise ValueError("Informe data início e fim.")
 
-                    recompensa_unit = float(recompensa_raw)
-                    qtd_minima = float(qtd_min_raw) if qtd_min_raw else None
-                    valor_minimo = float(valor_min_raw) if valor_min_raw else None
+                    def _to_dec(s: str) -> Decimal:
+                        try:
+                            return Decimal(s)
+                        except Exception:
+                            raise ValueError("Número inválido.")
+
+                    recompensa_unit = _to_dec(recompensa_raw)
+                    if recompensa_unit < 0:
+                        raise ValueError("Recompensa não pode ser negativa.")
+
+                    qtd_minima = _to_dec(qtd_min_raw) if qtd_min_raw else None
+                    if qtd_minima is not None and qtd_minima < 0:
+                        raise ValueError("Quantidade mínima não pode ser negativa.")
+
+                    valor_minimo = _to_dec(valor_min_raw) if valor_min_raw else None
+                    if valor_minimo is not None and valor_minimo < 0:
+                        raise ValueError("Valor mínimo não pode ser negativo.")
+
+                    # Persistimos como float (compatibilidade), mas com precisão controlada
+                    recompensa_unit = float(recompensa_unit.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP))
+                    if qtd_minima is not None:
+                        qtd_minima = float(qtd_minima)
+                    if valor_minimo is not None:
+                        valor_minimo = float(valor_minimo)
                     data_inicio = datetime.strptime(data_ini_raw, "%Y-%m-%d").date()
                     data_fim = datetime.strptime(data_fim_raw, "%Y-%m-%d").date()
                     if data_fim < data_inicio:
@@ -4257,9 +4303,9 @@ def admin_campanhas_qtd():
                             descricao_prefixo=(descricao_prefixo or '').strip(),
                             campo_match=campo_match,
                             marca=marca.upper(),
-                            recompensa_unit=recompensa_unit,
-                            qtd_minima=qtd_minima,
-                            valor_minimo=valor_minimo,
+                            recompensa_unit=float(recompensa_unit),
+                            qtd_minima=float(qtd_minima) if qtd_minima is not None else None,
+                            valor_minimo=float(valor_minimo) if valor_minimo is not None else None,
                             data_inicio=data_inicio,
                             data_fim=data_fim,
                             ativo=1,
