@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+{% block title %}Admin - Mensagens{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3">
+  <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+    <div>
+      <h4 class="m-0">📣 Gerenciar Mensagens</h4>
+      <div class="text-muted small">Crie avisos para Empresas (e, no caso do Admin, também para usuários individuais).</div>
+    </div>
+    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('mensagens_central') }}">Ver central</a>
+  </div>
+
+  <div class="row g-3">
+    <div class="col-12 col-xl-5">
+      <div class="card app-card">
+        <div class="card-body">
+          <h5 class="mb-3">➕ Nova mensagem</h5>
+
+          <form method="post">
+            <div class="mb-2">
+              <label class="form-label">Título</label>
+              <input class="form-control" name="titulo" maxlength="180" required>
+            </div>
+
+            <div class="mb-2">
+              <label class="form-label">Mensagem</label>
+              <textarea class="form-control" name="conteudo" rows="5" required></textarea>
+            </div>
+
+            <div class="row g-2 mb-2">
+              <div class="col-6">
+                <label class="form-label">Início</label>
+                <input type="date" class="form-control" name="inicio_em" value="{{ today }}">
+              </div>
+              <div class="col-6">
+                <label class="form-label">Fim</label>
+                <input type="date" class="form-control" name="fim_em">
+              </div>
+            </div>
+
+            <div class="d-flex gap-3 flex-wrap mb-2">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="bloqueante" id="bloqueante">
+                <label class="form-check-label" for="bloqueante">Bloqueante diária (obrigatória)</label>
+              </div>
+            </div>
+
+            <div class="mb-2">
+              <label class="form-label">Empresas</label>
+              <div class="border rounded p-2" style="max-height:240px; overflow:auto;">
+                {% for e in emps %}
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="empresas" value="{{ e.codigo }}" id="emp_{{ e.codigo }}">
+                    <label class="form-check-label" for="emp_{{ e.codigo }}">
+                      <strong>{{ e.codigo }}</strong> — {{ e.nome }}{% if e.cidade or e.uf %} ({{ e.cidade|default('') }}{% if e.cidade and e.uf %}/{% endif %}{{ e.uf|default('') }}){% endif %}
+                    </label>
+                  </div>
+                {% endfor %}
+              </div>
+              <div class="text-muted small mt-1">Dica: selecione ao menos 1 empresa. Supervisor só pode selecionar empresas dele.</div>
+            </div>
+
+            {% if (role|lower) == 'admin' %}
+              <div class="mb-3">
+                <label class="form-label">Usuário (opcional)</label>
+                <select class="form-select" name="usuario_id">
+                  <option value="">— Nenhum (somente empresas) —</option>
+                  {% for u in users %}
+                    <option value="{{ u.id }}">{{ u.username }} ({{ u.role }})</option>
+                  {% endfor %}
+                </select>
+                <div class="text-muted small mt-1">Admin pode enviar para um usuário específico, além das empresas.</div>
+              </div>
+            {% endif %}
+
+            <button class="btn btn-primary w-100">Criar mensagem</button>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-12 col-xl-7">
+      <div class="card app-card">
+        <div class="card-body">
+          <h5 class="mb-3">📜 Mensagens cadastradas</h5>
+
+          {% if mensagens and mensagens|length > 0 %}
+            <div class="vstack gap-2">
+              {% for m in mensagens %}
+                <div class="border rounded p-3">
+                  <div class="d-flex align-items-start justify-content-between gap-2 flex-wrap">
+                    <div>
+                      <div class="d-flex align-items-center gap-2 flex-wrap">
+                        <strong>{{ m.titulo }}</strong>
+                        {% if m.bloqueante %}
+                          <span class="badge text-bg-danger">Obrigatória</span>
+                        {% else %}
+                          <span class="badge text-bg-secondary">Informativa</span>
+                        {% endif %}
+                        {% if m.ativo %}
+                          <span class="badge text-bg-success">Ativa</span>
+                        {% else %}
+                          <span class="badge text-bg-dark">Inativa</span>
+                        {% endif %}
+                      </div>
+                      <div class="text-muted small mt-1">
+                        {% if m.inicio_em or m.fim_em %}
+                          Período: {{ m.inicio_em if m.inicio_em else "—" }} até {{ m.fim_em if m.fim_em else "—" }}
+                        {% else %}
+                          Período: sem período definido
+                        {% endif %}
+                      </div>
+
+                      <div class="text-muted small mt-1">
+                        <span class="me-2">Empresas: {{ (destinos[m.id].emps|length) if destinos.get(m.id) else 0 }}</span>
+                        {% if (role|lower) == 'admin' %}
+                          <span>Usuários: {{ (destinos[m.id].users|length) if destinos.get(m.id) else 0 }}</span>
+                        {% endif %}
+                      </div>
+                    </div>
+
+                    <div class="d-flex gap-2">
+                      <form method="post" action="{{ url_for('admin_mensagens_toggle', mensagem_id=m.id) }}">
+                        <button class="btn btn-sm btn-outline-primary">
+                          {% if m.ativo %}Desativar{% else %}Ativar{% endif %}
+                        </button>
+                      </form>
+                    </div>
+                  </div>
+
+                  <div class="mt-2" style="white-space:pre-wrap">{{ m.conteudo }}</div>
+                </div>
+              {% endfor %}
+            </div>
+          {% else %}
+            <div class="text-muted">Nenhuma mensagem cadastrada.</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,36 @@
+{% extends "base_auth.html" %}
+{% block title %}Aviso obrigatório - SistemaVendas{% endblock %}
+
+{% block content %}
+<div class="container py-4" style="max-width:760px;">
+  <div class="card shadow-sm border-0">
+    <div class="card-body p-4">
+      <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
+        <div>
+          <h4 class="m-0">⚠️ Aviso obrigatório</h4>
+          <div class="text-muted small mt-1">Você precisa confirmar a leitura para continuar usando o sistema.</div>
+        </div>
+        <div class="text-end">
+          <span class="badge text-bg-danger">Obrigatória</span>
+          {% if msg.inicio_em or msg.fim_em %}
+            <div class="text-muted small mt-1">Válida: {{ msg.inicio_em if msg.inicio_em else "—" }} até {{ msg.fim_em if msg.fim_em else "—" }}</div>
+          {% endif %}
+        </div>
+      </div>
+
+      <hr class="my-3">
+
+      <h5 class="mb-2">{{ msg.titulo }}</h5>
+      <div class="mb-3" style="white-space:pre-wrap">{{ msg.conteudo }}</div>
+
+      <form method="post" action="{{ url_for('mensagens_marcar_lida', mensagem_id=msg.id) }}">
+        <button class="btn btn-primary btn-lg w-100">✔ Li e entendi (hoje)</button>
+      </form>
+
+      <div class="text-muted small mt-3">
+        *Esta mensagem pode reaparecer diariamente enquanto estiver no período de validade.
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

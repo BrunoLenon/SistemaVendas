@@ -121,6 +121,69 @@ class Emp(Base):
         Index("ix_emps_cidade", "cidade"),
     )
 
+# =====================
+# Mensagens (comunicados)
+# =====================
+
+class Mensagem(Base):
+    __tablename__ = "mensagens"
+
+    id = Column(Integer, primary_key=True)
+    titulo = Column(String(180), nullable=False)
+    conteudo = Column(Text, nullable=False)
+    bloqueante = Column(Boolean, nullable=False, default=False)
+    ativo = Column(Boolean, nullable=False, default=True)
+    inicio_em = Column(Date, nullable=True)
+    fim_em = Column(Date, nullable=True)
+
+    created_by_user_id = Column(Integer, nullable=True, index=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        Index("ix_mensagens_ativo_bloqueante", "ativo", "bloqueante"),
+        Index("ix_mensagens_periodo", "inicio_em", "fim_em"),
+    )
+
+
+class MensagemEmpresa(Base):
+    __tablename__ = "mensagem_empresas"
+
+    id = Column(Integer, primary_key=True)
+    mensagem_id = Column(Integer, nullable=False, index=True)
+    emp = Column(String(30), nullable=False, index=True)
+
+    __table_args__ = (
+        UniqueConstraint("mensagem_id", "emp", name="uq_msg_empresa"),
+    )
+
+
+class MensagemUsuario(Base):
+    __tablename__ = "mensagem_usuarios"
+
+    id = Column(Integer, primary_key=True)
+    mensagem_id = Column(Integer, nullable=False, index=True)
+    usuario_id = Column(Integer, nullable=False, index=True)
+
+    __table_args__ = (
+        UniqueConstraint("mensagem_id", "usuario_id", name="uq_msg_usuario"),
+    )
+
+
+class MensagemLidaDiaria(Base):
+    __tablename__ = "mensagem_lidas_diarias"
+
+    id = Column(Integer, primary_key=True)
+    mensagem_id = Column(Integer, nullable=False, index=True)
+    usuario_id = Column(Integer, nullable=False, index=True)
+    data = Column(Date, nullable=False, index=True)
+    lida_em = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("mensagem_id", "usuario_id", "data", name="uq_msg_lida_dia"),
+        Index("ix_msg_lidas_usuario_data", "usuario_id", "data"),
+    )
+
+
 class Venda(Base):
     __tablename__ = "vendas"
 
@@ -480,6 +543,58 @@ def criar_tabelas():
                     NULL;
                 END $$;
             """))
+            # Mensagens (comunicados) + destinos + leitura diária
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS mensagens (
+                    id SERIAL PRIMARY KEY,
+                    titulo VARCHAR(180) NOT NULL,
+                    conteudo TEXT NOT NULL,
+                    bloqueante BOOLEAN NOT NULL DEFAULT FALSE,
+                    ativo BOOLEAN NOT NULL DEFAULT TRUE,
+                    inicio_em DATE,
+                    fim_em DATE,
+                    created_by_user_id INTEGER,
+                    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+                );
+            """))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_mensagens_ativo_bloqueante ON mensagens (ativo, bloqueante);"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_mensagens_periodo ON mensagens (inicio_em, fim_em);"))
+
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS mensagem_empresas (
+                    id SERIAL PRIMARY KEY,
+                    mensagem_id INTEGER NOT NULL,
+                    emp VARCHAR(30) NOT NULL,
+                    CONSTRAINT uq_msg_empresa UNIQUE (mensagem_id, emp)
+                );
+            """))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_msg_emp_mensagem_id ON mensagem_empresas (mensagem_id);"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_msg_emp_emp ON mensagem_empresas (emp);"))
+
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS mensagem_usuarios (
+                    id SERIAL PRIMARY KEY,
+                    mensagem_id INTEGER NOT NULL,
+                    usuario_id INTEGER NOT NULL,
+                    CONSTRAINT uq_msg_usuario UNIQUE (mensagem_id, usuario_id)
+                );
+            """))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_msg_usr_mensagem_id ON mensagem_usuarios (mensagem_id);"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_msg_usr_usuario_id ON mensagem_usuarios (usuario_id);"))
+
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS mensagem_lidas_diarias (
+                    id SERIAL PRIMARY KEY,
+                    mensagem_id INTEGER NOT NULL,
+                    usuario_id INTEGER NOT NULL,
+                    data DATE NOT NULL,
+                    lida_em TIMESTAMP NOT NULL DEFAULT NOW(),
+                    CONSTRAINT uq_msg_lida_dia UNIQUE (mensagem_id, usuario_id, data)
+                );
+            """))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_msg_lidas_usuario_data ON mensagem_lidas_diarias (usuario_id, data);"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_msg_lidas_data ON mensagem_lidas_diarias (data);"))
+
             conn.execute(text("UPDATE usuarios SET role='vendedor' WHERE role IS NULL OR role='' ;"))
             conn.execute(text("UPDATE usuarios SET role=lower(role) WHERE role IS NOT NULL;"))
             # Vendas: novos campos para relatórios (IF NOT EXISTS)

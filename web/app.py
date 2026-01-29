@@ -31,6 +31,10 @@ from db import (
     Usuario,
     UsuarioEmp,
     Emp,
+    Mensagem,
+    MensagemEmpresa,
+    MensagemUsuario,
+    MensagemLidaDiaria,
     Venda,
     DashboardCache,
     ItemParado,
@@ -261,6 +265,41 @@ def inject_branding():
     return {"branding": b}
 
 # -------------------- Configurações / Branding (ADMIN) --------------------
+
+@app.before_request
+def _mensagens_bloqueantes_guard():
+    # Ignora assets e healthz
+    if request.endpoint == "static" or request.path.startswith("/static"):
+        return None
+    if request.path.startswith("/healthz"):
+        return None
+
+    # Sem login, não bloqueia
+    if not session.get("usuario"):
+        return None
+
+    # Permitir rotas de auth e rotas de mensagens (para o usuário conseguir ler)
+    if request.path.startswith("/login") or request.path.startswith("/logout") or request.path.startswith("/senha"):
+        return None
+    if request.path.startswith("/mensagens"):
+        return None
+
+    try:
+        with SessionLocal() as db:
+            pendente = _find_pending_blocking_message(db)
+            if pendente:
+                # salva a rota desejada para retornar depois de marcar como lida
+                if request.method == "GET":
+                    session["after_block_redirect"] = request.full_path if request.query_string else request.path
+                else:
+                    session["after_block_redirect"] = request.referrer or url_for("dashboard")
+                return redirect(url_for("mensagens_bloqueio", mensagem_id=pendente.id))
+    except Exception as e:
+        # nunca derrubar o app por causa do módulo de mensagens
+        logging.exception("Erro no guard de mensagens bloqueantes: %s", e)
+
+    return None
+
 
 @app.route('/admin/configuracoes', methods=['GET', 'POST'])
 def admin_configuracoes():
@@ -570,6 +609,87 @@ def _allowed_emps() -> list[str]:
             return emps_db
     except Exception:
         return []
+def _is_date_in_range(today: date, inicio: date | None, fim: date | None) -> bool:
+    if inicio and today < inicio:
+        return False
+    if fim and today > fim:
+        return False
+    return True
+
+
+def _find_pending_blocking_message(db) -> Mensagem | None:
+    """Retorna a primeira mensagem bloqueante pendente para o usuário (hoje)."""
+    role = (_role() or "").lower()
+    user_id = session.get("user_id")
+    if not user_id:
+        return None
+
+    today = date.today()
+    allowed_emps = _allowed_emps()  # [] significa "todas" para admin_all_emps
+
+    # Busca candidatas recentes primeiro (id desc) para mostrar a mais nova
+    candidatas = (
+        db.query(Mensagem)
+        .filter(Mensagem.ativo.is_(True))
+        .filter(Mensagem.bloqueante.is_(True))
+        .order_by(Mensagem.id.desc())
+        .limit(50)
+        .all()
+    )
+
+    for msg in candidatas:
+        if not _is_date_in_range(today, msg.inicio_em, msg.fim_em):
+            continue
+
+        # Destino: usuário específico (admin pode mandar)
+        targeted_user = (
+            db.query(MensagemUsuario)
+            .filter(MensagemUsuario.mensagem_id == msg.id)
+            .filter(MensagemUsuario.usuario_id == int(user_id))
+            .first()
+            is not None
+        )
+
+        # Destino: empresas
+        targeted_emp = False
+        if role == "admin" and session.get("admin_all_emps"):
+            # Admin "todas as EMPs": se a mensagem tiver qualquer empresa destino, conta.
+            targeted_emp = (
+                db.query(MensagemEmpresa)
+                .filter(MensagemEmpresa.mensagem_id == msg.id)
+                .first()
+                is not None
+            )
+        else:
+            if allowed_emps:
+                targeted_emp = (
+                    db.query(MensagemEmpresa)
+                    .filter(MensagemEmpresa.mensagem_id == msg.id)
+                    .filter(MensagemEmpresa.emp.in_(allowed_emps))
+                    .first()
+                    is not None
+                )
+
+        if not (targeted_user or targeted_emp):
+            continue
+
+        # Já leu hoje?
+        ja_leu = (
+            db.query(MensagemLidaDiaria)
+            .filter(MensagemLidaDiaria.mensagem_id == msg.id)
+            .filter(MensagemLidaDiaria.usuario_id == int(user_id))
+            .filter(MensagemLidaDiaria.data == today)
+            .first()
+            is not None
+        )
+        if ja_leu:
+            continue
+
+        return msg
+
+    return None
+
+
 
 def _normalize_cols(df: pd.DataFrame) -> pd.DataFrame:
     """Normaliza nomes/tipos de colunas vindas do banco.
@@ -626,6 +746,14 @@ def _admin_required():
     if _role() != "admin":
         flash("Acesso restrito ao administrador.", "warning")
         audit("admin_forbidden")
+        return redirect(url_for("dashboard"))
+    return None
+
+def _admin_or_supervisor_required():
+    """Garante acesso ADMIN ou SUPERVISOR."""
+    if (_role() or "").lower() not in ["admin", "supervisor"]:
+        flash("Acesso restrito.", "warning")
+        audit("forbidden", path=request.path)
         return redirect(url_for("dashboard"))
     return None
 
@@ -4608,6 +4736,329 @@ def admin_apagar_vendas():
             db.close()
         except Exception:
             pass
+
+
+# =====================
+# Mensagens (Central + Bloqueio diário)
+# =====================
+
+@app.route("/mensagens", methods=["GET"])
+def mensagens_central():
+    red = _login_required()
+    if red:
+        return red
+
+    usuario = _usuario_logado()
+    role = (_role() or "").lower()
+    user_id = session.get("user_id")
+    allowed_emps = _allowed_emps()  # [] => todas (admin_all_emps)
+    today = date.today()
+
+    with SessionLocal() as db:
+        # Mensagens ativas e no período
+        msgs = (
+            db.query(Mensagem)
+            .filter(Mensagem.ativo.is_(True))
+            .order_by(Mensagem.bloqueante.desc(), Mensagem.id.desc())
+            .limit(200)
+            .all()
+        )
+
+        out = []
+        for msg in msgs:
+            if not _is_date_in_range(today, msg.inicio_em, msg.fim_em):
+                continue
+
+            targeted_user = (
+                db.query(MensagemUsuario)
+                .filter(MensagemUsuario.mensagem_id == msg.id)
+                .filter(MensagemUsuario.usuario_id == int(user_id))
+                .first()
+                is not None
+            )
+
+            targeted_emp = False
+            if role == "admin" and session.get("admin_all_emps"):
+                targeted_emp = (
+                    db.query(MensagemEmpresa)
+                    .filter(MensagemEmpresa.mensagem_id == msg.id)
+                    .first()
+                    is not None
+                )
+            else:
+                if allowed_emps:
+                    targeted_emp = (
+                        db.query(MensagemEmpresa)
+                        .filter(MensagemEmpresa.mensagem_id == msg.id)
+                        .filter(MensagemEmpresa.emp.in_(allowed_emps))
+                        .first()
+                        is not None
+                    )
+
+            if not (targeted_user or targeted_emp):
+                continue
+
+            lida_hoje = (
+                db.query(MensagemLidaDiaria)
+                .filter(MensagemLidaDiaria.mensagem_id == msg.id)
+                .filter(MensagemLidaDiaria.usuario_id == int(user_id))
+                .filter(MensagemLidaDiaria.data == today)
+                .first()
+                is not None
+            )
+
+            out.append({
+                "msg": msg,
+                "lida_hoje": lida_hoje,
+            })
+
+        return render_template("mensagens.html", mensagens=out, usuario=usuario, role=role)
+
+
+@app.route("/mensagens/bloqueio/<int:mensagem_id>", methods=["GET"])
+def mensagens_bloqueio(mensagem_id: int):
+    red = _login_required()
+    if red:
+        return red
+
+    usuario = _usuario_logado()
+    role = (_role() or "").lower()
+    user_id = session.get("user_id")
+    allowed_emps = _allowed_emps()
+    today = date.today()
+
+    with SessionLocal() as db:
+        msg = db.query(Mensagem).filter(Mensagem.id == mensagem_id).first()
+        if not msg or not msg.ativo or not msg.bloqueante or not _is_date_in_range(today, msg.inicio_em, msg.fim_em):
+            return redirect(url_for("dashboard"))
+
+        # Confere destino (segurança)
+        targeted_user = (
+            db.query(MensagemUsuario)
+            .filter(MensagemUsuario.mensagem_id == msg.id)
+            .filter(MensagemUsuario.usuario_id == int(user_id))
+            .first()
+            is not None
+        )
+
+        targeted_emp = False
+        if role == "admin" and session.get("admin_all_emps"):
+            targeted_emp = (
+                db.query(MensagemEmpresa)
+                .filter(MensagemEmpresa.mensagem_id == msg.id)
+                .first()
+                is not None
+            )
+        else:
+            if allowed_emps:
+                targeted_emp = (
+                    db.query(MensagemEmpresa)
+                    .filter(MensagemEmpresa.mensagem_id == msg.id)
+                    .filter(MensagemEmpresa.emp.in_(allowed_emps))
+                    .first()
+                    is not None
+                )
+
+        if not (targeted_user or targeted_emp):
+            return redirect(url_for("dashboard"))
+
+        return render_template("mensagem_bloqueio.html", msg=msg, usuario=usuario, role=role)
+
+
+@app.route("/mensagens/lida/<int:mensagem_id>", methods=["POST"])
+def mensagens_marcar_lida(mensagem_id: int):
+    red = _login_required()
+    if red:
+        return red
+
+    user_id = session.get("user_id")
+    today = date.today()
+
+    with SessionLocal() as db:
+        msg = db.query(Mensagem).filter(Mensagem.id == mensagem_id).first()
+        if msg and msg.ativo and msg.bloqueante:
+            # upsert simples (tenta inserir; se já existir, ignora)
+            existe = (
+                db.query(MensagemLidaDiaria)
+                .filter(MensagemLidaDiaria.mensagem_id == mensagem_id)
+                .filter(MensagemLidaDiaria.usuario_id == int(user_id))
+                .filter(MensagemLidaDiaria.data == today)
+                .first()
+            )
+            if not existe:
+                db.add(MensagemLidaDiaria(
+                    mensagem_id=mensagem_id,
+                    usuario_id=int(user_id),
+                    data=today,
+                ))
+                db.commit()
+
+    next_url = session.pop("after_block_redirect", None)
+    if next_url:
+        return redirect(next_url)
+    return redirect(url_for("dashboard"))
+
+
+@app.route("/admin/mensagens", methods=["GET", "POST"])
+def admin_mensagens():
+    red = _login_required()
+    if red:
+        return red
+    red = _admin_or_supervisor_required()
+    if red:
+        return red
+
+    usuario = _usuario_logado()
+    role = (_role() or "").lower()
+    user_id = session.get("user_id")
+    allowed_emps = _allowed_emps()
+    today = date.today()
+
+    with SessionLocal() as db:
+        emps_q = db.query(Emp).filter(Emp.ativo.is_(True)).order_by(Emp.codigo.asc()).all()
+        # Supervisor só pode ver/usar as empresas dele
+        if role == "supervisor":
+            emps_q = [e for e in emps_q if str(e.codigo) in set(allowed_emps or [])]
+
+        users_q = []
+        if role == "admin":
+            users_q = db.query(Usuario).order_by(Usuario.username.asc()).all()
+
+        if request.method == "POST":
+            titulo = (request.form.get("titulo") or "").strip()
+            conteudo = (request.form.get("conteudo") or "").strip()
+            bloqueante = (request.form.get("bloqueante") == "on")
+            ativo = True if (request.form.get("ativo") != "off") else False
+            inicio_em = (request.form.get("inicio_em") or "").strip()
+            fim_em = (request.form.get("fim_em") or "").strip()
+            empresas_sel = request.form.getlist("empresas")
+            usuario_dest = (request.form.get("usuario_id") or "").strip()  # admin
+
+            # validações
+            erros = []
+            if not titulo:
+                erros.append("Informe um título.")
+            if not conteudo:
+                erros.append("Informe a mensagem.")
+            if role == "supervisor" and not empresas_sel:
+                erros.append("Supervisor precisa selecionar ao menos 1 empresa.")
+            if role == "admin" and (not empresas_sel and not usuario_dest):
+                erros.append("Selecione ao menos 1 empresa ou 1 usuário.")
+
+            # restringe empresas do supervisor
+            if role == "supervisor":
+                allowed_set = set(allowed_emps or [])
+                empresas_sel = [e for e in empresas_sel if str(e) in allowed_set]
+
+            if not erros:
+                def _parse_date(s: str):
+                    try:
+                        return datetime.strptime(s, "%Y-%m-%d").date()
+                    except Exception:
+                        return None
+
+                msg = Mensagem(
+                    titulo=titulo,
+                    conteudo=conteudo,
+                    bloqueante=bloqueante,
+                    ativo=ativo,
+                    inicio_em=_parse_date(inicio_em),
+                    fim_em=_parse_date(fim_em),
+                    created_by_user_id=int(user_id) if user_id else None,
+                )
+                db.add(msg)
+                db.flush()
+
+                for emp_code in empresas_sel:
+                    db.add(MensagemEmpresa(mensagem_id=msg.id, emp=str(emp_code).strip()))
+                if role == "admin" and usuario_dest:
+                    try:
+                        uid = int(usuario_dest)
+                        db.add(MensagemUsuario(mensagem_id=msg.id, usuario_id=uid))
+                    except Exception:
+                        pass
+
+                db.commit()
+                flash("Mensagem criada com sucesso.", "success")
+                return redirect(url_for("admin_mensagens"))
+            else:
+                for e in erros:
+                    flash(e, "danger")
+
+        # listagem
+        mensagens = (
+            db.query(Mensagem)
+            .order_by(Mensagem.ativo.desc(), Mensagem.id.desc())
+            .limit(300)
+            .all()
+        )
+        # supervisor só vê mensagens que tenham destino em alguma empresa dele e que ele criou (ou todas? melhor: só dele)
+        if role == "supervisor":
+            allowed_set = set(allowed_emps or [])
+            ids = (
+                db.query(MensagemEmpresa.mensagem_id)
+                .filter(MensagemEmpresa.emp.in_(list(allowed_set)))
+                .distinct()
+                .all()
+            )
+            ids = {i[0] for i in ids}
+            mensagens = [m for m in mensagens if m.id in ids]
+
+        # Enriquecer destinos para exibição
+        destinos = {}
+        for m_ in mensagens:
+            emp_codes = [x.emp for x in db.query(MensagemEmpresa).filter(MensagemEmpresa.mensagem_id == m_.id).all()]
+            usr_ids = [x.usuario_id for x in db.query(MensagemUsuario).filter(MensagemUsuario.mensagem_id == m_.id).all()]
+            destinos[m_.id] = {"emps": emp_codes, "users": usr_ids}
+
+        return render_template(
+            "admin_mensagens.html",
+            usuario=usuario,
+            role=role,
+            emps=emps_q,
+            users=users_q,
+            mensagens=mensagens,
+            destinos=destinos,
+            today=today,
+        )
+
+
+@app.route("/admin/mensagens/<int:mensagem_id>/toggle", methods=["POST"])
+def admin_mensagens_toggle(mensagem_id: int):
+    red = _login_required()
+    if red:
+        return red
+    red = _admin_or_supervisor_required()
+    if red:
+        return red
+
+    role = (_role() or "").lower()
+    allowed_emps = _allowed_emps()
+
+    with SessionLocal() as db:
+        msg = db.query(Mensagem).filter(Mensagem.id == mensagem_id).first()
+        if not msg:
+            flash("Mensagem não encontrada.", "warning")
+            return redirect(url_for("admin_mensagens"))
+
+        if role == "supervisor":
+            # só pode toggle se a mensagem tiver destino em empresa dele
+            allowed_set = set(allowed_emps or [])
+            ok = (
+                db.query(MensagemEmpresa)
+                .filter(MensagemEmpresa.mensagem_id == msg.id)
+                .filter(MensagemEmpresa.emp.in_(list(allowed_set)))
+                .first()
+                is not None
+            )
+            if not ok:
+                flash("Acesso restrito.", "danger")
+                return redirect(url_for("admin_mensagens"))
+
+        msg.ativo = not bool(msg.ativo)
+        db.commit()
+        flash("Status atualizado.", "success")
+        return redirect(url_for("admin_mensagens"))
 
 # ------------- Erros -------------
 @app.errorhandler(500)
