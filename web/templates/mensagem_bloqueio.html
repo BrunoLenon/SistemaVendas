@@ -12,8 +12,11 @@
         </div>
         <div class="text-end">
           <span class="badge text-bg-danger">Obrigatória</span>
-          {% if msg.inicio_em or msg.fim_em %}
-            <div class="text-muted small mt-1">Válida: {{ msg.inicio_em if msg.inicio_em else "—" }} até {{ msg.fim_em if msg.fim_em else "—" }}</div>
+          {# Regra do negócio: validade não precisa aparecer para vendedores/supervisores. #}
+          {% if (role|lower) == 'admin' %}
+            {% if msg.inicio_em or msg.fim_em %}
+              <div class="text-muted small mt-1">Válida: {{ msg.inicio_em if msg.inicio_em else "—" }} até {{ msg.fim_em if msg.fim_em else "—" }}</div>
+            {% endif %}
           {% endif %}
         </div>
       </div>
@@ -27,9 +30,11 @@
         <button class="btn btn-primary btn-lg w-100">✔ Li e entendi (hoje)</button>
       </form>
 
-      <div class="text-muted small mt-3">
-        *Esta mensagem pode reaparecer diariamente enquanto estiver no período de validade.
-      </div>
+      {% if (role|lower) == 'admin' %}
+        <div class="text-muted small mt-3">
+          *Esta mensagem pode reaparecer diariamente enquanto estiver no período de validade.
+        </div>
+      {% endif %}
     </div>
   </div>
 </div>

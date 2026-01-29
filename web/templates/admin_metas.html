@@ -63,14 +63,52 @@
 
             <div class="col-12">
               <label class="form-label small">Escada (faixas)</label>
-              <textarea class="form-control" name="escalas" rows="5" placeholder="Exemplos:
-5:0.10
-10:0.20
-20:0.30" required></textarea>
-              <div class="text-muted small mt-1">
-                Formato: <code>limite:bonus</code>. Para Crescimento e Share o limite é em <b>% atingido</b>. Para MIX o limite é a <b>qtde de itens únicos</b>.
-                O bônus é o percentual pago sobre o valor total do mês (ex.: 0.10 = 0,10%).
+              {#
+                UI "pro" para escada: tabela com adicionar/remover e um textarea oculto como fonte de verdade.
+                O backend continua recebendo o campo "escalas" no formato linha-a-linha "limite:bonus".
+              #}
+              <textarea class="form-control d-none" name="escalas" id="escalas_text" rows="5"></textarea>
+
+              <div class="border rounded p-2 bg-light">
+                <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+                  <div class="text-muted small">
+                    <span class="fw-semibold">Limite</span> → <span class="fw-semibold">Bônus</span>
+                    <span class="ms-1">(bônus é % sobre o valor do mês, ex.: <code>0,10%</code>)</span>
+                  </div>
+                  <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="escada_exemplo">Inserir exemplo</button>
+                    <button type="button" class="btn btn-sm btn-outline-primary" id="escada_add">+ Adicionar faixa</button>
+                  </div>
+                </div>
+
+                <div class="table-responsive">
+                  <table class="table table-sm align-middle mb-0" id="escadas_table">
+                    <thead>
+                      <tr>
+                        <th style="width: 40%">Limite</th>
+                        <th style="width: 40%">Bônus (%)</th>
+                        <th class="text-end" style="width: 20%">&nbsp;</th>
+                      </tr>
+                    </thead>
+                    <tbody></tbody>
+                  </table>
+                </div>
+
+                <div class="text-muted small mt-2">
+                  <ul class="mb-0 ps-3">
+                    <li><b>Crescimento</b> e <b>Share</b>: limite em <b>% atingido</b> (ex.: 5, 10, 20).</li>
+                    <li><b>MIX</b>: limite é a <b>qtde de itens únicos</b> (ex.: 1500, 1700).</li>
+                    <li>Use bônus como <b>0,10</b> para 0,10% (pode digitar com vírgula).</li>
+                  </ul>
+                </div>
               </div>
+
+              <noscript>
+                <div class="alert alert-warning mt-2 mb-0">
+                  Seu navegador está sem JavaScript. Preencha a escada manualmente (uma linha por faixa): <code>limite:bonus</code>
+                </div>
+                <textarea class="form-control mt-2" name="escalas" rows="5" placeholder="Ex.:\n5:0.10\n10:0.20\n20:0.30" required></textarea>
+              </noscript>
             </div>
 
             <div class="col-12">
@@ -123,7 +161,9 @@
                         <span class="badge text-bg-secondary ms-1">inativa</span>
                       {% endif %}
                     </td>
-                    <td class="text-muted">{{ m.tipo }}</td>
+                    <td class="text-muted">
+                      {% if m.tipo == 'CRESCIMENTO' %}📈 Crescimento{% elif m.tipo == 'MIX' %}🧩 MIX{% elif m.tipo == 'SHARE_MARCA' %}🏷️ Share{% else %}{{ m.tipo }}{% endif %}
+                    </td>
                     <td class="small">
                       {% for e in (meta_emps.get(m.id) or []) %}
                         <span class="badge text-bg-light border">{{ e }}</span>
@@ -131,7 +171,12 @@
                     </td>
                     <td class="small">
                       {% for esc in (meta_escalas.get(m.id) or []) %}
-                        <div><code>{{ esc.limite_min }}</code> → <code>{{ esc.bonus_percentual }}</code></div>
+                        {% set bonus = ('%.2f' % (esc.bonus_percentual or 0))|replace('.',',') %}
+                        {% if m.tipo == 'MIX' %}
+                          <span class="badge text-bg-light border me-1 mb-1">≥ {{ esc.limite_min }} → {{ bonus }}%</span>
+                        {% else %}
+                          <span class="badge text-bg-light border me-1 mb-1">≥ {{ esc.limite_min }}% → {{ bonus }}%</span>
+                        {% endif %}
                       {% endfor %}
                     </td>
                     <td class="small">
@@ -165,4 +210,91 @@
     </div>
   </div>
 </div>
+
+<script>
+  // Builder da escada: mantém um textarea oculto (escalas_text) como fonte de verdade.
+  (function () {
+    const table = document.getElementById('escadas_table');
+    const tbody = table ? table.querySelector('tbody') : null;
+    const hidden = document.getElementById('escalas_text');
+    const btnAdd = document.getElementById('escada_add');
+    const btnEx = document.getElementById('escada_exemplo');
+
+    if (!tbody || !hidden || !btnAdd) return;
+
+    function normalizeNumber(v) {
+      if (v == null) return '';
+      return String(v).trim().replace(',', '.');
+    }
+
+    function serialize() {
+      const rows = Array.from(tbody.querySelectorAll('tr'));
+      const lines = [];
+      for (const r of rows) {
+        const lim = normalizeNumber(r.querySelector('input[data-kind="lim"]')?.value || '');
+        const bon = normalizeNumber(r.querySelector('input[data-kind="bon"]')?.value || '');
+        if (!lim || !bon) continue;
+        lines.push(`${lim}:${bon}`);
+      }
+      hidden.value = lines.join('\n');
+    }
+
+    function addRow(lim = '', bon = '') {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>
+          <input class="form-control form-control-sm" data-kind="lim" inputmode="decimal" placeholder="Ex.: 5" value="${lim}">
+        </td>
+        <td>
+          <div class="input-group input-group-sm">
+            <input class="form-control" data-kind="bon" inputmode="decimal" placeholder="Ex.: 0,10" value="${bon}">
+            <span class="input-group-text">%</span>
+          </div>
+        </td>
+        <td class="text-end">
+          <button type="button" class="btn btn-sm btn-outline-danger" title="Remover">✕</button>
+        </td>
+      `;
+
+      tr.querySelector('button').addEventListener('click', () => {
+        tr.remove();
+        serialize();
+      });
+
+      tr.querySelectorAll('input').forEach(inp => {
+        inp.addEventListener('input', serialize);
+        inp.addEventListener('change', serialize);
+      });
+
+      tbody.appendChild(tr);
+      serialize();
+    }
+
+    // Começa com 1 linha vazia para guiar.
+    addRow();
+
+    btnAdd.addEventListener('click', () => addRow());
+
+    if (btnEx) {
+      btnEx.addEventListener('click', () => {
+        tbody.innerHTML = '';
+        addRow('5', '0,10');
+        addRow('10', '0,20');
+        addRow('20', '0,30');
+      });
+    }
+
+    // Garante que antes de enviar o form o textarea oculto esteja preenchido.
+    const form = hidden.closest('form');
+    if (form) {
+      form.addEventListener('submit', (ev) => {
+        serialize();
+        if (!hidden.value || hidden.value.trim().length === 0) {
+          ev.preventDefault();
+          alert('Preencha ao menos uma faixa na escada (Limite e Bônus).');
+        }
+      });
+    }
+  })();
+</script>
 {% endblock %}

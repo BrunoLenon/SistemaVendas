@@ -36,13 +36,16 @@
                       <span class="badge text-bg-secondary">Informativa</span>
                     {% endif %}
                   </div>
-                  <div class="text-muted small mt-1">
-                    {% if m.inicio_em or m.fim_em %}
-                      Válida: {{ m.inicio_em if m.inicio_em else "—" }} até {{ m.fim_em if m.fim_em else "—" }}
-                    {% else %}
-                      Válida: sem período definido
-                    {% endif %}
-                  </div>
+                  {# Regra do negócio: vendedores/supervisores não precisam ver validade. #}
+                  {% if (role|lower) == 'admin' %}
+                    <div class="text-muted small mt-1">
+                      {% if m.inicio_em or m.fim_em %}
+                        Válida: {{ m.inicio_em if m.inicio_em else "—" }} até {{ m.fim_em if m.fim_em else "—" }}
+                      {% else %}
+                        Válida: sem período definido
+                      {% endif %}
+                    </div>
+                  {% endif %}
                 </div>
               </div>
 
