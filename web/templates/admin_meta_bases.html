@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}Base manual - {{ meta.nome }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-start gap-2 mb-3">
+  <div>
+    <h4 class="m-0">📈 Base manual (Crescimento)</h4>
+    <div class="text-muted small">
+      Meta: <b>{{ meta.nome }}</b> — {{ '%02d'|format(meta.mes) }}/{{ meta.ano }}.
+      Se preenchida, a base manual substitui a base automática (mesmo mês do ano passado).
+    </div>
+  </div>
+  <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('admin_metas', ano=meta.ano, mes=meta.mes) }}">Voltar</a>
+</div>
+
+<form method="post" action="{{ url_for('admin_meta_bases_salvar', meta_id=meta.id) }}">
+  <div class="card shadow-sm">
+    <div class="card-body">
+      <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0">
+          <thead>
+            <tr>
+              <th style="min-width:90px;">Empresa</th>
+              <th style="min-width:220px;">Vendedor</th>
+              <th class="text-end" style="min-width:140px;">Total mês</th>
+              <th class="text-end" style="min-width:140px;">Base automática</th>
+              <th style="min-width:160px;">Base manual (R$)</th>
+              <th style="min-width:200px;">Obs.</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for l in linhas %}
+              <tr>
+                <td class="text-muted">{{ l.emp }}</td>
+                <td class="fw-semibold">{{ l.vendedor }}</td>
+                <td class="text-end">R$ {{ '%.2f'|format(l.total_atual) }}</td>
+                <td class="text-end">R$ {{ '%.2f'|format(l.base_auto) }}</td>
+                <td>
+                  <input class="form-control form-control-sm"
+                         name="base__{{ l.emp }}__{{ l.vendedor }}"
+                         value="{{ '' if l.base_manual is none else ('%.2f'|format(l.base_manual)) }}"
+                         placeholder="vazio = usar auto">
+                </td>
+                <td>
+                  <input class="form-control form-control-sm"
+                         name="obs__{{ l.emp }}__{{ l.vendedor }}"
+                         value="{{ l.observacao }}"
+                         placeholder="Férias / troca carteira...">
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="d-flex justify-content-end mt-3">
+        <button class="btn btn-primary">Salvar bases</button>
+      </div>
+
+      <div class="text-muted small mt-2">
+        Dica: para “zerar” uma base manual, deixe o campo vazio e salve.
+      </div>
+    </div>
+  </div>
+</form>
+{% endblock %}

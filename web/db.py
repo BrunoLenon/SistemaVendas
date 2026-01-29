@@ -402,6 +402,148 @@ class CampanhaQtdResultado(Base):
     )
 
 
+# =====================
+# Metas (crescimento / mix / share de marcas)
+# =====================
+
+class MetaPrograma(Base):
+    """Programa de meta mensal.
+
+    tipos:
+      - CRESCIMENTO: compara valor do mês vs base (manual ou ano passado)
+      - MIX: itens únicos (por mestre) no mês
+      - SHARE_MARCA: participação (%) de um conjunto de marcas no total do mês
+    """
+
+    __tablename__ = "metas_programas"
+
+    id = Column(Integer, primary_key=True)
+
+    nome = Column(String(180), nullable=False)
+    tipo = Column(String(30), nullable=False, index=True)  # CRESCIMENTO | MIX | SHARE_MARCA
+
+    ano = Column(Integer, nullable=False, index=True)
+    mes = Column(Integer, nullable=False, index=True)
+
+    ativo = Column(Boolean, nullable=False, default=True)
+
+    created_by_user_id = Column(Integer, nullable=True, index=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        Index("ix_metas_programas_tipo_periodo", "tipo", "ano", "mes"),
+        Index("ix_metas_programas_periodo", "ano", "mes"),
+    )
+
+
+class MetaProgramaEmp(Base):
+    __tablename__ = "metas_programas_emps"
+
+    id = Column(Integer, primary_key=True)
+    meta_id = Column(Integer, nullable=False, index=True)
+    emp = Column(String(30), nullable=False, index=True)
+
+    __table_args__ = (
+        UniqueConstraint("meta_id", "emp", name="uq_meta_emp"),
+        Index("ix_meta_emp_emp", "emp"),
+    )
+
+
+class MetaEscala(Base):
+    """Faixas (escada) de atingimento -> bônus.
+
+    Para CRESCIMENTO e SHARE_MARCA: limite_min é % (ex.: 5, 10, 20) e bonus_percentual é % pago (ex.: 0.10, 0.20)
+    Para MIX: limite_min é quantidade de itens únicos (ex.: 1500, 1700) e bonus_percentual é % pago.
+    """
+
+    __tablename__ = "metas_escalas"
+
+    id = Column(Integer, primary_key=True)
+    meta_id = Column(Integer, nullable=False, index=True)
+
+    ordem = Column(Integer, nullable=False, default=0)
+    limite_min = Column(Float, nullable=False)
+    bonus_percentual = Column(Float, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("meta_id", "ordem", name="uq_meta_escala_ordem"),
+        Index("ix_meta_escala_meta", "meta_id"),
+    )
+
+
+class MetaMarca(Base):
+    """Marcas incluídas no cálculo de SHARE_MARCA (podem ser várias)."""
+
+    __tablename__ = "metas_marcas"
+
+    id = Column(Integer, primary_key=True)
+    meta_id = Column(Integer, nullable=False, index=True)
+    marca = Column(String(120), nullable=False, index=True)
+
+    __table_args__ = (
+        UniqueConstraint("meta_id", "marca", name="uq_meta_marca"),
+        Index("ix_meta_marca_marca", "marca"),
+    )
+
+
+class MetaBaseManual(Base):
+    """Base manual (override) para CRESCIMENTO por vendedor/EMP (mensal)."""
+
+    __tablename__ = "metas_bases_manuais"
+
+    id = Column(Integer, primary_key=True)
+    meta_id = Column(Integer, nullable=False, index=True)
+
+    emp = Column(String(30), nullable=False, index=True)
+    vendedor = Column(String(80), nullable=False, index=True)
+
+    base_valor = Column(Float, nullable=False, default=0.0)
+    observacao = Column(String(200), nullable=True)
+
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("meta_id", "emp", "vendedor", name="uq_meta_base_manual"),
+        Index("ix_meta_base_manual_emp_vend", "emp", "vendedor"),
+    )
+
+
+class MetaResultado(Base):
+    """Resultado calculado por meta/vendedor/EMP/mês.
+
+    Armazenamos para abrir rápido e permitir auditoria.
+    """
+
+    __tablename__ = "metas_resultados"
+
+    id = Column(Integer, primary_key=True)
+    meta_id = Column(Integer, nullable=False, index=True)
+
+    emp = Column(String(30), nullable=False, index=True)
+    vendedor = Column(String(80), nullable=False, index=True)
+
+    ano = Column(Integer, nullable=False, index=True)
+    mes = Column(Integer, nullable=False, index=True)
+
+    # métricas
+    valor_mes = Column(Float, nullable=False, default=0.0)
+    base_valor = Column(Float, nullable=True)
+    crescimento_pct = Column(Float, nullable=True)
+    mix_itens_unicos = Column(Float, nullable=True)
+    share_pct = Column(Float, nullable=True)
+    valor_marcas = Column(Float, nullable=True)
+
+    bonus_percentual = Column(Float, nullable=False, default=0.0)
+    premio = Column(Float, nullable=False, default=0.0)
+
+    calculado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("meta_id", "emp", "vendedor", "ano", "mes", name="uq_meta_resultado"),
+        Index("ix_meta_resultados_emp_periodo", "emp", "ano", "mes"),
+        Index("ix_meta_resultados_meta_periodo", "meta_id", "ano", "mes"),
+    )
+
 class VendasResumoPeriodo(Base):
     """Resumo mensal manual/importado (ex.: ano passado) por vendedor e EMP.
 

@@ -1,0 +1,168 @@
+{% extends "base.html" %}
+{% block title %}Admin - Metas{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+  <div>
+    <h4 class="m-0">🏁 Administração de Metas</h4>
+    <div class="text-muted small">Cadastre metas mensais (Crescimento, MIX e Share de Marcas) com escadas e empresas alvo.</div>
+  </div>
+
+  <form class="d-flex gap-2" method="get" action="{{ url_for('admin_metas') }}">
+    <input class="form-control form-control-sm" style="width:110px" name="mes" value="{{ '%02d'|format(mes) }}" placeholder="Mês">
+    <input class="form-control form-control-sm" style="width:120px" name="ano" value="{{ ano }}" placeholder="Ano">
+    <button class="btn btn-sm btn-outline-primary">Ir</button>
+  </form>
+</div>
+
+<div class="row g-3">
+  <div class="col-12 col-lg-5">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h6 class="mb-3">➕ Nova meta</h6>
+
+        <form method="post" action="{{ url_for('admin_metas_criar') }}">
+          <div class="row g-2">
+            <div class="col-12">
+              <label class="form-label small">Nome</label>
+              <input class="form-control" name="nome" placeholder="Ex.: Meta Crescimento (Jan)" required>
+            </div>
+
+            <div class="col-12 col-md-6">
+              <label class="form-label small">Tipo</label>
+              <select class="form-select" name="tipo" required>
+                <option value="CRESCIMENTO">📈 Crescimento</option>
+                <option value="MIX">🧩 MIX (itens únicos)</option>
+                <option value="SHARE_MARCA">🏷️ Share de Marcas</option>
+              </select>
+            </div>
+
+            <div class="col-6 col-md-3">
+              <label class="form-label small">Mês</label>
+              <input class="form-control" name="mes" value="{{ '%02d'|format(mes) }}" required>
+            </div>
+            <div class="col-6 col-md-3">
+              <label class="form-label small">Ano</label>
+              <input class="form-control" name="ano" value="{{ ano }}" required>
+            </div>
+
+            <div class="col-12">
+              <label class="form-label small">Empresas (obrigatório)</label>
+              <div class="border rounded p-2" style="max-height:180px; overflow:auto;">
+                {% for e in emps_rows %}
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="emps" value="{{ e.codigo }}" id="emp_{{ e.codigo }}">
+                    <label class="form-check-label" for="emp_{{ e.codigo }}">
+                      {{ e.codigo }} — {{ e.nome }}{% if e.cidade %} ({{ e.cidade }}{% if e.uf %}/{{ e.uf }}{% endif %}){% endif %}
+                    </label>
+                  </div>
+                {% endfor %}
+              </div>
+              <div class="text-muted small mt-1">Supervisor só enxerga as empresas dele.</div>
+            </div>
+
+            <div class="col-12">
+              <label class="form-label small">Escada (faixas)</label>
+              <textarea class="form-control" name="escalas" rows="5" placeholder="Exemplos:
+5:0.10
+10:0.20
+20:0.30" required></textarea>
+              <div class="text-muted small mt-1">
+                Formato: <code>limite:bonus</code>. Para Crescimento e Share o limite é em <b>% atingido</b>. Para MIX o limite é a <b>qtde de itens únicos</b>.
+                O bônus é o percentual pago sobre o valor total do mês (ex.: 0.10 = 0,10%).
+              </div>
+            </div>
+
+            <div class="col-12">
+              <label class="form-label small">Marcas (apenas Share de Marcas)</label>
+              <textarea class="form-control" name="marcas" rows="3" placeholder="EVOL, CREVON, VEI"></textarea>
+              <div class="text-muted small mt-1">Pode separar por vírgula, ponto-e-vírgula ou quebra de linha.</div>
+            </div>
+
+            <div class="col-12 d-grid">
+              <button class="btn btn-primary">Criar meta</button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div class="alert alert-info mt-3">
+      <b>Importante (Crescimento):</b> se houver férias/troca de carteira, ajuste a <b>Base manual</b> por vendedor/empresa no mês.
+    </div>
+  </div>
+
+  <div class="col-12 col-lg-7">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <h6 class="m-0">📋 Metas cadastradas ({{ '%02d'|format(mes) }}/{{ ano }})</h6>
+        </div>
+
+        {% if metas_list|length == 0 %}
+          <div class="text-muted">Nenhuma meta cadastrada para este período.</div>
+        {% else %}
+          <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+              <thead>
+                <tr>
+                  <th>Nome</th>
+                  <th>Tipo</th>
+                  <th>Empresas</th>
+                  <th>Escada</th>
+                  <th>Marcas</th>
+                  <th class="text-end">Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for m in metas_list %}
+                  <tr>
+                    <td class="fw-semibold">
+                      {{ m.nome }}
+                      {% if not m.ativo %}
+                        <span class="badge text-bg-secondary ms-1">inativa</span>
+                      {% endif %}
+                    </td>
+                    <td class="text-muted">{{ m.tipo }}</td>
+                    <td class="small">
+                      {% for e in (meta_emps.get(m.id) or []) %}
+                        <span class="badge text-bg-light border">{{ e }}</span>
+                      {% endfor %}
+                    </td>
+                    <td class="small">
+                      {% for esc in (meta_escalas.get(m.id) or []) %}
+                        <div><code>{{ esc.limite_min }}</code> → <code>{{ esc.bonus_percentual }}</code></div>
+                      {% endfor %}
+                    </td>
+                    <td class="small">
+                      {% if m.tipo == 'SHARE_MARCA' %}
+                        {% for mk in (meta_marcas.get(m.id) or []) %}
+                          <span class="badge text-bg-light border">{{ mk }}</span>
+                        {% endfor %}
+                      {% else %}
+                        <span class="text-muted">—</span>
+                      {% endif %}
+                    </td>
+                    <td class="text-end">
+                      {% if m.tipo == 'CRESCIMENTO' %}
+                        <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin_meta_bases', meta_id=m.id) }}">Bases</a>
+                      {% endif %}
+                      <form class="d-inline" method="post" action="{{ url_for('admin_metas_toggle', meta_id=m.id) }}">
+                        <input type="hidden" name="ano" value="{{ ano }}">
+                        <input type="hidden" name="mes" value="{{ mes }}">
+                        <button class="btn btn-sm btn-outline-secondary">
+                          {% if m.ativo %}Desativar{% else %}Ativar{% endif %}
+                        </button>
+                      </form>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
