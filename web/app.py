@@ -2850,11 +2850,13 @@ def relatorio_campanhas():
         else:
             emps_scope = _get_emps_com_vendas_no_periodo(ano, mes)
     elif role == "supervisor":
-        if not emp_usuario:
-            flash("Supervisor sem EMP cadastrada. Ajuste o usuário do supervisor.", "warning")
-            emps_scope = []
-        else:
-            emps_scope = [str(emp_usuario)]
+        emps_scope = _allowed_emps()
+        if not emps_scope:
+            if not emp_usuario:
+                flash("Supervisor sem Empresa cadastrada. Vincule ao menos 1 Empresa ao supervisor.", "warning")
+                emps_scope = []
+            else:
+                emps_scope = [str(emp_usuario)]
     else:
         # vendedor
         emps_scope = _get_emps_vendedor(vendedor_logado)
@@ -2975,6 +2977,7 @@ def relatorio_cidades_clientes():
         escopo_label = None
         pode_filtrar_emp = False
         pode_filtrar_vendedor = False
+        emps_opcoes = None
 
         if role == "admin":
             pode_filtrar_emp = True
@@ -2989,14 +2992,35 @@ def relatorio_cidades_clientes():
                 escopo_label = (escopo_label + " • " if escopo_label else "") + f"Vendedor {vendedor_filtro}"
 
         elif role == "supervisor":
-            base = base.filter(Venda.emp == emp_usuario)
-            base_hist = base_hist.filter(Venda.emp == emp_usuario)
-            escopo_label = f"EMP {emp_usuario}"
+            # Supervisor: pode ter 1 ou mais EMPs via usuario_emps
+            emps_scope = _allowed_emps()
+            if emps_scope:
+                emps_opcoes = emps_scope
+                # Pode filtrar por EMP quando tiver mais de uma
+                pode_filtrar_emp = len(emps_scope) > 1
+                if emp_filtro and emp_filtro in emps_scope:
+                    base = base.filter(Venda.emp == emp_filtro)
+                    base_hist = base_hist.filter(Venda.emp == emp_filtro)
+                    escopo_label = f"EMP {emp_filtro}"
+                else:
+                    base = base.filter(Venda.emp.in_(emps_scope))
+                    base_hist = base_hist.filter(Venda.emp.in_(emps_scope))
+                    escopo_label = f"EMPs {', '.join(emps_scope[:3])}" + (f" (+{len(emps_scope)-3})" if len(emps_scope) > 3 else "")
+            elif emp_usuario:
+                base = base.filter(Venda.emp == emp_usuario)
+                base_hist = base_hist.filter(Venda.emp == emp_usuario)
+                escopo_label = f"EMP {emp_usuario}"
+            else:
+                # Sem EMP vinculada
+                base = base.filter(text('1=0'))
+                base_hist = base_hist.filter(text('1=0'))
+                escopo_label = None
+
             pode_filtrar_vendedor = True
             if vendedor_filtro:
                 base = base.filter(func.upper(Venda.vendedor) == vendedor_filtro)
                 base_hist = base_hist.filter(func.upper(Venda.vendedor) == vendedor_filtro)
-                escopo_label += f" • Vendedor {vendedor_filtro}"
+                escopo_label = (escopo_label + " • " if escopo_label else "") + f"Vendedor {vendedor_filtro}"
 
         else:
             base = base.filter(func.upper(Venda.vendedor) == vendedor_logado)
@@ -3162,6 +3186,7 @@ def relatorio_cidades_clientes():
             emp_filtro=emp_filtro,
             vendedor_filtro=vendedor_filtro,
             emp_cards=emp_cards,
+            emps_opcoes=emps_opcoes,
         )
     finally:
         db.close()

@@ -458,8 +458,17 @@
 
         {% if pode_filtrar_emp %}
         <div class="col-6 col-md-2">
-          <label class="form-label mb-1">EMP</label>
-          <input class="form-control form-control-sm" id="emp" name="emp" value="{{ emp_filtro or '' }}" placeholder="ex: 101">
+          <label class="form-label mb-1">Empresa</label>
+          {% if emps_opcoes and emps_opcoes|length > 0 %}
+            <select class="form-select form-select-sm" id="emp" name="emp">
+              <option value="">Todas</option>
+              {% for e in emps_opcoes %}
+                <option value="{{ e }}" {% if emp_filtro == e %}selected{% endif %}>{{ e }}</option>
+              {% endfor %}
+            </select>
+          {% else %}
+            <input class="form-control form-control-sm" id="emp" name="emp" value="{{ emp_filtro or '' }}" placeholder="ex: 101">
+          {% endif %}
         </div>
         {% endif %}
 
