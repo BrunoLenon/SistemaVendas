@@ -4921,8 +4921,24 @@ def admin_mensagens():
             emps_q = [e for e in emps_q if str(e.codigo) in set(allowed_emps or [])]
 
         users_q = []
+        allowed_user_ids = set()
         if role == "admin":
             users_q = db.query(Usuario).order_by(Usuario.username.asc()).all()
+            allowed_user_ids = {u.id for u in users_q}
+        elif role == "supervisor":
+            # Supervisor pode enviar para usuários individuais, mas apenas dentro das empresas dele
+            allowed_set = set(allowed_emps or [])
+            if allowed_set:
+                users_q = (
+                    db.query(Usuario)
+                    .join(UsuarioEmp, UsuarioEmp.usuario_id == Usuario.id)
+                    .filter(UsuarioEmp.emp.in_(list(allowed_set)))
+                    .filter(UsuarioEmp.ativo.is_(True))
+                    .distinct()
+                    .order_by(Usuario.username.asc())
+                    .all()
+                )
+                allowed_user_ids = {u.id for u in users_q}
 
         if request.method == "POST":
             titulo = (request.form.get("titulo") or "").strip()
@@ -4932,7 +4948,7 @@ def admin_mensagens():
             inicio_em = (request.form.get("inicio_em") or "").strip()
             fim_em = (request.form.get("fim_em") or "").strip()
             empresas_sel = request.form.getlist("empresas")
-            usuario_dest = (request.form.get("usuario_id") or "").strip()  # admin
+            usuario_dest = (request.form.get("usuario_id") or "").strip()  # opcional (admin e supervisor)
 
             # validações
             erros = []
@@ -4940,8 +4956,8 @@ def admin_mensagens():
                 erros.append("Informe um título.")
             if not conteudo:
                 erros.append("Informe a mensagem.")
-            if role == "supervisor" and not empresas_sel:
-                erros.append("Supervisor precisa selecionar ao menos 1 empresa.")
+            if role == "supervisor" and (not empresas_sel and not usuario_dest):
+                erros.append("Selecione ao menos 1 empresa ou 1 usuário.")
             if role == "admin" and (not empresas_sel and not usuario_dest):
                 erros.append("Selecione ao menos 1 empresa ou 1 usuário.")
 
@@ -4949,6 +4965,18 @@ def admin_mensagens():
             if role == "supervisor":
                 allowed_set = set(allowed_emps or [])
                 empresas_sel = [e for e in empresas_sel if str(e) in allowed_set]
+
+
+            # restringe usuário destino (admin: qualquer; supervisor: apenas usuários das empresas dele)
+            if usuario_dest:
+                try:
+                    uid = int(usuario_dest)
+                    if uid not in allowed_user_ids:
+                        erros.append("Usuário inválido para envio.")
+                        usuario_dest = ""
+                except Exception:
+                    erros.append("Usuário inválido para envio.")
+                    usuario_dest = ""
 
             if not erros:
                 def _parse_date(s: str):
@@ -4971,7 +4999,7 @@ def admin_mensagens():
 
                 for emp_code in empresas_sel:
                     db.add(MensagemEmpresa(mensagem_id=msg.id, emp=str(emp_code).strip()))
-                if role == "admin" and usuario_dest:
+                if usuario_dest:
                     try:
                         uid = int(usuario_dest)
                         db.add(MensagemUsuario(mensagem_id=msg.id, usuario_id=uid))
@@ -4992,17 +5020,9 @@ def admin_mensagens():
             .limit(300)
             .all()
         )
-        # supervisor só vê mensagens que tenham destino em alguma empresa dele e que ele criou (ou todas? melhor: só dele)
+        # supervisor vê apenas as mensagens que ele criou
         if role == "supervisor":
-            allowed_set = set(allowed_emps or [])
-            ids = (
-                db.query(MensagemEmpresa.mensagem_id)
-                .filter(MensagemEmpresa.emp.in_(list(allowed_set)))
-                .distinct()
-                .all()
-            )
-            ids = {i[0] for i in ids}
-            mensagens = [m for m in mensagens if m.id in ids]
+            mensagens = [m for m in mensagens if m.created_by_user_id == int(user_id)]
 
         # Enriquecer destinos para exibição
         destinos = {}
@@ -5042,17 +5062,10 @@ def admin_mensagens_toggle(mensagem_id: int):
             return redirect(url_for("admin_mensagens"))
 
         if role == "supervisor":
-            # só pode toggle se a mensagem tiver destino em empresa dele
-            allowed_set = set(allowed_emps or [])
-            ok = (
-                db.query(MensagemEmpresa)
-                .filter(MensagemEmpresa.mensagem_id == msg.id)
-                .filter(MensagemEmpresa.emp.in_(list(allowed_set)))
-                .first()
-                is not None
-            )
-            if not ok:
+            # supervisor só pode alterar mensagens que ele mesmo criou
+            if msg.created_by_user_id != int(session.get("user_id") or 0):
                 flash("Acesso restrito.", "danger")
+                return redirect(url_for("admin_mensagens"))
                 return redirect(url_for("admin_mensagens"))
 
         msg.ativo = not bool(msg.ativo)
