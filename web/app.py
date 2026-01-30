@@ -3077,30 +3077,34 @@ def relatorio_cidades_clientes():
             })
 
         # Top clientes por EMP (por valor no período)
+        signed_val = case(
+            (Venda.mov_tipo_movto.in_(["DS", "CA"]), -Venda.valor_total),
+            else_=Venda.valor_total,
+        )
+
         cliente_rows = (
             base.with_entities(
                 Venda.emp.label("emp"),
-                func.coalesce(Venda.razao_norm, "sem_cliente").label("razao_norm"),
-                func.coalesce(func.max(Venda.razao), "").label("razao_label"),
-                func.coalesce(func.sum(Venda.valor_total), 0.0).label("valor_total"),
+                Venda.cliente_id_norm.label("cliente_id"),
+                func.coalesce(func.max(Venda.razao), "").label("cliente_label"),
+                func.coalesce(func.sum(signed_val), 0.0).label("valor_total"),
                 func.coalesce(func.sum(Venda.qtdade_vendida), 0.0).label("qtd_total"),
                 func.coalesce(func.count(func.distinct(Venda.mestre)), 0).label("mix_itens"),
             )
             .filter(Venda.cliente_id_norm.isnot(None))
-            .group_by(Venda.emp, func.coalesce(Venda.razao_norm, "sem_cliente"))
-            .order_by(Venda.emp, func.sum(Venda.valor_total).desc())
+            .group_by(Venda.emp, Venda.cliente_id_norm)
+            .order_by(Venda.emp, func.coalesce(func.sum(signed_val), 0.0).desc())
             .all()
         )
 
         clientes_por_emp = {}
         for r in cliente_rows:
             emp = str(r.emp)
-            label = (r.razao_label or "").strip()
-            if not label:
-                label = "SEM CLIENTE" if (r.razao_norm in (None, "", "sem_cliente")) else str(r.razao_norm).upper()
+            cliente_id = str(getattr(r, "cliente_id", "") or "").strip()
+            label = (getattr(r, "cliente_label", "") or "").strip() or cliente_id or "SEM CLIENTE"
             clientes_por_emp.setdefault(emp, []).append({
-                "razao_norm": r.razao_norm,
-                "razao_label": label,
+                "cliente_id": cliente_id,
+                "cliente_label": label,
                 "valor_total": float(r.valor_total or 0.0),
                 "qtd_total": float(r.qtd_total or 0.0),
                 "mix_itens": int(getattr(r, "mix_itens", 0) or 0),
@@ -3392,12 +3396,14 @@ def relatorio_cliente_itens_api():
     vendedor_logado = (_usuario_logado() or "").strip().upper()
 
     emp = (request.args.get("emp") or "").strip()
+    # compat: front antigo mandava razao_norm; novo prefere cliente_id (cliente_id_norm)
     razao_norm = (request.args.get("razao_norm") or "").strip()
+    cliente_id = (request.args.get("cliente_id") or request.args.get("cliente") or "").strip()
     mes = int(request.args.get("mes") or 0)
     ano = int(request.args.get("ano") or 0)
     vendedor = (request.args.get("vendedor") or "").strip().upper()
 
-    if not emp or not razao_norm or not mes or not ano:
+    if not emp or (not razao_norm and not cliente_id) or not mes or not ano:
         return jsonify({"error": "Parâmetros inválidos"}), 400
 
     # Permissões por perfil
@@ -3413,10 +3419,18 @@ def relatorio_cliente_itens_api():
     with SessionLocal() as db:
         base = db.query(Venda).filter(
             Venda.emp == str(emp),
-            Venda.razao_norm == razao_norm,
             extract("month", Venda.movimento) == mes,
             extract("year", Venda.movimento) == ano,
         )
+
+        # Identificação do cliente (compat)
+        if cliente_id:
+            base = base.filter(Venda.cliente_id_norm == cliente_id)
+        elif razao_norm:
+            base = base.filter(Venda.razao_norm == razao_norm)
+        else:
+            return jsonify({"error": "Parâmetros inválidos"}), 400
+
         if vendedor:
             base = base.filter(func.upper(Venda.vendedor) == vendedor)
 
@@ -3452,7 +3466,9 @@ def relatorio_cliente_itens_api():
 
     return jsonify({
         "emp": emp,
+        "cliente_id": cliente_id,
         "razao_norm": razao_norm,
+
         "ano": ano,
         "mes": mes,
         "total": total,
