@@ -174,14 +174,12 @@
     mob.style.display = '';
   }
 
-  
   async function openClienteItens(emp, cliente_id, cliente_label){
     const ctx = lastCityCtx || {cidade_norm: '', cidade_label: ''};
     const cidade_norm = ctx.cidade_norm || '';
     const modalEl = document.getElementById('clienteItensModal');
     const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
 
-    // meta e reset
     document.getElementById('clienteItensMeta').textContent = `EMP ${emp} • ${cliente_label} • ${mes}/${ano}` + (cidade_norm ? ` • ${ctx.cidade_label}` : '');
     document.getElementById('clienteItensLoading').style.display = '';
     document.getElementById('clienteItensTable').style.display = 'none';
@@ -205,7 +203,6 @@
 
     const resp = await fetch('/relatorios/cliente-itens?' + qs.toString());
     const data = await resp.json();
-    // ignore stale
     if (reqId !== cityReqId) return;
 
     document.getElementById('clienteItensLoading').style.display = 'none';
@@ -218,40 +215,38 @@
     const rows = data.itens || [];
     const tbody = document.querySelector('#clienteItensTable tbody');
     rows.forEach((r, idx) => {
-      const nome = (r.descricao && r.descricao.trim()) ? r.descricao.trim() : (r.mestre || '').trim();
+      const produto = (r.descricao || r.mestre || '').toString();
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td class="text-muted">${idx+1}</td>
-        <td class="fw-semibold">${nome}</td>
+        <td>${produto}</td>
         <td class="text-end">${brl(r.valor_total)}</td>
-        <td class="text-end">${(r.qtd_total || 0).toLocaleString('pt-BR')}</td>
+        <td class="text-end">${(r.qtd_total ?? 0)}</td>
       `;
       tbody.appendChild(tr);
     });
-
-    // mobile
+    document.getElementById('clienteItensTable').style.display = '';
+    // mobile cards
     const mob = document.getElementById('clienteItensMobile');
-    rows.slice(0, 200).forEach((r, idx) => {
-      const nome = (r.descricao && r.descricao.trim()) ? r.descricao.trim() : (r.mestre || '').trim();
+    rows.forEach((r, idx) => {
+      const produto = (r.descricao || r.mestre || '').toString();
       const div = document.createElement('div');
       div.className = 'mitem mb-2';
       div.innerHTML = `
         <div class="d-flex justify-content-between align-items-start gap-2">
-          <div class="fw-semibold">${idx+1}. ${nome}</div>
-          <div class="text-end">
-            <div class="fw-bold">${brl(r.valor_total)}</div>
-            <div class="text-muted small">Qtd: ${(r.qtd_total || 0).toLocaleString('pt-BR')}</div>
-          </div>
+          <div class="title">${idx+1}. ${produto}</div>
+          <div class="text-end fw-semibold">${brl(r.valor_total)}</div>
         </div>
+        <div class="kv mt-2"><div><span class="k">Qtd</span></div><div class="fw-semibold">${(r.qtd_total ?? 0)}</div></div>
       `;
       mob.appendChild(div);
     });
-
-    document.getElementById('clienteItensTable').style.display = '';
-    document.getElementById('clienteItensMobile').style.display = '';
+    mob.style.display = '';
   }
 
-async function openClienteMarcas(emp, cliente_id, cliente_label){
+
+
+  async function openClienteMarcas(emp, cliente_id, cliente_label){
     const ctx = lastCityCtx || {cidade_norm: ''};
     const cidade_norm = ctx.cidade_norm || '';
     const modalEl = document.getElementById('clienteMarcasModal');
@@ -538,7 +533,7 @@ async function openClienteMarcas(emp, cliente_id, cliente_label){
       if (!emp){
         return;
       }
-      openClienteItens(emp, cliente_id, label);
+      openClienteMarcas(emp, cliente_id, label);
       return;
     }
   });
@@ -1230,12 +1225,245 @@ async function openClienteMarcas(emp, cliente_id, cliente_label){
       if (!emp){
         return;
       }
-      openClienteItens(emp, cliente_id, label);
+      openClienteMarcas(emp, cliente_id, label);
       return;
     }
   });
 })();
 </script>
 
+
+
+<script>
+(function(){
+  if (window.__cc_global_fix) return;
+  window.__cc_global_fix = true;
+
+  function brl(v){
+    try{ return new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(v||0); }
+    catch(e){ return 'R$ ' + (v||0); }
+  }
+
+  function qsParams(base){
+    const mes = document.getElementById('mes')?.value || "{{ mes }}";
+    const ano = document.getElementById('ano')?.value || "{{ ano }}";
+    const vendedor = document.getElementById('vendedor')?.value || "{{ vendedor_filtro or '' }}";
+    const empFiltro = document.getElementById('emp')?.value || "{{ emp_filtro or '' }}";
+    const p = new URLSearchParams(Object.assign({mes, ano}, base||{}));
+    if (vendedor) p.set('vendedor', vendedor);
+    return {p, empFiltro, mes, ano};
+  }
+
+  let lastCityCtx = null;
+  let reqId = 0;
+
+  window.openCityClients = async function(emp, cidade_norm, cidade_label){
+    lastCityCtx = {emp, cidade_norm, cidade_label};
+    const modalEl = document.getElementById('cityClientsModal');
+    if (!modalEl) return;
+    const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+
+    const metaEl = document.getElementById('cityClientsMeta');
+    const loadingEl = document.getElementById('cityClientsLoading');
+    const tableEl = document.getElementById('cityClientsTable');
+    const mobEl = document.getElementById('cityClientsMobile');
+    const tbody = document.querySelector('#cityClientsTable tbody');
+
+    const {p, mes, ano} = qsParams({emp, cidade_norm});
+    if (metaEl) metaEl.textContent = `EMP ${emp} • ${cidade_label} • ${mes}/${ano}`;
+    if (loadingEl) loadingEl.style.display = '';
+    if (tableEl) tableEl.style.display = 'none';
+    if (mobEl) mobEl.style.display = 'none';
+    if (tbody) tbody.innerHTML = '';
+    if (mobEl) mobEl.innerHTML = '';
+
+    const my = ++reqId;
+    modal.show();
+
+    const resp = await fetch('/relatorios/cidade-clientes?' + p.toString());
+    const data = await resp.json().catch(()=>({error:'Erro'}));
+    if (my !== reqId) return;
+
+    if (loadingEl) loadingEl.style.display = 'none';
+    if (!resp.ok || data.error){
+      if (metaEl) metaEl.textContent = data.error || 'Erro ao carregar';
+      return;
+    }
+
+    const rows = data.clientes || [];
+    rows.forEach((r, i) => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td class="text-muted">${i+1}</td>
+        <td><a href="#" class="js-client link-primary text-decoration-none" data-razao="${r.cliente_id}" data-label="${(r.cliente||'').replace(/"/g,'&quot;')}">${r.cliente}</a></td>
+        <td class="text-end">${brl(r.valor_total)}</td>
+        <td class="text-end">${r.mix_itens || 0}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+    if (tableEl) tableEl.style.display = '';
+
+    rows.forEach((r, i) => {
+      const div = document.createElement('div');
+      div.className = 'mitem mb-2';
+      div.innerHTML = `
+        <div class="d-flex justify-content-between align-items-start gap-2">
+          <div class="title">${i+1}. <a href="#" class="js-client link-primary text-decoration-none" data-razao="${r.cliente_id}" data-label="${(r.cliente||'').replace(/"/g,'&quot;')}">${r.cliente}</a></div>
+          <div class="text-end fw-semibold">${brl(r.valor_total)}</div>
+        </div>
+        <div class="kv mt-2"><div><span class="k">Mix</span></div><div class="fw-semibold">${r.mix_itens || 0}</div></div>
+      `;
+      mobEl.appendChild(div);
+    });
+    if (mobEl) mobEl.style.display = '';
+  };
+
+  window.openClienteMarcas = async function(emp, cliente_id, cliente_label){
+    const ctx = lastCityCtx || {};
+    const cidade_norm = ctx.cidade_norm || '';
+    const cidade_label = ctx.cidade_label || '';
+    const modalEl = document.getElementById('clienteMarcasModal');
+    if (!modalEl) return;
+    const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+
+    const metaEl = document.getElementById('clienteMarcasMeta');
+    const loadingEl = document.getElementById('clienteMarcasLoading');
+    const tableEl = document.getElementById('clienteMarcasTable');
+    const tbody = document.querySelector('#clienteMarcasTable tbody');
+
+    const {p, mes, ano} = qsParams({emp, cliente_id});
+    if (cidade_norm) p.set('cidade_norm', cidade_norm);
+
+    if (metaEl) metaEl.textContent = `EMP ${emp} • ${cliente_label} • ${mes}/${ano}` + (cidade_norm ? ` • ${cidade_label}` : '');
+    if (loadingEl) loadingEl.style.display = '';
+    if (tableEl) tableEl.style.display = 'none';
+    if (tbody) tbody.innerHTML = '';
+
+    const my = ++reqId;
+    modal.show();
+
+    const resp = await fetch('/relatorios/cliente-marcas?' + p.toString());
+    const data = await resp.json().catch(()=>({error:'Erro'}));
+    if (my !== reqId) return;
+
+    if (loadingEl) loadingEl.style.display = 'none';
+    if (!resp.ok || data.error){
+      if (metaEl) metaEl.textContent = data.error || 'Erro ao carregar';
+      return;
+    }
+
+    const rows = data.marcas || [];
+    rows.forEach((r, i)=>{
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td class="text-muted">${i+1}</td>
+        <td>${r.marca}</td>
+        <td class="text-end">${brl(r.valor_total)}</td>
+        <td class="text-end">${(r.pct_cliente||0).toFixed(1)}%</td>
+      `;
+      tbody.appendChild(tr);
+    });
+    if (tableEl) tableEl.style.display = '';
+  };
+
+  window.openClienteItens = async function(emp, cliente_id, cliente_label){
+    const ctx = lastCityCtx || {};
+    const cidade_norm = ctx.cidade_norm || '';
+    const cidade_label = ctx.cidade_label || '';
+    const modalEl = document.getElementById('clienteItensModal');
+    if (!modalEl) {
+      // fallback: se modal não existir, abre marcas
+      return window.openClienteMarcas(emp, cliente_id, cliente_label);
+    }
+    const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+
+    const metaEl = document.getElementById('clienteItensMeta');
+    const loadingEl = document.getElementById('clienteItensLoading');
+    const tableEl = document.getElementById('clienteItensTable');
+    const mobEl = document.getElementById('clienteItensMobile');
+    const tbody = document.querySelector('#clienteItensTable tbody');
+
+    const btnMarcas = document.getElementById('btnVerMarcas');
+    if (btnMarcas){
+      btnMarcas.style.display = '';
+      btnMarcas.onclick = ()=>window.openClienteMarcas(emp, cliente_id, cliente_label);
+    }
+
+    const {p, mes, ano} = qsParams({emp, cliente_id});
+    if (cidade_norm) p.set('cidade_norm', cidade_norm);
+
+    if (metaEl) metaEl.textContent = `EMP ${emp} • ${cliente_label} • ${mes}/${ano}` + (cidade_norm ? ` • ${cidade_label}` : '');
+    if (loadingEl) loadingEl.style.display = '';
+    if (tableEl) tableEl.style.display = 'none';
+    if (mobEl) mobEl.style.display = 'none';
+    if (tbody) tbody.innerHTML = '';
+    if (mobEl) mobEl.innerHTML = '';
+
+    const my = ++reqId;
+    modal.show();
+
+    const resp = await fetch('/relatorios/cliente-itens?' + p.toString());
+    const data = await resp.json().catch(()=>({error:'Erro'}));
+    if (my !== reqId) return;
+
+    if (loadingEl) loadingEl.style.display = 'none';
+    if (!resp.ok || data.error){
+      if (metaEl) metaEl.textContent = data.error || 'Erro ao carregar';
+      return;
+    }
+
+    const rows = data.itens || [];
+    rows.forEach((r, i)=>{
+      const produto = (r.descricao || r.mestre || '').toString();
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td class="text-muted">${i+1}</td>
+        <td>${produto}</td>
+        <td class="text-end">${brl(r.valor_total)}</td>
+        <td class="text-end">${(r.qtd_total ?? 0)}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+    if (tableEl) tableEl.style.display = '';
+
+    rows.forEach((r, i)=>{
+      const produto = (r.descricao || r.mestre || '').toString();
+      const div = document.createElement('div');
+      div.className = 'mitem mb-2';
+      div.innerHTML = `
+        <div class="d-flex justify-content-between align-items-start gap-2">
+          <div class="title">${i+1}. ${produto}</div>
+          <div class="text-end fw-semibold">${brl(r.valor_total)}</div>
+        </div>
+        <div class="kv mt-2"><div><span class="k">Qtd</span></div><div class="fw-semibold">${(r.qtd_total ?? 0)}</div></div>
+      `;
+      mobEl.appendChild(div);
+    });
+    if (mobEl) mobEl.style.display = '';
+  };
+
+  // Delegação de cliques: cidades e clientes (vale para ambas as abas)
+  document.addEventListener('click', function(ev){
+    const a = ev.target.closest('a.js-city');
+    if (a){
+      ev.preventDefault();
+      const emp = a.getAttribute('data-emp');
+      const cidade_norm = a.getAttribute('data-cidade');
+      const label = a.textContent.trim();
+      if (emp) window.openCityClients(emp, cidade_norm, label);
+      return;
+    }
+    const c = ev.target.closest('a.js-client');
+    if (c){
+      ev.preventDefault();
+      const emp = (lastCityCtx && lastCityCtx.emp) ? lastCityCtx.emp : (document.getElementById('emp')?.value || "{{ emp_filtro or '' }}");
+      const cliente_id = c.getAttribute('data-razao');
+      const label = c.getAttribute('data-label') || c.textContent.trim();
+      if (emp && cliente_id) window.openClienteItens(emp, cliente_id, label);
+      return;
+    }
+  }, true);
+})();
+</script>
 
 {% endblock %}
