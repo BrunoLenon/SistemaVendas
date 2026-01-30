@@ -3087,6 +3087,7 @@ def relatorio_cidades_clientes():
                 Venda.emp.label("emp"),
                 Venda.cliente_id_norm.label("cliente_id"),
                 func.coalesce(func.max(Venda.razao), "").label("cliente_label"),
+                func.coalesce(func.max(Venda.razao_norm), "").label("razao_norm"),
                 func.coalesce(func.sum(signed_val), 0.0).label("valor_total"),
                 func.coalesce(func.sum(Venda.qtdade_vendida), 0.0).label("qtd_total"),
                 func.coalesce(func.count(func.distinct(Venda.mestre)), 0).label("mix_itens"),
@@ -3105,6 +3106,7 @@ def relatorio_cidades_clientes():
             clientes_por_emp.setdefault(emp, []).append({
                 "cliente_id": cliente_id,
                 "cliente_label": label,
+                "razao_norm": (getattr(r, "razao_norm", "") or "").strip(),
                 "valor_total": float(r.valor_total or 0.0),
                 "qtd_total": float(r.qtd_total or 0.0),
                 "mix_itens": int(getattr(r, "mix_itens", 0) or 0),
@@ -3423,8 +3425,11 @@ def relatorio_cliente_itens_api():
             extract("year", Venda.movimento) == ano,
         )
 
-        # Identificação do cliente (compat)
-        if cliente_id:
+        # Identificação do cliente (compat / robusto)
+        # Alguns bancos podem ter cliente_id_norm ou razao_norm inconsistentes; se vierem ambos, usamos OR.
+        if cliente_id and razao_norm:
+            base = base.filter(or_(Venda.cliente_id_norm == cliente_id, Venda.razao_norm == razao_norm))
+        elif cliente_id:
             base = base.filter(Venda.cliente_id_norm == cliente_id)
         elif razao_norm:
             base = base.filter(Venda.razao_norm == razao_norm)

@@ -689,7 +689,7 @@
   {% for r in c.clientes_preview %}
     <div class="mitem mb-2">
       <div class="d-flex justify-content-between align-items-start gap-2">
-        <div class="title"><a href="javascript:void(0)" class="client-row text-decoration-none" tabindex="0" data-emp="{{ c.emp }}" data-cliente="{{ r.cliente_id }}" data-label="{{ r.cliente_label }}" data-valor="{{ r.valor_total }}">{{ loop.index }}. {{ r.cliente_label }}</a></div>
+        <div class="title"><a href="javascript:void(0)" class="client-row text-decoration-none" tabindex="0" data-emp="{{ c.emp }}" data-cliente="{{ r.cliente_id }}" data-razao="{{ r.razao_norm }}" data-label="{{ r.cliente_label }}" data-valor="{{ r.valor_total }}">{{ loop.index }}. {{ r.cliente_label }}</a></div>
         <div class="text-end fw-semibold">R$ {{ r.valor_total|brl }}</div>
       </div>
       <div class="kv mt-2">
@@ -853,7 +853,7 @@
   function pct(v){ return (v||0).toFixed(1) + '%'; }
   function show(el, on){ if(!el) return; el.classList.toggle('d-none', !on); }
 
-  async function loadClient(emp, cliente_id){
+  async function loadClient(emp, cliente_id, razao_norm){
     const mes = document.getElementById('mes')?.value || '';
     const ano = document.getElementById('ano')?.value || '';
     const vendedor = document.getElementById('vendedor')?.value || '';
@@ -862,7 +862,7 @@
     show(elLoading,true);
     elBody.innerHTML = '<tr><td class="text-muted" colspan="3">Carregando…</td></tr>';
 
-    const params = new URLSearchParams({emp: emp, cliente_id: cliente_id, mes: mes, ano: ano, vendedor: vendedor});
+    const params = new URLSearchParams({emp: emp, cliente_id: cliente_id, razao_norm: razao_norm, mes: mes, ano: ano, vendedor: vendedor});
     const resp = await fetch('/relatorios/cliente-itens?' + params.toString(), {headers: {'Accept':'application/json'}});
     if(!resp.ok) throw new Error('HTTP ' + resp.status);
     const data = await resp.json();
@@ -888,6 +888,7 @@
     if(!modal) return;
     const emp = row.getAttribute('data-emp') || '';
     const cliente_id = row.getAttribute('data-cliente') || '';
+    const razao_norm = row.getAttribute('data-razao') || '';
     const label = row.getAttribute('data-label') || '';
     const valor = parseFloat(row.getAttribute('data-valor') || '0') || 0;
 
@@ -898,7 +899,7 @@
 
     modal.show();
 
-    loadClient(emp, cliente_id).then(()=>show(elLoading,false)).catch(err=>{
+    loadClient(emp, cliente_id, razao_norm).then(()=>show(elLoading,false)).catch(err=>{
       console.error(err);
       show(elLoading,false);
       show(elError,true);
