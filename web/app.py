@@ -56,7 +56,7 @@ from importar_excel import importar_planilha
 
 # Flask app (Render/Gunicorn expects `app` at module level: web/app.py -> app:app)
 app = Flask(__name__, template_folder="templates")
-app.secret_key = os.getenv("SECRET_KEY", "dev")
+app.secret_key = (os.getenv("SECRET_KEY") or "").strip()
 # Sessão expira após 1h sem atividade
 app.permanent_session_lifetime = timedelta(hours=1)
 
@@ -65,6 +65,14 @@ app.permanent_session_lifetime = timedelta(hours=1)
 # ==============================
 # Detecta produção (Render/FLASK_ENV)
 IS_PROD = bool(os.getenv("RENDER")) or (os.getenv("FLASK_ENV") == "production")
+
+# Em produção, SECRET_KEY é obrigatório e deve ser forte.
+# Isso protege cookies de sessão contra falsificação.
+if IS_PROD:
+    if (not app.secret_key) or (app.secret_key.lower() in {"dev", "development", "changeme", "default"}) or (len(app.secret_key) < 24):
+        raise RuntimeError(
+            "SECRET_KEY ausente/fraca em produção. Configure uma SECRET_KEY forte (>=24 chars) no Render."
+        )
 
 # Cache TTL (horas) - se o cache estiver mais velho que isso, recalcula ao vivo
 CACHE_TTL_HOURS = float(os.getenv("CACHE_TTL_HOURS", "12") or 12)
@@ -132,17 +140,31 @@ def _security_headers(resp):
 # --------------------------
 @app.template_filter("brl")
 def brl(value):
-    """Formata números no padrão brasileiro (ex: 21.555.384,00).
+    """Formata valores no padrão brasileiro (ex: 21.555.384,00).
 
+    Usa Decimal para evitar distorções de float (importante para metas/bonificações).
     Retorna "0,00" para None/valores inválidos.
     """
     if value is None:
         return "0,00"
     try:
-        num = float(value)
+        if isinstance(value, str):
+            # aceita '1.234,56' ou '1234.56'
+            s = value.strip()
+            if s.count(',') == 1 and (s.count('.') >= 1):
+                s = s.replace('.', '').replace(',', '.')
+            else:
+                s = s.replace(',', '.')
+            d = Decimal(s)
+        else:
+            d = Decimal(str(value))
     except Exception:
         return "0,00"
-    return f"{num:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+    d = d.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+    # formatador com separador milhares
+    s = f"{d:,.2f}"
+    return s.replace(',', 'X').replace('.', ',').replace('X', '.')
 
 # Logs no stdout (Render captura automaticamente)
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))

@@ -2,7 +2,7 @@ import os
 from datetime import datetime
 from urllib.parse import quote_plus
 
-from sqlalchemy import create_engine, Column, Integer, String, Float, Date, DateTime, Text, Boolean, Index, UniqueConstraint, text
+from sqlalchemy import create_engine, Column, Integer, String, Float, Numeric, Date, DateTime, Text, Boolean, Index, UniqueConstraint, text
 from sqlalchemy.orm import declarative_base, sessionmaker, synonym
 
 # =====================
@@ -204,10 +204,10 @@ class Venda(Base):
     nota = Column(String(60), nullable=True)  # NOTA
     emp = Column(String(30), nullable=True)   # EMP
 
-    unit = Column(Float, nullable=True)
-    des = Column(Float, nullable=True)
-    qtdade_vendida = Column(Float, nullable=True)
-    valor_total = Column(Float, nullable=False)
+    unit = Column(Numeric(18,4), nullable=True)
+    des = Column(Numeric(18,4), nullable=True)
+    qtdade_vendida = Column(Numeric(18,3), nullable=True)
+    valor_total = Column(Numeric(18,2), nullable=False)
 
     # === Novos campos para relatórios e campanhas por descrição (opcionais) ===
     descricao = Column(Text, nullable=True)        # DESCRICAO
@@ -252,10 +252,10 @@ class DashboardCache(Base):
     ano = Column(Integer, primary_key=True, nullable=False, index=True)
     mes = Column(Integer, primary_key=True, nullable=False, index=True)
 
-    valor_bruto = Column(Float, nullable=False, default=0.0)
-    valor_liquido = Column(Float, nullable=False, default=0.0)
-    devolucoes = Column(Float, nullable=False, default=0.0)
-    cancelamentos = Column(Float, nullable=False, default=0.0)
+    valor_bruto = Column(Numeric(18,2), nullable=False, default=0)
+    valor_liquido = Column(Numeric(18,2), nullable=False, default=0)
+    devolucoes = Column(Numeric(18,2), nullable=False, default=0)
+    cancelamentos = Column(Numeric(18,2), nullable=False, default=0)
     pct_devolucao = Column(Float, nullable=False, default=0.0)
 
     mix_produtos = Column(Integer, nullable=False, default=0)
@@ -264,7 +264,7 @@ class DashboardCache(Base):
     # Rankings (JSON serializado em texto para simplicidade)
     ranking_json = Column(Text, nullable=False, default='[]')
     ranking_top15_json = Column(Text, nullable=False, default='[]')
-    total_liquido_periodo = Column(Float, nullable=False, default=0.0)
+    total_liquido_periodo = Column(Numeric(18,2), nullable=False, default=0)
 
     atualizado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
 
@@ -330,9 +330,9 @@ class CampanhaQtd(Base):
     campo_match = Column(String(20), nullable=False, default='codigo')  # 'codigo' ou 'descricao'
     descricao_prefixo = Column(String(200), nullable=True)
 
-    recompensa_unit = Column(Float, nullable=False, default=0.0)
+    recompensa_unit = Column(Numeric(18,2), nullable=False, default=0)
     qtd_minima = Column(Float, nullable=True)
-    valor_minimo = Column(Float, nullable=True)
+    valor_minimo = Column(Numeric(18,2), nullable=True)
 
     data_inicio = Column(Date, nullable=False, index=True)
     data_fim = Column(Date, nullable=False, index=True)
@@ -369,15 +369,15 @@ class CampanhaQtdResultado(Base):
     titulo = Column(String(120), nullable=True)
     produto_prefixo = Column(String(200), nullable=False)
     marca = Column(String(120), nullable=False)
-    recompensa_unit = Column(Float, nullable=False, default=0.0)
+    recompensa_unit = Column(Numeric(18,2), nullable=False, default=0)
     qtd_minima = Column(Float, nullable=True)
     data_inicio = Column(Date, nullable=False)
     data_fim = Column(Date, nullable=False)
 
     qtd_vendida = Column(Float, nullable=False, default=0.0)
-    valor_vendido = Column(Float, nullable=False, default=0.0)
+    valor_vendido = Column(Numeric(18,2), nullable=False, default=0)
     atingiu_minimo = Column(Integer, nullable=False, default=0)
-    valor_recompensa = Column(Float, nullable=False, default=0.0)
+    valor_recompensa = Column(Numeric(18,2), nullable=False, default=0)
 
     status_pagamento = Column(String(20), nullable=False, default="PENDENTE")
     pago_em = Column(DateTime, nullable=True)
@@ -497,7 +497,7 @@ class MetaBaseManual(Base):
     emp = Column(String(30), nullable=False, index=True)
     vendedor = Column(String(80), nullable=False, index=True)
 
-    base_valor = Column(Float, nullable=False, default=0.0)
+    base_valor = Column(Numeric(18,2), nullable=False, default=0)
     observacao = Column(String(200), nullable=True)
 
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
@@ -526,15 +526,15 @@ class MetaResultado(Base):
     mes = Column(Integer, nullable=False, index=True)
 
     # métricas
-    valor_mes = Column(Float, nullable=False, default=0.0)
-    base_valor = Column(Float, nullable=True)
+    valor_mes = Column(Numeric(18,2), nullable=False, default=0)
+    base_valor = Column(Numeric(18,2), nullable=True)
     crescimento_pct = Column(Float, nullable=True)
     mix_itens_unicos = Column(Float, nullable=True)
     share_pct = Column(Float, nullable=True)
-    valor_marcas = Column(Float, nullable=True)
+    valor_marcas = Column(Numeric(18,2), nullable=True)
 
     bonus_percentual = Column(Float, nullable=False, default=0.0)
-    premio = Column(Float, nullable=False, default=0.0)
+    premio = Column(Numeric(18,2), nullable=False, default=0)
 
     calculado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
 
@@ -559,7 +559,7 @@ class VendasResumoPeriodo(Base):
     ano = Column(Integer, nullable=False, index=True)
     mes = Column(Integer, nullable=False, index=True)
 
-    valor_venda = Column(Float, nullable=False, default=0.0)
+    valor_venda = Column(Numeric(18,2), nullable=False, default=0)
     mix_produtos = Column(Integer, nullable=False, default=0)
 
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
