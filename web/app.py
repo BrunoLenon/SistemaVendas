@@ -2424,6 +2424,11 @@ def campanhas_qtd():
     mes = int(request.args.get("mes") or hoje.month)
     ano = int(request.args.get("ano") or hoje.year)
 
+    # modo de visualização
+    modo = (request.args.get("modo") or "consolidado").strip().lower()
+    if modo not in ("consolidado", "todas"):
+        modo = "consolidado"
+
     # vendedor alvo
     vendedor_logado = (_usuario_logado() or "").strip().upper()
 
@@ -2483,21 +2488,25 @@ def campanhas_qtd():
                 if not vend:
                     continue
 
-                # aplica prioridade: regras do vendedor substituem regras gerais
-                # chave: (produto_prefixo, marca)
-                by_key: dict[tuple[str, str, str], CampanhaQtd] = {}
-                for c in campanhas:
-                    campo_match = (getattr(c, "campo_match", None) or "codigo").strip().lower()
-                    if campo_match == "descricao":
-                        pref = (getattr(c, "descricao_prefixo", "") or "").strip() or (c.produto_prefixo or "").strip()
-                        key = ("descricao", pref.lower().strip(), (c.marca or "").strip().upper())
-                    else:
-                        key = ("codigo", (c.produto_prefixo or "").strip().upper(), (c.marca or "").strip().upper())
-                    if c.vendedor and c.vendedor.strip().upper() == vend:
-                        by_key[key] = c
-                    else:
-                        by_key.setdefault(key, c)
-                campanhas_final = list(by_key.values())
+                # modo consolidado: uma regra por (base/prefixo/marca) com prioridade por vendedor
+                # modo todas: mostra todas as campanhas ativas no período (inclusive duplicadas)
+                if modo == "consolidado":
+                    by_key: dict[tuple[str, str, str], CampanhaQtd] = {}
+                    for c in campanhas:
+                        campo_match = (getattr(c, "campo_match", None) or "codigo").strip().lower()
+                        if campo_match == "descricao":
+                            pref = (getattr(c, "descricao_prefixo", "") or "").strip() or (c.produto_prefixo or "").strip()
+                            key = ("descricao", pref.lower().strip(), (c.marca or "").strip().upper())
+                        else:
+                            key = ("codigo", (c.produto_prefixo or "").strip().upper(), (c.marca or "").strip().upper())
+                        # regras específicas do vendedor sobrescrevem regras gerais
+                        if c.vendedor and c.vendedor.strip().upper() == vend:
+                            by_key[key] = c
+                        else:
+                            by_key.setdefault(key, c)
+                    campanhas_final = list(by_key.values())
+                else:
+                    campanhas_final = list(campanhas)
 
                 total_recomp = 0.0
                 for c in campanhas_final:
