@@ -197,7 +197,15 @@
     const reqId = ++cityReqId;
     modal.show();
 
-    const qs = new URLSearchParams({emp, cliente_id, mes, ano});
+    // Compatibilidade:
+    // - no drill-down (cidade -> clientes) normalmente recebemos `cliente_id_norm`
+    // - na aba "Clientes" o dataset histórico usa `razao_norm`
+    // Enviamos ambos para o backend aceitar qualquer um.
+    const qs = new URLSearchParams({emp, mes, ano});
+    if (cliente_id) {
+      qs.set('cliente_id', cliente_id);
+      qs.set('razao_norm', cliente_id);
+    }
     if (vendedor) qs.set('vendedor', vendedor);
     if (cidade_norm) qs.set('cidade_norm', cidade_norm);
 
@@ -299,7 +307,7 @@
     const c = ev.target.closest('a.js-client');
     if (c){
       ev.preventDefault();
-      const emp = (lastCityCtx && lastCityCtx.emp) ? lastCityCtx.emp : (empFiltro || '');
+      const emp = c.getAttribute('data-emp') || ((lastCityCtx && lastCityCtx.emp) ? lastCityCtx.emp : (empFiltro || ''));
       const cliente_id = c.getAttribute('data-razao');
       const label = c.getAttribute('data-label') || c.textContent.trim();
       if (!emp){
@@ -527,13 +535,14 @@
     const c = ev.target.closest('a.js-client');
     if (c){
       ev.preventDefault();
-      const emp = (lastCityCtx && lastCityCtx.emp) ? lastCityCtx.emp : (empFiltro || '');
+      const emp = c.getAttribute('data-emp') || ((lastCityCtx && lastCityCtx.emp) ? lastCityCtx.emp : (empFiltro || ''));
       const cliente_id = c.getAttribute('data-razao');
       const label = c.getAttribute('data-label') || c.textContent.trim();
       if (!emp){
         return;
       }
-      openClienteMarcas(emp, cliente_id, label);
+      // padrão: abrir Produtos do cliente (ordenado por valor)
+      openClienteItens(emp, cliente_id, label);
       return;
     }
   });
@@ -799,7 +808,7 @@
   {% for r in c.clientes_preview %}
     <div class="mitem mb-2">
       <div class="d-flex justify-content-between align-items-start gap-2">
-        <div class="title"><a href="javascript:void(0)" class="client-row text-decoration-none" tabindex="0" data-emp="{{ c.emp }}" data-razao="{{ r.razao_norm }}" data-label="{{ r.razao_label }}" data-valor="{{ r.valor_total }}">{{ loop.index }}. {{ r.razao_label }}</a></div>
+        <div class="title"><a href="#" class="js-client link-primary text-decoration-none" tabindex="0" data-emp="{{ c.emp }}" data-razao="{{ r.razao_norm }}" data-label="{{ r.razao_label }}" data-valor="{{ r.valor_total }}">{{ loop.index }}. {{ r.razao_label }}</a></div>
         <div class="text-end fw-semibold">R$ {{ r.valor|brl }}</div>
       </div>
       <div class="kv mt-2">
@@ -824,7 +833,7 @@
                 {% for r in c.clientes_preview %}
                 <tr>
                   <td class="text-muted">{{ loop.index }}</td>
-                  <td class="fw-semibold"><a href="javascript:void(0)" class="client-row text-decoration-none" tabindex="0" data-emp="{{ c.emp }}" data-razao="{{ r.razao_norm }}" data-label="{{ r.razao_label }}" data-valor="{{ r.valor_total }}">{{ r.razao_label }}</a></td>
+                  <td class="fw-semibold"><a href="#" class="js-client link-primary text-decoration-none" tabindex="0" data-emp="{{ c.emp }}" data-razao="{{ r.razao_norm }}" data-label="{{ r.razao_label }}" data-valor="{{ r.valor_total }}">{{ r.razao_label }}</a></td>
                   <td class="text-end">R$ {{ "{:,.2f}".format(r.valor_total).replace(",", "X").replace(".", ",").replace("X", ".") }}</td>
                   <td class="text-end">{{ "{:,.0f}".format(r.mix_itens).replace(",", ".") }}</td>
                 </tr>
@@ -844,7 +853,7 @@
   {% for r in c.clientes_full %}
     <div class="mitem mb-2">
       <div class="d-flex justify-content-between align-items-start gap-2">
-        <div class="title"><a href="javascript:void(0)" class="client-row text-decoration-none" tabindex="0" data-emp="{{ c.emp }}" data-razao="{{ r.razao_norm }}" data-label="{{ r.razao_label }}" data-valor="{{ r.valor_total }}">{{ loop.index }}. {{ r.razao_label }}</a></div>
+        <div class="title"><a href="#" class="js-client link-primary text-decoration-none" tabindex="0" data-emp="{{ c.emp }}" data-razao="{{ r.razao_norm }}" data-label="{{ r.razao_label }}" data-valor="{{ r.valor_total }}">{{ loop.index }}. {{ r.razao_label }}</a></div>
         <div class="text-end fw-semibold">R$ {{ r.valor|brl }}</div>
       </div>
       <div class="kv mt-2">
@@ -869,7 +878,7 @@
                   {% for r in c.clientes_full %}
                   <tr>
                     <td class="text-muted">{{ loop.index }}</td>
-                    <td class="fw-semibold"><a href="javascript:void(0)" class="client-row text-decoration-none" tabindex="0" data-emp="{{ c.emp }}" data-razao="{{ r.razao_norm }}" data-label="{{ r.razao_label }}" data-valor="{{ r.valor_total }}">{{ r.razao_label }}</a></td>
+                    <td class="fw-semibold"><a href="#" class="js-client link-primary text-decoration-none" tabindex="0" data-emp="{{ c.emp }}" data-razao="{{ r.razao_norm }}" data-label="{{ r.razao_label }}" data-valor="{{ r.valor_total }}">{{ r.razao_label }}</a></td>
                     <td class="text-end">R$ {{ "{:,.2f}".format(r.valor_total).replace(",", "X").replace(".", ",").replace("X", ".") }}</td>
                     <td class="text-end">{{ "{:,.0f}".format(r.mix_itens).replace(",", ".") }}</td>
                   </tr>
