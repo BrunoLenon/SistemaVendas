@@ -3404,8 +3404,9 @@ def relatorio_cliente_itens_api():
     mes = int(request.args.get("mes") or 0)
     ano = int(request.args.get("ano") or 0)
     vendedor = (request.args.get("vendedor") or "").strip().upper()
+    cliente_label = (request.args.get("cliente_label") or request.args.get("label") or "").strip()
 
-    if not emp or (not razao_norm and not cliente_id) or not mes or not ano:
+    if not emp or (not razao_norm and not cliente_id and not cliente_label) or not mes or not ano:
         return jsonify({"error": "Parâmetros inválidos"}), 400
 
     # Permissões por perfil
@@ -3433,6 +3434,10 @@ def relatorio_cliente_itens_api():
             base = base.filter(Venda.cliente_id_norm == cliente_id)
         elif razao_norm:
             base = base.filter(Venda.razao_norm == razao_norm)
+        elif cliente_label:
+            # fallback: tenta pelo nome do cliente (normalizado)
+            lbl_norm = _norm_txt(cliente_label)
+            base = base.filter(or_(func.upper(Venda.cliente) == cliente_label.upper(), Venda.razao_norm == lbl_norm))
         else:
             return jsonify({"error": "Parâmetros inválidos"}), 400
 
@@ -3473,6 +3478,7 @@ def relatorio_cliente_itens_api():
         "emp": emp,
         "cliente_id": cliente_id,
         "razao_norm": razao_norm,
+        "cliente_label": cliente_label,
 
         "ano": ano,
         "mes": mes,

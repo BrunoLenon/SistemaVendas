@@ -62,7 +62,7 @@
 </div>
 
 <script>
-(function(){ if (window.__cc_init) return; window.__cc_init = true;
+(function(){ if (window.__cc_city_init) return; window.__cc_city_init = true;
   function brl(v){
     try{
       return new Intl.NumberFormat('pt-BR', {style:'currency', currency:'BRL'}).format(v || 0);
@@ -290,7 +290,7 @@
 </div>
 
 <script>
-(function(){ if (window.__cc_init) return; window.__cc_init = true;
+(function(){ if (window.__cc_client_init) return; window.__cc_client_init = true;
   function brl(v){
     try{
       return new Intl.NumberFormat('pt-BR', {style:'currency', currency:'BRL'}).format(v || 0);
@@ -689,7 +689,7 @@
   {% for r in c.clientes_preview %}
     <div class="mitem mb-2">
       <div class="d-flex justify-content-between align-items-start gap-2">
-        <div class="title"><a href="javascript:void(0)" class="client-row text-decoration-none" tabindex="0" data-emp="{{ c.emp }}" data-cliente="{{ r.cliente_id }}" data-razao="{{ r.razao_norm }}" data-label="{{ r.cliente_label }}" data-valor="{{ r.valor_total }}">{{ loop.index }}. {{ r.cliente_label }}</a></div>
+        <div class="title"><a href="javascript:void(0)" class="client-row text-decoration-none" tabindex="0" data-emp="{{ c.emp }}" data-cliente="{{ r.cliente_id }}" data-razao="{{ r.razao_norm }}" data-razao="{{ r.razao_norm }}" data-label="{{ r.cliente_label }}" data-valor="{{ r.valor_total }}">{{ loop.index }}. {{ r.cliente_label }}</a></div>
         <div class="text-end fw-semibold">R$ {{ r.valor_total|brl }}</div>
       </div>
       <div class="kv mt-2">
@@ -714,7 +714,7 @@
                 {% for r in c.clientes_preview %}
                 <tr>
                   <td class="text-muted">{{ loop.index }}</td>
-                  <td class="fw-semibold"><a href="javascript:void(0)" class="client-row text-decoration-none" tabindex="0" data-emp="{{ c.emp }}" data-cliente="{{ r.cliente_id }}" data-label="{{ r.cliente_label }}" data-valor="{{ r.valor_total }}">{{ r.cliente_label }}</a></td>
+                  <td class="fw-semibold"><a href="javascript:void(0)" class="client-row text-decoration-none" tabindex="0" data-emp="{{ c.emp }}" data-cliente="{{ r.cliente_id }}" data-razao="{{ r.razao_norm }}" data-label="{{ r.cliente_label }}" data-valor="{{ r.valor_total }}">{{ r.cliente_label }}</a></td>
                   <td class="text-end">R$ {{ "{:,.2f}".format(r.valor_total).replace(",", "X").replace(".", ",").replace("X", ".") }}</td>
                   <td class="text-end">{{ "{:,.0f}".format(r.mix_itens).replace(",", ".") }}</td>
                 </tr>
@@ -734,7 +734,7 @@
   {% for r in c.clientes_full %}
     <div class="mitem mb-2">
       <div class="d-flex justify-content-between align-items-start gap-2">
-        <div class="title"><a href="javascript:void(0)" class="client-row text-decoration-none" tabindex="0" data-emp="{{ c.emp }}" data-cliente="{{ r.cliente_id }}" data-label="{{ r.cliente_label }}" data-valor="{{ r.valor_total }}">{{ loop.index }}. {{ r.cliente_label }}</a></div>
+        <div class="title"><a href="javascript:void(0)" class="client-row text-decoration-none" tabindex="0" data-emp="{{ c.emp }}" data-cliente="{{ r.cliente_id }}" data-razao="{{ r.razao_norm }}" data-label="{{ r.cliente_label }}" data-valor="{{ r.valor_total }}">{{ loop.index }}. {{ r.cliente_label }}</a></div>
         <div class="text-end fw-semibold">R$ {{ r.valor_total|brl }}</div>
       </div>
       <div class="kv mt-2">
@@ -759,7 +759,7 @@
                   {% for r in c.clientes_full %}
                   <tr>
                     <td class="text-muted">{{ loop.index }}</td>
-                    <td class="fw-semibold"><a href="javascript:void(0)" class="client-row text-decoration-none" tabindex="0" data-emp="{{ c.emp }}" data-cliente="{{ r.cliente_id }}" data-label="{{ r.cliente_label }}" data-valor="{{ r.valor_total }}">{{ r.cliente_label }}</a></td>
+                    <td class="fw-semibold"><a href="javascript:void(0)" class="client-row text-decoration-none" tabindex="0" data-emp="{{ c.emp }}" data-cliente="{{ r.cliente_id }}" data-razao="{{ r.razao_norm }}" data-label="{{ r.cliente_label }}" data-valor="{{ r.valor_total }}">{{ r.cliente_label }}</a></td>
                     <td class="text-end">R$ {{ "{:,.2f}".format(r.valor_total).replace(",", "X").replace(".", ",").replace("X", ".") }}</td>
                     <td class="text-end">{{ "{:,.0f}".format(r.mix_itens).replace(",", ".") }}</td>
                   </tr>
@@ -831,7 +831,7 @@
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 
 <script>
-(function(){ if (window.__cc_init) return; window.__cc_init = true;
+(function(){ if (window.__cc_city_init) return; window.__cc_city_init = true;
   const modalEl = document.getElementById('clientModal');
   const modal = modalEl ? new bootstrap.Modal(modalEl) : null;
 
@@ -909,7 +909,7 @@
 
   document.addEventListener('click', (e)=>{
     const row = e.target.closest('.client-row');
-    if(row) openForRow(row);
+    if(row){ e.preventDefault(); openForRow(row); }
   });
   document.addEventListener('keydown', (e)=>{
     const row = e.target.closest && e.target.closest('.client-row');
@@ -983,7 +983,7 @@
 </div>
 
 <script>
-(function(){ if (window.__cc_init) return; window.__cc_init = true;
+(function(){ if (window.__cc_city_init) return; window.__cc_city_init = true;
   function brl(v){
     try{
       return new Intl.NumberFormat('pt-BR', {style:'currency', currency:'BRL'}).format(v || 0);
