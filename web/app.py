@@ -3254,7 +3254,6 @@ def relatorio_cidade_clientes_api():
             .filter(Venda.cliente_id_norm.isnot(None))
             .group_by(Venda.cliente_id_norm)
             .order_by(func.coalesce(func.sum(signed_val), 0.0).desc())
-            .limit(50)
             .all()
         )
 

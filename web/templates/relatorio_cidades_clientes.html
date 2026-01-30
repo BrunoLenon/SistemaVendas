@@ -77,6 +77,7 @@
   const empFiltro = "{{ emp_filtro or '' }}";
 
   let lastCityCtx = null;
+  let cityReqId = 0;
 
   async function openCityClients(emp, cidade_norm, cidade_label){
     lastCityCtx = {emp, cidade_norm, cidade_label};
@@ -88,12 +89,15 @@
     document.getElementById('cityClientsMobile').style.display = 'none';
     document.querySelector('#cityClientsTable tbody').innerHTML = '';
     document.getElementById('cityClientsMobile').innerHTML = '';
+    const reqId = ++cityReqId;
     modal.show();
 
     const qs = new URLSearchParams({emp, cidade_norm, mes, ano});
     if (vendedor) qs.set('vendedor', vendedor);
     const resp = await fetch('/relatorios/cidade-clientes?' + qs.toString());
     const data = await resp.json();
+    // ignore stale responses (prevents double-render on double-click)
+    if (reqId !== cityReqId) return;
     document.getElementById('cityClientsLoading').style.display = 'none';
 
     if (!resp.ok || data.error){
@@ -141,6 +145,7 @@
     document.getElementById('clienteMarcasLoading').style.display = '';
     document.getElementById('clienteMarcasTable').style.display = 'none';
     document.querySelector('#clienteMarcasTable tbody').innerHTML = '';
+    const reqId = ++cityReqId;
     modal.show();
 
     const qs = new URLSearchParams({emp, cliente_id, mes, ano});
@@ -300,6 +305,7 @@
   const empFiltro = "{{ emp_filtro or '' }}";
 
   let lastCityCtx = null;
+  let cityReqId = 0;
 
   async function openCityClients(emp, cidade_norm, cidade_label){
     lastCityCtx = {emp, cidade_norm, cidade_label};
@@ -311,12 +317,15 @@
     document.getElementById('cityClientsMobile').style.display = 'none';
     document.querySelector('#cityClientsTable tbody').innerHTML = '';
     document.getElementById('cityClientsMobile').innerHTML = '';
+    const reqId = ++cityReqId;
     modal.show();
 
     const qs = new URLSearchParams({emp, cidade_norm, mes, ano});
     if (vendedor) qs.set('vendedor', vendedor);
     const resp = await fetch('/relatorios/cidade-clientes?' + qs.toString());
     const data = await resp.json();
+    // ignore stale responses (prevents double-render on double-click)
+    if (reqId !== cityReqId) return;
     document.getElementById('cityClientsLoading').style.display = 'none';
 
     if (!resp.ok || data.error){
@@ -364,6 +373,7 @@
     document.getElementById('clienteMarcasLoading').style.display = '';
     document.getElementById('clienteMarcasTable').style.display = 'none';
     document.querySelector('#clienteMarcasTable tbody').innerHTML = '';
+    const reqId = ++cityReqId;
     modal.show();
 
     const qs = new URLSearchParams({emp, cliente_id, mes, ano});
@@ -987,6 +997,7 @@
   const empFiltro = "{{ emp_filtro or '' }}";
 
   let lastCityCtx = null;
+  let cityReqId = 0;
 
   async function openCityClients(emp, cidade_norm, cidade_label){
     lastCityCtx = {emp, cidade_norm, cidade_label};
@@ -998,12 +1009,15 @@
     document.getElementById('cityClientsMobile').style.display = 'none';
     document.querySelector('#cityClientsTable tbody').innerHTML = '';
     document.getElementById('cityClientsMobile').innerHTML = '';
+    const reqId = ++cityReqId;
     modal.show();
 
     const qs = new URLSearchParams({emp, cidade_norm, mes, ano});
     if (vendedor) qs.set('vendedor', vendedor);
     const resp = await fetch('/relatorios/cidade-clientes?' + qs.toString());
     const data = await resp.json();
+    // ignore stale responses (prevents double-render on double-click)
+    if (reqId !== cityReqId) return;
     document.getElementById('cityClientsLoading').style.display = 'none';
 
     if (!resp.ok || data.error){
@@ -1051,6 +1065,7 @@
     document.getElementById('clienteMarcasLoading').style.display = '';
     document.getElementById('clienteMarcasTable').style.display = 'none';
     document.querySelector('#clienteMarcasTable tbody').innerHTML = '';
+    const reqId = ++cityReqId;
     modal.show();
 
     const qs = new URLSearchParams({emp, cliente_id, mes, ano});
