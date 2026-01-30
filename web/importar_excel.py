@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import datetime as dt
 import os
-from decimal import Decimal, ROUND_HALF_UP
 from typing import Any, Dict, List, Optional
 
 import pandas as pd
@@ -72,32 +71,29 @@ def _to_date(value: Any) -> dt.date:
     return pd.to_datetime(value).date()
 
 
-def _to_decimal(value: Any, scale: int | None = None) -> Optional[Decimal]:
-    """Converte números vindos do Excel/CSV com segurança para Decimal.
+def _to_float(value: Any) -> Optional[float]:
+    """Converte números vindos do Excel/CSV com segurança.
 
-    - Mantém precisão (evita distorções de float em valor/bonificação)
-    - Aceita formato brasileiro (1.234,56) e internacional (1234.56)
+    - Se vier numérico (int/float), retorna float direto.
+    - Se vier string no formato brasileiro (contém vírgula), remove separador de milhar '.' e troca ',' por '.'
+    - Se vier string no formato internacional (somente '.' como decimal), NÃO remove '.' (evita multiplicar por 10/100)
     """
     if value is None or (isinstance(value, float) and pd.isna(value)):
         return None
     try:
         if isinstance(value, (int, float)) and not isinstance(value, bool):
-            d = Decimal(str(value))
-        elif isinstance(value, str):
+            return float(value)
+
+        if isinstance(value, str):
             s = value.strip()
             if not s:
                 return None
             if "," in s:
-                # brasileiro: remove milhares '.' e troca ',' por '.'
                 s = s.replace(".", "").replace(",", ".")
-            d = Decimal(s)
-        else:
-            d = Decimal(str(value))
+                return float(s)
+            return float(s)
 
-        if scale is not None:
-            q = Decimal('1').scaleb(-scale)  # 10^-scale
-            d = d.quantize(q, rounding=ROUND_HALF_UP)
-        return d
+        return float(value)
     except Exception:
         return None
 
@@ -265,12 +261,8 @@ def importar_planilha(
                         erros_linha += 1
                         continue
 
+                    nota = _norm_str(get("NOTA"))
                     emp = _norm_str(get("EMP"))
-                    if not emp:
-                        erros_linha += 1
-                        continue
-                    nota = (_norm_str(get("NOTA")) or "")
-                    emp = emp or ""
                     mov = _to_date(get("MOVIMENTO"))
                     # registra período para atualizar cache depois
                     if emp:
@@ -288,10 +280,10 @@ def importar_planilha(
                         "vendedor": vendedor,
                         "nota": nota,
                         "emp": emp,
-                        "unit": _to_decimal(get("UNIT"), scale=4),
-                        "des": _to_decimal(get("DES"), scale=4),
-                        "qtdade_vendida": _to_decimal(get("QTDADE_VENDIDA"), scale=3),
-                        "valor_total": _to_decimal(get("VALOR_TOTAL"), scale=2) or Decimal("0.00"),
+                        "unit": _to_float(get("UNIT")),
+                        "des": _to_float(get("DES")),
+                        "qtdade_vendida": _to_float(get("QTDADE_VENDIDA")),
+                        "valor_total": _to_float(get("VALOR_TOTAL")) or 0.0,
                         "descricao": _norm_str(get("DESCRICAO")),
                         "razao": _norm_str(get("RAZAO")),
                         "cidade": _norm_str(get("CIDADE")),
@@ -410,14 +402,8 @@ def importar_planilha(
                         erros_linha += 1
                         continue
 
-                    nota = _norm_str(row.get("NOTA")) or ""
+                    nota = _norm_str(row.get("NOTA"))
                     emp = _norm_str(row.get("EMP"))
-                    # EMP é obrigatório para escopo e deduplicação confiável
-                    if not emp:
-                        erros_linha += 1
-                        continue
-                    nota = nota or ""
-                    emp = emp or ""
                     mov = row.get("MOVIMENTO")
                     if mov is None or pd.isna(mov):
                         erros_linha += 1
@@ -436,10 +422,10 @@ def importar_planilha(
                         "vendedor": vendedor,
                         "nota": nota,
                         "emp": emp,
-                        "unit": _to_decimal(row.get("UNIT"), scale=4),
-                        "des": _to_decimal(row.get("DES"), scale=4),
-                        "qtdade_vendida": _to_decimal(row.get("QTDADE_VENDIDA"), scale=3),
-                        "valor_total": _to_decimal(row.get("VALOR_TOTAL"), scale=2) or Decimal("0.00"),
+                        "unit": _to_float(row.get("UNIT")),
+                        "des": _to_float(row.get("DES")),
+                        "qtdade_vendida": _to_float(row.get("QTDADE_VENDIDA")),
+                        "valor_total": _to_float(row.get("VALOR_TOTAL")) or 0.0,
                         "descricao": _norm_str(row.get("DESCRICAO")),
                         "razao": _norm_str(row.get("RAZAO")),
                         "cidade": _norm_str(row.get("CIDADE")),
@@ -448,7 +434,14 @@ def importar_planilha(
                         "razao_norm": _norm_text(row.get("RAZAO")),
                         "cidade_norm": _norm_text(row.get("CIDADE")),
                         "cliente_id_norm": _client_id_norm(row.get("CNPJ_CPF"), row.get("RAZAO")),
-
+                        "descricao": _norm_str(row.get("DESCRICAO")),
+                        "razao": _norm_str(row.get("RAZAO")),
+                        "cidade": _norm_str(row.get("CIDADE")),
+                        "cnpj_cpf": _norm_str(row.get("CNPJ_CPF")),
+                        "descricao_norm": _norm_text(row.get("DESCRICAO")),
+                        "razao_norm": _norm_text(row.get("RAZAO")),
+                        "cidade_norm": _norm_text(row.get("CIDADE")),
+                        "cliente_id_norm": _client_id_norm(row.get("CNPJ_CPF"), row.get("RAZAO")),
                     }
                     records.append(rec)
                     validas += 1
