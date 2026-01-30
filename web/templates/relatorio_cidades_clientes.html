@@ -32,6 +32,44 @@
   </div>
 </div>
 
+
+<!-- Modal: Cliente -> Produtos (itens) -->
+<div class="modal fade" id="clienteItensModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div>
+          <h5 class="modal-title">🧾 Produtos do cliente</h5>
+          <div class="text-muted small" id="clienteItensMeta"></div>
+        </div>
+        <div class="d-flex gap-2">
+          <button type="button" class="btn btn-outline-secondary btn-sm" id="btnVerMarcas" style="display:none;">Ver marcas</button>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+        </div>
+      </div>
+      <div class="modal-body">
+        <div id="clienteItensLoading" class="text-muted">Carregando...</div>
+
+        <div class="table-responsive d-none d-md-block">
+          <table class="table table-sm align-middle mb-0" id="clienteItensTable" style="display:none;">
+            <thead>
+              <tr class="text-muted small">
+                <th style="width:52px;">#</th>
+                <th>Produto</th>
+                <th class="text-end" style="width:140px;">Valor</th>
+                <th class="text-end" style="width:110px;">Qtd</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+
+        <div class="mobile-list d-md-none" id="clienteItensMobile" style="display:none;"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Modal: Cliente -> Marcas -->
 <div class="modal fade" id="clienteMarcasModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-lg modal-dialog-scrollable">
@@ -136,7 +174,84 @@
     mob.style.display = '';
   }
 
-  async function openClienteMarcas(emp, cliente_id, cliente_label){
+  
+  async function openClienteItens(emp, cliente_id, cliente_label){
+    const ctx = lastCityCtx || {cidade_norm: '', cidade_label: ''};
+    const cidade_norm = ctx.cidade_norm || '';
+    const modalEl = document.getElementById('clienteItensModal');
+    const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+
+    // meta e reset
+    document.getElementById('clienteItensMeta').textContent = `EMP ${emp} • ${cliente_label} • ${mes}/${ano}` + (cidade_norm ? ` • ${ctx.cidade_label}` : '');
+    document.getElementById('clienteItensLoading').style.display = '';
+    document.getElementById('clienteItensTable').style.display = 'none';
+    document.getElementById('clienteItensMobile').style.display = 'none';
+    document.querySelector('#clienteItensTable tbody').innerHTML = '';
+    document.getElementById('clienteItensMobile').innerHTML = '';
+
+    // botão "Ver marcas"
+    const btnMarcas = document.getElementById('btnVerMarcas');
+    btnMarcas.style.display = '';
+    btnMarcas.onclick = function(){
+      openClienteMarcas(emp, cliente_id, cliente_label);
+    };
+
+    const reqId = ++cityReqId;
+    modal.show();
+
+    const qs = new URLSearchParams({emp, cliente_id, mes, ano});
+    if (vendedor) qs.set('vendedor', vendedor);
+    if (cidade_norm) qs.set('cidade_norm', cidade_norm);
+
+    const resp = await fetch('/relatorios/cliente-itens?' + qs.toString());
+    const data = await resp.json();
+    // ignore stale
+    if (reqId !== cityReqId) return;
+
+    document.getElementById('clienteItensLoading').style.display = 'none';
+
+    if (!resp.ok || data.error){
+      document.getElementById('clienteItensMeta').textContent = (data && data.error) ? data.error : 'Erro ao carregar';
+      return;
+    }
+
+    const rows = data.itens || [];
+    const tbody = document.querySelector('#clienteItensTable tbody');
+    rows.forEach((r, idx) => {
+      const nome = (r.descricao && r.descricao.trim()) ? r.descricao.trim() : (r.mestre || '').trim();
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td class="text-muted">${idx+1}</td>
+        <td class="fw-semibold">${nome}</td>
+        <td class="text-end">${brl(r.valor_total)}</td>
+        <td class="text-end">${(r.qtd_total || 0).toLocaleString('pt-BR')}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+
+    // mobile
+    const mob = document.getElementById('clienteItensMobile');
+    rows.slice(0, 200).forEach((r, idx) => {
+      const nome = (r.descricao && r.descricao.trim()) ? r.descricao.trim() : (r.mestre || '').trim();
+      const div = document.createElement('div');
+      div.className = 'mitem mb-2';
+      div.innerHTML = `
+        <div class="d-flex justify-content-between align-items-start gap-2">
+          <div class="fw-semibold">${idx+1}. ${nome}</div>
+          <div class="text-end">
+            <div class="fw-bold">${brl(r.valor_total)}</div>
+            <div class="text-muted small">Qtd: ${(r.qtd_total || 0).toLocaleString('pt-BR')}</div>
+          </div>
+        </div>
+      `;
+      mob.appendChild(div);
+    });
+
+    document.getElementById('clienteItensTable').style.display = '';
+    document.getElementById('clienteItensMobile').style.display = '';
+  }
+
+async function openClienteMarcas(emp, cliente_id, cliente_label){
     const ctx = lastCityCtx || {cidade_norm: ''};
     const cidade_norm = ctx.cidade_norm || '';
     const modalEl = document.getElementById('clienteMarcasModal');
@@ -195,7 +310,7 @@
       if (!emp){
         return;
       }
-      openClienteMarcas(emp, cliente_id, label);
+      openClienteItens(emp, cliente_id, label);
       return;
     }
   });
@@ -423,7 +538,7 @@
       if (!emp){
         return;
       }
-      openClienteMarcas(emp, cliente_id, label);
+      openClienteItens(emp, cliente_id, label);
       return;
     }
   });
@@ -1115,7 +1230,7 @@
       if (!emp){
         return;
       }
-      openClienteMarcas(emp, cliente_id, label);
+      openClienteItens(emp, cliente_id, label);
       return;
     }
   });

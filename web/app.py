@@ -3398,47 +3398,57 @@ def relatorio_cliente_marcas_api():
 ## Relatório (AJAX): cliente -> itens (modal)
 @app.get("/relatorios/cliente-itens")
 def relatorio_cliente_itens_api():
-    """Retorna JSON com itens únicos comprados por um cliente (RAZAO_NORM) no período.
+    """Retorna JSON com produtos (itens) comprados por um cliente no período, ordenados por valor.
 
-    Retorna:
-    - total: soma (com sinal) do valor_total no período
-    - itens_unicos: quantidade de itens únicos (distinct mestre)
-    - itens: lista de {mestre, descricao, valor_total}
+    Compatibilidade:
+    - aceita `razao_norm` (legado) OU `cliente_id`/`cliente` (novo: cliente_id_norm)
+    - aceita filtro opcional `cidade_norm`
     """
     red = _login_required()
     if red:
         return red
 
     role = (_role() or "").strip().lower()
-    emp_usuario = _emp()
+    allowed_emps = _allowed_emps()
     vendedor_logado = (_usuario_logado() or "").strip().upper()
 
     emp = (request.args.get("emp") or "").strip()
     razao_norm = (request.args.get("razao_norm") or "").strip()
+    cliente_id = (request.args.get("cliente_id") or request.args.get("cliente") or "").strip()
+    cidade_norm = (request.args.get("cidade_norm") or "").strip()
     mes = int(request.args.get("mes") or 0)
     ano = int(request.args.get("ano") or 0)
     vendedor = (request.args.get("vendedor") or "").strip().upper()
 
-    if not emp or not razao_norm or not mes or not ano:
+    if not emp or (not razao_norm and not cliente_id) or not mes or not ano:
         return jsonify({"error": "Parâmetros inválidos"}), 400
 
     # Permissões por perfil
     if role == "supervisor":
-        allowed_emps = _allowed_emps()
-        if allowed_emps and str(emp) not in set(allowed_emps):
+        if allowed_emps and str(emp) not in [str(e) for e in allowed_emps]:
             return jsonify({"error": "Acesso negado"}), 403
     elif role == "vendedor":
-        # vendedor só pode ver os próprios dados (e não pode trocar vendedor via query)
-        vendedor = vendedor_logado
+        vendedor = vendedor_logado  # vendedor só vê os próprios dados
 
-    # Query base
     with SessionLocal() as db:
         base = db.query(Venda).filter(
             Venda.emp == str(emp),
-            Venda.razao_norm == razao_norm,
             extract("month", Venda.movimento) == mes,
             extract("year", Venda.movimento) == ano,
         )
+
+        # Identificação do cliente (compat)
+        if razao_norm:
+            base = base.filter(Venda.razao_norm == razao_norm)
+        elif cliente_id:
+            base = base.filter(Venda.cliente_id_norm == cliente_id)
+
+        if cidade_norm:
+            if cidade_norm == "sem_cidade":
+                base = base.filter(or_(Venda.cidade_norm.is_(None), Venda.cidade_norm == "", Venda.cidade_norm == "sem_cidade"))
+            else:
+                base = base.filter(Venda.cidade_norm == cidade_norm)
+
         if vendedor:
             base = base.filter(func.upper(Venda.vendedor) == vendedor)
 
@@ -3447,17 +3457,15 @@ def relatorio_cliente_itens_api():
             else_=Venda.valor_total,
         )
 
-        total = base.with_entities(func.coalesce(func.sum(signed_val), 0)).scalar() or 0
-        total = float(total)
-
-        itens_unicos = base.with_entities(func.count(func.distinct(Venda.mestre))).scalar() or 0
-        itens_unicos = int(itens_unicos)
+        total = float(base.with_entities(func.coalesce(func.sum(signed_val), 0)).scalar() or 0.0)
+        itens_unicos = int(base.with_entities(func.count(func.distinct(Venda.mestre))).scalar() or 0)
 
         itens_rows = (
             base.with_entities(
                 Venda.mestre.label("mestre"),
                 Venda.descricao.label("descricao"),
                 func.coalesce(func.sum(signed_val), 0).label("valor_total"),
+                func.coalesce(func.sum(Venda.qtdade_vendida), 0).label("qtd_total"),
             )
             .group_by(Venda.mestre, Venda.descricao)
             .order_by(func.coalesce(func.sum(signed_val), 0).desc())
@@ -3470,17 +3478,20 @@ def relatorio_cliente_itens_api():
             "mestre": (r.mestre or "").strip(),
             "descricao": (r.descricao or "").strip(),
             "valor_total": float(r.valor_total or 0.0),
+            "qtd_total": float(r.qtd_total or 0.0),
         })
 
     return jsonify({
-        "emp": emp,
+        "emp": str(emp),
         "razao_norm": razao_norm,
+        "cliente_id": cliente_id,
         "ano": ano,
         "mes": mes,
         "total": total,
         "itens_unicos": itens_unicos,
         "itens": itens,
     })
+
 
 @app.route("/senha", methods=["GET", "POST"])
 def senha():
