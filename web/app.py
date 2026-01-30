@@ -2989,9 +2989,23 @@ def relatorio_cidades_clientes():
                 escopo_label = (escopo_label + " • " if escopo_label else "") + f"Vendedor {vendedor_filtro}"
 
         elif role == "supervisor":
-            base = base.filter(Venda.emp == emp_usuario)
-            base_hist = base_hist.filter(Venda.emp == emp_usuario)
-            escopo_label = f"EMP {emp_usuario}"
+            # Supervisor: acesso às Empresas vinculadas via usuario_emps (pode ser 1 ou várias)
+            allowed_emps = _allowed_emps()
+            if allowed_emps:
+                base = base.filter(Venda.emp.in_(allowed_emps))
+                base_hist = base_hist.filter(Venda.emp.in_(allowed_emps))
+                # permite filtrar por uma Empresa específica dentro do escopo
+                if emp_filtro and emp_filtro in allowed_emps:
+                    base = base.filter(Venda.emp == emp_filtro)
+                    base_hist = base_hist.filter(Venda.emp == emp_filtro)
+                    escopo_label = f"Empresa {emp_filtro}"
+                else:
+                    escopo_label = "Empresas vinculadas"
+            else:
+                # sem Empresas vinculadas -> sem dados
+                base = base.filter(text("1=0"))
+                base_hist = base_hist.filter(text("1=0"))
+                escopo_label = "Sem empresas vinculadas"
             pode_filtrar_vendedor = True
             if vendedor_filtro:
                 base = base.filter(func.upper(Venda.vendedor) == vendedor_filtro)
@@ -3147,9 +3161,9 @@ def relatorio_cidades_clientes():
                     "clientes_recorrentes": recorr_map.get(emp, 0),
                 },
                 "cidades_preview": cities_full[:5],
-                "cidades_full": cities_full[:50],
+                "cidades_full": cities_full,
                 "clientes_preview": clients_full[:5],
-                "clientes_full": clients_full[:50],
+                "clientes_full": clients_full,
             })
 
         return render_template(
@@ -3200,7 +3214,8 @@ def relatorio_cidade_clientes_api():
 
     # Permissões
     if role == "supervisor":
-        if str(emp_usuario or "").strip() and str(emp) != str(emp_usuario):
+        allowed_emps = _allowed_emps()
+        if allowed_emps and str(emp) not in set(allowed_emps):
             return jsonify({"error": "Acesso negado"}), 403
     elif role == "vendedor":
         vendedor = vendedor_logado
@@ -3388,7 +3403,8 @@ def relatorio_cliente_itens_api():
 
     # Permissões por perfil
     if role == "supervisor":
-        if str(emp_usuario or "").strip() and str(emp) != str(emp_usuario):
+        allowed_emps = _allowed_emps()
+        if allowed_emps and str(emp) not in set(allowed_emps):
             return jsonify({"error": "Acesso negado"}), 403
     elif role == "vendedor":
         # vendedor só pode ver os próprios dados (e não pode trocar vendedor via query)
@@ -3424,7 +3440,6 @@ def relatorio_cliente_itens_api():
             )
             .group_by(Venda.mestre, Venda.descricao)
             .order_by(func.coalesce(func.sum(signed_val), 0).desc())
-            .limit(200)
             .all()
         )
 
@@ -4777,7 +4792,6 @@ def mensagens_central():
             db.query(Mensagem)
             .filter(Mensagem.ativo.is_(True))
             .order_by(Mensagem.bloqueante.desc(), Mensagem.id.desc())
-            .limit(200)
             .all()
         )
 
