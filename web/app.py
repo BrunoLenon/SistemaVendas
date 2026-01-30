@@ -2424,11 +2424,6 @@ def campanhas_qtd():
     mes = int(request.args.get("mes") or hoje.month)
     ano = int(request.args.get("ano") or hoje.year)
 
-    # modo de visualização
-    modo = (request.args.get("modo") or "consolidado").strip().lower()
-    if modo not in ("consolidado", "todas"):
-        modo = "consolidado"
-
     # vendedor alvo
     vendedor_logado = (_usuario_logado() or "").strip().upper()
 
@@ -2450,6 +2445,10 @@ def campanhas_qtd():
             emps_scope = _get_emps_vendedor(vendedor_sel)
     else:
         emps_scope = _resolver_emp_scope_para_usuario(vendedor_sel, role, emp_usuario)
+
+    # Permite filtrar por EMP dentro do escopo permitido (útil para vendedores multi-EMP)
+    if emp_param and str(emp_param) in [str(e) for e in (emps_scope or [])]:
+        emps_scope = [str(emp_param)]
 
     # Se não temos EMP, não dá pra montar relatório
     if not emps_scope and (role or "").lower() != "admin":
@@ -2488,25 +2487,21 @@ def campanhas_qtd():
                 if not vend:
                     continue
 
-                # modo consolidado: uma regra por (base/prefixo/marca) com prioridade por vendedor
-                # modo todas: mostra todas as campanhas ativas no período (inclusive duplicadas)
-                if modo == "consolidado":
-                    by_key: dict[tuple[str, str, str], CampanhaQtd] = {}
-                    for c in campanhas:
-                        campo_match = (getattr(c, "campo_match", None) or "codigo").strip().lower()
-                        if campo_match == "descricao":
-                            pref = (getattr(c, "descricao_prefixo", "") or "").strip() or (c.produto_prefixo or "").strip()
-                            key = ("descricao", pref.lower().strip(), (c.marca or "").strip().upper())
-                        else:
-                            key = ("codigo", (c.produto_prefixo or "").strip().upper(), (c.marca or "").strip().upper())
-                        # regras específicas do vendedor sobrescrevem regras gerais
-                        if c.vendedor and c.vendedor.strip().upper() == vend:
-                            by_key[key] = c
-                        else:
-                            by_key.setdefault(key, c)
-                    campanhas_final = list(by_key.values())
-                else:
-                    campanhas_final = list(campanhas)
+                # aplica prioridade: regras do vendedor substituem regras gerais
+                # chave: (produto_prefixo, marca)
+                by_key: dict[tuple[str, str, str], CampanhaQtd] = {}
+                for c in campanhas:
+                    campo_match = (getattr(c, "campo_match", None) or "codigo").strip().lower()
+                    if campo_match == "descricao":
+                        pref = (getattr(c, "descricao_prefixo", "") or "").strip() or (c.produto_prefixo or "").strip()
+                        key = ("descricao", pref.lower().strip(), (c.marca or "").strip().upper())
+                    else:
+                        key = ("codigo", (c.produto_prefixo or "").strip().upper(), (c.marca or "").strip().upper())
+                    if c.vendedor and c.vendedor.strip().upper() == vend:
+                        by_key[key] = c
+                    else:
+                        by_key.setdefault(key, c)
+                campanhas_final = list(by_key.values())
 
                 total_recomp = 0.0
                 for c in campanhas_final:
@@ -2547,6 +2542,7 @@ def campanhas_qtd():
         vendedor_logado=vendedor_logado,
         vendedores=vendedores_dropdown,
         blocos=blocos,
+        emps_scope=emps_scope,
         emp_param=emp_param,
     )
 
@@ -2689,13 +2685,37 @@ def _get_vendedores_emp_no_periodo(emp: str, ano: int, mes: int) -> list[str]:
     return vendedores
 
 def _calc_vendas_por_vendedor_para_campanha(db, emp: str, campanha: CampanhaQtd, periodo_ini: date, periodo_fim: date) -> dict[str, tuple[float, float]]:
-    """Retorna dict vendedor -> (qtd_vendida, valor_vendido) para uma campanha no período (já considerando EMP e filtros da campanha)."""
-    emp = str(emp)
-    prefix = (campanha.produto_prefixo or '').strip()
-    prefix_up = prefix.upper()
+    """Retorna dict vendedor -> (qtd_vendida, valor_vendido) para uma campanha no período.
 
-    campo_item = func.upper(func.trim(cast(Venda.mestre, String)))
-    cond_prefix = campo_item.like(prefix_up + "%")
+    IMPORTANTE: usa a MESMA regra de match de itens do _upsert_resultado:
+      - campo_match='codigo'    -> prefixo em Venda.mestre
+      - campo_match='descricao' -> prefixo em Venda.descricao_norm (normalizada)
+    """
+    emp = str(emp)
+
+    # Campo usado para match do item
+    campo_match = (getattr(campanha, "campo_match", None) or "codigo").strip().lower()
+
+    def _norm_prefix(s: str) -> str:
+        import unicodedata, re as _re
+        s = (s or "").strip()
+        s = "".join(c for c in unicodedata.normalize("NFKD", s) if not unicodedata.combining(c))
+        s = _re.sub(r"\s+", " ", s).strip().lower()
+        return s
+
+    if campo_match == "descricao":
+        prefix_raw = (getattr(campanha, "descricao_prefixo", "") or "").strip()
+        if not prefix_raw:
+            prefix_raw = (campanha.produto_prefixo or "").strip()
+        prefix = _norm_prefix(prefix_raw)
+        campo_item = func.lower(func.trim(func.coalesce(Venda.descricao_norm, "")))
+        cond_prefix = campo_item.like(prefix + "%")
+    else:
+        prefix = (campanha.produto_prefixo or "").strip()
+        prefix_up = prefix.upper()
+        campo_item = func.upper(func.trim(cast(Venda.mestre, String)))
+        cond_prefix = campo_item.like(prefix_up + "%")
+
     cond_marca = func.upper(func.trim(cast(Venda.marca, String))) == (campanha.marca or "").strip().upper()
 
     q = (

@@ -42,17 +42,6 @@
       </div>
 
       <form method="get" action="/campanhas" class="row g-2 align-items-end mt-1">
-        <div class="col-12">
-          <label class="form-label">Modo de exibição</label>
-          <div class="btn-group btn-group-sm" role="group" aria-label="Modo de exibição">
-            <input type="radio" class="btn-check" name="modo" id="modoConsolidado" value="consolidado" autocomplete="off" {% if (modo or "consolidado") == "consolidado" %}checked{% endif %}>
-            <label class="btn btn-outline-primary" for="modoConsolidado">Consolidado</label>
-            <input type="radio" class="btn-check" name="modo" id="modoTodas" value="todas" autocomplete="off" {% if (modo or "consolidado") == "todas" %}checked{% endif %}>
-            <label class="btn btn-outline-primary" for="modoTodas">Todas</label>
-          </div>
-          <div class="form-text">Consolidado = 1 regra por produto/marca. Todas = mostra todas as campanhas ativas (inclusive duplicadas).</div>
-        </div>
-
         {% if role and role|lower in ['admin','supervisor'] %}
           <div class="col-md-4">
             <label class="form-label">Vendedor</label>
@@ -70,6 +59,18 @@
           <div class="col-md-2">
             <label class="form-label">EMP (opcional)</label>
             <input class="form-control" type="text" name="emp" value="{{ emp_param or '' }}" placeholder="ex: 101">
+            <div class="form-text">Em branco: todas as EMPs do escopo.</div>
+          </div>
+        {% else %}
+          <div class="col-md-2">
+            <label class="form-label">EMP</label>
+            <select class="form-select" name="emp">
+              <option value="" {% if not emp_param %}selected{% endif %}>Todas</option>
+              {% for e in (emps_scope or []) %}
+                <option value="{{ e }}" {% if emp_param and emp_param|string == e|string %}selected{% endif %}>{{ e }}</option>
+              {% endfor %}
+            </select>
+            <div class="form-text">Filtre por loja (dentro do seu acesso).</div>
           </div>
         {% endif %}
 
