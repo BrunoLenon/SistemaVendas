@@ -132,7 +132,7 @@
     mob.style.display = '';
   }
 
-  async function openClienteMarcas(emp, razao_norm, cliente_label){
+  async function openClienteMarcas(emp, cliente_id, cliente_label){
     const ctx = lastCityCtx || {cidade_norm: ''};
     const cidade_norm = ctx.cidade_norm || '';
     const modalEl = document.getElementById('clienteMarcasModal');
@@ -143,7 +143,7 @@
     document.querySelector('#clienteMarcasTable tbody').innerHTML = '';
     modal.show();
 
-    const qs = new URLSearchParams({emp, razao_norm, mes, ano});
+    const qs = new URLSearchParams({emp, cliente_id, mes, ano});
     if (vendedor) qs.set('vendedor', vendedor);
     if (cidade_norm) qs.set('cidade_norm', cidade_norm);
     const resp = await fetch('/relatorios/cliente-marcas?' + qs.toString());
@@ -185,12 +185,12 @@
     if (c){
       ev.preventDefault();
       const emp = (lastCityCtx && lastCityCtx.emp) ? lastCityCtx.emp : (empFiltro || '');
-      const razao_norm = c.getAttribute('data-razao');
+      const cliente_id = c.getAttribute('data-razao');
       const label = c.getAttribute('data-label') || c.textContent.trim();
       if (!emp){
         return;
       }
-      openClienteMarcas(emp, razao_norm, label);
+      openClienteMarcas(emp, cliente_id, label);
       return;
     }
   });
@@ -355,7 +355,7 @@
     mob.style.display = '';
   }
 
-  async function openClienteMarcas(emp, razao_norm, cliente_label){
+  async function openClienteMarcas(emp, cliente_id, cliente_label){
     const ctx = lastCityCtx || {cidade_norm: ''};
     const cidade_norm = ctx.cidade_norm || '';
     const modalEl = document.getElementById('clienteMarcasModal');
@@ -366,7 +366,7 @@
     document.querySelector('#clienteMarcasTable tbody').innerHTML = '';
     modal.show();
 
-    const qs = new URLSearchParams({emp, razao_norm, mes, ano});
+    const qs = new URLSearchParams({emp, cliente_id, mes, ano});
     if (vendedor) qs.set('vendedor', vendedor);
     if (cidade_norm) qs.set('cidade_norm', cidade_norm);
     const resp = await fetch('/relatorios/cliente-marcas?' + qs.toString());
@@ -408,12 +408,12 @@
     if (c){
       ev.preventDefault();
       const emp = (lastCityCtx && lastCityCtx.emp) ? lastCityCtx.emp : (empFiltro || '');
-      const razao_norm = c.getAttribute('data-razao');
+      const cliente_id = c.getAttribute('data-razao');
       const label = c.getAttribute('data-label') || c.textContent.trim();
       if (!emp){
         return;
       }
-      openClienteMarcas(emp, razao_norm, label);
+      openClienteMarcas(emp, cliente_id, label);
       return;
     }
   });
@@ -458,17 +458,8 @@
 
         {% if pode_filtrar_emp %}
         <div class="col-6 col-md-2">
-          <label class="form-label mb-1">Empresa</label>
-          {% if emps_opcoes and emps_opcoes|length > 0 %}
-            <select class="form-select form-select-sm" id="emp" name="emp">
-              <option value="">Todas</option>
-              {% for e in emps_opcoes %}
-                <option value="{{ e }}" {% if emp_filtro == e %}selected{% endif %}>{{ e }}</option>
-              {% endfor %}
-            </select>
-          {% else %}
-            <input class="form-control form-control-sm" id="emp" name="emp" value="{{ emp_filtro or '' }}" placeholder="ex: 101">
-          {% endif %}
+          <label class="form-label mb-1">EMP</label>
+          <input class="form-control form-control-sm" id="emp" name="emp" value="{{ emp_filtro or '' }}" placeholder="ex: 101">
         </div>
         {% endif %}
 
@@ -1051,7 +1042,7 @@
     mob.style.display = '';
   }
 
-  async function openClienteMarcas(emp, razao_norm, cliente_label){
+  async function openClienteMarcas(emp, cliente_id, cliente_label){
     const ctx = lastCityCtx || {cidade_norm: ''};
     const cidade_norm = ctx.cidade_norm || '';
     const modalEl = document.getElementById('clienteMarcasModal');
@@ -1062,7 +1053,7 @@
     document.querySelector('#clienteMarcasTable tbody').innerHTML = '';
     modal.show();
 
-    const qs = new URLSearchParams({emp, razao_norm, mes, ano});
+    const qs = new URLSearchParams({emp, cliente_id, mes, ano});
     if (vendedor) qs.set('vendedor', vendedor);
     if (cidade_norm) qs.set('cidade_norm', cidade_norm);
     const resp = await fetch('/relatorios/cliente-marcas?' + qs.toString());
@@ -1104,12 +1095,12 @@
     if (c){
       ev.preventDefault();
       const emp = (lastCityCtx && lastCityCtx.emp) ? lastCityCtx.emp : (empFiltro || '');
-      const razao_norm = c.getAttribute('data-razao');
+      const cliente_id = c.getAttribute('data-razao');
       const label = c.getAttribute('data-label') || c.textContent.trim();
       if (!emp){
         return;
       }
-      openClienteMarcas(emp, razao_norm, label);
+      openClienteMarcas(emp, cliente_id, label);
       return;
     }
   });

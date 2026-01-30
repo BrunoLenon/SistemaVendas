@@ -2850,13 +2850,11 @@ def relatorio_campanhas():
         else:
             emps_scope = _get_emps_com_vendas_no_periodo(ano, mes)
     elif role == "supervisor":
-        emps_scope = _allowed_emps()
-        if not emps_scope:
-            if not emp_usuario:
-                flash("Supervisor sem Empresa cadastrada. Vincule ao menos 1 Empresa ao supervisor.", "warning")
-                emps_scope = []
-            else:
-                emps_scope = [str(emp_usuario)]
+        if not emp_usuario:
+            flash("Supervisor sem EMP cadastrada. Ajuste o usuário do supervisor.", "warning")
+            emps_scope = []
+        else:
+            emps_scope = [str(emp_usuario)]
     else:
         # vendedor
         emps_scope = _get_emps_vendedor(vendedor_logado)
@@ -2977,7 +2975,6 @@ def relatorio_cidades_clientes():
         escopo_label = None
         pode_filtrar_emp = False
         pode_filtrar_vendedor = False
-        emps_opcoes = None
 
         if role == "admin":
             pode_filtrar_emp = True
@@ -2992,35 +2989,14 @@ def relatorio_cidades_clientes():
                 escopo_label = (escopo_label + " • " if escopo_label else "") + f"Vendedor {vendedor_filtro}"
 
         elif role == "supervisor":
-            # Supervisor: pode ter 1 ou mais EMPs via usuario_emps
-            emps_scope = _allowed_emps()
-            if emps_scope:
-                emps_opcoes = emps_scope
-                # Pode filtrar por EMP quando tiver mais de uma
-                pode_filtrar_emp = len(emps_scope) > 1
-                if emp_filtro and emp_filtro in emps_scope:
-                    base = base.filter(Venda.emp == emp_filtro)
-                    base_hist = base_hist.filter(Venda.emp == emp_filtro)
-                    escopo_label = f"EMP {emp_filtro}"
-                else:
-                    base = base.filter(Venda.emp.in_(emps_scope))
-                    base_hist = base_hist.filter(Venda.emp.in_(emps_scope))
-                    escopo_label = f"EMPs {', '.join(emps_scope[:3])}" + (f" (+{len(emps_scope)-3})" if len(emps_scope) > 3 else "")
-            elif emp_usuario:
-                base = base.filter(Venda.emp == emp_usuario)
-                base_hist = base_hist.filter(Venda.emp == emp_usuario)
-                escopo_label = f"EMP {emp_usuario}"
-            else:
-                # Sem EMP vinculada
-                base = base.filter(text('1=0'))
-                base_hist = base_hist.filter(text('1=0'))
-                escopo_label = None
-
+            base = base.filter(Venda.emp == emp_usuario)
+            base_hist = base_hist.filter(Venda.emp == emp_usuario)
+            escopo_label = f"EMP {emp_usuario}"
             pode_filtrar_vendedor = True
             if vendedor_filtro:
                 base = base.filter(func.upper(Venda.vendedor) == vendedor_filtro)
                 base_hist = base_hist.filter(func.upper(Venda.vendedor) == vendedor_filtro)
-                escopo_label = (escopo_label + " • " if escopo_label else "") + f"Vendedor {vendedor_filtro}"
+                escopo_label += f" • Vendedor {vendedor_filtro}"
 
         else:
             base = base.filter(func.upper(Venda.vendedor) == vendedor_logado)
@@ -3186,7 +3162,6 @@ def relatorio_cidades_clientes():
             emp_filtro=emp_filtro,
             vendedor_filtro=vendedor_filtro,
             emp_cards=emp_cards,
-            emps_opcoes=emps_opcoes,
         )
     finally:
         db.close()
@@ -3292,22 +3267,25 @@ def relatorio_cliente_marcas_api():
         return red
 
     role = (_role() or "").strip().lower()
-    emp_usuario = _emp()
+    allowed_emps = _allowed_emps()
     vendedor_logado = (_usuario_logado() or "").strip().upper()
 
     emp = (request.args.get("emp") or "").strip()
+    # compat: o front antigo mandava razao_norm; o novo usa cliente_id (cliente_id_norm)
     razao_norm = (request.args.get("razao_norm") or "").strip()
+    cliente_id = (request.args.get("cliente_id") or request.args.get("cliente") or "").strip()
     cidade_norm = (request.args.get("cidade_norm") or "").strip()
     mes = int(request.args.get("mes") or 0)
     ano = int(request.args.get("ano") or 0)
     vendedor = (request.args.get("vendedor") or "").strip().upper()
 
-    if not emp or not razao_norm or not mes or not ano:
+    # Requer emp + (razao_norm ou cliente_id) + período
+    if not emp or (not razao_norm and not cliente_id) or not mes or not ano:
         return jsonify({"error": "Parâmetros inválidos"}), 400
 
     # Permissões
     if role == "supervisor":
-        if str(emp_usuario or "").strip() and str(emp) != str(emp_usuario):
+        if allowed_emps and str(emp) not in [str(e) for e in allowed_emps]:
             return jsonify({"error": "Acesso negado"}), 403
     elif role == "vendedor":
         vendedor = vendedor_logado  # vendedor não pode consultar outro vendedor
@@ -3315,10 +3293,18 @@ def relatorio_cliente_marcas_api():
     with SessionLocal() as db:
         base = db.query(Venda).filter(
             Venda.emp == str(emp),
-            Venda.razao_norm == razao_norm,
             extract("month", Venda.movimento) == mes,
             extract("year", Venda.movimento) == ano,
         )
+
+        # Identificação do cliente (compat)
+        if razao_norm:
+            base = base.filter(Venda.razao_norm == razao_norm)
+        elif cliente_id:
+            base = base.filter(Venda.cliente_id_norm == cliente_id)
+        else:
+            return jsonify({"error": "Parâmetros inválidos"}), 400
+
         if cidade_norm:
             if cidade_norm == "sem_cidade":
                 base = base.filter(or_(Venda.cidade_norm.is_(None), Venda.cidade_norm == "", Venda.cidade_norm == "sem_cidade"))
