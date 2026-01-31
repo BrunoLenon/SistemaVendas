@@ -1,6 +1,52 @@
 {% extends "base.html" %}
 
-{% block title %}Relatório de Campanhas — {{ mes }}/{{ ano }}{% endblock %}
+{% block title %}Relatório de Campanhas — {{ mes }}/{{ ano }}<script>
+(function(){
+  function norm(s){
+    return (s||"")
+      .toString()
+      .normalize("NFD").replace(/\p{Diacritic}/gu,"")
+      .toLowerCase();
+  }
+
+  function applyFilter(tableId, query){
+    const table = document.getElementById(tableId);
+    if(!table) return;
+    const rows = table.querySelectorAll("tbody tr[data-filter-row]");
+    const q = norm(query);
+    let visible = 0;
+
+    rows.forEach(r=>{
+      const hay = norm(r.innerText);
+      const show = !q || hay.includes(q);
+      r.style.display = show ? "" : "none";
+      if(show) visible++;
+    });
+
+    const empty = document.querySelector(`[data-filter-empty="${tableId}"]`);
+    if(empty){
+      empty.style.display = (visible===0) ? "" : "none";
+    }
+  }
+
+  document.addEventListener("input", function(e){
+    const inp = e.target.closest("[data-filter-input]");
+    if(!inp) return;
+    const tableId = inp.getAttribute("data-filter-input");
+    applyFilter(tableId, inp.value);
+  });
+
+  // When a vendor section is expanded, keep filter applied (if any)
+  document.addEventListener("shown.bs.collapse", function(e){
+    const collapse = e.target;
+    const inp = collapse.querySelector("[data-filter-input]");
+    if(!inp) return;
+    applyFilter(inp.getAttribute("data-filter-input"), inp.value);
+  });
+})();
+</script>
+
+{% endblock %}
 
 {% block extra_head %}
 <style>
@@ -8,6 +54,78 @@
   .subtitle{color:var(--bs-secondary-color)}
   .mono{font-variant-numeric: tabular-nums;}
   .table thead th{white-space:nowrap}
+
+  /* Modern translucent modal look */
+  .glass-modal .modal-content{
+    background: rgba(20, 24, 32, .68);
+    color: rgba(255,255,255,.92);
+    border: 1px solid rgba(255,255,255,.10);
+    box-shadow: 0 20px 60px rgba(0,0,0,.35);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border-radius: 1.1rem;
+  }
+  .glass-modal .modal-header{
+    border-bottom: 1px solid rgba(255,255,255,.10);
+  }
+  .glass-modal .modal-footer{
+    border-top: 1px solid rgba(255,255,255,.10);
+  }
+  .glass-modal .btn-close{filter: invert(1) grayscale(1); opacity:.8}
+  .glass-chip{
+    background: rgba(255,255,255,.08);
+    border: 1px solid rgba(255,255,255,.10);
+    color: rgba(255,255,255,.90);
+    border-radius: 999px;
+    padding: .35rem .6rem;
+    font-size: .82rem;
+  }
+  .glass-input{
+    background: rgba(255,255,255,.08) !important;
+    border: 1px solid rgba(255,255,255,.12) !important;
+    color: rgba(255,255,255,.92) !important;
+  }
+  .glass-input::placeholder{color: rgba(255,255,255,.55)}
+
+  /* Sticky header inside scrollable tables */
+  .table-sticky thead th{
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: rgba(255,255,255,.10);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+  }
+
+  /* Keep tables readable on dark glass */
+  .glass-modal .table{
+    color: rgba(255,255,255,.92);
+  }
+  .glass-modal .table-bordered>:not(caption)>*{
+    border-color: rgba(255,255,255,.10);
+  }
+  .glass-modal .table-light{
+    --bs-table-bg: rgba(255,255,255,.06);
+    --bs-table-color: rgba(255,255,255,.92);
+  }
+
+  .status-pill{
+    font-weight: 700;
+    letter-spacing: .2px;
+    border-radius: 999px;
+    padding: .25rem .55rem;
+    font-size: .78rem;
+    display: inline-flex;
+    align-items: center;
+    gap: .35rem;
+    border: 1px solid rgba(255,255,255,.12);
+    background: rgba(255,255,255,.08);
+    color: rgba(255,255,255,.92);
+  }
+  .status-pill.pago{background: rgba(25,135,84,.18); border-color: rgba(25,135,84,.35)}
+  .status-pill.pendente{background: rgba(255,193,7,.16); border-color: rgba(255,193,7,.35)}
+  .status-pill.cancelado{background: rgba(220,53,69,.16); border-color: rgba(220,53,69,.35)}
+
   @media (max-width: 768px){
     .table-responsive{border-radius: .75rem}
   }
@@ -117,7 +235,7 @@
         </div>
 
         <!-- Modal EMP -->
-        <div class="modal fade" id="{{ mid }}" tabindex="-1" aria-hidden="true">
+        <div class="modal fade glass-modal" id="{{ mid }}" tabindex="-1" aria-hidden="true">
           <div class="modal-dialog modal-xl modal-dialog-scrollable">
             <div class="modal-content" style="border-radius:1rem">
               <div class="modal-header">
@@ -164,44 +282,111 @@
                         </tr>
 
                         <tr class="collapse" id="d{{ mid }}_{{ vid }}">
-                          <td colspan="4">
-                            {% if not v.campanhas or (v.campanhas|length) == 0 %}
-                              <div class="text-muted">Sem campanhas para este vendedor no período.</div>
-                            {% else %}
-                              <div class="table-responsive">
-                                <table class="table table-sm table-bordered mb-0">
-                                  <thead class="table-light">
-                                    <tr>
-                                      <th>Título</th>
-                                      <th>Produto</th>
-                                      <th>Marca</th>
-                                      <th class="text-end">Qtd</th>
-                                      <th class="text-end">Mín</th>
-                                      <th class="text-end">R$/un</th>
-                                      <th class="text-end">Recompensa</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    {% for c in v.campanhas %}
-                                      <tr>
-                                        <td class="text-truncate" style="max-width:240px">
-                                          {{ c.titulo or ('Campanha #' ~ c.campanha_id) }}
-                                        </td>
-                                        <td class="mono small">{{ c.produto_prefixo }}</td>
-                                        <td>{{ c.marca }}</td>
-                                        <td class="text-end mono">{{ (c.qtd_vendida or 0)|int }}</td>
-                                        <td class="text-end mono">
-                                          {% if c.qtd_minima is not none %}{{ c.qtd_minima|int }}{% else %}-{% endif %}
-                                        </td>
-                                        <td class="text-end mono">{{ (c.recompensa_unit or 0)|brl }}</td>
-                                        <td class="text-end mono">
-                                          {% if c.valor_recompensa and c.valor_recompensa > 0 %}
-                                            <strong>{{ (c.valor_recompensa or 0)|brl }}</strong>
-                                          {% else %}
-                                            -
-                                          {% endif %}
-                                        </td>
-                                      </tr>
+  <td colspan="4">
+    {% if not v.campanhas or (v.campanhas|length) == 0 %}
+      <div class="text-muted">Sem campanhas para este vendedor no período.</div>
+    {% else %}
+
+      {# Totais por status (pago/pendente/cancelado) #}
+      {% set ns = namespace(total=0.0, pago=0.0, pend=0.0, canc=0.0, ct=0, ct_pago=0, ct_pend=0, ct_canc=0) %}
+      {% for c in v.campanhas %}
+        {% set ns.ct = ns.ct + 1 %}
+        {% set _val = (c.valor_recompensa or 0.0) %}
+        {% set ns.total = ns.total + _val %}
+        {% set st = (c.status_pagamento or 'PENDENTE')|upper %}
+        {% if st == 'PAGO' %}
+          {% set ns.pago = ns.pago + _val %}
+          {% set ns.ct_pago = ns.ct_pago + 1 %}
+        {% elif st == 'CANCELADO' %}
+          {% set ns.canc = ns.canc + _val %}
+          {% set ns.ct_canc = ns.ct_canc + 1 %}
+        {% else %}
+          {% set ns.pend = ns.pend + _val %}
+          {% set ns.ct_pend = ns.ct_pend + 1 %}
+        {% endif %}
+      {% endfor %}
+
+      <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+        <div class="d-flex flex-wrap gap-2">
+          <span class="glass-chip mono">Total: <strong>{{ ns.total|brl }}</strong></span>
+          <span class="glass-chip mono">PAGO <strong>{{ ns.ct_pago }}</strong> • {{ ns.pago|brl }}</span>
+          <span class="glass-chip mono">PEND <strong>{{ ns.ct_pend }}</strong> • {{ ns.pend|brl }}</span>
+          {% if ns.ct_canc > 0 %}
+            <span class="glass-chip mono">CANC <strong>{{ ns.ct_canc }}</strong> • {{ ns.canc|brl }}</span>
+          {% endif %}
+        </div>
+
+        <div style="min-width:260px">
+          <input
+            type="search"
+            class="form-control form-control-sm glass-input"
+            placeholder="Buscar na tabela (campanha, marca, base...)"
+            data-filter-input="t{{ mid }}_{{ vid }}"
+            aria-label="Buscar campanhas"
+          >
+        </div>
+      </div>
+
+      <div class="table-responsive">
+        <table class="table table-sm table-bordered mb-0 table-sticky" id="t{{ mid }}_{{ vid }}">
+          <thead class="table-light">
+            <tr>
+              <th>Campanha</th>
+              <th>Base</th>
+              <th>Marca</th>
+              <th class="text-end">R$/un</th>
+              <th class="text-end">Mín</th>
+              <th class="text-end">Qtd</th>
+              <th class="text-end">Valor</th>
+              <th>Status</th>
+              <th>Período</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for c in v.campanhas %}
+              {% set st = (c.status_pagamento or 'PENDENTE')|upper %}
+              {% set st_class = 'pendente' %}
+              {% if st == 'PAGO' %}{% set st_class = 'pago' %}{% endif %}
+              {% if st == 'CANCELADO' %}{% set st_class = 'cancelado' %}{% endif %}
+
+              <tr data-filter-row>
+                <td class="text-truncate" style="max-width:260px">
+                  {{ c.titulo or ('Campanha #' ~ c.campanha_id) }}
+                </td>
+                <td class="mono small">{{ c.produto_prefixo }}</td>
+                <td>{{ c.marca }}</td>
+                <td class="text-end mono">{{ (c.recompensa_unit or 0)|brl }}</td>
+                <td class="text-end mono">
+                  {% if c.qtd_minima is not none %}{{ c.qtd_minima|int }}{% else %}-{% endif %}
+                </td>
+                <td class="text-end mono">{{ (c.qtd_vendida or 0)|int }}</td>
+                <td class="text-end mono">
+                  {% if c.valor_recompensa and c.valor_recompensa > 0 %}
+                    <strong>{{ (c.valor_recompensa or 0)|brl }}</strong>
+                  {% else %}
+                    -
+                  {% endif %}
+                </td>
+                <td>
+                  <span class="status-pill {{ st_class }}">{{ st }}</span>
+                </td>
+                <td class="mono small">
+                  {{ c.data_inicio.strftime("%d/%m/%Y") if c.data_inicio else "" }}
+                  {% if c.data_fim %}a {{ c.data_fim.strftime("%d/%m/%Y") }}{% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+
+        <div class="small mt-2" data-filter-empty="t{{ mid }}_{{ vid }}" style="display:none; opacity:.8">
+          Nenhuma campanha encontrada com esse filtro.
+        </div>
+      </div>
+
+    {% endif %}
+  </td>
+</tr>
                                     {% endfor %}
                                   </tbody>
                                 </table>
