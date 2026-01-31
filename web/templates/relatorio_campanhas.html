@@ -129,10 +129,19 @@
   @media (max-width: 768px){
     .table-responsive{border-radius: .75rem}
   }
+
+
+  /* Painel interno do vendedor (evita "explodir" layout no modal) */
+  .collapse-panel{
+    max-height: 360px;
+    overflow: auto;
+    border-radius: 14px;
+  }
 </style>
 {% endblock %}
 
 {% block content %}
+{% set emp_filtro = request.args.get('emp','') %}
 <div class="container py-4">
 
   <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
@@ -173,6 +182,12 @@
           <input class="form-control" type="number" name="ano" min="2000" max="2100" value="{{ ano }}" required>
         </div>
 
+        <div class="col-6 col-md-2">
+          <label class="form-label">EMP</label>
+          <input class="form-control" name="emp" placeholder="ex: 501" value="{{ emp_filtro }}">
+        </div>
+
+
         <div class="col-12 col-md-1 d-grid">
           <button class="btn btn-primary" type="submit">OK</button>
         </div>
@@ -184,7 +199,11 @@
     </div>
   </div>
 
-  {% if not emps_data or (emps_data|length) == 0 %}
+  {% if not emp_filtro %}
+    <div class="alert alert-info shadow-sm">
+      Selecione uma <strong>EMP</strong> e clique em <strong>OK</strong> para visualizar o relatório.
+    </div>
+  {% elif not emps_data or (emps_data|length) == 0 %}
     <div class="alert alert-warning shadow-sm">
       Nenhum dado encontrado para o período selecionado.
     </div>
@@ -282,114 +301,111 @@
                         </tr>
 
                         <tr class="collapse" id="d{{ mid }}_{{ vid }}">
-  <td colspan="4">
-    {% if not v.campanhas or (v.campanhas|length) == 0 %}
-      <div class="text-muted">Sem campanhas para este vendedor no período.</div>
-    {% else %}
+                          <td colspan="4" class="p-2">
+                            {% if not v.campanhas or (v.campanhas|length) == 0 %}
+                              <div class="text-muted">Sem campanhas para este vendedor no período.</div>
+                            {% else %}
 
-      {# Totais por status (pago/pendente/cancelado) #}
-      {% set ns = namespace(total=0.0, pago=0.0, pend=0.0, canc=0.0, ct=0, ct_pago=0, ct_pend=0, ct_canc=0) %}
-      {% for c in v.campanhas %}
-        {% set ns.ct = ns.ct + 1 %}
-        {% set _val = (c.valor_recompensa or 0.0) %}
-        {% set ns.total = ns.total + _val %}
-        {% set st = (c.status_pagamento or 'PENDENTE')|upper %}
-        {% if st == 'PAGO' %}
-          {% set ns.pago = ns.pago + _val %}
-          {% set ns.ct_pago = ns.ct_pago + 1 %}
-        {% elif st == 'CANCELADO' %}
-          {% set ns.canc = ns.canc + _val %}
-          {% set ns.ct_canc = ns.ct_canc + 1 %}
-        {% else %}
-          {% set ns.pend = ns.pend + _val %}
-          {% set ns.ct_pend = ns.ct_pend + 1 %}
-        {% endif %}
-      {% endfor %}
+                              {# Totais por status (pago/pendente/cancelado) #}
+                              {% set ns = namespace(total=0.0, pago=0.0, pend=0.0, canc=0.0, ct=0, ct_pago=0, ct_pend=0, ct_canc=0) %}
+                              {% for c in v.campanhas %}
+                                {% set ns.ct = ns.ct + 1 %}
+                                {% set _val = (c.valor_recompensa or 0.0) %}
+                                {% set ns.total = ns.total + _val %}
+                                {% set st = (c.status_pagamento or 'PENDENTE')|upper %}
+                                {% if st == 'PAGO' %}
+                                  {% set ns.pago = ns.pago + _val %}
+                                  {% set ns.ct_pago = ns.ct_pago + 1 %}
+                                {% elif st == 'CANCELADO' %}
+                                  {% set ns.canc = ns.canc + _val %}
+                                  {% set ns.ct_canc = ns.ct_canc + 1 %}
+                                {% else %}
+                                  {% set ns.pend = ns.pend + _val %}
+                                  {% set ns.ct_pend = ns.ct_pend + 1 %}
+                                {% endif %}
+                              {% endfor %}
 
-      <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
-        <div class="d-flex flex-wrap gap-2">
-          <span class="glass-chip mono">Total: <strong>{{ ns.total|brl }}</strong></span>
-          <span class="glass-chip mono">PAGO <strong>{{ ns.ct_pago }}</strong> • {{ ns.pago|brl }}</span>
-          <span class="glass-chip mono">PEND <strong>{{ ns.ct_pend }}</strong> • {{ ns.pend|brl }}</span>
-          {% if ns.ct_canc > 0 %}
-            <span class="glass-chip mono">CANC <strong>{{ ns.ct_canc }}</strong> • {{ ns.canc|brl }}</span>
-          {% endif %}
-        </div>
+                              <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+                                <div class="d-flex flex-wrap gap-2">
+                                  <span class="glass-chip mono">Total: <strong>{{ ns.total|brl }}</strong></span>
+                                  <span class="glass-chip mono">PAGO <strong>{{ ns.ct_pago }}</strong> • {{ ns.pago|brl }}</span>
+                                  <span class="glass-chip mono">PEND <strong>{{ ns.ct_pend }}</strong> • {{ ns.pend|brl }}</span>
+                                  {% if ns.ct_canc > 0 %}
+                                    <span class="glass-chip mono">CANC <strong>{{ ns.ct_canc }}</strong> • {{ ns.canc|brl }}</span>
+                                  {% endif %}
+                                </div>
 
-        <div style="min-width:260px">
-          <input
-            type="search"
-            class="form-control form-control-sm glass-input"
-            placeholder="Buscar na tabela (campanha, marca, base...)"
-            data-filter-input="t{{ mid }}_{{ vid }}"
-            aria-label="Buscar campanhas"
-          >
-        </div>
-      </div>
-
-      <div class="table-responsive">
-        <table class="table table-sm table-bordered mb-0 table-sticky" id="t{{ mid }}_{{ vid }}">
-          <thead class="table-light">
-            <tr>
-              <th>Campanha</th>
-              <th>Base</th>
-              <th>Marca</th>
-              <th class="text-end">R$/un</th>
-              <th class="text-end">Mín</th>
-              <th class="text-end">Qtd</th>
-              <th class="text-end">Valor</th>
-              <th>Status</th>
-              <th>Período</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for c in v.campanhas %}
-              {% set st = (c.status_pagamento or 'PENDENTE')|upper %}
-              {% set st_class = 'pendente' %}
-              {% if st == 'PAGO' %}{% set st_class = 'pago' %}{% endif %}
-              {% if st == 'CANCELADO' %}{% set st_class = 'cancelado' %}{% endif %}
-
-              <tr data-filter-row>
-                <td class="text-truncate" style="max-width:260px">
-                  {{ c.titulo or ('Campanha #' ~ c.campanha_id) }}
-                </td>
-                <td class="mono small">{{ c.produto_prefixo }}</td>
-                <td>{{ c.marca }}</td>
-                <td class="text-end mono">{{ (c.recompensa_unit or 0)|brl }}</td>
-                <td class="text-end mono">
-                  {% if c.qtd_minima is not none %}{{ c.qtd_minima|int }}{% else %}-{% endif %}
-                </td>
-                <td class="text-end mono">{{ (c.qtd_vendida or 0)|int }}</td>
-                <td class="text-end mono">
-                  {% if c.valor_recompensa and c.valor_recompensa > 0 %}
-                    <strong>{{ (c.valor_recompensa or 0)|brl }}</strong>
-                  {% else %}
-                    -
-                  {% endif %}
-                </td>
-                <td>
-                  <span class="status-pill {{ st_class }}">{{ st }}</span>
-                </td>
-                <td class="mono small">
-                  {{ c.data_inicio.strftime("%d/%m/%Y") if c.data_inicio else "" }}
-                  {% if c.data_fim %}a {{ c.data_fim.strftime("%d/%m/%Y") }}{% endif %}
-                </td>
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-
-        <div class="small mt-2" data-filter-empty="t{{ mid }}_{{ vid }}" style="display:none; opacity:.8">
-          Nenhuma campanha encontrada com esse filtro.
-        </div>
-      </div>
-
-    {% endif %}
-  </td>
-</tr>
-                                  </tbody>
-                                </table>
+                                <div style="min-width:260px">
+                                  <input
+                                    type="search"
+                                    class="form-control form-control-sm glass-input"
+                                    placeholder="Buscar na tabela (campanha, marca, base...)"
+                                    data-filter-input="t{{ mid }}_{{ vid }}"
+                                    aria-label="Buscar campanhas"
+                                  >
+                                </div>
                               </div>
+
+                              <div class="collapse-panel">
+                                <div class="table-responsive">
+                                  <table class="table table-sm table-bordered mb-0 table-sticky" id="t{{ mid }}_{{ vid }}">
+                                    <thead class="table-light">
+                                      <tr>
+                                        <th>Campanha</th>
+                                        <th>Base</th>
+                                        <th>Marca</th>
+                                        <th class="text-end">R$/un</th>
+                                        <th class="text-end">Mín</th>
+                                        <th class="text-end">Qtd</th>
+                                        <th class="text-end">Valor</th>
+                                        <th>Status</th>
+                                        <th>Período</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {% for c in v.campanhas %}
+                                        {% set st = (c.status_pagamento or 'PENDENTE')|upper %}
+                                        {% set st_class = 'pendente' %}
+                                        {% if st == 'PAGO' %}{% set st_class = 'pago' %}{% endif %}
+                                        {% if st == 'CANCELADO' %}{% set st_class = 'cancelado' %}{% endif %}
+
+                                        <tr data-filter-row>
+                                          <td class="text-truncate" style="max-width:260px">
+                                            {{ c.titulo or ('Campanha #' ~ c.campanha_id) }}
+                                          </td>
+                                          <td class="mono small">{{ c.produto_prefixo }}</td>
+                                          <td>{{ c.marca }}</td>
+                                          <td class="text-end mono">{{ (c.recompensa_unit or 0)|brl }}</td>
+                                          <td class="text-end mono">
+                                            {% if c.qtd_minima is not none %}{{ c.qtd_minima|int }}{% else %}-{% endif %}
+                                          </td>
+                                          <td class="text-end mono">{{ (c.qtd_vendida or 0)|int }}</td>
+                                          <td class="text-end mono">
+                                            {% if c.valor_recompensa and c.valor_recompensa > 0 %}
+                                              <strong>{{ (c.valor_recompensa or 0)|brl }}</strong>
+                                            {% else %}
+                                              -
+                                            {% endif %}
+                                          </td>
+                                          <td>
+                                            <span class="status-pill {{ st_class }}">{{ st }}</span>
+                                          </td>
+                                          <td class="mono small">
+                                            {{ c.data_inicio.strftime("%d/%m/%Y") if c.data_inicio else "" }}
+                                            {% if c.data_fim %}a {{ c.data_fim.strftime("%d/%m/%Y") }}{% endif %}
+                                          </td>
+                                        </tr>
+                                      {% endfor %}
+                                    </tbody>
+                                  </table>
+
+                                  <div class="small mt-2" data-filter-empty="t{{ mid }}_{{ vid }}" style="display:none; opacity:.8">
+                                    Nenhuma campanha encontrada com esse filtro.
+                                  </div>
+                                </div>
+                              </div>
+
+                            {% endif %}
                           </td>
                         </tr>
 
