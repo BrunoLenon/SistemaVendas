@@ -2477,9 +2477,6 @@ def campanhas_qtd():
             vendedores_alvo = [vendedor_sel]
 
         for emp in emps_scope or ([emp_param] if emp_param else []):
-
-            emp_int = int(emp) if str(emp).isdigit() else emp
-
             emp = str(emp)
 
             # campanhas relevantes (overlap do mês)
@@ -2520,7 +2517,7 @@ def campanhas_qtd():
                 resultados = (
                     db.query(CampanhaQtdResultado)
                     .filter(
-                        CampanhaQtdResultado.emp_int == emp_int,
+                        CampanhaQtdResultado.emp == emp,
                         CampanhaQtdResultado.vendedor == vend,
                         CampanhaQtdResultado.competencia_ano == int(ano),
                         CampanhaQtdResultado.competencia_mes == int(mes),
@@ -2895,8 +2892,6 @@ def relatorio_campanhas():
 
     # Vendedores por EMP (limitado por role)
     for emp in emps_scope:
-        emp_int = int(emp) if str(emp).isdigit() else emp
-
         emp = str(emp)
         if role == "admin":
             # admin: todos os vendedores que venderam no período na EMP
@@ -4145,14 +4140,15 @@ def admin_itens_parados():
 
 @app.route('/admin/resumos_periodo', methods=['GET', 'POST'])
 
-@app.get("/admin/fechamento")
-def admin_fechamento_redirect():
-    """Compatibilidade: redireciona para o fechamento dentro de /admin/resumos_periodo."""
-    qs = request.query_string.decode("utf-8") if request.query_string else ""
-    url = "/admin/resumos_periodo"
-    if qs:
-        url += "?" + qs
-    return redirect(url + "#fechamento")
+if "admin_fechamento_redirect" not in globals():
+    @app.get("/admin/fechamento", endpoint="admin_fechamento_redirect")
+    def admin_fechamento_redirect():
+        """Compatibilidade: redireciona para /admin/resumos_periodo#fechamento."""
+        qs = request.query_string.decode("utf-8") if request.query_string else ""
+        url = "/admin/resumos_periodo"
+        if qs:
+            url += "?" + qs
+        return redirect(url + "#fechamento")
 
 def admin_resumos_periodo():
     red = _admin_required()
