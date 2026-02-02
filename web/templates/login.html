@@ -2,103 +2,32 @@
 
 {% block title %}Login - Sistema de Vendas{% endblock %}
 
-{% block extra_head %}
-<style>
-  /* Fundo moderno (sem quebrar o layout do base_auth) */
-  body{
-    background: radial-gradient(1200px 600px at 20% 10%, rgba(13,110,253,.18), transparent 55%),
-                radial-gradient(900px 500px at 90% 30%, rgba(25,135,84,.16), transparent 50%),
-                radial-gradient(900px 500px at 40% 100%, rgba(111,66,193,.14), transparent 55%),
-                #0b1220 !important;
-  }
-  .auth-shell{
-    position: relative;
-    border-radius: 18px;
-    border: 1px solid rgba(255,255,255,.12);
-    background: rgba(255,255,255,.06);
-    box-shadow: 0 18px 60px rgba(0,0,0,.35);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-    overflow: hidden;
-  }
-  .auth-shell::before{
-    content:"";
-    position:absolute;
-    inset:-2px;
-    background: linear-gradient(120deg, rgba(13,110,253,.35), rgba(25,135,84,.25), rgba(111,66,193,.25));
-    opacity:.35;
-    filter: blur(22px);
-    pointer-events:none;
-  }
-  .auth-card{
-    position: relative;
-    padding: 18px 18px 16px 18px;
-  }
-  .auth-title{
-    color: rgba(255,255,255,.92);
-  }
-  .auth-sub{
-    color: rgba(255,255,255,.65);
-  }
-  .form-label{ color: rgba(255,255,255,.80); }
-  .form-text{ color: rgba(255,255,255,.55) !important; }
-  .form-control{
-    background: rgba(255,255,255,.08);
-    border: 1px solid rgba(255,255,255,.14);
-    color: rgba(255,255,255,.92);
-  }
-  .form-control:focus{
-    background: rgba(255,255,255,.10);
-    border-color: rgba(13,110,253,.55);
-    box-shadow: 0 0 0 .2rem rgba(13,110,253,.18);
-    color: rgba(255,255,255,.95);
-  }
-  .btn-primary{
-    box-shadow: 0 10px 22px rgba(13,110,253,.28);
-  }
-  /* Ajusta cabeçalho do base_auth para combinar com o fundo */
-  .container > .text-center h4,
-  .container > .text-center .text-muted{
-    color: rgba(255,255,255,.85) !important;
-  }
-  .container > .text-center .text-muted{ opacity:.85; }
-</style>
-{% endblock %}
-
 {% block content %}
-  <div class="auth-shell">
-    <div class="auth-card">
-      <div class="d-flex align-items-center justify-content-between mb-3">
-        <div>
-          <div class="auth-sub small">🔐 Acesso</div>
-          <div class="auth-title fw-semibold" style="font-size:1.1rem;">Entre para visualizar seus relatórios</div>
-        </div>
+<div class="container d-flex align-items-center justify-content-center min-vh-100">
+  <div class="card shadow-sm p-4" style="max-width:420px; width:100%;">
+    <h5 class="text-center mb-3">🔐 Acesso</h5>
+
+    {% if error %}
+      <div class="alert alert-danger">{{ error }}</div>
+    {% endif %}
+
+    <form method="post">
+      <div class="mb-3">
+        <label class="form-label">Usuário</label>
+        <input type="text" name="usuario" class="form-control" required>
       </div>
 
-      {% if erro %}
-        <div class="alert alert-danger py-2 mb-3">{{ erro }}</div>
-      {% endif %}
-
-      <form method="post" autocomplete="on">
-        <div class="mb-3">
-          <label class="form-label">Usuário</label>
-          <input type="text" name="vendedor" class="form-control" placeholder="Ex.: RAFAEL" required autofocus>
-          <div class="form-text">Vendedor ou administrador (ex.: ADMIN).</div>
-        </div>
-
-        <div class="mb-3">
-          <label class="form-label">Senha</label>
-          <input type="password" name="senha" class="form-control" required>
-        </div>
-
-        <button class="btn btn-primary w-100">Entrar</button>
-      </form>
-
-      <div class="mt-3 pt-3" style="border-top:1px solid rgba(255,255,255,.10);">
-        <div class="auth-sub small">
-          Se não souber sua senha, fale com o administrador.
-        </div>
+      <div class="mb-3">
+        <label class="form-label">Senha</label>
+        <input type="password" name="senha" class="form-control" required>
       </div>
+
+      <button class="btn btn-primary w-100">Entrar</button>
+    </form>
+
+    <div class="text-center mt-3 small text-muted">
+      Se não souber sua senha, fale com o administrador.
     </div>
   </div>
+</div>
 {% endblock %}
