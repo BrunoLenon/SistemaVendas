@@ -1,0 +1,111 @@
+/* PowerBI-style global theme (dark + glass)
+   Safe to include system-wide: only affects visuals (no layout-critical JS). */
+
+:root{
+  --sv-bg: #0b1220;
+  --sv-surface: rgba(255,255,255,.06);
+  --sv-surface-2: rgba(255,255,255,.08);
+  --sv-stroke: rgba(255,255,255,.12);
+  --sv-text: rgba(255,255,255,.92);
+  --sv-muted: rgba(255,255,255,.65);
+  --sv-primary: #0d6efd;
+  --sv-success: #198754;
+  --sv-warning: #ffc107;
+  --sv-danger: #dc3545;
+  --sv-radius: 18px;
+}
+
+/* Apply dark by default if theme is not explicitly set */
+html:not([data-theme]){ background: var(--sv-bg); }
+
+html[data-theme="dark"] body,
+html:not([data-theme]) body{
+  background:
+    radial-gradient(1200px 600px at 20% 10%, rgba(13,110,253,.18), transparent 55%),
+    radial-gradient(900px 500px at 90% 30%, rgba(25,135,84,.16), transparent 50%),
+    radial-gradient(900px 500px at 40% 100%, rgba(111,66,193,.14), transparent 55%),
+    var(--sv-bg);
+  color: var(--sv-text);
+}
+
+html[data-theme="dark"] .text-muted{ color: var(--sv-muted) !important; }
+html[data-theme="dark"] .bg-light{ background: transparent !important; }
+
+.sv-app, .sv-auth{
+  min-height: 100vh;
+}
+
+.glass,
+html[data-theme="dark"] .card{
+  border-radius: var(--sv-radius);
+  border: 1px solid var(--sv-stroke);
+  background: var(--sv-surface);
+  box-shadow: 0 18px 60px rgba(0,0,0,.35);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+html[data-theme="dark"] .card .card-header{
+  background: transparent;
+  border-bottom: 1px solid var(--sv-stroke);
+}
+
+html[data-theme="dark"] .navbar.app-topbar{
+  border-bottom: 1px solid rgba(255,255,255,.10);
+  background: rgba(6, 12, 26, .55);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+html[data-theme="dark"] .app-sidebar{
+  background: rgba(6, 12, 26, .35);
+  border-right: 1px solid rgba(255,255,255,.08);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+html[data-theme="dark"] .form-control,
+html[data-theme="dark"] .form-select{
+  background: rgba(255,255,255,.08);
+  border: 1px solid rgba(255,255,255,.14);
+  color: var(--sv-text);
+}
+html[data-theme="dark"] .form-control:focus,
+html[data-theme="dark"] .form-select:focus{
+  background: rgba(255,255,255,.10);
+  border-color: rgba(13,110,253,.55);
+  box-shadow: 0 0 0 .2rem rgba(13,110,253,.18);
+  color: var(--sv-text);
+}
+
+html[data-theme="dark"] .table{
+  color: var(--sv-text);
+}
+html[data-theme="dark"] .table>:not(caption)>*>*{
+  background: rgba(255,255,255,.03);
+  border-bottom-color: rgba(255,255,255,.08);
+}
+html[data-theme="dark"] .table thead th{
+  color: rgba(255,255,255,.85);
+  background: rgba(255,255,255,.04);
+  border-bottom: 1px solid rgba(255,255,255,.10);
+}
+
+html[data-theme="dark"] .btn-outline-secondary{
+  color: rgba(255,255,255,.80);
+  border-color: rgba(255,255,255,.22);
+}
+html[data-theme="dark"] .btn-outline-secondary:hover{
+  background: rgba(255,255,255,.10);
+}
+
+html[data-theme="dark"] .alert{
+  border: 1px solid rgba(255,255,255,.12);
+  background: rgba(255,255,255,.06);
+  color: var(--sv-text);
+}
+
+/* Auth wrapper */
+html[data-theme="dark"] .sv-auth-wrap{
+  border-radius: var(--sv-radius);
+}
