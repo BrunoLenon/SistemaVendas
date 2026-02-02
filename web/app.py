@@ -55,26 +55,6 @@ from db import (
 from importar_excel import importar_planilha
 
 # Flask app (Render/Gunicorn expects `app` at module level: web/app.py -> app:app)
-def _parse_list_arg(req, key: str):
-    """Lê parâmetros repetidos ?key=a&key=b e também valores separados por vírgula."""
-    try:
-        vals = req.args.getlist(key)
-    except Exception:
-        v = req.args.get(key)
-        vals = [v] if v else []
-    out = []
-    for v in vals:
-        if v is None:
-            continue
-        s = str(v).strip()
-        if not s:
-            continue
-        if "," in s:
-            out.extend([p.strip() for p in s.split(",") if p.strip()])
-        else:
-            out.append(s)
-    return out
-
 app = Flask(__name__, template_folder="templates")
 app.secret_key = os.getenv("SECRET_KEY", "dev")
 # Sessão expira após 1h sem atividade
@@ -2497,9 +2477,6 @@ def campanhas_qtd():
             vendedores_alvo = [vendedor_sel]
 
         for emp in emps_scope or ([emp_param] if emp_param else []):
-
-            emp_int = int(emp) if str(emp).isdigit() else emp
-
             emp = str(emp)
 
             # campanhas relevantes (overlap do mês)
@@ -2540,7 +2517,7 @@ def campanhas_qtd():
                 resultados = (
                     db.query(CampanhaQtdResultado)
                     .filter(
-                        CampanhaQtdResultado.emp == emp_int,
+                        CampanhaQtdResultado.emp == emp,
                         CampanhaQtdResultado.vendedor == vend,
                         CampanhaQtdResultado.competencia_ano == int(ano),
                         CampanhaQtdResultado.competencia_mes == int(mes),
@@ -2888,9 +2865,6 @@ def relatorio_campanhas():
     ano = int(request.args.get("ano") or hoje.year)
 
     emp_param = (request.args.get("emp") or "").strip()
-    emp_params = _parse_list_arg(request, "emp")
-    if emp_params and not emp_param:
-        emp_param = emp_params[0].strip()
 
     vendedor_logado = (_usuario_logado() or "").strip().upper()
     vendedor_param = (request.args.get("vendedor") or "").strip().upper()
@@ -2918,8 +2892,6 @@ def relatorio_campanhas():
 
     # Vendedores por EMP (limitado por role)
     for emp in emps_scope:
-        emp_int = int(emp) if str(emp).isdigit() else emp
-
         emp = str(emp)
         if role == "admin":
             # admin: todos os vendedores que venderam no período na EMP
@@ -2952,7 +2924,7 @@ def relatorio_campanhas():
             resultados = (
                 db.query(CampanhaQtdResultado)
                 .filter(
-                    CampanhaQtdResultado.emp == emp_int,
+                    CampanhaQtdResultado.emp == emp,
                     CampanhaQtdResultado.competencia_ano == int(ano),
                     CampanhaQtdResultado.competencia_mes == int(mes),
                     CampanhaQtdResultado.vendedor.in_([v.strip().upper() for v in vendedores]),
@@ -4167,16 +4139,6 @@ def admin_itens_parados():
     )
 
 @app.route('/admin/resumos_periodo', methods=['GET', 'POST'])
-
-@app.get("/admin/fechamento", endpoint="admin_fechamento_compat")
-def admin_fechamento_compat():
-    """Atalho compatível: redireciona para o card de fechamento dentro de /admin/resumos_periodo."""
-    qs = request.query_string.decode("utf-8") if request.query_string else ""
-    url = "/admin/resumos_periodo"
-    if qs:
-        url += "?" + qs
-    return redirect(url + "#fechamento")
-
 def admin_resumos_periodo():
     red = _admin_required()
     if red:
@@ -4594,6 +4556,13 @@ def admin_resumos_periodo():
 
 # Compatibilidade: algumas telas/atalhos antigos apontavam para /admin/fechamento.
 # O fechamento mensal hoje é feito dentro da tela de resumos por período.
+@app.get('/admin/fechamento')
+def admin_fechamento_redirect():
+    red = _admin_required()
+    if red:
+        return red
+    return redirect(url_for('admin_resumos_periodo'))
+
 
 @app.route("/admin/campanhas", methods=["GET", "POST"])
 def admin_campanhas_qtd():

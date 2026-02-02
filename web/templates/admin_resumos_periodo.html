@@ -43,7 +43,7 @@
         </div>
         <div class="col-12 col-md-3 d-flex gap-2">
           <button class="btn btn-primary" type="submit">Filtrar</button>
-          <a class="btn btn-outline-primary" href="#fechamento">Fechamento mensal</a>
+          <a class="btn btn-outline-primary" href="/admin/fechamento">Fechamento mensal</a>
         </div>
       </form>
       <div class="small text-muted mt-2">
@@ -51,51 +51,6 @@
       </div>
     </div>
   </div>
-
-
-<div class="card shadow-sm" id="fechamento">
-  <div class="card-body">
-    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
-      <div>
-        <h6 class="mb-1">🔒 Fechamento do mês</h6>
-        <div class="text-muted small">
-          Competência atual do filtro: <b>{{ '%02d'|format(mes) }}/{{ ano }}</b>
-          {% if emp %} • EMP <b>{{ emp }}</b>{% else %} • (EMP em branco = geral){% endif %}
-        </div>
-        <div class="mt-2">
-          {% if fechado %}
-            <span class="badge bg-danger">MÊS FECHADO</span>
-            <span class="text-muted small ms-2">Edição manual travada até reabrir.</span>
-          {% else %}
-            <span class="badge bg-success">MÊS ABERTO</span>
-            <span class="text-muted small ms-2">Você pode fechar para travar edições.</span>
-          {% endif %}
-        </div>
-      </div>
-
-      <div class="d-flex gap-2">
-        <form method="post" class="m-0">
-          <input type="hidden" name="acao" value="fechar">
-          <input type="hidden" name="emp" value="{{ emp }}">
-          <input type="hidden" name="ano" value="{{ ano }}">
-          <input type="hidden" name="mes" value="{{ mes }}">
-          <button class="btn btn-outline-danger" {% if fechado %}disabled{% endif %}>Fechar mês</button>
-        </form>
-
-        <form method="post" class="m-0">
-          <input type="hidden" name="acao" value="reabrir">
-          <input type="hidden" name="emp" value="{{ emp }}">
-          <input type="hidden" name="ano" value="{{ ano }}">
-          <input type="hidden" name="mes" value="{{ mes }}">
-          <button class="btn btn-outline-secondary" {% if not fechado %}disabled{% endif %}>Reabrir mês</button>
-        </form>
-      </div>
-    </div>
-    <div class="form-text mt-2">
-      Dica: para fechar o mês anterior, altere o <b>Mês/Ano</b> no filtro acima para o período desejado e clique em <b>Filtrar</b>, depois feche aqui.
-    </div>
-  </div>
-</div>
 
   <div class="card shadow-sm">
     <div class="card-body">

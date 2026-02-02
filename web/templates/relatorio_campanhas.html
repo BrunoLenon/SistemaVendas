@@ -161,62 +161,41 @@
   <div class="card shadow-sm mb-3">
     <div class="card-body">
       <div class="fw-semibold mb-2">Filtros</div>
-      <form method="get" action="/relatorios/campanhas" class="row g-3 align-items-end">
-  <div class="col-12">
-    <div class="d-flex flex-wrap gap-3 align-items-end">
-      <div style="min-width:140px;">
-        <label class="form-label">Mês</label>
-        <input class="form-control" type="number" name="mes" value="{{ mes }}" min="1" max="12">
-      </div>
-      <div style="min-width:160px;">
-        <label class="form-label">Ano</label>
-        <input class="form-control" type="number" name="ano" value="{{ ano }}" min="2020" max="2100">
-      </div>
-
-      {% if role and role|lower == 'admin' %}
-      <div class="flex-grow-1" style="min-width:280px;">
-        <label class="form-label">EMP(s) (selecione uma ou mais)</label>
-        <div class="glass p-2 rounded" style="border:1px solid var(--stroke); max-height:140px; overflow:auto;">
-          <div class="d-flex flex-wrap gap-2">
-            {% for e in emps_options %}
-              {% set ee = (e|string) %}
-              <label class="form-check form-check-inline m-0">
-                <input class="form-check-input" type="checkbox" name="emp" value="{{ ee }}" {% if ee in emp_params %}checked{% endif %}>
-                <span class="form-check-label">{{ ee }}</span>
-              </label>
-            {% endfor %}
+      <form method="get" action="/relatorios/campanhas" class="row g-2 align-items-end">
+        {% if role and role|lower == 'admin' %}
+          <div class="col-md-3">
+            <label class="form-label">EMP (opcional)</label>
+            <input class="form-control" type="text" name="emp" value="{{ emp_param or '' }}" placeholder="ex: 101">
           </div>
-        </div>
-        <div class="form-text">Dica: marque múltiplas EMPs para comparar.</div>
-      </div>
-
-      <div class="flex-grow-1" style="min-width:320px;">
-        <label class="form-label">Vendedor(es) (opcional)</label>
-        <div class="glass p-2 rounded" style="border:1px solid var(--stroke); max-height:140px; overflow:auto;">
-          <div class="d-flex flex-wrap gap-2">
-            {% for v in vendedores_options %}
-              {% set vv = (v|string) %}
-              <label class="form-check form-check-inline m-0">
-                <input class="form-check-input" type="checkbox" name="vendedor" value="{{ vv }}" {% if vv in vendedor_params %}checked{% endif %}>
-                <span class="form-check-label">{{ vv }}</span>
-              </label>
-            {% endfor %}
+          <div class="col-md-4">
+            <label class="form-label">Vendedor (opcional)</label>
+            <input class="form-control" type="text" name="vendedor" value="{{ request.args.get('vendedor','') }}" placeholder="filtrar um vendedor">
           </div>
+        {% endif %}
+
+        <div class="col-6 col-md-2">
+          <label class="form-label">Mês</label>
+          <input class="form-control" type="number" name="mes" min="1" max="12" value="{{ mes }}" required>
         </div>
-        <div class="form-text">Se vazio, mostra todos os vendedores do período nas EMPs selecionadas.</div>
-      </div>
-      {% endif %}
+        <div class="col-6 col-md-2">
+          <label class="form-label">Ano</label>
+          <input class="form-control" type="number" name="ano" min="2000" max="2100" value="{{ ano }}" required>
+        </div>
 
-      {% if role and role|lower != 'admin' %}
-      <!-- Para supervisor/vendedor, mantém o escopo automático; apenas período -->
-      {% endif %}
+        <div class="col-6 col-md-2">
+          <label class="form-label">EMP</label>
+          <input class="form-control" name="emp" placeholder="ex: 501" value="{{ emp_filtro }}">
+        </div>
 
-      <div class="ms-auto">
-        <button class="btn btn-primary px-4">Atualizar</button>
-      </div>
-    </div>
-  </div>
-</form>
+
+        <div class="col-12 col-md-1 d-grid">
+          <button class="btn btn-primary" type="submit">OK</button>
+        </div>
+
+        <div class="col-12 col-md text-md-end">
+          <span class="subtitle small">O relatório é recalculado automaticamente ao abrir.</span>
+        </div>
+      </form>
     </div>
   </div>
 
