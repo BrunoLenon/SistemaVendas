@@ -1,6 +1,9 @@
 {% extends "base.html" %}
 
-{% block title %}Relatório de Campanhas — {{ mes }}/{{ ano }}<script>
+{% block title %}Relatório de Campanhas — {{ "%02d"|format(mes) }}/{{ ano }}{% endblock %}
+
+{% block extra_scripts %}
+<script>
 (function(){
   function norm(s){
     return (s||"")
@@ -142,7 +145,7 @@
 
 {% block content %}
 {% set emp_filtro = request.args.get('emp','') %}
-<div class="container py-4">
+<div class="container py-4 app-bg-grid">
 
   <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
     <div>
@@ -158,7 +161,7 @@
     </div>
   </div>
 
-  <div class="card shadow-sm mb-3">
+  <div class="card bi-card glass mb-3">
     <div class="card-body">
       <div class="fw-semibold mb-2">Filtros</div>
       <form method="get" action="/relatorios/campanhas" class="row g-2 align-items-end">
@@ -216,7 +219,7 @@
         {% set topv = e.vendedores[:3] %}
 
         <div class="col-12 col-md-6 col-lg-4">
-          <button type="button" class="card shadow-sm w-100 text-start border-0" style="border-radius:1rem"
+          <button type="button" class="card bi-card glass w-100 text-start border-0" style="border-radius:1rem"
                   data-bs-toggle="modal" data-bs-target="#{{ mid }}">
             <div class="card-body">
               <div class="d-flex justify-content-between align-items-start gap-2">
