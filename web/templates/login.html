@@ -3,8 +3,37 @@
 {% block title %}Login - Sistema de Vendas{% endblock %}
 
 {% block content %}
-<div class="container d-flex justify-content-center align-items-center" style="min-height:100vh;">
-    <div class="card shadow-sm" style="width:100%; max-width:380px;">
+<style>
+  .auth-bg{
+    min-height:100vh;
+    background: radial-gradient(1200px 600px at 15% 10%, rgba(79,140,255,.25), transparent 60%),
+                radial-gradient(900px 500px at 85% 20%, rgba(141,84,255,.22), transparent 55%),
+                radial-gradient(900px 600px at 50% 90%, rgba(0,200,255,.12), transparent 60%),
+                linear-gradient(180deg, rgba(15,18,28,1) 0%, rgba(10,12,18,1) 100%);
+  }
+  .glass-card{
+    background: rgba(255,255,255,.08);
+    border: 1px solid rgba(255,255,255,.14);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border-radius: 18px;
+    box-shadow: 0 10px 30px rgba(0,0,0,.35);
+  }
+  .glass-card .form-control{
+    background: rgba(255,255,255,.08);
+    border-color: rgba(255,255,255,.16);
+    color: #e9eefc;
+  }
+  .glass-card .form-control::placeholder{ color: rgba(233,238,252,.6); }
+  .glass-card .form-label, .glass-card .text-muted{ color: rgba(233,238,252,.85) !important; }
+  .auth-title{ color:#f3f6ff; }
+  .btn-primary{
+    box-shadow: 0 10px 18px rgba(13,110,253,.25);
+  }
+</style>
+
+<div class="auth-bg d-flex justify-content-center align-items-center p-3">
+    <div class="card glass-card" style="width:100%; max-width:380px;">
       <div class="card-body">
         {% if branding and branding.logo_url %}
           <div class="text-center mb-3">
