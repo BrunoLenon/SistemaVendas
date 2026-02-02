@@ -3,39 +3,32 @@
 {% block title %}Login - Sistema de Vendas{% endblock %}
 
 {% block content %}
-<div class="container d-flex justify-content-center align-items-center" style="min-height:100vh;">
-    <div class="card shadow-sm" style="width:100%; max-width:380px;">
-      <div class="card-body">
-        {% if branding and branding.logo_url %}
-          <div class="text-center mb-3">
-            <img src="{{ branding.logo_url }}{% if branding.version %}?v={{ branding.version }}{% endif %}" alt="Logo" style="max-height:70px; max-width:240px; object-fit:contain;">
-          </div>
-        {% endif %}
-        <h4 class="text-center mb-3">🔐 Acesso</h4>
+  <div class="card bi-card glass shadow-sm auth-card mx-auto" style="max-width:420px;">
+    <div class="card-body p-4">
+      <h4 class="text-center mb-3">🔐 Acesso</h4>
 
-        {% if erro %}
-          <div class="alert alert-danger py-2 mb-3">{{ erro }}</div>
-        {% endif %}
+      {% if erro %}
+        <div class="alert alert-danger py-2 mb-3">{{ erro }}</div>
+      {% endif %}
 
-        <form method="post">
-          <div class="mb-3">
-            <label class="form-label">Usuário</label>
-            <input type="text" name="vendedor" class="form-control" placeholder="Ex.: RAFAEL" required autofocus>
-            <div class="form-text">Vendedor ou administrador (ex.: ADMIN).</div>
-          </div>
-
-          <div class="mb-3">
-            <label class="form-label">Senha</label>
-            <input type="password" name="senha" class="form-control" required>
-          </div>
-
-          <button class="btn btn-primary w-100">Entrar</button>
-        </form>
-
-        <hr>
-        <div class="text-muted small">
-          Se não souber sua senha, fale com o administrador.
+      <form method="post">
+        <div class="mb-3">
+          <label class="form-label">Usuário</label>
+          <input type="text" name="vendedor" class="form-control" placeholder="Ex.: RAFAEL" required autofocus>
+          <div class="form-text">Vendedor ou administrador (ex.: ADMIN).</div>
         </div>
+
+        <div class="mb-3">
+          <label class="form-label">Senha</label>
+          <input type="password" name="senha" class="form-control" required>
+        </div>
+
+        <button class="btn btn-primary w-100">Entrar</button>
+      </form>
+
+      <hr>
+      <div class="text-muted small">
+        Se não souber sua senha, fale com o administrador.
       </div>
     </div>
   </div>

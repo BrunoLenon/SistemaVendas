@@ -1536,6 +1536,58 @@ def _periodo_prev(ano: int, mes: int) -> tuple[int, int]:
 def _signed_expr():
     return case((Venda.mov_tipo_movto.in_(["DS", "CA"]), -Venda.valor_total), else_=Venda.valor_total)
 
+def _emps_disponiveis_no_periodo(ano: int, mes: int) -> list[str]:
+    """Lista EMPs com vendas no período (usada para filtros e comparação no dashboard ADMIN)."""
+    start, end = _periodo_bounds(ano, mes)
+    with SessionLocal() as db:
+        rows = (
+            db.query(Venda.emp)
+            .filter(Venda.emp.isnot(None), Venda.emp != "", Venda.movimento >= start, Venda.movimento < end)
+            .distinct()
+            .order_by(Venda.emp)
+            .all()
+        )
+    return [str(r[0]).strip() for r in rows if r and r[0] is not None and str(r[0]).strip()]
+
+def _comparativo_emp_dashboard(ano: int, mes: int, emps: list[str], vendedor: str | None = None) -> dict:
+    """Comparação por EMP: vendas (líquido) e itens únicos (mix) no período.
+
+    - Vendas usa a mesma regra do dashboard (DS/CA negativo)
+    - Mix = distinct(mestre) apenas em movimentos não DS/CA
+    """
+    start, end = _periodo_bounds(ano, mes)
+    emps = [str(e).strip() for e in (emps or []) if e is not None and str(e).strip()]
+    if not emps:
+        return {"labels": [], "vendas": [], "itens_unicos": [], "scope": ""}
+
+    signed = _signed_expr()
+    mix_expr = func.count(func.distinct(case((~Venda.mov_tipo_movto.in_(["DS", "CA"]), Venda.mestre), else_=None)))
+
+    with SessionLocal() as db:
+        q = db.query(Venda).filter(
+            Venda.emp.in_(emps),
+            Venda.movimento >= start,
+            Venda.movimento < end,
+        )
+        if vendedor:
+            q = q.filter(func.upper(Venda.vendedor) == str(vendedor).strip().upper())
+
+        rows = (
+            q.with_entities(
+                Venda.emp,
+                func.coalesce(func.sum(signed), 0.0).label("liquido"),
+                func.coalesce(mix_expr, 0).label("mix"),
+            )
+            .group_by(Venda.emp)
+            .all()
+        )
+
+    by_emp = {str(r[0]).strip(): {"liquido": float(r[1] or 0.0), "mix": int(r[2] or 0)} for r in rows}
+    labels = [e for e in emps if e in by_emp]
+    vendas = [by_emp[e]["liquido"] for e in labels]
+    mix = [by_emp[e]["mix"] for e in labels]
+    return {"labels": labels, "vendas": vendas, "itens_unicos": mix}
+
 def _clientes_destaque(vendedor: str, ano: int, mes: int, emp_scope: str | None, topn: int = 5) -> dict:
     """Top clientes por crescimento/queda vs mês anterior (ΔR$ e Δ%)."""
     vendedor = (vendedor or "").strip().upper()
@@ -1792,6 +1844,36 @@ def dashboard():
             app.logger.exception("Erro ao calcular insights do dashboard")
             insights = None
 
+    # --- Comparação por EMP (ADMIN) ---
+    emps_disponiveis = []
+    emps_selecionadas = []
+    emp_compare = None
+    if (role or '').lower() == 'admin':
+        try:
+            emps_disponiveis = _emps_disponiveis_no_periodo(ano, mes)
+        except Exception:
+            app.logger.exception('Erro ao listar EMPs do período')
+            emps_disponiveis = []
+
+        # Multi-select (GET): ?emps=101&emps=102 ...
+        emps_selecionadas = [e.strip() for e in request.args.getlist('emps') if (e or '').strip()]
+
+        # Se nada foi selecionado, sugere as 3 primeiras EMPs do período (para evitar gráfico vazio)
+        if not emps_selecionadas and emps_disponiveis:
+            emps_selecionadas = emps_disponiveis[:3]
+
+        # Escopo opcional: comparar por EMP de um vendedor específico
+        cmp_scope = (request.args.get('cmp_scope') or '').strip().lower()
+        vendedor_scope = vendedor_alvo if (cmp_scope == 'vendedor' and vendedor_alvo) else None
+
+        if emps_selecionadas:
+            try:
+                emp_compare = _comparativo_emp_dashboard(ano, mes, emps_selecionadas, vendedor=vendedor_scope)
+                emp_compare['scope'] = 'vendedor' if vendedor_scope else 'geral'
+            except Exception:
+                app.logger.exception('Erro ao calcular comparativo por EMP')
+                emp_compare = None
+
     return render_template(
         "dashboard.html",
         insights=insights,
@@ -1805,6 +1887,9 @@ def dashboard():
         mes=mes,
         ano=ano,
         dados=dados,
+        emps_disponiveis=emps_disponiveis,
+        emps_selecionadas=emps_selecionadas,
+        emp_compare=emp_compare,
     )
 
 

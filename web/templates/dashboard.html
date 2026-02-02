@@ -14,6 +14,7 @@
 {% endblock %}
 
 {% block extra_scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script>
   // UX: evita cliques repetidos e mostra spinner ao atualizar filtros
   (function(){
@@ -29,6 +30,53 @@
     });
   })();
 </script>
+
+{% if role and role|lower == "admin" and emp_compare %}
+<script>
+  (function(){
+    const data = {{ emp_compare|tojson }};
+    if (!data || !data.labels || data.labels.length === 0) return;
+
+    const ctx1 = document.getElementById('empSalesChart');
+    const ctx2 = document.getElementById('empUniqueChart');
+    if (!ctx1 || !ctx2) return;
+
+    new Chart(ctx1, {
+      type: 'bar',
+      data: {
+        labels: data.labels,
+        datasets: [{
+          label: 'Vendas (líquido) - R$',
+          data: data.vendas,
+          borderWidth: 1
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { display: true } },
+        scales: { y: { beginAtZero: true } }
+      }
+    });
+
+    new Chart(ctx2, {
+      type: 'bar',
+      data: {
+        labels: data.labels,
+        datasets: [{
+          label: 'Itens únicos (mix) - por EMP',
+          data: data.itens_unicos,
+          borderWidth: 1
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { display: true } },
+        scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
+      }
+    });
+  })();
+</script>
+{% endif %}
 {% endblock %}
 
 {% block content %}
@@ -109,6 +157,28 @@
           </div>
         {% endif %}
 
+        {% if role and role|lower == "admin" %}
+          <div class="col-md-4">
+            <label class="form-label">Comparar EMPs</label>
+            <select class="form-select" name="emps" multiple size="3">
+              {% for e in emps_disponiveis %}
+                <option value="{{ e }}" {% if emps_selecionadas and (e in emps_selecionadas) %}selected{% endif %}>EMP {{ e }}</option>
+              {% endfor %}
+            </select>
+            <div class="form-text">Segure <kbd>Ctrl</kbd> para selecionar mais de uma EMP.</div>
+          </div>
+
+          <div class="col-md-2">
+            <label class="form-label">Escopo</label>
+            <select class="form-select" name="cmp_scope">
+              <option value="geral" {% if (request.args.get('cmp_scope') or 'geral') == 'geral' %}selected{% endif %}>Geral</option>
+              <option value="vendedor" {% if (request.args.get('cmp_scope') or '') == 'vendedor' %}selected{% endif %}{% if not vendedor_selecionado %} disabled{% endif %}>Do vendedor</option>
+            </select>
+          </div>
+        {% endif %}
+
+        
+
         <div class="col-6 col-md-2">
           <label class="form-label">Mês</label>
           <input class="form-control" type="number" name="mes" min="1" max="12" value="{{ mes }}" required>
@@ -131,6 +201,37 @@
       </form>
     </div>
   </div>
+
+  {% if role and role|lower == "admin" and emp_compare %}
+    <div class="row g-3 mb-3">
+      <div class="col-12 col-lg-6">
+        <div class="card bi-card glass h-100">
+          <div class="card-body">
+            <div class="d-flex align-items-center justify-content-between mb-2">
+              <div>
+                <div class="kpi-title">📊 Vendas por EMP</div>
+                <div class="kpi-sub">Período: {{ "%02d"|format(mes) }}/{{ ano }} • Escopo: {% if emp_compare.scope == 'vendedor' %}vendedor{% else %}geral{% endif %}</div>
+              </div>
+            </div>
+            <canvas id="empSalesChart" height="140"></canvas>
+          </div>
+        </div>
+      </div>
+      <div class="col-12 col-lg-6">
+        <div class="card bi-card glass h-100">
+          <div class="card-body">
+            <div class="d-flex align-items-center justify-content-between mb-2">
+              <div>
+                <div class="kpi-title">🧩 Itens únicos (mix) por EMP</div>
+                <div class="kpi-sub">Contagem de produtos únicos vendidos (exclui DS/CA)</div>
+              </div>
+            </div>
+            <canvas id="empUniqueChart" height="140"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+  {% endif %}
 
   {% if not dados %}
     <div class="alert alert-warning shadow-sm">
