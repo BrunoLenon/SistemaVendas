@@ -2,58 +2,19 @@
 
 {% block title %}Relatório de Campanhas — {{ "%02d"|format(mes) }}/{{ ano }}{% endblock %}
 
-{% block extra_scripts %}
-<script>
-(function(){
-  function norm(s){
-    return (s||"")
-      .toString()
-      .normalize("NFD").replace(/\p{Diacritic}/gu,"")
-      .toLowerCase();
-  }
-
-  function applyFilter(tableId, query){
-    const table = document.getElementById(tableId);
-    if(!table) return;
-    const rows = table.querySelectorAll("tbody tr[data-filter-row]");
-    const q = norm(query);
-    let visible = 0;
-
-    rows.forEach(r=>{
-      const hay = norm(r.innerText);
-      const show = !q || hay.includes(q);
-      r.style.display = show ? "" : "none";
-      if(show) visible++;
-    });
-
-    const empty = document.querySelector(`[data-filter-empty="${tableId}"]`);
-    if(empty){
-      empty.style.display = (visible===0) ? "" : "none";
-    }
-  }
-
-  document.addEventListener("input", function(e){
-    const inp = e.target.closest("[data-filter-input]");
-    if(!inp) return;
-    const tableId = inp.getAttribute("data-filter-input");
-    applyFilter(tableId, inp.value);
-  });
-
-  // When a vendor section is expanded, keep filter applied (if any)
-  document.addEventListener("shown.bs.collapse", function(e){
-    const collapse = e.target;
-    const inp = collapse.querySelector("[data-filter-input]");
-    if(!inp) return;
-    applyFilter(inp.getAttribute("data-filter-input"), inp.value);
-  });
-})();
-</script>
-
-{% endblock %}
-
 {% block extra_head %}
 <style>
-  .page-title{font-weight:700; letter-spacing:-.3px}
+  
+  .page-shell{max-width:1200px}
+  .glass{border-radius:18px}
+  .page-title{font-weight:800; letter-spacing:-.5px}
+  .subtitle{opacity:.85}
+  .kpi-card{min-height:88px}
+  .kpi-label{font-size:.78rem; opacity:.75; letter-spacing:.02em; text-transform:uppercase}
+  .kpi-value{font-size:1.25rem; font-weight:800}
+  .table thead th{position: sticky; top: 0; z-index: 1; background: rgba(15,18,26,.92);}
+  .table tbody tr:hover{background: rgba(255,255,255,.04)}
+.page-title{font-weight:700; letter-spacing:-.3px}
   .subtitle{color:var(--bs-secondary-color)}
   .mono{font-variant-numeric: tabular-nums;}
   .table thead th{white-space:nowrap}
@@ -145,7 +106,7 @@
 
 {% block content %}
 {% set emp_filtro = request.args.get('emp','') %}
-<div class="container py-4 app-bg-grid">
+<div class="container py-4 page-shell">
 
   <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
     <div>
@@ -156,12 +117,12 @@
       </div>
     </div>
     <div class="d-flex gap-2">
-      <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('dashboard') }}">Voltar</a>
-      <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('auth.logout') }}">Sair</a>
+      <a class="btn btn-outline-light btn-sm" href="{{ url_for('dashboard') }}">Voltar</a>
+      <a class="btn btn-outline-light btn-sm" href="{{ url_for('auth.logout') }}">Sair</a>
     </div>
   </div>
 
-  <div class="card bi-card glass mb-3">
+  <div class="card glass mb-3">
     <div class="card-body">
       <div class="fw-semibold mb-2">Filtros</div>
       <form method="get" action="/relatorios/campanhas" class="row g-2 align-items-end">
@@ -219,7 +180,7 @@
         {% set topv = e.vendedores[:3] %}
 
         <div class="col-12 col-md-6 col-lg-4">
-          <button type="button" class="card bi-card glass w-100 text-start border-0" style="border-radius:1rem"
+          <button type="button" class="card glass w-100 text-start border-0" style="border-radius:1rem"
                   data-bs-toggle="modal" data-bs-target="#{{ mid }}">
             <div class="card-body">
               <div class="d-flex justify-content-between align-items-start gap-2">
@@ -265,7 +226,7 @@
                   <div class="subtitle small">Relatório — EMP {{ e.emp }}</div>
                   <div class="fw-bold mono">Competência: {{ "%02d"|format(mes) }}/{{ ano }}</div>
                 </div>
-                <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Fechar</button>
+                <button type="button" class="btn btn-outline-light btn-sm" data-bs-dismiss="modal">Fechar</button>
               </div>
 
               <div class="modal-body">
@@ -429,3 +390,53 @@
 
 </div>
 {% endblock %}
+
+
+{% block extra_scripts %}
+<script>
+(function(){
+  function norm(s){
+    return (s||"")
+      .toString()
+      .normalize("NFD").replace(/\p{Diacritic}/gu,"")
+      .toLowerCase();
+  }
+
+  function applyFilter(tableId, query){
+    const table = document.getElementById(tableId);
+    if(!table) return;
+    const rows = table.querySelectorAll("tbody tr[data-filter-row]");
+    const q = norm(query);
+    let visible = 0;
+
+    rows.forEach(r=>{
+      const hay = norm(r.innerText);
+      const show = !q || hay.includes(q);
+      r.style.display = show ? "" : "none";
+      if(show) visible++;
+    });
+
+    const empty = document.querySelector(`[data-filter-empty="${tableId}"]`);
+    if(empty){
+      empty.style.display = (visible===0) ? "" : "none";
+    }
+  }
+
+  document.addEventListener("input", function(e){
+    const inp = e.target.closest("[data-filter-input]");
+    if(!inp) return;
+    const tableId = inp.getAttribute("data-filter-input");
+    applyFilter(tableId, inp.value);
+  });
+
+  // When a vendor section is expanded, keep filter applied (if any)
+  document.addEventListener("shown.bs.collapse", function(e){
+    const collapse = e.target;
+    const inp = collapse.querySelector("[data-filter-input]");
+    if(!inp) return;
+    applyFilter(inp.getAttribute("data-filter-input"), inp.value);
+  });
+})();
+</script>
+{% endblock %}
+

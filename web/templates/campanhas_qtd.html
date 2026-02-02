@@ -4,12 +4,22 @@
 
 {% block extra_head %}
 <style>
-  .page-title{font-weight:700; letter-spacing:-.3px}
+  
+  .page-shell{max-width:1280px}
+  .glass{border-radius:18px}
+  .page-title{font-weight:800; letter-spacing:-.5px}
+  .subtitle{opacity:.85}
+  .kpi-grid .card{min-height:92px}
+  .kpi-label{font-size:.78rem; opacity:.75; letter-spacing:.02em; text-transform:uppercase}
+  .kpi-value{font-size:1.25rem; font-weight:800}
+  .table thead th{position: sticky; top: 0; z-index: 1; background: rgba(15,18,26,.92);}
+  .table tbody tr:hover{background: rgba(255,255,255,.04)}
+.page-title{font-weight:700; letter-spacing:-.3px}
   .subtitle{color:var(--bs-secondary-color)}
   .mono{font-variant-numeric: tabular-nums;}
   .kpi{min-height:84px}
   .table thead th{white-space:nowrap}
-  .camp-card{border:1px solid var(--border); border-radius:1rem}
+  .camp-card{border:1px solid rgba(255,255,255,.10); border-radius:1.1rem; background: rgba(255,255,255,.04)}
   .camp-card .badge{font-weight:600}
   @media (max-width: 768px){
     .table-responsive{display:none;}
@@ -22,7 +32,7 @@
 {% endblock %}
 
 {% block content %}
-<div class="container py-4 app-bg-grid">
+<div class="container py-4 page-shell">
 
   <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
     <div>
@@ -30,11 +40,11 @@
       <div class="subtitle mt-1">Resumo por EMP e período. Exporte em PDF quando precisar compartilhar.</div>
     </div>
     <div class="d-flex gap-2">
-      <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('dashboard') }}">Voltar</a>
-      <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('auth.logout') }}">Sair</a>
+      <a class="btn btn-outline-light btn-sm" href="{{ url_for('dashboard') }}">Voltar</a>
+      <a class="btn btn-outline-light btn-sm" href="{{ url_for('auth.logout') }}">Sair</a>
     </div>
   </div>
-<div class="card bi-card glass mb-3">
+<div class="card glass mb-3">
     <div class="card-body">
       <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
         <div class="fw-semibold">Filtros</div>
@@ -102,7 +112,7 @@
         {% endfor %}
 
         <div class="col-12 col-md-6 col-lg-4">
-          <button type="button" class="card bi-card glass w-100 text-start border-0" style="border-radius:1rem"
+          <button type="button" class="card glass w-100 text-start border-0" style="border-radius:1rem"
                   data-bs-toggle="modal" data-bs-target="#{{ mid }}">
             <div class="card-body">
               <div class="d-flex justify-content-between align-items-start gap-2">
@@ -145,7 +155,7 @@
         </div>
 
         <!-- Modal EMP -->
-        <div class="modal fade glass-modal" id="{{ mid }}" tabindex="-1" aria-hidden="true">
+        <div class="modal fade" id="{{ mid }}" tabindex="-1" aria-hidden="true">
           <div class="modal-dialog modal-xl modal-dialog-scrollable">
             <div class="modal-content" style="border-radius:1rem">
               <div class="modal-header">
@@ -155,7 +165,7 @@
                 </div>
                 <div class="d-flex gap-2">
                   <a class="btn btn-outline-dark btn-sm" href="/campanhas/pdf?ano={{ ano }}&mes={{ mes }}&vendedor={{ vendedor }}&emp={{ b.emp }}">Exportar PDF (EMP)</a>
-                  <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Fechar</button>
+                  <button type="button" class="btn btn-outline-light btn-sm" data-bs-dismiss="modal">Fechar</button>
                 </div>
               </div>
               <div class="modal-body">
