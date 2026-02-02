@@ -2055,7 +2055,6 @@ def itens_parados():
         mes=mes,
         ano=ano,
         emp_param=emp_param,
-        emps_param_list=emps_param_list,
         emp_scopes=emp_scopes,
         itens_por_emp=itens_por_emp,
         vendedor=vendedor_alvo,
@@ -2437,11 +2436,7 @@ def campanhas_qtd():
             vendedor_sel = vendedor_logado
 
     # EMP scope
-    # Suporta seleção múltipla de EMPs via ?emps=501&emps=502 (ou emp legado)
-    emps_param_list = [e.strip() for e in request.args.getlist("emps") if (e or "").strip()]
     emp_param = (request.args.get("emp") or "").strip()
-    if not emps_param_list and emp_param:
-        emps_param_list = [emp_param]
     emps_scope: list[str] = []
     if (role or "").lower() == "admin":
         if emp_param:
@@ -2879,11 +2874,10 @@ def relatorio_campanhas():
     vendedores_por_emp: dict[str, list[str]] = {}
 
     if role == "admin":
-        # ADMIN: por padrão não mostra nada até filtrar, para facilitar comparação consciente
-        if emps_param_list:
-            emps_scope = emps_param_list
+        if emp_param:
+            emps_scope = [emp_param]
         else:
-            emps_scope = []
+            emps_scope = _get_emps_com_vendas_no_periodo(ano, mes)
     elif role == "supervisor":
         if not emp_usuario:
             flash("Supervisor sem EMP cadastrada. Ajuste o usuário do supervisor.", "warning")
@@ -2896,14 +2890,7 @@ def relatorio_campanhas():
         if not emps_scope:
             flash("Não foi possível identificar a EMP do vendedor pelas vendas.", "warning")
 
-    
-    # Opções de EMP para seleção (admin pode comparar múltiplas EMPs)
-    if role == "admin":
-        emps_options = _get_emps_com_vendas_no_periodo(ano, mes)
-    else:
-        emps_options = list(emps_scope)
-
-# Vendedores por EMP (limitado por role)
+    # Vendedores por EMP (limitado por role)
     for emp in emps_scope:
         emp = str(emp)
         if role == "admin":
@@ -2975,7 +2962,6 @@ def relatorio_campanhas():
         mes=mes,
         emp_param=emp_param,
         emps_data=emps_data,
-        emps_options=emps_options,
         vendedor=vendedor_logado,
     )
 
