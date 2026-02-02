@@ -184,14 +184,12 @@
     if(!e.target.closest('.sv-mselect')) closeAll(null);
   });
 
-  // EMP: modo single ou multi
   const empMulti = qs('#empMulti');
   function enforceEmpMode(){
     const empPanel = qs('#empPanel');
     if(!empPanel) return;
     const checks = qsa('input[name="emp"]', empPanel);
-    if(!empMulti.checked){
-      // se houver mais de um marcado, mantém só o primeiro
+    if(empMulti && !empMulti.checked){
       const marked = checks.filter(c=>c.checked);
       marked.slice(1).forEach(c=>c.checked=false);
     }
@@ -201,7 +199,6 @@
     empMulti.addEventListener('change', enforceEmpMode);
   }
 
-  // Se clicar em uma EMP no modo single, desmarca outras imediatamente
   const empPanel = qs('#empPanel');
   if(empPanel){
     empPanel.addEventListener('change', (e)=>{
@@ -213,7 +210,6 @@
     });
   }
 
-  // Atualiza labels
   function labelFor(panelSel, labelSel, name){
     const panel = qs(panelSel);
     const label = qs(labelSel);
@@ -232,9 +228,7 @@
     labelFor('#empPanel','#empLabel','emp');
   }
 
-  // Inicial
   updateLabels();
-  // Se vier com várias EMPs marcadas, liga automaticamente o modo multi
   const preMarkedEmp = empPanel ? qsa('input[name="emp"]', empPanel).filter(c=>c.checked).length : 0;
   if(empMulti && preMarkedEmp>1){
     empMulti.checked = true;

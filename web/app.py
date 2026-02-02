@@ -2887,12 +2887,13 @@ def relatorio_campanhas():
     mes = int(request.args.get("mes") or hoje.month)
     ano = int(request.args.get("ano") or hoje.year)
 
+    emp_param = (request.args.get("emp") or "").strip()
     emp_params = _parse_list_arg(request, "emp")
-    emp_param = (emp_params[0] if emp_params else "").strip()
+    if emp_params and not emp_param:
+        emp_param = emp_params[0].strip()
 
     vendedor_logado = (_usuario_logado() or "").strip().upper()
-    vendedor_params = [v.strip().upper() for v in _parse_list_arg(request, "vendedor")]
-    vendedor_param = (vendedor_params[0] if vendedor_params else "").strip().upper()
+    vendedor_param = (request.args.get("vendedor") or "").strip().upper()
 
     # Define escopo de EMPs e vendedores
     emps_scope: list[str] = []
@@ -2951,7 +2952,7 @@ def relatorio_campanhas():
             resultados = (
                 db.query(CampanhaQtdResultado)
                 .filter(
-                    CampanhaQtdResultado.emp == emp,
+                    CampanhaQtdResultado.emp == emp_int,
                     CampanhaQtdResultado.competencia_ano == int(ano),
                     CampanhaQtdResultado.competencia_mes == int(mes),
                     CampanhaQtdResultado.vendedor.in_([v.strip().upper() for v in vendedores]),
@@ -4167,9 +4168,9 @@ def admin_itens_parados():
 
 @app.route('/admin/resumos_periodo', methods=['GET', 'POST'])
 
-@app.get("/admin/fechamento", endpoint="admin_fechamento_redirect")
-def _admin_fechamento_redirect():
-    """Atalho: redireciona para o card de fechamento dentro de /admin/resumos_periodo."""
+@app.get("/admin/fechamento", endpoint="admin_fechamento_compat")
+def admin_fechamento_compat():
+    """Atalho compatível: redireciona para o card de fechamento dentro de /admin/resumos_periodo."""
     qs = request.query_string.decode("utf-8") if request.query_string else ""
     url = "/admin/resumos_periodo"
     if qs:
@@ -4593,13 +4594,6 @@ def admin_resumos_periodo():
 
 # Compatibilidade: algumas telas/atalhos antigos apontavam para /admin/fechamento.
 # O fechamento mensal hoje é feito dentro da tela de resumos por período.
-@app.get('/admin/fechamento')
-def admin_fechamento_redirect():
-    red = _admin_required()
-    if red:
-        return red
-    return redirect(url_for('admin_resumos_periodo'))
-
 
 @app.route("/admin/campanhas", methods=["GET", "POST"])
 def admin_campanhas_qtd():
