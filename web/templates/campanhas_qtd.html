@@ -53,42 +53,195 @@
 
   {% if role|lower in ['admin','supervisor'] %}
   <div class="col-md-4">
-    <label class="form-label">Vendedor(es)</label>
-    <div class="glass p-2 rounded" style="border:1px solid var(--stroke); max-height:140px; overflow:auto;">
-      <div class="d-flex flex-wrap gap-2">
-        {% for v in vendedores %}
-          {% set vv = (v|string)|upper %}
-          <label class="form-check form-check-inline m-0">
-            <input class="form-check-input" type="checkbox" name="vendedor" value="{{ vv }}" {% if vv in (vendedor_params or []) %}checked{% endif %}>
-            <span class="form-check-label">{{ ('LOJA TODA' if vv=='__ALL__' else vv) }}</span>
-          </label>
-        {% endfor %}
+    <label class="form-label d-flex justify-content-between">
+      <span>Vendedor(es)</span>
+      <small class="text-muted">Clique para selecionar</small>
+    </label>
+
+    <div class="sv-mselect" data-target="vend">
+      <button type="button" class="form-control text-start sv-mselect-btn" aria-expanded="false">
+        <span class="sv-mselect-label" id="vendLabel">Selecionar vendedor(es)</span>
+      </button>
+      <div class="sv-mselect-panel" id="vendPanel">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <strong class="small">Vendedores</strong>
+          <div class="d-flex gap-2">
+            <button type="button" class="btn btn-sm btn-outline-secondary" data-action="clear">Limpar</button>
+          </div>
+        </div>
+        <div class="sv-mselect-list">
+          {% for v in vendedores %}
+            {% set vv = (v|string)|upper %}
+            <label class="sv-opt">
+              <input class="form-check-input" type="checkbox" name="vendedor" value="{{ vv }}"
+                     {% if vv in (vendedor_params or []) or (vv == (vendedor|string)|upper and (vendedor_params|length == 0)) %}checked{% endif %}>
+              <span>{{ 'LOJA TODA' if vv=='__ALL__' else vv }}</span>
+            </label>
+          {% endfor %}
+        </div>
+        <div class="form-text mt-2">Dica: marque múltiplos vendedores para comparar.</div>
       </div>
     </div>
-    <div class="form-text">Dica: marque múltiplos vendedores para comparar. (Supervisor pode usar “LOJA TODA”).</div>
   </div>
   {% endif %}
 
   <div class="col-md-4">
-    <label class="form-label">EMP(s)</label>
-    <div class="glass p-2 rounded" style="border:1px solid var(--stroke); max-height:140px; overflow:auto;">
-      <div class="d-flex flex-wrap gap-2">
-        {% for e in emps_scope %}
-          {% set ee = (e|string) %}
-          <label class="form-check form-check-inline m-0">
-            <input class="form-check-input" type="checkbox" name="emp" value="{{ ee }}" {% if ee in (emp_params or []) %}checked{% endif %}>
-            <span class="form-check-label">{{ ee }}</span>
-          </label>
-        {% endfor %}
+    <div class="d-flex justify-content-between align-items-end">
+      <label class="form-label mb-0">EMP(s)</label>
+      <label class="form-check form-switch m-0">
+        <input class="form-check-input" type="checkbox" id="empMulti">
+        <span class="form-check-label small text-muted">Comparar várias</span>
+      </label>
+    </div>
+
+    <div class="sv-mselect" data-target="emp">
+      <button type="button" class="form-control text-start sv-mselect-btn" aria-expanded="false">
+        <span class="sv-mselect-label" id="empLabel">Selecionar EMP</span>
+      </button>
+      <div class="sv-mselect-panel" id="empPanel">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <strong class="small">Empresas</strong>
+          <div class="d-flex gap-2">
+            <button type="button" class="btn btn-sm btn-outline-secondary" data-action="clear">Limpar</button>
+          </div>
+        </div>
+        <div class="sv-mselect-list">
+          {% for e in emps_scope %}
+            {% set ee = (e|string) %}
+            <label class="sv-opt">
+              <input class="form-check-input" type="checkbox" name="emp" value="{{ ee }}" {% if ee in (emp_params or []) %}checked{% endif %}>
+              <span>{{ ee }}</span>
+            </label>
+          {% endfor %}
+        </div>
+        <div class="form-text mt-2">Com “Comparar várias” desligado, você filtra apenas 1 EMP.</div>
       </div>
     </div>
-    <div class="form-text">Se vazio, usa o escopo padrão do usuário.</div>
   </div>
 
   <div class="col-md-2 d-grid">
     <button class="btn btn-primary">Atualizar</button>
   </div>
 </form>
+
+<style>
+  .sv-mselect{ position:relative; }
+  .sv-mselect-btn{ cursor:pointer; background:#fff; }
+  .sv-mselect-panel{
+    position:absolute; z-index:50; left:0; right:0; top:calc(100% + 8px);
+    background:rgba(255,255,255,.98);
+    border:1px solid rgba(0,0,0,.10);
+    border-radius:14px;
+    box-shadow:0 18px 45px rgba(0,0,0,.18);
+    padding:12px;
+    display:none;
+  }
+  .sv-mselect.open .sv-mselect-panel{ display:block; }
+  .sv-mselect-list{
+    max-height:220px; overflow:auto;
+    display:grid; grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:8px 14px;
+    padding-right:6px;
+  }
+  .sv-opt{ display:flex; align-items:center; gap:8px; font-size:.92rem; margin:0; user-select:none; }
+  .sv-opt input{ transform:translateY(-1px); }
+</style>
+
+<script>
+(function(){
+  function qs(sel, root){ return (root||document).querySelector(sel); }
+  function qsa(sel, root){ return Array.from((root||document).querySelectorAll(sel)); }
+
+  function closeAll(except){
+    qsa('.sv-mselect').forEach(ms=>{
+      if(ms!==except) ms.classList.remove('open');
+    });
+  }
+
+  qsa('.sv-mselect').forEach(ms=>{
+    const btn = qs('.sv-mselect-btn', ms);
+    btn.addEventListener('click', (e)=>{
+      e.preventDefault();
+      const willOpen = !ms.classList.contains('open');
+      closeAll(ms);
+      ms.classList.toggle('open', willOpen);
+    });
+
+    ms.addEventListener('click', (e)=>{
+      const actionBtn = e.target.closest('button[data-action]');
+      if(actionBtn){
+        e.preventDefault();
+        const action = actionBtn.getAttribute('data-action');
+        if(action==='clear'){
+          qsa('input[type="checkbox"]', ms).forEach(i=> i.checked=false);
+          updateLabels();
+        }
+      }
+    });
+  });
+
+  document.addEventListener('click', (e)=>{
+    if(!e.target.closest('.sv-mselect')) closeAll(null);
+  });
+
+  // EMP: modo single ou multi
+  const empMulti = qs('#empMulti');
+  function enforceEmpMode(){
+    const empPanel = qs('#empPanel');
+    if(!empPanel) return;
+    const checks = qsa('input[name="emp"]', empPanel);
+    if(!empMulti.checked){
+      // se houver mais de um marcado, mantém só o primeiro
+      const marked = checks.filter(c=>c.checked);
+      marked.slice(1).forEach(c=>c.checked=false);
+    }
+    updateLabels();
+  }
+  if(empMulti){
+    empMulti.addEventListener('change', enforceEmpMode);
+  }
+
+  // Se clicar em uma EMP no modo single, desmarca outras imediatamente
+  const empPanel = qs('#empPanel');
+  if(empPanel){
+    empPanel.addEventListener('change', (e)=>{
+      const t=e.target;
+      if(t && t.name==='emp' && t.checked && empMulti && !empMulti.checked){
+        qsa('input[name="emp"]', empPanel).forEach(c=>{ if(c!==t) c.checked=false; });
+      }
+      updateLabels();
+    });
+  }
+
+  // Atualiza labels
+  function labelFor(panelSel, labelSel, name){
+    const panel = qs(panelSel);
+    const label = qs(labelSel);
+    if(!panel || !label) return;
+    const marked = qsa('input[name="'+name+'"]', panel).filter(c=>c.checked).map(c=>c.value);
+    if(marked.length===0){
+      label.textContent = (name==='emp') ? 'Selecionar EMP' : 'Selecionar vendedor(es)';
+    } else if(marked.length===1){
+      label.textContent = marked[0];
+    } else {
+      label.textContent = marked.length + ' selecionados';
+    }
+  }
+  function updateLabels(){
+    labelFor('#vendPanel','#vendLabel','vendedor');
+    labelFor('#empPanel','#empLabel','emp');
+  }
+
+  // Inicial
+  updateLabels();
+  // Se vier com várias EMPs marcadas, liga automaticamente o modo multi
+  const preMarkedEmp = empPanel ? qsa('input[name="emp"]', empPanel).filter(c=>c.checked).length : 0;
+  if(empMulti && preMarkedEmp>1){
+    empMulti.checked = true;
+  }
+  enforceEmpMode();
+})();
+</script>
     </div>
   </div>
 
