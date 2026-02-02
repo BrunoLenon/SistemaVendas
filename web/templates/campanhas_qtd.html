@@ -4,22 +4,12 @@
 
 {% block extra_head %}
 <style>
-  
-  .page-shell{max-width:1280px}
-  .glass{border-radius:18px}
-  .page-title{font-weight:800; letter-spacing:-.5px}
-  .subtitle{opacity:.85}
-  .kpi-grid .card{min-height:92px}
-  .kpi-label{font-size:.78rem; opacity:.75; letter-spacing:.02em; text-transform:uppercase}
-  .kpi-value{font-size:1.25rem; font-weight:800}
-  .table thead th{position: sticky; top: 0; z-index: 1; background: rgba(15,18,26,.92);}
-  .table tbody tr:hover{background: rgba(255,255,255,.04)}
-.page-title{font-weight:700; letter-spacing:-.3px}
+  .page-title{font-weight:700; letter-spacing:-.3px}
   .subtitle{color:var(--bs-secondary-color)}
   .mono{font-variant-numeric: tabular-nums;}
   .kpi{min-height:84px}
   .table thead th{white-space:nowrap}
-  .camp-card{border:1px solid rgba(255,255,255,.10); border-radius:1.1rem; background: rgba(255,255,255,.04)}
+  .camp-card{border:1px solid rgba(0,0,0,.07); border-radius:1rem}
   .camp-card .badge{font-weight:600}
   @media (max-width: 768px){
     .table-responsive{display:none;}
@@ -32,7 +22,7 @@
 {% endblock %}
 
 {% block content %}
-<div class="container py-4 page-shell">
+<div class="container py-4">
 
   <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
     <div>
@@ -40,63 +30,65 @@
       <div class="subtitle mt-1">Resumo por EMP e período. Exporte em PDF quando precisar compartilhar.</div>
     </div>
     <div class="d-flex gap-2">
-      <a class="btn btn-outline-light btn-sm" href="{{ url_for('dashboard') }}">Voltar</a>
-      <a class="btn btn-outline-light btn-sm" href="{{ url_for('auth.logout') }}">Sair</a>
+      <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('dashboard') }}">Voltar</a>
+      <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('auth.logout') }}">Sair</a>
     </div>
   </div>
-<div class="card glass mb-3">
+<div class="card shadow-sm mb-3">
     <div class="card-body">
       <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
         <div class="fw-semibold">Filtros</div>
         <a class="btn btn-outline-dark btn-sm" href="/campanhas/pdf?ano={{ ano }}&mes={{ mes }}&vendedor={{ vendedor }}{% if emp_param %}&emp={{ emp_param }}{% endif %}">Exportar PDF</a>
       </div>
 
-      <form method="get" action="/campanhas" class="row g-2 align-items-end mt-1">
-        {% if role and role|lower in ['admin','supervisor'] %}
-          <div class="col-md-4">
-            <label class="form-label">Vendedor</label>
-            <select class="form-select" name="vendedor">
-              {% for v in vendedores %}
-                <option value="{{ v }}" {% if vendedor == v %}selected{% endif %}>
-                  {% if v == '__ALL__' %}LOJA TODA{% else %}{{ v }}{% endif %}
-                </option>
-              {% endfor %}
-            </select>
-          </div>
-        {% endif %}
+      <form method="get" class="row g-3 align-items-end">
+  <div class="col-md-2">
+    <label class="form-label">Mês</label>
+    <input class="form-control" type="number" name="mes" value="{{ mes }}" min="1" max="12">
+  </div>
+  <div class="col-md-2">
+    <label class="form-label">Ano</label>
+    <input class="form-control" type="number" name="ano" value="{{ ano }}" min="2020" max="2100">
+  </div>
 
-        {% if role and role|lower == 'admin' %}
-          <div class="col-md-2">
-            <label class="form-label">EMP (opcional)</label>
-            <input class="form-control" type="text" name="emp" value="{{ emp_param or '' }}" placeholder="ex: 101">
-            <div class="form-text">Em branco: todas as EMPs do escopo.</div>
-          </div>
-        {% else %}
-          <div class="col-md-2">
-            <label class="form-label">EMP</label>
-            <select class="form-select" name="emp">
-              <option value="" {% if not emp_param %}selected{% endif %}>Todas</option>
-              {% for e in (emps_scope or []) %}
-                <option value="{{ e }}" {% if emp_param and emp_param|string == e|string %}selected{% endif %}>{{ e }}</option>
-              {% endfor %}
-            </select>
-            <div class="form-text">Filtre por loja (dentro do seu acesso).</div>
-          </div>
-        {% endif %}
+  {% if role|lower in ['admin','supervisor'] %}
+  <div class="col-md-4">
+    <label class="form-label">Vendedor(es)</label>
+    <div class="glass p-2 rounded" style="border:1px solid var(--stroke); max-height:140px; overflow:auto;">
+      <div class="d-flex flex-wrap gap-2">
+        {% for v in vendedores %}
+          {% set vv = (v|string)|upper %}
+          <label class="form-check form-check-inline m-0">
+            <input class="form-check-input" type="checkbox" name="vendedor" value="{{ vv }}" {% if vv in (vendedor_params or []) %}checked{% endif %}>
+            <span class="form-check-label">{{ ('LOJA TODA' if vv=='__ALL__' else vv) }}</span>
+          </label>
+        {% endfor %}
+      </div>
+    </div>
+    <div class="form-text">Dica: marque múltiplos vendedores para comparar. (Supervisor pode usar “LOJA TODA”).</div>
+  </div>
+  {% endif %}
 
-        <div class="col-6 col-md-2">
-          <label class="form-label">Mês</label>
-          <input class="form-control" type="number" name="mes" min="1" max="12" value="{{ mes }}" required>
-        </div>
-        <div class="col-6 col-md-2">
-          <label class="form-label">Ano</label>
-          <input class="form-control" type="number" name="ano" min="2000" max="2100" value="{{ ano }}" required>
-        </div>
+  <div class="col-md-4">
+    <label class="form-label">EMP(s)</label>
+    <div class="glass p-2 rounded" style="border:1px solid var(--stroke); max-height:140px; overflow:auto;">
+      <div class="d-flex flex-wrap gap-2">
+        {% for e in emps_scope %}
+          {% set ee = (e|string) %}
+          <label class="form-check form-check-inline m-0">
+            <input class="form-check-input" type="checkbox" name="emp" value="{{ ee }}" {% if ee in (emp_params or []) %}checked{% endif %}>
+            <span class="form-check-label">{{ ee }}</span>
+          </label>
+        {% endfor %}
+      </div>
+    </div>
+    <div class="form-text">Se vazio, usa o escopo padrão do usuário.</div>
+  </div>
 
-        <div class="col-12 col-md-2 d-grid">
-          <button class="btn btn-primary" type="submit">Atualizar</button>
-        </div>
-      </form>
+  <div class="col-md-2 d-grid">
+    <button class="btn btn-primary">Atualizar</button>
+  </div>
+</form>
     </div>
   </div>
 
@@ -112,7 +104,7 @@
         {% endfor %}
 
         <div class="col-12 col-md-6 col-lg-4">
-          <button type="button" class="card glass w-100 text-start border-0" style="border-radius:1rem"
+          <button type="button" class="card shadow-sm w-100 text-start border-0" style="border-radius:1rem"
                   data-bs-toggle="modal" data-bs-target="#{{ mid }}">
             <div class="card-body">
               <div class="d-flex justify-content-between align-items-start gap-2">
@@ -165,7 +157,7 @@
                 </div>
                 <div class="d-flex gap-2">
                   <a class="btn btn-outline-dark btn-sm" href="/campanhas/pdf?ano={{ ano }}&mes={{ mes }}&vendedor={{ vendedor }}&emp={{ b.emp }}">Exportar PDF (EMP)</a>
-                  <button type="button" class="btn btn-outline-light btn-sm" data-bs-dismiss="modal">Fechar</button>
+                  <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Fechar</button>
                 </div>
               </div>
               <div class="modal-body">

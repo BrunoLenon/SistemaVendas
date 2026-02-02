@@ -1792,17 +1792,6 @@ def dashboard():
             app.logger.exception("Erro ao calcular insights do dashboard")
             insights = None
 
-    emps_disponiveis = []
-    emps_selecionadas = []
-    if (role or '').lower() == 'admin':
-        try:
-            emps_disponiveis = _get_emps_com_vendas_no_periodo(ano, mes)
-            emps_selecionadas = list(emps_disponiveis)
-        except Exception:
-            app.logger.exception('Erro ao carregar lista de EMPs para comparativo')
-            emps_disponiveis = []
-            emps_selecionadas = []
-
     return render_template(
         "dashboard.html",
         insights=insights,
@@ -1816,64 +1805,8 @@ def dashboard():
         mes=mes,
         ano=ano,
         dados=dados,
-        emps_disponiveis=emps_disponiveis,
-        emps_selecionadas=emps_selecionadas,
     )
 
-
-
-@app.get('/api/dashboard/comparativo_emp')
-def api_dashboard_comparativo_emp():
-    red = _login_required()
-    if red:
-        return red
-
-    role = (_role() or '').lower()
-    if role != 'admin':
-        return jsonify({'error': 'forbidden'}), 403
-
-    mes, ano = _mes_ano_from_request()
-    vendedor = (request.args.get('vendedor') or '').strip().upper() or None
-    emps = [str(e).strip() for e in request.args.getlist('emps') if str(e).strip()]
-    if not emps:
-        emps = _get_emps_com_vendas_no_periodo(ano, mes)
-
-    inicio, fim = _periodo_bounds(int(ano), int(mes))
-    ds_ca = ['DS','CA']
-    with SessionLocal() as db:
-        q = db.query(
-            Venda.emp.label('emp'),
-            func.sum(case((Venda.mov_tipo_movto.in_(ds_ca), -Venda.valor_total), else_=Venda.valor_total)).label('valor')
-        ).filter(Venda.movimento >= inicio, Venda.movimento <= fim)
-        if vendedor:
-            q = q.filter(Venda.vendedor == vendedor)
-        if emps:
-            q = q.filter(Venda.emp.in_(emps))
-        q = q.group_by(Venda.emp)
-        rows_val = {str(e or '').strip(): float(v or 0.0) for e, v in q.all() if e}
-
-        q2 = db.query(
-            Venda.emp.label('emp'),
-            func.count(func.distinct(Venda.mestre)).label('mix')
-        ).filter(Venda.movimento >= inicio, Venda.movimento <= fim)
-        q2 = q2.filter(~Venda.mov_tipo_movto.in_(ds_ca))
-        if vendedor:
-            q2 = q2.filter(Venda.vendedor == vendedor)
-        if emps:
-            q2 = q2.filter(Venda.emp.in_(emps))
-        q2 = q2.group_by(Venda.emp)
-        rows_mix = {str(e or '').strip(): int(m or 0) for e, m in q2.all() if e}
-
-    labels = [e for e in emps if e in rows_val or e in rows_mix]
-    # mantém ordem determinística; se emps vierem vazias, usa union de keys
-    if not labels:
-        labels = sorted(set(list(rows_val.keys()) + list(rows_mix.keys())))
-
-    return jsonify({
-        'labels': labels,
-        'vendas': [rows_val.get(e, 0.0) for e in labels],
-        'itens_unicos': [rows_mix.get(e, 0) for e in labels],
-    })
 
 @app.get("/percentuais")
 def percentuais():
