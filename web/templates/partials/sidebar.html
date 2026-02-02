@@ -4,21 +4,6 @@
 {% set is_supervisor = (r == 'supervisor') %}
 {% set is_vendedor = (r == 'vendedor') %}
 
-{% set nav_ano = session.get('nav_ano') %}
-{% set nav_mes = session.get('nav_mes') %}
-{% set nav_emps = session.get('nav_emps') or [] %}
-{% set nav_vendedores = session.get('nav_vendedores') or [] %}
-{% set nav_qs = '' %}
-{% if nav_ano and nav_mes %}
-  {% set nav_qs = ('?ano=' ~ nav_ano ~ '&mes=' ~ nav_mes) %}
-  {% for e in nav_emps %}
-    {% set nav_qs = nav_qs ~ '&emp=' ~ e %}
-  {% endfor %}
-  {% for v in nav_vendedores %}
-    {% set nav_qs = nav_qs ~ '&vendedor=' ~ v %}
-  {% endfor %}
-{% endif %}
-
 <div class="sidebar-brand px-3 py-3">
   {% if branding and branding.logo_url %}
     <img
