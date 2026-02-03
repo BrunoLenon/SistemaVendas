@@ -9,6 +9,26 @@
     btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>' + text;
   }
 
+
+  function shadowSubmitter(form, btn) {
+    if (!form || !btn) return;
+    var name = btn.getAttribute("name");
+    if (!name) return;
+    var value = btn.getAttribute("value") || "";
+    // When a submit button is disabled before the request is sent,
+    // browsers may omit its name/value. Shadow it into a hidden input.
+    var sel = 'input[type="hidden"][data-submit-shadow="' + name.replace(/"/g, '\"') + '"]';
+    var existing = form.querySelector(sel);
+    if (!existing) {
+      existing = document.createElement("input");
+      existing.type = "hidden";
+      existing.setAttribute("data-submit-shadow", name);
+      form.appendChild(existing);
+    }
+    existing.name = name;
+    existing.value = value;
+  }
+
   document.addEventListener("submit", function (ev) {
     var form = ev.target;
     if (!(form instanceof HTMLFormElement)) return;
@@ -23,7 +43,7 @@
       // Fallback: first submit button
       btn = form.querySelector("button[type='submit'][data-loading], button[type='submit']");
     }
-    if (btn) setLoading(btn);
+    if (btn) { shadowSubmitter(form, btn); setLoading(btn); }
   }, true);
 
   // Also handle links/buttons that do heavy GETs (optional)
