@@ -1,7 +1,4 @@
 import os
-            # Fechamento mensal: status financeiro (aberto/a_pagar/pago)
-            conn.execute(text("ALTER TABLE fechamento_mensal ADD COLUMN IF NOT EXISTS status varchar(20) DEFAULT 'aberto';"))
-            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_fechamento_mensal_status ON fechamento_mensal (status);"))
 from datetime import datetime
 from urllib.parse import quote_plus
 
@@ -766,6 +763,10 @@ def criar_tabelas():
             conn.execute(text("UPDATE campanhas_qtd SET campo_match='codigo' WHERE campo_match IS NULL OR campo_match='';"))
 
 
+
+            # Fechamento mensal: status financeiro (aberto/a_pagar/pago)
+            conn.execute(text("ALTER TABLE fechamento_mensal ADD COLUMN IF NOT EXISTS status varchar(20) DEFAULT 'aberto';"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_fechamento_mensal_status ON fechamento_mensal (status);"))
     except Exception:
         # Se não tiver permissão ou der algum erro, não derruba o app.
         pass
