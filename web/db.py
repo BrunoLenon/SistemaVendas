@@ -1,4 +1,7 @@
 import os
+            # Fechamento mensal: status financeiro (aberto/a_pagar/pago)
+            conn.execute(text("ALTER TABLE fechamento_mensal ADD COLUMN IF NOT EXISTS status varchar(20) DEFAULT 'aberto';"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_fechamento_mensal_status ON fechamento_mensal (status);"))
 from datetime import datetime
 from urllib.parse import quote_plus
 
@@ -584,6 +587,8 @@ class FechamentoMensal(Base):
 
     fechado = Column(Boolean, nullable=False, default=True)
     fechado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
+    # Status do período (controle financeiro): "aberto", "a_pagar", "pago"
+    status = Column(String(20), nullable=False, default="aberto", index=True)
 
     __table_args__ = (
         UniqueConstraint("emp", "ano", "mes", name="uq_fechamento_mensal_raw"),

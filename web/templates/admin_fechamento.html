@@ -70,13 +70,12 @@
           <input type="hidden" name="mes" value="{{ mes }}">
           <input type="hidden" name="ano" value="{{ ano }}">
 
-          <button class="btn btn-danger" type="submit" name="acao" value="fechar"
                   {% if not emps_sel %}disabled{% endif %}>
-            Fechar mês
           </button>
-          <button class="btn btn-outline-secondary" type="submit" name="acao" value="reabrir"
+          <button class="btn btn-outline-secondary" type="submit" name="acao" value="reabrir" {% if not emps_sel %}disabled{% endif %}>
+            Reabrir (Voltar para Aberto)
+          </button>
                   {% if not emps_sel %}disabled{% endif %}>
-            Reabrir mês
           </button>
         </form>
       </div>
@@ -90,7 +89,8 @@
               <thead>
                 <tr>
                   <th>EMP</th>
-                  <th>Status</th>
+                  <th>Trava</th>
+                  <th>Financeiro</th>
                   <th>Fechado em</th>
                 </tr>
               </thead>
@@ -104,6 +104,15 @@
                         <span class="badge text-bg-danger">FECHADO</span>
                       {% else %}
                         <span class="badge text-bg-success">ABERTO</span>
+                      {% endif %}
+                    </td>
+                    <td>
+                      {% if st and st.status == "pago" %}
+                        <span class="badge text-bg-primary">PAGO</span>
+                      {% elif st and st.status == "a_pagar" %}
+                        <span class="badge text-bg-warning">A PAGAR</span>
+                      {% else %}
+                        <span class="badge text-bg-secondary">ABERTO</span>
                       {% endif %}
                     </td>
                     <td class="small text-muted">

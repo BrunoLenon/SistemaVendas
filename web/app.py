@@ -4955,9 +4955,16 @@ def admin_fechamento():
     mes = int(request.values.get("mes") or hoje.month)
 
     # multi-EMP: fecha em lote quando selecionar mais de uma EMP
-    emps_sel = [str(e).strip() for e in _parse_multi_args("emp") if str(e).strip()]
+    # multi-EMP: lê tanto querystring (?emp=101&emp=102) quanto POST (inputs hidden name=emp)
+    emps_sel = []
+    try:
+        emps_sel = [str(e).strip() for e in request.values.getlist("emp") if str(e).strip()]
+    except Exception:
+        emps_sel = []
     if not emps_sel:
-        # fallback: tenta usar emp no request antigo
+        emps_sel = [str(e).strip() for e in _parse_multi_args("emp") if str(e).strip()]
+    if not emps_sel:
+        # fallback: tenta usar emp único (mantém compatibilidade com versões antigas)
         emp_single = _emp_norm(request.values.get("emp", ""))
         emps_sel = [emp_single] if emp_single else []
 
@@ -4978,10 +4985,15 @@ def admin_fechamento():
             except Exception:
                 emps_all = []
 
-        if request.method == "POST" and acao in {"fechar", "reabrir"}:
+        if request.method == "POST" and acao in {"fechar_a_pagar", "fechar_pago", "reabrir"}:
             if not emps_sel:
                 msgs.append("⚠️ Selecione ao menos 1 EMP para fechar/reabrir.")
             else:
+                alvo_status = None
+                if acao == "fechar_a_pagar":
+                    alvo_status = "a_pagar"
+                elif acao == "fechar_pago":
+                    alvo_status = "pago"
                 for emp in emps_sel:
                     emp = _emp_norm(emp)
                     if not emp:
@@ -5000,20 +5012,29 @@ def admin_fechamento():
                             rec = FechamentoMensal(emp=emp, ano=int(ano), mes=int(mes), fechado=False)
                             db.add(rec)
 
-                        if acao == "fechar":
+                        if acao in {"fechar_a_pagar", "fechar_pago"}:
                             rec.fechado = True
                             rec.fechado_em = datetime.utcnow()
+                            # status financeiro (controle)
+                            if hasattr(rec, "status") and alvo_status:
+                                rec.status = alvo_status
                         else:
                             rec.fechado = False
                             rec.fechado_em = datetime.utcnow()  # mantém não-nulo
-                        db.commit()
+                            if hasattr(rec, "status"):
+                                rec.status = "aberto"
+                        # commit no final do lote (mais rápido e consistente)
                     except Exception:
-                        db.rollback()
-                        app.logger.exception("Erro ao atualizar fechamento mensal")
+                        app.logger.exception("Erro ao preparar fechamento mensal")
                         msgs.append(f"❌ Falha ao atualizar fechamento da EMP {emp}.")
                 if not msgs:
-                    msgs.append("✅ Operação concluída.")
-
+                    try:
+                        db.commit()
+                        msgs.append("✅ Operação concluída.")
+                    except Exception:
+                        db.rollback()
+                        app.logger.exception("Erro ao commitar fechamento mensal")
+                        msgs.append("❌ Falha ao salvar alterações no fechamento.")
         # Status para tela
         for emp in (emps_sel or []):
             emp = _emp_norm(emp)
@@ -5021,6 +5042,7 @@ def admin_fechamento():
                 continue
             fechado = False
             fechado_em = None
+            status_fin = "aberto"
             try:
                 rec = (
                     db.query(FechamentoMensal)
@@ -5031,12 +5053,15 @@ def admin_fechamento():
                     )
                     .first()
                 )
-                if rec and rec.fechado:
-                    fechado = True
-                    fechado_em = rec.fechado_em
+                if rec:
+                    if getattr(rec, "status", None):
+                        status_fin = rec.status
+                    if rec.fechado:
+                        fechado = True
+                        fechado_em = rec.fechado_em
             except Exception:
                 fechado = False
-            status_por_emp[emp] = {"fechado": fechado, "fechado_em": fechado_em}
+            status_por_emp[emp] = {"fechado": fechado, "fechado_em": fechado_em, "status": status_fin}
 
     emps_options = _get_emp_options(emps_all)
 
