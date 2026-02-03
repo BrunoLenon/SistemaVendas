@@ -860,6 +860,9 @@ def criar_tabelas():
                             END$$;
                         """))
             
+            except Exception:
+                pass
+
             # Campanhas Combo (kit) - pagamento por unidade após mínimos
             conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS campanhas_combo (
@@ -891,8 +894,6 @@ def criar_tabelas():
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_campanhas_combo_itens_combo ON campanhas_combo_itens (combo_id);"))
 
 
-except Exception:
-                pass
     except Exception:
         # Se não tiver permissão ou der algum erro, não derruba o app.
         pass
