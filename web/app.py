@@ -4990,6 +4990,7 @@ def admin_fechamento():
                 msgs.append("⚠️ Selecione ao menos 1 EMP para fechar/reabrir.")
             else:
                 alvo_status = None
+                updated_count = 0
                 if acao == "fechar_a_pagar":
                     alvo_status = "a_pagar"
                 elif acao == "fechar_pago":
@@ -5023,18 +5024,22 @@ def admin_fechamento():
                             rec.fechado_em = datetime.utcnow()  # mantém não-nulo
                             if hasattr(rec, "status"):
                                 rec.status = "aberto"
+                        updated_count += 1
                         # commit no final do lote (mais rápido e consistente)
                     except Exception:
                         app.logger.exception("Erro ao preparar fechamento mensal")
                         msgs.append(f"❌ Falha ao atualizar fechamento da EMP {emp}.")
-                if not msgs:
+                if updated_count > 0:
                     try:
                         db.commit()
-                        msgs.append("✅ Operação concluída.")
+                        msgs.append(f"✅ Operação concluída ({updated_count} EMPs).")
                     except Exception:
                         db.rollback()
                         app.logger.exception("Erro ao commitar fechamento mensal")
                         msgs.append("❌ Falha ao salvar alterações no fechamento.")
+                else:
+                    if not msgs:
+                        msgs.append("⚠️ Nenhuma EMP válida para atualizar.")
         # Status para tela
         for emp in (emps_sel or []):
             emp = _emp_norm(emp)
