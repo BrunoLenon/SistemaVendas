@@ -5005,7 +5005,7 @@ def admin_fechamento():
                             rec.fechado_em = datetime.utcnow()
                         else:
                             rec.fechado = False
-                            rec.fechado_em = None
+                            rec.fechado_em = datetime.utcnow()  # mantém não-nulo
                         db.commit()
                     except Exception:
                         db.rollback()
