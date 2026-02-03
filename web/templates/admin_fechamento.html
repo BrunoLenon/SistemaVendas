@@ -70,14 +70,17 @@
           <input type="hidden" name="mes" value="{{ mes }}">
           <input type="hidden" name="ano" value="{{ ano }}">
 
-                  {% if not emps_sel %}disabled{% endif %}>
-          </button>
-          <button class="btn btn-outline-secondary" type="submit" name="acao" value="reabrir" {% if not emps_sel %}disabled{% endif %}>
-            Reabrir (Voltar para Aberto)
-          </button>
-                  {% if not emps_sel %}disabled{% endif %}>
-          </button>
-        </form>
+                  
+<button class="btn btn-primary" type="submit" name="acao" value="fechar_a_pagar" {% if not emps_sel %}disabled{% endif %}>
+  Fechar (A pagar)
+</button>
+<button class="btn btn-success" type="submit" name="acao" value="fechar_pago" {% if not emps_sel %}disabled{% endif %}>
+  Fechar (Pago)
+</button>
+<button class="btn btn-outline-secondary" type="submit" name="acao" value="reabrir" {% if not emps_sel %}disabled{% endif %}>
+  Reabrir (Voltar para Aberto)
+</button>
+</form>
       </div>
 
       <div class="mt-3">
