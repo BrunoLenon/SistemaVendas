@@ -4971,7 +4971,20 @@ def admin_fechamento():
     msgs: list[str] = []
     status_por_emp: dict[str, dict] = {}
 
-    acao = (request.form.get("acao") or "").strip().lower()
+    # Normaliza a ação vinda do formulário (alguns navegadores/JS podem enviar
+    # variações, ex.: sem underscore, com hífen ou com espaços).
+    acao_raw = (request.form.get("acao") or "").strip().lower()
+    acao = {
+        "fechar_a_pagar": "fechar_a_pagar",
+        "fechar_apagar": "fechar_a_pagar",
+        "fechar-a-pagar": "fechar_a_pagar",
+        "a_pagar": "fechar_a_pagar",
+        "fechar_pago": "fechar_pago",
+        "fechar-pago": "fechar_pago",
+        "pago": "fechar_pago",
+        "reabrir": "reabrir",
+        "abrir": "reabrir",
+    }.get(acao_raw, acao_raw)
 
     with SessionLocal() as db:
         # Carrega opções de EMP para o filtro (admin: todas cadastradas, fallback: EMPs com vendas no período)
