@@ -1970,7 +1970,7 @@ def dashboard():
             app.logger.exception("Erro ao carregar dashboard geral do admin")
             dados_admin = None
 
-return render_template(
+    return render_template(
         "dashboard.html",
         insights=insights,
         vendedor=vendedor_alvo or "",
