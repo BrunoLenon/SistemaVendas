@@ -1154,6 +1154,28 @@ def _parse_multi_args(name: str) -> list[str]:
             seen.add(v); res.append(v)
     return res
 
+def _competencia_fechada(db, emp: str, ano: int, mes: int) -> bool:
+    """Retorna True se a competência (EMP+ano+mes) estiver marcada como FECHADA."""
+    emp = _emp_norm(emp)
+    if not emp:
+        return False
+    try:
+        rec = (
+            db.query(FechamentoMensal)
+            .filter(
+                FechamentoMensal.emp == emp,
+                FechamentoMensal.ano == int(ano),
+                FechamentoMensal.mes == int(mes),
+                FechamentoMensal.fechado.is_(True),
+            )
+            .first()
+        )
+        return bool(rec)
+    except Exception:
+        return False
+
+
+
 
 def _emp_to_int_safe(emp: str) -> int | str:
     """Regra crítica: EMP é numérico na base de vendas.
@@ -1613,6 +1635,68 @@ def favicon():
     return ("", 204)
 
 
+def _dados_admin_geral(mes: int, ano: int, emp_scope: list[str] | None = None):
+    """Visão geral do ADMIN quando nenhum vendedor é selecionado.
+
+    Mantém as mesmas regras de sinal (DS/CA negativos) usadas no dashboard por vendedor,
+    mas agrega por EMP (e também gera ranking de vendedores do período).
+    """
+    start = date(ano, mes, 1)
+    end = date(ano + 1, 1, 1) if mes == 12 else date(ano, mes + 1, 1)
+
+    signed = case((Venda.mov_tipo_movto.in_(['DS','CA']), -Venda.valor_total), else_=Venda.valor_total)
+
+    with SessionLocal() as db:
+        base = db.query(Venda).filter(Venda.movimento >= start, Venda.movimento < end)
+        if emp_scope:
+            emps = [str(e).strip() for e in emp_scope if e is not None and str(e).strip()]
+            if emps:
+                base = base.filter(Venda.emp.in_(emps))
+
+        bruto_expr = func.coalesce(func.sum(case((~Venda.mov_tipo_movto.in_(['DS','CA']), Venda.valor_total), else_=0.0)), 0.0)
+        devol_expr = func.coalesce(func.sum(case((Venda.mov_tipo_movto.in_(['DS','CA']), Venda.valor_total), else_=0.0)), 0.0)
+        liquido_expr = func.coalesce(func.sum(signed), 0.0)
+
+        total_row = base.with_entities(bruto_expr, devol_expr, liquido_expr).first()
+        total_bruto = float(total_row[0] or 0.0)
+        total_devol = float(total_row[1] or 0.0)
+        total_liquido = float(total_row[2] or 0.0)
+        pct_devolucao = (total_devol / total_bruto * 100.0) if total_bruto else None
+
+        # Por EMP
+        q_emp = (
+            base.with_entities(Venda.emp, bruto_expr.label("bruto"), devol_expr.label("devol"), liquido_expr.label("liquido"))
+            .group_by(Venda.emp)
+        )
+        emp_rows = []
+        for emp, bruto, devol, liquido in q_emp:
+            emp_rows.append({
+                "emp": (emp or "").strip(),
+                "valor_bruto": float(bruto or 0.0),
+                "valor_devolvido": float(devol or 0.0),
+                "valor_atual": float(liquido or 0.0),
+            })
+        emp_rows.sort(key=lambda r: r.get("valor_atual", 0.0), reverse=True)
+
+        # Top vendedores (líquido) – útil para drill-down rápido
+        q_vend = (
+            base.with_entities(Venda.vendedor, func.coalesce(func.sum(signed), 0.0))
+            .group_by(Venda.vendedor)
+        )
+        vend_rows = [{"vendedor": (v or "").strip().upper(), "valor": float(val or 0.0)} for v, val in q_vend]
+        vend_rows.sort(key=lambda r: r["valor"], reverse=True)
+
+    return {
+        "valor_bruto": total_bruto,
+        "valor_devolvido": total_devol,
+        "valor_atual": total_liquido,
+        "pct_devolucao": pct_devolucao,
+        "ranking_emp_list": emp_rows[:30],
+        "ranking_vendedores_list": vend_rows[:30],
+    }
+
+
+
 def _periodo_prev(ano: int, mes: int) -> tuple[int, int]:
     if int(mes) == 1:
         return int(ano) - 1, 12
@@ -1877,7 +1961,16 @@ def dashboard():
             app.logger.exception("Erro ao calcular insights do dashboard")
             insights = None
 
-    return render_template(
+    
+    dados_admin = None
+    if (role or '').lower() == "admin" and not vendedor_alvo:
+        try:
+            dados_admin = _dados_admin_geral(mes=mes, ano=ano)
+        except Exception:
+            app.logger.exception("Erro ao carregar dashboard geral do admin")
+            dados_admin = None
+
+return render_template(
         "dashboard.html",
         insights=insights,
         vendedor=vendedor_alvo or "",
@@ -1890,6 +1983,8 @@ def dashboard():
         mes=mes,
         ano=ano,
         dados=dados,
+        dados_admin=dados_admin,
+        admin_geral=(bool(dados_admin) and not (vendedor_alvo or '').strip()),
     )
 
 
@@ -2532,8 +2627,11 @@ def campanhas_qtd():
         # Admin pode escolher livremente; vendedor só pode ver ele mesmo
         if (role or "").lower() == "admin":
             if not vendedores_req:
-                vendedor_sel = vendedor_logado
-                vendedores_sel = [vendedor_logado] if vendedor_logado else []
+                vendedor_sel = "__ALL__"
+                vendedores_sel = ["__ALL__"]
+            else:
+                vendedor_sel = "__MULTI__" if len(vendedores_req) > 1 else vendedores_req[0]
+                vendedores_sel = vendedores_req
             else:
                 vendedor_sel = "__MULTI__" if len(vendedores_req) > 1 else vendedores_req[0]
                 vendedores_sel = vendedores_req
@@ -2580,6 +2678,10 @@ def campanhas_qtd():
 
     # Supervisor: opção para visualizar a loja inteira (comparação)
     if (role or "").lower() == "supervisor":
+        vendedores_dropdown = ["__ALL__"] + [v for v in vendedores_dropdown if (v or "").strip().upper() != "__ALL__"]
+
+    # Admin: opção de visão geral (todos vendedores)
+    if (role or "").lower() == "admin":
         vendedores_dropdown = ["__ALL__"] + [v for v in vendedores_dropdown if (v or "").strip().upper() != "__ALL__"]
 
     # Calcula resultados e agrupa por EMP
@@ -2656,12 +2758,13 @@ def campanhas_qtd():
         for v in vendedores_dropdown:
             vv = (v or "").strip().upper()
             if vv == "__ALL__":
-                vendedores_options.append({"value": "__ALL__", "label": "LOJA TODA"})
+                lbl = "LOJA TODA" if (role or "").lower() == "supervisor" else "TODOS VENDEDORES"
+                vendedores_options.append({"value": "__ALL__", "label": lbl})
             else:
                 vendedores_options.append({"value": vv, "label": vv})
 
     vendedor_display = (
-        "LOJA TODA" if (vendedor_sel or "").upper() == "__ALL__"
+        ("LOJA TODA" if (role or "").lower()=="supervisor" else "TODOS VENDEDORES") if (vendedor_sel or "").upper() == "__ALL__"
         else (f"{len(vendedores_sel)} selecionados" if (vendedor_sel or "").upper() == "__MULTI__" else vendedor_sel)
     )
 
@@ -4860,6 +4963,26 @@ def admin_campanhas_qtd():
     with SessionLocal() as db:
         if request.method == "POST":
             acao = (request.form.get("acao") or "").strip().lower()
+
+            # Se a competência estiver FECHADA, bloqueia alterações de campanhas (mantém integridade do fechamento)
+            try:
+                emp_post = (request.form.get("emp") or "").strip()
+                if not emp_post and request.form.get("id"):
+                    try:
+                        cid = int(request.form.get("id") or 0)
+                        obj = db.query(CampanhaQtd).filter(CampanhaQtd.id == cid).first()
+                        if obj:
+                            emp_post = (obj.emp or "").strip()
+                    except Exception:
+                        emp_post = ""
+                if emp_post and _competencia_fechada(db, emp_post, ano, mes):
+                    erro = f"Competência {mes:02d}/{ano} da EMP {emp_post} está FECHADA. Reabra em /admin/fechamento para editar campanhas."
+                    # impede execução do POST
+                    return redirect('/admin/fechamento' + f'?emp={emp_post}&mes={mes}&ano={ano}')
+            except Exception:
+                pass
+
+
             try:
                 if acao == "criar":
                     emp = (request.form.get("emp") or "").strip()

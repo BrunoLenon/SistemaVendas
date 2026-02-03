@@ -172,7 +172,126 @@
   </div>
 </div>
 
-{% if dados %}
+{% if admin_geral and dados_admin %}
+
+  <div class="alert alert-info d-flex align-items-center gap-2 mb-3">
+    <div><strong>Visão Geral</strong> — todos os vendedores do período. Use a tabela por EMP para comparar e abrir detalhes.</div>
+  </div>
+
+  <div class="row g-3 mb-3">
+    <div class="col-md-3">
+      <div class="card shadow-sm kpi">
+        <div class="card-body">
+          <div class="text-muted small">Total líquido (mês)</div>
+          <div class="fs-4 fw-bold">R$ {{ dados_admin.valor_atual|brl }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card shadow-sm kpi">
+        <div class="card-body">
+          <div class="text-muted small">Bruto (sem devolução)</div>
+          <div class="fs-4 fw-bold">R$ {{ dados_admin.valor_bruto|brl }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card shadow-sm kpi">
+        <div class="card-body">
+          <div class="text-muted small">Devolvido</div>
+          <div class="fs-4 fw-bold">R$ {{ dados_admin.valor_devolvido|brl }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card shadow-sm kpi">
+        <div class="card-body">
+          <div class="text-muted small">% devolução</div>
+          <div class="fs-4 fw-bold">{% if dados_admin.pct_devolucao is not none %}{{ "%.2f"|format(dados_admin.pct_devolucao) }}%{% else %}—{% endif %}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-3">
+    <div class="col-lg-7">
+      <div class="card shadow-sm">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <h5 class="m-0">Ranking por EMP</h5>
+            <span class="text-muted small">Clique para abrir Campanhas no período</span>
+          </div>
+          <div class="table-responsive">
+            <table class="table table-sm align-middle">
+              <thead class="table-light">
+                <tr>
+                  <th>EMP</th>
+                  <th class="text-end">Líquido</th>
+                  <th class="text-end">Bruto</th>
+                  <th class="text-end">Devolução</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in (dados_admin.ranking_emp_list or []) %}
+                  <tr>
+                    <td>
+                      <a href="/campanhas?emp={{ row.emp }}&mes={{ mes }}&ano={{ ano }}" class="text-decoration-none">
+                        {{ row.emp or "—" }}
+                      </a>
+                    </td>
+                    <td class="text-end fw-semibold">R$ {{ row.valor_atual|brl }}</td>
+                    <td class="text-end text-muted">R$ {{ row.valor_bruto|brl }}</td>
+                    <td class="text-end text-muted">R$ {{ row.valor_devolvido|brl }}</td>
+                  </tr>
+                {% endfor %}
+                {% if not (dados_admin.ranking_emp_list or []) %}
+                  <tr><td colspan="4" class="text-muted">Sem dados para o período.</td></tr>
+                {% endif %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-5">
+      <div class="card shadow-sm">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <h5 class="m-0">Top vendedores (líquido)</h5>
+            <span class="text-muted small">Clique para abrir Dashboard do vendedor</span>
+          </div>
+          <div class="table-responsive">
+            <table class="table table-sm align-middle">
+              <thead class="table-light">
+                <tr>
+                  <th>Vendedor</th>
+                  <th class="text-end">Líquido</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in (dados_admin.ranking_vendedores_list or []) %}
+                  <tr>
+                    <td>
+                      <a href="/dashboard?vendedor={{ row.vendedor }}&mes={{ mes }}&ano={{ ano }}" class="text-decoration-none">
+                        {{ row.vendedor }}
+                      </a>
+                    </td>
+                    <td class="text-end fw-semibold">R$ {{ row.valor|brl }}</td>
+                  </tr>
+                {% endfor %}
+                {% if not (dados_admin.ranking_vendedores_list or []) %}
+                  <tr><td colspan="2" class="text-muted">Sem dados.</td></tr>
+                {% endif %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+{% elif dados %}
   <div class="row g-3 mb-4">
     <div class="col-12 col-sm-6 col-lg-3">
       <div class="card shadow-sm border-0 h-100">
@@ -239,7 +358,10 @@
             <div class="col-md-4">
               <label class="form-label">Vendedor</label>
               <select class="form-select" name="vendedor">
-                <option value="">{% if vendedores and (vendedores|length) > 0 %}Selecione um vendedor{% else %}Nenhum vendedor encontrado{% endif %}</option>
+                {% if role and role|lower in ["admin", "supervisor"] %}
+                <option value="" {% if not vendedor_selecionado %}selected{% endif %}>Todos vendedores</option>
+                {% endif %}
+                <option value="" disabled>{% if vendedores and (vendedores|length) > 0 %}Selecione um vendedor específico{% else %}Nenhum vendedor encontrado{% endif %}</option>
                 {% for v in vendedores %}
                   <option value="{{ v }}" {% if vendedor_selecionado == v %}selected{% endif %}>{{ v }}</option>
                 {% endfor %}

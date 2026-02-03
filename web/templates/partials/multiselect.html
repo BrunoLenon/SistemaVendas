@@ -36,7 +36,15 @@
           <input type="search" class="form-control form-control-sm ms-search" placeholder="Buscar..." data-ms-search>
         </div>
 
-        <div class="ms-options" data-ms-options style="max-height:240px; overflow:auto;">
+        
+        <div class="d-flex justify-content-between align-items-center mb-1">
+          <div class="form-check small m-0">
+            <input class="form-check-input" type="checkbox" id="{{ menu_id }}-all" data-ms-selectall>
+            <label class="form-check-label" for="{{ menu_id }}-all">Selecionar todos</label>
+          </div>
+          <button class="btn btn-link btn-sm py-0 text-decoration-none" type="button" data-ms-selectnone>Limpar</button>
+        </div>
+<div class="ms-options" data-ms-options style="max-height:240px; overflow:auto;">
           {% for opt in options %}
             {% if opt is mapping %}
               {% set value = opt.value %}
