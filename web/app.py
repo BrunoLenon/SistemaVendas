@@ -5119,12 +5119,24 @@ def admin_fechamento():
         return red
 
     hoje = datetime.now()
-    ano = int(request.values.get("ano") or hoje.year)
+    # lê mês/ano tanto em GET quanto POST; usa defaults seguros
+    try:
+        ano = int(request.values.get("ano") or hoje.year)
+    except Exception:
+        ano = hoje.year
+    try:
+        mes = int(request.values.get("mes") or hoje.month)
+    except Exception:
+        mes = hoje.month
+    # normaliza para evitar ValueError em datas
+    if mes < 1: mes = 1
+    if mes > 12: mes = 12
+    if ano < 2000: ano = 2000
+    if ano > 2100: ano = 2100
 
     # Vigência padrão: mês inteiro
     default_data_inicio = date(ano, mes, 1)
     default_data_fim = date(ano, mes, calendar.monthrange(ano, mes)[1])
-    mes = int(request.values.get("mes") or hoje.month)
 
     # multi-EMP: fecha em lote quando selecionar mais de uma EMP
     # multi-EMP: lê tanto querystring (?emp=101&emp=102) quanto POST (inputs hidden name=emp)
