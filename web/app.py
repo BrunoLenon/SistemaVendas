@@ -2589,6 +2589,113 @@ def _upsert_resultado(
     res.atualizado_em = datetime.utcnow()
     return res
 
+
+
+def _calc_resultado_all_vendedores(
+    db,
+    campanha: CampanhaQtd,
+    emp: str,
+    competencia_ano: int,
+    competencia_mes: int,
+    periodo_ini: date,
+    periodo_fim: date,
+):
+    """Calcula (sem persistir) o agregado da campanha para TODOS os vendedores da EMP no período.
+
+    Otimização: evita multiplicar o custo por N vendedores quando o filtro está em 'TODOS'.
+    Mantém as mesmas regras de cálculo (qtd_vendida/valor_total, exclusões DS/CA, match por prefixo+marca),
+    apenas removendo o filtro por vendedor.
+    """
+    emp = str(emp)
+
+    campo_match = (getattr(campanha, "campo_match", None) or "codigo").strip().lower()
+
+    def _norm_prefix(s: str) -> str:
+        import unicodedata, re
+        s = (s or "").strip()
+        s = "".join(c for c in unicodedata.normalize("NFKD", s) if not unicodedata.combining(c))
+        s = re.sub(r"\s+", " ", s).strip().lower()
+        return s
+
+    if campo_match == "descricao":
+        prefix_raw = (getattr(campanha, "descricao_prefixo", "") or "").strip()
+        if not prefix_raw:
+            prefix_raw = (campanha.produto_prefixo or "").strip()
+        prefix = _norm_prefix(prefix_raw)
+        campo_item = func.lower(func.trim(func.coalesce(Venda.descricao_norm, "")))
+        cond_prefix = campo_item.like(prefix + "%")
+    else:
+        prefix_raw = (campanha.produto_prefixo or "").strip()
+        prefix = prefix_raw
+        prefix_up = prefix.upper()
+        campo_item = func.upper(func.trim(cast(Venda.mestre, String)))
+        cond_prefix = campo_item.like(prefix_up + "%")
+
+    cond_marca = func.upper(func.trim(cast(Venda.marca, String))) == (campanha.marca or "").strip().upper()
+
+    base = (
+        db.query(
+            func.coalesce(func.sum(Venda.qtdade_vendida), 0.0).label("qtd"),
+            func.coalesce(func.sum(Venda.valor_total), 0.0).label("valor"),
+        )
+        .filter(
+            Venda.emp == emp,
+            Venda.movimento >= periodo_ini,
+            Venda.movimento <= periodo_fim,
+            ~Venda.mov_tipo_movto.in_(["DS", "CA"]),
+            cond_prefix,
+            cond_marca,
+        )
+        .first()
+    )
+
+    qtd_vendida = float(getattr(base, "qtd", 0.0) or 0.0)
+    valor_vendido = float(getattr(base, "valor", 0.0) or 0.0)
+
+    min_qtd = getattr(campanha, "qtd_minima", None)
+    min_val = getattr(campanha, "valor_minimo", None)
+
+    atingiu = 1
+    if min_qtd is not None and float(min_qtd) > 0:
+        atingiu = 1 if qtd_vendida >= float(min_qtd) else 0
+    if atingiu and min_val is not None and float(min_val) > 0:
+        atingiu = 1 if valor_vendido >= float(min_val) else 0
+
+    try:
+        recompensa_unit_dec = Decimal(str(campanha.recompensa_unit or 0))
+    except Exception:
+        recompensa_unit_dec = Decimal("0")
+
+    if atingiu:
+        valor_recomp_dec = (Decimal(str(qtd_vendida)) * recompensa_unit_dec)
+        valor_recomp = float(valor_recomp_dec.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+    else:
+        valor_recomp = 0.0
+
+    # Objeto leve com os mesmos campos que o template usa
+    from types import SimpleNamespace
+    return SimpleNamespace(
+        campanha_id=campanha.id,
+        emp=emp,
+        vendedor="__ALL__",
+        competencia_ano=int(competencia_ano),
+        competencia_mes=int(competencia_mes),
+        status_pagamento="PENDENTE",
+        titulo=campanha.titulo,
+        produto_prefixo=prefix_raw,
+        marca=(campanha.marca or "").strip(),
+        recompensa_unit=float(campanha.recompensa_unit or 0.0),
+        qtd_minima=float(min_qtd) if (min_qtd is not None and float(min_qtd) > 0) else None,
+        data_inicio=campanha.data_inicio,
+        data_fim=campanha.data_fim,
+        qtd_vendida=qtd_vendida,
+        valor_vendido=valor_vendido,
+        atingiu_minimo=int(atingiu),
+        valor_recompensa=float(valor_recomp),
+        atualizado_em=datetime.utcnow(),
+    )
+
+
 def _resolver_emp_scope_para_usuario(vendedor: str, role: str, emp_usuario: str | None) -> list[str]:
     """Retorna lista de EMPs que o usuário pode visualizar (para campanhas e relatórios).
 
@@ -2708,7 +2815,8 @@ def campanhas_qtd():
     with SessionLocal() as db:
         # Para supervisor, permitir comparar a loja inteira (todos os vendedores da EMP)
         if (vendedor_sel or "").upper() == "__ALL__":
-            vendedores_alvo = [v for v in vendedores_dropdown if (v or "").strip()]
+            # Otimização: em modo TODOS, não iterar por N vendedores. Exibir agregado e permitir drill-down.
+            vendedores_alvo = ["__ALL__"]
         elif (vendedor_sel or "").upper() == "__MULTI__":
             vendedores_alvo = [v for v in (vendedores_sel or []) if (v or "").strip().upper() != "__ALL__"]
         else:
@@ -2742,34 +2850,28 @@ def campanhas_qtd():
                 campanhas_final = list(by_key.values())
 
                 total_recomp = 0.0
+                resultados_calc: list[CampanhaQtdResultado] = []
                 for c in campanhas_final:
                     # interseção do período
                     periodo_ini = max(c.data_inicio, inicio_mes)
                     periodo_fim = min(c.data_fim, fim_mes)
-                    res = _upsert_resultado(db, c, vend, emp, ano, mes, periodo_ini, periodo_fim)
+                    res = (_calc_resultado_all_vendedores(db, c, emp, ano, mes, periodo_ini, periodo_fim)
+                        if (vend or "").upper() == "__ALL__" else _upsert_resultado(db, c, vend, emp, ano, mes, periodo_ini, periodo_fim))
+                    resultados_calc.append(res)
                     total_recomp += float(res.valor_recompensa or 0.0)
 
-                db.commit()
-
-                # Recarrega resultados (já persistidos)
-                resultados = (
-                    db.query(CampanhaQtdResultado)
-                    .filter(
-                        CampanhaQtdResultado.emp == emp,
-                        CampanhaQtdResultado.vendedor == vend,
-                        CampanhaQtdResultado.competencia_ano == int(ano),
-                        CampanhaQtdResultado.competencia_mes == int(mes),
-                    )
-                    .order_by(CampanhaQtdResultado.valor_recompensa.desc())
-                    .all()
-                )
+                # Não commita a cada vendedor; commit único ao final melhora performance.
+                # Ordena em memória para evitar re-query.
+                resultados_calc.sort(key=lambda r: float(getattr(r, "valor_recompensa", 0.0) or 0.0), reverse=True)
 
                 blocos.append({
                     "emp": emp,
                     "vendedor": vend,
-                    "resultados": resultados,
+                    "resultados": resultados_calc,
                     "total": total_recomp,
                 })
+        db.commit()
+
         # Opções para filtros avançados (labels amigáveis)
     emps_options = _get_emp_options(emps_scope)
     vendedores_options = []
