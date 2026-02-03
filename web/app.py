@@ -2956,6 +2956,15 @@ def campanhas_qtd():
     
                         # Restrição por EMP no cadastro do combo (opcional)
                         base_c = base
+                        # Aplica vigência do combo (se informada). Se não informar, assume o mês inteiro.
+                        try:
+                            di = c.data_inicio or date(ano, mes, 1)
+                            dfim = c.data_fim or date(ano, mes, calendar.monthrange(ano, mes)[1])
+                            mov = pd.to_datetime(base_c["movimento"], errors="coerce")
+                            base_c = base_c[(mov.dt.date >= di) & (mov.dt.date <= dfim)]
+                        except Exception:
+                            pass
+
                         if c.emp:
                             base_c = base_c[base_c["EMP"] == str(c.emp)]
     
@@ -5111,6 +5120,10 @@ def admin_fechamento():
 
     hoje = datetime.now()
     ano = int(request.values.get("ano") or hoje.year)
+
+    # Vigência padrão: mês inteiro
+    default_data_inicio = date(ano, mes, 1)
+    default_data_fim = date(ano, mes, calendar.monthrange(ano, mes)[1])
     mes = int(request.values.get("mes") or hoje.month)
 
     # multi-EMP: fecha em lote quando selecionar mais de uma EMP
@@ -5283,6 +5296,25 @@ def admin_combos():
             vglobal_raw = (request.form.get("valor_unitario_global") or "").replace(",", ".").strip()
             valor_unitario_global = float(vglobal_raw) if vglobal_raw else None
 
+            # vigência (opcional). Se não informar, assume o mês inteiro.
+            data_inicio_str = (request.form.get("data_inicio") or "").strip()
+            data_fim_str = (request.form.get("data_fim") or "").strip()
+            data_inicio = default_data_inicio
+            data_fim = default_data_fim
+            if data_inicio_str:
+                try:
+                    data_inicio = datetime.strptime(data_inicio_str, "%Y-%m-%d").date()
+                except Exception:
+                    data_inicio = default_data_inicio
+            if data_fim_str:
+                try:
+                    data_fim = datetime.strptime(data_fim_str, "%Y-%m-%d").date()
+                except Exception:
+                    data_fim = default_data_fim
+            if data_inicio and data_fim and data_inicio > data_fim:
+                flash("Vigência inválida: início maior que fim.", "danger")
+                return redirect(url_for("admin_combos", mes=mes, ano=ano, emp=emp or ""))
+
             # itens (arrays)
             nomes = request.form.getlist("item_nome")
             matchs = request.form.getlist("item_match")
@@ -5330,6 +5362,8 @@ def admin_combos():
                     ano=ano,
                     emp=emp,
                     marca=marca,
+                    data_inicio=data_inicio,
+                    data_fim=data_fim,
                     valor_unitario_global=valor_unitario_global,
                     ativo=True,
                 )

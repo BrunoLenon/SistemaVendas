@@ -561,6 +561,10 @@ class CampanhaCombo(Base):
     mes = Column(Integer, nullable=False)
     ano = Column(Integer, nullable=False)
 
+    # Vigência opcional (se não informado, assume o mês inteiro)
+    data_inicio = Column(Date, nullable=True)
+    data_fim = Column(Date, nullable=True)
+
     # Campanha pode ser global (NULL) ou restrita a uma EMP específica (codigo).
     emp = Column(String(30), nullable=True, index=True)
 
