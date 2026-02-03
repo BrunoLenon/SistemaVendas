@@ -47,7 +47,7 @@
   <div class="row g-2 align-items-end">
     {% if role and role|lower in ['admin','supervisor'] %}
       <div class="col-md-4">
-        {{ multiselect("vendedor", vendedores_options or [], vendedores_sel or [], label="Vendedor(es)", placeholder="Selecionar") }}
+        {{ multiselect("vendedor", vendedores_options or [], vendedores_sel or [], label="Vendedor(es)", placeholder="Todos", all_token="__ALL__", all_label="Todos vendedores") }}
         <div class="form-text">Selecione 1 ou mais vendedores. Em supervisor, marque <b>LOJA TODA</b> para comparar todos.</div>
       </div>
     {% endif %}

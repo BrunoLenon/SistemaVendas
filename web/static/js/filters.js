@@ -13,21 +13,37 @@
     if (!hiddenBox) return;
 
     hiddenBox.innerHTML = "";
+    const checksAll = qsa(root, "[data-ms-check]");
     const checked = qsa(root, "[data-ms-check]:checked").map(i => i.value);
 
-    checked.forEach(v => {
+    // When all options are selected, optionally collapse querystring into a single token
+    const allToken = root.getAttribute("data-ms-alltoken") || "";
+    const allLabel = root.getAttribute("data-ms-alllabel") || "Todos";
+    const isAll = (allToken && checksAll.length > 0 && checked.length === checksAll.length);
+
+    if (isAll){
       const inp = document.createElement("input");
       inp.type = "hidden";
       inp.name = name;
-      inp.value = v;
+      inp.value = allToken;
       hiddenBox.appendChild(inp);
-    });
+    } else {
+      checked.forEach(v => {
+        const inp = document.createElement("input");
+        inp.type = "hidden";
+        inp.name = name;
+        inp.value = v;
+        hiddenBox.appendChild(inp);
+      });
+    }
 
     // label
     const label = root.querySelector("[data-ms-label]");
     if (label){
       if (checked.length === 0){
         label.textContent = label.getAttribute("data-placeholder") || "Todas";
+      } else if (isAll){
+        label.textContent = allLabel;
       } else if (checked.length === 1){
         label.textContent = checked[0];
       } else {

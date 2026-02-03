@@ -2612,23 +2612,20 @@ def campanhas_qtd():
 
     # Supervisor pode ver "a loja toda" (comparação entre vendedores)
     if (role or "").lower() == "supervisor":
-        if not vendedores_req:
+        if not vendedores_req or "__ALL__" in vendedores_req:
+            # Visão geral (loja toda). Não pré-marca todos os checkboxes; o token __ALL__ representa "todos".
             vendedor_sel = "__ALL__"
-            vendedores_sel = ["__ALL__"]
+            vendedores_sel = []
         else:
-            # Se marcar LOJA TODA, ignora os demais
-            if "__ALL__" in vendedores_req:
-                vendedor_sel = "__ALL__"
-                vendedores_sel = ["__ALL__"]
-            else:
-                vendedor_sel = "__MULTI__" if len(vendedores_req) > 1 else vendedores_req[0]
-                vendedores_sel = vendedores_req
+            vendedor_sel = "__MULTI__" if len(vendedores_req) > 1 else vendedores_req[0]
+            vendedores_sel = vendedores_req
     else:
         # Admin pode escolher livremente; vendedor só pode ver ele mesmo
         if (role or "").lower() == "admin":
-            if not vendedores_req:
+            if not vendedores_req or "__ALL__" in vendedores_req:
+                # Visão geral (todos vendedores). Token __ALL__ representa "todos".
                 vendedor_sel = "__ALL__"
-                vendedores_sel = ["__ALL__"]
+                vendedores_sel = []
             else:
                 vendedor_sel = "__MULTI__" if len(vendedores_req) > 1 else vendedores_req[0]
                 vendedores_sel = vendedores_req
@@ -2673,20 +2670,15 @@ def campanhas_qtd():
     except Exception:
         vendedores_dropdown = []
 
-    # Supervisor: opção para visualizar a loja inteira (comparação)
-    if (role or "").lower() == "supervisor":
-        vendedores_dropdown = ["__ALL__"] + [v for v in vendedores_dropdown if (v or "").strip().upper() != "__ALL__"]
-
-    # Admin: opção de visão geral (todos vendedores)
-    if (role or "").lower() == "admin":
-        vendedores_dropdown = ["__ALL__"] + [v for v in vendedores_dropdown if (v or "").strip().upper() != "__ALL__"]
+    # Nota: "Todos" é tratado via token __ALL__ (querystring) e pelo checkbox "Selecionar todos".
+    # Não adicionamos "__ALL__" como opção real na lista para evitar URLs gigantes.
 
     # Calcula resultados e agrupa por EMP
     blocos: list[dict] = []
     with SessionLocal() as db:
         # Para supervisor, permitir comparar a loja inteira (todos os vendedores da EMP)
         if (vendedor_sel or "").upper() == "__ALL__":
-            vendedores_alvo = [v for v in vendedores_dropdown if (v or "").strip().upper() != "__ALL__"]
+            vendedores_alvo = [v for v in vendedores_dropdown if (v or "").strip()]
         elif (vendedor_sel or "").upper() == "__MULTI__":
             vendedores_alvo = [v for v in (vendedores_sel or []) if (v or "").strip().upper() != "__ALL__"]
         else:
@@ -2754,11 +2746,9 @@ def campanhas_qtd():
     if vendedores_dropdown:
         for v in vendedores_dropdown:
             vv = (v or "").strip().upper()
-            if vv == "__ALL__":
-                lbl = "LOJA TODA" if (role or "").lower() == "supervisor" else "TODOS VENDEDORES"
-                vendedores_options.append({"value": "__ALL__", "label": lbl})
-            else:
-                vendedores_options.append({"value": vv, "label": vv})
+            if not vv:
+                continue
+            vendedores_options.append({"value": vv, "label": vv})
 
     vendedor_display = (
         ("LOJA TODA" if (role or "").lower()=="supervisor" else "TODOS VENDEDORES") if (vendedor_sel or "").upper() == "__ALL__"

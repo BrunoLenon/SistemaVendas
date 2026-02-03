@@ -4,13 +4,18 @@
    {{ multiselect("emp", emps_options, selected_emps, label="EMP(s)", placeholder="Todas") }}
 #}
 
-{% macro multiselect(name, options, selected, label="", placeholder="Selecionar", id_prefix="ms") %}
+{#
+  all_token: when provided, the component will emit a single hidden input with this token
+             when "all" options are selected. This avoids huge querystrings.
+  all_label: label shown when all options are selected via token.
+#}
+{% macro multiselect(name, options, selected, label="", placeholder="Selecionar", id_prefix="ms", all_token=None, all_label="Todos") %}
   {% set sel = selected or [] %}
   {% set btn_id = id_prefix ~ "-" ~ name ~ "-btn" %}
   {% set menu_id = id_prefix ~ "-" ~ name ~ "-menu" %}
   {% set box_id = id_prefix ~ "-" ~ name ~ "-hidden" %}
 
-  <div class="ms-field" data-ms-root data-ms-name="{{ name }}">
+  <div class="ms-field" data-ms-root data-ms-name="{{ name }}" {% if all_token %}data-ms-alltoken="{{ all_token }}" data-ms-alllabel="{{ all_label }}"{% endif %}>
     {% if label %}
       <label class="form-label mb-1">{{ label }}</label>
     {% endif %}
