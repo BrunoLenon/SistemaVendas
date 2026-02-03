@@ -41,52 +41,37 @@
         <a class="btn btn-outline-dark btn-sm" href="/campanhas/pdf?ano={{ ano }}&mes={{ mes }}&vendedor={{ vendedor }}{% if emp_param %}&emp={{ emp_param }}{% endif %}">Exportar PDF</a>
       </div>
 
-      <form method="get" action="/campanhas" class="row g-2 align-items-end mt-1">
-        {% if role and role|lower in ['admin','supervisor'] %}
-          <div class="col-md-4">
-            <label class="form-label">Vendedor</label>
-            <select class="form-select" name="vendedor">
-              {% for v in vendedores %}
-                <option value="{{ v }}" {% if vendedor == v %}selected{% endif %}>
-                  {% if v == '__ALL__' %}LOJA TODA{% else %}{{ v }}{% endif %}
-                </option>
-              {% endfor %}
-            </select>
-          </div>
-        {% endif %}
+      {% from "partials/multiselect.html" import multiselect %}
 
-        {% if role and role|lower == 'admin' %}
-          <div class="col-md-2">
-            <label class="form-label">EMP (opcional)</label>
-            <input class="form-control" type="text" name="emp" value="{{ emp_param or '' }}" placeholder="ex: 101">
-            <div class="form-text">Em branco: todas as EMPs do escopo.</div>
-          </div>
-        {% else %}
-          <div class="col-md-2">
-            <label class="form-label">EMP</label>
-            <select class="form-select" name="emp">
-              <option value="" {% if not emp_param %}selected{% endif %}>Todas</option>
-              {% for e in (emps_scope or []) %}
-                <option value="{{ e }}" {% if emp_param and emp_param|string == e|string %}selected{% endif %}>{{ e }}</option>
-              {% endfor %}
-            </select>
-            <div class="form-text">Filtre por loja (dentro do seu acesso).</div>
-          </div>
-        {% endif %}
+<form method="get" action="/campanhas" class="filter-bar mt-1">
+  <div class="row g-2 align-items-end">
+    {% if role and role|lower in ['admin','supervisor'] %}
+      <div class="col-md-4">
+        {{ multiselect("vendedor", vendedores_options or [], vendedores_sel or [], label="Vendedor(es)", placeholder="Selecionar") }}
+        <div class="form-text">Selecione 1 ou mais vendedores. Em supervisor, marque <b>LOJA TODA</b> para comparar todos.</div>
+      </div>
+    {% endif %}
 
-        <div class="col-6 col-md-2">
-          <label class="form-label">Mês</label>
-          <input class="form-control" type="number" name="mes" min="1" max="12" value="{{ mes }}" required>
-        </div>
-        <div class="col-6 col-md-2">
-          <label class="form-label">Ano</label>
-          <input class="form-control" type="number" name="ano" min="2000" max="2100" value="{{ ano }}" required>
-        </div>
+    <div class="col-md-4">
+      {{ multiselect("emp", emps_options or [], emps_sel or [], label="EMP(s)", placeholder="Todas") }}
+      <div class="form-text">Comparação entre lojas (dentro do seu acesso).</div>
+    </div>
 
-        <div class="col-12 col-md-2 d-grid">
-          <button class="btn btn-primary" type="submit">Atualizar</button>
-        </div>
-      </form>
+    <div class="col-6 col-md-2">
+      <label class="form-label">Mês</label>
+      <input class="form-control" type="number" name="mes" min="1" max="12" value="{{ mes }}" required>
+    </div>
+    <div class="col-6 col-md-2">
+      <label class="form-label">Ano</label>
+      <input class="form-control" type="number" name="ano" min="2000" max="2100" value="{{ ano }}" required>
+    </div>
+
+    <div class="col-12 col-md-2 d-grid">
+      <button class="btn btn-primary" type="submit">Atualizar</button>
+    </div>
+  </div>
+</form>
+
     </div>
   </div>
 

@@ -1107,6 +1107,73 @@ def _emp_norm(emp: str | None) -> str:
     return (emp or "").strip()
 
 
+def _parse_multi_args(name: str) -> list[str]:
+    """Lê parâmetros repetidos via querystring (?emp=101&emp=102).
+    Mantém compatibilidade com padrão antigo (?emp=101).
+    """
+    vals = []
+    try:
+        vals = request.args.getlist(name)
+    except Exception:
+        vals = []
+    # Compat: alguns formulários antigos mandam apenas 1 valor em get()
+    if not vals:
+        v = (request.args.get(name) or "").strip()
+        if v:
+            vals = [v]
+    # Aceita CSV (caso alguém copie/cole)
+    out: list[str] = []
+    for v in vals:
+        for part in str(v).split(","):
+            p = part.strip()
+            if p:
+                out.append(p)
+    # unique mantendo ordem
+    seen=set()
+    res=[]
+    for v in out:
+        if v not in seen:
+            seen.add(v); res.append(v)
+    return res
+
+
+def _emp_to_int_safe(emp: str) -> int | str:
+    """Regra crítica: EMP é numérico na base de vendas.
+    Sempre converte antes de comparar/filtrar para não zerar totais.
+    """
+    s = str(emp).strip()
+    return int(s) if s.isdigit() else s
+
+
+def _get_emp_options(codigos: list[str]) -> list[dict]:
+    """Retorna opções de EMP com label amigável (ex: 101 - Veipecas)."""
+    codigos = [str(c).strip() for c in (codigos or []) if str(c).strip()]
+    if not codigos:
+        return []
+    # mantém ordem original
+    uniq=[]
+    seen=set()
+    for c in codigos:
+        if c not in seen:
+            seen.add(c); uniq.append(c)
+    rows = {}
+    try:
+        with SessionLocal() as db:
+            for r in db.query(Emp).filter(Emp.codigo.in_(uniq)).all():
+                rows[str(r.codigo).strip()] = r
+    except Exception:
+        rows = {}
+    out=[]
+    for c in uniq:
+        r = rows.get(c)
+        if r and (r.nome or '').strip():
+            label = f"{c} - {(r.nome or '').strip()}"
+        else:
+            label = c
+        out.append({"value": c, "label": label})
+    return out
+
+
 def _mes_fechado(emp: str | None, ano: int, mes: int) -> bool:
     """Retorna True se o mês estiver marcado como fechado para a EMP."""
     emp_n = _emp_norm(emp)
@@ -2427,28 +2494,58 @@ def campanhas_qtd():
     # vendedor alvo
     vendedor_logado = (_usuario_logado() or "").strip().upper()
 
+    # Suporta multi-seleção via querystring: ?vendedor=JOAO&vendedor=MARIA
+    vendedores_req = [v.strip().upper() for v in _parse_multi_args("vendedor")]
+
     # Supervisor pode ver "a loja toda" (comparação entre vendedores)
     if (role or "").lower() == "supervisor":
-        vendedor_sel = (request.args.get("vendedor") or "__ALL__").strip().upper()
+        if not vendedores_req:
+            vendedor_sel = "__ALL__"
+            vendedores_sel = ["__ALL__"]
+        else:
+            # Se marcar LOJA TODA, ignora os demais
+            if "__ALL__" in vendedores_req:
+                vendedor_sel = "__ALL__"
+                vendedores_sel = ["__ALL__"]
+            else:
+                vendedor_sel = "__MULTI__" if len(vendedores_req) > 1 else vendedores_req[0]
+                vendedores_sel = vendedores_req
     else:
-        vendedor_sel = (request.args.get("vendedor") or vendedor_logado).strip().upper()
-        if (role or "").lower() != "admin" and vendedor_sel != vendedor_logado:
+        # Admin pode escolher livremente; vendedor só pode ver ele mesmo
+        if (role or "").lower() == "admin":
+            if not vendedores_req:
+                vendedor_sel = vendedor_logado
+                vendedores_sel = [vendedor_logado] if vendedor_logado else []
+            else:
+                vendedor_sel = "__MULTI__" if len(vendedores_req) > 1 else vendedores_req[0]
+                vendedores_sel = vendedores_req
+        else:
             vendedor_sel = vendedor_logado
+            vendedores_sel = [vendedor_logado] if vendedor_logado else []
+    # EMP scope (suporta multi-seleção: ?emp=101&emp=102)
+    emp_list = _parse_multi_args("emp")
+    emp_param = (emp_list[0] if (len(emp_list) == 1) else "")  # compat (usado em alguns templates)
+    emps_sel = [str(e).strip() for e in (emp_list or []) if str(e).strip()]
 
-    # EMP scope
-    emp_param = (request.args.get("emp") or "").strip()
     emps_scope: list[str] = []
     if (role or "").lower() == "admin":
-        if emp_param:
-            emps_scope = [emp_param]
+        if emps_sel:
+            emps_scope = emps_sel
         else:
-            emps_scope = _get_emps_vendedor(vendedor_sel)
+            emps_scope = _get_emps_vendedor(vendedor_sel if vendedor_sel != "__MULTI__" else (vendedores_sel[0] if vendedores_sel else vendedor_logado))
     else:
-        emps_scope = _resolver_emp_scope_para_usuario(vendedor_sel, role, emp_usuario)
+        # vendedor/supervisor: restringe ao escopo permitido
+        base_scope = _resolver_emp_scope_para_usuario(
+            vendedor_sel if vendedor_sel != "__MULTI__" else (vendedores_sel[0] if vendedores_sel else vendedor_logado),
+            role,
+            emp_usuario,
+        )
+        if emps_sel:
+            emps_scope = [e for e in base_scope if str(e) in {str(x) for x in emps_sel}]
+        else:
+            emps_scope = base_scope
 
-    # Permite filtrar por EMP dentro do escopo permitido (útil para vendedores multi-EMP)
-    if emp_param and str(emp_param) in [str(e) for e in (emps_scope or [])]:
-        emps_scope = [str(emp_param)]
+    # (Filtro por EMP já aplicado acima via emps_sel)
 
     # Se não temos EMP, não dá pra montar relatório
     if not emps_scope and (role or "").lower() != "admin":
@@ -2471,8 +2568,10 @@ def campanhas_qtd():
     blocos: list[dict] = []
     with SessionLocal() as db:
         # Para supervisor, permitir comparar a loja inteira (todos os vendedores da EMP)
-        if (role or "").lower() == "supervisor" and (vendedor_sel or "").upper() == "__ALL__":
+        if (vendedor_sel or "").upper() == "__ALL__":
             vendedores_alvo = [v for v in vendedores_dropdown if (v or "").strip().upper() != "__ALL__"]
+        elif (vendedor_sel or "").upper() == "__MULTI__":
+            vendedores_alvo = [v for v in (vendedores_sel or []) if (v or "").strip().upper() != "__ALL__"]
         else:
             vendedores_alvo = [vendedor_sel]
 
@@ -2532,17 +2631,37 @@ def campanhas_qtd():
                     "resultados": resultados,
                     "total": total_recomp,
                 })
+        # Opções para filtros avançados (labels amigáveis)
+    emps_options = _get_emp_options(emps_scope)
+    vendedores_options = []
+    if vendedores_dropdown:
+        for v in vendedores_dropdown:
+            vv = (v or "").strip().upper()
+            if vv == "__ALL__":
+                vendedores_options.append({"value": "__ALL__", "label": "LOJA TODA"})
+            else:
+                vendedores_options.append({"value": vv, "label": vv})
+
+    vendedor_display = (
+        "LOJA TODA" if (vendedor_sel or "").upper() == "__ALL__"
+        else (f"{len(vendedores_sel)} selecionados" if (vendedor_sel or "").upper() == "__MULTI__" else vendedor_sel)
+    )
+
     return render_template(
         "campanhas_qtd.html",
         role=role,
         ano=ano,
         mes=mes,
         vendedor=vendedor_sel,
-        vendedor_display=("LOJA TODA" if (vendedor_sel or "").upper() == "__ALL__" else vendedor_sel),
+        vendedor_display=vendedor_display,
         vendedor_logado=vendedor_logado,
         vendedores=vendedores_dropdown,
+        vendedores_options=vendedores_options,
+        vendedores_sel=vendedores_sel,
         blocos=blocos,
         emps_scope=emps_scope,
+        emps_options=emps_options,
+        emps_sel=emps_sel,
         emp_param=emp_param,
     )
 
@@ -2864,18 +2983,18 @@ def relatorio_campanhas():
     mes = int(request.args.get("mes") or hoje.month)
     ano = int(request.args.get("ano") or hoje.year)
 
-    emp_param = (request.args.get("emp") or "").strip()
-
+    # Suporta multi-seleção via querystring (?emp=101&emp=102 / ?vendedor=JOAO&vendedor=MARIA)
+    emps_sel = [str(e).strip() for e in _parse_multi_args("emp") if str(e).strip()]
     vendedor_logado = (_usuario_logado() or "").strip().upper()
-    vendedor_param = (request.args.get("vendedor") or "").strip().upper()
+    vendedores_sel = [str(v).strip().upper() for v in _parse_multi_args("vendedor") if str(v).strip()]
 
-    # Define escopo de EMPs e vendedores
+    # Define escopo de EMPs e vendedores    # Define escopo de EMPs e vendedores
     emps_scope: list[str] = []
     vendedores_por_emp: dict[str, list[str]] = {}
 
     if role == "admin":
-        if emp_param:
-            emps_scope = [emp_param]
+        if emps_sel:
+            emps_scope = emps_sel
         else:
             emps_scope = _get_emps_com_vendas_no_periodo(ano, mes)
     elif role == "supervisor":
@@ -2886,7 +3005,8 @@ def relatorio_campanhas():
             emps_scope = [str(emp_usuario)]
     else:
         # vendedor
-        emps_scope = _get_emps_vendedor(vendedor_logado)
+        base_emps = _get_emps_vendedor(vendedor_logado)
+        emps_scope = [e for e in base_emps if (not emps_sel or str(e) in {str(x) for x in emps_sel})]
         if not emps_scope:
             flash("Não foi possível identificar a EMP do vendedor pelas vendas.", "warning")
 
@@ -2896,11 +3016,16 @@ def relatorio_campanhas():
         if role == "admin":
             # admin: todos os vendedores que venderam no período na EMP
             vendedores = _get_vendedores_emp_no_periodo(emp, ano, mes)
-            # se admin passar vendedor, filtra (útil para testar)
-            if vendedor_param:
-                vendedores = [vendedor_param] if vendedor_param in vendedores else [vendedor_param]
+            # aplica filtro de vendedores (multi) se fornecido
+            if vendedores_sel:
+                allowed_set = {v.strip().upper() for v in vendedores}
+                pick = [v for v in vendedores_sel if v in allowed_set]
+                vendedores = pick if pick else []
         elif role == "supervisor":
             vendedores = _get_vendedores_emp_no_periodo(emp, ano, mes)
+            if vendedores_sel and "__ALL__" not in vendedores_sel:
+                allowed_set = {v.strip().upper() for v in vendedores}
+                vendedores = [v for v in vendedores_sel if v in allowed_set]
         else:
             vendedores = [vendedor_logado]
         vendedores_por_emp[emp] = vendedores
@@ -2955,13 +3080,31 @@ def relatorio_campanhas():
                 "vendedores": vendedores_data,
             })
 
+        emps_options = _get_emp_options(emps_scope)
+    vendedores_options = []
+    # Para o filtro, juntamos a lista de vendedores do escopo (únicos) para evitar lista vazia
+    try:
+        vset = []
+        for emp, vs in (vendedores_por_emp or {}).items():
+            for v in (vs or []):
+                vv = (v or "").strip().upper()
+                if vv and vv not in vset:
+                    vset.append(vv)
+        vendedores_options = [{"value": v, "label": v} for v in vset]
+    except Exception:
+        vendedores_options = []
+
     return render_template(
         "relatorio_campanhas.html",
         role=role,
         ano=ano,
         mes=mes,
-        emp_param=emp_param,
         emps_data=emps_data,
+        emps_scope=emps_scope,
+        emps_sel=emps_sel,
+        emps_options=emps_options,
+        vendedores_sel=vendedores_sel,
+        vendedores_options=vendedores_options,
         vendedor=vendedor_logado,
     )
 
@@ -4556,12 +4699,117 @@ def admin_resumos_periodo():
 
 # Compatibilidade: algumas telas/atalhos antigos apontavam para /admin/fechamento.
 # O fechamento mensal hoje é feito dentro da tela de resumos por período.
-@app.get('/admin/fechamento')
-def admin_fechamento_redirect():
+@app.route("/admin/fechamento", methods=["GET", "POST"])
+def admin_fechamento():
+    """Página dedicada de fechamento mensal (ADMIN).
+
+    Responsável por travar/reativar a competência (EMP + mês/ano), servindo de base
+    para relatórios consolidados e impedindo alterações em campanhas/resumos quando fechado.
+    """
     red = _admin_required()
     if red:
         return red
-    return redirect(url_for('admin_resumos_periodo'))
+
+    hoje = datetime.now()
+    ano = int(request.values.get("ano") or hoje.year)
+    mes = int(request.values.get("mes") or hoje.month)
+
+    # multi-EMP: fecha em lote quando selecionar mais de uma EMP
+    emps_sel = [str(e).strip() for e in _parse_multi_args("emp") if str(e).strip()]
+    if not emps_sel:
+        # fallback: tenta usar emp no request antigo
+        emp_single = _emp_norm(request.values.get("emp", ""))
+        emps_sel = [emp_single] if emp_single else []
+
+    msgs: list[str] = []
+    status_por_emp: dict[str, dict] = {}
+
+    acao = (request.form.get("acao") or "").strip().lower()
+
+    with SessionLocal() as db:
+        # Carrega opções de EMP para o filtro (admin: todas cadastradas, fallback: EMPs com vendas no período)
+        try:
+            emps_all = [str(r.codigo).strip() for r in db.query(Emp).order_by(Emp.codigo.asc()).all()]
+        except Exception:
+            emps_all = []
+        if not emps_all:
+            try:
+                emps_all = _get_emps_com_vendas_no_periodo(ano, mes)
+            except Exception:
+                emps_all = []
+
+        if request.method == "POST" and acao in {"fechar", "reabrir"}:
+            if not emps_sel:
+                msgs.append("⚠️ Selecione ao menos 1 EMP para fechar/reabrir.")
+            else:
+                for emp in emps_sel:
+                    emp = _emp_norm(emp)
+                    if not emp:
+                        continue
+                    try:
+                        rec = (
+                            db.query(FechamentoMensal)
+                            .filter(
+                                FechamentoMensal.emp == emp,
+                                FechamentoMensal.ano == int(ano),
+                                FechamentoMensal.mes == int(mes),
+                            )
+                            .first()
+                        )
+                        if not rec:
+                            rec = FechamentoMensal(emp=emp, ano=int(ano), mes=int(mes), fechado=False)
+                            db.add(rec)
+
+                        if acao == "fechar":
+                            rec.fechado = True
+                            rec.fechado_em = datetime.utcnow()
+                        else:
+                            rec.fechado = False
+                            rec.fechado_em = None
+                        db.commit()
+                    except Exception:
+                        db.rollback()
+                        app.logger.exception("Erro ao atualizar fechamento mensal")
+                        msgs.append(f"❌ Falha ao atualizar fechamento da EMP {emp}.")
+                if not msgs:
+                    msgs.append("✅ Operação concluída.")
+
+        # Status para tela
+        for emp in (emps_sel or []):
+            emp = _emp_norm(emp)
+            if not emp:
+                continue
+            fechado = False
+            fechado_em = None
+            try:
+                rec = (
+                    db.query(FechamentoMensal)
+                    .filter(
+                        FechamentoMensal.emp == emp,
+                        FechamentoMensal.ano == int(ano),
+                        FechamentoMensal.mes == int(mes),
+                    )
+                    .first()
+                )
+                if rec and rec.fechado:
+                    fechado = True
+                    fechado_em = rec.fechado_em
+            except Exception:
+                fechado = False
+            status_por_emp[emp] = {"fechado": fechado, "fechado_em": fechado_em}
+
+    emps_options = _get_emp_options(emps_all)
+
+    return render_template(
+        "admin_fechamento.html",
+        role=_role() or "",
+        ano=ano,
+        mes=mes,
+        emps_sel=emps_sel,
+        emps_options=emps_options,
+        status_por_emp=status_por_emp,
+        msgs=msgs,
+    )
 
 
 @app.route("/admin/campanhas", methods=["GET", "POST"])

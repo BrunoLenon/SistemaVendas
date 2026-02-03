@@ -1,0 +1,65 @@
+{# Reusable PowerBI-like multi-select dropdown with checkboxes.
+   Usage:
+   {% from "partials/multiselect.html" import multiselect %}
+   {{ multiselect("emp", emps_options, selected_emps, label="EMP(s)", placeholder="Todas") }}
+#}
+
+{% macro multiselect(name, options, selected, label="", placeholder="Selecionar", id_prefix="ms") %}
+  {% set sel = selected or [] %}
+  {% set btn_id = id_prefix ~ "-" ~ name ~ "-btn" %}
+  {% set menu_id = id_prefix ~ "-" ~ name ~ "-menu" %}
+  {% set box_id = id_prefix ~ "-" ~ name ~ "-hidden" %}
+
+  <div class="ms-field" data-ms-root data-ms-name="{{ name }}">
+    {% if label %}
+      <label class="form-label mb-1">{{ label }}</label>
+    {% endif %}
+
+    <div class="dropdown w-100">
+      <button class="btn btn-outline-secondary w-100 text-start ms-btn" type="button"
+              id="{{ btn_id }}" data-bs-toggle="dropdown" data-bs-auto-close="outside"
+              aria-expanded="false" data-ms-button>
+        <span class="ms-btn-text" data-ms-label>
+          {% if sel|length == 0 %}
+            {{ placeholder }}
+          {% elif sel|length == 1 %}
+            {{ sel[0] }}
+          {% else %}
+            {{ sel|length }} selecionados
+          {% endif %}
+        </span>
+        <span class="ms-caret">▾</span>
+      </button>
+
+      <div class="dropdown-menu p-2 ms-menu w-100" aria-labelledby="{{ btn_id }}" id="{{ menu_id }}">
+        <div class="ms-search-wrap mb-2">
+          <input type="search" class="form-control form-control-sm ms-search" placeholder="Buscar..." data-ms-search>
+        </div>
+
+        <div class="ms-options" data-ms-options style="max-height:240px; overflow:auto;">
+          {% for opt in options %}
+            {% if opt is mapping %}
+              {% set value = opt.value %}
+              {% set text = opt.label %}
+            {% else %}
+              {% set value = opt %}
+              {% set text = opt %}
+            {% endif %}
+            {% set checked = (value in sel) %}
+            <label class="ms-option d-flex align-items-center gap-2 px-2 py-1 rounded-2">
+              <input class="form-check-input m-0" type="checkbox" value="{{ value }}" {% if checked %}checked{% endif %} data-ms-check>
+              <span class="small">{{ text }}</span>
+            </label>
+          {% endfor %}
+        </div>
+
+        <div class="d-flex justify-content-between gap-2 mt-2 pt-2 border-top">
+          <button class="btn btn-sm btn-outline-secondary w-50" type="button" data-ms-clear>Limpar</button>
+          <button class="btn btn-sm btn-primary w-50" type="button" data-bs-toggle="dropdown">Aplicar</button>
+        </div>
+      </div>
+    </div>
+
+    <div data-ms-hidden id="{{ box_id }}"></div>
+  </div>
+{% endmacro %}

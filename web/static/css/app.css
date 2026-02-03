@@ -229,3 +229,39 @@ body{
   .modal-dialog.modal-xl{ max-width: 98vw; margin: .5rem auto; }
   .table-responsive{ border: 0; }
 }
+
+
+/* =========================
+   PowerBI-like MultiSelect
+   ========================= */
+.ms-field .ms-btn{
+  border-radius: 12px;
+  padding: .55rem .75rem;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:.5rem;
+}
+.ms-field .ms-btn:focus{
+  box-shadow: 0 0 0 .2rem rgba(37,99,235,.15);
+}
+.ms-field .ms-menu{
+  border-radius: 14px;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, .10);
+}
+.ms-field .ms-option{
+  cursor:pointer;
+}
+.ms-field .ms-option:hover{
+  background: rgba(15,23,42,.05);
+}
+[data-theme="dark"] .ms-field .ms-option:hover{
+  background: rgba(255,255,255,.06);
+}
+.filter-bar{
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 12px;
+  box-shadow: 0 10px 22px rgba(15,23,42,.06);
+}
