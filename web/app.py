@@ -1214,6 +1214,32 @@ def _get_emp_options(codigos: list[str]) -> list[dict]:
     return out
 
 
+
+def _get_all_emp_codigos(apenas_ativas: bool = True) -> list[str]:
+    """Lista todas as EMPs cadastradas (tabela emps).
+    Usado para Admin quando estiver em modo __ALL__ (todos vendedores) e não houver filtro de EMP.
+    """
+    try:
+        with SessionLocal() as db:
+            q = db.query(Emp.codigo)
+            if apenas_ativas:
+                q = q.filter(Emp.ativo.is_(True))
+            rows = q.order_by(Emp.codigo.asc()).all()
+            cods = [str(r[0]).strip() for r in rows if r and r[0] is not None and str(r[0]).strip()]
+            if cods:
+                return cods
+    except Exception:
+        pass
+    # fallback: tenta inferir via vendas
+    try:
+        with SessionLocal() as db:
+            rows = db.query(Venda.emp).distinct().order_by(Venda.emp.asc()).all()
+            cods = [str(r[0]).strip() for r in rows if r and r[0] is not None and str(r[0]).strip()]
+            return cods
+    except Exception:
+        return []
+
+
 def _mes_fechado(emp: str | None, ano: int, mes: int) -> bool:
     """Retorna True se o mês estiver marcado como fechado para a EMP."""
     emp_n = _emp_norm(emp)
@@ -2642,7 +2668,11 @@ def campanhas_qtd():
         if emps_sel:
             emps_scope = emps_sel
         else:
-            emps_scope = _get_emps_vendedor(vendedor_sel if vendedor_sel != "__MULTI__" else (vendedores_sel[0] if vendedores_sel else vendedor_logado))
+            # Admin em modo __ALL__ (todos vendedores): mostrar todas as EMPs cadastradas
+            if vendedor_sel == "__ALL__":
+                emps_scope = _get_all_emp_codigos(apenas_ativas=True)
+            else:
+                emps_scope = _get_emps_vendedor(vendedor_sel if vendedor_sel != "__MULTI__" else (vendedores_sel[0] if vendedores_sel else vendedor_logado))
     else:
         # vendedor/supervisor: restringe ao escopo permitido
         base_scope = _resolver_emp_scope_para_usuario(
