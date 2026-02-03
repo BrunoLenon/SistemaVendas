@@ -767,6 +767,40 @@ def criar_tabelas():
             # Fechamento mensal: status financeiro (aberto/a_pagar/pago)
             conn.execute(text("ALTER TABLE fechamento_mensal ADD COLUMN IF NOT EXISTS status varchar(20) DEFAULT 'aberto';"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_fechamento_mensal_status ON fechamento_mensal (status);"))
+
+            # Bancos mais antigos podem ter criado `status` como ENUM ou com restrições.
+            # Neste caso, o valor 'a_pagar' pode não existir e a atualização falha silenciosamente.
+            # Tentamos adicionar o valor ao ENUM, se for aplicável, sem derrubar a aplicação.
+            try:
+                row = conn.execute(text("""
+                    SELECT data_type, udt_name
+                    FROM information_schema.columns
+                    WHERE table_schema = 'public'
+                      AND table_name = 'fechamento_mensal'
+                      AND column_name = 'status'
+                    LIMIT 1
+                """)).fetchone()
+
+                if row and str(row[0]).upper() == 'USER-DEFINED':
+                    enum_name = str(row[1] or '').strip()
+                    # Segurança básica: só permite nomes simples (evita SQL injection em identifier)
+                    if enum_name and all(ch.isalnum() or ch == '_' for ch in enum_name):
+                        conn.execute(text(f"""
+                            DO $$
+                            BEGIN
+                                IF NOT EXISTS (
+                                    SELECT 1
+                                    FROM pg_enum e
+                                    JOIN pg_type t ON t.oid = e.enumtypid
+                                    WHERE t.typname = '{enum_name}'
+                                      AND e.enumlabel = 'a_pagar'
+                                ) THEN
+                                    ALTER TYPE {enum_name} ADD VALUE 'a_pagar';
+                                END IF;
+                            END$$;
+                        """))
+            except Exception:
+                pass
     except Exception:
         # Se não tiver permissão ou der algum erro, não derruba o app.
         pass
