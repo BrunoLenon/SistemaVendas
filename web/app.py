@@ -767,6 +767,16 @@ def _get_vendedores_db(role: str, emp_usuario: str | None) -> list[str]:
     """Lista de vendedores para dropdown sem carregar todas as vendas em memória."""
     role = (role or "").strip().lower()
     with SessionLocal() as db:
+        # Opcional (recomendado): mostrar/filtrar apenas vendedores cadastrados no sistema.
+        # Isso evita aparecer vendedor "fantasma" que existe nas vendas importadas mas não tem usuário.
+        try:
+            vendedores_cadastrados = {
+                (r[0] or "").strip().upper()
+                for r in db.query(Usuario.username).filter(func.lower(Usuario.role) == "vendedor").all()
+            }
+        except Exception:
+            vendedores_cadastrados = set()
+
         q = db.query(func.distinct(Venda.vendedor))
         if role == "supervisor":
             emps = _allowed_emps()
@@ -778,7 +788,15 @@ def _get_vendedores_db(role: str, emp_usuario: str | None) -> list[str]:
                 return []
         # admin vê tudo; vendedor usa o próprio (não usa dropdown normalmente)
         vendedores = [(r[0] or "").strip().upper() for r in q.all()]
-    vendedores = sorted([v for v in vendedores if v])
+
+    vendedores = [v for v in vendedores if v]
+
+    # Se houver cadastro, restringe a ele.
+    # (Mantém compatibilidade: se a base de usuários ainda não estiver completa, não zera a lista.)
+    if vendedores_cadastrados:
+        vendedores = [v for v in vendedores if v in vendedores_cadastrados]
+
+    vendedores = sorted(vendedores)
     return vendedores
 
 def _get_emps_vendedor(username: str) -> list[str]:

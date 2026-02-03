@@ -55,7 +55,13 @@
 
         <div class="d-flex justify-content-between gap-2 mt-2 pt-2 border-top">
           <button class="btn btn-sm btn-outline-secondary w-50" type="button" data-ms-clear>Limpar</button>
-          <button class="btn btn-sm btn-primary w-50" type="button" data-bs-toggle="dropdown">Aplicar</button>
+          {#
+            Não use data-bs-toggle aqui.
+            O Bootstrap tenta inicializar um Dropdown nesse botão (dentro do menu) e pode
+            gerar erro "Cannot read properties of null (reading 'classList')".
+            A ação de fechar o menu é feita via JS (filters.js) chamando bootstrap.Dropdown.hide().
+          #}
+          <button class="btn btn-sm btn-primary w-50" type="button" data-ms-apply>Aplicar</button>
         </div>
       </div>
     </div>

@@ -70,6 +70,26 @@
       });
     }
 
+    // Apply: close dropdown safely (without relying on data-bs-toggle inside menu)
+    const applyBtn = qs(root, "[data-ms-apply]");
+    if (applyBtn){
+      applyBtn.addEventListener("click", () => {
+        // Keep hidden inputs synced
+        updateHidden(root);
+
+        // Close the Bootstrap dropdown if available
+        const trigger = qs(root, "[data-ms-button]");
+        if (trigger && window.bootstrap && window.bootstrap.Dropdown){
+          try {
+            const inst = window.bootstrap.Dropdown.getOrCreateInstance(trigger);
+            inst.hide();
+          } catch (e) {
+            // fail silently
+          }
+        }
+      });
+    }
+
     const search = qs(root, "[data-ms-search]");
     if (search){
       search.addEventListener("input", () => applySearch(root));
