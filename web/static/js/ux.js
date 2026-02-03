@@ -16,8 +16,13 @@
     // If the form opts out, do nothing
     if (form.hasAttribute("data-no-loading")) return;
 
-    // Prefer a button explicitly marked as submit
-    var btn = form.querySelector("button[type='submit'][data-loading], button[type='submit']");
+    // Use the actual clicked submit button when available (fix for forms with multiple submit buttons)
+    var submitter = ev.submitter || null;
+    var btn = submitter && submitter.matches && submitter.matches("button[type='submit']") ? submitter : null;
+    if (!btn) {
+      // Fallback: first submit button
+      btn = form.querySelector("button[type='submit'][data-loading], button[type='submit']");
+    }
     if (btn) setLoading(btn);
   }, true);
 
