@@ -885,6 +885,15 @@ CREATE TABLE IF NOT EXISTS campanhas_combo (
     updated_at timestamp DEFAULT now()
 );
             """))
+
+            # Migração segura: se a tabela já existia (versões antigas),
+            # garante as colunas novas. (CREATE TABLE IF NOT EXISTS não adiciona colunas)
+            conn.execute(text("ALTER TABLE campanhas_combo ADD COLUMN IF NOT EXISTS data_inicio date;"))
+            conn.execute(text("ALTER TABLE campanhas_combo ADD COLUMN IF NOT EXISTS data_fim date;"))
+            conn.execute(text("ALTER TABLE campanhas_combo ADD COLUMN IF NOT EXISTS valor_unitario_global numeric(12,2);"))
+            conn.execute(text("ALTER TABLE campanhas_combo ADD COLUMN IF NOT EXISTS ativo boolean DEFAULT true;"))
+            conn.execute(text("ALTER TABLE campanhas_combo ADD COLUMN IF NOT EXISTS created_at timestamp DEFAULT now();"))
+            conn.execute(text("ALTER TABLE campanhas_combo ADD COLUMN IF NOT EXISTS updated_at timestamp DEFAULT now();"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_campanhas_combo_periodo ON campanhas_combo (ano, mes);"))
 
             conn.execute(text("""
