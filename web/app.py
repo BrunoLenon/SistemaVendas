@@ -2632,9 +2632,6 @@ def campanhas_qtd():
             else:
                 vendedor_sel = "__MULTI__" if len(vendedores_req) > 1 else vendedores_req[0]
                 vendedores_sel = vendedores_req
-            else:
-                vendedor_sel = "__MULTI__" if len(vendedores_req) > 1 else vendedores_req[0]
-                vendedores_sel = vendedores_req
         else:
             vendedor_sel = vendedor_logado
             vendedores_sel = [vendedor_logado] if vendedor_logado else []
