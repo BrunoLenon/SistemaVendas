@@ -40,6 +40,8 @@ from db import (
     ItemParado,
     CampanhaQtd,
     CampanhaQtdResultado,
+    CampanhaCombo,
+    CampanhaComboItem,
     VendasResumoPeriodo,
     MetaPrograma,
     MetaProgramaEmp,
@@ -2887,7 +2889,163 @@ def campanhas_qtd():
         else (f"{len(vendedores_sel)} selecionados" if (vendedor_sel or "").upper() == "__MULTI__" else vendedor_sel)
     )
 
-    return render_template(
+    
+    # ==========================
+    # Combos (Kit) - unidade após mínimos (marca obrigatória)
+    # ==========================
+    combos_cards = []
+    try:
+        with SessionLocal() as db:
+            combos = (
+                db.query(CampanhaCombo)
+                .filter(CampanhaCombo.ano == ano, CampanhaCombo.mes == mes, CampanhaCombo.ativo.is_(True))
+                .order_by(CampanhaCombo.id.asc())
+                .all()
+            )
+            combo_ids = [c.id for c in combos]
+            itens_por_combo = {}
+            if combo_ids:
+                itens = (
+                    db.query(CampanhaComboItem)
+                    .filter(CampanhaComboItem.combo_id.in_(combo_ids))
+                    .order_by(CampanhaComboItem.combo_id.asc(), CampanhaComboItem.ordem.asc())
+                    .all()
+                )
+                for it in itens:
+                    itens_por_combo.setdefault(it.combo_id, []).append(it)
+
+        if combos:
+            df = carregar_df()
+            if df is not None and not df.empty:
+                # normaliza colunas
+                df = df.copy()
+                df["ANO"] = pd.to_datetime(df["MOVIMENTO"]).dt.year
+                df["MES"] = pd.to_datetime(df["MOVIMENTO"]).dt.month
+                df["EMP"] = df["EMP"].astype(str)
+                df["VENDEDOR"] = df["VENDEDOR"].astype(str).str.upper()
+                df["MARCA"] = df["MARCA"].astype(str).str.upper()
+                df["MESTRE"] = df["MESTRE"].astype(str).str.upper()
+
+                # vendas (DS) no período
+                base = df[(df["ANO"] == ano) & (df["MES"] == mes)]
+                if "MOV_TIPO_MOVTO" in base.columns:
+                    base = base[base["MOV_TIPO_MOVTO"].astype(str).str.upper() == "DS"]
+
+                # filtro EMP(s) selecionadas, se houver
+                emps_filtrar = emps_sel or []
+                if emps_filtrar:
+                    base = base[base["EMP"].isin([str(e) for e in emps_filtrar])]
+
+                # filtro vendedor(es) selecionados, se não for __ALL__
+                if vendedor_sel != "__ALL__":
+                    if vendedores_sel:
+                        base = base[base["VENDEDOR"].isin([v.upper() for v in vendedores_sel])]
+                    elif (role or "").lower() != "admin" and vendedor_logado:
+                        base = base[base["VENDEDOR"] == vendedor_logado]
+
+                # Para supervisor: restringe EMP ao escopo dele (quando não vem filtro)
+                if (role or "").lower() == "supervisor" and not emps_filtrar:
+                    if emp_usuario:
+                        base = base[base["EMP"].isin([str(emp_usuario)])]
+
+                # Calcula por combo
+                for c in combos:
+                    itens = itens_por_combo.get(c.id, [])
+                    if not itens:
+                        continue
+
+                    # Restrição por EMP no cadastro do combo (opcional)
+                    base_c = base
+                    if c.emp:
+                        base_c = base_c[base_c["EMP"] == str(c.emp)]
+
+                    # Marca obrigatória
+                    marca_c = (c.marca or "").upper()
+                    base_c = base_c[base_c["MARCA"] == marca_c]
+
+                    if base_c.empty:
+                        combos_cards.append({
+                            "combo": c,
+                            "itens": itens,
+                            "rows": [],
+                            "msg": "Sem vendas para esta marca/período com os filtros atuais."
+                        })
+                        continue
+
+                    # agrega por item -> dict (emp,vendedor) -> qtd
+                    item_qty_maps = []
+                    for it in itens:
+                        pat = (it.match_mestre or "").upper()
+                        if not pat:
+                            item_qty_maps.append({})
+                            continue
+                        df_it = base_c[base_c["MESTRE"].str.contains(re.escape(pat), na=False)]
+                        if df_it.empty:
+                            item_qty_maps.append({})
+                            continue
+                        g = (
+                            df_it.groupby(["EMP", "VENDEDOR"])["QTDADE_VENDIDA"]
+                            .sum()
+                            .reset_index()
+                        )
+                        m = {(r["EMP"], r["VENDEDOR"]): float(r["QTDADE_VENDIDA"] or 0) for _, r in g.iterrows()}
+                        item_qty_maps.append(m)
+
+                    # conjunto de chaves (emp,vendedor) presentes em qualquer item
+                    keys = set()
+                    for m in item_qty_maps:
+                        keys.update(m.keys())
+
+                    rows = []
+                    for (emp_k, vend_k) in sorted(keys):
+                        # quantidades por item
+                        qts = []
+                        faltas = []
+                        gate_ok = True
+                        total = 0.0
+
+                        for idx_it, it in enumerate(itens):
+                            qtd = float(item_qty_maps[idx_it].get((emp_k, vend_k), 0.0))
+                            qts.append(qtd)
+                            minimo = int(it.minimo_qtd or 0)
+                            if qtd < minimo:
+                                gate_ok = False
+                                faltas.append({"item": it.nome_item, "faltam": max(minimo - qtd, 0)})
+                            # valor unitário (por item ou global)
+                            if gate_ok:
+                                pass
+
+                        if gate_ok:
+                            for idx_it, it in enumerate(itens):
+                                qtd = qts[idx_it]
+                                v_unit = it.valor_unitario
+                                if v_unit is None:
+                                    v_unit = c.valor_unitario_global
+                                v_unit = float(v_unit or 0.0)
+                                total += qtd * v_unit
+
+                        rows.append({
+                            "emp": emp_k,
+                            "vendedor": vend_k,
+                            "gate_ok": gate_ok,
+                            "faltas": faltas,
+                            "total": total,
+                            "qts": qts,
+                        })
+
+                    # ordena por total desc
+                    rows.sort(key=lambda x: x["total"], reverse=True)
+
+                    combos_cards.append({
+                        "combo": c,
+                        "itens": itens,
+                        "rows": rows,
+                        "msg": None
+                    })
+    except Exception as e:
+        combos_cards = []
+
+return render_template(
         "campanhas_qtd.html",
         role=role,
         ano=ano,
@@ -2903,6 +3061,7 @@ def campanhas_qtd():
         emps_options=emps_options,
         emps_sel=emps_sel,
         emp_param=emp_param,
+        combos_cards=combos_cards,
     )
 
 @app.get("/campanhas/pdf")
@@ -5092,6 +5251,132 @@ def admin_fechamento():
         emps_options=emps_options,
         status_por_emp=status_por_emp,
         msgs=msgs,
+    )
+
+
+
+@app.route("/admin/combos", methods=["GET", "POST"])
+def admin_combos():
+    """Cadastro de Campanhas Combo (pagamento por unidade após mínimos).
+
+    Apenas ADMIN.
+    """
+    red = _login_required()
+    if red:
+        return red
+    if (_role() or "").lower() != "admin":
+        flash("Acesso negado.", "danger")
+        return redirect("/dashboard")
+
+    hoje = date.today()
+    mes = int(request.values.get("mes") or hoje.month)
+    ano = int(request.values.get("ano") or hoje.year)
+
+    with SessionLocal() as db:
+        if request.method == "POST":
+            nome = (request.form.get("nome") or "").strip()
+            marca = (request.form.get("marca") or "").strip().upper()
+            emp = (request.form.get("emp") or "").strip()
+            emp = emp if emp else None
+
+            # valor global (opcional)
+            vglobal_raw = (request.form.get("valor_unitario_global") or "").replace(",", ".").strip()
+            valor_unitario_global = float(vglobal_raw) if vglobal_raw else None
+
+            # itens (arrays)
+            nomes = request.form.getlist("item_nome")
+            matchs = request.form.getlist("item_match")
+            mins = request.form.getlist("item_min")
+            vals = request.form.getlist("item_valor")
+
+            itens = []
+            for i in range(0, max(len(nomes), len(matchs), len(mins), len(vals))):
+                nome_i = (nomes[i] if i < len(nomes) else "").strip()
+                match_i = (matchs[i] if i < len(matchs) else "").strip()
+                min_i = (mins[i] if i < len(mins) else "").strip()
+                val_i = (vals[i] if i < len(vals) else "").strip()
+
+                if not nome_i and not match_i:
+                    continue
+
+                try:
+                    minimo_qtd = int(float(min_i.replace(",", "."))) if min_i else 0
+                except Exception:
+                    minimo_qtd = 0
+
+                val_unit = None
+                if val_i:
+                    try:
+                        val_unit = float(val_i.replace(",", "."))
+                    except Exception:
+                        val_unit = None
+
+                itens.append(
+                    dict(
+                        nome_item=nome_i or match_i,
+                        match_mestre=match_i or nome_i,
+                        minimo_qtd=minimo_qtd,
+                        valor_unitario=val_unit,
+                        ordem=len(itens) + 1,
+                    )
+                )
+
+            if not nome or not marca or len(itens) < 2:
+                flash("Informe nome, marca e pelo menos 2 itens do combo.", "warning")
+            else:
+                combo = CampanhaCombo(
+                    nome=nome,
+                    mes=mes,
+                    ano=ano,
+                    emp=emp,
+                    marca=marca,
+                    valor_unitario_global=valor_unitario_global,
+                    ativo=True,
+                )
+                db.add(combo)
+                db.flush()  # obtém combo.id
+
+                for it in itens:
+                    db.add(
+                        CampanhaComboItem(
+                            combo_id=combo.id,
+                            nome_item=it["nome_item"],
+                            match_mestre=it["match_mestre"],
+                            minimo_qtd=it["minimo_qtd"],
+                            valor_unitario=it["valor_unitario"],
+                            ordem=it["ordem"],
+                        )
+                    )
+
+                db.commit()
+                flash("Combo criado com sucesso.", "success")
+                return redirect(f"/admin/combos?mes={mes}&ano={ano}")
+
+        combos = (
+            db.query(CampanhaCombo)
+            .filter(CampanhaCombo.ano == ano, CampanhaCombo.mes == mes)
+            .order_by(CampanhaCombo.id.desc())
+            .all()
+        )
+        # carrega itens
+        combo_ids = [c.id for c in combos]
+        itens_map = {}
+        if combo_ids:
+            itens = (
+                db.query(CampanhaComboItem)
+                .filter(CampanhaComboItem.combo_id.in_(combo_ids))
+                .order_by(CampanhaComboItem.combo_id.asc(), CampanhaComboItem.ordem.asc())
+                .all()
+            )
+            for it in itens:
+                itens_map.setdefault(it.combo_id, []).append(it)
+
+    return render_template(
+        "admin_combos.html",
+        mes=mes,
+        ano=ano,
+        combos=combos,
+        itens_map=itens_map,
     )
 
 

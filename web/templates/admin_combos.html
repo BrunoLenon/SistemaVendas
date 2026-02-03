@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% block title %}Admin - Combos{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+  <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+    <div>
+      <h3 class="m-0">Campanhas Combo (Kit) — Cadastro</h3>
+      <div class="text-muted mt-1">Pagamento por unidade após atingir o mínimo de todos os itens (marca obrigatória).</div>
+    </div>
+    <div class="d-flex gap-2">
+      <a class="btn btn-outline-secondary btn-sm" href="/campanhas">Voltar</a>
+      <a class="btn btn-outline-secondary btn-sm" href="/admin/fechamento">Fechamento</a>
+    </div>
+  </div>
+
+  <div class="card shadow-sm mb-4">
+    <div class="card-body">
+      <form method="post" action="/admin/combos" class="row g-3" data-ux-loading="1" data-loading-text="Salvando...">
+        <div class="col-6 col-md-2">
+          <label class="form-label">Mês</label>
+          <input class="form-control" type="number" name="mes" min="1" max="12" value="{{ mes }}">
+        </div>
+        <div class="col-6 col-md-2">
+          <label class="form-label">Ano</label>
+          <input class="form-control" type="number" name="ano" min="2020" max="2035" value="{{ ano }}">
+        </div>
+        <div class="col-12 col-md-4">
+          <label class="form-label">Nome do combo</label>
+          <input class="form-control" name="nome" placeholder="Ex.: Linha Elétrica (BOSCH)">
+        </div>
+        <div class="col-6 col-md-2">
+          <label class="form-label">Marca (obrigatória)</label>
+          <input class="form-control" name="marca" placeholder="Ex.: BOSCH">
+        </div>
+        <div class="col-6 col-md-2">
+          <label class="form-label">EMP (opcional)</label>
+          <input class="form-control" name="emp" placeholder="Ex.: 101">
+        </div>
+
+        <div class="col-12 col-md-4">
+          <label class="form-label">Valor unitário global (opcional)</label>
+          <input class="form-control" name="valor_unitario_global" placeholder="Ex.: 2,00">
+          <div class="form-text">Se o item não tiver valor próprio, usa este valor.</div>
+        </div>
+
+        <div class="col-12">
+          <div class="table-responsive">
+            <table class="table table-sm align-middle">
+              <thead>
+                <tr>
+                  <th style="min-width:180px;">Item (nome)</th>
+                  <th style="min-width:220px;">Match (no campo MESTRE)</th>
+                  <th style="width:120px;">Mínimo</th>
+                  <th style="width:160px;">Valor unitário (opcional)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for i in range(0,5) %}
+                <tr>
+                  <td><input class="form-control form-control-sm" name="item_nome" placeholder="Ex.: Motor de partida"></td>
+                  <td><input class="form-control form-control-sm" name="item_match" placeholder="Ex.: MOTOR PARTIDA"></td>
+                  <td><input class="form-control form-control-sm" name="item_min" placeholder="5"></td>
+                  <td><input class="form-control form-control-sm" name="item_valor" placeholder="2,00"></td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          <div class="form-text">Preencha pelo menos 2 itens. O Match usa contém (case-insensitive) no campo MESTRE.</div>
+        </div>
+
+        <div class="col-12 d-flex gap-2">
+          <button class="btn btn-primary" type="submit">Salvar combo</button>
+          <a class="btn btn-outline-secondary" href="/admin/combos?mes={{ mes }}&ano={{ ano }}">Recarregar</a>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="card shadow-sm">
+    <div class="card-body">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <h5 class="m-0">Combos cadastrados ({{ mes }}/{{ ano }})</h5>
+      </div>
+      {% if not combos %}
+        <div class="text-muted">Nenhum combo cadastrado para este período.</div>
+      {% else %}
+        <div class="accordion" id="accCombos">
+          {% for c in combos %}
+          <div class="accordion-item">
+            <h2 class="accordion-header" id="h{{ c.id }}">
+              <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#c{{ c.id }}">
+                <strong class="me-2">{{ c.nome }}</strong>
+                <span class="badge bg-light text-dark me-2">Marca: {{ c.marca }}</span>
+                {% if c.emp %}<span class="badge bg-light text-dark">EMP: {{ c.emp }}</span>{% endif %}
+              </button>
+            </h2>
+            <div id="c{{ c.id }}" class="accordion-collapse collapse" data-bs-parent="#accCombos">
+              <div class="accordion-body">
+                <div class="text-muted mb-2">
+                  Valor global: {{ c.valor_unitario_global if c.valor_unitario_global is not none else "—" }}
+                </div>
+                <div class="table-responsive">
+                  <table class="table table-sm">
+                    <thead>
+                      <tr>
+                        <th>Ordem</th>
+                        <th>Item</th>
+                        <th>Match</th>
+                        <th>Mínimo</th>
+                        <th>Valor unitário</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {% for it in itens_map.get(c.id, []) %}
+                      <tr>
+                        <td>{{ it.ordem }}</td>
+                        <td>{{ it.nome_item }}</td>
+                        <td><code>{{ it.match_mestre }}</code></td>
+                        <td>{{ it.minimo_qtd }}</td>
+                        <td>{{ it.valor_unitario if it.valor_unitario is not none else "Global" }}</td>
+                      </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

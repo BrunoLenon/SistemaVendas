@@ -544,6 +544,66 @@ class MetaResultado(Base):
         Index("ix_meta_resultados_meta_periodo", "meta_id", "ano", "mes"),
     )
 
+
+class CampanhaCombo(Base):
+    """Campanha de combo/kit com marca obrigatória e pagamento por unidade após atingir mínimos.
+
+    Regras:
+      - Só paga se TODOS os itens do combo atingirem seus mínimos no período.
+      - Ao atingir, paga por unidade vendida de cada item (inclui as unidades do mínimo).
+      - Pode ter valor unitário global (default) e/ou valores por item (sobrescrevem o global).
+    """
+
+    __tablename__ = "campanhas_combo"
+
+    id = Column(Integer, primary_key=True)
+    nome = Column(String(120), nullable=False)
+    mes = Column(Integer, nullable=False)
+    ano = Column(Integer, nullable=False)
+
+    # Campanha pode ser global (NULL) ou restrita a uma EMP específica (codigo).
+    emp = Column(String(30), nullable=True, index=True)
+
+    # Marca obrigatória (correlação)
+    marca = Column(String(120), nullable=False, index=True)
+
+    # Valor unitário global opcional (aplica quando o item não tiver valor próprio)
+    valor_unitario_global = Column(Float, nullable=True)
+
+    ativo = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        Index("ix_campanhas_combo_periodo", "ano", "mes"),
+    )
+
+
+class CampanhaComboItem(Base):
+    __tablename__ = "campanhas_combo_itens"
+
+    id = Column(Integer, primary_key=True)
+    combo_id = Column(Integer, nullable=False, index=True)
+
+    # Nome amigável do item (ex.: Motor de partida)
+    nome_item = Column(String(120), nullable=False)
+
+    # Termo/padrão de busca no campo mestre (ex.: "MOTOR PARTIDA")
+    match_mestre = Column(String(160), nullable=False)
+
+    minimo_qtd = Column(Integer, nullable=False, default=0)
+
+    # Valor unitário por item (se NULL, usa valor_unitario_global da campanha)
+    valor_unitario = Column(Float, nullable=True)
+
+    ordem = Column(Integer, nullable=False, default=1)
+
+    __table_args__ = (
+        Index("ix_campanhas_combo_itens_combo", "combo_id"),
+    )
+
+
+
 class VendasResumoPeriodo(Base):
     """Resumo mensal manual/importado (ex.: ano passado) por vendedor e EMP.
 
@@ -799,7 +859,39 @@ def criar_tabelas():
                                 END IF;
                             END$$;
                         """))
-            except Exception:
+            
+            # Campanhas Combo (kit) - pagamento por unidade após mínimos
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS campanhas_combo (
+                    id SERIAL PRIMARY KEY,
+                    nome VARCHAR(120) NOT NULL,
+                    mes INTEGER NOT NULL,
+                    ano INTEGER NOT NULL,
+                    emp VARCHAR(30),
+                    marca VARCHAR(120) NOT NULL,
+                    valor_unitario_global DOUBLE PRECISION,
+                    ativo BOOLEAN NOT NULL DEFAULT TRUE,
+                    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+                );
+            """))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_campanhas_combo_periodo ON campanhas_combo (ano, mes);"))
+
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS campanhas_combo_itens (
+                    id SERIAL PRIMARY KEY,
+                    combo_id INTEGER NOT NULL,
+                    nome_item VARCHAR(120) NOT NULL,
+                    match_mestre VARCHAR(160) NOT NULL,
+                    minimo_qtd INTEGER NOT NULL DEFAULT 0,
+                    valor_unitario DOUBLE PRECISION,
+                    ordem INTEGER NOT NULL DEFAULT 1
+                );
+            """))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_campanhas_combo_itens_combo ON campanhas_combo_itens (combo_id);"))
+
+
+except Exception:
                 pass
     except Exception:
         # Se não tiver permissão ou der algum erro, não derruba o app.
