@@ -869,31 +869,37 @@ def criar_tabelas():
 
             # Campanhas Combo (kit) - pagamento por unidade após mínimos
             conn.execute(text("""
-                CREATE TABLE IF NOT EXISTS campanhas_combo (
-                    id SERIAL PRIMARY KEY,
-                    nome VARCHAR(120) NOT NULL,
-                    mes INTEGER NOT NULL,
-                    ano INTEGER NOT NULL,
-                    emp VARCHAR(30),
-                    marca VARCHAR(120) NOT NULL,
-                    valor_unitario_global DOUBLE PRECISION,
-                    ativo BOOLEAN NOT NULL DEFAULT TRUE,
-                    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-                    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
-                );
+
+CREATE TABLE IF NOT EXISTS campanhas_combo (
+    id serial PRIMARY KEY,
+    nome varchar(140) NOT NULL,
+    mes integer NOT NULL,
+    ano integer NOT NULL,
+    data_inicio date,
+    data_fim date,
+    emp integer,
+    marca varchar(120) NOT NULL,
+    valor_unitario_global numeric(12,2),
+    ativo boolean DEFAULT true,
+    created_at timestamp DEFAULT now(),
+    updated_at timestamp DEFAULT now()
+);
             """))
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_campanhas_combo_periodo ON campanhas_combo (ano, mes);"))
 
             conn.execute(text("""
-                CREATE TABLE IF NOT EXISTS campanhas_combo_itens (
-                    id SERIAL PRIMARY KEY,
-                    combo_id INTEGER NOT NULL,
-                    nome_item VARCHAR(120) NOT NULL,
-                    match_mestre VARCHAR(160) NOT NULL,
-                    minimo_qtd INTEGER NOT NULL DEFAULT 0,
-                    valor_unitario DOUBLE PRECISION,
-                    ordem INTEGER NOT NULL DEFAULT 1
-                );
+
+CREATE TABLE IF NOT EXISTS campanhas_combo_itens (
+    id serial PRIMARY KEY,
+    combo_id integer NOT NULL REFERENCES campanhas_combo(id) ON DELETE CASCADE,
+    nome_item varchar(200) NOT NULL,
+    match_mestre varchar(200),
+    minimo_qtd integer DEFAULT 0,
+    valor_unitario numeric(12,2) DEFAULT 0,
+    ordem integer DEFAULT 1,
+    created_at timestamp DEFAULT now(),
+    updated_at timestamp DEFAULT now()
+);
             """))
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_campanhas_combo_itens_combo ON campanhas_combo_itens (combo_id);"))
 
