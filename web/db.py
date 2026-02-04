@@ -553,6 +553,7 @@ class CampanhaCombo(Base):
 
     id = Column(Integer, primary_key=True)
     titulo = Column(String(160), nullable=False, default="")
+    nome = Column(String(160), nullable=False, server_default=text("''"))  # compat: coluna antiga/obrigatória
     emp = Column(String(30), nullable=True, index=True)  # null/'' => global
     marca = Column(String(120), nullable=False, default="", index=True)
 

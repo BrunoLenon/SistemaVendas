@@ -3576,6 +3576,7 @@ def relatorio_campanhas():
         vendedores_options = [{"value": v, "label": v} for v in vset]
     except Exception:
         vendedores_options = []
+    emps_options = _get_emp_options(emps_scope if 'emps_scope' in locals() else emps_todos)
     return render_template(
             "relatorio_campanhas.html",
             role=role,
@@ -5238,6 +5239,7 @@ def admin_combos():
 
                     combo = CampanhaCombo(
                         titulo=titulo,
+                        nome=titulo,  # compat: coluna nome NOT NULL
                         emp=emp if emp else None,
                         marca=marca,
                         data_inicio=d_ini,
