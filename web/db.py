@@ -842,6 +842,25 @@ def criar_tabelas():
 
 
 
+
+            # Campanhas Combo (unificado): garantir colunas necessárias
+            conn.execute(text("ALTER TABLE campanhas_combo ADD COLUMN IF NOT EXISTS titulo varchar(160);"))
+            conn.execute(text("ALTER TABLE campanhas_combo ADD COLUMN IF NOT EXISTS data_inicio date;"))
+            conn.execute(text("ALTER TABLE campanhas_combo ADD COLUMN IF NOT EXISTS data_fim date;"))
+            conn.execute(text("ALTER TABLE campanhas_combo ADD COLUMN IF NOT EXISTS updated_at timestamptz;"))
+            # Se existir coluna antiga "nome", copia para "titulo" quando estiver vazio
+            conn.execute(text("""
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='campanhas_combo' AND column_name='nome')
+     AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='campanhas_combo' AND column_name='titulo') THEN
+    UPDATE campanhas_combo
+       SET titulo = nome
+     WHERE (titulo IS NULL OR titulo = '') AND nome IS NOT NULL;
+  END IF;
+END $$;
+"""))
+
             # Fechamento mensal: status financeiro (aberto/a_pagar/pago)
             conn.execute(text("ALTER TABLE fechamento_mensal ADD COLUMN IF NOT EXISTS status varchar(20) DEFAULT 'aberto';"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_fechamento_mensal_status ON fechamento_mensal (status);"))
