@@ -545,41 +545,31 @@ class MetaResultado(Base):
     )
 
 
+# =========================
+# Campanhas Combo (Kit) — gate mínimo + pagamento por unidade (após bater todos os mínimos)
+# =========================
 class CampanhaCombo(Base):
-    """Campanha de combo/kit com marca obrigatória e pagamento por unidade após atingir mínimos.
-
-    Regras:
-      - Só paga se TODOS os itens do combo atingirem seus mínimos no período.
-      - Ao atingir, paga por unidade vendida de cada item (inclui as unidades do mínimo).
-      - Pode ter valor unitário global (default) e/ou valores por item (sobrescrevem o global).
-    """
-
     __tablename__ = "campanhas_combo"
 
     id = Column(Integer, primary_key=True)
-    nome = Column(String(120), nullable=False)
-    mes = Column(Integer, nullable=False)
-    ano = Column(Integer, nullable=False)
+    titulo = Column(String(160), nullable=False, default="")
+    emp = Column(String(30), nullable=True, index=True)  # null/'' => global
+    marca = Column(String(120), nullable=False, default="", index=True)
 
-    # Vigência opcional (se não informado, assume o mês inteiro)
-    data_inicio = Column(Date, nullable=True)
-    data_fim = Column(Date, nullable=True)
+    # Vigência
+    data_inicio = Column(Date, nullable=False)
+    data_fim = Column(Date, nullable=False)
 
-    # Campanha pode ser global (NULL) ou restrita a uma EMP específica (codigo).
-    emp = Column(String(30), nullable=True, index=True)
-
-    # Marca obrigatória (correlação)
-    marca = Column(String(120), nullable=False, index=True)
-
-    # Valor unitário global opcional (aplica quando o item não tiver valor próprio)
+    # Valor unitário global opcional (fallback quando item não tem valor_unitario)
     valor_unitario_global = Column(Float, nullable=True)
 
     ativo = Column(Boolean, nullable=False, default=True)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    criado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
+    atualizado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
 
     __table_args__ = (
-        Index("ix_campanhas_combo_periodo", "ano", "mes"),
+        Index("ix_combo_emp_marca", "emp", "marca"),
     )
 
 
@@ -589,23 +579,47 @@ class CampanhaComboItem(Base):
     id = Column(Integer, primary_key=True)
     combo_id = Column(Integer, nullable=False, index=True)
 
-    # Nome amigável do item (ex.: Motor de partida)
-    nome_item = Column(String(120), nullable=False)
+    # Match: CODIGO (MESTRE) por prefixo e/ou DESCRIÇÃO por contains
+    mestre_prefixo = Column(String(120), nullable=True)
+    descricao_contains = Column(String(200), nullable=True)
 
-    # Termo/padrão de busca no campo mestre (ex.: "MOTOR PARTIDA")
-    match_mestre = Column(String(160), nullable=False)
-
-    minimo_qtd = Column(Integer, nullable=False, default=0)
-
-    # Valor unitário por item (se NULL, usa valor_unitario_global da campanha)
-    valor_unitario = Column(Float, nullable=True)
+    minimo_qtd = Column(Float, nullable=False, default=0.0)
+    valor_unitario = Column(Float, nullable=True)  # opcional; se vazio usa combo.valor_unitario_global
 
     ordem = Column(Integer, nullable=False, default=1)
 
-    __table_args__ = (
-        Index("ix_campanhas_combo_itens_combo", "combo_id"),
-    )
+    criado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
 
+
+class CampanhaComboResultado(Base):
+    __tablename__ = "campanhas_combo_resultados"
+
+    id = Column(Integer, primary_key=True)
+    combo_id = Column(Integer, nullable=False, index=True)
+
+    competencia_ano = Column(Integer, nullable=False, index=True)
+    competencia_mes = Column(Integer, nullable=False, index=True)
+
+    emp = Column(String(30), nullable=False, index=True)
+    vendedor = Column(String(80), nullable=False, index=True)
+
+    titulo = Column(String(160), nullable=False, default="")
+    marca = Column(String(120), nullable=False, default="")
+
+    data_inicio = Column(Date, nullable=False)
+    data_fim = Column(Date, nullable=False)
+
+    atingiu_gate = Column(Integer, nullable=False, default=0)
+    valor_recompensa = Column(Float, nullable=False, default=0.0)
+
+    status_pagamento = Column(String(20), nullable=False, default="PENDENTE")
+    pago_em = Column(DateTime, nullable=True)
+    atualizado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        Index("ix_combo_res_emp_comp", "emp", "competencia_ano", "competencia_mes"),
+        Index("ix_combo_res_vendedor", "vendedor"),
+    )
 
 
 class VendasResumoPeriodo(Base):
@@ -863,56 +877,8 @@ def criar_tabelas():
                                 END IF;
                             END$$;
                         """))
-            
             except Exception:
                 pass
-
-            # Campanhas Combo (kit) - pagamento por unidade após mínimos
-            conn.execute(text("""
-
-CREATE TABLE IF NOT EXISTS campanhas_combo (
-    id serial PRIMARY KEY,
-    nome varchar(140) NOT NULL,
-    mes integer NOT NULL,
-    ano integer NOT NULL,
-    data_inicio date,
-    data_fim date,
-    emp integer,
-    marca varchar(120) NOT NULL,
-    valor_unitario_global numeric(12,2),
-    ativo boolean DEFAULT true,
-    created_at timestamp DEFAULT now(),
-    updated_at timestamp DEFAULT now()
-);
-            """))
-
-            # Migração segura: se a tabela já existia (versões antigas),
-            # garante as colunas novas. (CREATE TABLE IF NOT EXISTS não adiciona colunas)
-            conn.execute(text("ALTER TABLE campanhas_combo ADD COLUMN IF NOT EXISTS data_inicio date;"))
-            conn.execute(text("ALTER TABLE campanhas_combo ADD COLUMN IF NOT EXISTS data_fim date;"))
-            conn.execute(text("ALTER TABLE campanhas_combo ADD COLUMN IF NOT EXISTS valor_unitario_global numeric(12,2);"))
-            conn.execute(text("ALTER TABLE campanhas_combo ADD COLUMN IF NOT EXISTS ativo boolean DEFAULT true;"))
-            conn.execute(text("ALTER TABLE campanhas_combo ADD COLUMN IF NOT EXISTS created_at timestamp DEFAULT now();"))
-            conn.execute(text("ALTER TABLE campanhas_combo ADD COLUMN IF NOT EXISTS updated_at timestamp DEFAULT now();"))
-            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_campanhas_combo_periodo ON campanhas_combo (ano, mes);"))
-
-            conn.execute(text("""
-
-CREATE TABLE IF NOT EXISTS campanhas_combo_itens (
-    id serial PRIMARY KEY,
-    combo_id integer NOT NULL REFERENCES campanhas_combo(id) ON DELETE CASCADE,
-    nome_item varchar(200) NOT NULL,
-    match_mestre varchar(200),
-    minimo_qtd integer DEFAULT 0,
-    valor_unitario numeric(12,2) DEFAULT 0,
-    ordem integer DEFAULT 1,
-    created_at timestamp DEFAULT now(),
-    updated_at timestamp DEFAULT now()
-);
-            """))
-            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_campanhas_combo_itens_combo ON campanhas_combo_itens (combo_id);"))
-
-
     except Exception:
         # Se não tiver permissão ou der algum erro, não derruba o app.
         pass

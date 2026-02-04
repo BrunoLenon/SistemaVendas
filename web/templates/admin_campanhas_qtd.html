@@ -207,7 +207,11 @@
                   </tr>
                 </thead>
                 <tbody>
-                  {% for c in campanhas %}
+                  {% for grp in campanhas|sort(attribute='data_inicio', reverse=True)|groupby('competencia_label') %}
+                    <tr class="table-light">
+                      <td colspan="10" class="fw-semibold">{{ grp.grouper or 'Sem competência' }}</td>
+                    </tr>
+                    {% for c in grp.list %}
                     <tr data-emp="{{ c.emp or '' }}" data-search="{{ (c.titulo or '') ~ ' ' ~ (c.vendedor or '') ~ ' ' ~ (c.marca or '') ~ ' ' ~ (c.produto_prefixo or '') ~ ' ' ~ (c.descricao_prefixo or '') }}">
                       <td class="mono">{{ c.id }}</td>
                       <td class="mono">{{ c.emp or '-' }}</td>
@@ -244,6 +248,7 @@
                       </td>
                     </tr>
                   {% endfor %}
+                    {% endfor %}
                 </tbody>
               </table>
             </div>

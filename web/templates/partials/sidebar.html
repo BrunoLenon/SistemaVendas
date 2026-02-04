@@ -1,4 +1,10 @@
-{% set r = (role|default('')|lower) %}
+{% s
+          <li class="nav-item">
+            <a class="nav-link" href="/admin/combos">
+              <span class="me-2">🧩</span> Combos (Kit)
+            </a>
+          </li>
+          et r = (role|default('')|lower) %}
 {% set path = request.path %}
 {% set is_admin = (r == 'admin') %}
 {% set is_supervisor = (r == 'supervisor') %}
@@ -50,7 +56,8 @@
     <a class="nav-link {% if path.startswith('/admin/metas') %}active{% endif %}" href="/admin/metas">🏁 Metas</a>
     <a class="nav-link {% if path.startswith('/admin/importar') %}active{% endif %}" href="/admin/importar">📥 Importar vendas</a>
     <a class="nav-link {% if path.startswith('/admin/resumos_periodo') %}active{% endif %}" href="/admin/resumos_periodo">📆 Resumos por período</a>
-    <a class="nav-link {% if path.startswith('/admin/campanhas') %}active{% endif %}" href="/admin/campanhas">🎯 Campanhas</a>
+    <a class="nav-link {% if path.startswith('/admin/campanhas') %}active{% endif %}" href="/admin/campanhas"
+            >🎯 Campanhas</a>
     <a class="nav-link {% if path.startswith('/admin/itens_parados') %}active{% endif %}" href="/admin/itens_parados">🧾 Itens Parados (Admin)</a>
     <a class="nav-link {% if path.startswith('/admin/configuracoes') %}active{% endif %}" href="/admin/configuracoes">⚙️ Configurações</a>
     <a class="nav-link {% if path.startswith('/admin/fechamento') %}active{% endif %}" href="/admin/fechamento">✅ Fechamento</a>
@@ -58,10 +65,4 @@
 
   <div class="my-2 border-top border-light-subtle"></div>
   <a class="nav-link text-danger" href="/logout">🚪 Sair</a>
-</nav
-      <li class="nav-item">
-        <a class="nav-link" href="/admin/combos">
-          <span class="me-2">🧩</span> Campanhas (Combos)
-        </a>
-      </li>
->
+</nav>

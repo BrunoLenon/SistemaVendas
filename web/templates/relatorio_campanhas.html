@@ -203,46 +203,238 @@
     <div class="alert alert-info shadow-sm">
       Selecione uma <strong>EMP</strong> e clique em <strong>OK</strong> para visualizar o relatório.
     </div>
-  {% elif not emps_data or (emps_data|length) == 0 %}
+  {% elif (not emps_abertas or (emps_abertas|length)==0) and (not emps_fechadas or (emps_fechadas|length)==0) %}
     <div class="alert alert-warning shadow-sm">
       Nenhum dado encontrado para o período selecionado.
     </div>
   {% else %}
-    <div class="row g-3">
-      {% for e in emps_data %}
-        {% set emp_id = 'emp' ~ loop.index %}
-        {% set mid = 'modal_' ~ emp_id %}
-        {% set vend_ct = (e.vendedores|length) %}
-        {% set topv = e.vendedores[:3] %}
+    <ul class="nav nav-tabs mb-3" role="tablist">
+      <li class="nav-item" role="presentation">
+        <button class="nav-link active" id="tab-a" data-bs-toggle="tab" data-bs-target="#pane-a" type="button" role="tab">
+          A — Cadastros (Qtd/Combo)
+        </button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button class="nav-link" id="tab-b" data-bs-toggle="tab" data-bs-target="#pane-b" type="button" role="tab">
+          B — Abertas
+        </button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button class="nav-link" id="tab-c" data-bs-toggle="tab" data-bs-target="#pane-c" type="button" role="tab">
+          C — Fechadas
+        </button>
+      </li>
+    </ul>
 
-        <div class="col-12 col-md-6 col-lg-4">
-          <button type="button" class="card shadow-sm w-100 text-start border-0" style="border-radius:1rem"
-                  data-bs-toggle="modal" data-bs-target="#{{ mid }}">
-            <div class="card-body">
-              <div class="d-flex justify-content-between align-items-start gap-2">
-                <div>
-                  <div class="subtitle small">Loja</div>
-                  <div class="h5 m-0 fw-bold">EMP {{ e.emp }}</div>
+    <div class="tab-content">
+      <!-- Tab A: Cadastros -->
+      <div class="tab-pane fade show active" id="pane-a" role="tabpanel" aria-labelledby="tab-a">
+        <div class="row g-3">
+          {% for e in emps_todos %}
+            <div class="col-12">
+              <div class="card shadow-sm">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                  <div>
+                    <strong>EMP {{ e.emp }}</strong>
+                    {% if e.fechado %}
+                      <span class="badge text-bg-secondary ms-2">FECHADO</span>
+                    {% else %}
+                      <span class="badge text-bg-success ms-2">ABERTO</span>
+                    {% endif %}
+                  </div>
                 </div>
-                <span class="badge text-bg-light border mono">Total {{ e.total_emp|brl }}</span>
-              </div>
-
-              <div class="d-flex flex-wrap gap-2 mt-3">
-                <span class="badge rounded-pill text-bg-light border mono">{{ vend_ct }} vendedor(es)</span>
-              </div>
-
-              <div class="mt-3">
-                <div class="subtitle small mb-1">Preview (top vendedores)</div>
-                <div class="d-grid gap-1">
-                  {% for v in topv %}
-                    <div class="d-flex justify-content-between gap-2 small">
-                      <div class="text-truncate" style="max-width:240px"><strong>{{ v.vendedor }}</strong></div>
-                      <div class="mono">{{ v.total_recompensa|brl }}</div>
+                <div class="card-body">
+                  <h6 class="mb-2">Campanhas Qtd</h6>
+                  {% if not e.campanhas_qtd or (e.campanhas_qtd|length)==0 %}
+                    <div class="text-muted small mb-3">Nenhuma campanha Qtd cadastrada/intersectando o período.</div>
+                  {% else %}
+                    <div class="table-responsive mb-3">
+                      <table class="table table-sm align-middle">
+                        <thead>
+                          <tr>
+                            <th scope="col">Título</th>
+                            <th scope="col">Marca</th>
+                            <th scope="col">Match</th>
+                            <th scope="col">Mínimo</th>
+                            <th scope="col">R$/un</th>
+                            <th scope="col">Vigência</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {% for c in e.campanhas_qtd %}
+                            <tr>
+                              <td>{{ c.titulo }}</td>
+                              <td>{{ c.marca }}</td>
+                              <td>
+                                {% if (c.campo_match or 'codigo') == 'descricao' %}
+                                  DESCRIÇÃO: {{ c.descricao_prefixo or c.produto_prefixo }}
+                                {% else %}
+                                  MESTRE: {{ c.produto_prefixo }}
+                                {% endif %}
+                              </td>
+                              <td>{{ c.qtd_minima or '-' }}</td>
+                              <td>{{ '%.2f'|format(c.recompensa_unit or 0) }}</td>
+                              <td>{{ c.data_inicio }} → {{ c.data_fim }}</td>
+                            </tr>
+                          {% endfor %}
+                        </tbody>
+                      </table>
                     </div>
-                  {% endfor %}
-                  {% if vend_ct > 3 %}
-                    <div class="subtitle small">+ {{ vend_ct - 3 }} vendedor(es)…</div>
                   {% endif %}
+
+                  <h6 class="mb-2">Campanhas Combo</h6>
+                  {% if not e.combos or (e.combos|length)==0 %}
+                    <div class="text-muted small">Nenhum combo cadastrado/intersectando o período.</div>
+                  {% else %}
+                    <div class="table-responsive">
+                      <table class="table table-sm align-middle">
+                        <thead>
+                          <tr>
+                            <th scope="col">Título</th>
+                            <th scope="col">Marca</th>
+                            <th scope="col">Vigência</th>
+                            <th scope="col">Valor global</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {% for c in e.combos %}
+                            <tr>
+                              <td>{{ c.titulo }}</td>
+                              <td>{{ c.marca }}</td>
+                              <td>{{ c.data_inicio }} → {{ c.data_fim }}</td>
+                              <td>{% if c.valor_unitario_global is not none %}{{ '%.2f'|format(c.valor_unitario_global) }}{% else %}-{% endif %}</td>
+                            </tr>
+                          {% endfor %}
+                        </tbody>
+                      </table>
+                    </div>
+                  {% endif %}
+                </div>
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+
+      <!-- Tab B: Abertas -->
+      <div class="tab-pane fade" id="pane-b" role="tabpanel" aria-labelledby="tab-b">
+        {% if not emps_abertas or (emps_abertas|length)==0 %}
+          <div class="alert alert-info shadow-sm">Nenhuma campanha em aberto para o período/filtros.</div>
+        {% else %}
+          {% for e in emps_abertas %}
+            <div class="card shadow-sm mb-3">
+              <div class="card-header">
+                <strong>EMP {{ e.emp }}</strong> <span class="badge text-bg-success ms-2">ABERTO</span>
+              </div>
+              <div class="card-body">
+                {% for v in e.vendedores %}
+                  <div class="mb-3">
+                    <div class="d-flex justify-content-between align-items-center">
+                      <div class="fw-semibold">{{ v.vendedor }}</div>
+                      <div class="badge text-bg-dark">Total: {{ '%.2f'|format(v.total_recompensa or 0) }}</div>
+                    </div>
+                    <div class="table-responsive mt-2">
+                      <table class="table table-sm align-middle">
+                        <thead>
+                          <tr>
+                            <th scope="col">Tipo</th>
+                            <th scope="col">Campanha</th>
+                            <th scope="col">Marca</th>
+                            <th scope="col">Item</th>
+                            <th scope="col" class="text-end">Recompensa</th>
+                            <th scope="col">Atingiu</th>
+                            <th scope="col">Vigência</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {% for it in v.itens %}
+                            <tr>
+                              <td>
+                                {% if it.tipo == 'COMBO' %}
+                                  <span class="badge text-bg-purple" style="background:#6f42c1;">COMBO</span>
+                                {% else %}
+                                  <span class="badge text-bg-primary">QTD</span>
+                                {% endif %}
+                              </td>
+                              <td>{{ it.titulo }}</td>
+                              <td>{{ it.marca }}</td>
+                              <td class="text-muted">{{ it.produto }}</td>
+                              <td class="text-end">{{ '%.2f'|format(it.valor_recompensa or 0) }}</td>
+                              <td>{% if it.atingiu %}<span class="badge text-bg-success">SIM</span>{% else %}<span class="badge text-bg-secondary">NÃO</span>{% endif %}</td>
+                              <td class="text-muted small">{{ it.periodo }}</td>
+                            </tr>
+                          {% endfor %}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                {% endfor %}
+              </div>
+            </div>
+          {% endfor %}
+        {% endif %}
+      </div>
+
+      <!-- Tab C: Fechadas -->
+      <div class="tab-pane fade" id="pane-c" role="tabpanel" aria-labelledby="tab-c">
+        {% if not emps_fechadas or (emps_fechadas|length)==0 %}
+          <div class="alert alert-info shadow-sm">Nenhuma campanha fechada para o período/filtros.</div>
+        {% else %}
+          {% for e in emps_fechadas %}
+            <div class="card shadow-sm mb-3">
+              <div class="card-header">
+                <strong>EMP {{ e.emp }}</strong> <span class="badge text-bg-secondary ms-2">FECHADO</span>
+              </div>
+              <div class="card-body">
+                {% for v in e.vendedores %}
+                  <div class="mb-3">
+                    <div class="d-flex justify-content-between align-items-center">
+                      <div class="fw-semibold">{{ v.vendedor }}</div>
+                      <div class="badge text-bg-dark">Total: {{ '%.2f'|format(v.total_recompensa or 0) }}</div>
+                    </div>
+                    <div class="table-responsive mt-2">
+                      <table class="table table-sm align-middle">
+                        <thead>
+                          <tr>
+                            <th scope="col">Tipo</th>
+                            <th scope="col">Campanha</th>
+                            <th scope="col">Marca</th>
+                            <th scope="col">Item</th>
+                            <th scope="col" class="text-end">Recompensa</th>
+                            <th scope="col">Atingiu</th>
+                            <th scope="col">Vigência</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {% for it in v.itens %}
+                            <tr>
+                              <td>
+                                {% if it.tipo == 'COMBO' %}
+                                  <span class="badge text-bg-purple" style="background:#6f42c1;">COMBO</span>
+                                {% else %}
+                                  <span class="badge text-bg-primary">QTD</span>
+                                {% endif %}
+                              </td>
+                              <td>{{ it.titulo }}</td>
+                              <td>{{ it.marca }}</td>
+                              <td class="text-muted">{{ it.produto }}</td>
+                              <td class="text-end">{{ '%.2f'|format(it.valor_recompensa or 0) }}</td>
+                              <td>{% if it.atingiu %}<span class="badge text-bg-success">SIM</span>{% else %}<span class="badge text-bg-secondary">NÃO</span>{% endif %}</td>
+                              <td class="text-muted small">{{ it.periodo }}</td>
+                            </tr>
+                          {% endfor %}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                {% endfor %}
+              </div>
+            </div>
+          {% endfor %}
+        {% endif %}
+      </div>
+    </div>
+  {% endif %}{% endif %}
                 </div>
               </div>
 
