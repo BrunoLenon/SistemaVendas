@@ -324,6 +324,8 @@ class CampanhaQtd(Base):
     titulo = Column(String(120), nullable=True)
     produto_prefixo = Column(String(200), nullable=False)
     marca = Column(String(120), nullable=False)
+    ano = Column(Integer, nullable=False, index=True)
+    mes = Column(Integer, nullable=False, index=True)
 
     # Novo: campanhas por descrição (prefixo no início). Se campo_match='descricao', usa Venda.descricao_norm.
     campo_match = Column(String(20), nullable=False, default='codigo')  # 'codigo' ou 'descricao'
@@ -570,6 +572,7 @@ class CampanhaCombo(Base):
 
     __table_args__ = (
         Index("ix_combo_emp_marca", "emp", "marca"),
+        Index("ix_combo_ano_mes", "ano", "mes"),
     )
 
 

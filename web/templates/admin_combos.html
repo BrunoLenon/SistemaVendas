@@ -33,6 +33,8 @@
     <div class="card-body">
       <form method="post" action="/admin/combos?mes={{ mes }}&ano={{ ano }}" id="form-combo">
         <input type="hidden" name="acao" value="criar">
+        <input type="hidden" name="mes" value="{{ mes }}">
+        <input type="hidden" name="ano" value="{{ ano }}">
         <div class="row g-3">
           <div class="col-md-4">
             <label class="form-label">Título</label>
