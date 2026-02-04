@@ -5237,20 +5237,24 @@ def admin_combos():
                     if d_fim < d_ini:
                         raise ValueError("Data fim não pode ser menor que data início.")
 
-                    combo = CampanhaCombo(
+                    combo_kwargs = dict(
                         titulo=titulo,
-                        nome=titulo,
+                        nome=titulo,  # compat: preenche 'nome' com o mesmo valor do título
                         emp=emp or None,
                         marca=marca,
-                        ano=ano,
-                        mes=mes,
                         data_inicio=d_ini,
                         data_fim=d_fim,
                         valor_unitario_global=valor_global,
                         ativo=True,
-                        created_at=datetime.utcnow(),
-                        updated_at=datetime.utcnow(),
                     )
+                    # 'mes' existe e é NOT NULL no Supabase
+                    if hasattr(CampanhaCombo, "mes"):
+                        combo_kwargs["mes"] = mes
+                    # algumas bases podem ter 'ano' também; só envia se existir no model
+                    if hasattr(CampanhaCombo, "ano"):
+                        combo_kwargs["ano"] = ano
+
+                    combo = CampanhaCombo(**combo_kwargs)
                     db.add(combo)
                     db.flush()  # obtém combo.id
 
