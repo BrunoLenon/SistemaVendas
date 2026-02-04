@@ -25,6 +25,15 @@
           <label class="form-label">Ano</label>
           <input class="form-control" type="number" name="ano" min="2020" max="2035" value="{{ ano }}">
         </div>
+        <div class="col-6 col-md-3">
+          <label class="form-label">Data início</label>
+          <input class="form-control" type="date" name="data_inicio" value="{{ default_data_inicio }}">
+        </div>
+        <div class="col-6 col-md-3">
+          <label class="form-label">Data fim</label>
+          <input class="form-control" type="date" name="data_fim" value="{{ default_data_fim }}">
+          <div class="form-text">Ex.: 01–05, 10–20 (crie mais de um combo se quiser intervalos diferentes).</div>
+        </div>
         <div class="col-12 col-md-4">
           <label class="form-label">Nome do combo</label>
           <input class="form-control" name="nome" placeholder="Ex.: Linha Elétrica (BOSCH)">
@@ -94,6 +103,9 @@
                 <strong class="me-2">{{ c.nome }}</strong>
                 <span class="badge bg-light text-dark me-2">Marca: {{ c.marca }}</span>
                 {% if c.emp %}<span class="badge bg-light text-dark">EMP: {{ c.emp }}</span>{% endif %}
+                {% if c.data_inicio and c.data_fim %}
+                  <span class="badge bg-secondary ms-2">{{ c.data_inicio }} → {{ c.data_fim }}</span>
+                {% endif %}
               </button>
             </h2>
             <div id="c{{ c.id }}" class="accordion-collapse collapse" data-bs-parent="#accCombos">

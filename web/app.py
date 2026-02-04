@@ -2960,7 +2960,8 @@ def campanhas_qtd():
                         try:
                             di = c.data_inicio or date(ano, mes, 1)
                             dfim = c.data_fim or date(ano, mes, calendar.monthrange(ano, mes)[1])
-                            mov = pd.to_datetime(base_c["movimento"], errors="coerce")
+                            # Coluna de data das vendas é MOVIMENTO (date/datetime)
+                            mov = pd.to_datetime(base_c["MOVIMENTO"], errors="coerce")
                             base_c = base_c[(mov.dt.date >= di) & (mov.dt.date <= dfim)]
                         except Exception:
                             pass
@@ -5293,9 +5294,21 @@ def admin_combos():
         flash("Acesso negado.", "danger")
         return redirect("/dashboard")
 
+    # Período (mês/ano) — usa request.values para suportar GET e POST.
     hoje = date.today()
-    mes = int(request.values.get("mes") or hoje.month)
-    ano = int(request.values.get("ano") or hoje.year)
+    mes = request.values.get("mes", type=int) or hoje.month
+    ano = request.values.get("ano", type=int) or hoje.year
+
+    # Vigência padrão: mês inteiro (permite campanhas por intervalo, ex.: 01–05).
+    try:
+        last_day = calendar.monthrange(ano, mes)[1]
+    except Exception:
+        mes = max(1, min(int(mes or hoje.month), 12))
+        ano = int(ano or hoje.year)
+        last_day = calendar.monthrange(ano, mes)[1]
+
+    default_data_inicio = date(ano, mes, 1)
+    default_data_fim = date(ano, mes, last_day)
 
     with SessionLocal() as db:
         if request.method == "POST":
@@ -5421,6 +5434,8 @@ def admin_combos():
         "admin_combos.html",
         mes=mes,
         ano=ano,
+        default_data_inicio=default_data_inicio,
+        default_data_fim=default_data_fim,
         combos=combos,
         itens_map=itens_map,
     )
