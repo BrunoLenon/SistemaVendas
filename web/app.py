@@ -4544,7 +4544,7 @@ def admin_emps():
                                 nome=nome,
                                 cidade=cidade or None,
                                 uf=uf or None,
-                                ativo=ativo,
+                                ativo=True,
                             )
                         )
                         ok = f"EMP {codigo} criada."
@@ -5237,24 +5237,20 @@ def admin_combos():
                     if d_fim < d_ini:
                         raise ValueError("Data fim não pode ser menor que data início.")
 
-                    combo_kwargs = dict(
+                    combo = CampanhaCombo(
                         titulo=titulo,
-                        nome=titulo,  # compat: preenche 'nome' com o mesmo valor do título
+                        nome=titulo,
                         emp=emp or None,
                         marca=marca,
                         data_inicio=d_ini,
                         data_fim=d_fim,
+                        ano=ano,
+                        mes=mes,
                         valor_unitario_global=valor_global,
                         ativo=True,
+                        created_at=datetime.utcnow(),
+                        updated_at=datetime.utcnow(),
                     )
-                    # 'mes' existe e é NOT NULL no Supabase
-                    if hasattr(CampanhaCombo, "mes"):
-                        combo_kwargs["mes"] = mes
-                    # algumas bases podem ter 'ano' também; só envia se existir no model
-                    if hasattr(CampanhaCombo, "ano"):
-                        combo_kwargs["ano"] = ano
-
-                    combo = CampanhaCombo(**combo_kwargs)
                     db.add(combo)
                     db.flush()  # obtém combo.id
 
@@ -6027,7 +6023,7 @@ def admin_mensagens():
                     titulo=titulo,
                     conteudo=conteudo,
                     bloqueante=bloqueante,
-                    ativo=ativo,
+                    ativo=True,
                     inicio_em=_parse_date(inicio_em),
                     fim_em=_parse_date(fim_em),
                     created_by_user_id=int(user_id) if user_id else None,
