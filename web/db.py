@@ -2,7 +2,7 @@ import os
 from datetime import datetime
 from urllib.parse import quote_plus
 
-from sqlalchemy import create_engine, Column, Integer, String, Float, Date, DateTime, Text, Boolean, Index, UniqueConstraint, text
+from sqlalchemy import create_engine, Column, Integer, String, Float, Date, DateTime, Text, Boolean, Index, UniqueConstraint, text, func
 from sqlalchemy.orm import declarative_base, sessionmaker, synonym
 
 # =====================
@@ -266,11 +266,9 @@ class DashboardCache(Base):
     ranking_top15_json = Column(Text, nullable=False, default='[]')
     total_liquido_periodo = Column(Float, nullable=False, default=0.0)
 
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, server_default=func.now())
-
-    # Compatibilidade: algumas rotas usam o nome "updated_at".
-    # Usamos synonym para funcionar em filtros e order_by.
-    updated_at = synonym("atualizado_em")
+    atualizado_em = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, server_default=func.now())
+    # Alias de compatibilidade
+    atualizado_em = synonym("updated_at")
 
     __table_args__ = (
         # Índices para acelerar consultas do dashboard
