@@ -2,7 +2,7 @@ import os
 from datetime import datetime
 from urllib.parse import quote_plus
 
-from sqlalchemy import create_engine, Column, Integer, String, Float, Date, DateTime, Text, Boolean, Index, UniqueConstraint, func, text
+from sqlalchemy import create_engine, Column, Integer, String, Float, Date, DateTime, Text, Boolean, Index, UniqueConstraint, text
 from sqlalchemy.orm import declarative_base, sessionmaker, synonym
 
 # =====================
@@ -552,36 +552,26 @@ class CampanhaCombo(Base):
     __tablename__ = "campanhas_combo"
 
     id = Column(Integer, primary_key=True)
-
-    # Campos conforme Supabase
-    nome = Column(String(160), nullable=False)  # obrigatório no banco
-    titulo = Column(String(160), nullable=True)  # opcional no banco (mantemos por compatibilidade UI)
-
-    mes = Column(Integer, nullable=False, index=True)
-    ano = Column(Integer, nullable=False, index=True)
-
+    titulo = Column(String(160), nullable=False, default="")
+    nome = Column(String(160), nullable=False, server_default=text("''"))  # compat: coluna antiga/obrigatória
     emp = Column(String(30), nullable=True, index=True)  # null/'' => global
-    marca = Column(String(120), nullable=False, index=True)
+    marca = Column(String(120), nullable=False, default="", index=True)
 
-    # Vigência (no banco pode ser nulo, mas a UI sempre envia)
-    data_inicio = Column(Date, nullable=True)
-    data_fim = Column(Date, nullable=True)
+    # Vigência
+    data_inicio = Column(Date, nullable=False)
+    data_fim = Column(Date, nullable=False)
 
+    # Valor unitário global opcional (fallback quando item não tem valor_unitario)
     valor_unitario_global = Column(Float, nullable=True)
 
     ativo = Column(Boolean, nullable=False, default=True)
 
-    created_at = Column(DateTime, nullable=False, server_default=func.now())
-    updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
-
-    # colunas extras existentes no Supabase (opcionais)
-    criado_em = Column(DateTime(timezone=True), nullable=True, server_default=func.now())
-    atualizado_em = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, server_default=func.now())
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, server_default=func.now())
 
     __table_args__ = (
-        Index("ix_campanhas_combo_periodo", "ano", "mes"),
+        Index("ix_combo_emp_marca", "emp", "marca"),
     )
-
 
 
 class CampanhaComboItem(Base):
@@ -591,15 +581,15 @@ class CampanhaComboItem(Base):
     combo_id = Column(Integer, nullable=False, index=True)
 
     # Match: CODIGO (MESTRE) por prefixo e/ou DESCRIÇÃO por contains
-    mestre_prefixo = Column(String(120), nullable=True)
-    descricao_contains = Column(String(200), nullable=True)
+    mestre_prefixo = Column("match_mestre", String(120), nullable=False)
+    descricao_contains = Column("nome_item", String(200), nullable=False)
 
-    minimo_qtd = Column(Float, nullable=False, default=0.0)
+    minimo_qtd = Column(Integer, nullable=False)
     valor_unitario = Column(Float, nullable=True)  # opcional; se vazio usa combo.valor_unitario_global
 
     ordem = Column(Integer, nullable=False, default=1)
 
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, server_default=func.now())
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
 
 class CampanhaComboResultado(Base):
