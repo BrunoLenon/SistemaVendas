@@ -5239,15 +5239,14 @@ def admin_combos():
 
                     combo = CampanhaCombo(
                         titulo=titulo,
-                        nome=nome or titulo,
+                        # compat: se a tabela ainda tiver coluna "nome" obrigatória, preenche igual ao título
+                        nome=titulo,
                         emp=emp or None,
                         marca=marca,
                         data_inicio=d_ini,
                         data_fim=d_fim,
-                        ano=ano,
-                        mes=mes,
-                        valor_unitario_global=vug,
-                        ativo=ativo,
+                        valor_unitario_global=valor_global,
+                        ativo=True,
                         created_at=datetime.utcnow(),
                         updated_at=datetime.utcnow(),
                     )
