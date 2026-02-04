@@ -2,7 +2,7 @@ import os
 from datetime import datetime
 from urllib.parse import quote_plus
 
-from sqlalchemy import create_engine, Column, Integer, String, Float, Date, DateTime, Text, Boolean, Index, UniqueConstraint, text
+from sqlalchemy import create_engine, Column, Integer, String, Float, Date, DateTime, Text, Boolean, Index, UniqueConstraint, text, func
 from sqlalchemy.orm import declarative_base, sessionmaker, synonym
 
 # =====================
@@ -297,8 +297,7 @@ class ItemParado(Base):
 
     ativo = Column(Integer, nullable=False, default=1)  # 1=ativo, 0=inativo
 
-    criado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
-    atualizado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, server_default=func.now())atualizado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
 
     __table_args__ = (
         Index('ix_itens_parados_emp_codigo', 'emp', 'codigo'),
@@ -339,8 +338,7 @@ class CampanhaQtd(Base):
 
     ativo = Column(Integer, nullable=False, default=1)
 
-    criado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
-    atualizado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, server_default=func.now())atualizado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
 
     __table_args__ = (
         Index("ix_campanhas_qtd_emp_periodo", "emp", "data_inicio", "data_fim"),
@@ -570,8 +568,7 @@ class CampanhaCombo(Base):
 
     ativo = Column(Boolean, nullable=False, default=True)
 
-    criado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
-    atualizado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, server_default=func.now())atualizado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
 
     __table_args__ = (
         Index("ix_combo_emp_marca", "emp", "marca"),
@@ -593,10 +590,7 @@ class CampanhaComboItem(Base):
 
     ordem = Column(Integer, nullable=False, default=1)
 
-    criado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
-
-
-class CampanhaComboResultado(Base):
+    created_at = Column(DateTime, nullable=False, server_default=func.now())class CampanhaComboResultado(Base):
     __tablename__ = "campanhas_combo_resultados"
 
     id = Column(Integer, primary_key=True)

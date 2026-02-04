@@ -1275,7 +1275,7 @@ def _vendedores_from_db(role: str, emp_usuario: str | None):
 def _cache_is_fresh(row: DashboardCache) -> bool:
     """Retorna True se a linha do cache ainda está dentro do TTL."""
     try:
-        ts = getattr(row, "atualizado_em", None) or getattr(row, "updated_at", None)
+        ts = getattr(row, "updated_at", None) or getattr(row, "updated_at", None)
         if not ts:
             return False
         # ts pode vir timezone-aware ou naive; normaliza pra naive UTC
@@ -2589,7 +2589,7 @@ def _upsert_resultado(
     res.valor_vendido = valor_vendido
     res.atingiu_minimo = int(atingiu)
     res.valor_recompensa = float(valor_recomp)
-    res.atualizado_em = datetime.utcnow()
+    res.updated_at = datetime.utcnow()
     return res
 
 
@@ -2695,7 +2695,7 @@ def _calc_resultado_all_vendedores(
         valor_vendido=valor_vendido,
         atingiu_minimo=int(atingiu),
         valor_recompensa=float(valor_recomp),
-        atualizado_em=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
     )
 
 
@@ -3258,7 +3258,7 @@ def _recalcular_resultados_combos_para_scope(ano: int, mes: int, emps: list[str]
                         atingiu_gate=int(atingiu),
                         valor_recompensa=float(total),
                         status_pagamento="PENDENTE",
-                        atualizado_em=datetime.utcnow(),
+                        updated_at=datetime.utcnow(),
                     ))
 
             if novos:
@@ -3362,7 +3362,7 @@ def _recalcular_resultados_campanhas_para_scope(ano: int, mes: int, emps: list[s
                         atingiu_minimo=int(atingiu),
                         valor_recompensa=float(valor_recomp),
                         status_pagamento="PENDENTE",
-                        atualizado_em=datetime.utcnow(),
+                        updated_at=datetime.utcnow(),
                     ))
             if novos:
                 db.bulk_save_objects(novos)
@@ -4735,7 +4735,7 @@ def admin_itens_parados():
                     if not it:
                         raise ValueError('Item não encontrado.')
                     it.ativo = 0 if int(it.ativo or 0) == 1 else 1
-                    it.atualizado_em = datetime.utcnow()
+                    it.updated_at = datetime.utcnow()
                     db.commit()
                     ok = 'Status do item atualizado.'
 
@@ -5248,8 +5248,8 @@ def admin_combos():
                         mes=int(d_ini.month),
                         valor_unitario_global=valor_global,
                         ativo=True,
-                        criado_em=datetime.utcnow(),
-                        atualizado_em=datetime.utcnow(),
+                        created_at=datetime.utcnow(),
+                        updated_at=datetime.utcnow(),
                     )
                     db.add(combo)
                     db.flush()  # obtém combo.id
@@ -5287,7 +5287,7 @@ def admin_combos():
                             minimo_qtd=float(minimo_qtd or 0.0),
                             valor_unitario=valor_unit,
                             ordem=i+1,
-                            criado_em=datetime.utcnow(),
+                            created_at=datetime.utcnow(),
                         ))
 
                     if not itens:
@@ -5621,7 +5621,7 @@ def admin_campanhas_qtd():
                     if not c:
                         raise ValueError("Campanha não encontrada.")
                     c.ativo = 0 if int(c.ativo or 0) == 1 else 1
-                    c.atualizado_em = datetime.utcnow()
+                    c.updated_at = datetime.utcnow()
                     db.commit()
                     ok = "Status da campanha atualizado."
 
@@ -5649,7 +5649,7 @@ def admin_campanhas_qtd():
                     else:
                         r.status_pagamento = "PAGO"
                         r.pago_em = datetime.utcnow()
-                    r.atualizado_em = datetime.utcnow()
+                    r.updated_at = datetime.utcnow()
                     db.commit()
                     ok = "Status de pagamento atualizado."
 
