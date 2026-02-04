@@ -1275,7 +1275,7 @@ def _vendedores_from_db(role: str, emp_usuario: str | None):
 def _cache_is_fresh(row: DashboardCache) -> bool:
     """Retorna True se a linha do cache ainda está dentro do TTL."""
     try:
-        ts = getattr(row, "updated_at", None) or getattr(row, "updated_at", None)
+        ts = getattr(row, "atualizado_em", None) or getattr(row, "updated_at", None)
         if not ts:
             return False
         # ts pode vir timezone-aware ou naive; normaliza pra naive UTC
@@ -2589,7 +2589,7 @@ def _upsert_resultado(
     res.valor_vendido = valor_vendido
     res.atingiu_minimo = int(atingiu)
     res.valor_recompensa = float(valor_recomp)
-    res.updated_at = datetime.utcnow()
+    res.atualizado_em = datetime.utcnow()
     return res
 
 
@@ -4735,7 +4735,7 @@ def admin_itens_parados():
                     if not it:
                         raise ValueError('Item não encontrado.')
                     it.ativo = 0 if int(it.ativo or 0) == 1 else 1
-                    it.updated_at = datetime.utcnow()
+                    it.atualizado_em = datetime.utcnow()
                     db.commit()
                     ok = 'Status do item atualizado.'
 
@@ -5239,15 +5239,15 @@ def admin_combos():
 
                     combo = CampanhaCombo(
                         titulo=titulo,
-                        nome=titulo,  # compat: coluna nome NOT NULL
-                        emp=emp if emp else None,
+                        nome=nome or titulo,
+                        emp=emp or None,
                         marca=marca,
                         data_inicio=d_ini,
                         data_fim=d_fim,
-                        ano=int(d_ini.year),
-                        mes=int(d_ini.month),
-                        valor_unitario_global=valor_global,
-                        ativo=True,
+                        ano=ano,
+                        mes=mes,
+                        valor_unitario_global=vug,
+                        ativo=ativo,
                         created_at=datetime.utcnow(),
                         updated_at=datetime.utcnow(),
                     )
@@ -5621,7 +5621,7 @@ def admin_campanhas_qtd():
                     if not c:
                         raise ValueError("Campanha não encontrada.")
                     c.ativo = 0 if int(c.ativo or 0) == 1 else 1
-                    c.updated_at = datetime.utcnow()
+                    c.atualizado_em = datetime.utcnow()
                     db.commit()
                     ok = "Status da campanha atualizado."
 
@@ -5649,7 +5649,7 @@ def admin_campanhas_qtd():
                     else:
                         r.status_pagamento = "PAGO"
                         r.pago_em = datetime.utcnow()
-                    r.updated_at = datetime.utcnow()
+                    r.atualizado_em = datetime.utcnow()
                     db.commit()
                     ok = "Status de pagamento atualizado."
 

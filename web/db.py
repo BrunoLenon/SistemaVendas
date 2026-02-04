@@ -2,7 +2,7 @@ import os
 from datetime import datetime
 from urllib.parse import quote_plus
 
-from sqlalchemy import create_engine, Column, Integer, String, Float, Date, DateTime, Text, Boolean, Index, UniqueConstraint, text, func
+from sqlalchemy import create_engine, Column, Integer, String, Float, Date, DateTime, Text, Boolean, Index, UniqueConstraint, text
 from sqlalchemy.orm import declarative_base, sessionmaker, synonym
 
 # =====================
@@ -135,6 +135,7 @@ class Mensagem(Base):
     ativo = Column(Boolean, nullable=False, default=True)
     inicio_em = Column(Date, nullable=True)
     fim_em = Column(Date, nullable=True)
+
     created_by_user_id = Column(Integer, nullable=True, index=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
@@ -187,15 +188,19 @@ class Venda(Base):
     __tablename__ = "vendas"
 
     id = Column(Integer, primary_key=True)
+
     mestre = Column(String(120), nullable=False, index=True)
     marca = Column(String(120), index=True)
+
     vendedor = Column(String(80), nullable=False, index=True)
 
     # No banco a coluna se chama 'movimento' (planilha: MOVIMENTO)
     movimento = Column(Date, nullable=False, index=True)
     # Alias para manter compatibilidade com código legado que usa Venda.data
     data = synonym("movimento")
+
     mov_tipo_movto = Column(String(10), nullable=False)
+
     nota = Column(String(60), nullable=True)  # NOTA
     emp = Column(String(30), nullable=True)   # EMP
 
@@ -246,11 +251,13 @@ class DashboardCache(Base):
     vendedor = Column(String(80), primary_key=True, nullable=False, index=True)
     ano = Column(Integer, primary_key=True, nullable=False, index=True)
     mes = Column(Integer, primary_key=True, nullable=False, index=True)
+
     valor_bruto = Column(Float, nullable=False, default=0.0)
     valor_liquido = Column(Float, nullable=False, default=0.0)
     devolucoes = Column(Float, nullable=False, default=0.0)
     cancelamentos = Column(Float, nullable=False, default=0.0)
     pct_devolucao = Column(Float, nullable=False, default=0.0)
+
     mix_produtos = Column(Integer, nullable=False, default=0)
     mix_marcas = Column(Integer, nullable=False, default=0)
 
@@ -258,7 +265,8 @@ class DashboardCache(Base):
     ranking_json = Column(Text, nullable=False, default='[]')
     ranking_top15_json = Column(Text, nullable=False, default='[]')
     total_liquido_periodo = Column(Float, nullable=False, default=0.0)
-    atualizado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, server_default=func.now())
 
     # Compatibilidade: algumas rotas usam o nome "updated_at".
     # Usamos synonym para funcionar em filtros e order_by.
@@ -280,15 +288,17 @@ class ItemParado(Base):
 
     # Código do produto (vamos comparar com Venda.mestre)
     codigo = Column(String(120), nullable=False, index=True)
+
     descricao = Column(String(255), nullable=True)
     quantidade = Column(Integer, nullable=True)
 
     # Percentual de recompensa (ex: 10 para 10%)
     recompensa_pct = Column(Float, nullable=False, default=0.0)
+
     ativo = Column(Integer, nullable=False, default=1)  # 1=ativo, 0=inativo
 
-    created_at = Column(DateTime, nullable=False, server_default=func.now())
-    atualizado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, server_default=func.now())
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, server_default=func.now())
 
     __table_args__ = (
         Index('ix_itens_parados_emp_codigo', 'emp', 'codigo'),
@@ -308,6 +318,7 @@ class CampanhaQtd(Base):
     __tablename__ = "campanhas_qtd"
 
     id = Column(Integer, primary_key=True)
+
     emp = Column(String(30), nullable=False, index=True)
     vendedor = Column(String(80), nullable=True, index=True)  # NULL = todos
 
@@ -318,14 +329,18 @@ class CampanhaQtd(Base):
     # Novo: campanhas por descrição (prefixo no início). Se campo_match='descricao', usa Venda.descricao_norm.
     campo_match = Column(String(20), nullable=False, default='codigo')  # 'codigo' ou 'descricao'
     descricao_prefixo = Column(String(200), nullable=True)
+
     recompensa_unit = Column(Float, nullable=False, default=0.0)
     qtd_minima = Column(Float, nullable=True)
     valor_minimo = Column(Float, nullable=True)
+
     data_inicio = Column(Date, nullable=False, index=True)
     data_fim = Column(Date, nullable=False, index=True)
+
     ativo = Column(Integer, nullable=False, default=1)
-    created_at = Column(DateTime, nullable=False, server_default=func.now())
-    atualizado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, server_default=func.now())
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, server_default=func.now())
 
     __table_args__ = (
         Index("ix_campanhas_qtd_emp_periodo", "emp", "data_inicio", "data_fim"),
@@ -346,6 +361,7 @@ class CampanhaQtdResultado(Base):
     # Competência (para relatórios por mês)
     competencia_ano = Column(Integer, nullable=False, index=True)
     competencia_mes = Column(Integer, nullable=False, index=True)
+
     emp = Column(String(30), nullable=False, index=True)
     vendedor = Column(String(80), nullable=False, index=True)
 
@@ -357,13 +373,16 @@ class CampanhaQtdResultado(Base):
     qtd_minima = Column(Float, nullable=True)
     data_inicio = Column(Date, nullable=False)
     data_fim = Column(Date, nullable=False)
+
     qtd_vendida = Column(Float, nullable=False, default=0.0)
     valor_vendido = Column(Float, nullable=False, default=0.0)
     atingiu_minimo = Column(Integer, nullable=False, default=0)
     valor_recompensa = Column(Float, nullable=False, default=0.0)
+
     status_pagamento = Column(String(20), nullable=False, default="PENDENTE")
     pago_em = Column(DateTime, nullable=True)
-    atualizado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, server_default=func.now())
 
     __table_args__ = (
         UniqueConstraint(
@@ -399,12 +418,15 @@ class MetaPrograma(Base):
     __tablename__ = "metas_programas"
 
     id = Column(Integer, primary_key=True)
+
     nome = Column(String(180), nullable=False)
     tipo = Column(String(30), nullable=False, index=True)  # CRESCIMENTO | MIX | SHARE_MARCA
 
     ano = Column(Integer, nullable=False, index=True)
     mes = Column(Integer, nullable=False, index=True)
+
     ativo = Column(Boolean, nullable=False, default=True)
+
     created_by_user_id = Column(Integer, nullable=True, index=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
@@ -438,6 +460,7 @@ class MetaEscala(Base):
 
     id = Column(Integer, primary_key=True)
     meta_id = Column(Integer, nullable=False, index=True)
+
     ordem = Column(Integer, nullable=False, default=0)
     limite_min = Column(Float, nullable=False)
     bonus_percentual = Column(Float, nullable=False)
@@ -470,10 +493,13 @@ class MetaBaseManual(Base):
 
     id = Column(Integer, primary_key=True)
     meta_id = Column(Integer, nullable=False, index=True)
+
     emp = Column(String(30), nullable=False, index=True)
     vendedor = Column(String(80), nullable=False, index=True)
+
     base_valor = Column(Float, nullable=False, default=0.0)
     observacao = Column(String(200), nullable=True)
+
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
     __table_args__ = (
@@ -492,8 +518,10 @@ class MetaResultado(Base):
 
     id = Column(Integer, primary_key=True)
     meta_id = Column(Integer, nullable=False, index=True)
+
     emp = Column(String(30), nullable=False, index=True)
     vendedor = Column(String(80), nullable=False, index=True)
+
     ano = Column(Integer, nullable=False, index=True)
     mes = Column(Integer, nullable=False, index=True)
 
@@ -504,8 +532,10 @@ class MetaResultado(Base):
     mix_itens_unicos = Column(Float, nullable=True)
     share_pct = Column(Float, nullable=True)
     valor_marcas = Column(Float, nullable=True)
+
     bonus_percentual = Column(Float, nullable=False, default=0.0)
     premio = Column(Float, nullable=False, default=0.0)
+
     calculado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
 
     __table_args__ = (
@@ -531,15 +561,13 @@ class CampanhaCombo(Base):
     data_inicio = Column(Date, nullable=False)
     data_fim = Column(Date, nullable=False)
 
-    # Competência (para filtros por mês/ano no sistema)
-    ano = Column(Integer, nullable=False, default=0, server_default=text('0'), index=True)
-    mes = Column(Integer, nullable=False, default=0, server_default=text('0'), index=True)
-
     # Valor unitário global opcional (fallback quando item não tem valor_unitario)
     valor_unitario_global = Column(Float, nullable=True)
+
     ativo = Column(Boolean, nullable=False, default=True)
-    created_at = Column(DateTime, nullable=False, server_default=func.now())
-    atualizado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, server_default=func.now())
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, server_default=func.now())
 
     __table_args__ = (
         Index("ix_combo_emp_marca", "emp", "marca"),
@@ -555,11 +583,13 @@ class CampanhaComboItem(Base):
     # Match: CODIGO (MESTRE) por prefixo e/ou DESCRIÇÃO por contains
     mestre_prefixo = Column(String(120), nullable=True)
     descricao_contains = Column(String(200), nullable=True)
+
     minimo_qtd = Column(Float, nullable=False, default=0.0)
     valor_unitario = Column(Float, nullable=True)  # opcional; se vazio usa combo.valor_unitario_global
 
     ordem = Column(Integer, nullable=False, default=1)
-    created_at = Column(DateTime, nullable=False, server_default=func.now())
+
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, server_default=func.now())
 
 
 class CampanhaComboResultado(Base):
@@ -567,19 +597,25 @@ class CampanhaComboResultado(Base):
 
     id = Column(Integer, primary_key=True)
     combo_id = Column(Integer, nullable=False, index=True)
+
     competencia_ano = Column(Integer, nullable=False, index=True)
     competencia_mes = Column(Integer, nullable=False, index=True)
+
     emp = Column(String(30), nullable=False, index=True)
     vendedor = Column(String(80), nullable=False, index=True)
+
     titulo = Column(String(160), nullable=False, default="")
     marca = Column(String(120), nullable=False, default="")
+
     data_inicio = Column(Date, nullable=False)
     data_fim = Column(Date, nullable=False)
+
     atingiu_gate = Column(Integer, nullable=False, default=0)
     valor_recompensa = Column(Float, nullable=False, default=0.0)
+
     status_pagamento = Column(String(20), nullable=False, default="PENDENTE")
     pago_em = Column(DateTime, nullable=True)
-    atualizado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, server_default=func.now())
 
     __table_args__ = (
         Index("ix_combo_res_emp_comp", "emp", "competencia_ano", "competencia_mes"),
@@ -601,8 +637,10 @@ class VendasResumoPeriodo(Base):
     vendedor = Column(String(80), nullable=False, index=True)
     ano = Column(Integer, nullable=False, index=True)
     mes = Column(Integer, nullable=False, index=True)
+
     valor_venda = Column(Float, nullable=False, default=0.0)
     mix_produtos = Column(Integer, nullable=False, default=0)
+
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
@@ -622,6 +660,7 @@ class FechamentoMensal(Base):
     emp = Column(String(30), nullable=False, default="", index=True)
     ano = Column(Integer, nullable=False, index=True)
     mes = Column(Integer, nullable=False, index=True)
+
     fechado = Column(Boolean, nullable=False, default=True)
     fechado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
     # Status do período (controle financeiro): "aberto", "a_pagar", "pago"
@@ -653,6 +692,7 @@ class BrandingTheme(Base):
     logo_url = Column(Text, nullable=True)
     favicon_url = Column(Text, nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
+
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
@@ -833,71 +873,6 @@ BEGIN
   END IF;
 END $$;
 """))
-            conn.execute(text("""
-DO $$
-BEGIN
-  -- Itens do combo
-  BEGIN
-    ALTER TABLE campanhas_combo_itens ADD COLUMN IF NOT EXISTS created_at timestamptz;
-  EXCEPTION WHEN others THEN NULL; END;
-  BEGIN
-    ALTER TABLE campanhas_combo_itens ALTER COLUMN created_at SET DEFAULT now();
-  EXCEPTION WHEN others THEN NULL; END;
-  BEGIN
-    UPDATE campanhas_combo_itens SET created_at = now() WHERE created_at IS NULL;
-  EXCEPTION WHEN others THEN NULL; END;
-  BEGIN
-    ALTER TABLE campanhas_combo_itens ALTER COLUMN created_at SET NOT NULL;
-  EXCEPTION WHEN others THEN NULL; END;
-END $$;
-"""))
-
-                # Garantir colunas e defaults que o banco pode exigir (evita NotNullViolation em ambientes já existentes)
-            conn.execute(text("""
-DO $$
-BEGIN
-  -- mes/ano (usado para filtros)
-  BEGIN
-    ALTER TABLE campanhas_combo ADD COLUMN IF NOT EXISTS ano integer;
-  EXCEPTION WHEN others THEN NULL; END;
-  BEGIN
-    ALTER TABLE campanhas_combo ADD COLUMN IF NOT EXISTS mes integer;
-  EXCEPTION WHEN others THEN NULL; END;
-
-  -- created_at / updated_at (alguns dumps usam esses nomes e exigem NOT NULL)
-  BEGIN
-    ALTER TABLE campanhas_combo ADD COLUMN IF NOT EXISTS created_at timestamptz;
-  EXCEPTION WHEN others THEN NULL; END;
-  BEGIN
-    ALTER TABLE campanhas_combo ADD COLUMN IF NOT EXISTS updated_at timestamptz;
-  EXCEPTION WHEN others THEN NULL; END;
-
-  -- defaults
-  BEGIN
-    ALTER TABLE campanhas_combo ALTER COLUMN created_at SET DEFAULT now();
-  EXCEPTION WHEN others THEN NULL; END;
-  BEGIN
-    ALTER TABLE campanhas_combo ALTER COLUMN updated_at SET DEFAULT now();
-  EXCEPTION WHEN others THEN NULL; END;
-
-  -- preencher nulos existentes
-  BEGIN
-    UPDATE campanhas_combo SET created_at = now() WHERE created_at IS NULL;
-  EXCEPTION WHEN others THEN NULL; END;
-  BEGIN
-    UPDATE campanhas_combo SET updated_at = now() WHERE updated_at IS NULL;
-  EXCEPTION WHEN others THEN NULL; END;
-
-  -- tentar impor NOT NULL (se a coluna existir)
-  BEGIN
-    ALTER TABLE campanhas_combo ALTER COLUMN created_at SET NOT NULL;
-  EXCEPTION WHEN others THEN NULL; END;
-  BEGIN
-    ALTER TABLE campanhas_combo ALTER COLUMN updated_at SET NOT NULL;
-  EXCEPTION WHEN others THEN NULL; END;
-END $$;
-"""))
-
 
             # Fechamento mensal: status financeiro (aberto/a_pagar/pago)
             conn.execute(text("ALTER TABLE fechamento_mensal ADD COLUMN IF NOT EXISTS status varchar(20) DEFAULT 'aberto';"))
