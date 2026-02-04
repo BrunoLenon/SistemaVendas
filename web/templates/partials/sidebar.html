@@ -1,10 +1,6 @@
-{% s
-          <li class="nav-item">
-            <a class="nav-link" href="/admin/combos">
-              <span class="me-2">🧩</span> Combos (Kit)
-            </a>
-          </li>
-          et r = (role|default('')|lower) %}
+{# sidebar.html - Versão corrigida e organizada #}
+
+{% set r = (role|default('')|lower) %}
 {% set path = request.path %}
 {% set is_admin = (r == 'admin') %}
 {% set is_supervisor = (r == 'supervisor') %}
@@ -30,39 +26,87 @@
 </div>
 
 <nav class="nav flex-column p-2">
-  <a class="nav-link {% if path.startswith('/dashboard') or path=='/' %}active{% endif %}" href="/dashboard">📊 Dashboard</a>
-  <a class="nav-link {% if path.startswith('/relatorios/cidades-clientes') %}active{% endif %}" href="/relatorios/cidades-clientes">🏙️ Cidades & Clientes</a>
-  <a class="nav-link {% if path.startswith('/relatorios/campanhas') %}active{% endif %}" href="/relatorios/campanhas">🎯 Relatório Campanhas</a>
-  <a class="nav-link {% if path.startswith('/campanhas') and not path.startswith('/relatorios') %}active{% endif %}" href="/campanhas">⭐ Campanhas (Qtd)</a>
-  <a class="nav-link {% if path.startswith('/metas') %}active{% endif %}" href="/metas">🏁 Metas</a>
-  <a class="nav-link {% if path.startswith('/itens_parados') %}active{% endif %}" href="/itens_parados">🧾 Itens Parados</a>
-  <a class="nav-link {% if path.startswith('/mensagens') %}active{% endif %}" href="/mensagens">📣 Mensagens</a>
+  {# Links comuns a todos #}
+  <a class="nav-link {% if path.startswith('/dashboard') or path == '/' %}active{% endif %}" href="/dashboard">
+    📊 Dashboard
+  </a>
+  
+  <a class="nav-link {% if path.startswith('/relatorios/cidades-clientes') %}active{% endif %}" href="/relatorios/cidades-clientes">
+    🏙️ Cidades & Clientes
+  </a>
+  
+  <a class="nav-link {% if path.startswith('/relatorios/campanhas') %}active{% endif %}" href="/relatorios/campanhas">
+    🎯 Relatório Campanhas
+  </a>
+  
+  <a class="nav-link {% if path.startswith('/campanhas') and not path.startswith('/relatorios') %}active{% endif %}" href="/campanhas">
+    ⭐ Campanhas (Qtd)
+  </a>
+  
+  <a class="nav-link {% if path.startswith('/metas') %}active{% endif %}" href="/metas">
+    🏁 Metas
+  </a>
+  
+  <a class="nav-link {% if path.startswith('/itens_parados') %}active{% endif %}" href="/itens_parados">
+    🧾 Itens Parados
+  </a>
+  
+  <a class="nav-link {% if path.startswith('/mensagens') %}active{% endif %}" href="/mensagens">
+    📣 Mensagens
+  </a>
 
   <div class="my-2 border-top border-light-subtle"></div>
 
-  <a class="nav-link {% if path.startswith('/senha') %}active{% endif %}" href="/senha">🔑 Trocar senha</a>
+  <a class="nav-link {% if path.startswith('/senha') %}active{% endif %}" href="/senha">
+    🔑 Trocar senha
+  </a>
 
-
+  {# Supervisor #}
   {% if is_supervisor %}
     <div class="mt-2 mb-1 px-2 text-uppercase text-muted small">Gestão</div>
-    <a class="nav-link {% if path.startswith('/admin/mensagens') %}active{% endif %}" href="/admin/mensagens">📣 Mensagens</a>
-    <a class="nav-link {% if path.startswith('/admin/metas') %}active{% endif %}" href="/admin/metas">🏁 Metas</a>
+    <a class="nav-link {% if path.startswith('/admin/mensagens') %}active{% endif %}" href="/admin/mensagens">
+      📣 Mensagens
+    </a>
+    <a class="nav-link {% if path.startswith('/admin/metas') %}active{% endif %}" href="/admin/metas">
+      🏁 Metas
+    </a>
   {% endif %}
 
+  {# Admin #}
   {% if is_admin %}
     <div class="mt-2 mb-1 px-2 text-uppercase text-muted small">Admin</div>
-    <a class="nav-link {% if path.startswith('/admin/usuarios') %}active{% endif %}" href="/admin/usuarios">👤 Usuários</a>
-    <a class="nav-link {% if path.startswith('/admin/mensagens') %}active{% endif %}" href="/admin/mensagens">📣 Mensagens</a>
-    <a class="nav-link {% if path.startswith('/admin/metas') %}active{% endif %}" href="/admin/metas">🏁 Metas</a>
-    <a class="nav-link {% if path.startswith('/admin/importar') %}active{% endif %}" href="/admin/importar">📥 Importar vendas</a>
-    <a class="nav-link {% if path.startswith('/admin/resumos_periodo') %}active{% endif %}" href="/admin/resumos_periodo">📆 Resumos por período</a>
-    <a class="nav-link {% if path.startswith('/admin/campanhas') %}active{% endif %}" href="/admin/campanhas"
-            >🎯 Campanhas</a>
-    <a class="nav-link {% if path.startswith('/admin/itens_parados') %}active{% endif %}" href="/admin/itens_parados">🧾 Itens Parados (Admin)</a>
-    <a class="nav-link {% if path.startswith('/admin/configuracoes') %}active{% endif %}" href="/admin/configuracoes">⚙️ Configurações</a>
-    <a class="nav-link {% if path.startswith('/admin/fechamento') %}active{% endif %}" href="/admin/fechamento">✅ Fechamento</a>
+    <a class="nav-link {% if path.startswith('/admin/usuarios') %}active{% endif %}" href="/admin/usuarios">
+      👤 Usuários
+    </a>
+    <a class="nav-link {% if path.startswith('/admin/mensagens') %}active{% endif %}" href="/admin/mensagens">
+      📣 Mensagens
+    </a>
+    <a class="nav-link {% if path.startswith('/admin/metas') %}active{% endif %}" href="/admin/metas">
+      🏁 Metas
+    </a>
+    <a class="nav-link {% if path.startswith('/admin/importar') %}active{% endif %}" href="/admin/importar">
+      📥 Importar vendas
+    </a>
+    <a class="nav-link {% if path.startswith('/admin/resumos_periodo') %}active{% endif %}" href="/admin/resumos_periodo">
+      📆 Resumos por período
+    </a>
+    <a class="nav-link {% if path.startswith('/admin/campanhas') %}active{% endif %}" href="/admin/campanhas">
+      🎯 Campanhas
+    </a>
+    <a class="nav-link {% if path.startswith('/admin/itens_parados') %}active{% endif %}" href="/admin/itens_parados">
+      🧾 Itens Parados (Admin)
+    </a>
+    <a class="nav-link {% if path.startswith('/admin/configuracoes') %}active{% endif %}" href="/admin/configuracoes">
+      ⚙️ Configurações
+    </a>
+    <a class="nav-link {% if path.startswith('/admin/fechamento') %}active{% endif %}" href="/admin/fechamento">
+      ✅ Fechamento
+    </a>
   {% endif %}
 
   <div class="my-2 border-top border-light-subtle"></div>
-  <a class="nav-link text-danger" href="/logout">🚪 Sair</a>
+  
+  <a class="nav-link text-danger" href="/logout">
+    🚪 Sair
+  </a>
 </nav>
