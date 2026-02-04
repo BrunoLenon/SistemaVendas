@@ -5244,6 +5244,8 @@ def admin_combos():
                         marca=marca,
                         data_inicio=d_ini,
                         data_fim=d_fim,
+                        ano=int(d_ini.year),
+                        mes=int(d_ini.month),
                         valor_unitario_global=valor_global,
                         ativo=True,
                         criado_em=datetime.utcnow(),

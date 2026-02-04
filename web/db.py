@@ -561,6 +561,10 @@ class CampanhaCombo(Base):
     data_inicio = Column(Date, nullable=False)
     data_fim = Column(Date, nullable=False)
 
+    # Competência (para filtros por mês/ano no sistema)
+    ano = Column(Integer, nullable=False, default=0, server_default=text('0'), index=True)
+    mes = Column(Integer, nullable=False, default=0, server_default=text('0'), index=True)
+
     # Valor unitário global opcional (fallback quando item não tem valor_unitario)
     valor_unitario_global = Column(Float, nullable=True)
 
