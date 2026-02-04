@@ -711,8 +711,14 @@ def criar_tabelas():
     Base.metadata.create_all(engine)
 
     # Ajustes compatíveis (IF NOT EXISTS) — seguros para rodar em produção
+    # IMPORTANTE:
+    # - Em Postgres, se uma alteração de schema falhar dentro de uma transação,
+    #   a transação fica "aborted" e NENHUM comando seguinte é aplicado.
+    # - Para evitar que 1 ajuste falho impeça todos os outros (e estoure
+    #   UndefinedColumn depois), rodamos em AUTOCOMMIT.
     try:
-        with engine.begin() as conn:
+        with engine.connect() as conn:
+            conn = conn.execution_options(isolation_level="AUTOCOMMIT")
             # Cadastro de EMPs (lojas/filiais)
             conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS emps (
@@ -847,6 +853,12 @@ def criar_tabelas():
             conn.execute(text("ALTER TABLE campanhas_combo ADD COLUMN IF NOT EXISTS titulo varchar(160);"))
             conn.execute(text("ALTER TABLE campanhas_combo ADD COLUMN IF NOT EXISTS data_inicio date;"))
             conn.execute(text("ALTER TABLE campanhas_combo ADD COLUMN IF NOT EXISTS data_fim date;"))
+
+            # Campos de auditoria (o modelo usa criado_em/atualizado_em)
+            conn.execute(text("ALTER TABLE campanhas_combo ADD COLUMN IF NOT EXISTS criado_em timestamptz DEFAULT now();"))
+            conn.execute(text("ALTER TABLE campanhas_combo ADD COLUMN IF NOT EXISTS atualizado_em timestamptz;"))
+
+            # Compat: versões antigas podem ter 'updated_at'
             conn.execute(text("ALTER TABLE campanhas_combo ADD COLUMN IF NOT EXISTS updated_at timestamptz;"))
             # Se existir coluna antiga "nome", copia para "titulo" quando estiver vazio
             conn.execute(text("""
