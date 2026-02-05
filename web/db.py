@@ -266,7 +266,7 @@ class DashboardCache(Base):
     ranking_top15_json = Column(Text, nullable=False, default='[]')
     total_liquido_periodo = Column(Float, nullable=False, default=0.0)
 
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, server_default=func.now())
+    atualizado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
 
     # Compatibilidade: algumas rotas usam o nome "updated_at".
     # Usamos synonym para funcionar em filtros e order_by.
@@ -297,8 +297,8 @@ class ItemParado(Base):
 
     ativo = Column(Integer, nullable=False, default=1)  # 1=ativo, 0=inativo
 
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, server_default=func.now())
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, server_default=func.now())
+    criado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
+    atualizado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
 
     __table_args__ = (
         Index('ix_itens_parados_emp_codigo', 'emp', 'codigo'),
@@ -339,13 +339,14 @@ class CampanhaQtd(Base):
 
     ativo = Column(Integer, nullable=False, default=1)
 
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, server_default=func.now())
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, server_default=func.now())
-
     __table_args__ = (
         Index("ix_campanhas_qtd_emp_periodo", "emp", "data_inicio", "data_fim"),
     )
 
+
+    # timestamps (na tabela antiga os nomes são criado_em/atualizado_em)
+    created_at = Column('criado_em', DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column('atualizado_em', DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 class CampanhaQtdResultado(Base):
     """Snapshot mensal por vendedor/campanha.
@@ -382,7 +383,7 @@ class CampanhaQtdResultado(Base):
     status_pagamento = Column(String(20), nullable=False, default="PENDENTE")
     pago_em = Column(DateTime, nullable=True)
 
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, server_default=func.now())
+    atualizado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
 
     __table_args__ = (
         UniqueConstraint(
@@ -553,28 +554,38 @@ class CampanhaCombo(Base):
 
     id = Column(Integer, primary_key=True)
     titulo = Column(String(160), nullable=False, default="")
-    nome = Column(String(160), nullable=False, server_default=text("''"))  # compat: coluna antiga/obrigatória
+    nome = Column(String(160), nullable=False, default="")
     emp = Column(String(30), nullable=True, index=True)  # null/'' => global
     marca = Column(String(120), nullable=False, default="", index=True)
 
     # Vigência
     data_inicio = Column(Date, nullable=False)
     data_fim = Column(Date, nullable=False)
-    ano = Column(Integer, nullable=False, default=0, index=True)
-    mes = Column(Integer, nullable=False, default=0, index=True)
+
+    # Competência (para agrupar por mês/ano)
+    ano = Column(Integer, nullable=False, index=True)
+    mes = Column(Integer, nullable=False, index=True)
 
     # Valor unitário global opcional (fallback quando item não tem valor_unitario)
     valor_unitario_global = Column(Float, nullable=True)
 
     ativo = Column(Boolean, nullable=False, default=True)
 
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, server_default=func.now())
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, server_default=func.now())
-
     __table_args__ = (
         Index("ix_combo_emp_marca", "emp", "marca"),
     )
 
+
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, server_default=func.now())
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, server_default=func.now())
+
+    @property
+    def criado_em(self):
+        return self.created_at
+
+    @property
+    def atualizado_em(self):
+        return self.updated_at
 
 class CampanhaComboItem(Base):
     __tablename__ = "campanhas_combo_itens"
@@ -591,7 +602,7 @@ class CampanhaComboItem(Base):
 
     ordem = Column(Integer, nullable=False, default=1)
 
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, server_default=func.now())
+    criado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
 
 
 class CampanhaComboResultado(Base):
@@ -617,7 +628,7 @@ class CampanhaComboResultado(Base):
 
     status_pagamento = Column(String(20), nullable=False, default="PENDENTE")
     pago_em = Column(DateTime, nullable=True)
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, server_default=func.now())
+    atualizado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
 
     __table_args__ = (
         Index("ix_combo_res_emp_comp", "emp", "competencia_ano", "competencia_mes"),
