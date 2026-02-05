@@ -5237,21 +5237,21 @@ def admin_combos():
                         raise ValueError("Data fim não pode ser menor que data início.")
 
                     combo = CampanhaCombo(
-                        titulo=titulo,
-                        nome=titulo,  # manter compatibilidade com telas/relatórios
-                        emp=emp if emp else None,
-                        marca=marca,
-                        data_inicio=d_ini,
-                        data_fim=d_fim,
-                        ano=int(d_ini.year),
-                        mes=int(d_ini.month),
-                        valor_unitario_global=valor_global,
-                        ativo=True,
-                        created_at=datetime.utcnow(),
-                        updated_at=datetime.utcnow(),
-                    )
-                    db.add(combo)
-                    db.flush()  # obtém combo.id
+    titulo=titulo,
+    nome=titulo,  # manter compatibilidade com telas/relatórios
+    emp=emp if emp else None,
+    marca=marca,
+    data_inicio=d_ini,
+    data_fim=d_fim,
+    ano=int(d_ini.year),
+    mes=int(d_ini.month),
+    valor_unitario_global=valor_global,
+    ativo=True,
+    created_at=datetime.utcnow(),
+    updated_at=datetime.utcnow(),
+)
+db.add(combo)
+db.flush()  # obtém combo.id
 
 
                     mestres = request.form.getlist("mestre_prefixo[]")
@@ -5296,34 +5296,6 @@ def admin_combos():
                     db.bulk_save_objects(itens)
                     db.commit()
                     ok = "Combo criado com sucesso."
-                except Exception as e:
-                    db.rollback()
-                    erro = str(e)
-
-            if acao == "excluir":
-                try:
-                    combo_id_raw = (request.form.get("combo_id") or "").strip()
-                    if not combo_id_raw.isdigit():
-                        raise ValueError("combo_id inválido.")
-                    combo_id = int(combo_id_raw)
-
-                    combo = db.query(CampanhaCombo).get(combo_id)
-                    if not combo:
-                        raise ValueError("Campanha combo não encontrada.")
-
-                    # Remove dependências primeiro (itens/resultados) para evitar violação de FK
-                    try:
-                        db.query(CampanhaComboResultado).filter(CampanhaComboResultado.combo_id == combo_id).delete(synchronize_session=False)
-                    except Exception:
-                        pass
-                    try:
-                        db.query(CampanhaComboItem).filter(CampanhaComboItem.combo_id == combo_id).delete(synchronize_session=False)
-                    except Exception:
-                        pass
-
-                    db.delete(combo)
-                    db.commit()
-                    ok = "Campanha combo excluída com sucesso."
                 except Exception as e:
                     db.rollback()
                     erro = str(e)
