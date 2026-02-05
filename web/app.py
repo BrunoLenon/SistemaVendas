@@ -4544,7 +4544,7 @@ def admin_emps():
                                 nome=nome,
                                 cidade=cidade or None,
                                 uf=uf or None,
-                                ativo=True,
+                                ativo=ativo,
                             )
                         )
                         ok = f"EMP {codigo} criada."
@@ -5212,96 +5212,98 @@ def admin_combos():
     with SessionLocal() as db:
         if request.method == "POST":
             acao = (request.form.get("acao") or "").strip().lower()
+
             if acao == "criar":
                 try:
                     titulo = (request.form.get("titulo") or "").strip()
-                    emp = (request.form.get("emp") or "").strip()
-                    marca = (request.form.get("marca") or "").strip().upper()
-                    vig_ini = request.form.get("data_inicio") or inicio_mes.isoformat()
-                    vig_fim = request.form.get("data_fim") or fim_mes.isoformat()
+                    emp = (request.form.get("emp") or "").strip() or None
+                    marca = (request.form.get("marca") or "").strip()
+                    valor_global = (request.form.get("valor_unitario_global") or "").strip()
+                    data_inicio_str = (request.form.get("data_inicio") or "").strip()
+                    data_fim_str = (request.form.get("data_fim") or "").strip()
 
-                    # valor global opcional
-                    vglob_raw = (request.form.get("valor_unitario_global") or "").strip().replace(",", ".")
-                    valor_global = float(vglob_raw) if vglob_raw else None
+                    if not titulo:
+                        raise ValueError("Informe o título do combo.")
+                    if not marca:
+                        raise ValueError("Informe a marca (obrigatória).")
 
-                    if not titulo or not marca:
-                        raise ValueError("Título e marca são obrigatórios.")
+                    def _parse_data(s: str):
+                        s = (s or "").strip()
+                        if not s:
+                            return None
+                        for fmt in ("%Y-%m-%d", "%d/%m/%Y"):
+                            try:
+                                return datetime.strptime(s, fmt).date()
+                            except ValueError:
+                                pass
+                        raise ValueError("Data inválida: " + s)
 
-                    # Parse datas
-                    try:
-                        d_ini = datetime.fromisoformat(vig_ini).date()
-                        d_fim = datetime.fromisoformat(vig_fim).date()
-                    except Exception:
-                        raise ValueError("Datas inválidas. Use o seletor de datas.")
+                    d_ini = _parse_data(data_inicio_str) or date(ano, mes, 1)
+                    d_fim = _parse_data(data_fim_str) or d_ini
 
-                    if d_fim < d_ini:
-                        raise ValueError("Data fim não pode ser menor que data início.")
+                    ano_calc = int(d_ini.year)
+                    mes_calc = int(d_ini.month)
+
+                    vug = None
+                    if valor_global:
+                        vug = float(valor_global.replace(",", "."))
+
+                    now = datetime.utcnow()
 
                     combo = CampanhaCombo(
                         titulo=titulo,
                         nome=titulo,
-                        emp=emp or None,
+                        emp=emp,
                         marca=marca,
                         data_inicio=d_ini,
                         data_fim=d_fim,
-                        ano=ano,
-                        mes=mes,
-                        valor_unitario_global=valor_global,
+                        ano=ano_calc,
+                        mes=mes_calc,
+                        valor_unitario_global=vug,
                         ativo=True,
-                        created_at=datetime.utcnow(),
-                        updated_at=datetime.utcnow(),
+                        created_at=now,
+                        updated_at=now,
                     )
                     db.add(combo)
-                    db.flush()  # obtém combo.id
+                    db.flush()
 
-                    mestres = request.form.getlist("mestre_prefixo[]")
-                    descs = request.form.getlist("descricao_contains[]")
-                    minimos = request.form.getlist("minimo_qtd[]")
-                    vals = request.form.getlist("valor_unitario[]")
+                    mestres = request.form.getlist("mestre[]")
+                    descrs = request.form.getlist("descricao[]")
+                    mins = request.form.getlist("minimo[]")
+                    vus = request.form.getlist("valor_unit[]")
 
-                    itens = []
-                    for i in range(max(len(mestres), len(descs), len(minimos), len(vals))):
-                        mp = (mestres[i] if i < len(mestres) else "") or ""
-                        dc = (descs[i] if i < len(descs) else "") or ""
-                        mi = (minimos[i] if i < len(minimos) else "") or ""
-                        vu = (vals[i] if i < len(vals) else "") or ""
+                    for i in range(len(mestres)):
+                        m_prefix = (mestres[i] or "").strip() or None
+                        d_like = (descrs[i] or "").strip() or None
+                        minimo = int((mins[i] or "0").strip() or "0")
+                        valor_unit = (vus[i] or "").strip()
+                        v_unit = None
+                        if valor_unit:
+                            v_unit = float(valor_unit.replace(",", "."))
 
-                        mp = mp.strip()
-                        dc = dc.strip()
+                        if not m_prefix and not d_like:
+                            continue
+                        if minimo <= 0:
+                            continue
 
-                        if not mp and not dc:
-                            continue  # ignora linha vazia
-
-                        try:
-                            minimo_qtd = float(str(mi).replace(",", ".") or 0)
-                        except Exception:
-                            minimo_qtd = 0.0
-
-                        vu_raw = str(vu).strip().replace(",", ".")
-                        valor_unit = float(vu_raw) if vu_raw else None
-
-                        itens.append(CampanhaComboItem(
+                        it = CampanhaComboItem(
                             combo_id=combo.id,
-                            mestre_prefixo=mp if mp else None,
-                            descricao_contains=dc if dc else None,
-                            minimo_qtd=float(minimo_qtd or 0.0),
-                            valor_unitario=valor_unit,
-                            ordem=i+1,
-                            created_at=datetime.utcnow(),
-                        ))
+                            mestre_prefixo=m_prefix,
+                            descricao_like=d_like,
+                            minimo=minimo,
+                            valor_unitario=v_unit,
+                        )
+                        db.add(it)
 
-                    if not itens:
-                        raise ValueError("Adicione pelo menos 1 requisito (MESTRE e/ou DESCRIÇÃO).")
-
-                    db.bulk_save_objects(itens)
                     db.commit()
-                    ok = "Combo criado com sucesso."
+                    flash("Combo salvo!", "success")
+                    return redirect(url_for("admin_combos", mes=mes, ano=ano))
+
                 except Exception as e:
                     db.rollback()
                     erro = str(e)
 
-        # lista combos que intersectam o mês/ano (inclui globais)
-        combos = (
+    combos = (
             db.query(CampanhaCombo)
             .filter(
                 CampanhaCombo.ativo.is_(True),
@@ -5311,7 +5313,7 @@ def admin_combos():
             .order_by(CampanhaCombo.data_inicio.desc(), CampanhaCombo.id.desc())
             .all()
         )
-
+    
     return render_template(
         "admin_combos.html",
         mes=mes,
@@ -6023,7 +6025,7 @@ def admin_mensagens():
                     titulo=titulo,
                     conteudo=conteudo,
                     bloqueante=bloqueante,
-                    ativo=True,
+                    ativo=ativo,
                     inicio_em=_parse_date(inicio_em),
                     fim_em=_parse_date(fim_em),
                     created_by_user_id=int(user_id) if user_id else None,
