@@ -2,7 +2,7 @@ import os
 from datetime import datetime
 from urllib.parse import quote_plus
 
-from sqlalchemy import create_engine, Column, Integer, String, Float, Date, DateTime, Text, Boolean, Index, UniqueConstraint, text, func
+from sqlalchemy import create_engine, Column, Integer, String, Float, Numeric, Date, DateTime, Text, Boolean, Index, UniqueConstraint, text, func
 from sqlalchemy.orm import declarative_base, sessionmaker, synonym
 
 # =====================
@@ -204,10 +204,10 @@ class Venda(Base):
     nota = Column(String(60), nullable=True)  # NOTA
     emp = Column(String(30), nullable=True)   # EMP
 
-    unit = Column(Float, nullable=True)
-    des = Column(Float, nullable=True)
-    qtdade_vendida = Column(Float, nullable=True)
-    valor_total = Column(Float, nullable=False)
+    unit = Column(Numeric(14, 2), nullable=True)
+    des = Column(Numeric(14, 2), nullable=True)
+    qtdade_vendida = Column(Numeric(14, 3), nullable=True)
+    valor_total = Column(Numeric(14, 2), nullable=False)
 
     # === Novos campos para relatórios e campanhas por descrição (opcionais) ===
     descricao = Column(Text, nullable=True)        # DESCRICAO
@@ -297,7 +297,8 @@ class ItemParado(Base):
 
     ativo = Column(Integer, nullable=False, default=1)  # 1=ativo, 0=inativo
 
-    criado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    criado_em = synonym('created_at')
     atualizado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
 
     __table_args__ = (
@@ -378,7 +379,7 @@ class CampanhaQtdResultado(Base):
     qtd_vendida = Column(Float, nullable=False, default=0.0)
     valor_vendido = Column(Float, nullable=False, default=0.0)
     atingiu_minimo = Column(Integer, nullable=False, default=0)
-    valor_recompensa = Column(Float, nullable=False, default=0.0)
+    valor_recompensa = Column(Numeric(14, 2), nullable=False, server_default=text("0"))
 
     status_pagamento = Column(String(20), nullable=False, default="PENDENTE")
     pago_em = Column(DateTime, nullable=True)
@@ -597,12 +598,13 @@ class CampanhaComboItem(Base):
     mestre_prefixo = Column(String(120), nullable=True)
     descricao_contains = Column(String(200), nullable=True)
 
-    minimo_qtd = Column(Float, nullable=False, default=0.0)
-    valor_unitario = Column(Float, nullable=True)  # opcional; se vazio usa combo.valor_unitario_global
+    minimo_qtd = Column(Numeric(14, 3), nullable=False, server_default=text("0"))
+    valor_unitario = Column(Numeric(14, 2), nullable=True)  # opcional; se vazio usa combo.valor_unitario_global
 
     ordem = Column(Integer, nullable=False, default=1)
 
-    criado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    criado_em = synonym('created_at')
 
 
 class CampanhaComboResultado(Base):
@@ -624,7 +626,7 @@ class CampanhaComboResultado(Base):
     data_fim = Column(Date, nullable=False)
 
     atingiu_gate = Column(Integer, nullable=False, default=0)
-    valor_recompensa = Column(Float, nullable=False, default=0.0)
+    valor_recompensa = Column(Numeric(14, 2), nullable=False, server_default=text("0"))
 
     status_pagamento = Column(String(20), nullable=False, default="PENDENTE")
     pago_em = Column(DateTime, nullable=True)
