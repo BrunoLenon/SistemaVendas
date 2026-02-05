@@ -344,6 +344,7 @@
                             <th scope="col" class="text-end">Recompensa</th>
                             <th scope="col">Atingiu</th>
                             <th scope="col">Vigência</th>
+                            <th scope="col">Detalhes</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -362,6 +363,69 @@
                               <td class="text-end">{{ '%.2f'|format(it.valor_recompensa or 0) }}</td>
                               <td>{% if it.atingiu %}<span class="badge text-bg-success">SIM</span>{% else %}<span class="badge text-bg-secondary">NÃO</span>{% endif %}</td>
                               <td class="text-muted small">{{ it.periodo }}</td>
+                              <td>
+                                {% if it.tipo == 'COMBO' and it.detalhes and (it.detalhes|length) > 0 %}
+                                  <button class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#comboDetalhe-{{ e.emp }}-{{ v.vendedor|replace(' ','_') }}-{{ it.combo_id }}">Parcial</button>
+
+                                  <div class="modal fade glass-modal" id="comboDetalhe-{{ e.emp }}-{{ v.vendedor|replace(' ','_') }}-{{ it.combo_id }}" tabindex="-1" aria-hidden="true">
+                                    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+                                      <div class="modal-content">
+                                        <div class="modal-header">
+                                          <div>
+                                            <h5 class="modal-title m-0">{{ it.titulo }} <span class="glass-chip ms-2">EMP {{ e.emp }}</span></h5>
+                                            <div class="small opacity-75 mt-1">Vendedor: <strong>{{ v.vendedor }}</strong> · {{ it.periodo }}</div>
+                                          </div>
+                                          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+                                        </div>
+                                        <div class="modal-body">
+                                          <div class="d-flex flex-wrap gap-2 mb-2">
+                                            <span class="glass-chip">Marca: <strong>{{ it.marca }}</strong></span>
+                                            <span class="glass-chip">Status: {% if it.atingiu %}<strong>ATINGIU</strong>{% else %}<strong>NÃO ATINGIU (parcial)</strong>{% endif %}</span>
+                                            <span class="glass-chip">Recompensa: <strong>{{ '%.2f'|format(it.valor_recompensa or 0) }}</strong></span>
+                                          </div>
+
+                                          <div class="table-responsive table-sticky collapse-panel">
+                                            <table class="table table-sm table-bordered align-middle mb-0">
+                                              <thead class="table-light">
+                                                <tr>
+                                                  <th>Ordem</th>
+                                                  <th>Regra (match)</th>
+                                                  <th class="text-end">Mínimo</th>
+                                                  <th class="text-end">Vendido</th>
+                                                  <th class="text-end">Falta</th>
+                                                  <th class="text-end">R$/un</th>
+                                                  <th class="text-end">Subtotal</th>
+                                                  <th>Status</th>
+                                                </tr>
+                                              </thead>
+                                              <tbody>
+                                                {% for d in it.detalhes %}
+                                                  <tr>
+                                                    <td class="mono">{{ d.ordem }}</td>
+                                                    <td>{{ d.match }}</td>
+                                                    <td class="text-end mono">{{ '%.2f'|format(d.minimo or 0) }}</td>
+                                                    <td class="text-end mono">{{ '%.2f'|format(d.qtd or 0) }}</td>
+                                                    <td class="text-end mono">{{ '%.2f'|format(d.faltam or 0) }}</td>
+                                                    <td class="text-end mono">{{ '%.2f'|format(d.unit or 0) }}</td>
+                                                    <td class="text-end mono">{{ '%.2f'|format(d.subtotal or 0) }}</td>
+                                                    <td>{% if d.atingiu %}<span class="badge text-bg-success">OK</span>{% else %}<span class="badge text-bg-secondary">Pendente</span>{% endif %}</td>
+                                                  </tr>
+                                                {% endfor %}
+                                              </tbody>
+                                            </table>
+                                          </div>
+                                          <div class="small opacity-75 mt-2">Obs.: a campanha só “paga” se atingir o mínimo em <strong>todos</strong> os itens do kit.</div>
+                                        </div>
+                                        <div class="modal-footer">
+                                          <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Fechar</button>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                {% else %}
+                                  <span class="text-muted small">-</span>
+                                {% endif %}
+                              </td>
                             </tr>
                           {% endfor %}
                         </tbody>
@@ -403,6 +467,7 @@
                             <th scope="col" class="text-end">Recompensa</th>
                             <th scope="col">Atingiu</th>
                             <th scope="col">Vigência</th>
+                            <th scope="col">Detalhes</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -421,6 +486,69 @@
                               <td class="text-end">{{ '%.2f'|format(it.valor_recompensa or 0) }}</td>
                               <td>{% if it.atingiu %}<span class="badge text-bg-success">SIM</span>{% else %}<span class="badge text-bg-secondary">NÃO</span>{% endif %}</td>
                               <td class="text-muted small">{{ it.periodo }}</td>
+                              <td>
+                                {% if it.tipo == 'COMBO' and it.detalhes and (it.detalhes|length) > 0 %}
+                                  <button class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#comboDetalhe-{{ e.emp }}-{{ v.vendedor|replace(' ','_') }}-{{ it.combo_id }}">Parcial</button>
+
+                                  <div class="modal fade glass-modal" id="comboDetalhe-{{ e.emp }}-{{ v.vendedor|replace(' ','_') }}-{{ it.combo_id }}" tabindex="-1" aria-hidden="true">
+                                    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+                                      <div class="modal-content">
+                                        <div class="modal-header">
+                                          <div>
+                                            <h5 class="modal-title m-0">{{ it.titulo }} <span class="glass-chip ms-2">EMP {{ e.emp }}</span></h5>
+                                            <div class="small opacity-75 mt-1">Vendedor: <strong>{{ v.vendedor }}</strong> · {{ it.periodo }}</div>
+                                          </div>
+                                          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+                                        </div>
+                                        <div class="modal-body">
+                                          <div class="d-flex flex-wrap gap-2 mb-2">
+                                            <span class="glass-chip">Marca: <strong>{{ it.marca }}</strong></span>
+                                            <span class="glass-chip">Status: {% if it.atingiu %}<strong>ATINGIU</strong>{% else %}<strong>NÃO ATINGIU (parcial)</strong>{% endif %}</span>
+                                            <span class="glass-chip">Recompensa: <strong>{{ '%.2f'|format(it.valor_recompensa or 0) }}</strong></span>
+                                          </div>
+
+                                          <div class="table-responsive table-sticky collapse-panel">
+                                            <table class="table table-sm table-bordered align-middle mb-0">
+                                              <thead class="table-light">
+                                                <tr>
+                                                  <th>Ordem</th>
+                                                  <th>Regra (match)</th>
+                                                  <th class="text-end">Mínimo</th>
+                                                  <th class="text-end">Vendido</th>
+                                                  <th class="text-end">Falta</th>
+                                                  <th class="text-end">R$/un</th>
+                                                  <th class="text-end">Subtotal</th>
+                                                  <th>Status</th>
+                                                </tr>
+                                              </thead>
+                                              <tbody>
+                                                {% for d in it.detalhes %}
+                                                  <tr>
+                                                    <td class="mono">{{ d.ordem }}</td>
+                                                    <td>{{ d.match }}</td>
+                                                    <td class="text-end mono">{{ '%.2f'|format(d.minimo or 0) }}</td>
+                                                    <td class="text-end mono">{{ '%.2f'|format(d.qtd or 0) }}</td>
+                                                    <td class="text-end mono">{{ '%.2f'|format(d.faltam or 0) }}</td>
+                                                    <td class="text-end mono">{{ '%.2f'|format(d.unit or 0) }}</td>
+                                                    <td class="text-end mono">{{ '%.2f'|format(d.subtotal or 0) }}</td>
+                                                    <td>{% if d.atingiu %}<span class="badge text-bg-success">OK</span>{% else %}<span class="badge text-bg-secondary">Pendente</span>{% endif %}</td>
+                                                  </tr>
+                                                {% endfor %}
+                                              </tbody>
+                                            </table>
+                                          </div>
+                                          <div class="small opacity-75 mt-2">Obs.: a campanha só “paga” se atingir o mínimo em <strong>todos</strong> os itens do kit.</div>
+                                        </div>
+                                        <div class="modal-footer">
+                                          <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Fechar</button>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                {% else %}
+                                  <span class="text-muted small">-</span>
+                                {% endif %}
+                              </td>
                             </tr>
                           {% endfor %}
                         </tbody>
