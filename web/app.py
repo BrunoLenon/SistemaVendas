@@ -2878,20 +2878,6 @@ def campanhas_qtd():
         # Opções para filtros avançados (labels amigáveis)
     emps_options = _get_emp_options(emps_scope)
     vendedores_options = []
-    # Opções de EMP para o filtro (multi)
-    try:
-        e_seen = set()
-        emps_options = []
-        for it in (emps_todos or []):
-            e = str((it or {}).get('emp', '')).strip()
-            if e and e not in e_seen:
-                e_seen.add(e)
-                emps_options.append({'value': e, 'label': e})
-        if not emps_options:
-            emps_options = [{'value': e, 'label': e} for e in (emps_scope or [])]
-    except Exception:
-        emps_options = [{'value': e, 'label': e} for e in (emps_scope or [])]
-
     if vendedores_dropdown:
         for v in vendedores_dropdown:
             vv = (v or "").strip().upper()
@@ -3590,6 +3576,12 @@ def relatorio_campanhas():
         vendedores_options = [{"value": v, "label": v} for v in vset]
     except Exception:
         vendedores_options = []
+    # Opções de EMP para o filtro (multi)
+    try:
+        emps_options = [{"value": str(e), "label": str(e)} for e in (emps_scope or [])]
+    except Exception:
+        emps_options = []
+
     return render_template(
             "relatorio_campanhas.html",
             role=role,
@@ -5266,6 +5258,7 @@ def admin_combos():
                     )
                     db.add(combo)
                     db.flush()  # obtém combo.id
+
 
 
                     mestres = request.form.getlist("mestre_prefixo[]")
