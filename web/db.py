@@ -605,17 +605,23 @@ class CampanhaComboItem(Base):
     id = Column(Integer, primary_key=True)
     combo_id = Column(Integer, nullable=False, index=True)
 
+    nome_item = Column(String(255), nullable=True)
+
+    # Campo obrigatório no banco: define o texto-base do match (mestre_prefixo ou descricao_contains)
+    match_mestre = Column(String(255), nullable=False)
+
     # Match: CODIGO (MESTRE) por prefixo e/ou DESCRIÇÃO por contains
     mestre_prefixo = Column(String(120), nullable=True)
     descricao_contains = Column(String(200), nullable=True)
 
-    minimo_qtd = Column(Float, nullable=False, default=0.0)
+    minimo_qtd = Column(Integer, nullable=False, default=0)
     valor_unitario = Column(Float, nullable=True)  # opcional; se vazio usa combo.valor_unitario_global
 
     ordem = Column(Integer, nullable=False, default=1)
 
-    criado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
-
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, server_default=func.now())
+    criado_em = Column(DateTime, nullable=False, default=datetime.utcnow, server_default=func.now())
+    atualizado_em = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, server_default=func.now())
 
 class CampanhaComboResultado(Base):
     __tablename__ = "campanhas_combo_resultados"

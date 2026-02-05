@@ -5237,21 +5237,21 @@ def admin_combos():
                         raise ValueError("Data fim não pode ser menor que data início.")
 
                     combo = CampanhaCombo(
-    titulo=titulo,
-    nome=titulo,  # manter compatibilidade com telas/relatórios
-    emp=emp if emp else None,
-    marca=marca,
-    data_inicio=d_ini,
-    data_fim=d_fim,
-    ano=int(d_ini.year),
-    mes=int(d_ini.month),
-    valor_unitario_global=valor_global,
-    ativo=True,
-    created_at=datetime.utcnow(),
-    updated_at=datetime.utcnow(),
-)
-db.add(combo)
-db.flush()  # obtém combo.id
+                        titulo=titulo,
+                        nome=titulo,  # manter compatibilidade com telas/relatórios
+                        emp=emp if emp else None,
+                        marca=marca,
+                        data_inicio=d_ini,
+                        data_fim=d_fim,
+                        ano=int(d_ini.year),
+                        mes=int(d_ini.month),
+                        valor_unitario_global=valor_global,
+                        ativo=True,
+                        created_at=datetime.utcnow(),
+                        updated_at=datetime.utcnow(),
+                    )
+                    db.add(combo)
+                    db.flush()  # obtém combo.id
 
 
                     mestres = request.form.getlist("mestre_prefixo[]")
@@ -5273,14 +5273,14 @@ db.flush()  # obtém combo.id
                             continue  # ignora linha vazia
 
                         try:
-                            minimo_qtd = float(str(mi).replace(",", ".") or 0)
+                            minimo_qtd = int(float(str(mi).replace(",", ".") or 0))
                         except Exception:
                             minimo_qtd = 0.0
 
                         vu_raw = str(vu).strip().replace(",", ".")
                         valor_unit = float(vu_raw) if vu_raw else None
 
-                                                match_mestre = (mp or dc or '').strip()
+                        match_mestre = (mp or dc or '').strip()
                         if not match_mestre:
                             continue
                         itens.append({
