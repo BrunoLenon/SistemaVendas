@@ -53,6 +53,30 @@
           </div>
 
           <div class="col-md-3">
+            <label class="form-label">Modelo de pagamento</label>
+            <select class="form-select" name="modelo_pagamento">
+              <option value="TODOS_ITENS" selected>Combo — pagar por todos itens do gate</option>
+              <option value="POR_DESCRICAO">Combo — pagar por descrição+marca (após gate)</option>
+            </select>
+            <div class="form-text">No modelo 2, o vendedor precisa bater o gate e depois recebe por unidade filtrada.</div>
+          </div>
+
+          <div class="col-md-3">
+            <label class="form-label">Filtro marca (modelo 2)</label>
+            <input class="form-control" name="filtro_marca" placeholder="MAGNETRON">
+          </div>
+
+          <div class="col-md-3">
+            <label class="form-label">Descrição começa com (modelo 2)</label>
+            <input class="form-control" name="filtro_descricao_prefixo" placeholder="MOTOR DE PARTIDA">
+          </div>
+
+          <div class="col-md-3">
+            <label class="form-label">Valor unitário modelo 2 (opcional)</label>
+            <input class="form-control" name="valor_unitario_modelo2" inputmode="decimal" placeholder="1.00">
+          </div>
+
+          <div class="col-md-3">
             <label class="form-label">Data início</label>
             <input class="form-control" type="date" name="data_inicio" value="{{ default_data_inicio }}">
           </div>

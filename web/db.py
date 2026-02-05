@@ -569,6 +569,18 @@ class CampanhaCombo(Base):
     # Valor unitário global opcional (fallback quando item não tem valor_unitario)
     valor_unitario_global = Column(Float, nullable=True)
 
+    # Modelo de pagamento:
+    # - TODOS_ITENS: (modelo atual) após bater o mínimo em TODOS os itens, paga por unidade dos itens do gate (qtd * valor_unitario item/global)
+    # - POR_DESCRICAO: após bater o mínimo em TODOS os itens do gate, paga por unidade nas vendas filtradas por descrição+marca (filtro_*), com valor_unitario_modelo2/global
+    modelo_pagamento = Column(String(20), nullable=False, default="TODOS_ITENS", server_default="TODOS_ITENS", index=True)
+
+    # Filtros do modelo POR_DESCRICAO (opcionais; quando vazios, não paga nada nesse modelo)
+    filtro_marca = Column(String(120), nullable=True, index=True)  # ex: MAGNETRON
+    filtro_descricao_prefixo = Column(String(200), nullable=True)  # ex: MOTOR DE PARTIDA
+
+    # Valor unitário específico do modelo POR_DESCRICAO (fallback: valor_unitario_global)
+    valor_unitario_modelo2 = Column(Float, nullable=True)
+
     ativo = Column(Boolean, nullable=False, default=True)
 
     __table_args__ = (
