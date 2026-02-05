@@ -5237,21 +5237,21 @@ def admin_combos():
                         raise ValueError("Data fim não pode ser menor que data início.")
 
                     combo = CampanhaCombo(
-                        titulo=titulo,
-                        nome=titulo,  # manter compatibilidade com telas/relatórios
-                        emp=emp if emp else None,
-                        marca=marca,
-                        data_inicio=d_ini,
-                        data_fim=d_fim,
-                        ano=int(d_ini.year),
-                        mes=int(d_ini.month),
-                        valor_unitario_global=valor_global,
-                        ativo=True,
-                        created_at=datetime.utcnow(),
-                        updated_at=datetime.utcnow(),
-                    )
-                    db.add(combo)
-                    db.flush()  # obtém combo.id
+    titulo=titulo,
+    nome=titulo,  # manter compatibilidade com telas/relatórios
+    emp=emp if emp else None,
+    marca=marca,
+    data_inicio=d_ini,
+    data_fim=d_fim,
+    ano=int(d_ini.year),
+    mes=int(d_ini.month),
+    valor_unitario_global=valor_global,
+    ativo=True,
+    created_at=datetime.utcnow(),
+    updated_at=datetime.utcnow(),
+)
+db.add(combo)
+db.flush()  # obtém combo.id
 
 
                     mestres = request.form.getlist("mestre_prefixo[]")
@@ -5280,26 +5280,27 @@ def admin_combos():
                         vu_raw = str(vu).strip().replace(",", ".")
                         valor_unit = float(vu_raw) if vu_raw else None
 
-                        match_mestre = (mp or dc or "").strip()
+                                                match_mestre = (mp or dc or '').strip()
                         if not match_mestre:
-                            raise ValueError("match_mestre é obrigatório (informe MESTRE ou DESCRIÇÃO).")
-                        match_mestre = match_mestre.upper()
-
-                        itens.append(CampanhaComboItem(
-                            combo_id=combo.id,
-                            mestre_prefixo=mp if mp else None,
-                            descricao_contains=dc if dc else None,
-                            match_mestre=match_mestre,
-                            minimo_qtd=float(minimo_qtd or 0.0),
-                            valor_unitario=valor_unit,
-                            ordem=i+1,
-                            criado_em=datetime.utcnow(),
-                        ))
-
+                            continue
+                        itens.append({
+                            'combo_id': combo.id,
+                            'mestre_prefixo': mp if mp else None,
+                            'descricao_contains': dc if dc else None,
+                            'match_mestre': match_mestre,
+                            'minimo_qtd': float(minimo_qtd or 0.0),
+                            'valor_unitario': valor_unit,
+                            'ordem': i+1,
+                            'criado_em': datetime.utcnow(),
+                        })
                     if not itens:
                         raise ValueError("Adicione pelo menos 1 requisito (MESTRE e/ou DESCRIÇÃO).")
 
-                    db.bulk_save_objects(itens)
+                    sql = text(
+                        "INSERT INTO campanhas_combo_itens (combo_id, mestre_prefixo, descricao_contains, match_mestre, minimo_qtd, valor_unitario, ordem, criado_em) "
+                        "VALUES (:combo_id, :mestre_prefixo, :descricao_contains, :match_mestre, :minimo_qtd, :valor_unitario, :ordem, :criado_em)"
+                    )
+                    db.execute(sql, itens)
                     db.commit()
                     ok = "Combo criado com sucesso."
                 except Exception as e:
