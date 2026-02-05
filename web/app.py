@@ -3576,27 +3576,22 @@ def relatorio_campanhas():
         vendedores_options = [{"value": v, "label": v} for v in vset]
     except Exception:
         vendedores_options = []
-    # Opções de EMP para o filtro (multi)
-    try:
-        emps_options = [{"value": str(e), "label": str(e)} for e in (emps_scope or [])]
-    except Exception:
-        emps_options = []
-
+    emps_options = _get_emp_options(emps_scope)
     return render_template(
-            "relatorio_campanhas.html",
-            role=role,
-            ano=ano,
-            mes=mes,
-            emps_todos=emps_todos,
-            emps_abertas=emps_abertas,
-            emps_fechadas=emps_fechadas,
-            emps_scope=emps_scope,
-            emps_sel=emps_sel,
-            emps_options=emps_options,
-            vendedores_sel=vendedores_sel,
-            vendedores_options=vendedores_options,
-            vendedor=vendedor_logado,
-        )
+        "relatorio_campanhas.html",
+        role=role,
+        ano=ano,
+        mes=mes,
+        emps_todos=emps_todos,
+        emps_abertas=emps_abertas,
+        emps_fechadas=emps_fechadas,
+        emps_scope=emps_scope,
+        emps_sel=emps_sel,
+        emps_options=emps_options,
+        vendedores_sel=vendedores_sel,
+        vendedores_options=vendedores_options,
+        vendedor=vendedor_logado,
+    )
 
 
 
@@ -5258,7 +5253,6 @@ def admin_combos():
                     )
                     db.add(combo)
                     db.flush()  # obtém combo.id
-
 
 
                     mestres = request.form.getlist("mestre_prefixo[]")

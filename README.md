@@ -1,43 +1,27 @@
 # SistemaVendas
 
-Sistema web de gestão comercial/vendas (Flask + Supabase/PostgreSQL).
+Sistema web de **gestão comercial/vendas** com **campanhas (quantidade e combo)**, metas, relatórios e fechamento mensal.
 
-## Estrutura
-- `web/` -> aplicação Flask (rotas, templates, assets)
-- `sincronizador/` -> rotinas de sincronização/importação
-- `processador.py` -> processamento auxiliar
-- `usuarios.json` -> dados auxiliares (se aplicável)
+## Stack
+- Backend: Python + Flask
+- Banco: Supabase (PostgreSQL)
+- Deploy: Render (Gunicorn)
 
-## Requisitos
-Python 3.11+ (Render pode usar 3.11/3.12; use a mesma versão localmente).
-
-As dependências estão em `requirements.txt` (na raiz).
-
-## Rodar localmente (Windows)
+## Rodar localmente
 ```bash
 python -m venv .venv
-.venv\Scripts\activate
+# Windows: .venv\Scripts\activate
+# Linux/Mac: source .venv/bin/activate
 pip install -r requirements.txt
-
-# crie um .env na raiz (ou em web/) com as variáveis do Supabase/Postgres
-# exemplo:
-# DATABASE_URL=postgresql+psycopg2://USER:PASSWORD@HOST:5432/DBNAME
-
-python -m web.app
+set FLASK_ENV=development
+python web/app.py
 ```
 
-## Deploy no Render
-Configure no serviço:
-- **Build Command**: `pip install -r requirements.txt`
-- **Start Command**: `gunicorn web.app:app`
+> Configure suas variáveis em `.env` (use `.env.example` como base).
 
-Se você optar por manter o requirements em `web/requirements.txt`, então o Build Command deve ser:
-`pip install -r web/requirements.txt`
+## Deploy (Render)
+Use um **Procfile** na raiz:
+`web: gunicorn --chdir web app:app`
 
-## Variáveis de ambiente (Render / Supabase)
-- `DATABASE_URL` (ou as variáveis usadas no seu `db.py`/config)
-- `FLASK_SECRET_KEY` (se aplicável)
-- outras variáveis que você já usa no projeto
-
-## Observações
-- Se o repositório estiver público, este README evita o “404” e documenta instalação/deploy.
+## Campanhas: como funciona (resumo)
+Veja `docs/campanhas.md`.
