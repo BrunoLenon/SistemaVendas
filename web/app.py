@@ -3448,7 +3448,6 @@ def relatorio_campanhas():
     emps_fechadas = []
 
     with SessionLocal() as db:
-        inicio_mes, fim_mes = _periodo_bounds(int(ano), int(mes))
         # mapa de fechamento por EMP na competência
         fech_map = {}
         try:
@@ -3516,11 +3515,6 @@ def relatorio_campanhas():
             )
 
             # agrupa por vendedor e unifica (QTD + COMBO)
-            # cache para detalhamento de combos (parcial por item)
-            combo_cache = {}
-            combo_itens_cache = {}
-            qtd_item_cache = {}
-
             by_vend = {}
             for r in resultados_qtd:
                 v = (r.vendedor or "").strip().upper()
@@ -3537,55 +3531,8 @@ def relatorio_campanhas():
                 })
             for r in resultados_combo:
                 v = (r.vendedor or "").strip().upper()
-
-                detalhes = []
-                try:
-                    # carrega combo e itens (cache)
-                    combo_obj = combo_cache.get(r.combo_id)
-                    if combo_obj is None:
-                        combo_obj = db.query(CampanhaCombo).filter(CampanhaCombo.id == r.combo_id).first()
-                        combo_cache[r.combo_id] = combo_obj
-
-                    itens = combo_itens_cache.get(r.combo_id)
-                    if itens is None:
-                        itens = (
-                            db.query(CampanhaComboItem)
-                            .filter(CampanhaComboItem.combo_id == r.combo_id)
-                            .order_by(CampanhaComboItem.ordem.asc(), CampanhaComboItem.id.asc())
-                            .all()
-                        )
-                        combo_itens_cache[r.combo_id] = itens or []
-
-                    periodo_ini = max(r.data_inicio, inicio_mes)
-                    periodo_fim = min(r.data_fim, fim_mes)
-                    if itens and periodo_ini <= periodo_fim:
-                        for it in itens:
-                            key = (emp, int(it.id), str(periodo_ini), str(periodo_fim), (r.marca or "").strip().upper())
-                            if key not in qtd_item_cache:
-                                qtd_item_cache[key] = _calc_qtd_por_vendedor_para_combo_item(db, emp, it, r.marca, periodo_ini, periodo_fim)
-                            qtd = float((qtd_item_cache.get(key) or {}).get(v, 0.0) or 0.0)
-                            minimo = float(it.minimo_qtd or 0.0)
-                            faltam = max(minimo - qtd, 0.0)
-                            atingiu_item = 1 if (minimo <= 0 or qtd >= minimo) else 0
-                            unit = it.valor_unitario if it.valor_unitario is not None else (getattr(combo_obj, "valor_unitario_global", None) if combo_obj is not None else None)
-                            unit = float(unit or 0.0)
-                            subtotal = float(qtd * unit)
-                            detalhes.append({
-                                "ordem": int(it.ordem or 0),
-                                "match": (it.mestre_prefixo or it.descricao_contains or it.match_mestre or it.nome_item or "").strip(),
-                                "minimo": float(minimo),
-                                "qtd": float(qtd),
-                                "faltam": float(faltam),
-                                "unit": float(unit),
-                                "subtotal": float(subtotal),
-                                "atingiu": int(atingiu_item),
-                            })
-                except Exception:
-                    detalhes = []
-
                 by_vend.setdefault(v, []).append({
                     "tipo": "COMBO",
-                    "combo_id": int(r.combo_id),
                     "titulo": r.titulo,
                     "marca": r.marca,
                     "produto": "KIT",
@@ -3594,7 +3541,6 @@ def relatorio_campanhas():
                     "atingiu": int(r.atingiu_gate or 0),
                     "status_pagamento": r.status_pagamento,
                     "periodo": f"{r.data_inicio} → {r.data_fim}",
-                    "detalhes": detalhes,
                 })
 
             # ordena campanhas dentro do vendedor (maior recompensa primeiro)
@@ -3618,6 +3564,13 @@ def relatorio_campanhas():
                 emps_fechadas.append(emp_payload)
             else:
                 emps_abertas.append(emp_payload)
+
+
+    # Opções de EMP para o filtro (multi) — sempre definido para evitar NameError
+    try:
+        emps_options = _get_emp_options(emps_scope)
+    except Exception:
+        emps_options = []
 
     # Opções de vendedor para o filtro (multi)
     try:
