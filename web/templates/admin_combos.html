@@ -1,37 +1,69 @@
 {% extends "base.html" %}
-    <div class="mt-2">
-      <a class="btn btn-outline-secondary btn-sm" href="/dashboard">← Voltar ao início</a>
-    </div>
+
 {% block title %}Admin — Combos (Kit){% endblock %}
+
+{% block extra_head %}
+<style>
+  .page-title{font-weight:700; letter-spacing:-.3px}
+  .subtitle{color:var(--bs-secondary-color)}
+  .kpi{display:inline-flex; align-items:center; gap:.4rem; padding:.35rem .65rem; border-radius:999px; background:rgba(13,110,253,.08); color:#0d6efd; font-size:.85rem}
+  .card-soft{border-radius:1rem}
+  .form-control, .form-select{border-radius:.75rem}
+  .table td, .table th{vertical-align:middle}
+  .hint{color:var(--bs-secondary-color); font-size:.85rem}
+</style>
+{% endblock %}
 
 {% block content %}
 <div class="container py-4" style="max-width: 1200px;">
   <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
     <div>
-      <h3 class="m-0">🧩 Combos (Kit)</h3>
-      <div class="text-muted">Campanha por unidade após bater o mínimo em TODOS os itens (marca obrigatória).</div>
+      <div class="d-flex flex-wrap align-items-center gap-2">
+        <h3 class="m-0 page-title">🧩 Combos (Kit)</h3>
+        <span class="kpi">Período: {{ "%02d"|format(mes|int) }}/{{ ano }}</span>
+      </div>
+      <div class="subtitle">Campanha por unidade após bater o mínimo em <b>TODOS</b> os itens (marca obrigatória).</div>
     </div>
-    <form class="d-flex gap-2 align-items-end" method="get" action="/admin/combos">
-      <div>
-        <label class="form-label mb-1">Mês</label>
-        <input class="form-control" type="number" name="mes" min="1" max="12" value="{{ mes }}" style="width:90px;">
-      </div>
-      <div>
-        <label class="form-label mb-1">Ano</label>
-        <input class="form-control" type="number" name="ano" min="2020" max="2035" value="{{ ano }}" style="width:110px;">
-      </div>
-      <button class="btn btn-primary" type="submit">Carregar</button>
-    </form>
+    <div class="d-flex flex-wrap gap-2 align-items-end">
+      <a class="btn btn-sm btn-outline-secondary" href="/dashboard">← Voltar</a>
+      <form class="d-flex gap-2 align-items-end" method="get" action="/admin/combos">
+        <div>
+          <label class="form-label mb-1">Mês</label>
+          <input class="form-control" type="number" name="mes" min="1" max="12" value="{{ mes }}" style="width:90px;">
+        </div>
+        <div>
+          <label class="form-label mb-1">Ano</label>
+          <input class="form-control" type="number" name="ano" min="2020" max="2035" value="{{ ano }}" style="width:110px;">
+        </div>
+        <button class="btn btn-primary" type="submit">Carregar</button>
+      </form>
+    </div>
   </div>
 
+
   {% if erro %}
-    <div class="alert alert-danger shadow-sm">{{ erro }}</div>
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <strong>Novo Combo</strong>
+      <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#comboTipsCollapse" aria-expanded="false">Dicas</button>
+    </div>
   {% endif %}
+      <div class="collapse mb-3" id="comboTipsCollapse">
+        <div class="alert alert-light border small mb-0">
+          <div class="fw-semibold mb-1">Como configurar corretamente</div>
+          <ul class="mb-0">
+            <li><b>EMP</b> vazio = combo válido para <b>todas</b> as empresas. Preencha para restringir (ex.: <code>101</code>).</li>
+            <li><b>Itens do combo</b>: cada item precisa de <b>Mestre prefixo</b> <i>ou</i> <b>Descrição contém</b> (um dos dois) + <b>mínimo</b>.</li>
+            <li><b>Ordem</b> define a sequência dos itens no kit (1, 2, 3...).</li>
+            <li><b>match_mestre</b> é preenchido automaticamente (mestre_prefixo → descrição_contains → nome_item). Ele é <b>obrigatório</b>.</li>
+          </ul>
+          <div class="hint mt-2">Dica: use <b>Mestre prefixo</b> quando o código do produto é padronizado; use <b>Descrição contém</b> para capturar marca/linha (ex.: <code>BOSCH</code>).</div>
+        </div>
+      </div>
   {% if ok %}
     <div class="alert alert-success shadow-sm">{{ ok }}</div>
   {% endif %}
 
-  <div class="card shadow-sm mb-3">
+  <div class="card card-soft shadow-sm mb-3">
     <div class="card-header"><strong>Novo Combo</strong></div>
     <div class="card-body">
       <form method="post" action="/admin/combos?mes={{ mes }}&ano={{ ano }}" id="form-combo">
@@ -127,7 +159,7 @@
     </div>
   </div>
 
-  <div class="card shadow-sm">
+  <div class="card card-soft shadow-sm">
     <div class="card-header"><strong>Combos cadastrados (intersectam {{ mes }}/{{ ano }})</strong></div>
     <div class="card-body">
       {% if not combos or (combos|length)==0 %}
