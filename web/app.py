@@ -2883,9 +2883,7 @@ def campanhas_qtd():
             vv = (v or "").strip().upper()
             if not vv:
                 continue
-            vendedores_options.append({"value": vv, "label": vv})
-
-    vendedor_display = (
+            vendedores_options.append(vv)vendedor_display = (
         ("LOJA TODA" if (role or "").lower()=="supervisor" else "TODOS VENDEDORES") if (vendedor_sel or "").upper() == "__ALL__"
         else (f"{len(vendedores_sel)} selecionados" if (vendedor_sel or "").upper() == "__MULTI__" else vendedor_sel)
     )
@@ -3151,7 +3149,6 @@ def _calc_qtd_por_vendedor_para_combo_item(db, emp: str, item: CampanhaComboItem
 
     mp = (item.mestre_prefixo or "").strip()
     dc = (item.descricao_contains or "").strip()
-    mm = (getattr(item, "match_mestre", None) or "").strip()
 
     if mp:
         conds.append(func.upper(func.trim(cast(Venda.mestre, String))).like(mp.strip().upper() + "%"))
@@ -3161,22 +3158,8 @@ def _calc_qtd_por_vendedor_para_combo_item(db, emp: str, item: CampanhaComboItem
         campo = func.lower(func.trim(func.coalesce(Venda.descricao_norm, Venda.descricao, "")))
         conds.append(campo.like("%" + needle + "%"))
 
-    # Fallback: muitos bancos antigos gravam apenas match_mestre (obrigatório).
-    # Se mestre_prefixo/descricao_contains estiverem vazios, usamos match_mestre como regra:
-    # - se parece código (sem espaços), faz prefixo no mestre
-    # - caso contrário, faz contains na descrição normalizada
-    if not mp and not dc and mm:
-        mm_up = mm.upper()
-        is_codigo = (" " not in mm) and (len(mm) <= 40) and bool(re.fullmatch(r"[0-9A-Z._/-]+", mm_up))
-        if is_codigo:
-            conds.append(func.upper(func.trim(cast(Venda.mestre, String))).like(mm_up + "%"))
-        else:
-            needle = _norm_text(mm)
-            campo = func.lower(func.trim(func.coalesce(Venda.descricao_norm, Venda.descricao, "")))
-            conds.append(campo.like("%" + needle + "%"))
-
     # Se nenhum match foi definido, não retorna nada (evita pagar "tudo")
-    if not mp and not dc and not mm:
+    if not mp and not dc:
         return {}
 
     q = (
