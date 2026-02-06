@@ -3137,7 +3137,13 @@ def _norm_text(s: str) -> str:
 
 
 def _calc_qtd_por_vendedor_para_combo_item(db, emp: str, item: CampanhaComboItem, marca: str, periodo_ini: date, periodo_fim: date) -> dict[str, float]:
-    """Retorna dict vendedor -> qtd para um item do combo no período."""
+    """Retorna dict vendedor -> qtd para um item do combo no período.
+
+    Regras de match (compatível com banco antigo):
+      - Se item.mestre_prefixo existir: prefix match em Venda.mestre
+      - Se item.descricao_contains existir: contains case-insensitive em descricao_norm/descricao
+      - Se ambos vazios: usa item.match_mestre como fallback (prefixo se parecer código; senão contains)
+    """
     emp = str(emp)
     marca_up = (marca or "").strip().upper()
 
@@ -3152,10 +3158,21 @@ def _calc_qtd_por_vendedor_para_combo_item(db, emp: str, item: CampanhaComboItem
     mp = (item.mestre_prefixo or "").strip()
     dc = (item.descricao_contains or "").strip()
 
+    # Fallback para bases antigas: match_mestre é obrigatório e pode ser a única regra persistida
+    if not mp and not dc:
+        mm = (getattr(item, "match_mestre", None) or "").strip()
+        if mm:
+            # Se não tem espaços e é alfanumérico/símbolos comuns, tratamos como código (prefixo).
+            # Caso contrário, tratamos como trecho de descrição (contains).
+            import re as _re
+            if _re.fullmatch(r"[A-Za-z0-9._\-/]+", mm):
+                mp = mm
+            else:
+                dc = mm
+
     if mp:
         conds.append(func.upper(func.trim(cast(Venda.mestre, String))).like(mp.strip().upper() + "%"))
     if dc:
-        # usa descricao_norm se existir, senão descricao
         needle = _norm_text(dc)
         campo = func.lower(func.trim(func.coalesce(Venda.descricao_norm, Venda.descricao, "")))
         conds.append(campo.like("%" + needle + "%"))
