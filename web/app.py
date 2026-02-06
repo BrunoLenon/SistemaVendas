@@ -2722,190 +2722,331 @@ def _resolver_emp_scope_para_usuario(vendedor: str, role: str, emp_usuario: str 
 
 @app.get("/campanhas")
 def campanhas_qtd():
-    """Relatório de campanhas de recompensa por quantidade.
+    """Visão operacional de campanhas (QTD + COMBO) por mês/ano.
 
-    - Vendedor: vê por EMPs inferidas de vendas (multi-EMP)
-    - Supervisor: vê apenas EMP dele
-    - Admin: pode escolher vendedor/EMP
+    Hierarquia:
+    - ADMIN: vê resumo geral por EMP e, ao expandir, parciais por vendedor.
+    - SUPERVISOR: vê apenas a EMP dele e os vendedores dessa EMP.
+    - VENDEDOR: vê apenas seus próprios dados (suas EMPs inferidas pelas vendas).
+
+    Observação: Esta página consome snapshots (CampanhaQtdResultado / CampanhaComboResultado),
+    evitando processamento pesado em tempo real. O recalculo é feito apenas no escopo necessário.
     """
     red = _login_required()
     if red:
         return red
 
-    role = _role() or ""
+    role = (_role() or "").strip().lower()
     emp_usuario = _emp()
 
-    # período
     hoje = date.today()
     mes = int(request.args.get("mes") or hoje.month)
     ano = int(request.args.get("ano") or hoje.year)
 
-    # vendedor alvo
+    # Suporta multi-seleção via querystring (?emp=101&emp=102 / ?vendedor=JOAO&vendedor=MARIA)
+    emps_sel = [str(e).strip() for e in _parse_multi_args("emp") if str(e).strip()]
     vendedor_logado = (_usuario_logado() or "").strip().upper()
+    vendedores_sel = [str(v).strip().upper() for v in _parse_multi_args("vendedor") if str(v).strip()]
 
-    # Suporta multi-seleção via querystring: ?vendedor=JOAO&vendedor=MARIA
-    vendedores_req = [v.strip().upper() for v in _parse_multi_args("vendedor")]
-
-    # Supervisor pode ver "a loja toda" (comparação entre vendedores)
-    if (role or "").lower() == "supervisor":
-        if not vendedores_req or "__ALL__" in vendedores_req:
-            # Visão geral (loja toda). Não pré-marca todos os checkboxes; o token __ALL__ representa "todos".
-            vendedor_sel = "__ALL__"
-            vendedores_sel = []
-        else:
-            vendedor_sel = "__MULTI__" if len(vendedores_req) > 1 else vendedores_req[0]
-            vendedores_sel = vendedores_req
-    else:
-        # Admin pode escolher livremente; vendedor só pode ver ele mesmo
-        if (role or "").lower() == "admin":
-            if not vendedores_req or "__ALL__" in vendedores_req:
-                # Visão geral (todos vendedores). Token __ALL__ representa "todos".
-                vendedor_sel = "__ALL__"
-                vendedores_sel = []
-            else:
-                vendedor_sel = "__MULTI__" if len(vendedores_req) > 1 else vendedores_req[0]
-                vendedores_sel = vendedores_req
-        else:
-            vendedor_sel = vendedor_logado
-            vendedores_sel = [vendedor_logado] if vendedor_logado else []
-    # EMP scope (suporta multi-seleção: ?emp=101&emp=102)
-    emp_list = _parse_multi_args("emp")
-    emp_param = (emp_list[0] if (len(emp_list) == 1) else "")  # compat (usado em alguns templates)
-    emps_sel = [str(e).strip() for e in (emp_list or []) if str(e).strip()]
-
+    # Escopo de EMPs e vendedores
     emps_scope: list[str] = []
-    if (role or "").lower() == "admin":
+    vendedores_por_emp: dict[str, list[str]] = {}
+
+    if role == "admin":
+        # Admin: por padrão, EMPs com vendas no período; pode filtrar EMP(s).
         if emps_sel:
             emps_scope = emps_sel
         else:
-            # Admin em modo __ALL__ (todos vendedores): mostrar todas as EMPs cadastradas
-            if vendedor_sel == "__ALL__":
-                emps_scope = _get_all_emp_codigos(apenas_ativas=True)
-            else:
-                emps_scope = _get_emps_vendedor(vendedor_sel if vendedor_sel != "__MULTI__" else (vendedores_sel[0] if vendedores_sel else vendedor_logado))
+            emps_scope = _get_emps_com_vendas_no_periodo(ano, mes)
+    elif role == "supervisor":
+        if not emp_usuario:
+            flash("Supervisor sem EMP cadastrada. Ajuste o usuário do supervisor.", "warning")
+            emps_scope = []
+        else:
+            emps_scope = [str(emp_usuario)]
     else:
-        # vendedor/supervisor: restringe ao escopo permitido
-        base_scope = _resolver_emp_scope_para_usuario(
-            vendedor_sel if vendedor_sel != "__MULTI__" else (vendedores_sel[0] if vendedores_sel else vendedor_logado),
-            role,
-            emp_usuario,
-        )
-        if emps_sel:
-            emps_scope = [e for e in base_scope if str(e) in {str(x) for x in emps_sel}]
+        # Vendedor: EMPs inferidas pelas vendas dele
+        base_emps = _get_emps_vendedor(vendedor_logado)
+        emps_scope = [e for e in base_emps if (not emps_sel or str(e) in {str(x) for x in emps_sel})]
+        if not emps_scope:
+            flash("Não foi possível identificar a EMP do vendedor pelas vendas.", "warning")
+
+    for emp in emps_scope:
+        emp = str(emp)
+        if role == "admin":
+            vendedores = _get_vendedores_emp_no_periodo(emp, ano, mes)
+            if vendedores_sel:
+                allowed_set = {v.strip().upper() for v in vendedores}
+                pick = [v for v in vendedores_sel if v in allowed_set]
+                vendedores = pick if pick else []
+        elif role == "supervisor":
+            vendedores = _get_vendedores_emp_no_periodo(emp, ano, mes)
+            if vendedores_sel and "__ALL__" not in vendedores_sel:
+                allowed_set = {v.strip().upper() for v in vendedores}
+                vendedores = [v for v in vendedores_sel if v in allowed_set]
         else:
-            emps_scope = base_scope
+            vendedores = [vendedor_logado] if vendedor_logado else []
+        vendedores_por_emp[emp] = vendedores
 
-    # (Filtro por EMP já aplicado acima via emps_sel)
-
-    # Se não temos EMP, não dá pra montar relatório
-    if not emps_scope and (role or "").lower() != "admin":
-        flash("Não foi possível identificar a EMP do vendedor pelas vendas. Verifique se já existem vendas importadas.", "warning")
-
-    inicio_mes, fim_mes = _periodo_bounds(ano, mes)
-
-    # Busca vendedores dropdown
-    vendedores_dropdown = []
+    # Recalcula snapshots do escopo para garantir consistência
     try:
-        vendedores_dropdown = _get_vendedores_db(role, emp_usuario)
-    except Exception:
-        vendedores_dropdown = []
+        _recalcular_resultados_campanhas_para_scope(ano, mes, emps_scope, vendedores_por_emp)
+        _recalcular_resultados_combos_para_scope(ano, mes, emps_scope, vendedores_por_emp)
+    except Exception as e:
+        print(f"[CAMPANHAS] erro ao recalcular snapshots: {e}")
+        flash("Não foi possível recalcular os resultados agora. Exibindo dados já salvos.", "warning")
 
-    # Nota: "Todos" é tratado via token __ALL__ (querystring) e pelo checkbox "Selecionar todos".
-    # Não adicionamos "__ALL__" como opção real na lista para evitar URLs gigantes.
+    # Monta dataset leve (EMP -> resumo -> vendedores -> linhas)
+    emps_data: list[dict] = []
 
-    # Calcula resultados e agrupa por EMP
-    blocos: list[dict] = []
     with SessionLocal() as db:
-        # Para supervisor, permitir comparar a loja inteira (todos os vendedores da EMP)
-        if (vendedor_sel or "").upper() == "__ALL__":
-            # Otimização: em modo TODOS, não iterar por N vendedores. Exibir agregado e permitir drill-down.
-            vendedores_alvo = ["__ALL__"]
-        elif (vendedor_sel or "").upper() == "__MULTI__":
-            vendedores_alvo = [v for v in (vendedores_sel or []) if (v or "").strip().upper() != "__ALL__"]
-        else:
-            vendedores_alvo = [vendedor_sel]
+        inicio_mes, fim_mes = _periodo_bounds(int(ano), int(mes))
 
-        for emp in emps_scope or ([emp_param] if emp_param else []):
+        for emp in emps_scope:
             emp = str(emp)
+            vendedores = [v.strip().upper() for v in (vendedores_por_emp.get(emp) or []) if v and v.strip()]
 
-            # campanhas relevantes (overlap do mês)
-            campanhas = _campanhas_mes_overlap(ano, mes, emp)
+            # Definições de combos do mês (para cache de parcial)
+            combos_defs = (
+                db.query(CampanhaCombo)
+                .filter(
+                    CampanhaCombo.ativo.is_(True),
+                    or_(CampanhaCombo.emp.is_(None), CampanhaCombo.emp == "", CampanhaCombo.emp == emp),
+                    CampanhaCombo.data_inicio <= fim_mes,
+                    CampanhaCombo.data_fim >= inicio_mes,
+                )
+                .order_by(CampanhaCombo.data_inicio.asc(), CampanhaCombo.id.asc())
+                .all()
+            )
 
-            for vend in vendedores_alvo:
-                vend = (vend or "").strip().upper()
-                if not vend:
-                    continue
+            combo_calc_cache = {}
+            try:
+                combo_ids = [int(c.id) for c in (combos_defs or []) if getattr(c, "id", None) is not None]
+                if combo_ids:
+                    itens_rows = (
+                        db.query(CampanhaComboItem)
+                        .filter(CampanhaComboItem.combo_id.in_(combo_ids))
+                        .order_by(CampanhaComboItem.combo_id.asc(), CampanhaComboItem.ordem.asc(), CampanhaComboItem.id.asc())
+                        .all()
+                    )
+                    itens_by_combo = {}
+                    for it in itens_rows:
+                        itens_by_combo.setdefault(int(it.combo_id), []).append(it)
 
-                # aplica prioridade: regras do vendedor substituem regras gerais
-                # chave: (produto_prefixo, marca)
-                by_key: dict[tuple[str, str, str], CampanhaQtd] = {}
-                for c in campanhas:
-                    campo_match = (getattr(c, "campo_match", None) or "codigo").strip().lower()
-                    if campo_match == "descricao":
-                        pref = (getattr(c, "descricao_prefixo", "") or "").strip() or (c.produto_prefixo or "").strip()
-                        key = ("descricao", pref.lower().strip(), (c.marca or "").strip().upper())
-                    else:
-                        key = ("codigo", (c.produto_prefixo or "").strip().upper(), (c.marca or "").strip().upper())
-                    if c.vendedor and c.vendedor.strip().upper() == vend:
-                        by_key[key] = c
-                    else:
-                        by_key.setdefault(key, c)
-                campanhas_final = list(by_key.values())
+                    for cdef in (combos_defs or []):
+                        cid = int(getattr(cdef, "id", 0) or 0)
+                        if cid <= 0:
+                            continue
+                        itens = itens_by_combo.get(cid) or []
+                        if not itens:
+                            continue
+                        periodo_ini = max(getattr(cdef, "data_inicio", inicio_mes), inicio_mes)
+                        periodo_fim = min(getattr(cdef, "data_fim", fim_mes), fim_mes)
 
-                total_recomp = 0.0
-                resultados_calc: list[CampanhaQtdResultado] = []
-                for c in campanhas_final:
-                    # interseção do período
-                    periodo_ini = max(c.data_inicio, inicio_mes)
-                    periodo_fim = min(c.data_fim, fim_mes)
-                    res = (_calc_resultado_all_vendedores(db, c, emp, ano, mes, periodo_ini, periodo_fim)
-                        if (vend or "").upper() == "__ALL__" else _upsert_resultado(db, c, vend, emp, ano, mes, periodo_ini, periodo_fim))
-                    resultados_calc.append(res)
-                    total_recomp += float(res.valor_recompensa or 0.0)
+                        qtd_por_item = []
+                        for it in itens:
+                            qtd_por_item.append(_calc_qtd_por_vendedor_para_combo_item(db, emp, it, cdef.marca, periodo_ini, periodo_fim))
 
-                # Não commita a cada vendedor; commit único ao final melhora performance.
-                # Ordena em memória para evitar re-query.
-                resultados_calc.sort(key=lambda r: float(getattr(r, "valor_recompensa", 0.0) or 0.0), reverse=True)
+                        combo_calc_cache[cid] = {"combo": cdef, "itens": itens, "qtd_por_item": qtd_por_item}
+            except Exception:
+                combo_calc_cache = {}
 
-                blocos.append({
-                    "emp": emp,
-                    "vendedor": vend,
-                    "resultados": resultados_calc,
-                    "total": total_recomp,
+            # Carrega resultados do período para a EMP (somente vendedores do escopo)
+            q = db.query(CampanhaQtdResultado).filter(
+                CampanhaQtdResultado.ano == ano,
+                CampanhaQtdResultado.mes == mes,
+                CampanhaQtdResultado.emp == emp,
+            )
+            c = db.query(CampanhaComboResultado).filter(
+                CampanhaComboResultado.ano == ano,
+                CampanhaComboResultado.mes == mes,
+                CampanhaComboResultado.emp == emp,
+            )
+            if vendedores:
+                q = q.filter(CampanhaQtdResultado.vendedor.in_(vendedores))
+                c = c.filter(CampanhaComboResultado.vendedor.in_(vendedores))
+
+            resultados_qtd = q.order_by(CampanhaQtdResultado.vendedor.asc(), CampanhaQtdResultado.id.asc()).all()
+            resultados_combo = c.order_by(CampanhaComboResultado.vendedor.asc(), CampanhaComboResultado.id.asc()).all()
+
+            # Agrupa por vendedor em uma lista de linhas (tipo Excel)
+            by_vend: dict[str, list[dict]] = {}
+            vend_total: dict[str, float] = {}
+
+            for r in resultados_qtd:
+                v = (r.vendedor or "").strip().upper()
+                by_vend.setdefault(v, []).append({
+                    "tipo": "QTD",
+                    "titulo": r.titulo,
+                    "marca": r.marca,
+                    "periodo": f"{r.data_inicio} → {r.data_fim}",
+                    "status": "OK" if int(getattr(r, "atingiu_minimo", 0) or 0) == 1 else "PENDENTE",
+                    "atingiu": int(getattr(r, "atingiu_minimo", 0) or 0),
+                    "valor_recompensa": float(r.valor_recompensa or 0.0),
                 })
-        db.commit()
+                vend_total[v] = vend_total.get(v, 0.0) + float(r.valor_recompensa or 0.0)
 
-        # Opções para filtros avançados (labels amigáveis)
+            for r in resultados_combo:
+                v = (r.vendedor or "").strip().upper()
+                detalhes = None
+                parcial = None
+                critico_texto = None
+                try:
+                    cache = combo_calc_cache.get(int(r.combo_id))
+                    if cache:
+                        itens = cache.get("itens") or []
+                        qtd_por_item = cache.get("qtd_por_item") or []
+                        combo_def = cache.get("combo")
+                        det_list = []
+                        itens_ok = 0
+                        itens_total = len(itens)
+                        max_falta = -1
+                        crit_ord = 999999
+                        crit_nome = ""
+                        crit_falta = 0
+                        for it_def, qtd_map in zip(itens, qtd_por_item):
+                            vendido = float((qtd_map or {}).get(v, 0.0))
+                            minimo = float(getattr(it_def, "minimo_qtd", 0.0) or 0.0)
+                            falta = max(minimo - vendido, 0.0)
+                            atingiu_item = 1 if falta <= 0 else 0
+                            if atingiu_item:
+                                itens_ok += 1
+
+                            unit = getattr(it_def, "valor_unitario", None)
+                            if unit is None and combo_def is not None:
+                                unit = getattr(combo_def, "valor_unitario_global", None)
+                            unit_f = float(unit or 0.0) if unit is not None else 0.0
+                            subtotal = vendido * unit_f if unit_f else 0.0
+
+                            mp = (getattr(it_def, "mestre_prefixo", None) or "").strip()
+                            dc = (getattr(it_def, "descricao_contains", None) or "").strip()
+                            if mp:
+                                regra = f"MESTRE: {mp}"
+                            elif dc:
+                                regra = f"DESC: {dc}"
+                            else:
+                                regra = (getattr(it_def, "match_mestre", None) or getattr(it_def, "nome_item", None) or "").strip()
+
+                            det_list.append({
+                                "ordem": int(getattr(it_def, "ordem", 0) or 0),
+                                "match": regra,
+                                "minimo": int(minimo),
+                                "qtd": int(vendido),
+                                "faltam": int(falta),
+                                "unit": unit_f,
+                                "subtotal": float(subtotal),
+                                "atingiu": int(atingiu_item),
+                            })
+
+                            if falta > 0:
+                                ordv = int(getattr(it_def, "ordem", 0) or 0)
+                                nome_show = (getattr(it_def, "nome_item", None) or getattr(it_def, "match_mestre", None) or mp or dc or "Item").strip()
+                                if (falta > max_falta) or (falta == max_falta and ordv < crit_ord):
+                                    max_falta = falta
+                                    crit_ord = ordv
+                                    crit_nome = nome_show
+                                    crit_falta = falta
+
+                        parcial = f"{itens_ok}/{itens_total}" if itens_total else "0/0"
+                        if max_falta > 0:
+                            critico_texto = f"Falta: {crit_nome} ({int(crit_falta)} un)"
+                        else:
+                            critico_texto = "OK"
+
+                        detalhes = det_list
+                except Exception:
+                    detalhes = None
+                    parcial = None
+                    critico_texto = None
+
+                gate_ok = 1 if float(r.valor_recompensa or 0.0) > 0 else 0
+                by_vend.setdefault(v, []).append({
+                    "tipo": "COMBO",
+                    "titulo": r.titulo,
+                    "marca": r.marca,
+                    "periodo": f"{r.data_inicio} → {r.data_fim}",
+                    "status": "GATE OK" if gate_ok else "GATE NOK",
+                    "gate_ok": gate_ok,
+                    "parcial": parcial,
+                    "critico": critico_texto,
+                    "detalhes": detalhes,
+                    "valor_recompensa": float(r.valor_recompensa or 0.0),
+                })
+                vend_total[v] = vend_total.get(v, 0.0) + float(r.valor_recompensa or 0.0)
+
+            # Ordena linhas por tipo (QTD primeiro) e depois por título
+            for v in list(by_vend.keys()):
+                by_vend[v].sort(key=lambda x: (0 if x.get("tipo") == "QTD" else 1, str(x.get("titulo") or "")))
+
+            # Resumo da EMP
+            emp_total = sum(vend_total.values()) if vend_total else 0.0
+
+            # status EMP (🟢🟡🔴)
+            any_ok = False
+            any_pending = False
+            for v, rows in by_vend.items():
+                for row in rows:
+                    if row.get("tipo") == "QTD":
+                        if int(row.get("atingiu") or 0) == 1:
+                            any_ok = True
+                        else:
+                            any_pending = True
+                    else:
+                        if int(row.get("gate_ok") or 0) == 1:
+                            any_ok = True
+                        else:
+                            any_pending = True
+            if any_ok and not any_pending:
+                emp_status = "green"
+            elif any_ok and any_pending:
+                emp_status = "yellow"
+            else:
+                emp_status = "red"
+
+            # Totalizadores (com números)
+            qtd_ok = sum(1 for rows in by_vend.values() for r in rows if r.get("tipo") == "QTD" and int(r.get("atingiu") or 0) == 1)
+            qtd_total = sum(1 for rows in by_vend.values() for r in rows if r.get("tipo") == "QTD")
+            combo_ok = sum(1 for rows in by_vend.values() for r in rows if r.get("tipo") == "COMBO" and int(r.get("gate_ok") or 0) == 1)
+            combo_total = sum(1 for rows in by_vend.values() for r in rows if r.get("tipo") == "COMBO")
+
+            emps_data.append({
+                "emp": emp,
+                "status": emp_status,
+                "total": emp_total,
+                "qtd_ok": qtd_ok,
+                "qtd_total": qtd_total,
+                "combo_ok": combo_ok,
+                "combo_total": combo_total,
+                "vendedores": [
+                    {"nome": v, "total": float(vend_total.get(v, 0.0)), "linhas": (by_vend.get(v) or [])}
+                    for v in sorted(by_vend.keys())
+                ],
+            })
+
+    # Opções de filtros
     emps_options = _get_emp_options(emps_scope)
     vendedores_options = []
-    if vendedores_dropdown:
-        for v in vendedores_dropdown:
-            vv = (v or "").strip().upper()
-            if not vv:
-                continue
-            vendedores_options.append({"value": vv, "label": vv})
-
-    vendedor_display = (
-        ("LOJA TODA" if (role or "").lower()=="supervisor" else "TODOS VENDEDORES") if (vendedor_sel or "").upper() == "__ALL__"
-        else (f"{len(vendedores_sel)} selecionados" if (vendedor_sel or "").upper() == "__MULTI__" else vendedor_sel)
-    )
+    try:
+        # opções deduplicadas
+        vset = set()
+        for emp in emps_scope:
+            for v in (vendedores_por_emp.get(str(emp)) or []):
+                if v and v.strip():
+                    vset.add(v.strip().upper())
+        vendedores_options = sorted(vset)
+    except Exception:
+        vendedores_options = []
 
     return render_template(
         "campanhas_qtd.html",
         role=role,
         ano=ano,
         mes=mes,
-        vendedor=vendedor_sel,
-        vendedor_display=vendedor_display,
-        vendedor_logado=vendedor_logado,
-        vendedores=vendedores_dropdown,
-        vendedores_options=vendedores_options,
-        vendedores_sel=vendedores_sel,
-        blocos=blocos,
-        emps_scope=emps_scope,
-        emps_options=emps_options,
         emps_sel=emps_sel,
-        emp_param=emp_param,
+        vendedores_sel=vendedores_sel,
+        emps_options=emps_options,
+        vendedores_options=vendedores_options,
+        emps_data=emps_data,
     )
 
 @app.get("/campanhas/pdf")
@@ -3151,11 +3292,6 @@ def _calc_qtd_por_vendedor_para_combo_item(db, emp: str, item: CampanhaComboItem
 
     mp = (item.mestre_prefixo or "").strip()
     dc = (item.descricao_contains or "").strip()
-
-    # Fallback: muitos bancos antigos só preenchem match_mestre (NOT NULL).
-    # Se mestre_prefixo/descricao_contains estiverem vazios, tratamos match_mestre como prefixo do mestre.
-    if not mp and not dc:
-        mp = (getattr(item, "match_mestre", "") or "").strip()
 
     if mp:
         conds.append(func.upper(func.trim(cast(Venda.mestre, String))).like(mp.strip().upper() + "%"))
