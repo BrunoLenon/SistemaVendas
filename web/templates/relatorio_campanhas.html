@@ -364,7 +364,11 @@
                                   </div>
                                 {% endif %}
                                 {% if it.tipo == 'COMBO' and it.detalhes %}
-                                  {% set mid = 'modal_combo_' ~ e.emp ~ '_' ~ loop.parent.index0 ~ '_' ~ loop.index0 %}
+                                  {#
+                                    Jinja 3+ removeu `loop.parent` (agora é `loop.parentloop`).
+                                    Usamos parentloop para gerar IDs únicos e evitar erro em runtime.
+                                  #}
+                                  {% set mid = 'modal_combo_' ~ e.emp ~ '_' ~ loop.parentloop.index0 ~ '_' ~ loop.index0 %}
                                   <button type="button" class="btn btn-sm btn-outline-light ms-2"
                                           data-bs-toggle="modal" data-bs-target="#{{ mid }}">
                                     Ver Parcial
