@@ -3565,6 +3565,13 @@ def relatorio_campanhas():
             else:
                 emps_abertas.append(emp_payload)
 
+
+    # Opções de EMP para o filtro (multi) — sempre definido para evitar NameError
+    try:
+        emps_options = _get_emp_options(emps_scope)
+    except Exception:
+        emps_options = []
+
     # Opções de vendedor para o filtro (multi)
     try:
         vset = []
@@ -3576,11 +3583,6 @@ def relatorio_campanhas():
         vendedores_options = [{"value": v, "label": v} for v in vset]
     except Exception:
         vendedores_options = []
-    # Opções de EMP para o filtro (sempre definidas para evitar NameError no template)
-    try:
-        emps_options = _get_emp_options(emps_scope)
-    except Exception:
-        emps_options = [{"value": str(e), "label": str(e)} for e in (emps_scope or [])]
     return render_template(
             "relatorio_campanhas.html",
             role=role,
