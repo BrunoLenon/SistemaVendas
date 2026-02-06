@@ -3465,69 +3465,7 @@ def relatorio_campanhas():
             vendedores = vendedores_por_emp.get(emp) or []
             if not vendedores:
                 continue
-
-            # -------- Cadastros (Tab A) --------
-            # Campanhas Qtd que intersectam o mês
-            campanhas_qtd_defs = _campanhas_mes_overlap(int(ano), int(mes), emp)
-            # Combos que intersectam o mês
-            combos_defs = (
-                db.query(CampanhaCombo)
-                .filter(
-                    CampanhaCombo.ativo.is_(True),
-                    or_(CampanhaCombo.emp.is_(None), CampanhaCombo.emp == "", CampanhaCombo.emp == emp),
-                    CampanhaCombo.data_inicio <= _periodo_bounds(int(ano), int(mes))[1],
-                    CampanhaCombo.data_fim >= _periodo_bounds(int(ano), int(mes))[0],
-                )
-                .order_by(CampanhaCombo.data_inicio.asc(), CampanhaCombo.id.asc())
-                .all()
-            )
-
-            # Cache de itens e quantidades por combo para montar o parcial (UI)
-            combo_calc_cache = {}
-            try:
-                inicio_mes, fim_mes = _periodo_bounds(int(ano), int(mes))
-                combo_ids = [int(c.id) for c in (combos_defs or []) if getattr(c, "id", None) is not None]
-                if combo_ids:
-                    itens_rows = (
-                        db.query(CampanhaComboItem)
-                        .filter(CampanhaComboItem.combo_id.in_(combo_ids))
-                        .order_by(CampanhaComboItem.combo_id.asc(), CampanhaComboItem.ordem.asc(), CampanhaComboItem.id.asc())
-                        .all()
-                    )
-                    itens_by_combo = {}
-                    for it in itens_rows:
-                        itens_by_combo.setdefault(int(it.combo_id), []).append(it)
-
-                    for cdef in (combos_defs or []):
-                        cid = int(getattr(cdef, "id", 0) or 0)
-                        if cid <= 0:
-                            continue
-                        itens = itens_by_combo.get(cid) or []
-                        if not itens:
-                            continue
-                        periodo_ini = max(getattr(cdef, "data_inicio", inicio_mes), inicio_mes)
-                        periodo_fim = min(getattr(cdef, "data_fim", fim_mes), fim_mes)
-
-                        qtd_por_item = []
-                        for it in itens:
-                            qtd_por_item.append(_calc_qtd_por_vendedor_para_combo_item(db, emp, it, cdef.marca, periodo_ini, periodo_fim))
-
-                        combo_calc_cache[cid] = {
-                            "combo": cdef,
-                            "itens": itens,
-                            "qtd_por_item": qtd_por_item,
-                        }
-            except Exception:
-                combo_calc_cache = {}
-
-            emps_todos.append({
-                "emp": emp,
-                "fechado": bool(fech_map.get(emp, False)),
-                "campanhas_qtd": campanhas_qtd_defs,
-                "combos": combos_defs,
-            })
-
-            # -------- Resultados (Tab B/C) --------
+            # -------- Resultados --------
             resultados_qtd = (
                 db.query(CampanhaQtdResultado)
                 .filter(
@@ -3553,6 +3491,53 @@ def relatorio_campanhas():
             )
 
             # agrupa por vendedor e unifica (QTD + COMBO)
+            
+            # ---- Cache leve para cálculo de parcial do combo (somente combos presentes nos resultados) ----
+            combo_calc_cache = {}
+            try:
+                inicio_mes, fim_mes = _periodo_bounds(int(ano), int(mes))
+                combo_ids = sorted({int(r.combo_id) for r in (resultados_combo or []) if getattr(r, "combo_id", None)})
+                if combo_ids:
+                    combos_defs = (
+                        db.query(CampanhaCombo)
+                          .filter(CampanhaCombo.id.in_(combo_ids))
+                          .all()
+                    )
+                    itens_rows = (
+                        db.query(CampanhaComboItem)
+                          .filter(CampanhaComboItem.combo_id.in_(combo_ids))
+                          .order_by(CampanhaComboItem.combo_id.asc(), CampanhaComboItem.ordem.asc(), CampanhaComboItem.id.asc())
+                          .all()
+                    )
+                    itens_by_combo = {}
+                    for it in itens_rows:
+                        try:
+                            itens_by_combo.setdefault(int(it.combo_id), []).append(it)
+                        except Exception:
+                            continue
+
+                    for cdef in (combos_defs or []):
+                        cid = int(getattr(cdef, "id", 0) or 0)
+                        if cid <= 0:
+                            continue
+                        itens = itens_by_combo.get(cid) or []
+                        if not itens:
+                            continue
+
+                        periodo_ini = max(getattr(cdef, "data_inicio", inicio_mes), inicio_mes)
+                        periodo_fim = min(getattr(cdef, "data_fim", fim_mes), fim_mes)
+
+                        qtd_por_item = []
+                        for it in itens:
+                            qtd_por_item.append(
+                                _calc_qtd_por_vendedor_para_combo_item(
+                                    db, emp, it, getattr(cdef, "marca", ""), periodo_ini, periodo_fim
+                                )
+                            )
+
+                        combo_calc_cache[cid] = {"combo": cdef, "itens": itens, "qtd_por_item": qtd_por_item}
+            except Exception:
+                combo_calc_cache = {}
             by_vend = {}
             for r in resultados_qtd:
                 v = (r.vendedor or "").strip().upper()
