@@ -3576,28 +3576,22 @@ def relatorio_campanhas():
         vendedores_options = [{"value": v, "label": v} for v in vset]
     except Exception:
         vendedores_options = []
-
-    # Opções de EMP para o filtro (sempre definido para evitar NameError)
-    try:
-        emps_options = _get_emp_options(emps_scope)
-    except Exception:
-        emps_options = []
-
     return render_template(
-        "relatorio_campanhas.html",
-        role=role,
-        ano=ano,
-        mes=mes,
-        emps_todos=emps_todos,
-        emps_abertas=emps_abertas,
-        emps_fechadas=emps_fechadas,
-        emps_scope=emps_scope,
-        emps_sel=emps_sel,
-        emps_options=emps_options,
-        vendedores_sel=vendedores_sel,
-        vendedores_options=vendedores_options,
-        vendedor=vendedor_logado,
-    )
+            "relatorio_campanhas.html",
+            role=role,
+            ano=ano,
+            mes=mes,
+            emps_todos=emps_todos,
+            emps_abertas=emps_abertas,
+            emps_fechadas=emps_fechadas,
+            emps_scope=emps_scope,
+            emps_sel=emps_sel,
+            emps_options=emps_options,
+            vendedores_sel=vendedores_sel,
+            vendedores_options=vendedores_options,
+            vendedor=vendedor_logado,
+        )
+
 
 
 
@@ -4190,6 +4184,8 @@ def admin_usuarios():
     usuario = _usuario_logado()
     erro = None
     ok = None
+
+    combos_itens_map = {}
 
     with SessionLocal() as db:
         if request.method == "POST":
@@ -5325,6 +5321,30 @@ def admin_combos():
             .all()
         )
 
+        # carrega itens de cada combo para exibir no template (collapse "Ver itens")
+        try:
+            combo_ids = [c.id for c in (combos or []) if getattr(c, "id", None) is not None]
+            if combo_ids:
+                itens = (
+                    db.query(CampanhaComboItem)
+                    .filter(CampanhaComboItem.combo_id.in_(combo_ids))
+                    .order_by(
+                        CampanhaComboItem.combo_id.asc(),
+                        CampanhaComboItem.ordem.asc(),
+                        CampanhaComboItem.id.asc(),
+                    )
+                    .all()
+                )
+                combos_itens_map = {}
+                for it in itens:
+                    try:
+                        cid = int(it.combo_id)
+                    except Exception:
+                        cid = it.combo_id
+                    combos_itens_map.setdefault(cid, []).append(it)
+        except Exception:
+            combos_itens_map = {}
+
     return render_template(
         "admin_combos.html",
         mes=mes,
@@ -5332,6 +5352,7 @@ def admin_combos():
         erro=erro,
         ok=ok,
         combos=combos,
+        combos_itens_map=combos_itens_map,
         default_data_inicio=default_data_inicio,
         default_data_fim=default_data_fim,
     )
