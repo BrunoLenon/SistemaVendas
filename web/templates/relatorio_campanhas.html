@@ -199,15 +199,7 @@
     </div>
   </div>
 
-  {% if not emp_filtro %}
-    <div class="alert alert-info shadow-sm">
-      Selecione uma <strong>EMP</strong> e clique em <strong>OK</strong> para visualizar o relatório.
-    </div>
-  {% elif (not emps_abertas or (emps_abertas|length)==0) and (not emps_fechadas or (emps_fechadas|length)==0) %}
-    <div class="alert alert-warning shadow-sm">
-      Nenhum dado encontrado para o período selecionado.
-    </div>
-  {% else %}
+  
     <ul class="nav nav-tabs mb-3" role="tablist">
       <li class="nav-item" role="presentation">
         <button class="nav-link active" id="tab-a" data-bs-toggle="tab" data-bs-target="#pane-a" type="button" role="tab">
@@ -327,7 +319,12 @@
                 <strong>EMP {{ e.emp }}</strong> <span class="badge text-bg-success ms-2">ABERTO</span>
               </div>
               <div class="card-body">
-                {% for v in e.vendedores %}
+                {% set cid = "emp_vends_abertas_" ~ e.emp %}
+                <button class="btn btn-sm btn-outline-secondary mb-2" type="button" data-bs-toggle="collapse" data-bs-target="#{{ cid }}">
+                  Ver vendedores
+                </button>
+                <div class="collapse {% if role and role|lower != 'admin' %}show{% endif %}" id="{{ cid }}">
+                  {% for v in e.vendedores %}
                   <div class="mb-3">
                     <div class="d-flex justify-content-between align-items-center">
                       <div class="fw-semibold">{{ v.vendedor }}</div>
@@ -360,11 +357,17 @@
                               <td>{{ it.marca }}</td>
                               <td class="text-muted">
                                 {{ it.produto }}
+                                {% if it.tipo == 'COMBO' %}
+                                  <div class="small mt-1">
+                                    <span class="badge text-bg-light text-dark">Progresso: {{ it.parcial|default('0/0') }}</span>
+                                    <span class="text-muted ms-2">{{ it.critico_texto|default('') }}</span>
+                                  </div>
+                                {% endif %}
                                 {% if it.tipo == 'COMBO' and it.detalhes %}
                                   {% set mid = 'modal_combo_' ~ e.emp ~ '_' ~ loop.parent.index0 ~ '_' ~ loop.index0 %}
                                   <button type="button" class="btn btn-sm btn-outline-light ms-2"
                                           data-bs-toggle="modal" data-bs-target="#{{ mid }}">
-                                    Parcial
+                                    Ver Parcial
                                   </button>
 
                                   <div class="modal fade glass-modal" id="{{ mid }}" tabindex="-1" aria-hidden="true">
@@ -372,7 +375,7 @@
                                       <div class="modal-content">
                                         <div class="modal-header">
                                           <div>
-                                            <div class="subtitle small">Parcial do Combo</div>
+                                            <div class="subtitle small">Ver Parcial do Combo</div>
                                             <div class="fw-bold">{{ it.titulo }} <span class="glass-chip ms-2">EMP {{ e.emp }}</span></div>
                                             <div class="small opacity-75">Vendedor: {{ v.vendedor }} • {{ "%02d"|format(mes) }}/{{ ano }}</div>
                                           </div>
@@ -426,7 +429,15 @@
                                   </div>
                                 {% endif %}
                               </td>
+                              {% if it.tipo == 'COMBO' and not it.atingiu %}
+                              <td class="text-end text-muted">-</td>
+                            {% else %}
+                              {% if it.tipo == 'COMBO' and not it.atingiu %}
+                              <td class="text-end text-muted">-</td>
+                            {% else %}
                               <td class="text-end">{{ '%.2f'|format(it.valor_recompensa or 0) }}</td>
+                            {% endif %}
+                            {% endif %}
                               <td>{% if it.atingiu %}<span class="badge text-bg-success">SIM</span>{% else %}<span class="badge text-bg-secondary">NÃO</span>{% endif %}</td>
                               <td class="text-muted small">{{ it.periodo }}</td>
                             </tr>
@@ -436,6 +447,7 @@
                     </div>
                   </div>
                 {% endfor %}
+                </div>
               </div>
             </div>
           {% endfor %}
@@ -453,7 +465,12 @@
                 <strong>EMP {{ e.emp }}</strong> <span class="badge text-bg-secondary ms-2">FECHADO</span>
               </div>
               <div class="card-body">
-                {% for v in e.vendedores %}
+                {% set cid = "emp_vends_fechadas_" ~ e.emp %}
+                <button class="btn btn-sm btn-outline-secondary mb-2" type="button" data-bs-toggle="collapse" data-bs-target="#{{ cid }}">
+                  Ver vendedores
+                </button>
+                <div class="collapse {% if role and role|lower != 'admin' %}show{% endif %}" id="{{ cid }}">
+                  {% for v in e.vendedores %}
                   <div class="mb-3">
                     <div class="d-flex justify-content-between align-items-center">
                       <div class="fw-semibold">{{ v.vendedor }}</div>
@@ -490,7 +507,7 @@
                                   {% set mid = 'modal_combo_' ~ e.emp ~ '_' ~ loop.parent.index0 ~ '_' ~ loop.index0 %}
                                   <button type="button" class="btn btn-sm btn-outline-light ms-2"
                                           data-bs-toggle="modal" data-bs-target="#{{ mid }}">
-                                    Parcial
+                                    Ver Parcial
                                   </button>
 
                                   <div class="modal fade glass-modal" id="{{ mid }}" tabindex="-1" aria-hidden="true">
@@ -498,7 +515,7 @@
                                       <div class="modal-content">
                                         <div class="modal-header">
                                           <div>
-                                            <div class="subtitle small">Parcial do Combo</div>
+                                            <div class="subtitle small">Ver Parcial do Combo</div>
                                             <div class="fw-bold">{{ it.titulo }} <span class="glass-chip ms-2">EMP {{ e.emp }}</span></div>
                                             <div class="small opacity-75">Vendedor: {{ v.vendedor }} • {{ "%02d"|format(mes) }}/{{ ano }}</div>
                                           </div>
@@ -552,7 +569,11 @@
                                   </div>
                                 {% endif %}
                               </td>
+                              {% if it.tipo == 'COMBO' and not it.atingiu %}
+                              <td class="text-end text-muted">-</td>
+                            {% else %}
                               <td class="text-end">{{ '%.2f'|format(it.valor_recompensa or 0) }}</td>
+                            {% endif %}
                               <td>{% if it.atingiu %}<span class="badge text-bg-success">SIM</span>{% else %}<span class="badge text-bg-secondary">NÃO</span>{% endif %}</td>
                               <td class="text-muted small">{{ it.periodo }}</td>
                             </tr>
@@ -562,14 +583,13 @@
                     </div>
                   </div>
                 {% endfor %}
+                </div>
               </div>
             </div>
           {% endfor %}
         {% endif %}
       </div>
     </div>
-  {% endif %}
-
 
 </div>
 {% endblock %}

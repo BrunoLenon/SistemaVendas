@@ -142,6 +142,7 @@
             </thead>
             <tbody>
               <tr>
+                <td><input class="form-control" name="nome_item[]" placeholder="Ex: MOTOR PARTIDA"></td>
                 <td><input class="form-control" name="mestre_prefixo[]" placeholder="Ex: 1234"></td>
                 <td><input class="form-control" name="descricao_contains[]" placeholder="Ex: MOTOR PARTIDA"></td>
                 <td><input class="form-control" name="minimo_qtd[]" type="number" min="0" step="1" value="5"></td>
@@ -175,6 +176,8 @@
                 <th scope="col">Marca</th>
                 <th scope="col">Vigência</th>
                 <th scope="col">Valor global</th>
+                <th scope="col">Itens</th>
+                <th scope="col" class="text-end">Ações</th>
               </tr>
             </thead>
             <tbody>
@@ -185,8 +188,61 @@
                   <td>{{ c.emp or 'GLOBAL' }}</td>
                   <td>{{ c.marca }}</td>
                   <td>{{ c.data_inicio }} → {{ c.data_fim }}</td>
-                  <td>{% if c.valor_unitario_global is not none %}{{ '%.2f'|format(c.valor_unitario_global) }}{% else %}-{% endif %}</td>
+                                    <td>{% if c.valor_unitario_global is not none %}{{ '%.2f'|format(c.valor_unitario_global) }}{% else %}-{% endif %}</td>
+                  <td>
+                    {% set itens = (combos_itens_map.get(c.id) if combos_itens_map is defined else []) or [] %}
+                    <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#itens_combo_{{ c.id }}">
+                      Ver itens ({{ itens|length }})
+                    </button>
+                  </td>
+                  <td class="text-end">
+                    <form method="post" action="/admin/combos?mes={{ mes }}&ano={{ ano }}" class="d-inline">
+                      <input type="hidden" name="acao" value="remover">
+                      <input type="hidden" name="combo_id" value="{{ c.id }}">
+                      <button class="btn btn-sm btn-outline-danger" type="submit" onclick="return confirm('Remover este combo e seus itens?');">Remover</button>
+                    </form>
+                  </td>
                 </tr>
+                <tr class="collapse" id="itens_combo_{{ c.id }}">
+                  <td colspan="8">
+                    <div class="p-2">
+                      {% if itens|length == 0 %}
+                        <div class="text-muted small">Sem itens cadastrados.</div>
+                      {% else %}
+                        <div class="table-responsive">
+                          <table class="table table-sm align-middle mb-0">
+                            <thead>
+                              <tr>
+                                <th>#</th>
+                                <th>Regra</th>
+                                <th class="text-end">Mínimo</th>
+                                <th class="text-end">R$/un</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {% for it in itens %}
+                                <tr>
+                                  <td class="text-muted">{{ it.ordem }}</td>
+                                  <td>
+                                    {% if it.mestre_prefixo %}MESTRE: {{ it.mestre_prefixo }}
+                                    {% elif it.descricao_contains %}DESC: {{ it.descricao_contains }}
+                                    {% else %}{{ it.match_mestre or it.nome_item or '-' }}{% endif %}
+                                  </td>
+                                  <td class="text-end">{{ it.minimo_qtd }}</td>
+                                  <td class="text-end">
+                                    {% if it.valor_unitario is not none %}{{ '%.2f'|format(it.valor_unitario) }}
+                                    {% else %}<span class="text-muted">global</span>{% endif %}
+                                  </td>
+                                </tr>
+                              {% endfor %}
+                            </tbody>
+                          </table>
+                        </div>
+                      {% endif %}
+                    </div>
+                  </td>
+                </tr>
+
               {% endfor %}
             </tbody>
           </table>
@@ -201,6 +257,28 @@
   const tbl = document.getElementById('tbl-itens');
   const btnAdd = document.getElementById('btn-add-linha');
   if(!tbl || !btnAdd) return;
+
+  const form = document.getElementById('form-combo');
+
+  function hasAnyItem(){
+    const rows = tbl.querySelectorAll('tbody tr');
+    for(const r of rows){
+      const nm = (r.querySelector('input[name="nome_item[]"]')?.value || '').trim();
+      const mp = (r.querySelector('input[name="mestre_prefixo[]"]')?.value || '').trim();
+      const dc = (r.querySelector('input[name="descricao_contains[]"]')?.value || '').trim();
+      if(nm || mp || dc) return true;
+    }
+    return false;
+  }
+
+  if(form){
+    form.addEventListener('submit', (ev) => {
+      if(!hasAnyItem()){
+        ev.preventDefault();
+        alert('Adicione pelo menos 1 item válido no kit (Nome e/ou Mestre prefixo e/ou Descrição contém).');
+      }
+    });
+  }
 
   function wireRow(tr){
     const del = tr.querySelector('.btn-del');
@@ -223,6 +301,7 @@
     const tbody = tbl.querySelector('tbody');
     const tr = document.createElement('tr');
     tr.innerHTML = `
+      <td><input class="form-control" name="nome_item[]" placeholder="Ex: MOTOR PARTIDA"></td>
       <td><input class="form-control" name="mestre_prefixo[]" placeholder="Ex: 1234"></td>
       <td><input class="form-control" name="descricao_contains[]" placeholder="Ex: MOTOR PARTIDA"></td>
       <td><input class="form-control" name="minimo_qtd[]" type="number" min="0" step="1" value="5"></td>
