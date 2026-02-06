@@ -1,237 +1,235 @@
 {% extends "base.html" %}
-
 {% block title %}Admin — Combos (Kit){% endblock %}
-
-{% block extra_head %}
-<style>
-  .page-title{font-weight:700; letter-spacing:-.3px}
-  .subtitle{color:var(--bs-secondary-color)}
-  .kpi{display:inline-flex; align-items:center; gap:.4rem; padding:.35rem .65rem; border-radius:999px; background:rgba(13,110,253,.08); color:#0d6efd; font-size:.85rem}
-  .card-soft{border-radius:1rem}
-  .form-control, .form-select{border-radius:.75rem}
-  .table td, .table th{vertical-align:middle}
-  .hint{color:var(--bs-secondary-color); font-size:.85rem}
-</style>
-{% endblock %}
 
 {% block content %}
 <div class="container py-4" style="max-width: 1200px;">
   <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
     <div>
-      <div class="d-flex flex-wrap align-items-center gap-2">
-        <h3 class="m-0 page-title">🧩 Combos (Kit)</h3>
-        <span class="kpi">Período: {{ "%02d"|format(mes|int) }}/{{ ano }}</span>
-      </div>
-      <div class="subtitle">Campanha por unidade após bater o mínimo em <b>TODOS</b> os itens (marca obrigatória).</div>
+      <h3 class="m-0">🧩 Combos (Kit)</h3>
+      <div class="text-muted">Paga por unidade <b>após</b> bater o mínimo em <b>todos</b> os itens do kit (marca obrigatória).</div>
     </div>
-    <div class="d-flex flex-wrap gap-2 align-items-end">
-      <a class="btn btn-sm btn-outline-secondary" href="/dashboard">← Voltar</a>
-      <form class="d-flex gap-2 align-items-end" method="get" action="/admin/combos">
-        <div>
-          <label class="form-label mb-1">Mês</label>
-          <input class="form-control" type="number" name="mes" min="1" max="12" value="{{ mes }}" style="width:90px;">
-        </div>
-        <div>
-          <label class="form-label mb-1">Ano</label>
-          <input class="form-control" type="number" name="ano" min="2020" max="2035" value="{{ ano }}" style="width:110px;">
-        </div>
-        <button class="btn btn-primary" type="submit">Carregar</button>
-      </form>
+    <div class="d-flex align-items-center gap-2">
+      <span class="badge text-bg-light border text-dark">Competência: {{ mes }}/{{ ano }}</span>
+      <a class="btn btn-outline-secondary btn-sm" href="/dashboard">← Voltar</a>
     </div>
   </div>
 
-
   {% if erro %}
-    <div class="card-header d-flex justify-content-between align-items-center">
-      <strong>Novo Combo</strong>
-      <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#comboTipsCollapse" aria-expanded="false">Dicas</button>
-    </div>
+    <div class="alert alert-danger">{{ erro }}</div>
   {% endif %}
-      <div class="collapse mb-3" id="comboTipsCollapse">
-        <div class="alert alert-light border small mb-0">
-          <div class="fw-semibold mb-1">Como configurar corretamente</div>
+  {% if ok %}
+    <div class="alert alert-success">{{ ok }}</div>
+  {% endif %}
+
+  <div class="card shadow-sm mb-3">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <div class="fw-semibold">Novo Combo</div>
+      <button class="btn btn-outline-secondary btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#dicasCombo" aria-expanded="false">
+        💡 Dicas
+      </button>
+    </div>
+    <div class="collapse" id="dicasCombo">
+      <div class="card-body border-bottom">
+        <div class="small text-muted">
           <ul class="mb-0">
-            <li><b>EMP</b> vazio = combo válido para <b>todas</b> as empresas. Preencha para restringir (ex.: <code>101</code>).</li>
-            <li><b>Itens do combo</b>: cada item precisa de <b>Mestre prefixo</b> <i>ou</i> <b>Descrição contém</b> (um dos dois) + <b>mínimo</b>.</li>
-            <li><b>Ordem</b> define a sequência dos itens no kit (1, 2, 3...).</li>
-            <li><b>match_mestre</b> é preenchido automaticamente (mestre_prefixo → descrição_contains → nome_item). Ele é <b>obrigatório</b>.</li>
+            <li><b>Marca</b> é obrigatória e filtra as vendas do período do combo.</li>
+            <li><b>Gate</b>: o vendedor precisa bater o <b>mínimo em todos os itens</b> para o combo “atingir”.</li>
+            <li>Itens podem ser por <b>Mestre (prefixo)</b> e/ou por <b>Descrição contém</b> (ex.: “MOTOR PARTIDA”).</li>
+            <li><b>R$/un</b> no item é opcional. Se vazio, usa o <b>Valor unitário global</b> do combo (se informado).</li>
           </ul>
-          <div class="hint mt-2">Dica: use <b>Mestre prefixo</b> quando o código do produto é padronizado; use <b>Descrição contém</b> para capturar marca/linha (ex.: <code>BOSCH</code>).</div>
         </div>
       </div>
-  {% if ok %}
-    <div class="alert alert-success shadow-sm">{{ ok }}</div>
-  {% endif %}
+    </div>
 
-  <div class="card card-soft shadow-sm mb-3">
-    <div class="card-header"><strong>Novo Combo</strong></div>
     <div class="card-body">
-      <form method="post" action="/admin/combos?mes={{ mes }}&ano={{ ano }}" id="form-combo">
-        <input type="hidden" name="acao" value="criar">
+      <form method="post" action="/admin/combos" class="vstack gap-3">
+        <input type="hidden" name="acao" value="criar"/>
+
         <div class="row g-3">
           <div class="col-md-4">
-            <label class="form-label">Título</label>
-            <input class="form-control" name="titulo" required placeholder="Ex: Linha elétrica BOSCH">
+            <label class="form-label">Título <span class="text-danger">*</span></label>
+            <input class="form-control" name="titulo" placeholder="Ex: Combo Magnetron Fevereiro" required>
           </div>
           <div class="col-md-2">
             <label class="form-label">EMP (opcional)</label>
-            <input class="form-control" name="emp" placeholder="101">
-            <div class="form-text">Vazio = global.</div>
+            <input class="form-control" name="emp" placeholder="Ex: 1001">
+            <div class="form-text">Vazio = combo global (todas as EMPs).</div>
           </div>
           <div class="col-md-3">
-            <label class="form-label">Marca (obrigatória)</label>
-            <input class="form-control" name="marca" required placeholder="BOSCH">
+            <label class="form-label">Marca <span class="text-danger">*</span></label>
+            <input class="form-control" name="marca" placeholder="Ex: MAGNETRON" required>
           </div>
           <div class="col-md-3">
             <label class="form-label">Valor unitário global (opcional)</label>
-            <input class="form-control" name="valor_unitario_global" inputmode="decimal" placeholder="2.00">
+            <input class="form-control" name="valor_unitario_global" inputmode="decimal" placeholder="Ex: 2,00">
           </div>
-
-          <div class="col-md-3">
-            <label class="form-label">Modelo de pagamento</label>
-            <select class="form-select" name="modelo_pagamento">
-              <option value="TODOS_ITENS" selected>Combo — pagar por todos itens do gate</option>
-              <option value="POR_DESCRICAO">Combo — pagar por descrição+marca (após gate)</option>
-            </select>
-            <div class="form-text">No modelo 2, o vendedor precisa bater o gate e depois recebe por unidade filtrada.</div>
-          </div>
-
           <div class="col-md-3">
             <label class="form-label">Filtro marca (modelo 2)</label>
-            <input class="form-control" name="filtro_marca" placeholder="MAGNETRON">
+            <input class="form-control" name="filtro_marca" placeholder="Ex: MAGNETRON">
+            <div class="form-text">Opcional: restringe ainda mais a marca.</div>
           </div>
-
-          <div class="col-md-3">
+          <div class="col-md-5">
             <label class="form-label">Descrição começa com (modelo 2)</label>
-            <input class="form-control" name="filtro_descricao_prefixo" placeholder="MOTOR DE PARTIDA">
+            <input class="form-control" name="descricao_comeca" placeholder="Ex: MOTOR DE PARTIDA">
           </div>
-
-          <div class="col-md-3">
+          <div class="col-md-4">
             <label class="form-label">Valor unitário modelo 2 (opcional)</label>
-            <input class="form-control" name="valor_unitario_modelo2" inputmode="decimal" placeholder="1.00">
-          </div>
-
-          <div class="col-md-3">
-            <label class="form-label">Data início</label>
-            <input class="form-control" type="date" name="data_inicio" value="{{ default_data_inicio }}">
+            <input class="form-control" name="valor_unitario_modelo2" inputmode="decimal" placeholder="Ex: 1,00">
           </div>
           <div class="col-md-3">
-            <label class="form-label">Data fim</label>
-            <input class="form-control" type="date" name="data_fim" value="{{ default_data_fim }}">
+            <label class="form-label">Data início <span class="text-danger">*</span></label>
+            <input class="form-control" type="date" name="data_inicio" value="{{ default_data_inicio }}" required>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Data fim <span class="text-danger">*</span></label>
+            <input class="form-control" type="date" name="data_fim" value="{{ default_data_fim }}" required>
           </div>
         </div>
 
-        <hr class="my-3">
+        <hr class="my-2"/>
 
-        <div class="d-flex justify-content-between align-items-center mb-2">
+        <div class="d-flex justify-content-between align-items-center">
           <div class="fw-semibold">Requisitos (itens do kit)</div>
-          <button type="button" class="btn btn-outline-secondary btn-sm" id="btn-add-linha">+ Adicionar linha</button>
+          <button class="btn btn-outline-primary btn-sm" type="button" onclick="addLine()">+ Adicionar linha</button>
         </div>
+        <div class="small text-muted">Preencha <b>Mestre</b> e/ou <b>Descrição contém</b>. “Mínimo” é obrigatório.</div>
 
         <div class="table-responsive">
-          <table class="table table-sm align-middle" id="tbl-itens">
+          <table class="table table-sm align-middle" id="itensTable">
             <thead>
               <tr>
-                <th scope="col">MESTRE (prefixo)</th>
-                <th scope="col">DESCRIÇÃO contém</th>
-                <th scope="col" style="width:120px;">Mínimo</th>
-                <th scope="col" style="width:140px;">R$/un (opcional)</th>
-                <th scope="col" style="width:60px;"></th>
-            <th class="text-end">Ações</th>
+                <th style="width: 20%;">Mestre (prefixo)</th>
+                <th>Descrição contém</th>
+                <th style="width: 10%;">Mínimo <span class="text-danger">*</span></th>
+                <th style="width: 14%;">R$/un (opcional)</th>
+                <th style="width: 1%;">Ações</th>
               </tr>
             </thead>
             <tbody>
               <tr>
                 <td><input class="form-control" name="mestre_prefixo[]" placeholder="Ex: 1234"></td>
                 <td><input class="form-control" name="descricao_contains[]" placeholder="Ex: MOTOR PARTIDA"></td>
-                <td><input class="form-control" name="minimo_qtd[]" type="number" min="0" step="1" value="5"></td>
-                <td><input class="form-control" name="valor_unitario[]" inputmode="decimal" placeholder="2.00"></td>
-                <td class="text-end"><button type="button" class="btn btn-sm btn-outline-danger btn-del">✕</button></td>
+                <td><input class="form-control" name="minimo_qtd[]" type="number" min="0" step="1" value="1" required></td>
+                <td><input class="form-control" name="valor_unitario[]" inputmode="decimal" placeholder="Ex: 2,00"></td>
+                <td><button class="btn btn-outline-danger btn-sm" type="button" onclick="removeLine(this)">✕</button></td>
               </tr>
             </tbody>
           </table>
         </div>
 
         <div class="d-flex justify-content-end">
-          <button class="btn btn-success" type="submit">Salvar Combo</button>
+          <button class="btn btn-success">Salvar Combo</button>
         </div>
       </form>
     </div>
   </div>
 
-  <div class="card card-soft shadow-sm">
-    <div class="card-header"><strong>Combos cadastrados (intersectam {{ mes }}/{{ ano }})</strong></div>
-    <div class="card-body">
-      {% if not combos or (combos|length)==0 %}
-        <div class="text-muted">Nenhum combo cadastrado para o período.</div>
-      {% else %}
-        <div class="table-responsive">
-          <table class="table table-sm align-middle">
-            <thead>
-              <tr>
-                <th scope="col">ID</th>
-                <th scope="col">Título</th>
-                <th scope="col">EMP</th>
-                <th scope="col">Marca</th>
-                <th scope="col">Vigência</th>
-                <th scope="col">Valor global</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for c in combos %}
-                <tr>
-                  <td class="text-muted">{{ c.id }}</td>
-                  <td>{{ c.titulo }}</td>
-                  <td>{{ c.emp or 'GLOBAL' }}</td>
-                  <td>{{ c.marca }}</td>
-                  <td>{{ c.data_inicio }} → {{ c.data_fim }}</td>
-                  <td>{% if c.valor_unitario_global is not none %}{{ '%.2f'|format(c.valor_unitario_global) }}{% else %}-{% endif %}</td>
-                </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-      {% endif %}
+  <div class="card shadow-sm">
+    <div class="card-header fw-semibold">Combos cadastrados (intersectam {{ mes }}/{{ ano }})</div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover align-middle m-0">
+          <thead class="table-light">
+            <tr>
+              <th>ID</th>
+              <th>Título</th>
+              <th>EMP</th>
+              <th>Marca</th>
+              <th>Vigência</th>
+              <th class="text-end">Valor global</th>
+              <th>Itens do kit</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for c in (combos or []) %}
+            {% set cid = c.id %}
+            <tr>
+              <td class="text-muted">{{ c.id }}</td>
+              <td class="fw-semibold">{{ c.titulo }}</td>
+              <td>{{ c.emp or "—" }}</td>
+              <td>{{ c.marca }}</td>
+              <td class="text-muted">{{ c.data_inicio }} → {{ c.data_fim }}</td>
+              <td class="text-end">{{ '%.2f'|format(c.valor_unitario_global or 0) if c.valor_unitario_global else "—" }}</td>
+              <td>
+                <button class="btn btn-outline-secondary btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#kit{{ cid }}">
+                  Ver itens ({{ (combos_itens_map.get(cid) or [])|length }})
+                </button>
+              </td>
+            </tr>
+            <tr class="collapse" id="kit{{ cid }}">
+              <td colspan="7" class="bg-light">
+                {% set itens = combos_itens_map.get(cid) or [] %}
+                {% if not itens %}
+                  <div class="text-muted small">Nenhum item cadastrado.</div>
+                {% else %}
+                  <div class="table-responsive">
+                    <table class="table table-sm align-middle mb-0">
+                      <thead>
+                        <tr>
+                          <th>#</th>
+                          <th>Regra</th>
+                          <th class="text-end">Mínimo</th>
+                          <th class="text-end">R$/un</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {% for it in itens %}
+                        <tr>
+                          <td class="text-muted">{{ it.ordem }}</td>
+                          <td class="small">
+                            {% if it.mestre_prefixo %}
+                              <span class="badge text-bg-light border text-dark me-1">Mestre</span>{{ it.mestre_prefixo }}
+                            {% endif %}
+                            {% if it.descricao_contains %}
+                              <span class="badge text-bg-light border text-dark ms-2 me-1">Descrição</span>{{ it.descricao_contains }}
+                            {% endif %}
+                            {% if not it.mestre_prefixo and not it.descricao_contains %}
+                              {{ it.match_mestre }}
+                            {% endif %}
+                          </td>
+                          <td class="text-end">{{ '%.0f'|format(it.minimo_qtd or 0) }}</td>
+                          <td class="text-end">
+                            {% if it.valor_unitario is not none %}
+                              {{ '%.2f'|format(it.valor_unitario) }}
+                            {% else %}
+                              <span class="text-muted">global</span>
+                            {% endif %}
+                          </td>
+                        </tr>
+                        {% endfor %}
+                      </tbody>
+                    </table>
+                  </div>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
     </div>
   </div>
 </div>
 
 <script>
-(function(){
-  const tbl = document.getElementById('tbl-itens');
-  const btnAdd = document.getElementById('btn-add-linha');
-  if(!tbl || !btnAdd) return;
-
-  function wireRow(tr){
-    const del = tr.querySelector('.btn-del');
-    if(del){
-      del.addEventListener('click', () => {
-        const tbody = tbl.querySelector('tbody');
-        if(tbody.querySelectorAll('tr').length > 1){
-          tr.remove();
-        }else{
-          // limpa
-          tr.querySelectorAll('input').forEach(i => i.value = '');
-        }
-      });
-    }
-  }
-
-  tbl.querySelectorAll('tbody tr').forEach(wireRow);
-
-  btnAdd.addEventListener('click', () => {
-    const tbody = tbl.querySelector('tbody');
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td><input class="form-control" name="mestre_prefixo[]" placeholder="Ex: 1234"></td>
-      <td><input class="form-control" name="descricao_contains[]" placeholder="Ex: MOTOR PARTIDA"></td>
-      <td><input class="form-control" name="minimo_qtd[]" type="number" min="0" step="1" value="5"></td>
-      <td><input class="form-control" name="valor_unitario[]" inputmode="decimal" placeholder="2.00"></td>
-      <td class="text-end"><button type="button" class="btn btn-sm btn-outline-danger btn-del">✕</button></td>
-    `;
-    tbody.appendChild(tr);
-    wireRow(tr);
-  });
-})();
+function addLine(){
+  const tbody = document.querySelector("#itensTable tbody");
+  const tr = document.createElement("tr");
+  tr.innerHTML = `
+    <td><input class="form-control" name="mestre_prefixo[]" placeholder="Ex: 1234"></td>
+    <td><input class="form-control" name="descricao_contains[]" placeholder="Ex: MOTOR PARTIDA"></td>
+    <td><input class="form-control" name="minimo_qtd[]" type="number" min="0" step="1" value="1" required></td>
+    <td><input class="form-control" name="valor_unitario[]" inputmode="decimal" placeholder="Ex: 2,00"></td>
+    <td><button class="btn btn-outline-danger btn-sm" type="button" onclick="removeLine(this)">✕</button></td>
+  `;
+  tbody.appendChild(tr);
+}
+function removeLine(btn){
+  const tr = btn.closest("tr");
+  if(!tr) return;
+  const tbody = tr.parentElement;
+  if(tbody.querySelectorAll("tr").length <= 1) return; // mantém ao menos 1
+  tr.remove();
+}
 </script>
 {% endblock %}

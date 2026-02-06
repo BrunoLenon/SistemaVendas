@@ -343,6 +343,7 @@
                             <th scope="col">Item</th>
                             <th scope="col" class="text-end">Recompensa</th>
                             <th scope="col">Atingiu</th>
+                            <th scope="col">Parcial</th>
                             <th scope="col">Vigência</th>
                           </tr>
                         </thead>
@@ -358,76 +359,85 @@
                               </td>
                               <td>{{ it.titulo }}</td>
                               <td>{{ it.marca }}</td>
-                              <td class="text-muted">
-                                {{ it.produto }}
-                                {% if it.tipo == 'COMBO' and it.detalhes %}
-                                  {% set mid = 'modal_combo_' ~ e.emp ~ '_' ~ loop.parent.index0 ~ '_' ~ loop.index0 %}
-                                  <button type="button" class="btn btn-sm btn-outline-light ms-2"
-                                          data-bs-toggle="modal" data-bs-target="#{{ mid }}">
-                                    Parcial
-                                  </button>
-
-                                  <div class="modal fade glass-modal" id="{{ mid }}" tabindex="-1" aria-hidden="true">
-                                    <div class="modal-dialog modal-xl modal-dialog-scrollable">
-                                      <div class="modal-content">
-                                        <div class="modal-header">
-                                          <div>
-                                            <div class="subtitle small">Parcial do Combo</div>
-                                            <div class="fw-bold">{{ it.titulo }} <span class="glass-chip ms-2">EMP {{ e.emp }}</span></div>
-                                            <div class="small opacity-75">Vendedor: {{ v.vendedor }} • {{ "%02d"|format(mes) }}/{{ ano }}</div>
-                                          </div>
-                                          <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Fechar</button>
-                                        </div>
-
-                                        <div class="modal-body">
-                                          <div class="table-responsive">
-                                            <table class="table table-sm table-bordered table-sticky align-middle">
-                                              <thead class="table-light">
-                                                <tr>
-                                                  <th>#</th>
-                                                  <th>Match</th>
-                                                  <th class="text-end">Mínimo</th>
-                                                  <th class="text-end">Vendido</th>
-                                                  <th class="text-end">Falta</th>
-                                                  <th class="text-end">R$/un</th>
-                                                  <th class="text-end">Subtotal</th>
-                                                  <th>Status</th>
-                                                </tr>
-                                              </thead>
-                                              <tbody>
-                                                {% for d in it.detalhes %}
-                                                  <tr>
-                                                    <td class="mono">{{ d.ordem|int }}</td>
-                                                    <td class="text-truncate" style="max-width: 420px">{{ d.match }}</td>
-                                                    <td class="text-end mono">{{ d.minimo|int }}</td>
-                                                    <td class="text-end mono">{{ d.qtd|int }}</td>
-                                                    <td class="text-end mono">{{ d.faltam|int }}</td>
-                                                    <td class="text-end mono">{{ (d.unit or 0)|brl }}</td>
-                                                    <td class="text-end mono"><strong>{{ (d.subtotal or 0)|brl }}</strong></td>
-                                                    <td>
-                                                      {% if d.atingiu %}
-                                                        <span class="badge text-bg-success">OK</span>
-                                                      {% else %}
-                                                        <span class="badge text-bg-warning">PENDENTE</span>
-                                                      {% endif %}
-                                                    </td>
-                                                  </tr>
-                                                {% endfor %}
-                                              </tbody>
-                                            </table>
-                                          </div>
-                                        </div>
-
-                                        <div class="modal-footer">
-                                          <div class="small opacity-75">Dica: se algum item estiver pendente, o combo ainda não bateu o mínimo.</div>
-                                        </div>
-                                      </div>
-                                    </div>
-                                  </div>
-                                {% endif %}
-                              </td>
+                              <td class="text-muted">{{ it.produto }}</td>
                               <td class="text-end">{{ '%.2f'|format(it.valor_recompensa or 0) }}</td>
                               <td>{% if it.atingiu %}<span class="badge text-bg-success">SIM</span>{% else %}<span class="badge text-bg-secondary">NÃO</span>{% endif %}</td>
+
+<td>
+  {% if it.tipo == "COMBO" %}
+    {% set mid = "combo_" ~ emp.emp ~ "_" ~ v.vendedor|replace(" ","_") ~ "_" ~ loop.index %}
+    <div class="d-flex align-items-center gap-2">
+      <span class="badge text-bg-light border text-dark">{{ it.progresso or "0/0" }}</span>
+      <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#{{ mid }}">
+        Parcial
+      </button>
+    </div>
+
+    <div class="modal fade" id="{{ mid }}" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">Parcial do Combo — {{ it.titulo }} ({{ it.marca }})</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <div class="small text-muted mb-2">
+              Regra: o vendedor precisa bater o <b>mínimo em todos os itens</b> para “atingir” o combo.
+            </div>
+            <div class="table-responsive">
+              <table class="table table-sm align-middle">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Regra</th>
+                    <th class="text-end">Mínimo</th>
+                    <th class="text-end">Vendido</th>
+                    <th class="text-end">Falta</th>
+                    <th class="text-end">R$/un</th>
+                    <th class="text-end">Subtotal</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for d in (it.detalhes or []) %}
+                  <tr>
+                    <td class="text-muted">{{ d.ordem }}</td>
+                    <td class="small">
+                      {% if d.mestre_prefixo %}
+                        <span class="badge text-bg-light border text-dark me-1">Mestre</span>{{ d.mestre_prefixo }}
+                      {% endif %}
+                      {% if d.descricao_contains %}
+                        <span class="badge text-bg-light border text-dark ms-2 me-1">Descrição</span>{{ d.descricao_contains }}
+                      {% endif %}
+                      {% if not d.mestre_prefixo and not d.descricao_contains %}
+                        {{ d.match_mestre }}
+                      {% endif %}
+                    </td>
+                    <td class="text-end">{{ '%.0f'|format(d.minimo or 0) }}</td>
+                    <td class="text-end">{{ '%.0f'|format(d.qtd or 0) }}</td>
+                    <td class="text-end">{{ '%.0f'|format(d.falta or 0) }}</td>
+                    <td class="text-end">{{ '%.2f'|format(d.unit or 0) }}</td>
+                    <td class="text-end">{{ '%.2f'|format(d.subtotal or 0) }}</td>
+                    <td>
+                      {% if d.ok %}
+                        <span class="badge text-bg-success">OK</span>
+                      {% else %}
+                        <span class="badge text-bg-secondary">Pendente</span>
+                      {% endif %}
+                    </td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  {% else %}
+    <span class="text-muted">—</span>
+  {% endif %}
+</td>
                               <td class="text-muted small">{{ it.periodo }}</td>
                             </tr>
                           {% endfor %}
@@ -469,6 +479,7 @@
                             <th scope="col">Item</th>
                             <th scope="col" class="text-end">Recompensa</th>
                             <th scope="col">Atingiu</th>
+                            <th scope="col">Parcial</th>
                             <th scope="col">Vigência</th>
                           </tr>
                         </thead>
@@ -484,74 +495,7 @@
                               </td>
                               <td>{{ it.titulo }}</td>
                               <td>{{ it.marca }}</td>
-                              <td class="text-muted">
-                                {{ it.produto }}
-                                {% if it.tipo == 'COMBO' and it.detalhes %}
-                                  {% set mid = 'modal_combo_' ~ e.emp ~ '_' ~ loop.parent.index0 ~ '_' ~ loop.index0 %}
-                                  <button type="button" class="btn btn-sm btn-outline-light ms-2"
-                                          data-bs-toggle="modal" data-bs-target="#{{ mid }}">
-                                    Parcial
-                                  </button>
-
-                                  <div class="modal fade glass-modal" id="{{ mid }}" tabindex="-1" aria-hidden="true">
-                                    <div class="modal-dialog modal-xl modal-dialog-scrollable">
-                                      <div class="modal-content">
-                                        <div class="modal-header">
-                                          <div>
-                                            <div class="subtitle small">Parcial do Combo</div>
-                                            <div class="fw-bold">{{ it.titulo }} <span class="glass-chip ms-2">EMP {{ e.emp }}</span></div>
-                                            <div class="small opacity-75">Vendedor: {{ v.vendedor }} • {{ "%02d"|format(mes) }}/{{ ano }}</div>
-                                          </div>
-                                          <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Fechar</button>
-                                        </div>
-
-                                        <div class="modal-body">
-                                          <div class="table-responsive">
-                                            <table class="table table-sm table-bordered table-sticky align-middle">
-                                              <thead class="table-light">
-                                                <tr>
-                                                  <th>#</th>
-                                                  <th>Match</th>
-                                                  <th class="text-end">Mínimo</th>
-                                                  <th class="text-end">Vendido</th>
-                                                  <th class="text-end">Falta</th>
-                                                  <th class="text-end">R$/un</th>
-                                                  <th class="text-end">Subtotal</th>
-                                                  <th>Status</th>
-                                                </tr>
-                                              </thead>
-                                              <tbody>
-                                                {% for d in it.detalhes %}
-                                                  <tr>
-                                                    <td class="mono">{{ d.ordem|int }}</td>
-                                                    <td class="text-truncate" style="max-width: 420px">{{ d.match }}</td>
-                                                    <td class="text-end mono">{{ d.minimo|int }}</td>
-                                                    <td class="text-end mono">{{ d.qtd|int }}</td>
-                                                    <td class="text-end mono">{{ d.faltam|int }}</td>
-                                                    <td class="text-end mono">{{ (d.unit or 0)|brl }}</td>
-                                                    <td class="text-end mono"><strong>{{ (d.subtotal or 0)|brl }}</strong></td>
-                                                    <td>
-                                                      {% if d.atingiu %}
-                                                        <span class="badge text-bg-success">OK</span>
-                                                      {% else %}
-                                                        <span class="badge text-bg-warning">PENDENTE</span>
-                                                      {% endif %}
-                                                    </td>
-                                                  </tr>
-                                                {% endfor %}
-                                              </tbody>
-                                            </table>
-                                          </div>
-                                        </div>
-
-                                        <div class="modal-footer">
-                                          <div class="small opacity-75">Dica: se algum item estiver pendente, o combo ainda não bateu o mínimo.</div>
-                                        </div>
-                                      </div>
-                                    </div>
-                                  </div>
-                                {% endif %}
-                              </td>
+                              <td class="text-muted">{{ it.produto }}</td>
                               <td class="text-end">{{ '%.2f'|format(it.valor_recompensa or 0) }}</td>
                               <td>{% if it.atingiu %}<span class="badge text-bg-success">SIM</span>{% else %}<span class="badge text-bg-secondary">NÃO</span>{% endif %}</td>
                               <td class="text-muted small">{{ it.periodo }}</td>
@@ -569,7 +513,186 @@
       </div>
     </div>
   {% endif %}
+                </div>
+              </div>
 
+              <div class="d-flex justify-content-end mt-3">
+                <span class="btn btn-sm btn-outline-primary">Ver detalhes</span>
+              </div>
+            </div>
+          </button>
+        </div>
+
+        <!-- Modal EMP -->
+        <div class="modal fade glass-modal" id="{{ mid }}" tabindex="-1" aria-hidden="true">
+          <div class="modal-dialog modal-xl modal-dialog-scrollable">
+            <div class="modal-content" style="border-radius:1rem">
+              <div class="modal-header">
+                <div>
+                  <div class="subtitle small">Relatório — EMP {{ e.emp }}</div>
+                  <div class="fw-bold mono">Competência: {{ "%02d"|format(mes) }}/{{ ano }}</div>
+                </div>
+                <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Fechar</button>
+              </div>
+
+              <div class="modal-body">
+                <div class="d-flex flex-wrap gap-2 mb-3">
+                  <span class="badge text-bg-light border mono">Total recompensa: {{ e.total_emp|brl }}</span>
+                  <span class="badge text-bg-light border mono">{{ vend_ct }} vendedor(es)</span>
+                </div>
+
+                <div class="table-responsive">
+                  <table class="table table-sm align-middle mb-0">
+                    <thead class="table-light">
+                      <tr>
+                        <th>Vendedor</th>
+                        <th class="text-end">Total recompensa</th>
+                        <th class="text-end">Qtd campanhas</th>
+                        <th class="text-end">Detalhes</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {% for v in e.vendedores %}
+                        {% set vid = emp_id ~ '_v' ~ loop.index %}
+
+                        <tr>
+                          <td><strong>{{ v.vendedor }}</strong></td>
+                          <td class="text-end mono">{{ v.total_recompensa|brl }}</td>
+                          <td class="text-end mono">{{ v.campanhas|length }}</td>
+                          <td class="text-end">
+                            <button class="btn btn-sm btn-outline-primary" type="button"
+                                    data-bs-toggle="collapse"
+                                    data-bs-target="#d{{ mid }}_{{ vid }}"
+                                    aria-expanded="false"
+                                    aria-controls="d{{ mid }}_{{ vid }}">
+                              Ver campanhas
+                            </button>
+                          </td>
+                        </tr>
+
+                        <tr class="collapse" id="d{{ mid }}_{{ vid }}">
+                          <td colspan="4" class="p-2">
+                            {% if not v.campanhas or (v.campanhas|length) == 0 %}
+                              <div class="text-muted">Sem campanhas para este vendedor no período.</div>
+                            {% else %}
+
+                              {# Totais por status (pago/pendente/cancelado) #}
+                              {% set ns = namespace(total=0.0, pago=0.0, pend=0.0, canc=0.0, ct=0, ct_pago=0, ct_pend=0, ct_canc=0) %}
+                              {% for c in v.campanhas %}
+                                {% set ns.ct = ns.ct + 1 %}
+                                {% set _val = (c.valor_recompensa or 0.0) %}
+                                {% set ns.total = ns.total + _val %}
+                                {% set st = (c.status_pagamento or 'PENDENTE')|upper %}
+                                {% if st == 'PAGO' %}
+                                  {% set ns.pago = ns.pago + _val %}
+                                  {% set ns.ct_pago = ns.ct_pago + 1 %}
+                                {% elif st == 'CANCELADO' %}
+                                  {% set ns.canc = ns.canc + _val %}
+                                  {% set ns.ct_canc = ns.ct_canc + 1 %}
+                                {% else %}
+                                  {% set ns.pend = ns.pend + _val %}
+                                  {% set ns.ct_pend = ns.ct_pend + 1 %}
+                                {% endif %}
+                              {% endfor %}
+
+                              <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+                                <div class="d-flex flex-wrap gap-2">
+                                  <span class="glass-chip mono">Total: <strong>{{ ns.total|brl }}</strong></span>
+                                  <span class="glass-chip mono">PAGO <strong>{{ ns.ct_pago }}</strong> • {{ ns.pago|brl }}</span>
+                                  <span class="glass-chip mono">PEND <strong>{{ ns.ct_pend }}</strong> • {{ ns.pend|brl }}</span>
+                                  {% if ns.ct_canc > 0 %}
+                                    <span class="glass-chip mono">CANC <strong>{{ ns.ct_canc }}</strong> • {{ ns.canc|brl }}</span>
+                                  {% endif %}
+                                </div>
+
+                                <div style="min-width:260px">
+                                  <input
+                                    type="search"
+                                    class="form-control form-control-sm glass-input"
+                                    placeholder="Buscar na tabela (campanha, marca, base...)"
+                                    data-filter-input="t{{ mid }}_{{ vid }}"
+                                    aria-label="Buscar campanhas"
+                                  >
+                                </div>
+                              </div>
+
+                              <div class="collapse-panel">
+                                <div class="table-responsive">
+                                  <table class="table table-sm table-bordered mb-0 table-sticky" id="t{{ mid }}_{{ vid }}">
+                                    <thead class="table-light">
+                                      <tr>
+                                        <th>Campanha</th>
+                                        <th>Base</th>
+                                        <th>Marca</th>
+                                        <th class="text-end">R$/un</th>
+                                        <th class="text-end">Mín</th>
+                                        <th class="text-end">Qtd</th>
+                                        <th class="text-end">Valor</th>
+                                        <th>Status</th>
+                                        <th>Período</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {% for c in v.campanhas %}
+                                        {% set st = (c.status_pagamento or 'PENDENTE')|upper %}
+                                        {% set st_class = 'pendente' %}
+                                        {% if st == 'PAGO' %}{% set st_class = 'pago' %}{% endif %}
+                                        {% if st == 'CANCELADO' %}{% set st_class = 'cancelado' %}{% endif %}
+
+                                        <tr data-filter-row>
+                                          <td class="text-truncate" style="max-width:260px">
+                                            {{ c.titulo or ('Campanha #' ~ c.campanha_id) }}
+                                          </td>
+                                          <td class="mono small">{{ c.produto_prefixo }}</td>
+                                          <td>{{ c.marca }}</td>
+                                          <td class="text-end mono">{{ (c.recompensa_unit or 0)|brl }}</td>
+                                          <td class="text-end mono">
+                                            {% if c.qtd_minima is not none %}{{ c.qtd_minima|int }}{% else %}-{% endif %}
+                                          </td>
+                                          <td class="text-end mono">{{ (c.qtd_vendida or 0)|int }}</td>
+                                          <td class="text-end mono">
+                                            {% if c.valor_recompensa and c.valor_recompensa > 0 %}
+                                              <strong>{{ (c.valor_recompensa or 0)|brl }}</strong>
+                                            {% else %}
+                                              -
+                                            {% endif %}
+                                          </td>
+                                          <td>
+                                            <span class="status-pill {{ st_class }}">{{ st }}</span>
+                                          </td>
+                                          <td class="mono small">
+                                            {{ c.data_inicio.strftime("%d/%m/%Y") if c.data_inicio else "" }}
+                                            {% if c.data_fim %}a {{ c.data_fim.strftime("%d/%m/%Y") }}{% endif %}
+                                          </td>
+                                        </tr>
+                                      {% endfor %}
+                                    </tbody>
+                                  </table>
+
+                                  <div class="small mt-2" data-filter-empty="t{{ mid }}_{{ vid }}" style="display:none; opacity:.8">
+                                    Nenhuma campanha encontrada com esse filtro.
+                                  </div>
+                                </div>
+                              </div>
+
+                            {% endif %}
+                          </td>
+                        </tr>
+
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                </div>
+
+              </div>
+            </div>
+          </div>
+        </div>
+        <!-- /Modal EMP -->
+
+      {% endfor %}
+    </div>
+  {% endif %}
 
 </div>
 {% endblock %}
