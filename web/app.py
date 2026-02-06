@@ -3137,7 +3137,13 @@ def _norm_text(s: str) -> str:
 
 
 def _calc_qtd_por_vendedor_para_combo_item(db, emp: str, item: CampanhaComboItem, marca: str, periodo_ini: date, periodo_fim: date) -> dict[str, float]:
-    """Retorna dict vendedor -> qtd para um item do combo no período."""
+    """Retorna dict vendedor -> qtd para um item do combo no período.
+
+    Regras de match (compatível com banco antigo):
+      - Se item.mestre_prefixo existir: prefix match em Venda.mestre
+      - Se item.descricao_contains existir: contains case-insensitive em descricao_norm/descricao
+      - Se ambos vazios: usa item.match_mestre como fallback (prefixo se parecer código; senão contains)
+    """
     emp = str(emp)
     marca_up = (marca or "").strip().upper()
 
@@ -3152,12 +3158,14 @@ def _calc_qtd_por_vendedor_para_combo_item(db, emp: str, item: CampanhaComboItem
     mp = (item.mestre_prefixo or "").strip()
     dc = (item.descricao_contains or "").strip()
 
-    # Fallback: muitos itens antigos usam apenas match_mestre (obrigatório no banco)
+    # Fallback para bases antigas: match_mestre é obrigatório e pode ser a única regra persistida
     if not mp and not dc:
         mm = (getattr(item, "match_mestre", None) or "").strip()
         if mm:
-            # heurística: se parece um código/prefixo (sem espaços), usa mestre; senão usa contains na descrição
-            if (" " not in mm) and re.match(r"^[A-Za-z0-9_./-]+$", mm):
+            # Se não tem espaços e é alfanumérico/símbolos comuns, tratamos como código (prefixo).
+            # Caso contrário, tratamos como trecho de descrição (contains).
+            import re as _re
+            if _re.fullmatch(r"[A-Za-z0-9._\-/]+", mm):
                 mp = mm
             else:
                 dc = mm
@@ -3165,7 +3173,6 @@ def _calc_qtd_por_vendedor_para_combo_item(db, emp: str, item: CampanhaComboItem
     if mp:
         conds.append(func.upper(func.trim(cast(Venda.mestre, String))).like(mp.strip().upper() + "%"))
     if dc:
-        # usa descricao_norm se existir, senão descricao
         needle = _norm_text(dc)
         campo = func.lower(func.trim(func.coalesce(Venda.descricao_norm, Venda.descricao, "")))
         conds.append(campo.like("%" + needle + "%"))
@@ -3522,35 +3529,38 @@ def relatorio_campanhas():
                 )
                 .order_by(CampanhaComboResultado.vendedor.asc(), CampanhaComboResultado.valor_recompensa.desc())
                 .all()
-            
-            # Pré-carrega definições/itens de combos para gerar "parcial" (o que falta) no relatório
-            combo_ids = sorted({int(r.combo_id) for r in (resultados_combo or []) if getattr(r, "combo_id", None) is not None})
-            combos_by_id = {}
-            combo_itens_map = {}
-            combo_item_qtd_cache = {}  # (combo_item_id, marca, ini, fim) -> {VEND: qtd}
+            )
 
-            if combo_ids:
-                try:
-                    combos_rows = (
-                        db.query(CampanhaCombo)
-                        .filter(CampanhaCombo.id.in_(combo_ids))
-                        .all()
-                    )
-                    combos_by_id = {int(c.id): c for c in (combos_rows or [])}
 
+            # Pré-calcula detalhes de COMBO para exibição (leve e sem alterar valores salvos)
+            combo_items_by_combo: dict[int, list[CampanhaComboItem]] = {}
+            combo_calc_cache: dict[tuple[int, str, date, date], tuple[list[CampanhaComboItem], list[dict[str, float]]]] = {}
+            try:
+                combo_ids = sorted({int(r.combo_id) for r in resultados_combo if getattr(r, "combo_id", None)})
+                if combo_ids:
                     itens_rows = (
                         db.query(CampanhaComboItem)
                         .filter(CampanhaComboItem.combo_id.in_(combo_ids))
                         .order_by(CampanhaComboItem.combo_id.asc(), CampanhaComboItem.ordem.asc(), CampanhaComboItem.id.asc())
                         .all()
                     )
-                    for itx in itens_rows or []:
-                        combo_itens_map.setdefault(int(itx.combo_id), []).append(itx)
-                except Exception as _e:
-                    combos_by_id = {}
-                    combo_itens_map = {}
-                    combo_item_qtd_cache = {}
-)
+                    for it in itens_rows:
+                        combo_items_by_combo.setdefault(int(it.combo_id), []).append(it)
+
+                # cache de qtd por item agrupado por vendedor (evita query por vendedor)
+                for r in resultados_combo:
+                    key = (int(r.combo_id), (r.marca or "").strip().upper(), r.data_inicio, r.data_fim)
+                    if key in combo_calc_cache:
+                        continue
+                    itens_def = combo_items_by_combo.get(int(r.combo_id), []) or []
+                    maps = []
+                    for it in itens_def:
+                        maps.append(_calc_qtd_por_vendedor_para_combo_item(db, emp, it, r.marca, r.data_inicio, r.data_fim))
+                    combo_calc_cache[key] = (itens_def, maps)
+            except Exception as _e:
+                print(f"[RELATORIO_CAMPANHAS] aviso: não foi possível montar detalhes de combo: {_e}")
+                combo_items_by_combo = {}
+                combo_calc_cache = {}
 
             # agrupa por vendedor e unifica (QTD + COMBO)
             by_vend = {}
@@ -3569,70 +3579,47 @@ def relatorio_campanhas():
                 })
             for r in resultados_combo:
                 v = (r.vendedor or "").strip().upper()
-
-                # Monta parcial (progresso + itens faltantes) para UI — não altera valor salvo do resultado
-                combo_id = int(getattr(r, "combo_id", 0) or 0)
-                combo_def = combos_by_id.get(combo_id)
-                itens_def = combo_itens_map.get(combo_id) or []
-
-                detalhes = None
+                combo_itens = []
                 parcial = None
                 critico_texto = None
-
                 try:
-                    if combo_def and itens_def:
-                        itens_det = []
-                        ok_count = 0
-                        total_itens = len(itens_def)
-                        # calcula vendido por item (cache por item/período)
-                        for it_def in itens_def:
-                            marca_ref = (r.marca or combo_def.marca or "").strip().upper()
-                            ini = r.data_inicio
-                            fim = r.data_fim
-                            cache_key = (int(it_def.id), marca_ref, ini, fim)
-                            if cache_key not in combo_item_qtd_cache:
-                                combo_item_qtd_cache[cache_key] = _calc_qtd_por_vendedor_para_combo_item(db, emp, it_def, marca_ref, ini, fim) or {}
-
-                            vendido_map = combo_item_qtd_cache.get(cache_key) or {}
-                            vendido = float(vendido_map.get(v, 0.0) or 0.0)
-                            minimo = int(getattr(it_def, "minimo_qtd", 0) or 0)
-                            falta = max(minimo - int(vendido), 0)
-                            ok = 1 if falta == 0 else 0
-                            if ok:
-                                ok_count += 1
-
-                            itens_det.append({
-                                "ordem": int(getattr(it_def, "ordem", 0) or 0),
-                                "regra": (getattr(it_def, "match_mestre", None) or getattr(it_def, "mestre_prefixo", None) or getattr(it_def, "descricao_contains", None) or "").strip(),
-                                "nome_item": (getattr(it_def, "nome_item", None) or "").strip(),
-                                "minimo": minimo,
-                                "vendido": int(vendido),
-                                "falta": int(falta),
-                                "ok": bool(ok),
-                            })
-
-                        parcial = f"{ok_count}/{total_itens}" if total_itens else None
-
-                        # item crítico = maior falta (empate: menor ordem)
-                        crit = None
-                        for itdet in itens_det:
-                            if crit is None:
-                                crit = itdet
-                            else:
-                                if itdet["falta"] > crit["falta"] or (itdet["falta"] == crit["falta"] and itdet.get("ordem", 999999) < crit.get("ordem", 999999)):
-                                    crit = itdet
-                        if crit and int(crit.get("falta") or 0) > 0:
-                            nm = crit.get("nome_item") or crit.get("regra") or "Item"
-                            critico_texto = f"Falta: {nm} ({crit.get('falta')} un)"
-                        else:
-                            critico_texto = "Completo"
-
-                        detalhes = {
-                            "gate_ok": bool(int(getattr(r, "atingiu_gate", 0) or 0) == 1),
-                            "itens": itens_det,
-                        }
+                    key = (int(r.combo_id), (r.marca or "").strip().upper(), r.data_inicio, r.data_fim)
+                    itens_def, maps = combo_calc_cache.get(key, ([], []))
+                    itens_ok = 0
+                    crit_falta = -1
+                    crit_ordem = 10**9
+                    crit_nome = ""
+                    for it, mp in zip(itens_def, maps):
+                        vendido = float((mp or {}).get(v, 0.0) or 0.0)
+                        minimo = int(getattr(it, "minimo_qtd", 0) or 0)
+                        falta = max(minimo - vendido, 0.0)
+                        ok = falta <= 1e-9
+                        if ok:
+                            itens_ok += 1
+                        nome = (getattr(it, "nome_item", None) or getattr(it, "match_mestre", None) or getattr(it, "mestre_prefixo", None) or getattr(it, "descricao_contains", None) or "ITEM").strip()
+                        ordem = int(getattr(it, "ordem", 0) or 0)
+                        if falta > crit_falta or (abs(falta - crit_falta) <= 1e-9 and ordem < crit_ordem):
+                            crit_falta = falta
+                            crit_ordem = ordem
+                            crit_nome = nome
+                        combo_itens.append({
+                            "nome": nome,
+                            "regra": (getattr(it, "match_mestre", None) or "").strip(),
+                            "minimo": minimo,
+                            "vendido": vendido,
+                            "falta": falta,
+                            "ok": bool(ok),
+                        })
+                    total_itens = len(combo_itens)
+                    parcial = f"{itens_ok}/{total_itens}" if total_itens else "0/0"
+                    if total_itens and itens_ok == total_itens:
+                        critico_texto = "OK"
+                    elif crit_falta >= 0:
+                        critico_texto = f"Falta: {crit_nome} ({int(crit_falta) if float(crit_falta).is_integer() else crit_falta:g} un)"
+                    else:
+                        critico_texto = "Sem itens"
                 except Exception:
-                    detalhes = None
+                    combo_itens = []
                     parcial = None
                     critico_texto = None
 
@@ -3641,14 +3628,14 @@ def relatorio_campanhas():
                     "titulo": r.titulo,
                     "marca": r.marca,
                     "produto": "KIT",
+                    "parcial": parcial,
+                    "critico_texto": critico_texto,
+                    "combo_itens": combo_itens,
                     "qtd": None,
                     "valor_recompensa": float(r.valor_recompensa or 0.0),
                     "atingiu": int(r.atingiu_gate or 0),
                     "status_pagamento": r.status_pagamento,
                     "periodo": f"{r.data_inicio} → {r.data_fim}",
-                    "parcial": parcial,
-                    "critico_texto": critico_texto,
-                    "detalhes": detalhes,
                 })
 
             # ordena campanhas dentro do vendedor (maior recompensa primeiro)
