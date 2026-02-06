@@ -2883,7 +2883,9 @@ def campanhas_qtd():
             vv = (v or "").strip().upper()
             if not vv:
                 continue
-            vendedores_options.append(vv)vendedor_display = (
+            vendedores_options.append(vv)
+
+    vendedor_display = (
         ("LOJA TODA" if (role or "").lower()=="supervisor" else "TODOS VENDEDORES") if (vendedor_sel or "").upper() == "__ALL__"
         else (f"{len(vendedores_sel)} selecionados" if (vendedor_sel or "").upper() == "__MULTI__" else vendedor_sel)
     )
