@@ -523,6 +523,7 @@
           </button>
         </div>
 
+{% if e is defined %}
         <!-- Modal EMP -->
         <div class="modal fade glass-modal" id="{{ mid }}" tabindex="-1" aria-hidden="true">
           <div class="modal-dialog modal-xl modal-dialog-scrollable">
@@ -689,8 +690,11 @@
           </div>
         </div>
         <!-- /Modal EMP -->
+{% endif %}
 
+      {% endfor %}
     </div>
+  {% endif %}
 
 </div>
 {% endblock %}
