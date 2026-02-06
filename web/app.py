@@ -2740,8 +2740,6 @@ def campanhas_qtd():
     mes = int(request.args.get("mes") or hoje.month)
     ano = int(request.args.get("ano") or hoje.year)
 
-    inicio_mes, fim_mes = _periodo_bounds(int(ano), int(mes))
-
     # vendedor alvo
     vendedor_logado = (_usuario_logado() or "").strip().upper()
 
@@ -3515,123 +3513,35 @@ def relatorio_campanhas():
                 .order_by(CampanhaComboResultado.vendedor.asc(), CampanhaComboResultado.valor_recompensa.desc())
                 .all()
             )
+
             # agrupa por vendedor e unifica (QTD + COMBO)
-            inicio_mes, fim_mes = _periodo_bounds(int(ano), int(mes))
-
-            # Cache para detalhar combos (parcial por item) sem repetir consultas dentro da mesma EMP
-            combo_cache: dict[int, dict] = {}
-
-            def _combo_details_for_vendor(combo_id: int, vend: str):
-                """Retorna (progresso_str, detalhes_list) para um vendedor no combo."""
-                cid = int(combo_id)
-                vend = (vend or "").strip().upper()
-
-                if cid not in combo_cache:
-                    combo = db.query(CampanhaCombo).filter(CampanhaCombo.id == cid).first()
-                    itens_ = (
-                        db.query(CampanhaComboItem)
-                        .filter(CampanhaComboItem.combo_id == cid)
-                        .order_by(CampanhaComboItem.ordem.asc(), CampanhaComboItem.id.asc())
-                        .all()
-                    )
-
-                    if not combo or not itens_:
-                        combo_cache[cid] = {"combo": combo, "itens": [], "qtd_maps": []}
-                    else:
-                        # período efetivo do combo dentro da competência
-                        periodo_ini = max(combo.data_inicio, inicio_mes)
-                        periodo_fim = min(combo.data_fim, fim_mes)
-
-                        qtd_maps = []
-                        for it_ in itens_:
-                            qtd_maps.append(
-                                _calc_qtd_por_vendedor_para_combo_item(
-                                    db, emp, it_, combo.marca, periodo_ini, periodo_fim
-                                )
-                            )
-
-                        combo_cache[cid] = {"combo": combo, "itens": itens_, "qtd_maps": qtd_maps}
-
-                info = combo_cache.get(cid) or {}
-                combo = info.get("combo")
-                itens_ = info.get("itens") or []
-                qtd_maps = info.get("qtd_maps") or []
-
-                detalhes = []
-                ok_count = 0
-                total_items = len(itens_)
-
-                for it_, qmap in zip(itens_, qtd_maps):
-                    qtd = float((qmap or {}).get(vend, 0.0))
-                    minimo = float(it_.minimo_qtd or 0.0)
-                    falta = max(0.0, minimo - qtd) if minimo > 0 else 0.0
-
-                    unit = (
-                        it_.valor_unitario
-                        if it_.valor_unitario is not None
-                        else (combo.valor_unitario_global if combo else None)
-                    )
-                    unit = float(unit or 0.0)
-                    subtotal = float(qtd * unit)
-
-                    ok = (minimo <= 0) or (qtd >= minimo)
-                    if ok:
-                        ok_count += 1
-
-                    detalhes.append(
-                        {
-                            "ordem": int(it_.ordem or 0),
-                            "mestre_prefixo": it_.mestre_prefixo,
-                            "descricao_contains": it_.descricao_contains,
-                            "match_mestre": it_.match_mestre,
-                            "minimo": minimo,
-                            "qtd": qtd,
-                            "falta": falta,
-                            "unit": unit,
-                            "subtotal": subtotal,
-                            "ok": bool(ok),
-                        }
-                    )
-
-                progresso = f"{ok_count}/{total_items}" if total_items else "0/0"
-                return progresso, detalhes
-
-            by_vend: dict[str, list[dict]] = {}
-
+            by_vend = {}
             for r in resultados_qtd:
                 v = (r.vendedor or "").strip().upper()
-                by_vend.setdefault(v, []).append(
-                    {
-                        "tipo": "QTD",
-                        "titulo": r.titulo,
-                        "marca": r.marca,
-                        "produto": r.produto_prefixo,
-                        "qtd": float(r.qtd_vendida or 0.0),
-                        "valor_recompensa": float(r.valor_recompensa or 0.0),
-                        "atingiu": int(r.atingiu_minimo or 0),
-                        "status_pagamento": r.status_pagamento,
-                        "periodo": f"{r.data_inicio} → {r.data_fim}",
-                    }
-                )
-
+                by_vend.setdefault(v, []).append({
+                    "tipo": "QTD",
+                    "titulo": r.titulo,
+                    "marca": r.marca,
+                    "produto": r.produto_prefixo,
+                    "qtd": float(r.qtd_vendida or 0.0),
+                    "valor_recompensa": float(r.valor_recompensa or 0.0),
+                    "atingiu": int(r.atingiu_minimo or 0),
+                    "status_pagamento": r.status_pagamento,
+                    "periodo": f"{r.data_inicio} → {r.data_fim}",
+                })
             for r in resultados_combo:
                 v = (r.vendedor or "").strip().upper()
-                prog, dets = _combo_details_for_vendor(r.combo_id, v)
-                by_vend.setdefault(v, []).append(
-                    {
-                        "tipo": "COMBO",
-                        "titulo": r.titulo,
-                        "marca": r.marca,
-                        "produto": "KIT",
-                        "qtd": None,
-                        "valor_recompensa": float(r.valor_recompensa or 0.0),
-                        "atingiu": int(r.atingiu_gate or 0),
-                        "progresso": prog,
-                        "detalhes": dets,
-                        "status_pagamento": r.status_pagamento,
-                        "periodo": f"{r.data_inicio} → {r.data_fim}",
-                    }
-                )
+                by_vend.setdefault(v, []).append({
+                    "tipo": "COMBO",
+                    "titulo": r.titulo,
+                    "marca": r.marca,
+                    "produto": "KIT",
+                    "qtd": None,
+                    "valor_recompensa": float(r.valor_recompensa or 0.0),
+                    "atingiu": int(r.atingiu_gate or 0),
+                    "status_pagamento": r.status_pagamento,
+                    "periodo": f"{r.data_inicio} → {r.data_fim}",
+                })
 
             # ordena campanhas dentro do vendedor (maior recompensa primeiro)
             vendedores_cards = []
@@ -3666,22 +3576,28 @@ def relatorio_campanhas():
         vendedores_options = [{"value": v, "label": v} for v in vset]
     except Exception:
         vendedores_options = []
-    return render_template(
-            "relatorio_campanhas.html",
-            role=role,
-            ano=ano,
-            mes=mes,
-            emps_todos=emps_todos,
-            emps_abertas=emps_abertas,
-            emps_fechadas=emps_fechadas,
-            emps_scope=emps_scope,
-            emps_sel=emps_sel,
-            emps_options=emps_options,
-            vendedores_sel=vendedores_sel,
-            vendedores_options=vendedores_options,
-            vendedor=vendedor_logado,
-        )
 
+    # Opções de EMP para o filtro (sempre definido para evitar NameError)
+    try:
+        emps_options = _get_emp_options(emps_scope)
+    except Exception:
+        emps_options = []
+
+    return render_template(
+        "relatorio_campanhas.html",
+        role=role,
+        ano=ano,
+        mes=mes,
+        emps_todos=emps_todos,
+        emps_abertas=emps_abertas,
+        emps_fechadas=emps_fechadas,
+        emps_scope=emps_scope,
+        emps_sel=emps_sel,
+        emps_options=emps_options,
+        vendedores_sel=vendedores_sel,
+        vendedores_options=vendedores_options,
+        vendedor=vendedor_logado,
+    )
 
 
 
@@ -5409,29 +5325,6 @@ def admin_combos():
             .all()
         )
 
-
-        # carrega itens de cada combo para exibição (accordion na UI)
-        combos_itens_map: dict[int, list[dict]] = {}
-        try:
-            combo_ids = [int(c.id) for c in (combos or [])]
-            if combo_ids:
-                itens_rows = (
-                    db.query(CampanhaComboItem)
-                    .filter(CampanhaComboItem.combo_id.in_(combo_ids))
-                    .order_by(CampanhaComboItem.combo_id.asc(), CampanhaComboItem.ordem.asc(), CampanhaComboItem.id.asc())
-                    .all()
-                )
-                for it in itens_rows:
-                    combos_itens_map.setdefault(int(it.combo_id), []).append({
-                        "ordem": int(it.ordem or 0),
-                        "mestre_prefixo": it.mestre_prefixo,
-                        "descricao_contains": it.descricao_contains,
-                        "minimo_qtd": float(it.minimo_qtd or 0.0),
-                        "valor_unitario": (float(it.valor_unitario) if it.valor_unitario is not None else None),
-                        "match_mestre": it.match_mestre,
-                    })
-        except Exception:
-            combos_itens_map = {}
     return render_template(
         "admin_combos.html",
         mes=mes,
@@ -5439,7 +5332,6 @@ def admin_combos():
         erro=erro,
         ok=ok,
         combos=combos,
-        combos_itens_map=combos_itens_map,
         default_data_inicio=default_data_inicio,
         default_data_fim=default_data_fim,
     )
