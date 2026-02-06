@@ -1,6 +1,9 @@
 {% extends "base.html" %}
 
-{% block title %}Relatório de Campanhas — {{ mes }}/{{ ano }}<script>
+{% block title %}Relatório de Campanhas — {{ mes }}/{{ ano }}{% endblock %}
+
+{% block extra_head %}
+<script>
 (function(){
   function norm(s){
     return (s||"")
@@ -36,7 +39,7 @@
     applyFilter(tableId, inp.value);
   });
 
-  // When a vendor section is expanded, keep filter applied (if any)
+  // Reaplicar filtro ao expandir seções
   document.addEventListener("shown.bs.collapse", function(e){
     const collapse = e.target;
     const inp = collapse.querySelector("[data-filter-input]");
@@ -46,16 +49,12 @@
 })();
 </script>
 
-{% endblock %}
-
-{% block extra_head %}
 <style>
   .page-title{font-weight:700; letter-spacing:-.3px}
   .subtitle{color:var(--bs-secondary-color)}
   .mono{font-variant-numeric: tabular-nums;}
   .table thead th{white-space:nowrap}
 
-  /* Modern translucent modal look */
   .glass-modal .modal-content{
     background: rgba(20, 24, 32, .68);
     color: rgba(255,255,255,.92);
@@ -87,7 +86,6 @@
   }
   .glass-input::placeholder{color: rgba(255,255,255,.55)}
 
-  /* Sticky header inside scrollable tables */
   .table-sticky thead th{
     position: sticky;
     top: 0;
@@ -97,7 +95,6 @@
     -webkit-backdrop-filter: blur(10px);
   }
 
-  /* Keep tables readable on dark glass */
   .glass-modal .table{
     color: rgba(255,255,255,.92);
   }
@@ -130,8 +127,6 @@
     .table-responsive{border-radius: .75rem}
   }
 
-
-  /* Painel interno do vendedor (evita "explodir" layout no modal) */
   .collapse-panel{
     max-height: 360px;
     overflow: auto;
@@ -142,6 +137,7 @@
 
 {% block content %}
 {% set emp_filtro = (emps_sel|join(',') if emps_sel else '') %}
+
 <div class="container py-4">
 
   <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
@@ -163,64 +159,63 @@
       <div class="fw-semibold mb-2">Filtros</div>
       {% from "partials/multiselect.html" import multiselect %}
 
-<form method="get" action="/relatorios/campanhas" class="filter-bar">
-  <div class="row g-2 align-items-end">
-    {% if role and role|lower in ['admin','supervisor'] %}
-      <div class="col-md-4">
-        {{ multiselect("vendedor", vendedores_options or [], vendedores_sel or [], label="Vendedor(es)", placeholder="Todos", all_token="__ALL__", all_label="Todos vendedores") }}
-        <div class="form-text">Comparação e drill-down por vendedor.</div>
-      </div>
-    {% endif %}
+      <form method="get" action="{{ url_for('relatorios.campanhas') }}" class="filter-bar">
+        <div class="row g-2 align-items-end">
+          {% if role and role|lower in ['admin','supervisor'] %}
+            <div class="col-md-4">
+              {{ multiselect("vendedor", vendedores_options or [], vendedores_sel or [], label="Vendedor(es)", placeholder="Todos", all_token="__ALL__", all_label="Todos vendedores") }}
+              <div class="form-text">Comparação e drill-down por vendedor.</div>
+            </div>
+          {% endif %}
 
-    <div class="col-md-4">
-      {{ multiselect("emp", emps_options or [], emps_sel or [], label="EMP(s)", placeholder="Todas") }}
-      <div class="form-text">Comparação por loja (dentro do seu acesso).</div>
-    </div>
+          <div class="col-md-4">
+            {{ multiselect("emp", emps_options or [], emps_sel or [], label="EMP(s)", placeholder="Todas") }}
+            <div class="form-text">Comparação por loja (dentro do seu acesso).</div>
+          </div>
 
-    <div class="col-6 col-md-2">
-      <label class="form-label">Mês</label>
-      <input class="form-control" type="number" name="mes" min="1" max="12" value="{{ mes }}" required>
-    </div>
-    <div class="col-6 col-md-2">
-      <label class="form-label">Ano</label>
-      <input class="form-control" type="number" name="ano" min="2000" max="2100" value="{{ ano }}" required>
-    </div>
+          <div class="col-6 col-md-2">
+            <label class="form-label">Mês</label>
+            <input class="form-control" type="number" name="mes" min="1" max="12" value="{{ mes }}" required>
+          </div>
+          <div class="col-6 col-md-2">
+            <label class="form-label">Ano</label>
+            <input class="form-control" type="number" name="ano" min="2000" max="2100" value="{{ ano }}" required>
+          </div>
 
-    <div class="col-12 col-md-2 d-grid">
-      <button class="btn btn-primary" type="submit">Atualizar</button>
-    </div>
+          <div class="col-12 col-md-2 d-grid">
+            <button class="btn btn-primary" type="submit">Atualizar</button>
+          </div>
 
-    <div class="col-12">
-      <span class="subtitle small">O relatório é recalculado automaticamente ao abrir.</span>
-    </div>
-  </div>
-</form>
-
+          <div class="col-12">
+            <span class="subtitle small">O relatório é recalculado automaticamente ao abrir.</span>
+          </div>
+        </div>
+      </form>
     </div>
   </div>
 
   {% if not emp_filtro %}
     <div class="alert alert-info shadow-sm">
-      Selecione uma <strong>EMP</strong> e clique em <strong>OK</strong> para visualizar o relatório.
+      Selecione uma <strong>EMP</strong> e clique em <strong>Atualizar</strong> para visualizar o relatório.
     </div>
-  {% elif (not emps_abertas or (emps_abertas|length)==0) and (not emps_fechadas or (emps_fechadas|length)==0) %}
+  {% elif (not emps_abertas or emps_abertas|length == 0) and (not emps_fechadas or emps_fechadas|length == 0) %}
     <div class="alert alert-warning shadow-sm">
       Nenhum dado encontrado para o período selecionado.
     </div>
   {% else %}
     <ul class="nav nav-tabs mb-3" role="tablist">
       <li class="nav-item" role="presentation">
-        <button class="nav-link active" id="tab-a" data-bs-toggle="tab" data-bs-target="#pane-a" type="button" role="tab">
+        <button class="nav-link active" id="tab-a" data-bs-toggle="tab" data-bs-target="#pane-a" type="button" role="tab" aria-controls="pane-a" aria-selected="true">
           A — Cadastros (Qtd/Combo)
         </button>
       </li>
       <li class="nav-item" role="presentation">
-        <button class="nav-link" id="tab-b" data-bs-toggle="tab" data-bs-target="#pane-b" type="button" role="tab">
+        <button class="nav-link" id="tab-b" data-bs-toggle="tab" data-bs-target="#pane-b" type="button" role="tab" aria-controls="pane-b" aria-selected="false">
           B — Abertas
         </button>
       </li>
       <li class="nav-item" role="presentation">
-        <button class="nav-link" id="tab-c" data-bs-toggle="tab" data-bs-target="#pane-c" type="button" role="tab">
+        <button class="nav-link" id="tab-c" data-bs-toggle="tab" data-bs-target="#pane-c" type="button" role="tab" aria-controls="pane-c" aria-selected="false">
           C — Fechadas
         </button>
       </li>
@@ -245,7 +240,7 @@
                 </div>
                 <div class="card-body">
                   <h6 class="mb-2">Campanhas Qtd</h6>
-                  {% if not e.campanhas_qtd or (e.campanhas_qtd|length)==0 %}
+                  {% if not e.campanhas_qtd or e.campanhas_qtd|length == 0 %}
                     <div class="text-muted small mb-3">Nenhuma campanha Qtd cadastrada/intersectando o período.</div>
                   {% else %}
                     <div class="table-responsive mb-3">
@@ -263,18 +258,18 @@
                         <tbody>
                           {% for c in e.campanhas_qtd %}
                             <tr>
-                              <td>{{ c.titulo }}</td>
-                              <td>{{ c.marca }}</td>
+                              <td>{{ c.titulo|default('Sem título') }}</td>
+                              <td>{{ c.marca|default('-') }}</td>
                               <td>
                                 {% if (c.campo_match or 'codigo') == 'descricao' %}
-                                  DESCRIÇÃO: {{ c.descricao_prefixo or c.produto_prefixo }}
+                                  DESCRIÇÃO: {{ c.descricao_prefixo or c.produto_prefixo|default('-') }}
                                 {% else %}
-                                  MESTRE: {{ c.produto_prefixo }}
+                                  MESTRE: {{ c.produto_prefixo|default('-') }}
                                 {% endif %}
                               </td>
-                              <td>{{ c.qtd_minima or '-' }}</td>
-                              <td>{{ '%.2f'|format(c.recompensa_unit or 0) }}</td>
-                              <td>{{ c.data_inicio }} → {{ c.data_fim }}</td>
+                              <td>{{ c.qtd_minima|default('-') }}</td>
+                              <td>{{ '%.2f'|format(c.recompensa_unit|default(0)) }}</td>
+                              <td>{{ c.data_inicio|default('-') }} → {{ c.data_fim|default('-') }}</td>
                             </tr>
                           {% endfor %}
                         </tbody>
@@ -283,7 +278,7 @@
                   {% endif %}
 
                   <h6 class="mb-2">Campanhas Combo</h6>
-                  {% if not e.combos or (e.combos|length)==0 %}
+                  {% if not e.combos or e.combos|length == 0 %}
                     <div class="text-muted small">Nenhum combo cadastrado/intersectando o período.</div>
                   {% else %}
                     <div class="table-responsive">
@@ -299,10 +294,10 @@
                         <tbody>
                           {% for c in e.combos %}
                             <tr>
-                              <td>{{ c.titulo }}</td>
-                              <td>{{ c.marca }}</td>
-                              <td>{{ c.data_inicio }} → {{ c.data_fim }}</td>
-                              <td>{% if c.valor_unitario_global is not none %}{{ '%.2f'|format(c.valor_unitario_global) }}{% else %}-{% endif %}</td>
+                              <td>{{ c.titulo|default('Sem título') }}</td>
+                              <td>{{ c.marca|default('-') }}</td>
+                              <td>{{ c.data_inicio|default('-') }} → {{ c.data_fim|default('-') }}</td>
+                              <td>{{ '%.2f'|format(c.valor_unitario_global|default(0)) if c.valor_unitario_global is not none else '-' }}</td>
                             </tr>
                           {% endfor %}
                         </tbody>
@@ -318,7 +313,7 @@
 
       <!-- Tab B: Abertas -->
       <div class="tab-pane fade" id="pane-b" role="tabpanel" aria-labelledby="tab-b">
-        {% if not emps_abertas or (emps_abertas|length)==0 %}
+        {% if not emps_abertas or emps_abertas|length == 0 %}
           <div class="alert alert-info shadow-sm">Nenhuma campanha em aberto para o período/filtros.</div>
         {% else %}
           {% for e in emps_abertas %}
@@ -331,7 +326,7 @@
                   <div class="mb-3">
                     <div class="d-flex justify-content-between align-items-center">
                       <div class="fw-semibold">{{ v.vendedor }}</div>
-                      <div class="badge text-bg-dark">Total: {{ '%.2f'|format(v.total_recompensa or 0) }}</div>
+                      <div class="badge text-bg-dark">Total: {{ '%.2f'|format(v.total_recompensa|default(0)) }}</div>
                     </div>
                     <div class="table-responsive mt-2">
                       <table class="table table-sm align-middle">
@@ -357,88 +352,88 @@
                                   <span class="badge text-bg-primary">QTD</span>
                                 {% endif %}
                               </td>
-                              <td>{{ it.titulo }}</td>
-                              <td>{{ it.marca }}</td>
-                              <td class="text-muted">{{ it.produto }}</td>
-                              <td class="text-end">{{ '%.2f'|format(it.valor_recompensa or 0) }}</td>
+                              <td>{{ it.titulo|default('Sem título') }}</td>
+                              <td>{{ it.marca|default('-') }}</td>
+                              <td class="text-muted">{{ it.produto|default('-') }}</td>
+                              <td class="text-end">{{ '%.2f'|format(it.valor_recompensa|default(0)) }}</td>
                               <td>{% if it.atingiu %}<span class="badge text-bg-success">SIM</span>{% else %}<span class="badge text-bg-secondary">NÃO</span>{% endif %}</td>
+                              <td>
+                                {% if it.tipo == "COMBO" %}
+                                  {% set mid = "combo_" ~ e.emp ~ "_" ~ v.vendedor|replace(" ","_") ~ "_" ~ loop.index %}
+                                  <div class="d-flex align-items-center gap-2">
+                                    <span class="badge text-bg-light border text-dark">{{ it.progresso|default("0/0") }}</span>
+                                    <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#{{ mid }}">
+                                      Parcial
+                                    </button>
+                                  </div>
 
-<td>
-  {% if it.tipo == "COMBO" %}
-    {% set mid = "combo_" ~ emp.emp ~ "_" ~ v.vendedor|replace(" ","_") ~ "_" ~ loop.index %}
-    <div class="d-flex align-items-center gap-2">
-      <span class="badge text-bg-light border text-dark">{{ it.progresso or "0/0" }}</span>
-      <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#{{ mid }}">
-        Parcial
-      </button>
-    </div>
-
-    <div class="modal fade" id="{{ mid }}" tabindex="-1" aria-hidden="true">
-      <div class="modal-dialog modal-lg modal-dialog-scrollable">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h5 class="modal-title">Parcial do Combo — {{ it.titulo }} ({{ it.marca }})</h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-          </div>
-          <div class="modal-body">
-            <div class="small text-muted mb-2">
-              Regra: o vendedor precisa bater o <b>mínimo em todos os itens</b> para “atingir” o combo.
-            </div>
-            <div class="table-responsive">
-              <table class="table table-sm align-middle">
-                <thead>
-                  <tr>
-                    <th>#</th>
-                    <th>Regra</th>
-                    <th class="text-end">Mínimo</th>
-                    <th class="text-end">Vendido</th>
-                    <th class="text-end">Falta</th>
-                    <th class="text-end">R$/un</th>
-                    <th class="text-end">Subtotal</th>
-                    <th>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {% for d in (it.detalhes or []) %}
-                  <tr>
-                    <td class="text-muted">{{ d.ordem }}</td>
-                    <td class="small">
-                      {% if d.mestre_prefixo %}
-                        <span class="badge text-bg-light border text-dark me-1">Mestre</span>{{ d.mestre_prefixo }}
-                      {% endif %}
-                      {% if d.descricao_contains %}
-                        <span class="badge text-bg-light border text-dark ms-2 me-1">Descrição</span>{{ d.descricao_contains }}
-                      {% endif %}
-                      {% if not d.mestre_prefixo and not d.descricao_contains %}
-                        {{ d.match_mestre }}
-                      {% endif %}
-                    </td>
-                    <td class="text-end">{{ '%.0f'|format(d.minimo or 0) }}</td>
-                    <td class="text-end">{{ '%.0f'|format(d.qtd or 0) }}</td>
-                    <td class="text-end">{{ '%.0f'|format(d.falta or 0) }}</td>
-                    <td class="text-end">{{ '%.2f'|format(d.unit or 0) }}</td>
-                    <td class="text-end">{{ '%.2f'|format(d.subtotal or 0) }}</td>
-                    <td>
-                      {% if d.ok %}
-                        <span class="badge text-bg-success">OK</span>
-                      {% else %}
-                        <span class="badge text-bg-secondary">Pendente</span>
-                      {% endif %}
-                    </td>
-                  </tr>
-                  {% endfor %}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  {% else %}
-    <span class="text-muted">—</span>
-  {% endif %}
-</td>
-                              <td class="text-muted small">{{ it.periodo }}</td>
+                                  <!-- Modal Parcial Combo -->
+                                  <div class="modal fade" id="{{ mid }}" tabindex="-1" aria-hidden="true">
+                                    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+                                      <div class="modal-content">
+                                        <div class="modal-header">
+                                          <h5 class="modal-title">Parcial do Combo — {{ it.titulo }} ({{ it.marca }})</h5>
+                                          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                        </div>
+                                        <div class="modal-body">
+                                          <div class="small text-muted mb-2">
+                                            Regra: o vendedor precisa bater o <b>mínimo em todos os itens</b> para “atingir” o combo.
+                                          </div>
+                                          <div class="table-responsive">
+                                            <table class="table table-sm align-middle">
+                                              <thead>
+                                                <tr>
+                                                  <th>#</th>
+                                                  <th>Regra</th>
+                                                  <th class="text-end">Mínimo</th>
+                                                  <th class="text-end">Vendido</th>
+                                                  <th class="text-end">Falta</th>
+                                                  <th class="text-end">R$/un</th>
+                                                  <th class="text-end">Subtotal</th>
+                                                  <th>Status</th>
+                                                </tr>
+                                              </thead>
+                                              <tbody>
+                                                {% for d in (it.detalhes or []) %}
+                                                <tr>
+                                                  <td class="text-muted">{{ d.ordem|default('-') }}</td>
+                                                  <td class="small">
+                                                    {% if d.mestre_prefixo %}
+                                                      <span class="badge text-bg-light border text-dark me-1">Mestre</span>{{ d.mestre_prefixo }}
+                                                    {% endif %}
+                                                    {% if d.descricao_contains %}
+                                                      <span class="badge text-bg-light border text-dark ms-2 me-1">Descrição</span>{{ d.descricao_contains }}
+                                                    {% endif %}
+                                                    {% if not d.mestre_prefixo and not d.descricao_contains %}
+                                                      {{ d.match_mestre|default('-') }}
+                                                    {% endif %}
+                                                  </td>
+                                                  <td class="text-end">{{ '%.0f'|format(d.minimo|default(0)) }}</td>
+                                                  <td class="text-end">{{ '%.0f'|format(d.qtd|default(0)) }}</td>
+                                                  <td class="text-end">{{ '%.0f'|format(d.falta|default(0)) }}</td>
+                                                  <td class="text-end">{{ '%.2f'|format(d.unit|default(0)) }}</td>
+                                                  <td class="text-end">{{ '%.2f'|format(d.subtotal|default(0)) }}</td>
+                                                  <td>
+                                                    {% if d.ok %}
+                                                      <span class="badge text-bg-success">OK</span>
+                                                    {% else %}
+                                                      <span class="badge text-bg-secondary">Pendente</span>
+                                                    {% endif %}
+                                                  </td>
+                                                </tr>
+                                                {% endfor %}
+                                              </tbody>
+                                            </table>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                {% else %}
+                                  <span class="text-muted">—</span>
+                                {% endif %}
+                              </td>
+                              <td class="text-muted small">{{ it.periodo|default('-') }}</td>
                             </tr>
                           {% endfor %}
                         </tbody>
@@ -454,7 +449,7 @@
 
       <!-- Tab C: Fechadas -->
       <div class="tab-pane fade" id="pane-c" role="tabpanel" aria-labelledby="tab-c">
-        {% if not emps_fechadas or (emps_fechadas|length)==0 %}
+        {% if not emps_fechadas or emps_fechadas|length == 0 %}
           <div class="alert alert-info shadow-sm">Nenhuma campanha fechada para o período/filtros.</div>
         {% else %}
           {% for e in emps_fechadas %}
@@ -467,7 +462,7 @@
                   <div class="mb-3">
                     <div class="d-flex justify-content-between align-items-center">
                       <div class="fw-semibold">{{ v.vendedor }}</div>
-                      <div class="badge text-bg-dark">Total: {{ '%.2f'|format(v.total_recompensa or 0) }}</div>
+                      <div class="badge text-bg-dark">Total: {{ '%.2f'|format(v.total_recompensa|default(0)) }}</div>
                     </div>
                     <div class="table-responsive mt-2">
                       <table class="table table-sm align-middle">
@@ -479,7 +474,6 @@
                             <th scope="col">Item</th>
                             <th scope="col" class="text-end">Recompensa</th>
                             <th scope="col">Atingiu</th>
-                            <th scope="col">Parcial</th>
                             <th scope="col">Vigência</th>
                           </tr>
                         </thead>
@@ -493,12 +487,12 @@
                                   <span class="badge text-bg-primary">QTD</span>
                                 {% endif %}
                               </td>
-                              <td>{{ it.titulo }}</td>
-                              <td>{{ it.marca }}</td>
-                              <td class="text-muted">{{ it.produto }}</td>
-                              <td class="text-end">{{ '%.2f'|format(it.valor_recompensa or 0) }}</td>
+                              <td>{{ it.titulo|default('Sem título') }}</td>
+                              <td>{{ it.marca|default('-') }}</td>
+                              <td class="text-muted">{{ it.produto|default('-') }}</td>
+                              <td class="text-end">{{ '%.2f'|format(it.valor_recompensa|default(0)) }}</td>
                               <td>{% if it.atingiu %}<span class="badge text-bg-success">SIM</span>{% else %}<span class="badge text-bg-secondary">NÃO</span>{% endif %}</td>
-                              <td class="text-muted small">{{ it.periodo }}</td>
+                              <td class="text-muted small">{{ it.periodo|default('-') }}</td>
                             </tr>
                           {% endfor %}
                         </tbody>
@@ -511,188 +505,6 @@
           {% endfor %}
         {% endif %}
       </div>
-    </div>
-  {% endif %}
-                </div>
-              </div>
-
-              <div class="d-flex justify-content-end mt-3">
-                <span class="btn btn-sm btn-outline-primary">Ver detalhes</span>
-              </div>
-            </div>
-          </button>
-        </div>
-
-{% if e is defined %}
-        <!-- Modal EMP -->
-        <div class="modal fade glass-modal" id="{{ mid }}" tabindex="-1" aria-hidden="true">
-          <div class="modal-dialog modal-xl modal-dialog-scrollable">
-            <div class="modal-content" style="border-radius:1rem">
-              <div class="modal-header">
-                <div>
-                  <div class="subtitle small">Relatório — EMP {{ e.emp }}</div>
-                  <div class="fw-bold mono">Competência: {{ "%02d"|format(mes) }}/{{ ano }}</div>
-                </div>
-                <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Fechar</button>
-              </div>
-
-              <div class="modal-body">
-                <div class="d-flex flex-wrap gap-2 mb-3">
-                  <span class="badge text-bg-light border mono">Total recompensa: {{ e.total_emp|brl }}</span>
-                  <span class="badge text-bg-light border mono">{{ vend_ct }} vendedor(es)</span>
-                </div>
-
-                <div class="table-responsive">
-                  <table class="table table-sm align-middle mb-0">
-                    <thead class="table-light">
-                      <tr>
-                        <th>Vendedor</th>
-                        <th class="text-end">Total recompensa</th>
-                        <th class="text-end">Qtd campanhas</th>
-                        <th class="text-end">Detalhes</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {% for v in e.vendedores %}
-                        {% set vid = emp_id ~ '_v' ~ loop.index %}
-
-                        <tr>
-                          <td><strong>{{ v.vendedor }}</strong></td>
-                          <td class="text-end mono">{{ v.total_recompensa|brl }}</td>
-                          <td class="text-end mono">{{ v.campanhas|length }}</td>
-                          <td class="text-end">
-                            <button class="btn btn-sm btn-outline-primary" type="button"
-                                    data-bs-toggle="collapse"
-                                    data-bs-target="#d{{ mid }}_{{ vid }}"
-                                    aria-expanded="false"
-                                    aria-controls="d{{ mid }}_{{ vid }}">
-                              Ver campanhas
-                            </button>
-                          </td>
-                        </tr>
-
-                        <tr class="collapse" id="d{{ mid }}_{{ vid }}">
-                          <td colspan="4" class="p-2">
-                            {% if not v.campanhas or (v.campanhas|length) == 0 %}
-                              <div class="text-muted">Sem campanhas para este vendedor no período.</div>
-                            {% else %}
-
-                              {# Totais por status (pago/pendente/cancelado) #}
-                              {% set ns = namespace(total=0.0, pago=0.0, pend=0.0, canc=0.0, ct=0, ct_pago=0, ct_pend=0, ct_canc=0) %}
-                              {% for c in v.campanhas %}
-                                {% set ns.ct = ns.ct + 1 %}
-                                {% set _val = (c.valor_recompensa or 0.0) %}
-                                {% set ns.total = ns.total + _val %}
-                                {% set st = (c.status_pagamento or 'PENDENTE')|upper %}
-                                {% if st == 'PAGO' %}
-                                  {% set ns.pago = ns.pago + _val %}
-                                  {% set ns.ct_pago = ns.ct_pago + 1 %}
-                                {% elif st == 'CANCELADO' %}
-                                  {% set ns.canc = ns.canc + _val %}
-                                  {% set ns.ct_canc = ns.ct_canc + 1 %}
-                                {% else %}
-                                  {% set ns.pend = ns.pend + _val %}
-                                  {% set ns.ct_pend = ns.ct_pend + 1 %}
-                                {% endif %}
-                              {% endfor %}
-
-                              <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
-                                <div class="d-flex flex-wrap gap-2">
-                                  <span class="glass-chip mono">Total: <strong>{{ ns.total|brl }}</strong></span>
-                                  <span class="glass-chip mono">PAGO <strong>{{ ns.ct_pago }}</strong> • {{ ns.pago|brl }}</span>
-                                  <span class="glass-chip mono">PEND <strong>{{ ns.ct_pend }}</strong> • {{ ns.pend|brl }}</span>
-                                  {% if ns.ct_canc > 0 %}
-                                    <span class="glass-chip mono">CANC <strong>{{ ns.ct_canc }}</strong> • {{ ns.canc|brl }}</span>
-                                  {% endif %}
-                                </div>
-
-                                <div style="min-width:260px">
-                                  <input
-                                    type="search"
-                                    class="form-control form-control-sm glass-input"
-                                    placeholder="Buscar na tabela (campanha, marca, base...)"
-                                    data-filter-input="t{{ mid }}_{{ vid }}"
-                                    aria-label="Buscar campanhas"
-                                  >
-                                </div>
-                              </div>
-
-                              <div class="collapse-panel">
-                                <div class="table-responsive">
-                                  <table class="table table-sm table-bordered mb-0 table-sticky" id="t{{ mid }}_{{ vid }}">
-                                    <thead class="table-light">
-                                      <tr>
-                                        <th>Campanha</th>
-                                        <th>Base</th>
-                                        <th>Marca</th>
-                                        <th class="text-end">R$/un</th>
-                                        <th class="text-end">Mín</th>
-                                        <th class="text-end">Qtd</th>
-                                        <th class="text-end">Valor</th>
-                                        <th>Status</th>
-                                        <th>Período</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody>
-                                      {% for c in v.campanhas %}
-                                        {% set st = (c.status_pagamento or 'PENDENTE')|upper %}
-                                        {% set st_class = 'pendente' %}
-                                        {% if st == 'PAGO' %}{% set st_class = 'pago' %}{% endif %}
-                                        {% if st == 'CANCELADO' %}{% set st_class = 'cancelado' %}{% endif %}
-
-                                        <tr data-filter-row>
-                                          <td class="text-truncate" style="max-width:260px">
-                                            {{ c.titulo or ('Campanha #' ~ c.campanha_id) }}
-                                          </td>
-                                          <td class="mono small">{{ c.produto_prefixo }}</td>
-                                          <td>{{ c.marca }}</td>
-                                          <td class="text-end mono">{{ (c.recompensa_unit or 0)|brl }}</td>
-                                          <td class="text-end mono">
-                                            {% if c.qtd_minima is not none %}{{ c.qtd_minima|int }}{% else %}-{% endif %}
-                                          </td>
-                                          <td class="text-end mono">{{ (c.qtd_vendida or 0)|int }}</td>
-                                          <td class="text-end mono">
-                                            {% if c.valor_recompensa and c.valor_recompensa > 0 %}
-                                              <strong>{{ (c.valor_recompensa or 0)|brl }}</strong>
-                                            {% else %}
-                                              -
-                                            {% endif %}
-                                          </td>
-                                          <td>
-                                            <span class="status-pill {{ st_class }}">{{ st }}</span>
-                                          </td>
-                                          <td class="mono small">
-                                            {{ c.data_inicio.strftime("%d/%m/%Y") if c.data_inicio else "" }}
-                                            {% if c.data_fim %}a {{ c.data_fim.strftime("%d/%m/%Y") }}{% endif %}
-                                          </td>
-                                        </tr>
-                                      {% endfor %}
-                                    </tbody>
-                                  </table>
-
-                                  <div class="small mt-2" data-filter-empty="t{{ mid }}_{{ vid }}" style="display:none; opacity:.8">
-                                    Nenhuma campanha encontrada com esse filtro.
-                                  </div>
-                                </div>
-                              </div>
-
-                            {% endif %}
-                          </td>
-                        </tr>
-
-                      {% endfor %}
-                    </tbody>
-                  </table>
-                </div>
-
-              </div>
-            </div>
-          </div>
-        </div>
-        <!-- /Modal EMP -->
-{% endif %}
-
-      {% endfor %}
     </div>
   {% endif %}
 
