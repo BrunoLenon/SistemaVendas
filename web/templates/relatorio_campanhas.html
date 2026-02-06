@@ -159,7 +159,7 @@
       <div class="fw-semibold mb-2">Filtros</div>
       {% from "partials/multiselect.html" import multiselect %}
 
-      <form method="get" action="{{ url_for('relatorios.campanhas') }}" class="filter-bar">
+      <form method="get" action="{{ url_for('relatorio_campanhas') }}" class="filter-bar">
         <div class="row g-2 align-items-end">
           {% if role and role|lower in ['admin','supervisor'] %}
             <div class="col-md-4">
