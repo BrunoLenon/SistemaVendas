@@ -3137,13 +3137,7 @@ def _norm_text(s: str) -> str:
 
 
 def _calc_qtd_por_vendedor_para_combo_item(db, emp: str, item: CampanhaComboItem, marca: str, periodo_ini: date, periodo_fim: date) -> dict[str, float]:
-    """Retorna dict vendedor -> qtd para um item do combo no período.
-
-    Regras de match (compatível com banco antigo):
-      - Se item.mestre_prefixo existir: prefix match em Venda.mestre
-      - Se item.descricao_contains existir: contains case-insensitive em descricao_norm/descricao
-      - Se ambos vazios: usa item.match_mestre como fallback (prefixo se parecer código; senão contains)
-    """
+    """Retorna dict vendedor -> qtd para um item do combo no período."""
     emp = str(emp)
     marca_up = (marca or "").strip().upper()
 
@@ -3158,14 +3152,12 @@ def _calc_qtd_por_vendedor_para_combo_item(db, emp: str, item: CampanhaComboItem
     mp = (item.mestre_prefixo or "").strip()
     dc = (item.descricao_contains or "").strip()
 
-    # Fallback para bases antigas: match_mestre é obrigatório e pode ser a única regra persistida
+    # Fallback: muitos itens antigos usam apenas match_mestre (obrigatório no banco)
     if not mp and not dc:
         mm = (getattr(item, "match_mestre", None) or "").strip()
         if mm:
-            # Se não tem espaços e é alfanumérico/símbolos comuns, tratamos como código (prefixo).
-            # Caso contrário, tratamos como trecho de descrição (contains).
-            import re as _re
-            if _re.fullmatch(r"[A-Za-z0-9._\-/]+", mm):
+            # heurística: se parece um código/prefixo (sem espaços), usa mestre; senão usa contains na descrição
+            if (" " not in mm) and re.match(r"^[A-Za-z0-9_./-]+$", mm):
                 mp = mm
             else:
                 dc = mm
@@ -3173,6 +3165,7 @@ def _calc_qtd_por_vendedor_para_combo_item(db, emp: str, item: CampanhaComboItem
     if mp:
         conds.append(func.upper(func.trim(cast(Venda.mestre, String))).like(mp.strip().upper() + "%"))
     if dc:
+        # usa descricao_norm se existir, senão descricao
         needle = _norm_text(dc)
         campo = func.lower(func.trim(func.coalesce(Venda.descricao_norm, Venda.descricao, "")))
         conds.append(campo.like("%" + needle + "%"))
@@ -3529,7 +3522,35 @@ def relatorio_campanhas():
                 )
                 .order_by(CampanhaComboResultado.vendedor.asc(), CampanhaComboResultado.valor_recompensa.desc())
                 .all()
-            )
+            
+            # Pré-carrega definições/itens de combos para gerar "parcial" (o que falta) no relatório
+            combo_ids = sorted({int(r.combo_id) for r in (resultados_combo or []) if getattr(r, "combo_id", None) is not None})
+            combos_by_id = {}
+            combo_itens_map = {}
+            combo_item_qtd_cache = {}  # (combo_item_id, marca, ini, fim) -> {VEND: qtd}
+
+            if combo_ids:
+                try:
+                    combos_rows = (
+                        db.query(CampanhaCombo)
+                        .filter(CampanhaCombo.id.in_(combo_ids))
+                        .all()
+                    )
+                    combos_by_id = {int(c.id): c for c in (combos_rows or [])}
+
+                    itens_rows = (
+                        db.query(CampanhaComboItem)
+                        .filter(CampanhaComboItem.combo_id.in_(combo_ids))
+                        .order_by(CampanhaComboItem.combo_id.asc(), CampanhaComboItem.ordem.asc(), CampanhaComboItem.id.asc())
+                        .all()
+                    )
+                    for itx in itens_rows or []:
+                        combo_itens_map.setdefault(int(itx.combo_id), []).append(itx)
+                except Exception as _e:
+                    combos_by_id = {}
+                    combo_itens_map = {}
+                    combo_item_qtd_cache = {}
+)
 
             # agrupa por vendedor e unifica (QTD + COMBO)
             by_vend = {}
@@ -3548,6 +3569,73 @@ def relatorio_campanhas():
                 })
             for r in resultados_combo:
                 v = (r.vendedor or "").strip().upper()
+
+                # Monta parcial (progresso + itens faltantes) para UI — não altera valor salvo do resultado
+                combo_id = int(getattr(r, "combo_id", 0) or 0)
+                combo_def = combos_by_id.get(combo_id)
+                itens_def = combo_itens_map.get(combo_id) or []
+
+                detalhes = None
+                parcial = None
+                critico_texto = None
+
+                try:
+                    if combo_def and itens_def:
+                        itens_det = []
+                        ok_count = 0
+                        total_itens = len(itens_def)
+                        # calcula vendido por item (cache por item/período)
+                        for it_def in itens_def:
+                            marca_ref = (r.marca or combo_def.marca or "").strip().upper()
+                            ini = r.data_inicio
+                            fim = r.data_fim
+                            cache_key = (int(it_def.id), marca_ref, ini, fim)
+                            if cache_key not in combo_item_qtd_cache:
+                                combo_item_qtd_cache[cache_key] = _calc_qtd_por_vendedor_para_combo_item(db, emp, it_def, marca_ref, ini, fim) or {}
+
+                            vendido_map = combo_item_qtd_cache.get(cache_key) or {}
+                            vendido = float(vendido_map.get(v, 0.0) or 0.0)
+                            minimo = int(getattr(it_def, "minimo_qtd", 0) or 0)
+                            falta = max(minimo - int(vendido), 0)
+                            ok = 1 if falta == 0 else 0
+                            if ok:
+                                ok_count += 1
+
+                            itens_det.append({
+                                "ordem": int(getattr(it_def, "ordem", 0) or 0),
+                                "regra": (getattr(it_def, "match_mestre", None) or getattr(it_def, "mestre_prefixo", None) or getattr(it_def, "descricao_contains", None) or "").strip(),
+                                "nome_item": (getattr(it_def, "nome_item", None) or "").strip(),
+                                "minimo": minimo,
+                                "vendido": int(vendido),
+                                "falta": int(falta),
+                                "ok": bool(ok),
+                            })
+
+                        parcial = f"{ok_count}/{total_itens}" if total_itens else None
+
+                        # item crítico = maior falta (empate: menor ordem)
+                        crit = None
+                        for itdet in itens_det:
+                            if crit is None:
+                                crit = itdet
+                            else:
+                                if itdet["falta"] > crit["falta"] or (itdet["falta"] == crit["falta"] and itdet.get("ordem", 999999) < crit.get("ordem", 999999)):
+                                    crit = itdet
+                        if crit and int(crit.get("falta") or 0) > 0:
+                            nm = crit.get("nome_item") or crit.get("regra") or "Item"
+                            critico_texto = f"Falta: {nm} ({crit.get('falta')} un)"
+                        else:
+                            critico_texto = "Completo"
+
+                        detalhes = {
+                            "gate_ok": bool(int(getattr(r, "atingiu_gate", 0) or 0) == 1),
+                            "itens": itens_det,
+                        }
+                except Exception:
+                    detalhes = None
+                    parcial = None
+                    critico_texto = None
+
                 by_vend.setdefault(v, []).append({
                     "tipo": "COMBO",
                     "titulo": r.titulo,
@@ -3558,6 +3646,9 @@ def relatorio_campanhas():
                     "atingiu": int(r.atingiu_gate or 0),
                     "status_pagamento": r.status_pagamento,
                     "periodo": f"{r.data_inicio} → {r.data_fim}",
+                    "parcial": parcial,
+                    "critico_texto": critico_texto,
+                    "detalhes": detalhes,
                 })
 
             # ordena campanhas dentro do vendedor (maior recompensa primeiro)
