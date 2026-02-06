@@ -2853,13 +2853,13 @@ def campanhas_qtd():
 
             # Carrega resultados do período para a EMP (somente vendedores do escopo)
             q = db.query(CampanhaQtdResultado).filter(
-                CampanhaQtdResultado.ano == ano,
-                CampanhaQtdResultado.mes == mes,
+                CampanhaQtdResultado.competencia_ano == ano,
+                CampanhaQtdResultado.competencia_mes == mes,
                 CampanhaQtdResultado.emp == emp,
             )
             c = db.query(CampanhaComboResultado).filter(
-                CampanhaComboResultado.ano == ano,
-                CampanhaComboResultado.mes == mes,
+                CampanhaComboResultado.competencia_ano == ano,
+                CampanhaComboResultado.competencia_mes == mes,
                 CampanhaComboResultado.emp == emp,
             )
             if vendedores:
