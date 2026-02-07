@@ -23,6 +23,7 @@ from flask import (
     send_file,
     jsonify,
 )
+from web.authz import get_user_scope
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from dados_db import carregar_df, limpar_cache_df
@@ -816,7 +817,8 @@ def _get_emps_vendedor(username: str) -> list[str]:
         return []
 
     # Primeiro tenta permissão via usuário_emps (quando o vendedor está logado)
-    if (_usuario_logado() or "").strip().upper() == username:
+    scope = get_user_scope()
+    if (scope.usuario or "").strip().upper() == username:
         emps = _allowed_emps()
         if emps:
             return sorted({str(e).strip() for e in emps if e is not None and str(e).strip()})
@@ -1955,7 +1957,10 @@ def dashboard():
 
     # Resolve vendedor alvo + lista para dropdown sem carregar toda a tabela em memória
     if role == "vendedor":
-        vendedor_alvo = (_usuario_logado() or "").strip().upper()
+        scope = get_user_scope()
+        vendedor_alvo = \"\"
+        if scope.vendedor:
+            vendedor_alvo = str(scope.vendedor).strip().upper()
         vendedores_lista = []
         msg = None
     else:
@@ -2036,8 +2041,10 @@ def percentuais():
         vendedor_req = (request.args.get('vendedor') or '').strip().upper() or None
         vendedor_alvo = vendedor_req if (vendedor_req and vendedor_req in vendedores) else None
     else:
-        vendedor_alvo = (_usuario_logado() or '').strip().upper()
-
+        scope = get_user_scope()
+        vendedor_alvo = \"\"
+        if scope.vendedor:
+            vendedor_alvo = str(scope.vendedor).strip().upper()
     dados = None
     if vendedor_alvo:
         dados = _dados_from_cache(vendedor_alvo, mes, ano, emp_scope)
@@ -2075,8 +2082,10 @@ def marcas():
         vendedor_req = (request.args.get('vendedor') or '').strip().upper() or None
         vendedor_alvo = vendedor_req if (vendedor_req and vendedor_req in vendedores) else None
     else:
-        vendedor_alvo = (_usuario_logado() or '').strip().upper()
-
+        scope = get_user_scope()
+        vendedor_alvo = \"\"
+        if scope.vendedor:
+            vendedor_alvo = str(scope.vendedor).strip().upper()
     dados = None
     if vendedor_alvo:
         dados = _dados_from_cache(vendedor_alvo, mes, ano, emp_scope)
@@ -2113,8 +2122,10 @@ def devolucoes():
         vendedor_req = (request.args.get('vendedor') or '').strip().upper() or None
         vendedor_alvo = vendedor_req if (vendedor_req and vendedor_req in vendedores) else None
     else:
-        vendedor_alvo = (_usuario_logado() or '').strip().upper()
-
+        scope = get_user_scope()
+        vendedor_alvo = \"\"
+        if scope.vendedor:
+            vendedor_alvo = str(scope.vendedor).strip().upper()
     if not vendedor_alvo:
         devol = {}
     else:
@@ -2180,8 +2191,10 @@ def itens_parados():
             vendedor_alvo = None  # admin/supervisor sem seleção = só lista
 
     else:
-        vendedor_alvo = (_usuario_logado() or '').strip().upper()
-
+        scope = get_user_scope()
+        vendedor_alvo = \"\"
+        if scope.vendedor:
+            vendedor_alvo = str(scope.vendedor).strip().upper()
     # --- EMP(s) visíveis para o usuário ---
     emp_param = (request.args.get('emp') or '').strip()
     emp_scopes = []
@@ -2302,8 +2315,10 @@ def itens_parados_pdf():
         else:
             vendedor_alvo = None
     else:
-        vendedor_alvo = (_usuario_logado() or '').strip().upper()
-
+        scope = get_user_scope()
+        vendedor_alvo = \"\"
+        if scope.vendedor:
+            vendedor_alvo = str(scope.vendedor).strip().upper()
     emp_param = (request.args.get('emp') or '').strip()
     emp_scopes = []
 
@@ -2744,8 +2759,10 @@ def campanhas_qtd():
     ano = int(request.args.get("ano") or hoje.year)
 
     # vendedor alvo
-    vendedor_logado = (_usuario_logado() or "").strip().upper()
-
+    scope = get_user_scope()
+    vendedor_logado = \"\"
+    if scope.vendedor:
+        vendedor_logado = str(scope.vendedor).strip().upper()
     # Suporta multi-seleção via querystring: ?vendedor=JOAO&vendedor=MARIA
     vendedores_req = [v.strip().upper() for v in _parse_multi_args("vendedor")]
 
@@ -2923,7 +2940,10 @@ def campanhas_qtd_pdf():
     mes = int(request.args.get("mes") or hoje.month)
     ano = int(request.args.get("ano") or hoje.year)
 
-    vendedor_logado = (_usuario_logado() or "").strip().upper()
+    scope = get_user_scope()
+    vendedor_logado = \"\"
+    if scope.vendedor:
+        vendedor_logado = str(scope.vendedor).strip().upper()
     if (role or "").lower() == "supervisor":
         vendedor_sel = (request.args.get("vendedor") or "__ALL__").strip().upper()
         if vendedor_sel == "__ALL__":
@@ -3409,7 +3429,10 @@ def relatorio_campanhas():
 
     # Suporta multi-seleção via querystring (?emp=101&emp=102 / ?vendedor=JOAO&vendedor=MARIA)
     emps_sel = [str(e).strip() for e in _parse_multi_args("emp") if str(e).strip()]
-    vendedor_logado = (_usuario_logado() or "").strip().upper()
+    scope = get_user_scope()
+    vendedor_logado = \"\"
+    if scope.vendedor:
+        vendedor_logado = str(scope.vendedor).strip().upper()
     vendedores_sel = [str(v).strip().upper() for v in _parse_multi_args("vendedor") if str(v).strip()]
 
     # Define escopo de EMPs e vendedores    # Define escopo de EMPs e vendedores
@@ -3715,8 +3738,10 @@ def relatorio_cidades_clientes():
 
     role = (_role() or "").strip().lower()
     emp_usuario = _emp()
-    vendedor_logado = (_usuario_logado() or "").strip().upper()
-
+    scope = get_user_scope()
+    vendedor_logado = \"\"
+    if scope.vendedor:
+        vendedor_logado = str(scope.vendedor).strip().upper()
     hoje = date.today()
     mes = int(request.args.get("mes") or hoje.month)
     ano = int(request.args.get("ano") or hoje.year)
@@ -3968,8 +3993,10 @@ def relatorio_cidade_clientes_api():
 
     role = (_role() or "").strip().lower()
     emp_usuario = _emp()
-    vendedor_logado = (_usuario_logado() or "").strip().upper()
-
+    scope = get_user_scope()
+    vendedor_logado = \"\"
+    if scope.vendedor:
+        vendedor_logado = str(scope.vendedor).strip().upper()
     emp = (request.args.get("emp") or "").strip()
     cidade_norm = (request.args.get("cidade_norm") or "").strip()
     mes = int(request.args.get("mes") or 0)
@@ -4049,8 +4076,10 @@ def relatorio_cliente_marcas_api():
 
     role = (_role() or "").strip().lower()
     allowed_emps = _allowed_emps()
-    vendedor_logado = (_usuario_logado() or "").strip().upper()
-
+    scope = get_user_scope()
+    vendedor_logado = \"\"
+    if scope.vendedor:
+        vendedor_logado = str(scope.vendedor).strip().upper()
     emp = (request.args.get("emp") or "").strip()
     # compat: o front antigo mandava razao_norm; o novo usa cliente_id (cliente_id_norm)
     razao_norm = (request.args.get("razao_norm") or "").strip()
@@ -4156,8 +4185,10 @@ def relatorio_cliente_itens_api():
 
     role = (_role() or "").strip().lower()
     emp_usuario = _emp()
-    vendedor_logado = (_usuario_logado() or "").strip().upper()
-
+    scope = get_user_scope()
+    vendedor_logado = \"\"
+    if scope.vendedor:
+        vendedor_logado = str(scope.vendedor).strip().upper()
     emp = (request.args.get("emp") or "").strip()
     # compat: front antigo mandava razao_norm; novo prefere cliente_id (cliente_id_norm)
     razao_norm = (request.args.get("razao_norm") or "").strip()
