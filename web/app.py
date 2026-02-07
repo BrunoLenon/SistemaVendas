@@ -553,11 +553,15 @@ def _supabase_storage_upload(filename: str, content: bytes, content_type: str, f
         raise RuntimeError(f"Falha upload storage: {r.status_code} {r.text[:200]}")
     public_url = f"{supa_url}/storage/v1/object/public/{bucket}/{path}"
     return public_url
-def _usuario_logado() -> str | None:
-    return session.get("usuario")
+def _usuario_logado() -> bool:
+    from authz import is_logged_in
+    return is_logged_in()
 
-def _role() -> str | None:
-    return _normalize_role(session.get("role"))
+
+def _role() -> str:
+    from authz import role
+    return role()
+
 
 def _emp() -> str | None:
     """Retorna a EMP do usuário logado (quando existir)."""
@@ -743,28 +747,27 @@ def _normalize_cols(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 def _login_required():
-    if not _usuario_logado():
-        return redirect(url_for("auth.login"))
-    return None
+    from authz import require_login_redirect
+    return require_login_redirect()
+
 
 def _admin_required():
-    """Garante acesso ADMIN.
+    """Compat: mantido para não quebrar chamadas antigas."""
+    from authz import require_login_redirect, require_role
+    red = require_login_redirect()
+    if red:
+        return red
+    return require_role(["admin"])
 
-    Retorna um redirect quando não for admin; caso contrário retorna None.
-    """
-    if _role() != "admin":
-        flash("Acesso restrito ao administrador.", "warning")
-        audit("admin_forbidden")
-        return redirect(url_for("dashboard"))
-    return None
 
 def _admin_or_supervisor_required():
-    """Garante acesso ADMIN ou SUPERVISOR."""
-    if (_role() or "").lower() not in ["admin", "supervisor"]:
-        flash("Acesso restrito.", "warning")
-        audit("forbidden", path=request.path)
-        return redirect(url_for("dashboard"))
-    return None
+    """Compat: mantido para não quebrar chamadas antigas."""
+    from authz import require_login_redirect, require_role
+    red = require_login_redirect()
+    if red:
+        return red
+    return require_role(["admin", "supervisor"])
+
 
 def _get_vendedores_db(role: str, emp_usuario: str | None) -> list[str]:
     """Lista de vendedores para dropdown sem carregar todas as vendas em memória."""
