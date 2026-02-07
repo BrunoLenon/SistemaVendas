@@ -23,7 +23,6 @@ from flask import (
     send_file,
     jsonify,
 )
-from web.authz import get_user_scope
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from dados_db import carregar_df, limpar_cache_df
@@ -554,15 +553,11 @@ def _supabase_storage_upload(filename: str, content: bytes, content_type: str, f
         raise RuntimeError(f"Falha upload storage: {r.status_code} {r.text[:200]}")
     public_url = f"{supa_url}/storage/v1/object/public/{bucket}/{path}"
     return public_url
-def _usuario_logado() -> bool:
-    from authz import is_logged_in
-    return is_logged_in()
+def _usuario_logado() -> str | None:
+    return session.get("usuario")
 
-
-def _role() -> str:
-    from authz import role
-    return role()
-
+def _role() -> str | None:
+    return _normalize_role(session.get("role"))
 
 def _emp() -> str | None:
     """Retorna a EMP do usuário logado (quando existir)."""
@@ -748,27 +743,28 @@ def _normalize_cols(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 def _login_required():
-    from authz import require_login_redirect
-    return require_login_redirect()
-
+    if not _usuario_logado():
+        return redirect(url_for("auth.login"))
+    return None
 
 def _admin_required():
-    """Compat: mantido para não quebrar chamadas antigas."""
-    from authz import require_login_redirect, require_role
-    red = require_login_redirect()
-    if red:
-        return red
-    return require_role(["admin"])
+    """Garante acesso ADMIN.
 
+    Retorna um redirect quando não for admin; caso contrário retorna None.
+    """
+    if _role() != "admin":
+        flash("Acesso restrito ao administrador.", "warning")
+        audit("admin_forbidden")
+        return redirect(url_for("dashboard"))
+    return None
 
 def _admin_or_supervisor_required():
-    """Compat: mantido para não quebrar chamadas antigas."""
-    from authz import require_login_redirect, require_role
-    red = require_login_redirect()
-    if red:
-        return red
-    return require_role(["admin", "supervisor"])
-
+    """Garante acesso ADMIN ou SUPERVISOR."""
+    if (_role() or "").lower() not in ["admin", "supervisor"]:
+        flash("Acesso restrito.", "warning")
+        audit("forbidden", path=request.path)
+        return redirect(url_for("dashboard"))
+    return None
 
 def _get_vendedores_db(role: str, emp_usuario: str | None) -> list[str]:
     """Lista de vendedores para dropdown sem carregar todas as vendas em memória."""
@@ -817,8 +813,7 @@ def _get_emps_vendedor(username: str) -> list[str]:
         return []
 
     # Primeiro tenta permissão via usuário_emps (quando o vendedor está logado)
-    scope = get_user_scope()
-    if (scope.usuario or "").strip().upper() == username:
+    if (_usuario_logado() or "").strip().upper() == username:
         emps = _allowed_emps()
         if emps:
             return sorted({str(e).strip() for e in emps if e is not None and str(e).strip()})
@@ -1957,10 +1952,7 @@ def dashboard():
 
     # Resolve vendedor alvo + lista para dropdown sem carregar toda a tabela em memória
     if role == "vendedor":
-        scope = get_user_scope()
-        vendedor_alvo = ""
-        if scope.vendedor:
-            vendedor_alvo = str(scope.vendedor).strip().upper()
+        vendedor_alvo = (_usuario_logado() or "").strip().upper()
         vendedores_lista = []
         msg = None
     else:
@@ -2041,10 +2033,8 @@ def percentuais():
         vendedor_req = (request.args.get('vendedor') or '').strip().upper() or None
         vendedor_alvo = vendedor_req if (vendedor_req and vendedor_req in vendedores) else None
     else:
-        scope = get_user_scope()
-        vendedor_alvo = ""
-        if scope.vendedor:
-            vendedor_alvo = str(scope.vendedor).strip().upper()
+        vendedor_alvo = (_usuario_logado() or '').strip().upper()
+
     dados = None
     if vendedor_alvo:
         dados = _dados_from_cache(vendedor_alvo, mes, ano, emp_scope)
@@ -2082,10 +2072,8 @@ def marcas():
         vendedor_req = (request.args.get('vendedor') or '').strip().upper() or None
         vendedor_alvo = vendedor_req if (vendedor_req and vendedor_req in vendedores) else None
     else:
-        scope = get_user_scope()
-        vendedor_alvo = ""
-        if scope.vendedor:
-            vendedor_alvo = str(scope.vendedor).strip().upper()
+        vendedor_alvo = (_usuario_logado() or '').strip().upper()
+
     dados = None
     if vendedor_alvo:
         dados = _dados_from_cache(vendedor_alvo, mes, ano, emp_scope)
@@ -2122,10 +2110,8 @@ def devolucoes():
         vendedor_req = (request.args.get('vendedor') or '').strip().upper() or None
         vendedor_alvo = vendedor_req if (vendedor_req and vendedor_req in vendedores) else None
     else:
-        scope = get_user_scope()
-        vendedor_alvo = ""
-        if scope.vendedor:
-            vendedor_alvo = str(scope.vendedor).strip().upper()
+        vendedor_alvo = (_usuario_logado() or '').strip().upper()
+
     if not vendedor_alvo:
         devol = {}
     else:
@@ -2191,10 +2177,8 @@ def itens_parados():
             vendedor_alvo = None  # admin/supervisor sem seleção = só lista
 
     else:
-        scope = get_user_scope()
-        vendedor_alvo = ""
-        if scope.vendedor:
-            vendedor_alvo = str(scope.vendedor).strip().upper()
+        vendedor_alvo = (_usuario_logado() or '').strip().upper()
+
     # --- EMP(s) visíveis para o usuário ---
     emp_param = (request.args.get('emp') or '').strip()
     emp_scopes = []
@@ -2315,10 +2299,8 @@ def itens_parados_pdf():
         else:
             vendedor_alvo = None
     else:
-        scope = get_user_scope()
-        vendedor_alvo = ""
-        if scope.vendedor:
-            vendedor_alvo = str(scope.vendedor).strip().upper()
+        vendedor_alvo = (_usuario_logado() or '').strip().upper()
+
     emp_param = (request.args.get('emp') or '').strip()
     emp_scopes = []
 
@@ -2759,10 +2741,8 @@ def campanhas_qtd():
     ano = int(request.args.get("ano") or hoje.year)
 
     # vendedor alvo
-    scope = get_user_scope()
-    vendedor_logado = ""
-    if scope.vendedor:
-        vendedor_logado = str(scope.vendedor).strip().upper()
+    vendedor_logado = (_usuario_logado() or "").strip().upper()
+
     # Suporta multi-seleção via querystring: ?vendedor=JOAO&vendedor=MARIA
     vendedores_req = [v.strip().upper() for v in _parse_multi_args("vendedor")]
 
@@ -2940,10 +2920,7 @@ def campanhas_qtd_pdf():
     mes = int(request.args.get("mes") or hoje.month)
     ano = int(request.args.get("ano") or hoje.year)
 
-    scope = get_user_scope()
-    vendedor_logado = ""
-    if scope.vendedor:
-        vendedor_logado = str(scope.vendedor).strip().upper()
+    vendedor_logado = (_usuario_logado() or "").strip().upper()
     if (role or "").lower() == "supervisor":
         vendedor_sel = (request.args.get("vendedor") or "__ALL__").strip().upper()
         if vendedor_sel == "__ALL__":
@@ -3429,10 +3406,7 @@ def relatorio_campanhas():
 
     # Suporta multi-seleção via querystring (?emp=101&emp=102 / ?vendedor=JOAO&vendedor=MARIA)
     emps_sel = [str(e).strip() for e in _parse_multi_args("emp") if str(e).strip()]
-    scope = get_user_scope()
-    vendedor_logado = ""
-    if scope.vendedor:
-        vendedor_logado = str(scope.vendedor).strip().upper()
+    vendedor_logado = (_usuario_logado() or "").strip().upper()
     vendedores_sel = [str(v).strip().upper() for v in _parse_multi_args("vendedor") if str(v).strip()]
 
     # Define escopo de EMPs e vendedores    # Define escopo de EMPs e vendedores
@@ -3738,10 +3712,8 @@ def relatorio_cidades_clientes():
 
     role = (_role() or "").strip().lower()
     emp_usuario = _emp()
-    scope = get_user_scope()
-    vendedor_logado = ""
-    if scope.vendedor:
-        vendedor_logado = str(scope.vendedor).strip().upper()
+    vendedor_logado = (_usuario_logado() or "").strip().upper()
+
     hoje = date.today()
     mes = int(request.args.get("mes") or hoje.month)
     ano = int(request.args.get("ano") or hoje.year)
@@ -3993,10 +3965,8 @@ def relatorio_cidade_clientes_api():
 
     role = (_role() or "").strip().lower()
     emp_usuario = _emp()
-    scope = get_user_scope()
-    vendedor_logado = ""
-    if scope.vendedor:
-        vendedor_logado = str(scope.vendedor).strip().upper()
+    vendedor_logado = (_usuario_logado() or "").strip().upper()
+
     emp = (request.args.get("emp") or "").strip()
     cidade_norm = (request.args.get("cidade_norm") or "").strip()
     mes = int(request.args.get("mes") or 0)
@@ -4076,10 +4046,8 @@ def relatorio_cliente_marcas_api():
 
     role = (_role() or "").strip().lower()
     allowed_emps = _allowed_emps()
-    scope = get_user_scope()
-    vendedor_logado = ""
-    if scope.vendedor:
-        vendedor_logado = str(scope.vendedor).strip().upper()
+    vendedor_logado = (_usuario_logado() or "").strip().upper()
+
     emp = (request.args.get("emp") or "").strip()
     # compat: o front antigo mandava razao_norm; o novo usa cliente_id (cliente_id_norm)
     razao_norm = (request.args.get("razao_norm") or "").strip()
@@ -4185,10 +4153,8 @@ def relatorio_cliente_itens_api():
 
     role = (_role() or "").strip().lower()
     emp_usuario = _emp()
-    scope = get_user_scope()
-    vendedor_logado = ""
-    if scope.vendedor:
-        vendedor_logado = str(scope.vendedor).strip().upper()
+    vendedor_logado = (_usuario_logado() or "").strip().upper()
+
     emp = (request.args.get("emp") or "").strip()
     # compat: front antigo mandava razao_norm; novo prefere cliente_id (cliente_id_norm)
     razao_norm = (request.args.get("razao_norm") or "").strip()
@@ -5443,6 +5409,36 @@ def admin_combos():
                     db.rollback()
                     erro = str(e)
 
+            elif acao == "remover":
+                try:
+                    combo_id_raw = (request.form.get("combo_id") or "").strip()
+                    if not combo_id_raw.isdigit():
+                        raise ValueError("Combo inválido.")
+                    combo_id = int(combo_id_raw)
+
+                    # Hard delete: remove itens e o combo
+                    db.execute(text("DELETE FROM campanhas_combo_itens WHERE combo_id = :cid"), {"cid": combo_id})
+                    # Tenta limpar resultados (se existirem) sem quebrar o fluxo
+                    try:
+                        db.execute(text("DELETE FROM campanhas_combo_resultados WHERE combo_id = :cid"), {"cid": combo_id})
+                    except Exception:
+                        pass
+                    db.execute(text("DELETE FROM campanhas_combo WHERE id = :cid"), {"cid": combo_id})
+
+                    # Fallback: se não apagou (tabela diferente) tenta soft delete
+                    try:
+                        # se ainda existir (por qualquer motivo), desativa
+                        db.execute(text("UPDATE campanhas_combo SET ativo = false WHERE id = :cid"), {"cid": combo_id})
+                    except Exception:
+                        pass
+
+                    db.commit()
+                    ok = "Combo removido com sucesso."
+                except Exception as e:
+                    db.rollback()
+                    erro = str(e)
+
+
         # lista combos que intersectam o mês/ano (inclui globais)
         combos = (
             db.query(CampanhaCombo)
@@ -5455,6 +5451,20 @@ def admin_combos():
             .all()
         )
 
+
+        combo_ids = [c.id for c in combos]
+        combos_itens_map = {}
+        if combo_ids:
+            itens_rows = (
+                db.query(CampanhaComboItem)
+                .filter(CampanhaComboItem.combo_id.in_(combo_ids))
+                .order_by(CampanhaComboItem.combo_id.asc(), CampanhaComboItem.ordem.asc(), CampanhaComboItem.id.asc())
+                .all()
+            )
+            for it in itens_rows:
+                combos_itens_map.setdefault(it.combo_id, []).append(it)
+
+
     return render_template(
         "admin_combos.html",
         mes=mes,
@@ -5462,6 +5472,7 @@ def admin_combos():
         erro=erro,
         ok=ok,
         combos=combos,
+        combos_itens_map=combos_itens_map,
         default_data_inicio=default_data_inicio,
         default_data_fim=default_data_fim,
     )
