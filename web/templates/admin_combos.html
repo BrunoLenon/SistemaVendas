@@ -1,6 +1,28 @@
 {% extends "base.html" %}
 
-{% block title %}Admin — Combos (Kit){% endblock %}
+{% block title %}Admin — Combos (Kit)
+<script>
+(function(){
+  function toggleModelo2Required(){
+    var sel = document.getElementById('modelo_pagamento');
+    var desc = document.getElementById('filtro_descricao_prefixo');
+    if(!sel || !desc) return;
+    var isB = (sel.value || '').toUpperCase() === 'POR_DESCRICAO';
+    if(isB){
+      desc.setAttribute('required','required');
+    } else {
+      desc.removeAttribute('required');
+    }
+  }
+  document.addEventListener('change', function(ev){
+    if(ev.target && ev.target.id === 'modelo_pagamento'){ toggleModelo2Required(); }
+  });
+  document.addEventListener('DOMContentLoaded', toggleModelo2Required);
+  toggleModelo2Required();
+})();
+</script>
+
+{% endblock %}
 
 {% block extra_head %}
 <style>
@@ -12,6 +34,28 @@
   .table td, .table th{vertical-align:middle}
   .hint{color:var(--bs-secondary-color); font-size:.85rem}
 </style>
+
+<script>
+(function(){
+  function toggleModelo2Required(){
+    var sel = document.getElementById('modelo_pagamento');
+    var desc = document.getElementById('filtro_descricao_prefixo');
+    if(!sel || !desc) return;
+    var isB = (sel.value || '').toUpperCase() === 'POR_DESCRICAO';
+    if(isB){
+      desc.setAttribute('required','required');
+    } else {
+      desc.removeAttribute('required');
+    }
+  }
+  document.addEventListener('change', function(ev){
+    if(ev.target && ev.target.id === 'modelo_pagamento'){ toggleModelo2Required(); }
+  });
+  document.addEventListener('DOMContentLoaded', toggleModelo2Required);
+  toggleModelo2Required();
+})();
+</script>
+
 {% endblock %}
 
 {% block content %}
@@ -89,11 +133,11 @@
 
           <div class="col-md-3">
             <label class="form-label">Modelo de pagamento</label>
-            <select class="form-select" name="modelo_pagamento">
-              <option value="TODOS_ITENS" selected>Combo — pagar por todos itens do gate</option>
-              <option value="POR_DESCRICAO">Combo — pagar por descrição+marca (após gate)</option>
+            <select class="form-select" name="modelo_pagamento" id="modelo_pagamento">
+              <option value="TODOS_ITENS" selected>A) pagar por todos os itens do gate</option>
+              <option value="POR_DESCRICAO">B) pagar por descrição + marca após o gate</option>
             </select>
-            <div class="form-text">No modelo 2, o vendedor precisa bater o gate e depois recebe por unidade filtrada.</div>
+            <div class="form-text">No modelo B, a descrição é obrigatória; a marca usada é a 'Marca (obrigatória)' se o filtro marca ficar vazio.</div>
           </div>
 
           <div class="col-md-3">
@@ -103,7 +147,7 @@
 
           <div class="col-md-3">
             <label class="form-label">Descrição começa com (modelo 2)</label>
-            <input class="form-control" name="filtro_descricao_prefixo" placeholder="MOTOR DE PARTIDA">
+            <input class="form-control" name="filtro_descricao_prefixo" id="filtro_descricao_prefixo" placeholder="MOTOR DE PARTIDA">
           </div>
 
           <div class="col-md-3">
@@ -313,4 +357,26 @@
   });
 })();
 </script>
+
+<script>
+(function(){
+  function toggleModelo2Required(){
+    var sel = document.getElementById('modelo_pagamento');
+    var desc = document.getElementById('filtro_descricao_prefixo');
+    if(!sel || !desc) return;
+    var isB = (sel.value || '').toUpperCase() === 'POR_DESCRICAO';
+    if(isB){
+      desc.setAttribute('required','required');
+    } else {
+      desc.removeAttribute('required');
+    }
+  }
+  document.addEventListener('change', function(ev){
+    if(ev.target && ev.target.id === 'modelo_pagamento'){ toggleModelo2Required(); }
+  });
+  document.addEventListener('DOMContentLoaded', toggleModelo2Required);
+  toggleModelo2Required();
+})();
+</script>
+
 {% endblock %}
