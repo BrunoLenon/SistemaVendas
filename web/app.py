@@ -1958,7 +1958,7 @@ def dashboard():
     # Resolve vendedor alvo + lista para dropdown sem carregar toda a tabela em memória
     if role == "vendedor":
         scope = get_user_scope()
-        vendedor_alvo = \"\"
+        vendedor_alvo = ""
         if scope.vendedor:
             vendedor_alvo = str(scope.vendedor).strip().upper()
         vendedores_lista = []
@@ -2042,7 +2042,7 @@ def percentuais():
         vendedor_alvo = vendedor_req if (vendedor_req and vendedor_req in vendedores) else None
     else:
         scope = get_user_scope()
-        vendedor_alvo = \"\"
+        vendedor_alvo = ""
         if scope.vendedor:
             vendedor_alvo = str(scope.vendedor).strip().upper()
     dados = None
@@ -2083,7 +2083,7 @@ def marcas():
         vendedor_alvo = vendedor_req if (vendedor_req and vendedor_req in vendedores) else None
     else:
         scope = get_user_scope()
-        vendedor_alvo = \"\"
+        vendedor_alvo = ""
         if scope.vendedor:
             vendedor_alvo = str(scope.vendedor).strip().upper()
     dados = None
@@ -2123,7 +2123,7 @@ def devolucoes():
         vendedor_alvo = vendedor_req if (vendedor_req and vendedor_req in vendedores) else None
     else:
         scope = get_user_scope()
-        vendedor_alvo = \"\"
+        vendedor_alvo = ""
         if scope.vendedor:
             vendedor_alvo = str(scope.vendedor).strip().upper()
     if not vendedor_alvo:
@@ -2192,7 +2192,7 @@ def itens_parados():
 
     else:
         scope = get_user_scope()
-        vendedor_alvo = \"\"
+        vendedor_alvo = ""
         if scope.vendedor:
             vendedor_alvo = str(scope.vendedor).strip().upper()
     # --- EMP(s) visíveis para o usuário ---
@@ -2316,7 +2316,7 @@ def itens_parados_pdf():
             vendedor_alvo = None
     else:
         scope = get_user_scope()
-        vendedor_alvo = \"\"
+        vendedor_alvo = ""
         if scope.vendedor:
             vendedor_alvo = str(scope.vendedor).strip().upper()
     emp_param = (request.args.get('emp') or '').strip()
@@ -2760,7 +2760,7 @@ def campanhas_qtd():
 
     # vendedor alvo
     scope = get_user_scope()
-    vendedor_logado = \"\"
+    vendedor_logado = ""
     if scope.vendedor:
         vendedor_logado = str(scope.vendedor).strip().upper()
     # Suporta multi-seleção via querystring: ?vendedor=JOAO&vendedor=MARIA
@@ -2941,7 +2941,7 @@ def campanhas_qtd_pdf():
     ano = int(request.args.get("ano") or hoje.year)
 
     scope = get_user_scope()
-    vendedor_logado = \"\"
+    vendedor_logado = ""
     if scope.vendedor:
         vendedor_logado = str(scope.vendedor).strip().upper()
     if (role or "").lower() == "supervisor":
@@ -3430,7 +3430,7 @@ def relatorio_campanhas():
     # Suporta multi-seleção via querystring (?emp=101&emp=102 / ?vendedor=JOAO&vendedor=MARIA)
     emps_sel = [str(e).strip() for e in _parse_multi_args("emp") if str(e).strip()]
     scope = get_user_scope()
-    vendedor_logado = \"\"
+    vendedor_logado = ""
     if scope.vendedor:
         vendedor_logado = str(scope.vendedor).strip().upper()
     vendedores_sel = [str(v).strip().upper() for v in _parse_multi_args("vendedor") if str(v).strip()]
@@ -3739,7 +3739,7 @@ def relatorio_cidades_clientes():
     role = (_role() or "").strip().lower()
     emp_usuario = _emp()
     scope = get_user_scope()
-    vendedor_logado = \"\"
+    vendedor_logado = ""
     if scope.vendedor:
         vendedor_logado = str(scope.vendedor).strip().upper()
     hoje = date.today()
@@ -3994,7 +3994,7 @@ def relatorio_cidade_clientes_api():
     role = (_role() or "").strip().lower()
     emp_usuario = _emp()
     scope = get_user_scope()
-    vendedor_logado = \"\"
+    vendedor_logado = ""
     if scope.vendedor:
         vendedor_logado = str(scope.vendedor).strip().upper()
     emp = (request.args.get("emp") or "").strip()
@@ -4077,7 +4077,7 @@ def relatorio_cliente_marcas_api():
     role = (_role() or "").strip().lower()
     allowed_emps = _allowed_emps()
     scope = get_user_scope()
-    vendedor_logado = \"\"
+    vendedor_logado = ""
     if scope.vendedor:
         vendedor_logado = str(scope.vendedor).strip().upper()
     emp = (request.args.get("emp") or "").strip()
@@ -4186,7 +4186,7 @@ def relatorio_cliente_itens_api():
     role = (_role() or "").strip().lower()
     emp_usuario = _emp()
     scope = get_user_scope()
-    vendedor_logado = \"\"
+    vendedor_logado = ""
     if scope.vendedor:
         vendedor_logado = str(scope.vendedor).strip().upper()
     emp = (request.args.get("emp") or "").strip()
