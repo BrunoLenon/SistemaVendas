@@ -3287,37 +3287,37 @@ def _recalcular_resultados_combos_para_scope(ano: int, mes: int, emps: list[str]
                 for it in itens:
                     qtd_por_item.append(_calc_qtd_por_vendedor_para_combo_item(db, emp, it, combo.marca, periodo_ini, periodo_fim))
 
-modelo_pag = (getattr(combo, "modelo_pagamento", None) or "TODOS_ITENS").strip().upper()
-qtd_modelo2 = None
-unit_modelo2 = 0.0
-if modelo_pag == "POR_DESCRICAO":
-    qtd_modelo2 = _calc_qtd_por_vendedor_para_combo_modelo2(db, emp, combo, periodo_ini, periodo_fim)
-    u2 = combo.valor_unitario_modelo2 if combo.valor_unitario_modelo2 is not None else combo.valor_unitario_global
-    unit_modelo2 = float(u2 or 0.0)
+                modelo_pag = (getattr(combo, "modelo_pagamento", None) or "TODOS_ITENS").strip().upper()
+                qtd_modelo2: dict[str, float] | None = None
+                unit_modelo2 = 0.0
+                if modelo_pag == "POR_DESCRICAO":
+                    qtd_modelo2 = _calc_qtd_por_vendedor_para_combo_modelo2(db, emp, combo, periodo_ini, periodo_fim)
+                    u2 = combo.valor_unitario_modelo2 if combo.valor_unitario_modelo2 is not None else combo.valor_unitario_global
+                    unit_modelo2 = float(u2 or 0.0)
 
                 for vend in vendedores_emp:
-    # Gate: precisa bater mínimo em todos os itens (requisitos)
-    atingiu = 1
-    for it, qtd_map in zip(itens, qtd_por_item):
-        qtd = float(qtd_map.get(vend, 0.0))
-        minimo = float(it.minimo_qtd or 0.0)
-        if minimo > 0 and qtd < minimo:
-            atingiu = 0
-            break
+                    # Gate: precisa bater mínimo em todos os itens (requisitos)
+                    atingiu = 1
+                    for it, qtd_map in zip(itens, qtd_por_item):
+                        qtd = float(qtd_map.get(vend, 0.0))
+                        minimo = float(it.minimo_qtd or 0.0)
+                        if minimo > 0 and qtd < minimo:
+                            atingiu = 0
+                            break
 
-    total = 0.0
-    if atingiu:
-        if modelo_pag == "POR_DESCRICAO":
-            qtd2 = float((qtd_modelo2 or {}).get(vend, 0.0))
-            total = qtd2 * float(unit_modelo2 or 0.0)
-        else:
-            # Modelo A: paga por todos os itens do gate (qtd * R$/un do item; fallback: valor global)
-            for it, qtd_map in zip(itens, qtd_por_item):
-                qtd = float(qtd_map.get(vend, 0.0))
-                unit = it.valor_unitario if it.valor_unitario is not None else combo.valor_unitario_global
-                total += qtd * float(unit or 0.0)
+                    total = 0.0
+                    if atingiu:
+                        if modelo_pag == "POR_DESCRICAO":
+                            qtd2 = float((qtd_modelo2 or {}).get(vend, 0.0))
+                            total = qtd2 * float(unit_modelo2 or 0.0)
+                        else:
+                            # Modelo A: paga por todos os itens do gate (qtd * R$/un do item; fallback: valor global)
+                            for it, qtd_map in zip(itens, qtd_por_item):
+                                qtd = float(qtd_map.get(vend, 0.0))
+                                unit = it.valor_unitario if it.valor_unitario is not None else combo.valor_unitario_global
+                                total += qtd * float(unit or 0.0)
 
-                novos.append(CampanhaComboResultado(
+                    novos.append(CampanhaComboResultado(
                         combo_id=combo.id,
                         competencia_ano=int(ano),
                         competencia_mes=int(mes),
@@ -3333,10 +3333,9 @@ if modelo_pag == "POR_DESCRICAO":
                         atualizado_em=datetime.utcnow(),
                     ))
 
-            if novos:
-                db.bulk_save_objects(novos)
-            db.commit()
-
+                if novos:
+                    db.bulk_save_objects(novos)
+                db.commit()
 
 def _build_campanhas_escolhidas_por_vendedor(campanhas: list[CampanhaQtd], vendedores: list[str]) -> dict[str, list[CampanhaQtd]]:
     """Aplica a regra de prioridade por chave (prefixo+marca): campanha do vendedor substitui campanha geral."""
