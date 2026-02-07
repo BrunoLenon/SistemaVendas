@@ -605,7 +605,7 @@ class CampanhaComboItem(Base):
     id = Column(Integer, primary_key=True)
     combo_id = Column(Integer, nullable=False, index=True)
 
-    nome_item = Column(String(255), nullable=False)
+    nome_item = Column(String(255), nullable=True)
 
     # Campo obrigatório no banco: define o texto-base do match (mestre_prefixo ou descricao_contains)
     match_mestre = Column(String(255), nullable=False)
