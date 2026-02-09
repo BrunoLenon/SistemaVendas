@@ -1,140 +1,101 @@
 {% extends "base.html" %}
-
 {% block title %}Admin — Combos (Simples){% endblock %}
 
-{% block extra_head %}
-<style>
-  .page-title{font-weight:700; letter-spacing:-.3px}
-  .subtitle{color:var(--bs-secondary-color)}
-  .card-soft{border-radius:1rem}
-  .form-control, .form-select{border-radius:.75rem}
-  .table td, .table th{vertical-align:middle}
-  .pill{display:inline-flex; align-items:center; gap:.35rem; padding:.25rem .55rem; border-radius:999px; background:rgba(13,110,253,.08); color:#0d6efd; font-size:.85rem}
-</style>
-{% endblock %}
-
 {% block content %}
-<div class="container py-4" style="max-width:1200px;">
-  <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
-    <div>
-      <h3 class="page-title m-0">🧩 Combos (venda casada) — Admin</h3>
-      <div class="subtitle mt-1">Cadastre combos simples usando apenas <b>MESTRE</b> (coluna da tabela de vendas).</div>
+<div class="container py-3" style="max-width: 1100px;">
+  <div class="d-flex align-items-center justify-content-between mb-2">
+    <h4 class="m-0">Admin — Combos (Simples)</h4>
+    <a class="btn btn-outline-secondary btn-sm" href="/dashboard">Voltar</a>
+  </div>
+
+  <div class="card shadow-sm mb-3">
+    <div class="card-body">
+      <form class="d-flex gap-2 align-items-end" method="get" action="/admin/combos">
+        <div>
+          <label class="form-label mb-1">Mês</label>
+          <input class="form-control" type="number" name="mes" min="1" max="12" value="{{ mes }}" style="width:90px;">
+        </div>
+        <div>
+          <label class="form-label mb-1">Ano</label>
+          <input class="form-control" type="number" name="ano" min="2020" max="2035" value="{{ ano }}" style="width:110px;">
+        </div>
+        <button class="btn btn-primary" type="submit">Carregar</button>
+      </form>
+      <div class="form-text mt-2">
+        <b>Combo simples</b> = venda casada por <b>MESTRE</b> (coluna <code>vendas.mestre</code>).  
+        O vendedor precisa bater o <b>mínimo</b> em <b>todos</b> os itens. Ao bater, recebe a soma dos valores <b>R$</b> cadastrados.
+      </div>
     </div>
-    <a class="btn btn-outline-secondary" href="/dashboard">Voltar</a>
   </div>
 
   {% if erro %}
-    <div class="alert alert-danger">{{ erro }}</div>
+    <div class="alert alert-danger shadow-sm">{{ erro }}</div>
   {% endif %}
   {% if ok %}
-    <div class="alert alert-success">{{ ok }}</div>
+    <div class="alert alert-success shadow-sm">{{ ok }}</div>
   {% endif %}
 
-  <!-- Filtro competência -->
-  <div class="card card-soft shadow-sm mb-3">
+  <div class="card shadow-sm mb-3">
+    <div class="card-header"><strong>Novo Combo</strong></div>
     <div class="card-body">
-      <form class="row g-2 align-items-end" method="get" action="/admin/combos">
-        <div class="col-6 col-md-2">
-          <label class="form-label">Mês</label>
-          <select class="form-select" name="mes">
-            {% for m in range(1,13) %}
-              <option value="{{ m }}" {% if m == mes %}selected{% endif %}>{{ "%02d"|format(m) }}</option>
-            {% endfor %}
-          </select>
-        </div>
-        <div class="col-6 col-md-2">
-          <label class="form-label">Ano</label>
-          <input class="form-control" name="ano" value="{{ ano }}" />
-        </div>
-        <div class="col-12 col-md-3">
-          <label class="form-label">Data início (padrão)</label>
-          <input class="form-control" type="date" name="data_inicio" value="{{ default_data_inicio }}">
-        </div>
-        <div class="col-12 col-md-3">
-          <label class="form-label">Data fim (padrão)</label>
-          <input class="form-control" type="date" name="data_fim" value="{{ default_data_fim }}">
-        </div>
-        <div class="col-12 col-md-2 d-grid">
-          <button class="btn btn-primary">Carregar</button>
-        </div>
-      </form>
-    </div>
-  </div>
-
-  <!-- Criar combo -->
-  <div class="card card-soft shadow-sm mb-4">
-    <div class="card-body">
-      <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
-        <h5 class="m-0">➕ Novo Combo (Simples)</h5>
-        <span class="pill">Gate = atingir o mínimo em <b>todos</b> os itens</span>
-      </div>
-
-      <form method="post" action="/admin/combos">
+      <form method="post" action="/admin/combos?mes={{ mes }}&ano={{ ano }}" id="form-combo">
         <input type="hidden" name="acao" value="criar">
-        <input type="hidden" name="mes" value="{{ mes }}">
-        <input type="hidden" name="ano" value="{{ ano }}">
-
-        <div class="row g-2">
-          <div class="col-12 col-md-5">
+        <div class="row g-3 mb-3">
+          <div class="col-md-5">
             <label class="form-label">Título (nome da campanha)</label>
-            <input class="form-control" name="titulo" placeholder="Ex: Venda casada Fevereiro" required>
+            <input class="form-control" name="titulo" required placeholder="Ex: Combo freio + óleo + vela">
           </div>
-          <div class="col-6 col-md-2">
+          <div class="col-md-2">
             <label class="form-label">EMP (opcional)</label>
-            <input class="form-control" name="emp" placeholder="Ex: 101">
+            <input class="form-control" name="emp" placeholder="101">
+            <div class="form-text">Vazio = global.</div>
           </div>
-          <div class="col-6 col-md-2">
+          <div class="col-md-2">
             <label class="form-label">Data início</label>
             <input class="form-control" type="date" name="data_inicio" value="{{ default_data_inicio }}" required>
           </div>
-          <div class="col-6 col-md-2">
+          <div class="col-md-2">
             <label class="form-label">Data fim</label>
             <input class="form-control" type="date" name="data_fim" value="{{ default_data_fim }}" required>
           </div>
         </div>
 
-        <hr class="my-3">
+        <div class="d-flex align-items-center justify-content-between mb-2">
+          <strong>Requisitos (itens do combo)</strong>
+          <button type="button" class="btn btn-outline-primary btn-sm" id="btn-add">+ Adicionar linha</button>
+        </div>
 
         <div class="table-responsive">
-          <table class="table table-sm table-hover align-middle">
+          <table class="table table-sm align-middle">
             <thead>
               <tr>
-                <th style="width:40%">MESTRE (Venda.mestre)</th>
-                <th style="width:20%">Quantidade mínima</th>
-                <th style="width:20%">Valor R$ (recompensa)</th>
-                <th style="width:20%"></th>
+                <th style="min-width:180px;">MESTRE</th>
+                <th style="width:160px;">Quantidade mínima</th>
+                <th style="width:140px;">Valor R$</th>
+                <th style="width:80px;">Ações</th>
               </tr>
             </thead>
-            <tbody id="itensBody">
+            <tbody id="itens-body">
               <tr>
-                <td><input class="form-control" name="mestre_prefixo[]" placeholder="Ex: MTR123" required></td>
-                <td><input class="form-control" name="minimo_qtd[]" type="number" min="1" step="1" value="1" required></td>
-                <td><input class="form-control" name="valor_unitario[]" type="number" min="0.01" step="0.01" value="1.00" required></td>
-                <td class="text-end">
-                  <button type="button" class="btn btn-outline-danger btn-sm" onclick="removeRow(this)">Remover</button>
-                </td>
+                <td><input class="form-control form-control-sm" name="mestre[]" placeholder="Ex: 336109" required></td>
+                <td><input class="form-control form-control-sm" name="minimo[]" type="number" min="1" step="1" value="1" required></td>
+                <td><input class="form-control form-control-sm" name="valor[]" type="number" step="0.01" min="0" placeholder="Ex: 10.00" required></td>
+                <td><button type="button" class="btn btn-outline-danger btn-sm btn-del">✕</button></td>
               </tr>
             </tbody>
           </table>
         </div>
 
-        <div class="d-flex justify-content-between flex-wrap gap-2">
-          <button type="button" class="btn btn-outline-primary" onclick="addRow()">➕ Adicionar item</button>
-          <button class="btn btn-success">💾 Salvar Combo</button>
+        <div class="d-flex justify-content-end">
+          <button class="btn btn-success" type="submit">Salvar Combo</button>
         </div>
       </form>
-
-      <div class="text-muted mt-3" style="font-size:.92rem">
-        <b>Como paga:</b> se o vendedor atingir o mínimo em <b>todos</b> os itens, ele recebe a soma dos valores R$ cadastrados em cada item.
-      </div>
     </div>
   </div>
 
-  <!-- Lista combos -->
-  <div class="card card-soft shadow-sm">
+  <div class="card shadow-sm">
+    <div class="card-header"><strong>Combos cadastrados (intersectam {{ mes }}/{{ ano }})</strong></div>
     <div class="card-body">
-      <h5 class="mb-3">📋 Combos cadastrados (competência {{ "%02d"|format(mes) }}/{{ ano }})</h5>
-
       {% if not combos %}
         <div class="text-muted">Nenhum combo cadastrado para o período.</div>
       {% else %}
@@ -143,20 +104,27 @@
             <div class="accordion-item">
               <h2 class="accordion-header" id="h{{ c.id }}">
                 <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#c{{ c.id }}">
-                  <div class="w-100 d-flex justify-content-between flex-wrap gap-2">
+                  <div class="w-100 d-flex justify-content-between align-items-center">
                     <div>
-                      <b>#{{ c.id }}</b> — {{ c.titulo }}
-                      {% if c.emp %}<span class="ms-2 badge text-bg-secondary">EMP {{ c.emp }}</span>{% else %}<span class="ms-2 badge text-bg-light">Global</span>{% endif %}
+                      <strong>{{ c.titulo }}</strong>
+                      <span class="text-muted ms-2">
+                        {% if c.emp %}EMP {{ c.emp }}{% else %}Global{% endif %}
+                        • {{ c.data_inicio }} → {{ c.data_fim }}
+                      </span>
                     </div>
-                    <div class="text-muted">
-                      {{ c.data_inicio }} → {{ c.data_fim }}
+                    <div>
+                      <form method="post" action="/admin/combos?mes={{ mes }}&ano={{ ano }}" onsubmit="return confirm('Remover este combo?');">
+                        <input type="hidden" name="acao" value="remover">
+                        <input type="hidden" name="combo_id" value="{{ c.id }}">
+                        <button class="btn btn-outline-danger btn-sm" type="submit">Remover</button>
+                      </form>
                     </div>
                   </div>
                 </button>
               </h2>
               <div id="c{{ c.id }}" class="accordion-collapse collapse" data-bs-parent="#accCombos">
                 <div class="accordion-body">
-                  {% set itens = (combos_itens_map.get(c.id) or []) %}
+                  {% set itens = combos_itens_map.get(c.id, []) %}
                   {% if not itens %}
                     <div class="text-muted">Sem itens cadastrados.</div>
                   {% else %}
@@ -171,24 +139,16 @@
                         </thead>
                         <tbody>
                           {% for it in itens %}
-                          <tr>
-                            <td>{{ (it.mestre_prefixo or it.match_mestre or "") }}</td>
-                            <td>{{ it.minimo_qtd }}</td>
-                            <td>{{ it.valor_unitario }}</td>
-                          </tr>
+                            <tr>
+                              <td>{{ it.match_mestre }}</td>
+                              <td>{{ it.minimo_qtd }}</td>
+                              <td>{{ "%.2f"|format(it.valor_unitario or 0) }}</td>
+                            </tr>
                           {% endfor %}
                         </tbody>
                       </table>
                     </div>
                   {% endif %}
-
-                  <form method="post" action="/admin/combos" onsubmit="return confirm('Remover este combo?')">
-                    <input type="hidden" name="acao" value="remover">
-                    <input type="hidden" name="combo_id" value="{{ c.id }}">
-                    <input type="hidden" name="mes" value="{{ mes }}">
-                    <input type="hidden" name="ano" value="{{ ano }}">
-                    <button class="btn btn-outline-danger btn-sm">🗑️ Remover combo</button>
-                  </form>
                 </div>
               </div>
             </div>
@@ -197,29 +157,33 @@
       {% endif %}
     </div>
   </div>
+
 </div>
 
 <script>
-function addRow(){
-  const tbody = document.getElementById("itensBody");
-  const tr = document.createElement("tr");
-  tr.innerHTML = `
-    <td><input class="form-control" name="mestre_prefixo[]" placeholder="Ex: MTR123" required></td>
-    <td><input class="form-control" name="minimo_qtd[]" type="number" min="1" step="1" value="1" required></td>
-    <td><input class="form-control" name="valor_unitario[]" type="number" min="0.01" step="0.01" value="1.00" required></td>
-    <td class="text-end">
-      <button type="button" class="btn btn-outline-danger btn-sm" onclick="removeRow(this)">Remover</button>
-    </td>
-  `;
-  tbody.appendChild(tr);
-}
-function removeRow(btn){
-  const tbody = document.getElementById("itensBody");
-  if(tbody.children.length <= 1){
-    alert("O combo precisa ter pelo menos 1 item.");
-    return;
+(function(){
+  const body = document.getElementById('itens-body');
+  const btnAdd = document.getElementById('btn-add');
+  function bindDel(btn){
+    btn.addEventListener('click', () => {
+      const tr = btn.closest('tr');
+      if(!tr) return;
+      if(body.querySelectorAll('tr').length <= 1) return; // mantém 1 linha
+      tr.remove();
+    });
   }
-  btn.closest("tr").remove();
-}
+  document.querySelectorAll('.btn-del').forEach(bindDel);
+  btnAdd.addEventListener('click', () => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><input class="form-control form-control-sm" name="mestre[]" placeholder="Ex: 336109" required></td>
+      <td><input class="form-control form-control-sm" name="minimo[]" type="number" min="1" step="1" value="1" required></td>
+      <td><input class="form-control form-control-sm" name="valor[]" type="number" step="0.01" min="0" placeholder="Ex: 10.00" required></td>
+      <td><button type="button" class="btn btn-outline-danger btn-sm btn-del">✕</button></td>
+    `;
+    body.appendChild(tr);
+    bindDel(tr.querySelector('.btn-del'));
+  });
+})();
 </script>
 {% endblock %}
