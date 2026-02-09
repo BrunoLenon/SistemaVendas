@@ -5444,7 +5444,7 @@ def admin_combos():
             combos_itens_map.setdefault(it.combo_id, []).append(it)
 
         # EMPs cadastradas (para seleção)
-        emps = db.query(Empresa).order_by(Empresa.emp.asc()).all()
+        emps = db.query(Emp).order_by(Emp.codigo.asc()).all()
 
     return render_template(
         "admin_combos.html",
