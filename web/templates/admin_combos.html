@@ -1,6 +1,26 @@
 {% extends "base.html" %}
 
-{% block title %}Admin — Combos (Kit){% endblock %}
+{% block title %}Admin — Combos (Kit)<script>
+(function(){
+  function syncModelo(){
+    var sel = document.querySelector('select[name="modelo_pagamento"]');
+    var pref = document.querySelector('input[name="filtro_descricao_prefixo"]');
+    if(!sel || !pref) return;
+    var v = (sel.value || '').toUpperCase();
+    if(v === 'POR_DESCRICAO'){
+      pref.setAttribute('required','required');
+    } else {
+      pref.removeAttribute('required');
+    }
+  }
+  document.addEventListener('change', function(e){
+    if(e.target && e.target.name === 'modelo_pagamento') syncModelo();
+  });
+  document.addEventListener('DOMContentLoaded', syncModelo);
+  syncModelo();
+})();
+</script>
+{% endblock %}
 
 {% block extra_head %}
 <style>
@@ -12,6 +32,26 @@
   .table td, .table th{vertical-align:middle}
   .hint{color:var(--bs-secondary-color); font-size:.85rem}
 </style>
+<script>
+(function(){
+  function syncModelo(){
+    var sel = document.querySelector('select[name="modelo_pagamento"]');
+    var pref = document.querySelector('input[name="filtro_descricao_prefixo"]');
+    if(!sel || !pref) return;
+    var v = (sel.value || '').toUpperCase();
+    if(v === 'POR_DESCRICAO'){
+      pref.setAttribute('required','required');
+    } else {
+      pref.removeAttribute('required');
+    }
+  }
+  document.addEventListener('change', function(e){
+    if(e.target && e.target.name === 'modelo_pagamento') syncModelo();
+  });
+  document.addEventListener('DOMContentLoaded', syncModelo);
+  syncModelo();
+})();
+</script>
 {% endblock %}
 
 {% block content %}
@@ -311,6 +351,26 @@
     tbody.appendChild(tr);
     wireRow(tr);
   });
+})();
+</script>
+<script>
+(function(){
+  function syncModelo(){
+    var sel = document.querySelector('select[name="modelo_pagamento"]');
+    var pref = document.querySelector('input[name="filtro_descricao_prefixo"]');
+    if(!sel || !pref) return;
+    var v = (sel.value || '').toUpperCase();
+    if(v === 'POR_DESCRICAO'){
+      pref.setAttribute('required','required');
+    } else {
+      pref.removeAttribute('required');
+    }
+  }
+  document.addEventListener('change', function(e){
+    if(e.target && e.target.name === 'modelo_pagamento') syncModelo();
+  });
+  document.addEventListener('DOMContentLoaded', syncModelo);
+  syncModelo();
 })();
 </script>
 {% endblock %}

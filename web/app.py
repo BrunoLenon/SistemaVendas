@@ -3136,13 +3136,18 @@ def _norm_text(s: str) -> str:
     return s
 
 
-def _calc_qtd_por_vendedor_para_combo_item(db, emp: str, item: CampanhaComboItem, marca: str, periodo_ini: date, periodo_fim: date) -> dict[str, float]:
+
+def _calc_qtd_por_vendedor_para_combo_item(db, emp: str, item: CampanhaComboItem, marca: str | None, periodo_ini: date, periodo_fim: date) -> dict[str, float]:
     """Retorna dict vendedor -> qtd para um item do combo no período.
 
-    Regras de match (compatível com banco antigo):
+    Regras de match:
       - Se item.mestre_prefixo existir: prefix match em Venda.mestre
       - Se item.descricao_contains existir: contains case-insensitive em descricao_norm/descricao
       - Se ambos vazios: usa item.match_mestre como fallback (prefixo se parecer código; senão contains)
+
+    Observação (2026-02):
+      - `marca` é OPCIONAL. Para combos multi-marca, passe None/'' para NÃO filtrar por marca no gate.
+      - O modelo POR_DESCRICAO aplica filtro de marca/prefixo separadamente (não no gate).
     """
     emp = str(emp)
     marca_up = (marca or "").strip().upper()
@@ -3152,18 +3157,16 @@ def _calc_qtd_por_vendedor_para_combo_item(db, emp: str, item: CampanhaComboItem
         Venda.movimento >= periodo_ini,
         Venda.movimento <= periodo_fim,
         ~Venda.mov_tipo_movto.in_(["DS", "CA"]),
-        func.upper(func.trim(cast(Venda.marca, String))) == marca_up,
     ]
+    if marca_up:
+        conds.append(func.upper(func.trim(cast(Venda.marca, String))) == marca_up)
 
     mp = (item.mestre_prefixo or "").strip()
     dc = (item.descricao_contains or "").strip()
 
-    # Fallback para bases antigas: match_mestre é obrigatório e pode ser a única regra persistida
     if not mp and not dc:
         mm = (getattr(item, "match_mestre", None) or "").strip()
         if mm:
-            # Se não tem espaços e é alfanumérico/símbolos comuns, tratamos como código (prefixo).
-            # Caso contrário, tratamos como trecho de descrição (contains).
             import re as _re
             if _re.fullmatch(r"[A-Za-z0-9._\-/]+", mm):
                 mp = mm
@@ -3177,30 +3180,33 @@ def _calc_qtd_por_vendedor_para_combo_item(db, emp: str, item: CampanhaComboItem
         campo = func.lower(func.trim(func.coalesce(Venda.descricao_norm, Venda.descricao, "")))
         conds.append(campo.like("%" + needle + "%"))
 
-    # Se nenhum match foi definido, não retorna nada (evita pagar "tudo")
-    if not mp and not dc:
-        return {}
-
     q = (
         db.query(
             func.upper(func.trim(cast(Venda.vendedor, String))).label("vendedor"),
-            func.coalesce(func.sum(Venda.qtdade_vendida), 0.0).label("qtd"),
+            func.coalesce(func.sum(cast(Venda.qtde, Float)), 0.0).label("qtd"),
         )
-        .filter(*conds)
+        .filter(and_(*conds))
         .group_by(func.upper(func.trim(cast(Venda.vendedor, String))))
     )
-    rows = q.all()
+
     out: dict[str, float] = {}
-    for r in rows:
-        v = (r.vendedor or "").strip().upper()
-        if not v:
-            continue
-        out[v] = float(r.qtd or 0.0)
+    for vend, qtd in q.all():
+        if vend:
+            out[str(vend).strip().upper()] = float(qtd or 0.0)
     return out
 
 
+
 def _recalcular_resultados_combos_para_scope(ano: int, mes: int, emps: list[str], vendedores_por_emp: dict[str, list[str]]) -> None:
-    """Recalcula (upsert) snapshots em campanhas_combo_resultados para o escopo informado."""
+    """Recalcula (upsert) snapshots em campanhas_combo_resultados para o escopo informado.
+
+    Regras (refactor 2026-02):
+    - Gate: precisa bater mínimo em TODOS os requisitos do combo (cada requisito pode ser por mestre_prefixo e/ou descricao_contains).
+      * O gate NÃO filtra por marca, permitindo combo multi-marca (venda casada de itens de marcas diferentes).
+    - Modelo A (TODOS_ITENS): após bater gate, paga por unidade de cada requisito: qtd(requisito) * (R$/un do requisito ou valor_unitario_global).
+    - Modelo B (POR_DESCRICAO): após bater gate, paga por unidade em TODAS as vendas filtradas por (descricao_prefixo + marca),
+      usando (valor_unitario_modelo2 ou valor_unitario_global). No modelo B, descricao_prefixo precisa existir.
+    """
     inicio_mes, fim_mes = _periodo_bounds(int(ano), int(mes))
     with SessionLocal() as db:
         for emp in emps:
@@ -3211,7 +3217,6 @@ def _recalcular_resultados_combos_para_scope(ano: int, mes: int, emps: list[str]
 
             combos = _combos_mes_overlap(int(ano), int(mes), emp)
             if not combos:
-                # limpa resultados do período para evitar lixo antigo
                 db.query(CampanhaComboResultado).filter(
                     CampanhaComboResultado.emp == emp,
                     CampanhaComboResultado.competencia_ano == int(ano),
@@ -3220,14 +3225,14 @@ def _recalcular_resultados_combos_para_scope(ano: int, mes: int, emps: list[str]
                 db.commit()
                 continue
 
-            # apaga resultados antigos do escopo (EMP+competência)
             db.query(CampanhaComboResultado).filter(
                 CampanhaComboResultado.emp == emp,
                 CampanhaComboResultado.competencia_ano == int(ano),
                 CampanhaComboResultado.competencia_mes == int(mes),
             ).delete(synchronize_session=False)
 
-            novos = []
+            novos: list[CampanhaComboResultado] = []
+
             for combo in combos:
                 periodo_ini = max(combo.data_inicio, inicio_mes)
                 periodo_fim = min(combo.data_fim, fim_mes)
@@ -3241,26 +3246,48 @@ def _recalcular_resultados_combos_para_scope(ano: int, mes: int, emps: list[str]
                 if not itens:
                     continue
 
-                # qtd por vendedor por item
+                # Gate: qtd por vendedor por requisito (SEM filtro de marca)
                 qtd_por_item: list[dict[str, float]] = []
                 for it in itens:
-                    qtd_por_item.append(_calc_qtd_por_vendedor_para_combo_item(db, emp, it, combo.marca, periodo_ini, periodo_fim))
+                    qtd_por_item.append(_calc_qtd_por_vendedor_para_combo_item(db, emp, it, None, periodo_ini, periodo_fim))
+
+                modelo = (getattr(combo, "modelo_pagamento", None) or "TODOS_ITENS").strip().upper()
+                if modelo not in {"TODOS_ITENS", "POR_DESCRICAO"}:
+                    modelo = "TODOS_ITENS"
+
+                filtro_marca = (getattr(combo, "filtro_marca", None) or "").strip().upper() or (combo.marca or "").strip().upper()
+                filtro_pref = (getattr(combo, "filtro_descricao_prefixo", None) or "").strip()
+
+                qtd_modelo2: dict[str, float] = {}
+                if modelo == "POR_DESCRICAO" and filtro_pref:
+                    qtd_modelo2 = _calc_qtd_por_vendedor_para_combo_modelo2(db, emp, filtro_marca, filtro_pref, periodo_ini, periodo_fim)
 
                 for vend in vendedores_emp:
-                    # Gate: precisa bater mínimo em todos os itens
                     atingiu = 1
-                    total = 0.0
+                    total_gate = 0.0
+
                     for it, qtd_map in zip(itens, qtd_por_item):
                         qtd = float(qtd_map.get(vend, 0.0))
                         minimo = float(it.minimo_qtd or 0.0)
                         if minimo > 0 and qtd < minimo:
                             atingiu = 0
                             break
-                        unit = it.valor_unitario if it.valor_unitario is not None else combo.valor_unitario_global
-                        unit = float(unit or 0.0)
-                        total += qtd * unit
-                    if not atingiu:
-                        total = 0.0
+
+                        unit_item = it.valor_unitario if it.valor_unitario is not None else combo.valor_unitario_global
+                        unit_item = float(unit_item or 0.0)
+                        total_gate += qtd * unit_item
+
+                    total = 0.0
+                    if atingiu:
+                        if modelo == "POR_DESCRICAO":
+                            unit2 = getattr(combo, "valor_unitario_modelo2", None)
+                            if unit2 is None:
+                                unit2 = combo.valor_unitario_global
+                            unit2 = float(unit2 or 0.0)
+                            qtd2 = float(qtd_modelo2.get(vend, 0.0)) if filtro_pref else 0.0
+                            total = qtd2 * unit2
+                        else:
+                            total = float(total_gate)
 
                     novos.append(CampanhaComboResultado(
                         combo_id=combo.id,
@@ -3281,6 +3308,48 @@ def _recalcular_resultados_combos_para_scope(ano: int, mes: int, emps: list[str]
             if novos:
                 db.bulk_save_objects(novos)
             db.commit()
+
+
+def _calc_qtd_por_vendedor_para_combo_modelo2(db, emp: str, marca: str | None, descricao_prefixo: str | None, periodo_ini: date, periodo_fim: date) -> dict[str, float]:
+    """Quantidade por vendedor para o MODELO B (POR_DESCRICAO).
+
+    Conta todas as vendas do período na EMP onde:
+      - marca bate (quando informado)
+      - descrição NORMALIZADA começa com o prefixo informado
+    """
+    emp = str(emp)
+    marca_up = (marca or "").strip().upper()
+    pref = (descricao_prefixo or "").strip()
+    if not pref:
+        return {}
+
+    conds = [
+        Venda.emp == emp,
+        Venda.movimento >= periodo_ini,
+        Venda.movimento <= periodo_fim,
+        ~Venda.mov_tipo_movto.in_(["DS", "CA"]),
+    ]
+    if marca_up:
+        conds.append(func.upper(func.trim(cast(Venda.marca, String))) == marca_up)
+
+    needle = _norm_text(pref)
+    campo = func.lower(func.trim(func.coalesce(Venda.descricao_norm, Venda.descricao, "")))
+    conds.append(campo.like(needle + "%"))
+
+    q = (
+        db.query(
+            func.upper(func.trim(cast(Venda.vendedor, String))).label("vendedor"),
+            func.coalesce(func.sum(cast(Venda.qtde, Float)), 0.0).label("qtd"),
+        )
+        .filter(and_(*conds))
+        .group_by(func.upper(func.trim(cast(Venda.vendedor, String))))
+    )
+
+    out: dict[str, float] = {}
+    for vend, qtd in q.all():
+        if vend:
+            out[str(vend).strip().upper()] = float(qtd or 0.0)
+    return out
 
 
 def _build_campanhas_escolhidas_por_vendedor(campanhas: list[CampanhaQtd], vendedores: list[str]) -> dict[str, list[CampanhaQtd]]:
@@ -5286,10 +5355,24 @@ def admin_resumos_periodo():
 # Compatibilidade: algumas telas/atalhos antigos apontavam para /admin/fechamento.
 # O fechamento mensal hoje é feito dentro da tela de resumos por período.
 @app.route("/admin/combos", methods=["GET", "POST"])
+
 def admin_combos():
-    """Cadastro de Campanhas Combo (Kit).
-    Regra: paga por unidade APÓS bater o mínimo em TODOS os itens (marca obrigatória).
-    Suporta match por MESTRE (prefixo) e/ou DESCRIÇÃO (contains).
+    """Cadastro de Campanhas Combo (Kit / venda casada).
+
+    Especificação (refactor 2026-02):
+    - Combo = conjunto de requisitos (itens) que precisam ser batidos (gate) para ativar a campanha ao vendedor.
+    - Cada requisito pode ser definido por:
+        * mestre_prefixo (match por prefixo em Venda.mestre / código)
+        * descricao_contains (match por trecho em descrição normalizada)
+      Se ambos vazios, usa match_mestre como fallback (compat).
+    - Gate: precisa bater o mínimo em TODOS os requisitos.
+      * O gate NÃO filtra por marca, permitindo requisitos de marcas diferentes (combo multi-marca).
+    - Modelo de pagamento:
+        A) TODOS_ITENS: paga por todos os itens do gate após bater (qtd do requisito * R$/un do requisito; fallback valor global)
+        B) POR_DESCRICAO: após bater gate, paga por unidades vendidas que começam com um prefixo de descrição + marca, com valor_unitario_modelo2 (fallback global)
+           - No modelo B, o prefixo de descrição é obrigatório.
+
+    Observação: `marca` do combo é a "marca referência" (usada principalmente no modelo B e na identificação do combo).
     """
     red = _login_required()
     if red:
@@ -5306,41 +5389,74 @@ def admin_combos():
     ano = int(request.values.get("ano") or hoje.year)
 
     inicio_mes, fim_mes = _periodo_bounds(ano, mes)
-
     default_data_inicio = request.values.get("data_inicio") or inicio_mes.isoformat()
     default_data_fim = request.values.get("data_fim") or fim_mes.isoformat()
+
+    def _to_float(s: str | None) -> float | None:
+        s = (s or "").strip().replace(",", ".")
+        return float(s) if s else None
 
     with SessionLocal() as db:
         if request.method == "POST":
             acao = (request.form.get("acao") or "").strip().lower()
+
+            # REMOVER
+            if acao == "remover":
+                try:
+                    combo_id = int(request.form.get("combo_id") or 0)
+                    if not combo_id:
+                        raise ValueError("Combo inválido.")
+                    db.query(CampanhaComboItem).filter(CampanhaComboItem.combo_id == combo_id).delete(synchronize_session=False)
+                    db.query(CampanhaComboResultado).filter(CampanhaComboResultado.combo_id == combo_id).delete(synchronize_session=False)
+                    db.query(CampanhaCombo).filter(CampanhaCombo.id == combo_id).delete(synchronize_session=False)
+                    db.commit()
+                    return redirect(url_for("admin_combos", mes=mes, ano=ano))
+                except Exception as e:
+                    db.rollback()
+                    erro = str(e)
+
+            # CRIAR
             if acao == "criar":
                 try:
                     titulo = (request.form.get("titulo") or "").strip()
                     emp = (request.form.get("emp") or "").strip()
                     marca = (request.form.get("marca") or "").strip().upper()
-                    vig_ini = request.form.get("data_inicio") or inicio_mes.isoformat()
-                    vig_fim = request.form.get("data_fim") or fim_mes.isoformat()
 
-                    # valor global opcional
-                    vglob_raw = (request.form.get("valor_unitario_global") or "").strip().replace(",", ".")
-                    valor_global = float(vglob_raw) if vglob_raw else None
+                    modelo_pag = (request.form.get("modelo_pagamento") or "TODOS_ITENS").strip().upper()
+                    if modelo_pag not in {"TODOS_ITENS", "POR_DESCRICAO"}:
+                        modelo_pag = "TODOS_ITENS"
 
-                    if not titulo or not marca:
-                        raise ValueError("Título e marca são obrigatórios.")
+                    valor_global = _to_float(request.form.get("valor_unitario_global"))
 
-                    # Parse datas
+                    filtro_marca = (request.form.get("filtro_marca") or "").strip().upper() or None
+                    filtro_pref = (request.form.get("filtro_descricao_prefixo") or "").strip() or None
+                    valor_modelo2 = _to_float(request.form.get("valor_unitario_modelo2"))
+
+                    vig_ini = (request.form.get("data_inicio") or default_data_inicio).strip()
+                    vig_fim = (request.form.get("data_fim") or default_data_fim).strip()
+
+                    if not titulo:
+                        raise ValueError("Informe o título do combo.")
+                    if not marca:
+                        raise ValueError("Informe a marca referência do combo.")
+
+                    if modelo_pag == "POR_DESCRICAO":
+                        if not filtro_pref:
+                            raise ValueError("No modelo B, informe 'Descrição começa com (modelo 2)'.")
+                        if not filtro_marca:
+                            filtro_marca = marca
+
                     try:
                         d_ini = datetime.fromisoformat(vig_ini).date()
                         d_fim = datetime.fromisoformat(vig_fim).date()
                     except Exception:
                         raise ValueError("Datas inválidas. Use o seletor de datas.")
-
                     if d_fim < d_ini:
                         raise ValueError("Data fim não pode ser menor que data início.")
 
                     combo = CampanhaCombo(
                         titulo=titulo,
-                        nome=titulo,  # manter compatibilidade com telas/relatórios
+                        nome=titulo,
                         emp=emp if emp else None,
                         marca=marca,
                         data_inicio=d_ini,
@@ -5348,68 +5464,75 @@ def admin_combos():
                         ano=int(d_ini.year),
                         mes=int(d_ini.month),
                         valor_unitario_global=valor_global,
+                        modelo_pagamento=modelo_pag,
+                        filtro_marca=filtro_marca,
+                        filtro_descricao_prefixo=filtro_pref,
+                        valor_unitario_modelo2=valor_modelo2,
                         ativo=True,
                         created_at=datetime.utcnow(),
                         updated_at=datetime.utcnow(),
                     )
                     db.add(combo)
-                    db.flush()  # obtém combo.id
-
+                    db.flush()
 
                     mestres = request.form.getlist("mestre_prefixo[]")
                     descs = request.form.getlist("descricao_contains[]")
+                    nomes = request.form.getlist("nome_item[]")
                     minimos = request.form.getlist("minimo_qtd[]")
                     vals = request.form.getlist("valor_unitario[]")
 
-                    itens = []
-                    for i in range(max(len(mestres), len(descs), len(minimos), len(vals))):
+                    itens_obj: list[CampanhaComboItem] = []
+                    n = max(len(mestres), len(descs), len(minimos), len(vals), len(nomes))
+                    for i in range(n):
                         mp = (mestres[i] if i < len(mestres) else "") or ""
                         dc = (descs[i] if i < len(descs) else "") or ""
+                        nm = (nomes[i] if i < len(nomes) else "") or ""
                         mi = (minimos[i] if i < len(minimos) else "") or ""
                         vu = (vals[i] if i < len(vals) else "") or ""
 
                         mp = mp.strip()
                         dc = dc.strip()
+                        nm = nm.strip()
 
                         if not mp and not dc:
-                            continue  # ignora linha vazia
+                            continue
 
                         try:
                             minimo_qtd = int(float(str(mi).replace(",", ".") or 0))
                         except Exception:
-                            minimo_qtd = 0.0
+                            minimo_qtd = 0
 
-                        vu_raw = str(vu).strip().replace(",", ".")
-                        valor_unit = float(vu_raw) if vu_raw else None
+                        vunit = _to_float(str(vu))
 
-                        match_mestre = (mp or dc or '').strip()
+                        match_mestre = (mp or dc).strip()
                         if not match_mestre:
                             continue
-                        itens.append({
-                            'combo_id': combo.id,
-                            'mestre_prefixo': mp if mp else None,
-                            'descricao_contains': dc if dc else None,
-                            'match_mestre': match_mestre,
-                            'minimo_qtd': float(minimo_qtd or 0.0),
-                            'valor_unitario': valor_unit,
-                            'ordem': i+1,
-                            'criado_em': datetime.utcnow(),
-                        })
-                    if not itens:
-                        raise ValueError("Adicione pelo menos 1 requisito (MESTRE e/ou DESCRIÇÃO).")
 
-                    sql = text(
-                        "INSERT INTO campanhas_combo_itens (combo_id, mestre_prefixo, descricao_contains, match_mestre, minimo_qtd, valor_unitario, ordem, criado_em) "
-                        "VALUES (:combo_id, :mestre_prefixo, :descricao_contains, :match_mestre, :minimo_qtd, :valor_unitario, :ordem, :criado_em)"
-                    )
-                    db.execute(sql, itens)
+                        itens_obj.append(CampanhaComboItem(
+                            combo_id=combo.id,
+                            nome_item=nm or None,
+                            match_mestre=match_mestre,
+                            mestre_prefixo=mp or None,
+                            descricao_contains=dc or None,
+                            minimo_qtd=int(minimo_qtd),
+                            valor_unitario=vunit,
+                            ordem=int(i + 1),
+                            created_at=datetime.utcnow(),
+                            criado_em=datetime.utcnow(),
+                            atualizado_em=datetime.utcnow(),
+                        ))
+
+                    if not itens_obj:
+                        raise ValueError("Adicione pelo menos 1 requisito (MESTRE e/ou DESCRIÇÃO contém).")
+
+                    db.bulk_save_objects(itens_obj)
                     db.commit()
-                    ok = "Combo criado com sucesso."
+                    return redirect(url_for("admin_combos", mes=mes, ano=ano))
+
                 except Exception as e:
                     db.rollback()
                     erro = str(e)
 
-        # lista combos que intersectam o mês/ano (inclui globais)
         combos = (
             db.query(CampanhaCombo)
             .filter(
@@ -5421,6 +5544,18 @@ def admin_combos():
             .all()
         )
 
+        combo_ids = [int(c.id) for c in combos if c and c.id]
+        combos_itens_map: dict[int, list[CampanhaComboItem]] = {}
+        if combo_ids:
+            itens = (
+                db.query(CampanhaComboItem)
+                .filter(CampanhaComboItem.combo_id.in_(combo_ids))
+                .order_by(CampanhaComboItem.combo_id.asc(), CampanhaComboItem.ordem.asc(), CampanhaComboItem.id.asc())
+                .all()
+            )
+            for it in itens:
+                combos_itens_map.setdefault(int(it.combo_id), []).append(it)
+
     return render_template(
         "admin_combos.html",
         mes=mes,
@@ -5428,6 +5563,7 @@ def admin_combos():
         erro=erro,
         ok=ok,
         combos=combos,
+        combos_itens_map=combos_itens_map,
         default_data_inicio=default_data_inicio,
         default_data_fim=default_data_fim,
     )
