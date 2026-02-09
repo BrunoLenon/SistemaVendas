@@ -3233,39 +3233,39 @@ def _recalcular_resultados_combos_para_scope(ano: int, mes: int, emps: list[str]
                     qtd_por_item.append(_calc_qtd_por_vendedor_para_combo_item(db, emp, it, combo.marca, periodo_ini, periodo_fim))
 
                 for vend in vendedores_emp:
-    # Gate simples: precisa bater o mínimo em TODOS os itens (por `Venda.mestre`)
-    atingiu = 1
-    total = 0.0
-    for it, qtd_map in zip(itens, qtd_por_item):
-        qtd = float(qtd_map.get(vend, 0.0))
-        minimo = float(it.minimo_qtd or 0.0)
-        if minimo > 0 and qtd < minimo:
-            atingiu = 0
-            break
+                    # Gate simples: precisa bater o mínimo em TODOS os itens (por `Venda.mestre`)
+                    atingiu = 1
+                    total = 0.0
+                    for it, qtd_map in zip(itens, qtd_por_item):
+                        qtd = float(qtd_map.get(vend, 0.0))
+                        minimo = int(it.minimo_qtd or 0)
+                        if minimo > 0 and qtd < minimo:
+                            atingiu = 0
+                            break
 
-        # Recompensa simples: soma do valor do item (não multiplica pela quantidade).
-        total += float(it.valor_unitario or 0.0)
+                        # Recompensa simples: soma do valor configurado por item (R$) quando o gate é atingido.
+                        total += float(it.valor_unitario or 0.0)
 
-    if not atingiu:
-        total = 0.0
+                    if not atingiu:
+                        total = 0.0
 
-    novos.append(CampanhaComboResultado(
-
-                        combo_id=combo.id,
-                        competencia_ano=int(ano),
-                        competencia_mes=int(mes),
-                        emp=emp,
-                        vendedor=vend,
-                        titulo=combo.titulo,
-                        marca=combo.marca,
-                        data_inicio=combo.data_inicio,
-                        data_fim=combo.data_fim,
-                        atingiu_gate=int(atingiu),
-                        valor_recompensa=float(total),
-                        status_pagamento="PENDENTE",
-                        atualizado_em=datetime.utcnow(),
-                    ))
-
+                    novos.append(
+                        CampanhaComboResultado(
+                            combo_id=combo.id,
+                            competencia_ano=int(ano),
+                            competencia_mes=int(mes),
+                            emp=emp,
+                            vendedor=vend,
+                            titulo=combo.titulo,
+                            marca=combo.marca,
+                            data_inicio=combo.data_inicio,
+                            data_fim=combo.data_fim,
+                            atingiu_gate=int(atingiu),
+                            valor_recompensa=float(total),
+                            status_pagamento='PENDENTE',
+                            atualizado_em=datetime.utcnow(),
+                        )
+                    )
             if novos:
                 db.bulk_save_objects(novos)
             db.commit()
@@ -5275,41 +5275,16 @@ def admin_resumos_periodo():
 # O fechamento mensal hoje é feito dentro da tela de resumos por período.
 @app.route("/admin/combos", methods=["GET", "POST"])
 def admin_combos():
-    """Cadastro de Campanhas Combo (Kit).
-    Regra: paga por unidade APÓS bater o mínimo em TODOS os itens (marca obrigatória).
-    Suporta match por MESTRE (prefixo) e/ou DESCRIÇÃO (contains).
-    """
-    red = _login_required()
-    if red:
-        return red
-    red = _admin_required()
-    if red:
-        return red
-
-    erro = None
-    ok = None
-
-    hoje = date.today()
-    mes = int(request.values.get("mes") or hoje.month)
-    ano = int(request.values.get("ano") or hoje.year)
-
-    inicio_mes, fim_mes = _periodo_bounds(ano, mes)
-
-    default_data_inicio = request.values.get("data_inicio") or inicio_mes.isoformat()
-    default_data_fim = request.values.get("data_fim") or fim_mes.isoformat()
-
-    with SessionLocal() as db:
-        if request.method == "POST":
-            acao = (request.form.get("acao") or "").strip().lower()
-            if acao == "criar":
-                try:
-                    titulo = (request.form.get("titulo"def admin_combos():
     """Cadastro de Combos (venda casada) - versão simples.
 
-    - Cada combo possui um período (data_inicio/data_fim) e opcionalmente uma EMP.
-    - Cada requisito usa APENAS `Venda.mestre` para contabilizar a quantidade vendida.
-    - Gate: o vendedor precisa atingir o mínimo em TODOS os requisitos.
-    - Recompensa: soma dos valores (R$) definidos em cada requisito quando o gate é atingido.
+    Regras:
+      - Cada combo tem título, período (data_inicio/data_fim) e opcionalmente EMP (vazio => global).
+      - Cada requisito é definido por:
+          * MESTRE (match EXATO em Venda.mestre, case-insensitive)
+          * Quantidade mínima
+          * Valor R$ (recompensa fixa do requisito)
+      - Gate: o vendedor precisa atingir o mínimo em TODOS os requisitos para receber recompensa.
+      - Recompensa: soma dos valores R$ de cada requisito quando o gate é atingido.
     """
     red = _login_required()
     if red:
@@ -5318,14 +5293,19 @@ def admin_combos():
     if red:
         return red
 
-    erro = None
-    ok = None
-
-    hoje = date.today()
-    mes = int(request.values.get("mes") or hoje.month)
-    ano = int(request.values.get("ano") or hoje.year)
+    # competência para listagem/cadastro
+    try:
+        ano = int(request.values.get("ano") or datetime.utcnow().year)
+    except Exception:
+        ano = datetime.utcnow().year
+    try:
+        mes = int(request.values.get("mes") or datetime.utcnow().month)
+    except Exception:
+        mes = datetime.utcnow().month
 
     inicio_mes, fim_mes = _periodo_bounds(ano, mes)
+
+    # defaults do formulário
     default_data_inicio = request.values.get("data_inicio") or inicio_mes.isoformat()
     default_data_fim = request.values.get("data_fim") or fim_mes.isoformat()
 
@@ -5334,327 +5314,148 @@ def admin_combos():
             acao = (request.form.get("acao") or "").strip().lower()
 
             if acao == "remover":
+                combo_id = request.form.get("combo_id")
                 try:
-                    combo_id = int(request.form.get("combo_id") or 0)
-                    if combo_id <= 0:
-                        raise ValueError("Combo inválido.")
-                    db.query(CampanhaComboItem).filter(CampanhaComboItem.combo_id == combo_id).delete(synchronize_session=False)
-                    db.query(CampanhaCombo).filter(CampanhaCombo.id == combo_id).delete(synchronize_session=False)
-                    db.commit()
-                    ok = "Combo removido."
-                except Exception as e:
-                    db.rollback()
-                    erro = str(e)
+                    combo_id_int = int(combo_id)
+                except Exception:
+                    combo_id_int = None
 
-            elif acao == "criar":
+                if combo_id_int:
+                    # remove itens + combo
+                    db.query(CampanhaComboItem).filter(CampanhaComboItem.combo_id == combo_id_int).delete(synchronize_session=False)
+                    db.query(CampanhaCombo).filter(CampanhaCombo.id == combo_id_int).delete(synchronize_session=False)
+                    db.commit()
+                    flash("✅ Combo removido.", "success")
+                else:
+                    flash("❌ Combo inválido para remoção.", "danger")
+
+                return redirect(url_for("admin_combos", ano=ano, mes=mes))
+
+            if acao == "criar":
                 try:
                     titulo = (request.form.get("titulo") or "").strip()
                     emp = (request.form.get("emp") or "").strip()
-                    vig_ini = request.form.get("data_inicio") or inicio_mes.isoformat()
-                    vig_fim = request.form.get("data_fim") or fim_mes.isoformat()
+                    data_inicio = _parse_date(request.form.get("data_inicio")) or inicio_mes
+                    data_fim = _parse_date(request.form.get("data_fim")) or fim_mes
 
                     if not titulo:
                         raise ValueError("Título é obrigatório.")
-
-                    try:
-                        d_ini = datetime.fromisoformat(vig_ini).date()
-                        d_fim = datetime.fromisoformat(vig_fim).date()
-                    except Exception:
-                        raise ValueError("Datas inválidas. Use o seletor de datas.")
-
-                    if d_fim < d_ini:
-                        raise ValueError("Data fim não pode ser menor que data início.")
-
-                    # Mantemos `marca` preenchida por compatibilidade com o schema/relatórios, mas NÃO usamos para cálculo.
-                    combo = CampanhaCombo(
-                        titulo=titulo,
-                        nome=titulo,
-                        emp=emp if emp else None,
-                        marca="MIX",
-                        data_inicio=d_ini,
-                        data_fim=d_fim,
-                        ano=int(d_ini.year),
-                        mes=int(d_ini.month),
-                        valor_unitario_global=None,
-                        ativo=True,
-                        created_at=datetime.utcnow(),
-                        updated_at=datetime.utcnow(),
-                    )
-                    db.add(combo)
-                    db.flush()  # combo.id
+                    if data_fim < data_inicio:
+                        raise ValueError("Data fim deve ser maior/igual à data início.")
 
                     mestres = request.form.getlist("mestre_prefixo[]")
                     minimos = request.form.getlist("minimo_qtd[]")
-                    vals = request.form.getlist("valor_unitario[]")
+                    valores = request.form.getlist("valor_unitario[]")
 
-                    itens = []
-                    for i in range(max(len(mestres), len(minimos), len(vals))):
-                        mestre = (mestres[i] if i < len(mestres) else "") or ""
-                        mi = (minimos[i] if i < len(minimos) else "") or ""
-                        vu = (vals[i] if i < len(vals) else "") or ""
+                    if not mestres:
+                        raise ValueError("Informe pelo menos 1 item no combo.")
 
-                        mestre = mestre.strip().upper()
+                    # cria combo (mantemos campos obrigatórios do banco)
+                    combo = CampanhaCombo(
+                        titulo=titulo,
+                        nome=titulo,
+                        emp=(emp or None),
+                        marca="COMBO",  # placeholder (campo NOT NULL no banco)
+                        data_inicio=data_inicio,
+                        data_fim=data_fim,
+                        ano=int(ano),
+                        mes=int(mes),
+                        valor_unitario_global=None,
+                        modelo_pagamento="SIMPLES",
+                        filtro_marca="",
+                        descricao_inicio_modelo2="",
+                        valor_unitario_modelo2=None,
+                        criado_em=datetime.utcnow(),
+                        atualizado_em=datetime.utcnow(),
+                    )
+                    db.add(combo)
+                    db.flush()  # gera combo.id
+
+                    itens_objs = []
+                    ordem = 1
+                    for mestre_raw, minimo_raw, valor_raw in zip(mestres, minimos, valores):
+                        mestre = (mestre_raw or "").strip().upper()
                         if not mestre:
                             continue
-
                         try:
-                            minimo_qtd = int(float(str(mi).replace(",", ".") or 0))
+                            minimo_int = int(float(minimo_raw or 0))
                         except Exception:
-                            minimo_qtd = 0
-
-                        vu_raw = str(vu).strip().replace(",", ".")
+                            minimo_int = 0
                         try:
-                            valor_unit = float(vu_raw) if vu_raw else 0.0
+                            valor_f = float(str(valor_raw or "0").replace(",", "."))
                         except Exception:
-                            valor_unit = 0.0
+                            valor_f = 0.0
 
-                        if minimo_qtd <= 0:
-                            raise ValueError(f"Mínimo inválido para o item '{mestre}'.")
-                        if valor_unit <= 0:
-                            raise ValueError(f"Valor R$ inválido para o item '{mestre}'.")
+                        if minimo_int <= 0:
+                            raise ValueError(f"Mínimo inválido para o item {mestre}.")
+                        if valor_f <= 0:
+                            raise ValueError(f"Valor R$ inválido para o item {mestre}.")
 
-                        itens.append({
-                            "combo_id": combo.id,
-                            "mestre_prefixo": mestre,
-                            "descricao_contains": None,
-                            "match_mestre": mestre,
-                            "minimo_qtd": minimo_qtd,
-                            "valor_unitario": valor_unit,
-                            "ordem": i + 1,
-                            "criado_em": datetime.utcnow(),
-                        })
+                        itens_objs.append(
+                            CampanhaComboItem(
+                                combo_id=combo.id,
+                                nome_item=mestre,
+                                match_mestre=mestre,  # obrigatório no banco
+                                mestre_prefixo=mestre,
+                                descricao_contains=None,
+                                minimo_qtd=minimo_int,
+                                valor_unitario=valor_f,
+                                ordem=ordem,
+                                criado_em=datetime.utcnow(),
+                                atualizado_em=datetime.utcnow(),
+                            )
+                        )
+                        ordem += 1
 
-                    if not itens:
-                        raise ValueError("Adicione pelo menos 1 requisito (MESTRE, Mínimo e Valor).")
+                    if not itens_objs:
+                        raise ValueError("Informe itens válidos (MESTRE + mínimo + valor).")
 
-                    sql = text(
-                        "INSERT INTO campanhas_combo_itens (combo_id, mestre_prefixo, descricao_contains, match_mestre, minimo_qtd, valor_unitario, ordem, criado_em) "
-                        "VALUES (:combo_id, :mestre_prefixo, :descricao_contains, :match_mestre, :minimo_qtd, :valor_unitario, :ordem, :criado_em)"
-                    )
-                    db.execute(sql, itens)
+                    db.bulk_save_objects(itens_objs)
                     db.commit()
-                    ok = "Combo criado com sucesso."
+
+                    flash("✅ Combo cadastrado com sucesso!", "success")
+                    return redirect(url_for("admin_combos", ano=ano, mes=mes))
+
                 except Exception as e:
                     db.rollback()
-                    erro = str(e)
+                    flash(f"❌ Erro ao cadastrar combo: {e}", "danger")
+                    return redirect(url_for("admin_combos", ano=ano, mes=mes))
 
+        # listagem: todos os combos que intersectam a competência (admin vê tudo)
         combos = (
             db.query(CampanhaCombo)
-            .filter(
-                CampanhaCombo.ativo.is_(True),
-                CampanhaCombo.data_inicio <= fim_mes,
-                CampanhaCombo.data_fim >= inicio_mes,
-            )
-            .order_by(CampanhaCombo.data_inicio.desc(), CampanhaCombo.id.desc())
+            .filter(CampanhaCombo.data_inicio <= fim_mes, CampanhaCombo.data_fim >= inicio_mes)
+            .order_by(CampanhaCombo.emp.asc().nullsfirst(), CampanhaCombo.data_inicio.desc(), CampanhaCombo.id.desc())
             .all()
         )
 
         combo_ids = [c.id for c in combos]
-        combos_itens_map = {}
+        itens = []
         if combo_ids:
-            itens_all = (
+            itens = (
                 db.query(CampanhaComboItem)
                 .filter(CampanhaComboItem.combo_id.in_(combo_ids))
                 .order_by(CampanhaComboItem.combo_id.asc(), CampanhaComboItem.ordem.asc(), CampanhaComboItem.id.asc())
                 .all()
             )
-            for it in itens_all:
-                combos_itens_map.setdefault(it.combo_id, []).append(it)
+
+        combos_itens_map = {}
+        for it in itens:
+            combos_itens_map.setdefault(it.combo_id, []).append(it)
+
+        # EMPs cadastradas (para seleção)
+        emps = db.query(Empresa).order_by(Empresa.emp.asc()).all()
 
     return render_template(
         "admin_combos.html",
-        mes=mes,
         ano=ano,
-        erro=erro,
-        ok=ok,
+        mes=mes,
         combos=combos,
         combos_itens_map=combos_itens_map,
+        emps=emps,
         default_data_inicio=default_data_inicio,
         default_data_fim=default_data_fim,
     )
-
-= (request.form.get("emp") or "").strip()
-                if not emp_post and request.form.get("id"):
-                    try:
-                        cid = int(request.form.get("id") or 0)
-                        obj = db.query(CampanhaQtd).filter(CampanhaQtd.id == cid).first()
-                        if obj:
-                            emp_post = (obj.emp or "").strip()
-                    except Exception:
-                        emp_post = ""
-                if emp_post and _competencia_fechada(db, emp_post, ano, mes):
-                    erro = f"Competência {mes:02d}/{ano} da EMP {emp_post} está FECHADA. Reabra em /admin/fechamento para editar campanhas."
-                    # impede execução do POST
-                    return redirect('/admin/fechamento' + f'?emp={emp_post}&mes={mes}&ano={ano}')
-            except Exception:
-                pass
-
-
-            try:
-                if acao == "criar":
-                    emp = (request.form.get("emp") or "").strip()
-                    vendedor = (request.form.get("vendedor") or "").strip().upper() or None
-                    titulo = (request.form.get("titulo") or "").strip() or None
-
-                    campo_match = (request.form.get("campo_match") or "codigo").strip().lower()
-                    if campo_match not in {"codigo", "descricao"}:
-                        campo_match = "codigo"
-
-                    produto_prefixo = (request.form.get("produto_prefixo") or "").strip()
-                    descricao_prefixo = (request.form.get("descricao_prefixo") or "").strip()
-                    marca = (request.form.get("marca") or "").strip()
-
-                    recompensa_raw = (request.form.get("recompensa_unit") or "").strip().replace(",", ".")
-                    qtd_min_raw = (request.form.get("qtd_minima") or "").strip().replace(",", ".")
-                    valor_min_raw = (request.form.get("valor_minimo") or "").strip().replace(",", ".")
-
-                    data_ini_raw = (request.form.get("data_inicio") or "").strip()
-                    data_fim_raw = (request.form.get("data_fim") or "").strip()
-
-                    if not emp:
-                        raise ValueError("Informe a EMP.")
-                    if campo_match == "descricao":
-                        if not descricao_prefixo and not produto_prefixo:
-                            raise ValueError("Informe a descrição (início).")
-                    else:
-                        if not produto_prefixo:
-                            raise ValueError("Informe o código/prefixo do produto.")
-                    if not marca:
-                        raise ValueError("Informe a marca.")
-                    if not recompensa_raw:
-                        raise ValueError("Informe a recompensa (R$/un).")
-                    if not data_ini_raw or not data_fim_raw:
-                        raise ValueError("Informe data início e fim.")
-
-                    def _to_dec(s: str) -> Decimal:
-                        try:
-                            return Decimal(s)
-                        except Exception:
-                            raise ValueError("Número inválido.")
-
-                    recompensa_unit = _to_dec(recompensa_raw)
-                    if recompensa_unit < 0:
-                        raise ValueError("Recompensa não pode ser negativa.")
-
-                    qtd_minima = _to_dec(qtd_min_raw) if qtd_min_raw else None
-                    if qtd_minima is not None and qtd_minima < 0:
-                        raise ValueError("Quantidade mínima não pode ser negativa.")
-
-                    valor_minimo = _to_dec(valor_min_raw) if valor_min_raw else None
-                    if valor_minimo is not None and valor_minimo < 0:
-                        raise ValueError("Valor mínimo não pode ser negativo.")
-
-                    # Persistimos como float (compatibilidade), mas com precisão controlada
-                    recompensa_unit = float(recompensa_unit.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP))
-                    if qtd_minima is not None:
-                        qtd_minima = float(qtd_minima)
-                    if valor_minimo is not None:
-                        valor_minimo = float(valor_minimo)
-                    data_inicio = datetime.strptime(data_ini_raw, "%Y-%m-%d").date()
-                    data_fim = datetime.strptime(data_fim_raw, "%Y-%m-%d").date()
-                    if data_fim < data_inicio:
-                        raise ValueError("Data fim não pode ser menor que data início.")
-
-                    db.add(
-                        CampanhaQtd(
-                            emp=str(emp),
-                            vendedor=vendedor,
-                            titulo=titulo,
-                            produto_prefixo=(produto_prefixo or '').upper(),
-                            descricao_prefixo=(descricao_prefixo or '').strip(),
-                            campo_match=campo_match,
-                            marca=marca.upper(),
-                            recompensa_unit=float(recompensa_unit),
-                            qtd_minima=float(qtd_minima) if qtd_minima is not None else None,
-                            valor_minimo=float(valor_minimo) if valor_minimo is not None else None,
-                            data_inicio=data_inicio,
-                            data_fim=data_fim,
-                            ativo=1,
-                        )
-                    )
-                    db.commit()
-                    ok = "Campanha cadastrada com sucesso."
-
-                elif acao == "toggle":
-                    cid = int(request.form.get("campanha_id") or 0)
-                    c = db.query(CampanhaQtd).filter(CampanhaQtd.id == cid).first()
-                    if not c:
-                        raise ValueError("Campanha não encontrada.")
-                    c.ativo = 0 if int(c.ativo or 0) == 1 else 1
-                    c.atualizado_em = datetime.utcnow()
-                    db.commit()
-                    ok = "Status da campanha atualizado."
-
-                elif acao == "remover":
-                    cid = int(request.form.get("campanha_id") or 0)
-                    c = db.query(CampanhaQtd).filter(CampanhaQtd.id == cid).first()
-                    if not c:
-                        raise ValueError("Campanha não encontrada.")
-
-                    # Remove também o histórico/snapshot mensal dessa campanha
-                    db.query(CampanhaQtdResultado).filter(CampanhaQtdResultado.campanha_id == cid).delete(synchronize_session=False)
-
-                    db.delete(c)
-                    db.commit()
-                    ok = "Campanha removida."
-
-                elif acao == "pagar":
-                    rid = int(request.form.get("resultado_id") or 0)
-                    r = db.query(CampanhaQtdResultado).filter(CampanhaQtdResultado.id == rid).first()
-                    if not r:
-                        raise ValueError("Resultado não encontrado.")
-                    if (r.status_pagamento or "PENDENTE") == "PAGO":
-                        r.status_pagamento = "PENDENTE"
-                        r.pago_em = None
-                    else:
-                        r.status_pagamento = "PAGO"
-                        r.pago_em = datetime.utcnow()
-                    r.atualizado_em = datetime.utcnow()
-                    db.commit()
-                    ok = "Status de pagamento atualizado."
-
-                else:
-                    raise ValueError("Ação inválida.")
-
-            except Exception as e:
-                db.rollback()
-                erro = str(e)
-                app.logger.exception("Erro ao gerenciar campanhas")
-
-        campanhas = db.query(CampanhaQtd).order_by(CampanhaQtd.emp.asc(), CampanhaQtd.data_inicio.desc()).all()
-        resultados = (
-            db.query(CampanhaQtdResultado)
-            .filter(
-                CampanhaQtdResultado.competencia_ano == int(ano),
-                CampanhaQtdResultado.competencia_mes == int(mes),
-            )
-            .order_by(CampanhaQtdResultado.valor_recompensa.desc())
-            .all()
-        )
-
-    
-    # UX: agrupa por competência (mês/ano) na lista
-    try:
-        for c in (campanhas or []):
-            di = getattr(c, "data_inicio", None)
-            if di:
-                setattr(c, "competencia_label", f"{int(di.month):02d}/{int(di.year)}")
-            else:
-                setattr(c, "competencia_label", "")
-    except Exception:
-        pass
-
-    return render_template(
-            "admin_campanhas_qtd.html",
-            usuario=_usuario_logado(),
-            campanhas=campanhas,
-            resultados=resultados,
-            ano=ano,
-            mes=mes,
-            erro=erro,
-            ok=ok,
-        )
-
 @app.route("/admin/apagar_vendas", methods=["POST"])
 def admin_apagar_vendas():
     """Apaga vendas por dia ou por mes.
