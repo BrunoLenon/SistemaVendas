@@ -196,6 +196,49 @@
   </div>
 </form>
 
+      {# ===== KPI (PowerBI-like) ===== #}
+      {% set ns = namespace(total=0.0, total_qtd=0.0, total_combo=0.0, vendedores=0, itens=0, atingidos=0) %}
+      {% for emp in (emps_abertas or []) + (emps_fechadas or []) %}
+        {% for vc in emp.vendedores or [] %}
+          {% set ns.vendedores = ns.vendedores + 1 %}
+          {% set ns.total = ns.total + (vc.total_recompensa or 0.0) %}
+          {% for it in vc.itens or [] %}
+            {% set ns.itens = ns.itens + 1 %}
+            {% if (it.atingiu or 0) == 1 %}{% set ns.atingidos = ns.atingidos + 1 %}{% endif %}
+            {% if (it.tipo or "") == "QTD" %}
+              {% set ns.total_qtd = ns.total_qtd + (it.valor_recompensa or 0.0) %}
+            {% elif (it.tipo or "") == "COMBO" %}
+              {% set ns.total_combo = ns.total_combo + (it.valor_recompensa or 0.0) %}
+            {% endif %}
+          {% endfor %}
+        {% endfor %}
+      {% endfor %}
+      {% set taxa = ( (ns.atingidos / ns.itens * 100) if ns.itens else 0 ) %}
+      <div class="kpi-grid mt-3">
+        <div class="kpi-card">
+          <div class="kpi-label">Recompensas no período</div>
+          <div class="kpi-value mono">R$ {{ '%.2f'|format(ns.total) }}</div>
+          <div class="kpi-sub">Aberto + Fechado ({{ "%02d"|format(mes) }}/{{ ano }})</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Campanhas (Qtd)</div>
+          <div class="kpi-value mono">R$ {{ '%.2f'|format(ns.total_qtd) }}</div>
+          <div class="kpi-sub">Recompensas acumuladas</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Combos</div>
+          <div class="kpi-value mono">R$ {{ '%.2f'|format(ns.total_combo) }}</div>
+          <div class="kpi-sub">Recompensas acumuladas</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Taxa de atingimento</div>
+          <div class="kpi-value mono">{{ '%.0f'|format(taxa) }}%</div>
+          <div class="kpi-bar mt-2"><span style="width: {{ taxa|round(0,'floor') }}%"></span></div>
+          <div class="kpi-sub">{{ ns.atingidos }} / {{ ns.itens }} metas atingidas</div>
+        </div>
+      </div>
+
+
     </div>
   </div>
 

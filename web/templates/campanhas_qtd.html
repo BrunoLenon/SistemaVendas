@@ -73,6 +73,42 @@
   </div>
 </form>
 
+      {# ===== KPI (PowerBI-like) ===== #}
+      {% set ns = namespace(total=0.0, campanhas=0, itens=0, atingidos=0) %}
+      {% for b in blocos or [] %}
+        {% set ns.total = ns.total + (b.total or 0.0) %}
+        {% for r in b.resultados or [] %}
+          {% set ns.campanhas = ns.campanhas + 1 %}
+          {% set ns.itens = ns.itens + 1 %}
+          {% if (r.atingiu_minimo or 0) == 1 %}{% set ns.atingidos = ns.atingidos + 1 %}{% endif %}
+        {% endfor %}
+      {% endfor %}
+      {% set taxa = ( (ns.atingidos / ns.itens * 100) if ns.itens else 0 ) %}
+      <div class="kpi-grid mt-3">
+        <div class="kpi-card">
+          <div class="kpi-label">Recompensa (Qtd)</div>
+          <div class="kpi-value mono">R$ {{ '%.2f'|format(ns.total) }}</div>
+          <div class="kpi-sub">{{ "%02d"|format(mes) }}/{{ ano }}</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Campanhas no filtro</div>
+          <div class="kpi-value mono">{{ ns.campanhas }}</div>
+          <div class="kpi-sub">Somando todas as EMPs/Vendedores</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Taxa de atingimento</div>
+          <div class="kpi-value mono">{{ '%.0f'|format(taxa) }}%</div>
+          <div class="kpi-bar mt-2"><span style="width: {{ taxa|round(0,'floor') }}%"></span></div>
+          <div class="kpi-sub">{{ ns.atingidos }} / {{ ns.itens }} atingidas</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Escopo</div>
+          <div class="kpi-value mono">{{ (emps_sel|length) if emps_sel else (emps_scope|length) }}</div>
+          <div class="kpi-sub">EMPs consideradas</div>
+        </div>
+      </div>
+
+
     </div>
   </div>
 
