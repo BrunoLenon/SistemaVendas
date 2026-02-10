@@ -291,19 +291,52 @@
                         <thead>
                           <tr>
                             <th scope="col">Título</th>
-                            <th scope="col">Marca</th>
                             <th scope="col">Vigência</th>
-                            <th scope="col">Valor global</th>
+                            <th scope="col">Itens</th>
                           </tr>
                         </thead>
                         <tbody>
                           {% for c in e.combos %}
                             <tr>
                               <td>{{ c.titulo }}</td>
-                              <td>{{ c.marca }}</td>
                               <td>{{ c.data_inicio }} → {{ c.data_fim }}</td>
-                              <td>{% if c.valor_unitario_global is not none %}{{ '%.2f'|format(c.valor_unitario_global) }}{% else %}-{% endif %}</td>
+                              <td>
+                                {% set itens = (e.combos_itens_map.get(c.id) if e.combos_itens_map is defined else None) %}
+                                {% if itens and (itens|length) > 0 %}
+                                  <button class="btn btn-outline-secondary btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#combo-itens-{{ c.id }}" aria-expanded="false">
+                                    Ver itens ({{ itens|length }})
+                                  </button>
+                                {% else %}
+                                  <span class="text-muted">-</span>
+                                {% endif %}
+                              </td>
                             </tr>
+                            {% if itens and (itens|length) > 0 %}
+                            <tr class="collapse" id="combo-itens-{{ c.id }}">
+                              <td colspan="3">
+                                <div class="table-responsive">
+                                  <table class="table table-sm mb-0">
+                                    <thead>
+                                      <tr>
+                                        <th>MESTRE</th>
+                                        <th class="text-end">Mínimo</th>
+                                        <th class="text-end">Valor R$</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {% for it in itens %}
+                                      <tr>
+                                        <td>{{ it.match_mestre }}</td>
+                                        <td class="text-end">{{ it.minimo_qtd }}</td>
+                                        <td class="text-end">{{ '%.2f'|format(it.valor_unitario or 0) }}</td>
+                                      </tr>
+                                      {% endfor %}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </td>
+                            </tr>
+                            {% endif %}
                           {% endfor %}
                         </tbody>
                       </table>
