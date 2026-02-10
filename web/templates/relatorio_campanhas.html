@@ -292,7 +292,7 @@
                           <tr>
                             <th scope="col">Título</th>
                             <th scope="col">Vigência</th>
-                            <th scope="col">Itens</th>
+                            <th scope="col" style="width: 140px;">Itens</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -301,9 +301,9 @@
                               <td>{{ c.titulo }}</td>
                               <td>{{ c.data_inicio }} → {{ c.data_fim }}</td>
                               <td>
-                                {% set itens = (e.combos_itens_map.get(c.id) if e.combos_itens_map is defined else None) %}
+                                {% set itens = (c.itens if c.itens is defined else []) %}
                                 {% if itens and (itens|length) > 0 %}
-                                  <button class="btn btn-outline-secondary btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#combo-itens-{{ c.id }}" aria-expanded="false">
+                                  <button class="btn btn-outline-primary btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#comboItens{{ c.id }}" aria-expanded="false">
                                     Ver itens ({{ itens|length }})
                                   </button>
                                 {% else %}
@@ -312,30 +312,34 @@
                               </td>
                             </tr>
                             {% if itens and (itens|length) > 0 %}
-                            <tr class="collapse" id="combo-itens-{{ c.id }}">
-                              <td colspan="3">
-                                <div class="table-responsive">
-                                  <table class="table table-sm mb-0">
-                                    <thead>
-                                      <tr>
-                                        <th>MESTRE</th>
-                                        <th class="text-end">Mínimo</th>
-                                        <th class="text-end">Valor R$</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody>
-                                      {% for it in itens %}
-                                      <tr>
-                                        <td>{{ it.match_mestre }}</td>
-                                        <td class="text-end">{{ it.minimo_qtd }}</td>
-                                        <td class="text-end">{{ '%.2f'|format(it.valor_unitario or 0) }}</td>
-                                      </tr>
-                                      {% endfor %}
-                                    </tbody>
-                                  </table>
-                                </div>
-                              </td>
-                            </tr>
+                              <tr class="bg-light">
+                                <td colspan="3" class="p-0 border-0">
+                                  <div class="collapse" id="comboItens{{ c.id }}">
+                                    <div class="p-3">
+                                      <div class="table-responsive">
+                                        <table class="table table-sm mb-0">
+                                          <thead>
+                                            <tr>
+                                              <th>MESTRE</th>
+                                              <th>Mínimo</th>
+                                              <th>Valor R$</th>
+                                            </tr>
+                                          </thead>
+                                          <tbody>
+                                            {% for it in itens %}
+                                              <tr>
+                                                <td>{{ it.match_mestre }}</td>
+                                                <td>{{ it.minimo_qtd }}</td>
+                                                <td>{{ "%.2f"|format(it.valor_unitario or 0) }}</td>
+                                              </tr>
+                                            {% endfor %}
+                                          </tbody>
+                                        </table>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </td>
+                              </tr>
                             {% endif %}
                           {% endfor %}
                         </tbody>
