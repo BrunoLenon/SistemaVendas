@@ -20,7 +20,8 @@
       <h3 class="page-title m-0">Admin — Combos (Simples)</h3>
       <div class="subtitle mt-1">
         Combo simples = venda casada por <b>MESTRE</b> (coluna <code>vendas.mestre</code>).
-        O vendedor precisa bater o mínimo em <b>todos</b> os itens. Ao bater, recebe a soma dos valores <b>R$</b> cadastrados.
+        O vendedor precisa bater o mínimo em <b>todos</b> os itens. Ao bater o gate, recebe a recompensa <b>por unidade vendida</b>
+        de cada item (valor R$ × quantidade vendida no período do combo).
       </div>
     </div>
     <a class="btn btn-outline-secondary btn-sm" href="/dashboard">Voltar</a>
@@ -101,7 +102,7 @@
             <tbody id="rows">
               <tr>
                 <td><input class="form-control" name="mestre_prefixo[]" placeholder="Ex: 336109" required></td>
-                <td><input class="form-control" name="minimo_qtd[]" type="number" min="0" step="1" value="1" required></td>
+                <td><input class="form-control" name="minimo_qtd[]" type="number" min="1" step="1" value="1" required></td>
                 <td><input class="form-control" name="valor_unitario[]" placeholder="Ex: 10.00" required></td>
                 <td><button class="btn btn-outline-danger btn-sm" type="button" onclick="removeRow(this)">✕</button></td>
               </tr>
@@ -191,7 +192,7 @@ document.getElementById('btnAddRow').addEventListener('click', () => {
   const tr = document.createElement('tr');
   tr.innerHTML = `
     <td><input class="form-control" name="mestre_prefixo[]" placeholder="Ex: 336109" required></td>
-    <td><input class="form-control" name="minimo_qtd[]" type="number" min="0" step="1" value="1" required></td>
+    <td><input class="form-control" name="minimo_qtd[]" type="number" min="1" step="1" value="1" required></td>
     <td><input class="form-control" name="valor_unitario[]" placeholder="Ex: 10.00" required></td>
     <td><button class="btn btn-outline-danger btn-sm" type="button" onclick="removeRow(this)">✕</button></td>
   `;

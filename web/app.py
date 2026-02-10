@@ -3169,8 +3169,13 @@ def _calc_qtd_por_vendedor_para_combo_item(db, emp: str, item: CampanhaComboItem
             else:
                 dc = mm
 
+    # Mestre: prefix match (o "código" do item pode ser o mestre completo ou um prefixo)
+    # Ex.: mp="336109" deve casar "336109" e também "336109-XYZ" dependendo da origem do dado.
     if mp:
-        conds.append(func.upper(func.trim(cast(Venda.mestre, String))) == mp.strip().upper())
+        mp_up = mp.strip().upper()
+        campo_mestre = func.upper(func.trim(cast(Venda.mestre, String)))
+        # LIKE 'PREFIX%'
+        conds.append(campo_mestre.like(mp_up + "%"))
     if dc:
         needle = _norm_text(dc)
         campo = func.lower(func.trim(func.coalesce(Venda.descricao_norm, Venda.descricao, "")))
@@ -3258,7 +3263,9 @@ def _recalcular_resultados_combos_para_scope(ano: int, mes: int, emps: list[str]
                         if qtd < minimo:
                             atingiu = 0
                             break
-                        total += float(it.valor_unitario or 0.0)
+                        # Recompensa por unidade vendida (após gate):
+                        # se o vendedor vendeu 2und e valor_unitario=10 => 20
+                        total += float(it.valor_unitario or 0.0) * float(qtd)
                     if not atingiu:
                         total = 0.0
 
