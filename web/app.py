@@ -6,6 +6,8 @@ import json
 from datetime import date, datetime, timedelta
 import calendar
 from io import BytesIO
+import io
+import csv
 
 from decimal import Decimal, ROUND_HALF_UP
 
@@ -1177,6 +1179,85 @@ def _competencia_fechada(db, emp: str, ano: int, mes: int) -> bool:
     except Exception:
         return False
 
+
+
+
+def _competencia_status(db, emp: str, ano: int, mes: int) -> dict:
+    """Retorna informações de fechamento da competência.
+
+    status:
+      - aberto
+      - a_pagar
+      - pago
+    fechado: bool
+    """
+    emp = _emp_norm(emp)
+    if not emp:
+        return {"fechado": False, "status": "aberto"}
+    try:
+        rec = (
+            db.query(FechamentoMensal)
+            .filter(
+                FechamentoMensal.emp == emp,
+                FechamentoMensal.ano == int(ano),
+                FechamentoMensal.mes == int(mes),
+            )
+            .first()
+        )
+        if not rec:
+            return {"fechado": False, "status": "aberto"}
+        status = (getattr(rec, "status", None) or "aberto").strip().lower()
+        fechado = bool(getattr(rec, "fechado", False))
+        return {"fechado": fechado, "status": status, "rec": rec}
+    except Exception:
+        return {"fechado": False, "status": "aberto"}
+
+
+def _ensure_fechamento_auditoria(db):
+    """Cria a tabela de auditoria de fechamento se não existir.
+    Isso evita depender de migrations e mantém o deploy simples no Supabase.
+    """
+    try:
+        db.execute(text("""
+            CREATE TABLE IF NOT EXISTS fechamento_auditoria (
+                id BIGSERIAL PRIMARY KEY,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                emp VARCHAR(20) NOT NULL,
+                ano INT NOT NULL,
+                mes INT NOT NULL,
+                acao VARCHAR(30) NOT NULL,
+                status_anterior VARCHAR(30),
+                status_novo VARCHAR(30),
+                usuario VARCHAR(80),
+                detalhe TEXT
+            );
+        """))
+    except Exception:
+        # não quebra o fluxo do app se o usuário do banco não tiver permissão
+        pass
+
+
+def _auditar_fechamento(db, emp: str, ano: int, mes: int, acao: str, status_anterior: str | None, status_novo: str | None, detalhe: str = ""):
+    try:
+        _ensure_fechamento_auditoria(db)
+        db.execute(
+            text("""
+                INSERT INTO fechamento_auditoria (emp, ano, mes, acao, status_anterior, status_novo, usuario, detalhe)
+                VALUES (:emp, :ano, :mes, :acao, :sa, :sn, :u, :d)
+            """),
+            {
+                "emp": str(emp),
+                "ano": int(ano),
+                "mes": int(mes),
+                "acao": str(acao),
+                "sa": (status_anterior or None),
+                "sn": (status_novo or None),
+                "u": (_usuario_logado() or None),
+                "d": (detalhe or None),
+            },
+        )
+    except Exception:
+        pass
 
 
 
@@ -5870,6 +5951,13 @@ def admin_fechamento():
                             rec = FechamentoMensal(emp=emp, ano=int(ano), mes=int(mes), fechado=False)
                             db.add(rec)
 
+                        status_anterior = (getattr(rec, "status", None) or "aberto").strip().lower()
+
+                        # Regra: se estiver PAGO, não reabre sem "force=1" (protege histórico)
+                        if acao == "reabrir" and status_anterior == "pago" and (request.values.get("force") or "") != "1":
+                            msgs.append(f"🔒 EMP {emp} está como PAGO em {mes:02d}/{ano}. Para reabrir, use o modo forçado (force=1).")
+                            continue
+
                         if acao in {"fechar_a_pagar", "fechar_pago"}:
                             rec.fechado = True
                             rec.fechado_em = datetime.utcnow()
@@ -5881,6 +5969,19 @@ def admin_fechamento():
                             rec.fechado_em = datetime.utcnow()  # mantém não-nulo
                             if hasattr(rec, "status"):
                                 rec.status = "aberto"
+
+                        status_novo = (getattr(rec, "status", None) or "aberto").strip().lower()
+                        _auditar_fechamento(
+                            db,
+                            emp=emp,
+                            ano=int(ano),
+                            mes=int(mes),
+                            acao=acao,
+                            status_anterior=status_anterior,
+                            status_novo=status_novo,
+                            detalhe="via /admin/fechamento",
+                        )
+
                         updated_count += 1
                         # commit no final do lote (mais rápido e consistente)
                     except Exception:
@@ -5937,6 +6038,106 @@ def admin_fechamento():
         status_por_emp=status_por_emp,
         msgs=msgs,
     )
+
+
+
+
+@app.get("/admin/fechamento/export")
+def admin_fechamento_export():
+    """Exporta o fechamento mensal em CSV (ADMIN).
+
+    Exporta os resultados (Qtd + Combo) do mês/ano selecionado, agrupados por EMP e vendedor,
+    incluindo status do fechamento.
+    """
+    red = _admin_required()
+    if red:
+        return red
+
+    hoje = datetime.now()
+    ano = int(request.values.get("ano") or hoje.year)
+    mes = int(request.values.get("mes") or hoje.month)
+
+    # lista de EMPs (pode ser multi via ?emp=101&emp=102 ou via emp=101,102)
+    emps_sel = []
+    try:
+        emps_sel = [str(e).strip() for e in request.values.getlist("emp") if str(e).strip()]
+    except Exception:
+        emps_sel = []
+    if not emps_sel:
+        emps_sel = [str(e).strip() for e in _parse_multi_args("emp") if str(e).strip()]
+
+    with SessionLocal() as db:
+        # fallback: se nada selecionado, exporta todas as EMPs com vendas no período
+        if not emps_sel:
+            try:
+                emps_sel = _get_emps_com_vendas_no_periodo(ano, mes)
+            except Exception:
+                emps_sel = []
+
+        rows = []
+        for emp in (emps_sel or []):
+            emp = _emp_norm(emp)
+            if not emp:
+                continue
+
+            # status do fechamento
+            st = _competencia_status(db, emp, ano, mes)
+            status_fin = (st.get("status") or "aberto")
+
+            q_rows = (
+                db.query(CampanhaQtdResultado)
+                .filter(
+                    CampanhaQtdResultado.emp == emp,
+                    CampanhaQtdResultado.competencia_ano == int(ano),
+                    CampanhaQtdResultado.competencia_mes == int(mes),
+                )
+                .all()
+            )
+            c_rows = (
+                db.query(CampanhaComboResultado)
+                .filter(
+                    CampanhaComboResultado.emp == emp,
+                    CampanhaComboResultado.competencia_ano == int(ano),
+                    CampanhaComboResultado.competencia_mes == int(mes),
+                )
+                .all()
+            )
+
+            # agrega por vendedor
+            agg = {}
+            for r in q_rows:
+                vend = (r.vendedor or "").strip().upper()
+                d = agg.setdefault(vend, {"qtd": 0.0, "combo": 0.0})
+                d["qtd"] += float(getattr(r, "valor_recompensa", 0.0) or 0.0)
+            for r in c_rows:
+                vend = (r.vendedor or "").strip().upper()
+                d = agg.setdefault(vend, {"qtd": 0.0, "combo": 0.0})
+                d["combo"] += float(getattr(r, "valor_recompensa", 0.0) or 0.0)
+
+            for vend, d in agg.items():
+                rows.append({
+                    "emp": emp,
+                    "ano": int(ano),
+                    "mes": int(mes),
+                    "status_fechamento": status_fin,
+                    "vendedor": vend,
+                    "valor_qtd": round(float(d.get("qtd") or 0.0), 2),
+                    "valor_combo": round(float(d.get("combo") or 0.0), 2),
+                    "valor_total": round(float((d.get("qtd") or 0.0) + (d.get("combo") or 0.0)), 2),
+                })
+
+    # gera CSV
+    output = io.StringIO()
+    fieldnames = ["emp", "ano", "mes", "status_fechamento", "vendedor", "valor_qtd", "valor_combo", "valor_total"]
+    w = csv.DictWriter(output, fieldnames=fieldnames, delimiter=";")
+    w.writeheader()
+    for r in rows:
+        w.writerow(r)
+
+    bio = BytesIO(output.getvalue().encode("utf-8"))
+    fname = f"fechamento_{ano}_{mes:02d}.csv"
+    return send_file(bio, as_attachment=True, download_name=fname, mimetype="text/csv; charset=utf-8")
+
 
 
 @app.route("/admin/campanhas", methods=["GET", "POST"])
