@@ -2443,7 +2443,7 @@ def itens_parados():
                             Venda.emp,
                             Venda.mestre,
                             func.coalesce(func.sum(func.coalesce(Venda.valor_total, 0.0)), 0.0).label("valor_vendido"),
-                            func.coalesce(func.sum(func.coalesce(Venda.qtde_vendida, 0.0)), 0.0).label("qtd_vendida"),
+                            func.coalesce(func.sum(func.coalesce(Venda.qtidade_vendida, 0.0)), 0.0).label("qtd_vendida"),
                         )
                         .filter(Venda.emp.in_(emp_scopes))
                         .filter(Venda.vendedor == vendedor_alvo)
@@ -2718,7 +2718,7 @@ def _calc_itens_parados_recompensa_por_emp_vendedor(
        - valor = SUM(valor_total) * (pct/100)
 
     B) Valor por unidade (recomendado e compatível com sua tabela atual):
-       - usa ItemParado.recompensa (R$ por unidade) e Venda.qtde_vendida
+       - usa ItemParado.recompensa (R$ por unidade) e Venda.qtidade_vendida
        - opcional gate: ItemParado.quantidade (mínimo). Se existir:
             se qtd_vendida < minimo -> 0
             se qtd_vendida >= minimo -> qtd_vendida * recompensa
@@ -2743,7 +2743,7 @@ def _calc_itens_parados_recompensa_por_emp_vendedor(
         db.query(
             func.upper(cast(Venda.vendedor, String)).label('vendedor'),
             cast(Venda.mestre, String).label('codigo'),
-            func.coalesce(func.sum(func.coalesce(Venda.qtde_vendida, 0.0)), 0.0).label('qtd_vendida'),
+            func.coalesce(func.sum(func.coalesce(Venda.qtidade_vendida, 0.0)), 0.0).label('qtd_vendida'),
             func.coalesce(func.sum(func.coalesce(Venda.valor_total, 0.0)), 0.0).label('valor_vendido'),
         )
         .join(
