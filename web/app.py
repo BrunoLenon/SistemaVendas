@@ -4081,6 +4081,10 @@ def relatorio_campanhas():
                     vendedores=[v.strip().upper() for v in (vendedores or []) if (v or "").strip()] if vendedores else None,
                 )
             except Exception as _e:
+                try:
+                    db.rollback()
+                except Exception:
+                    pass
                 app.logger.warning(f"[RELATORIO_CAMPANHAS] aviso: não foi possível calcular itens parados: {_e}")
                 itens_map = {}
 
