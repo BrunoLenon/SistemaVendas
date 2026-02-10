@@ -2428,35 +2428,80 @@ def itens_parados():
     recomp_map = {}
 
     if vendedor_alvo and itens_all:
-        # lista de códigos (mestre) cadastrados nos itens
-        codigos = [ (i.codigo or '').strip() for i in itens_all if (i.codigo or '').strip() ]
-        codigos = sorted(set(codigos))
-        if codigos:
-            start, end = _periodo_bounds(ano, mes)
-            with SessionLocal() as db:
-                q = (
-                    db.query(Venda.emp, Venda.mestre, func.coalesce(func.sum(Venda.valor_total), 0.0))
-                    .filter(Venda.emp.in_(emp_scopes))
-                    .filter(Venda.vendedor == vendedor_alvo)
-                    .filter(Venda.movimento >= start)
-                    .filter(Venda.movimento < end)
-                    .filter(Venda.mov_tipo_movto == 'OA')
-                    .filter(Venda.mestre.in_(codigos))
-                    .group_by(Venda.emp, Venda.mestre)
-                )
-                for emp_v, mestre, total in q.all():
-                    k_emp = str(emp_v).strip() if emp_v is not None else ''
-                    k_cod = (mestre or '').strip()
-                    vendido_total_map[(k_emp, k_cod)] = float(total or 0.0)
+            # lista de códigos (mestre) cadastrados nos itens
+            codigos = [(i.codigo or '').strip() for i in itens_all if (i.codigo or '').strip()]
+            codigos = sorted(set(codigos))
+            if codigos:
+                start, end = _periodo_bounds(ano, mes)
 
-            for it in itens_all:
-                emp_it = str(it.emp).strip() if it.emp is not None else ''
-                cod = (it.codigo or '').strip()
-                total = vendido_total_map.get((emp_it, cod), 0.0)
-                pct = float(it.recompensa_pct or 0.0)
-                valor = (total * (pct / 100.0)) if total > 0 and pct > 0 else 0.0
-                recomp_map[(emp_it, cod)] = valor
+                vendido_valor_map = {}
+                vendido_qtd_map = {}
 
+                with SessionLocal() as db:
+                    q = (
+                        db.query(
+                            Venda.emp,
+                            Venda.mestre,
+                            func.coalesce(func.sum(func.coalesce(Venda.valor_total, 0.0)), 0.0).label("valor_vendido"),
+                            func.coalesce(func.sum(func.coalesce(Venda.qtde_vendida, 0.0)), 0.0).label("qtd_vendida"),
+                        )
+                        .filter(Venda.emp.in_(emp_scopes))
+                        .filter(Venda.vendedor == vendedor_alvo)
+                        .filter(Venda.movimento >= start)
+                        .filter(Venda.movimento < end)
+                        .filter(Venda.mov_tipo_movto == 'OA')
+                        .filter(Venda.mestre.in_(codigos))
+                        .group_by(Venda.emp, Venda.mestre)
+                    )
+                    for emp_v, mestre, valor_vendido, qtd_vendida in q.all():
+                        k_emp = str(emp_v).strip() if emp_v is not None else ''
+                        k_cod = (mestre or '').strip()
+                        vendido_valor_map[(k_emp, k_cod)] = float(valor_vendido or 0.0)
+                        vendido_qtd_map[(k_emp, k_cod)] = float(qtd_vendida or 0.0)
+
+                # Mantém compatibilidade: vendido_total_map continua existindo (valor vendido em R$)
+                vendido_total_map.update(vendido_valor_map)
+
+                for it in itens_all:
+                    emp_it = str(it.emp).strip() if it.emp is not None else ''
+                    cod = (it.codigo or '').strip()
+
+                    total_valor = float(vendido_valor_map.get((emp_it, cod), 0.0) or 0.0)
+                    total_qtd = float(vendido_qtd_map.get((emp_it, cod), 0.0) or 0.0)
+
+                    valor = 0.0
+
+                    # Modo A: percentual do valor vendido (se existir coluna recompensa_pct)
+                    if getattr(it, "recompensa_pct", None) is not None:
+                        try:
+                            pct = float(getattr(it, "recompensa_pct") or 0.0)
+                        except Exception:
+                            pct = 0.0
+                        valor = (total_valor * (pct / 100.0)) if total_valor > 0 and pct > 0 else 0.0
+
+                    # Modo B: valor por unidade (recomendado)
+                    else:
+                        try:
+                            unit = float(getattr(it, "recompensa", None) or getattr(it, "recompensa_unit", None) or 0.0)
+                        except Exception:
+                            unit = 0.0
+                        try:
+                            minimo = int(getattr(it, "quantidade", None) or getattr(it, "minimo_qtd", None) or 1)
+                        except Exception:
+                            minimo = 1
+
+                        if unit > 0 and total_qtd > 0 and total_qtd >= float(minimo):
+                            valor = total_qtd * unit
+                        else:
+                            valor = 0.0
+
+                    recomp_map[(emp_it, cod)] = float(valor or 0.0)
+
+            # expõe também qtd no template (se o template quiser usar)
+            try:
+                vendido_qtd_map  # noqa: F401
+            except Exception:
+                vendido_qtd_map = {}
     return render_template(
         "itens_parados.html",
         role=role,
@@ -2468,6 +2513,7 @@ def itens_parados():
         vendedor=vendedor_alvo,
         vendedores_lista=vendedores_lista,
         vendido_total_map=vendido_total_map,
+        vendido_qtd_map=locals().get("vendido_qtd_map", {}),
         recomp_map=recomp_map,
     )
 
@@ -2666,23 +2712,39 @@ def _calc_itens_parados_recompensa_por_emp_vendedor(
 ) -> dict[str, float]:
     """Calcula a recompensa de Itens Parados no período (mês/ano) por vendedor.
 
-    Regra (igual à tela /itens_parados):
+    Compatível com dois modelos (detecta colunas no ORM):
+    A) Percentual sobre valor vendido:
+       - usa ItemParado.recompensa_pct (0-100) e Venda.valor_total
+       - valor = SUM(valor_total) * (pct/100)
+
+    B) Valor por unidade (recomendado e compatível com sua tabela atual):
+       - usa ItemParado.recompensa (R$ por unidade) e Venda.qtde_vendida
+       - opcional gate: ItemParado.quantidade (mínimo). Se existir:
+            se qtd_vendida < minimo -> 0
+            se qtd_vendida >= minimo -> qtd_vendida * recompensa
+
+    Regras comuns:
     - Considera apenas vendas OA
     - Join com ItemParado (emp + codigo==mestre)
-    - Soma: valor_total * (recompensa_pct/100)
-    - Considera apenas itens ativos (se a coluna `ativo` existir)
+    - Se existir coluna `ativo` no ItemParado, considera apenas ativo=True/1
     """
     inicio, fim = _periodo_bounds(int(ano), int(mes))
 
-    vend_list = [v.strip().upper() for v in (vendedores or []) if (v or "").strip()]
-    ativo_col = getattr(ItemParado, "ativo", None)
+    vend_list = [v.strip().upper() for v in (vendedores or []) if (v or '').strip()]
+    ativo_col = getattr(ItemParado, 'ativo', None)
 
-    valor_expr = func.coalesce(Venda.valor_total, 0.0) * (func.coalesce(ItemParado.recompensa_pct, 0.0) / 100.0)
+    # Detecta modo de cálculo pelo schema do ORM
+    pct_col = getattr(ItemParado, 'recompensa_pct', None)
+    valor_unit_col = getattr(ItemParado, 'recompensa', None) or getattr(ItemParado, 'recompensa_unit', None)
+    min_qtd_col = getattr(ItemParado, 'quantidade', None) or getattr(ItemParado, 'minimo_qtd', None)
 
-    q = (
+    # Base: vendas filtradas
+    base = (
         db.query(
-            func.upper(cast(Venda.vendedor, String)).label("vendedor"),
-            func.coalesce(func.sum(valor_expr), 0.0).label("valor_recomp"),
+            func.upper(cast(Venda.vendedor, String)).label('vendedor'),
+            cast(Venda.mestre, String).label('codigo'),
+            func.coalesce(func.sum(func.coalesce(Venda.qtde_vendida, 0.0)), 0.0).label('qtd_vendida'),
+            func.coalesce(func.sum(func.coalesce(Venda.valor_total, 0.0)), 0.0).label('valor_vendido'),
         )
         .join(
             ItemParado,
@@ -2695,18 +2757,70 @@ def _calc_itens_parados_recompensa_por_emp_vendedor(
             cast(Venda.emp, String) == str(emp),
             Venda.movimento >= inicio,
             Venda.movimento < fim,
-            Venda.mov_tipo_movto == "OA",
+            Venda.mov_tipo_movto == 'OA',
         )
     )
 
     if ativo_col is not None:
-        q = q.filter(ativo_col == True)
+        try:
+            base = base.filter(or_(ativo_col == True, ativo_col == 1))
+        except Exception:
+            base = base.filter(ativo_col == True)
     if vend_list:
-        q = q.filter(func.upper(cast(Venda.vendedor, String)).in_(vend_list))
+        base = base.filter(func.upper(cast(Venda.vendedor, String)).in_(vend_list))
 
-    rows = q.group_by(func.upper(cast(Venda.vendedor, String))).all()
-    return {str(r.vendedor).strip().upper(): float(r.valor_recomp or 0.0) for r in rows}
+    rows = base.group_by(
+        func.upper(cast(Venda.vendedor, String)),
+        cast(Venda.mestre, String),
+    ).all()
 
+    # Carrega itens configurados para calcular recompensa por código
+    itens = (
+        db.query(ItemParado)
+        .filter(cast(ItemParado.emp, String) == str(emp))
+        .all()
+    )
+    itens_map = {str(getattr(i, 'codigo', '') or '').strip(): i for i in itens}
+
+    out: dict[str, float] = {}
+    for r in rows:
+        vend = (r.vendedor or '').strip().upper()
+        cod = (r.codigo or '').strip()
+        qtd_vendida = float(getattr(r, 'qtd_vendida', 0.0) or 0.0)
+        valor_vendido = float(getattr(r, 'valor_vendido', 0.0) or 0.0)
+
+        it = itens_map.get(cod)
+        if not it:
+            continue
+
+        valor_recomp = 0.0
+
+        # Modo A: percentual
+        if pct_col is not None and getattr(it, 'recompensa_pct', None) is not None:
+            try:
+                pct = float(getattr(it, 'recompensa_pct') or 0.0)
+            except Exception:
+                pct = 0.0
+            if pct > 0 and valor_vendido > 0:
+                valor_recomp = valor_vendido * (pct / 100.0)
+
+        # Modo B: por unidade
+        elif valor_unit_col is not None:
+            try:
+                unit = float(getattr(it, 'recompensa', None) or getattr(it, 'recompensa_unit', None) or 0.0)
+            except Exception:
+                unit = 0.0
+            try:
+                minimo = int(getattr(it, 'quantidade', None) or getattr(it, 'minimo_qtd', None) or 1)
+            except Exception:
+                minimo = 1
+
+            if unit > 0 and qtd_vendida > 0 and qtd_vendida >= float(minimo):
+                valor_recomp = qtd_vendida * unit
+
+        out[vend] = float(out.get(vend, 0.0) + float(valor_recomp or 0.0))
+
+    return out
 
 # ---------------------------------------------------------------------
 # Campanhas de recompensa por quantidade (prefixo + marca)
