@@ -2986,156 +2986,156 @@ def campanhas_qtd():
                 resultados_calc.sort(key=lambda r: float(getattr(r, "valor_recompensa", 0.0) or 0.0), reverse=True)
 
                 
-# -------- Combos (resultado em cache) --------
-combos_calc = []
-total_combo = 0.0
-try:
-    if (vend or "").upper() == "__ALL__":
-        # Agregado da loja (sem listar vendedor a vendedor)
-        rows = (
-            db.query(
-                CampanhaComboResultado.combo_id,
-                CampanhaComboResultado.titulo,
-                CampanhaComboResultado.marca,
-                CampanhaComboResultado.data_inicio,
-                CampanhaComboResultado.data_fim,
-                func.sum(CampanhaComboResultado.valor_recompensa).label("valor_recompensa"),
-                func.sum(CampanhaComboResultado.atingiu_gate).label("atingiu_sum"),
-                func.count(CampanhaComboResultado.id).label("vend_count"),
-            )
-            .filter(
-                CampanhaComboResultado.emp == emp,
-                CampanhaComboResultado.competencia_ano == int(ano),
-                CampanhaComboResultado.competencia_mes == int(mes),
-            )
-            .group_by(
-                CampanhaComboResultado.combo_id,
-                CampanhaComboResultado.titulo,
-                CampanhaComboResultado.marca,
-                CampanhaComboResultado.data_inicio,
-                CampanhaComboResultado.data_fim,
-            )
-            .order_by(func.sum(CampanhaComboResultado.valor_recompensa).desc())
-            .all()
-        )
-        for r in rows:
-            vc = float(getattr(r, "valor_recompensa", 0.0) or 0.0)
-            total_combo += vc
-            vend_count = int(getattr(r, "vend_count", 0) or 0)
-            atingiu_sum = int(getattr(r, "atingiu_sum", 0) or 0)
-            taxa = (100.0 * (atingiu_sum / vend_count)) if vend_count else 0.0
-            combos_calc.append({
-                "tipo": "COMBO",
-                "titulo": getattr(r, "titulo", "") or "",
-                "marca": getattr(r, "marca", "") or "",
-                "produto": "KIT",
-                "parcial": None,
-                "critico_texto": f"Atingimento: {taxa:.0f}%",
-                "combo_itens": [],
-                "valor_recompensa": vc,
-                "atingiu": 1 if taxa >= 50 else 0,
-                "periodo": f"{getattr(r, 'data_inicio', '')} → {getattr(r, 'data_fim', '')}",
-            })
-    else:
-        rows = (
-            db.query(CampanhaComboResultado)
-            .filter(
-                CampanhaComboResultado.emp == emp,
-                CampanhaComboResultado.competencia_ano == int(ano),
-                CampanhaComboResultado.competencia_mes == int(mes),
-                CampanhaComboResultado.vendedor == vend,
-            )
-            .order_by(CampanhaComboResultado.valor_recompensa.desc())
-            .all()
-        )
+                # -------- Combos (resultado em cache) --------
+                combos_calc = []
+                total_combo = 0.0
+                try:
+                    if (vend or "").upper() == "__ALL__":
+                        # Agregado da loja (sem listar vendedor a vendedor)
+                        rows = (
+                            db.query(
+                                CampanhaComboResultado.combo_id,
+                                CampanhaComboResultado.titulo,
+                                CampanhaComboResultado.marca,
+                                CampanhaComboResultado.data_inicio,
+                                CampanhaComboResultado.data_fim,
+                                func.sum(CampanhaComboResultado.valor_recompensa).label("valor_recompensa"),
+                                func.sum(CampanhaComboResultado.atingiu_gate).label("atingiu_sum"),
+                                func.count(CampanhaComboResultado.id).label("vend_count"),
+                            )
+                            .filter(
+                                CampanhaComboResultado.emp == emp,
+                                CampanhaComboResultado.competencia_ano == int(ano),
+                                CampanhaComboResultado.competencia_mes == int(mes),
+                            )
+                            .group_by(
+                                CampanhaComboResultado.combo_id,
+                                CampanhaComboResultado.titulo,
+                                CampanhaComboResultado.marca,
+                                CampanhaComboResultado.data_inicio,
+                                CampanhaComboResultado.data_fim,
+                            )
+                            .order_by(func.sum(CampanhaComboResultado.valor_recompensa).desc())
+                            .all()
+                        )
+                        for r in rows:
+                            vc = float(getattr(r, "valor_recompensa", 0.0) or 0.0)
+                            total_combo += vc
+                            vend_count = int(getattr(r, "vend_count", 0) or 0)
+                            atingiu_sum = int(getattr(r, "atingiu_sum", 0) or 0)
+                            taxa = (100.0 * (atingiu_sum / vend_count)) if vend_count else 0.0
+                            combos_calc.append({
+                                "tipo": "COMBO",
+                                "titulo": getattr(r, "titulo", "") or "",
+                                "marca": getattr(r, "marca", "") or "",
+                                "produto": "KIT",
+                                "parcial": None,
+                                "critico_texto": f"Atingimento: {taxa:.0f}%",
+                                "combo_itens": [],
+                                "valor_recompensa": vc,
+                                "atingiu": 1 if taxa >= 50 else 0,
+                                "periodo": f"{getattr(r, 'data_inicio', '')} → {getattr(r, 'data_fim', '')}",
+                            })
+                    else:
+                        rows = (
+                            db.query(CampanhaComboResultado)
+                            .filter(
+                                CampanhaComboResultado.emp == emp,
+                                CampanhaComboResultado.competencia_ano == int(ano),
+                                CampanhaComboResultado.competencia_mes == int(mes),
+                                CampanhaComboResultado.vendedor == vend,
+                            )
+                            .order_by(CampanhaComboResultado.valor_recompensa.desc())
+                            .all()
+                        )
 
-        # Pré-carrega itens dos combos presentes
-        combo_ids = sorted({int(r.combo_id) for r in rows if getattr(r, "combo_id", None)})
-        itens_by_combo = {}
-        calc_cache = {}
-        if combo_ids:
-            itens_rows = (
-                db.query(CampanhaComboItem)
-                .filter(CampanhaComboItem.combo_id.in_(combo_ids))
-                .order_by(CampanhaComboItem.combo_id.asc(), CampanhaComboItem.ordem.asc(), CampanhaComboItem.id.asc())
-                .all()
-            )
-            for it in itens_rows:
-                itens_by_combo.setdefault(int(it.combo_id), []).append(it)
+                        # Pré-carrega itens dos combos presentes
+                        combo_ids = sorted({int(r.combo_id) for r in rows if getattr(r, "combo_id", None)})
+                        itens_by_combo = {}
+                        calc_cache = {}
+                        if combo_ids:
+                            itens_rows = (
+                                db.query(CampanhaComboItem)
+                                .filter(CampanhaComboItem.combo_id.in_(combo_ids))
+                                .order_by(CampanhaComboItem.combo_id.asc(), CampanhaComboItem.ordem.asc(), CampanhaComboItem.id.asc())
+                                .all()
+                            )
+                            for it in itens_rows:
+                                itens_by_combo.setdefault(int(it.combo_id), []).append(it)
 
-        for r in rows:
-            vc = float(getattr(r, "valor_recompensa", 0.0) or 0.0)
-            total_combo += vc
+                        for r in rows:
+                            vc = float(getattr(r, "valor_recompensa", 0.0) or 0.0)
+                            total_combo += vc
 
-            combo_itens = []
-            parcial = None
-            critico_texto = None
-            try:
-                key = (int(r.combo_id), (r.marca or "").strip().upper(), r.data_inicio, r.data_fim)
-                if key not in calc_cache:
-                    itens_def = itens_by_combo.get(int(r.combo_id), []) or []
-                    maps = []
-                    for it in itens_def:
-                        maps.append(_calc_qtd_por_vendedor_para_combo_item(db, emp, it, r.marca, r.data_inicio, r.data_fim))
-                    calc_cache[key] = (itens_def, maps)
-                itens_def, maps = calc_cache.get(key, ([], []))
+                            combo_itens = []
+                            parcial = None
+                            critico_texto = None
+                            try:
+                                key = (int(r.combo_id), (r.marca or "").strip().upper(), r.data_inicio, r.data_fim)
+                                if key not in calc_cache:
+                                    itens_def = itens_by_combo.get(int(r.combo_id), []) or []
+                                    maps = []
+                                    for it in itens_def:
+                                        maps.append(_calc_qtd_por_vendedor_para_combo_item(db, emp, it, r.marca, r.data_inicio, r.data_fim))
+                                    calc_cache[key] = (itens_def, maps)
+                                itens_def, maps = calc_cache.get(key, ([], []))
 
-                itens_ok = 0
-                crit_falta = -1
-                crit_ordem = 10**9
-                crit_nome = ""
-                for it, mp in zip(itens_def, maps):
-                    vendido = float((mp or {}).get(vend, 0.0) or 0.0)
-                    minimo = int(getattr(it, "minimo_qtd", 0) or 0)
-                    falta = max(minimo - vendido, 0.0)
-                    ok = falta <= 1e-9
-                    if ok:
-                        itens_ok += 1
-                    nome = (getattr(it, "nome_item", None) or getattr(it, "match_mestre", None) or getattr(it, "mestre_prefixo", None) or getattr(it, "descricao_contains", None) or "ITEM").strip()
-                    ordem = int(getattr(it, "ordem", 0) or 0)
-                    if falta > crit_falta or (abs(falta - crit_falta) <= 1e-9 and ordem < crit_ordem):
-                        crit_falta = falta
-                        crit_ordem = ordem
-                        crit_nome = nome
-                    combo_itens.append({
-                        "nome": nome,
-                        "regra": (getattr(it, "match_mestre", None) or "").strip(),
-                        "minimo": minimo,
-                        "vendido": vendido,
-                        "falta": falta,
-                        "ok": bool(ok),
-                    })
-                total_itens = len(combo_itens)
-                parcial = f"{itens_ok}/{total_itens}" if total_itens else "0/0"
-                if total_itens and itens_ok == total_itens:
-                    critico_texto = "OK"
-                elif crit_falta >= 0:
-                    critico_texto = f"Falta: {crit_nome} ({int(crit_falta) if float(crit_falta).is_integer() else crit_falta:g} un)"
-                else:
-                    critico_texto = "Sem itens"
-            except Exception:
-                combo_itens = []
-                parcial = None
-                critico_texto = None
+                                itens_ok = 0
+                                crit_falta = -1
+                                crit_ordem = 10**9
+                                crit_nome = ""
+                                for it, mp in zip(itens_def, maps):
+                                    vendido = float((mp or {}).get(vend, 0.0) or 0.0)
+                                    minimo = int(getattr(it, "minimo_qtd", 0) or 0)
+                                    falta = max(minimo - vendido, 0.0)
+                                    ok = falta <= 1e-9
+                                    if ok:
+                                        itens_ok += 1
+                                    nome = (getattr(it, "nome_item", None) or getattr(it, "match_mestre", None) or getattr(it, "mestre_prefixo", None) or getattr(it, "descricao_contains", None) or "ITEM").strip()
+                                    ordem = int(getattr(it, "ordem", 0) or 0)
+                                    if falta > crit_falta or (abs(falta - crit_falta) <= 1e-9 and ordem < crit_ordem):
+                                        crit_falta = falta
+                                        crit_ordem = ordem
+                                        crit_nome = nome
+                                    combo_itens.append({
+                                        "nome": nome,
+                                        "regra": (getattr(it, "match_mestre", None) or "").strip(),
+                                        "minimo": minimo,
+                                        "vendido": vendido,
+                                        "falta": falta,
+                                        "ok": bool(ok),
+                                    })
+                                total_itens = len(combo_itens)
+                                parcial = f"{itens_ok}/{total_itens}" if total_itens else "0/0"
+                                if total_itens and itens_ok == total_itens:
+                                    critico_texto = "OK"
+                                elif crit_falta >= 0:
+                                    critico_texto = f"Falta: {crit_nome} ({int(crit_falta) if float(crit_falta).is_integer() else crit_falta:g} un)"
+                                else:
+                                    critico_texto = "Sem itens"
+                            except Exception:
+                                combo_itens = []
+                                parcial = None
+                                critico_texto = None
 
-            combos_calc.append({
-                "tipo": "COMBO",
-                "titulo": r.titulo,
-                "marca": r.marca,
-                "produto": "KIT",
-                "parcial": parcial,
-                "critico_texto": critico_texto,
-                "combo_itens": combo_itens,
-                "valor_recompensa": vc,
-                "atingiu": int(getattr(r, "atingiu_gate", 0) or 0),
-                "periodo": f"{r.data_inicio} → {r.data_fim}",
-            })
-except Exception as _e:
-    print(f"[CAMPANHAS] aviso: combos não carregaram: {_e}")
-    combos_calc = []
-    total_combo = 0.0
+                            combos_calc.append({
+                                "tipo": "COMBO",
+                                "titulo": r.titulo,
+                                "marca": r.marca,
+                                "produto": "KIT",
+                                "parcial": parcial,
+                                "critico_texto": critico_texto,
+                                "combo_itens": combo_itens,
+                                "valor_recompensa": vc,
+                                "atingiu": int(getattr(r, "atingiu_gate", 0) or 0),
+                                "periodo": f"{r.data_inicio} → {r.data_fim}",
+                            })
+                except Exception as _e:
+                    print(f"[CAMPANHAS] aviso: combos não carregaram: {_e}")
+                    combos_calc = []
+                    total_combo = 0.0
 
-blocos.append({
+                blocos.append({
                     "emp": emp,
                     "vendedor": vend,
                     "resultados": resultados_calc,
@@ -3143,9 +3143,9 @@ blocos.append({
                     "total": total_recomp,
                     "total_combo": total_combo,
                 })
-        db.commit()
 
-        # Opções para filtros avançados (labels amigáveis)
+        db.commit()
+    # Opções para filtros avançados (labels amigáveis)
     emps_options = _get_emp_options(emps_scope)
     vendedores_options = []
     if vendedores_dropdown:
