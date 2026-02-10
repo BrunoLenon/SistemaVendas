@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+
+{% block title %}Resumo — {{ "%02d"|format(mes) }}/{{ ano }}{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+
+  <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+    <div>
+      <h3 class="m-0 page-title">🧭 Resumo — {{ "%02d"|format(mes) }}/{{ ano }}</h3>
+      <div class="text-muted mt-1">Visão rápida do mês com atalhos para detalhes.</div>
+    </div>
+    <div class="d-flex gap-2">
+      <a class="btn btn-outline-secondary btn-sm" href="/dashboard">Voltar</a>
+    </div>
+  </div>
+
+  {% from "partials/multiselect.html" import multiselect %}
+
+  <form method="get" class="card shadow-sm mb-3">
+    <div class="card-body">
+      <div class="row g-2 align-items-end filter-bar">
+        {% if role in ['admin','supervisor'] %}
+          <div class="col-md-4">
+            {{ multiselect("emp", emps_options or [], emps_sel or [], label="EMP(s)", placeholder="Todas") }}
+            <div class="form-text">Filtre o resumo por EMP (dentro do seu acesso).</div>
+          </div>
+          <div class="col-md-4">
+            {{ multiselect("vendedor", vendedores_options or [], vendedores_sel or [], label="Vendedor(es)", placeholder="Todos", all_token="__ALL__", all_label="Todos vendedores") }}
+            <div class="form-text">Opcional: filtre por vendedor.</div>
+          </div>
+        {% endif %}
+        <div class="col-6 col-md-2">
+          <label class="form-label">Mês</label>
+          <input class="form-control" type="number" name="mes" min="1" max="12" value="{{ mes }}">
+        </div>
+        <div class="col-6 col-md-2">
+          <label class="form-label">Ano</label>
+          <input class="form-control" type="number" name="ano" min="2000" max="2100" value="{{ ano }}">
+        </div>
+        <div class="col-12 col-md-2 d-grid">
+          <button class="btn btn-dark" type="submit">Aplicar</button>
+        </div>
+      </div>
+    </div>
+  </form>
+
+  <div class="kpi-grid">
+    <div class="kpi-card">
+      <div class="kpi-label">Recompensa (Total)</div>
+      <div class="kpi-value mono">{{ kpi.total|brl }}</div>
+      <div class="kpi-sub">Qtd {{ kpi.qtd|brl }} • Combo {{ kpi.combo|brl }}</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Itens no período</div>
+      <div class="kpi-value mono">{{ kpi.itens }}</div>
+      <div class="kpi-sub">Resultados já calculados (cache)</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Taxa de atingimento</div>
+      <div class="kpi-value mono">{{ '%.0f'|format(taxa_total) }}%</div>
+      <div class="kpi-bar mt-2"><span style="width: {{ taxa_total|round(0,'floor') }}%"></span></div>
+      <div class="kpi-sub">{{ kpi.atingidos }} / {{ kpi.itens }} atingidos</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Atalho</div>
+      <div class="d-flex gap-2 mt-2 flex-wrap">
+        <a class="btn btn-outline-primary btn-sm" href="/relatorios/campanhas?ano={{ ano }}&mes={{ mes }}">🎯 Relatório Campanhas</a>
+        <a class="btn btn-outline-primary btn-sm" href="/campanhas?ano={{ ano }}&mes={{ mes }}">⭐ Campanhas</a>
+      </div>
+      <div class="kpi-sub mt-2">Clique para detalhes.</div>
+    </div>
+  </div>
+
+  <div class="mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <div class="fw-semibold">Resumo por EMP</div>
+      <div class="text-muted small">Clique em uma EMP para abrir direto no relatório.</div>
+    </div>
+
+    {% if cards and (cards|length) > 0 %}
+      <div class="row g-3">
+        {% for e in cards %}
+          <div class="col-12 col-md-6 col-lg-4">
+            <div class="card shadow-sm" style="border-radius:1rem">
+              <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start gap-2">
+                  <div>
+                    <div class="text-muted small">EMP</div>
+                    <div class="fw-bold mono" style="font-size:1.15rem">{{ e.emp }}</div>
+                  </div>
+                  <span class="badge text-bg-light border mono">{{ '%.0f'|format(e.taxa) }}%</span>
+                </div>
+
+                <div class="mt-2 fw-bold mono" style="font-size:1.25rem">{{ e.total|brl }}</div>
+                <div class="text-muted small">Qtd {{ e.qtd|brl }} • Combo {{ e.combo|brl }}</div>
+
+                <div class="kpi-bar mt-2"><span style="width: {{ e.taxa|round(0,'floor') }}%"></span></div>
+
+                <div class="d-flex gap-2 mt-3 flex-wrap">
+                  <a class="btn btn-outline-dark btn-sm" href="/relatorios/campanhas?ano={{ ano }}&mes={{ mes }}&emp={{ e.emp }}">Abrir relatório</a>
+                  <a class="btn btn-outline-secondary btn-sm" href="/campanhas?ano={{ ano }}&mes={{ mes }}&emp={{ e.emp }}">Abrir campanhas</a>
+                </div>
+              </div>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="text-muted">Sem dados no período.</div>
+    {% endif %}
+  </div>
+
+</div>
+{% endblock %}

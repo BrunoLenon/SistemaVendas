@@ -339,3 +339,5 @@ body{
   box-shadow: 0 18px 50px rgba(0,0,0,.18);
 }
 .ms-option:hover{ background: rgba(148,163,184,.15); }
+
+.page-title{font-weight:800; letter-spacing:-.3px}

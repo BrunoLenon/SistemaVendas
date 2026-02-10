@@ -2017,6 +2017,124 @@ def dashboard():
     )
 
 
+
+@app.get("/resumo")
+def resumo_geral():
+    """Resumo geral (1 clique) para Admin/Supervisor/Vendedor.
+    Mostra KPIs do mês/ano e cartões por EMP (conforme permissão).
+    """
+    red = _login_required()
+    if red:
+        return red
+
+    mes, ano = _mes_ano_from_request()
+
+    role = (_role() or "").strip().lower()
+    emp_usuario = _emp()
+    vendedor_logado = (_usuario_logado() or "").strip().upper()
+
+    # Escopo de EMP
+    emps_sel = [str(e).strip() for e in _parse_multi_args("emp") if str(e).strip()]
+    if role == "admin":
+        emps_scope = emps_sel or _get_emps_com_vendas_no_periodo(ano, mes)
+    elif role == "supervisor":
+        emps_scope = [str(emp_usuario)] if emp_usuario else []
+    else:
+        base_emps = _get_emps_vendedor(vendedor_logado)
+        emps_scope = [e for e in base_emps if (not emps_sel or str(e) in {str(x) for x in emps_sel})]
+
+    # Escopo de vendedores
+    vendedores_sel = [str(v).strip().upper() for v in _parse_multi_args("vendedor") if str(v).strip()]
+    vendedores_scope = None
+    if role == "vendedor":
+        vendedores_scope = [vendedor_logado]
+    elif vendedores_sel:
+        if "__ALL__" in vendedores_sel:
+            vendedores_scope = None
+        else:
+            vendedores_scope = vendedores_sel
+
+    cards = []
+    kpi = {"total": 0.0, "qtd": 0.0, "combo": 0.0, "itens": 0, "atingidos": 0}
+
+    with SessionLocal() as db:
+        for emp in (emps_scope or []):
+            emp = str(emp)
+
+            q = db.query(CampanhaQtdResultado).filter(
+                CampanhaQtdResultado.emp == emp,
+                CampanhaQtdResultado.competencia_ano == int(ano),
+                CampanhaQtdResultado.competencia_mes == int(mes),
+            )
+            c = db.query(CampanhaComboResultado).filter(
+                CampanhaComboResultado.emp == emp,
+                CampanhaComboResultado.competencia_ano == int(ano),
+                CampanhaComboResultado.competencia_mes == int(mes),
+            )
+            if vendedores_scope:
+                q = q.filter(CampanhaQtdResultado.vendedor.in_(vendedores_scope))
+                c = c.filter(CampanhaComboResultado.vendedor.in_(vendedores_scope))
+
+            q_rows = q.all()
+            c_rows = c.all()
+
+            qtd_total = sum(float(r.valor_recompensa or 0.0) for r in q_rows)
+            combo_total = sum(float(r.valor_recompensa or 0.0) for r in c_rows)
+            total = qtd_total + combo_total
+
+            itens = len(q_rows) + len(c_rows)
+            atingidos = sum(1 for r in q_rows if int(r.atingiu_minimo or 0) == 1) + sum(1 for r in c_rows if int(r.atingiu_gate or 0) == 1)
+            taxa = (100.0 * (atingidos / itens)) if itens else 0.0
+
+            kpi["total"] += total
+            kpi["qtd"] += qtd_total
+            kpi["combo"] += combo_total
+            kpi["itens"] += itens
+            kpi["atingidos"] += atingidos
+
+            cards.append({
+                "emp": emp,
+                "total": total,
+                "qtd": qtd_total,
+                "combo": combo_total,
+                "itens": itens,
+                "atingidos": atingidos,
+                "taxa": taxa,
+            })
+
+    cards.sort(key=lambda x: float(x.get("total") or 0.0), reverse=True)
+    taxa_total = (100.0 * (kpi["atingidos"] / kpi["itens"])) if kpi["itens"] else 0.0
+
+    # Opções de filtros (admin/supervisor podem filtrar; vendedor não precisa)
+    try:
+        emps_options = _get_emp_options(emps_scope if role != "admin" else None)
+    except Exception:
+        emps_options = []
+    try:
+        # para o filtro de vendedor, buscamos a lista no período dentro das EMPs de escopo
+        vend_set = set()
+        for emp in emps_scope or []:
+            for v in _get_vendedores_emp_no_periodo(str(emp), ano, mes):
+                vend_set.add(v.strip().upper())
+        vendedores_options = sorted(vend_set)
+    except Exception:
+        vendedores_options = []
+
+    return render_template(
+        "resumo.html",
+        mes=mes, ano=ano,
+        role=role,
+        emps_scope=emps_scope,
+        emps_sel=emps_sel,
+        vendedores_sel=vendedores_sel,
+        emps_options=emps_options,
+        vendedores_options=vendedores_options,
+        cards=cards,
+        kpi=kpi,
+        taxa_total=taxa_total,
+    )
+
+
 @app.get("/percentuais")
 def percentuais():
     red = _login_required()
@@ -2867,11 +2985,163 @@ def campanhas_qtd():
                 # Ordena em memória para evitar re-query.
                 resultados_calc.sort(key=lambda r: float(getattr(r, "valor_recompensa", 0.0) or 0.0), reverse=True)
 
-                blocos.append({
+                
+# -------- Combos (resultado em cache) --------
+combos_calc = []
+total_combo = 0.0
+try:
+    if (vend or "").upper() == "__ALL__":
+        # Agregado da loja (sem listar vendedor a vendedor)
+        rows = (
+            db.query(
+                CampanhaComboResultado.combo_id,
+                CampanhaComboResultado.titulo,
+                CampanhaComboResultado.marca,
+                CampanhaComboResultado.data_inicio,
+                CampanhaComboResultado.data_fim,
+                func.sum(CampanhaComboResultado.valor_recompensa).label("valor_recompensa"),
+                func.sum(CampanhaComboResultado.atingiu_gate).label("atingiu_sum"),
+                func.count(CampanhaComboResultado.id).label("vend_count"),
+            )
+            .filter(
+                CampanhaComboResultado.emp == emp,
+                CampanhaComboResultado.competencia_ano == int(ano),
+                CampanhaComboResultado.competencia_mes == int(mes),
+            )
+            .group_by(
+                CampanhaComboResultado.combo_id,
+                CampanhaComboResultado.titulo,
+                CampanhaComboResultado.marca,
+                CampanhaComboResultado.data_inicio,
+                CampanhaComboResultado.data_fim,
+            )
+            .order_by(func.sum(CampanhaComboResultado.valor_recompensa).desc())
+            .all()
+        )
+        for r in rows:
+            vc = float(getattr(r, "valor_recompensa", 0.0) or 0.0)
+            total_combo += vc
+            vend_count = int(getattr(r, "vend_count", 0) or 0)
+            atingiu_sum = int(getattr(r, "atingiu_sum", 0) or 0)
+            taxa = (100.0 * (atingiu_sum / vend_count)) if vend_count else 0.0
+            combos_calc.append({
+                "tipo": "COMBO",
+                "titulo": getattr(r, "titulo", "") or "",
+                "marca": getattr(r, "marca", "") or "",
+                "produto": "KIT",
+                "parcial": None,
+                "critico_texto": f"Atingimento: {taxa:.0f}%",
+                "combo_itens": [],
+                "valor_recompensa": vc,
+                "atingiu": 1 if taxa >= 50 else 0,
+                "periodo": f"{getattr(r, 'data_inicio', '')} → {getattr(r, 'data_fim', '')}",
+            })
+    else:
+        rows = (
+            db.query(CampanhaComboResultado)
+            .filter(
+                CampanhaComboResultado.emp == emp,
+                CampanhaComboResultado.competencia_ano == int(ano),
+                CampanhaComboResultado.competencia_mes == int(mes),
+                CampanhaComboResultado.vendedor == vend,
+            )
+            .order_by(CampanhaComboResultado.valor_recompensa.desc())
+            .all()
+        )
+
+        # Pré-carrega itens dos combos presentes
+        combo_ids = sorted({int(r.combo_id) for r in rows if getattr(r, "combo_id", None)})
+        itens_by_combo = {}
+        calc_cache = {}
+        if combo_ids:
+            itens_rows = (
+                db.query(CampanhaComboItem)
+                .filter(CampanhaComboItem.combo_id.in_(combo_ids))
+                .order_by(CampanhaComboItem.combo_id.asc(), CampanhaComboItem.ordem.asc(), CampanhaComboItem.id.asc())
+                .all()
+            )
+            for it in itens_rows:
+                itens_by_combo.setdefault(int(it.combo_id), []).append(it)
+
+        for r in rows:
+            vc = float(getattr(r, "valor_recompensa", 0.0) or 0.0)
+            total_combo += vc
+
+            combo_itens = []
+            parcial = None
+            critico_texto = None
+            try:
+                key = (int(r.combo_id), (r.marca or "").strip().upper(), r.data_inicio, r.data_fim)
+                if key not in calc_cache:
+                    itens_def = itens_by_combo.get(int(r.combo_id), []) or []
+                    maps = []
+                    for it in itens_def:
+                        maps.append(_calc_qtd_por_vendedor_para_combo_item(db, emp, it, r.marca, r.data_inicio, r.data_fim))
+                    calc_cache[key] = (itens_def, maps)
+                itens_def, maps = calc_cache.get(key, ([], []))
+
+                itens_ok = 0
+                crit_falta = -1
+                crit_ordem = 10**9
+                crit_nome = ""
+                for it, mp in zip(itens_def, maps):
+                    vendido = float((mp or {}).get(vend, 0.0) or 0.0)
+                    minimo = int(getattr(it, "minimo_qtd", 0) or 0)
+                    falta = max(minimo - vendido, 0.0)
+                    ok = falta <= 1e-9
+                    if ok:
+                        itens_ok += 1
+                    nome = (getattr(it, "nome_item", None) or getattr(it, "match_mestre", None) or getattr(it, "mestre_prefixo", None) or getattr(it, "descricao_contains", None) or "ITEM").strip()
+                    ordem = int(getattr(it, "ordem", 0) or 0)
+                    if falta > crit_falta or (abs(falta - crit_falta) <= 1e-9 and ordem < crit_ordem):
+                        crit_falta = falta
+                        crit_ordem = ordem
+                        crit_nome = nome
+                    combo_itens.append({
+                        "nome": nome,
+                        "regra": (getattr(it, "match_mestre", None) or "").strip(),
+                        "minimo": minimo,
+                        "vendido": vendido,
+                        "falta": falta,
+                        "ok": bool(ok),
+                    })
+                total_itens = len(combo_itens)
+                parcial = f"{itens_ok}/{total_itens}" if total_itens else "0/0"
+                if total_itens and itens_ok == total_itens:
+                    critico_texto = "OK"
+                elif crit_falta >= 0:
+                    critico_texto = f"Falta: {crit_nome} ({int(crit_falta) if float(crit_falta).is_integer() else crit_falta:g} un)"
+                else:
+                    critico_texto = "Sem itens"
+            except Exception:
+                combo_itens = []
+                parcial = None
+                critico_texto = None
+
+            combos_calc.append({
+                "tipo": "COMBO",
+                "titulo": r.titulo,
+                "marca": r.marca,
+                "produto": "KIT",
+                "parcial": parcial,
+                "critico_texto": critico_texto,
+                "combo_itens": combo_itens,
+                "valor_recompensa": vc,
+                "atingiu": int(getattr(r, "atingiu_gate", 0) or 0),
+                "periodo": f"{r.data_inicio} → {r.data_fim}",
+            })
+except Exception as _e:
+    print(f"[CAMPANHAS] aviso: combos não carregaram: {_e}")
+    combos_calc = []
+    total_combo = 0.0
+
+blocos.append({
                     "emp": emp,
                     "vendedor": vend,
                     "resultados": resultados_calc,
+                    "combos": combos_calc,
                     "total": total_recomp,
+                    "total_combo": total_combo,
                 })
         db.commit()
 
