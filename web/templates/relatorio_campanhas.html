@@ -229,7 +229,7 @@
 </form>
 
       {# ===== KPI (PowerBI-like) ===== #}
-      {% set ns = namespace(total=0.0, total_qtd=0.0, total_combo=0.0, vendedores=0, itens=0, atingidos=0) %}
+      {% set ns = namespace(total=0.0, total_qtd=0.0, total_combo=0.0, total_itens_parados=0.0, vendedores=0, itens=0, atingidos=0) %}
       {% for emp in (emps_abertas or []) + (emps_fechadas or []) %}
         {% for vc in emp.vendedores or [] %}
           {% set ns.vendedores = ns.vendedores + 1 %}
@@ -241,6 +241,8 @@
               {% set ns.total_qtd = ns.total_qtd + (it.valor_recompensa or 0.0) %}
             {% elif (it.tipo or "") == "COMBO" %}
               {% set ns.total_combo = ns.total_combo + (it.valor_recompensa or 0.0) %}
+            {% elif (it.tipo or "") == "ITENS" %}
+              {% set ns.total_itens_parados = ns.total_itens_parados + (it.valor_recompensa or 0.0) %}
             {% endif %}
           {% endfor %}
         {% endfor %}
@@ -260,6 +262,11 @@
         <div class="kpi-card">
           <div class="kpi-label">Combos</div>
           <div class="kpi-value mono">R$ {{ '%.2f'|format(ns.total_combo) }}</div>
+          <div class="kpi-sub">Recompensas acumuladas</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Itens Parados</div>
+          <div class="kpi-value mono">R$ {{ '%.2f'|format(ns.total_itens_parados) }}</div>
           <div class="kpi-sub">Recompensas acumuladas</div>
         </div>
         <div class="kpi-card">
@@ -292,7 +299,7 @@
       </div>
       <div class="emp-grid">
         {% for e in (emps_abertas or []) + (emps_fechadas or []) %}
-          {% set emp_total = namespace(v=0.0, qtd=0.0, combo=0.0, itens=0, ating=0) %}
+          {% set emp_total = namespace(v=0.0, qtd=0.0, combo=0.0, itens_parados=0.0, itens=0, ating=0) %}
           {% for vc in e.vendedores or [] %}
             {% set emp_total.v = emp_total.v + (vc.total_recompensa or 0.0) %}
             {% for it in vc.itens or [] %}
@@ -302,6 +309,8 @@
                 {% set emp_total.qtd = emp_total.qtd + (it.valor_recompensa or 0.0) %}
               {% elif (it.tipo or "") == "COMBO" %}
                 {% set emp_total.combo = emp_total.combo + (it.valor_recompensa or 0.0) %}
+              {% elif (it.tipo or "") == "ITENS" %}
+                {% set emp_total.itens_parados = emp_total.itens_parados + (it.valor_recompensa or 0.0) %}
               {% endif %}
             {% endfor %}
           {% endfor %}
@@ -323,6 +332,7 @@
               <div class="d-flex flex-wrap gap-2 mt-2">
                 <span class="pill muted">Qtd: R$ {{ '%.2f'|format(emp_total.qtd) }}</span>
                 <span class="pill muted">Combo: R$ {{ '%.2f'|format(emp_total.combo) }}</span>
+                <span class="pill muted">Itens: R$ {{ '%.2f'|format(emp_total.itens_parados) }}</span>
                 <span class="pill warn">Ating.: {{ '%.0f'|format(emp_taxa) }}%</span>
               </div>
               <div class="subtitle small mt-2">Vendedores: {{ (e.vendedores|length) if e.vendedores else 0 }}</div>
@@ -496,13 +506,14 @@
                 <div class="vend-grid">
                   {% for v in e.vendedores %}
                     {% set mid = 'mB' ~ loop.index ~ 'E' ~ e.emp %}
-                    {% set vt = namespace(total=0.0, qtd=0.0, combo=0.0, itens=0, ating=0) %}
+                    {% set vt = namespace(total=0.0, qtd=0.0, combo=0.0, itens_parados=0.0, itens=0, ating=0) %}
                     {% for it in v.itens or [] %}
                       {% set vt.total = vt.total + (it.valor_recompensa or 0.0) %}
                       {% set vt.itens = vt.itens + 1 %}
                       {% if (it.atingiu or 0) == 1 %}{% set vt.ating = vt.ating + 1 %}{% endif %}
                       {% if (it.tipo or '') == 'QTD' %}{% set vt.qtd = vt.qtd + (it.valor_recompensa or 0.0) %}{% endif %}
                       {% if (it.tipo or '') == 'COMBO' %}{% set vt.combo = vt.combo + (it.valor_recompensa or 0.0) %}{% endif %}
+                      {% if (it.tipo or '') == 'ITENS' %}{% set vt.itens_parados = vt.itens_parados + (it.valor_recompensa or 0.0) %}{% endif %}
                     {% endfor %}
                     {% set vtaxa = ((vt.ating / vt.itens * 100) if vt.itens else 0) %}
 
@@ -517,6 +528,7 @@
                       <div class="d-flex flex-wrap gap-2 mt-2">
                         <span class="pill muted">Qtd: R$ {{ '%.2f'|format(vt.qtd) }}</span>
                         <span class="pill muted">Combo: R$ {{ '%.2f'|format(vt.combo) }}</span>
+                        <span class="pill muted">Itens: R$ {{ '%.2f'|format(vt.itens_parados) }}</span>
                         <span class="pill warn">Ating.: {{ '%.0f'|format(vtaxa) }}%</span>
                       </div>
                       <div class="subtitle small mt-2">{{ (v.itens|length) if v.itens else 0 }} campanha(s) no período</div>
@@ -543,6 +555,7 @@
                               <span class="glass-chip mono">Total: R$ {{ '%.2f'|format(vt.total) }}</span>
                               <span class="glass-chip">Qtd: R$ {{ '%.2f'|format(vt.qtd) }}</span>
                               <span class="glass-chip">Combo: R$ {{ '%.2f'|format(vt.combo) }}</span>
+                              <span class="glass-chip">Itens: R$ {{ '%.2f'|format(vt.itens_parados) }}</span>
                               <span class="glass-chip">Ating.: {{ '%.0f'|format(vtaxa) }}%</span>
                             </div>
 
@@ -570,6 +583,8 @@
                                       <td>
                                         {% if it.tipo == 'COMBO' %}
                                           <span class="badge text-bg-purple" style="background:#6f42c1;">COMBO</span>
+                                        {% elif it.tipo == 'ITENS' %}
+                                          <span class="badge text-bg-warning text-dark">ITENS</span>
                                         {% else %}
                                           <span class="badge text-bg-primary">QTD</span>
                                         {% endif %}
@@ -661,13 +676,14 @@
                 <div class="vend-grid">
                   {% for v in e.vendedores %}
                     {% set mid = 'mC' ~ loop.index ~ 'E' ~ e.emp %}
-                    {% set vt = namespace(total=0.0, qtd=0.0, combo=0.0, itens=0, ating=0) %}
+                    {% set vt = namespace(total=0.0, qtd=0.0, combo=0.0, itens_parados=0.0, itens=0, ating=0) %}
                     {% for it in v.itens or [] %}
                       {% set vt.total = vt.total + (it.valor_recompensa or 0.0) %}
                       {% set vt.itens = vt.itens + 1 %}
                       {% if (it.atingiu or 0) == 1 %}{% set vt.ating = vt.ating + 1 %}{% endif %}
                       {% if (it.tipo or '') == 'QTD' %}{% set vt.qtd = vt.qtd + (it.valor_recompensa or 0.0) %}{% endif %}
                       {% if (it.tipo or '') == 'COMBO' %}{% set vt.combo = vt.combo + (it.valor_recompensa or 0.0) %}{% endif %}
+                      {% if (it.tipo or '') == 'ITENS' %}{% set vt.itens_parados = vt.itens_parados + (it.valor_recompensa or 0.0) %}{% endif %}
                     {% endfor %}
                     {% set vtaxa = ((vt.ating / vt.itens * 100) if vt.itens else 0) %}
 
@@ -682,6 +698,7 @@
                       <div class="d-flex flex-wrap gap-2 mt-2">
                         <span class="pill muted">Qtd: R$ {{ '%.2f'|format(vt.qtd) }}</span>
                         <span class="pill muted">Combo: R$ {{ '%.2f'|format(vt.combo) }}</span>
+                        <span class="pill muted">Itens: R$ {{ '%.2f'|format(vt.itens_parados) }}</span>
                         <span class="pill warn">Ating.: {{ '%.0f'|format(vtaxa) }}%</span>
                       </div>
                       <div class="subtitle small mt-2">{{ (v.itens|length) if v.itens else 0 }} campanha(s) no período</div>
@@ -708,6 +725,7 @@
                               <span class="glass-chip mono">Total: R$ {{ '%.2f'|format(vt.total) }}</span>
                               <span class="glass-chip">Qtd: R$ {{ '%.2f'|format(vt.qtd) }}</span>
                               <span class="glass-chip">Combo: R$ {{ '%.2f'|format(vt.combo) }}</span>
+                              <span class="glass-chip">Itens: R$ {{ '%.2f'|format(vt.itens_parados) }}</span>
                               <span class="glass-chip">Ating.: {{ '%.0f'|format(vtaxa) }}%</span>
                             </div>
 
@@ -735,6 +753,8 @@
                                       <td>
                                         {% if it.tipo == 'COMBO' %}
                                           <span class="badge text-bg-purple" style="background:#6f42c1;">COMBO</span>
+                                        {% elif it.tipo == 'ITENS' %}
+                                          <span class="badge text-bg-warning text-dark">ITENS</span>
                                         {% else %}
                                           <span class="badge text-bg-primary">QTD</span>
                                         {% endif %}
