@@ -3152,8 +3152,7 @@ def _calc_qtd_por_vendedor_para_combo_item(db, emp: str, item: CampanhaComboItem
         Venda.movimento >= periodo_ini,
         Venda.movimento <= periodo_fim,
         ~Venda.mov_tipo_movto.in_(["DS", "CA"]),
-        func.upper(func.trim(cast(Venda.marca, String))) == marca_up,
-    ]
+        ]
 
     mp = (item.mestre_prefixo or "").strip()
     dc = (item.descricao_contains or "").strip()
@@ -3171,7 +3170,7 @@ def _calc_qtd_por_vendedor_para_combo_item(db, emp: str, item: CampanhaComboItem
                 dc = mm
 
     if mp:
-        conds.append(func.upper(func.trim(cast(Venda.mestre, String))).like(mp.strip().upper() + "%"))
+        conds.append(func.upper(func.trim(cast(Venda.mestre, String))) == mp.strip().upper())
     if dc:
         needle = _norm_text(dc)
         campo = func.lower(func.trim(func.coalesce(Venda.descricao_norm, Venda.descricao, "")))
@@ -3253,12 +3252,13 @@ def _recalcular_resultados_combos_para_scope(ano: int, mes: int, emps: list[str]
                     for it, qtd_map in zip(itens, qtd_por_item):
                         qtd = float(qtd_map.get(vend, 0.0))
                         minimo = float(it.minimo_qtd or 0.0)
-                        if minimo > 0 and qtd < minimo:
+                        if minimo <= 0:
                             atingiu = 0
                             break
-                        unit = it.valor_unitario if it.valor_unitario is not None else combo.valor_unitario_global
-                        unit = float(unit or 0.0)
-                        total += qtd * unit
+                        if qtd < minimo:
+                            atingiu = 0
+                            break
+                        total += float(it.valor_unitario or 0.0)
                     if not atingiu:
                         total = 0.0
 
