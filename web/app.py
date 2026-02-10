@@ -3450,51 +3450,35 @@ def relatorio_campanhas():
         else:
             vendedores = [vendedor_logado]
         vendedores_por_emp[emp] = vendedores
-
-    # Performance: NÃO recalcular automaticamente em todo carregamento.
-    # - Recalcula apenas quando o usuário pedir (?recalc=1)
-    # - Ou quando não existir nenhum snapshot salvo para a competência/escopo (primeira vez do mês)
-    recalc = str(request.args.get("recalc") or "").strip() == "1"
-    need_recalc = False
-    if not recalc:
-        try:
-            with SessionLocal() as _dbchk:
-                has_qtd = (
-                    _dbchk.query(CampanhaQtdResultado.id)
-                    .filter(
-                        CampanhaQtdResultado.competencia_ano == int(ano),
-                        CampanhaQtdResultado.competencia_mes == int(mes),
-                        CampanhaQtdResultado.emp.in_([str(e) for e in emps_scope]),
-                    )
-                    .limit(1)
-                    .first()
-                    is not None
-                )
-                has_combo = (
-                    _dbchk.query(CampanhaComboResultado.id)
-                    .filter(
-                        CampanhaComboResultado.competencia_ano == int(ano),
-                        CampanhaComboResultado.competencia_mes == int(mes),
-                        CampanhaComboResultado.emp.in_([str(e) for e in emps_scope]),
-                    )
-                    .limit(1)
-                    .first()
-                    is not None
-                )
-                need_recalc = not (has_qtd or has_combo)
-        except Exception as e:
-            # Se falhar a checagem, não força recálculo (evita deixar a página pesada),
-            # mas deixa rastreável no log.
-            print(f"[RELATORIO_CAMPANHAS] falha checando snapshots existentes: {e}")
-            need_recalc = False
-
-    if recalc or need_recalc:
+    # Recalculo pesado: por padrão NÃO roda ao abrir (performance).
+    # Para forçar, use ?recalc=1 (ou clique no botão Recalcular).
+    force_recalc = str(request.args.get('recalc') or '').strip() in ('1','true','True','sim','yes')
+    if force_recalc:
         try:
             _recalcular_resultados_campanhas_para_scope(ano, mes, emps_scope, vendedores_por_emp)
             _recalcular_resultados_combos_para_scope(ano, mes, emps_scope, vendedores_por_emp)
+            flash('Resultados recalculados com sucesso.', 'success')
         except Exception as e:
             print(f"[RELATORIO_CAMPANHAS] erro ao recalcular snapshots: {e}")
-            flash("Não foi possível recalcular os resultados das campanhas agora. Exibindo dados já salvos.", "warning")
+            flash('Não foi possível recalcular os resultados das campanhas agora. Exibindo dados já salvos.', 'warning')
+    else:
+        # Se não tiver cache ainda, avisa o usuário (sem travar a página).
+        try:
+            qtd_count = db.query(CampanhaQtdResultado).filter(
+                CampanhaQtdResultado.ano == ano,
+                CampanhaQtdResultado.mes == mes,
+                CampanhaQtdResultado.emp.in_(emps_scope),
+            ).count()
+            combo_count = db.query(CampanhaComboResultado).filter(
+                CampanhaComboResultado.ano == ano,
+                CampanhaComboResultado.mes == mes,
+                CampanhaComboResultado.emp.in_(emps_scope),
+            ).count()
+            if (qtd_count + combo_count) == 0:
+                flash('Ainda não há resultados calculados para este período/filtro. Clique em “Recalcular” para gerar.', 'info')
+        except Exception as e:
+            # Se algum model/tabela não existir no ambiente, não derruba a página.
+            print(f"[RELATORIO_CAMPANHAS] aviso ao checar cache: {e}")
 
     # Carrega resultados e organiza para o template
     emps_todos = []  # para tab A (cadastros)
@@ -3536,26 +3520,11 @@ def relatorio_campanhas():
                 .all()
             )
 
-            # Itens dos combos (para exibir no cadastro igual Campanhas Qtd)
-            combo_ids = [int(c.id) for c in (combos_defs or []) if getattr(c, "id", None) is not None]
-            combos_itens_map: dict[int, list[CampanhaComboItem]] = {}
-            if combo_ids:
-                rows_it = (
-                    db.query(CampanhaComboItem)
-                    .filter(CampanhaComboItem.combo_id.in_(combo_ids))
-                    .order_by(CampanhaComboItem.combo_id.asc(), CampanhaComboItem.ordem.asc(), CampanhaComboItem.id.asc())
-                    .all()
-                )
-                for it in rows_it:
-                    combos_itens_map.setdefault(int(it.combo_id), []).append(it)
-
-
             emps_todos.append({
                 "emp": emp,
                 "fechado": bool(fech_map.get(emp, False)),
                 "campanhas_qtd": campanhas_qtd_defs,
                 "combos": combos_defs,
-                "combos_itens_map": combos_itens_map,
             })
 
             # -------- Resultados (Tab B/C) --------
