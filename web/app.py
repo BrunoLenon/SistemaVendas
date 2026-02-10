@@ -5868,8 +5868,12 @@ def admin_combos():
 def admin_fechamento():
     """Página dedicada de fechamento mensal (ADMIN).
 
-    Responsável por travar/reativar a competência (EMP + mês/ano), servindo de base
-    para relatórios consolidados e impedindo alterações em campanhas/resumos quando fechado.
+    Modelo recomendado (ERP-like):
+      - status consolidado: ABERTO | A_PAGAR | PAGO
+      - TRAVA = status != ABERTO
+      - Se status == PAGO, reabrir somente com force=1 (protege histórico)
+      - Auditoria em fechamento_auditoria (fail-safe)
+      - Export CSV por competência (rota /admin/fechamento/export)
     """
     red = _admin_required()
     if red:
@@ -5879,7 +5883,6 @@ def admin_fechamento():
     ano = int(request.values.get("ano") or hoje.year)
     mes = int(request.values.get("mes") or hoje.month)
 
-    # multi-EMP: fecha em lote quando selecionar mais de uma EMP
     # multi-EMP: lê tanto querystring (?emp=101&emp=102) quanto POST (inputs hidden name=emp)
     emps_sel = []
     try:
@@ -5895,9 +5898,9 @@ def admin_fechamento():
 
     msgs: list[str] = []
     status_por_emp: dict[str, dict] = {}
+    auditoria_rows: list[dict] = []
 
-    # Normaliza a ação vinda do formulário (alguns navegadores/JS podem enviar
-    # variações, ex.: sem underscore, com hífen ou com espaços).
+    # Normaliza ação
     acao_raw = (request.form.get("acao") or "").strip().lower()
     acao = {
         "fechar_a_pagar": "fechar_a_pagar",
@@ -5909,7 +5912,28 @@ def admin_fechamento():
         "pago": "fechar_pago",
         "reabrir": "reabrir",
         "abrir": "reabrir",
+        "reabrir_forcado": "reabrir_forcado",
+        "reabrir-forcado": "reabrir_forcado",
     }.get(acao_raw, acao_raw)
+
+    def _norm_status(s: str | None) -> str:
+        s = (s or "").strip().upper()
+        if s in {"A PAGAR", "A_PAGAR", "APAGAR", "A-PAGAR"}:
+            return "A_PAGAR"
+        if s in {"PAGO", "PAG0"}:
+            return "PAGO"
+        # compat legado
+        if s in {"ABERTO", "OPEN"}:
+            return "ABERTO"
+        if (s or "").strip().lower() in {"a_pagar", "apagar"}:
+            return "A_PAGAR"
+        if (s or "").strip().lower() == "pago":
+            return "PAGO"
+        return "ABERTO"
+
+    def _status_to_db(s: str) -> str:
+        # Mantemos o formato consolidado na coluna status (se existir)
+        return _norm_status(s)
 
     with SessionLocal() as db:
         # Carrega opções de EMP para o filtro (admin: todas cadastradas, fallback: EMPs com vendas no período)
@@ -5923,16 +5947,12 @@ def admin_fechamento():
             except Exception:
                 emps_all = []
 
-        if request.method == "POST" and acao in {"fechar_a_pagar", "fechar_pago", "reabrir"}:
+        # ---- AÇÃO (POST) ----
+        if request.method == "POST" and acao in {"fechar_a_pagar", "fechar_pago", "reabrir", "reabrir_forcado"}:
             if not emps_sel:
                 msgs.append("⚠️ Selecione ao menos 1 EMP para fechar/reabrir.")
             else:
-                alvo_status = None
                 updated_count = 0
-                if acao == "fechar_a_pagar":
-                    alvo_status = "a_pagar"
-                elif acao == "fechar_pago":
-                    alvo_status = "pago"
                 for emp in emps_sel:
                     emp = _emp_norm(emp)
                     if not emp:
@@ -5951,26 +5971,29 @@ def admin_fechamento():
                             rec = FechamentoMensal(emp=emp, ano=int(ano), mes=int(mes), fechado=False)
                             db.add(rec)
 
-                        status_anterior = (getattr(rec, "status", None) or "aberto").strip().lower()
+                        status_anterior = _norm_status(getattr(rec, "status", None))
 
-                        # Regra: se estiver PAGO, não reabre sem "force=1" (protege histórico)
-                        if acao == "reabrir" and status_anterior == "pago" and (request.values.get("force") or "") != "1":
-                            msgs.append(f"🔒 EMP {emp} está como PAGO em {mes:02d}/{ano}. Para reabrir, use o modo forçado (force=1).")
-                            continue
+                        # Reabrir de PAGO exige force=1 OU ação reabrir_forcado
+                        force = (request.values.get("force") or "").strip()
+                        if acao in {"reabrir", "reabrir_forcado"} and status_anterior == "PAGO":
+                            if acao != "reabrir_forcado" and force != "1":
+                                msgs.append(f"🔒 EMP {emp} está como PAGO em {mes:02d}/{ano}. Para reabrir, use Reabrir (forçado).")
+                                continue
 
-                        if acao in {"fechar_a_pagar", "fechar_pago"}:
-                            rec.fechado = True
-                            rec.fechado_em = datetime.utcnow()
-                            # status financeiro (controle)
-                            if hasattr(rec, "status") and alvo_status:
-                                rec.status = alvo_status
+                        # Define status alvo
+                        if acao == "fechar_a_pagar":
+                            status_novo = "A_PAGAR"
+                        elif acao == "fechar_pago":
+                            status_novo = "PAGO"
                         else:
-                            rec.fechado = False
-                            rec.fechado_em = datetime.utcnow()  # mantém não-nulo
-                            if hasattr(rec, "status"):
-                                rec.status = "aberto"
+                            status_novo = "ABERTO"
 
-                        status_novo = (getattr(rec, "status", None) or "aberto").strip().lower()
+                        # Persiste: status consolidado + trava derivada
+                        if hasattr(rec, "status"):
+                            rec.status = _status_to_db(status_novo)
+                        rec.fechado = True if status_novo != "ABERTO" else False
+                        rec.fechado_em = datetime.utcnow()  # mantém registro da última mudança
+
                         _auditar_fechamento(
                             db,
                             emp=emp,
@@ -5981,12 +6004,11 @@ def admin_fechamento():
                             status_novo=status_novo,
                             detalhe="via /admin/fechamento",
                         )
-
                         updated_count += 1
-                        # commit no final do lote (mais rápido e consistente)
                     except Exception:
                         app.logger.exception("Erro ao preparar fechamento mensal")
                         msgs.append(f"❌ Falha ao atualizar fechamento da EMP {emp}.")
+
                 if updated_count > 0:
                     try:
                         db.commit()
@@ -5995,17 +6017,15 @@ def admin_fechamento():
                         db.rollback()
                         app.logger.exception("Erro ao commitar fechamento mensal")
                         msgs.append("❌ Falha ao salvar alterações no fechamento.")
-                else:
-                    if not msgs:
-                        msgs.append("⚠️ Nenhuma EMP válida para atualizar.")
-        # Status para tela
+
+        # ---- STATUS PARA TELA ----
+        statuses = []
         for emp in (emps_sel or []):
             emp = _emp_norm(emp)
             if not emp:
                 continue
-            fechado = False
-            fechado_em = None
-            status_fin = "aberto"
+
+            rec = None
             try:
                 rec = (
                     db.query(FechamentoMensal)
@@ -6016,17 +6036,77 @@ def admin_fechamento():
                     )
                     .first()
                 )
-                if rec:
-                    if getattr(rec, "status", None):
-                        status_fin = rec.status
-                    if rec.fechado:
-                        fechado = True
-                        fechado_em = rec.fechado_em
             except Exception:
-                fechado = False
-            status_por_emp[emp] = {"fechado": fechado, "fechado_em": fechado_em, "status": status_fin}
+                rec = None
+
+            st = _norm_status(getattr(rec, "status", None) if rec else None)
+            fechado_em = getattr(rec, "fechado_em", None) if rec else None
+            trava = (st != "ABERTO")
+            status_por_emp[emp] = {
+                "status": st,
+                "trava": trava,
+                "fechado": trava,
+                "fechado_em": fechado_em,
+            }
+            statuses.append(st)
+
+        # Status geral do período (para controlar botões)
+        ui_status = "ABERTO"
+        if statuses:
+            if len(set(statuses)) == 1:
+                ui_status = statuses[0]
+            else:
+                ui_status = "MISTO"
+
+        # Auditoria (últimas ações do período/EMPs)
+        try:
+            emp_list = [str(_emp_norm(e)) for e in (emps_sel or []) if str(_emp_norm(e))]
+            if emp_list:
+                q = text(
+                    """
+                    SELECT emp, ano, mes, acao, status_anterior, status_novo, usuario, detalhe, created_at
+                    FROM fechamento_auditoria
+                    WHERE ano = :ano AND mes = :mes AND emp = ANY(:emps)
+                    ORDER BY created_at DESC
+                    LIMIT 150
+                    """
+                )
+                res = db.execute(q, {"ano": int(ano), "mes": int(mes), "emps": emp_list}).fetchall()
+            else:
+                q = text(
+                    """
+                    SELECT emp, ano, mes, acao, status_anterior, status_novo, usuario, detalhe, created_at
+                    FROM fechamento_auditoria
+                    WHERE ano = :ano AND mes = :mes
+                    ORDER BY created_at DESC
+                    LIMIT 150
+                    """
+                )
+                res = db.execute(q, {"ano": int(ano), "mes": int(mes)}).fetchall()
+            auditoria_rows = [
+                {
+                    "emp": r[0],
+                    "ano": r[1],
+                    "mes": r[2],
+                    "acao": r[3],
+                    "status_anterior": r[4],
+                    "status_novo": r[5],
+                    "usuario": r[6],
+                    "detalhe": r[7],
+                    "created_at": r[8],
+                }
+                for r in (res or [])
+            ]
+        except Exception:
+            auditoria_rows = []
 
     emps_options = _get_emp_options(emps_all)
+
+    # flags para o template (botões)
+    can_fechar_apagar = (ui_status == "ABERTO" or ui_status == "MISTO")
+    can_fechar_pago = (ui_status in {"ABERTO", "A_PAGAR", "MISTO"})
+    can_reabrir = (ui_status in {"A_PAGAR", "MISTO"})
+    can_reabrir_forcado = (ui_status in {"PAGO", "MISTO"})
 
     return render_template(
         "admin_fechamento.html",
@@ -6036,6 +6116,12 @@ def admin_fechamento():
         emps_sel=emps_sel,
         emps_options=emps_options,
         status_por_emp=status_por_emp,
+        ui_status=ui_status,
+        can_fechar_apagar=can_fechar_apagar,
+        can_fechar_pago=can_fechar_pago,
+        can_reabrir=can_reabrir,
+        can_reabrir_forcado=can_reabrir_forcado,
+        auditoria_rows=auditoria_rows,
         msgs=msgs,
     )
 
