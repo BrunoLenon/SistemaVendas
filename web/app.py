@@ -4219,19 +4219,41 @@ def relatorio_campanhas():
                 })
             # ordena campanhas dentro do vendedor (maior recompensa primeiro)
             vendedores_cards = []
+            emp_tot_qtd = 0.0
+            emp_tot_combo = 0.0
+            emp_tot_itens = 0.0
+            emp_tot_geral = 0.0
+
             for v in sorted(by_vend.keys()):
                 itens = by_vend[v]
                 itens.sort(key=lambda x: (x.get("valor_recompensa", 0.0)), reverse=True)
-                total_v = sum(float(x.get("valor_recompensa") or 0.0) for x in itens)
+
+                tot_qtd = sum(float(x.get("valor_recompensa") or 0.0) for x in itens if (x.get("tipo") == "QTD"))
+                tot_combo = sum(float(x.get("valor_recompensa") or 0.0) for x in itens if (x.get("tipo") == "COMBO"))
+                tot_itens = sum(float(x.get("valor_recompensa") or 0.0) for x in itens if (x.get("tipo") == "ITENS"))
+                total_v = float(tot_qtd + tot_combo + tot_itens)
+
+                emp_tot_qtd += float(tot_qtd)
+                emp_tot_combo += float(tot_combo)
+                emp_tot_itens += float(tot_itens)
+                emp_tot_geral += float(total_v)
+
                 vendedores_cards.append({
                     "vendedor": v,
                     "total_recompensa": float(total_v),
+                    "total_qtd": float(tot_qtd),
+                    "total_combo": float(tot_combo),
+                    "total_itens": float(tot_itens),
                     "itens": itens,
                 })
 
             emp_payload = {
                 "emp": emp,
                 "fechado": bool(fech_map.get(emp, False)),
+                "total_qtd": float(emp_tot_qtd),
+                "total_combo": float(emp_tot_combo),
+                "total_itens": float(emp_tot_itens),
+                "total_geral": float(emp_tot_geral),
                 "vendedores": vendedores_cards,
             }
             if emp_payload["fechado"]:
@@ -4257,6 +4279,12 @@ def relatorio_campanhas():
         vendedores_options = [{"value": v, "label": v} for v in vset]
     except Exception:
         vendedores_options = []
+        # KPIs gerais (Qtd + Combo + Itens Parados)
+    kpi_total_qtd = sum(float(e.get("total_qtd") or 0.0) for e in (emps_todos or []))
+    kpi_total_combo = sum(float(e.get("total_combo") or 0.0) for e in (emps_todos or []))
+    kpi_total_itens = sum(float(e.get("total_itens") or 0.0) for e in (emps_todos or []))
+    kpi_total_geral = float(kpi_total_qtd + kpi_total_combo + kpi_total_itens)
+
     return render_template(
             "relatorio_campanhas.html",
             role=role,
@@ -4271,6 +4299,10 @@ def relatorio_campanhas():
             vendedores_sel=vendedores_sel,
             vendedores_options=vendedores_options,
             vendedor=vendedor_logado,
+            kpi_total_qtd=kpi_total_qtd,
+            kpi_total_combo=kpi_total_combo,
+            kpi_total_itens=kpi_total_itens,
+            kpi_total_geral=kpi_total_geral,
         )
 
 
