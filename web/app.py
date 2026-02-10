@@ -2653,6 +2653,61 @@ def itens_parados_pdf():
     filename = f"itens_parados_{mes:02d}_{ano}.pdf"
     return send_file(buf, mimetype="application/pdf", as_attachment=True, download_name=filename)
 
+
+# ---------------------------------------------------------------------
+# Itens Parados -> Recompensa (para somar com campanhas no relatório)
+# ---------------------------------------------------------------------
+def _calc_itens_parados_recompensa_por_emp_vendedor(
+    db,
+    ano: int,
+    mes: int,
+    emp: str,
+    vendedores: list[str] | None = None,
+) -> dict[str, float]:
+    """Calcula a recompensa de Itens Parados no período (mês/ano) por vendedor.
+
+    Regra (igual à tela /itens_parados):
+    - Considera apenas vendas OA
+    - Join com ItemParado (emp + codigo==mestre)
+    - Soma: valor_total * (recompensa_pct/100)
+    - Considera apenas itens ativos (se a coluna `ativo` existir)
+    """
+    inicio, fim = _periodo_bounds(int(ano), int(mes))
+
+    vend_list = [v.strip().upper() for v in (vendedores or []) if (v or "").strip()]
+    ativo_col = getattr(ItemParado, "ativo", None)
+
+    valor_expr = func.coalesce(Venda.valor_total, 0.0) * (func.coalesce(ItemParado.recompensa_pct, 0.0) / 100.0)
+
+    q = (
+        db.query(
+            func.upper(cast(Venda.vendedor, String)).label("vendedor"),
+            func.coalesce(func.sum(valor_expr), 0.0).label("valor_recomp"),
+        )
+        .join(
+            ItemParado,
+            and_(
+                cast(ItemParado.emp, String) == cast(Venda.emp, String),
+                cast(ItemParado.codigo, String) == cast(Venda.mestre, String),
+            ),
+        )
+        .filter(
+            cast(Venda.emp, String) == str(emp),
+            Venda.movimento >= inicio,
+            Venda.movimento < fim,
+            Venda.mov_tipo_movto == "OA",
+        )
+    )
+
+    if ativo_col is not None:
+        q = q.filter(ativo_col == True)
+    if vend_list:
+        q = q.filter(func.upper(cast(Venda.vendedor, String)).in_(vend_list))
+
+    rows = q.group_by(func.upper(cast(Venda.vendedor, String))).all()
+    return {str(r.vendedor).strip().upper(): float(r.valor_recomp or 0.0) for r in rows}
+
+
 # ---------------------------------------------------------------------
 # Campanhas de recompensa por quantidade (prefixo + marca)
 # ---------------------------------------------------------------------
@@ -4015,6 +4070,35 @@ def relatorio_campanhas():
                     "periodo": f"{r.data_inicio} → {r.data_fim}",
                 })
 
+
+            # ---- Itens Parados (3ª campanha) ----
+            try:
+                itens_map = _calc_itens_parados_recompensa_por_emp_vendedor(
+                    db,
+                    ano=int(ano),
+                    mes=int(mes),
+                    emp=str(emp),
+                    vendedores=[v.strip().upper() for v in (vendedores or []) if (v or "").strip()] if vendedores else None,
+                )
+            except Exception as _e:
+                app.logger.warning(f"[RELATORIO_CAMPANHAS] aviso: não foi possível calcular itens parados: {_e}")
+                itens_map = {}
+
+            for vend_nome, valor_recomp in (itens_map or {}).items():
+                if float(valor_recomp or 0.0) <= 0.0:
+                    continue
+                vkey = (vend_nome or "").strip().upper()
+                by_vend.setdefault(vkey, []).append({
+                    "tipo": "ITENS",
+                    "titulo": "Itens Parados",
+                    "marca": "",
+                    "produto": "Config Itens Parados",
+                    "qtd": None,
+                    "valor_recompensa": float(valor_recomp or 0.0),
+                    "atingiu": 1,
+                    "status_pagamento": "PENDENTE",
+                    "periodo": f"{inicio_mes} → {fim_mes - timedelta(days=1)}",
+                })
             # ordena campanhas dentro do vendedor (maior recompensa primeiro)
             vendedores_cards = []
             for v in sorted(by_vend.keys()):
