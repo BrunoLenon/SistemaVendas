@@ -2340,6 +2340,15 @@ def devolucoes():
     )
 
 
+
+def _venda_qtd_col():
+    """Retorna a coluna de quantidade vendida no modelo Venda.
+
+    O projeto já usou nomes diferentes ao longo do tempo (qtde_vendida / qtidade_vendida).
+    Para evitar quebra em produção, escolhemos a que existir no modelo.
+    """
+    return getattr(Venda, "qtde_vendida", None) or getattr(Venda, "qtidade_vendida", None)
+
 @app.get("/itens_parados")
 def itens_parados():
     """Relatório de itens parados (liquidação) por EMP.
@@ -2423,7 +2432,11 @@ def itens_parados():
         e = str(it.emp).strip() if it.emp is not None else ''
         itens_por_emp.setdefault(e, []).append(it)
 
-    # --- Calcular vendido_total por (emp, codigo) e recompensa ---
+        qtd_col = _venda_qtd_col()
+    if qtd_col is None:
+        logging.warning("Venda: coluna de quantidade vendida não encontrada (qtde_vendida/qtidade_vendida).")
+
+# --- Calcular vendido_total por (emp, codigo) e recompensa ---
     vendido_total_map = {}
     recomp_map = {}
 
@@ -2443,7 +2456,7 @@ def itens_parados():
                             Venda.emp,
                             Venda.mestre,
                             func.coalesce(func.sum(func.coalesce(Venda.valor_total, 0.0)), 0.0).label("valor_vendido"),
-                            func.coalesce(func.sum(func.coalesce(Venda.qtidade_vendida, 0.0)), 0.0).label("qtd_vendida"),
+                            func.coalesce(func.sum(func.coalesce(qtd_col, 0.0)), 0.0).label("qtd_vendida"),
                         )
                         .filter(Venda.emp.in_(emp_scopes))
                         .filter(Venda.vendedor == vendedor_alvo)
@@ -2718,7 +2731,7 @@ def _calc_itens_parados_recompensa_por_emp_vendedor(
        - valor = SUM(valor_total) * (pct/100)
 
     B) Valor por unidade (recomendado e compatível com sua tabela atual):
-       - usa ItemParado.recompensa (R$ por unidade) e Venda.qtidade_vendida
+       - usa ItemParado.recompensa (R$ por unidade) e qtd_col
        - opcional gate: ItemParado.quantidade (mínimo). Se existir:
             se qtd_vendida < minimo -> 0
             se qtd_vendida >= minimo -> qtd_vendida * recompensa
@@ -2743,7 +2756,7 @@ def _calc_itens_parados_recompensa_por_emp_vendedor(
         db.query(
             func.upper(cast(Venda.vendedor, String)).label('vendedor'),
             cast(Venda.mestre, String).label('codigo'),
-            func.coalesce(func.sum(func.coalesce(Venda.qtidade_vendida, 0.0)), 0.0).label('qtd_vendida'),
+            func.coalesce(func.sum(func.coalesce(qtd_col, 0.0)), 0.0).label('qtd_vendida'),
             func.coalesce(func.sum(func.coalesce(Venda.valor_total, 0.0)), 0.0).label('valor_vendido'),
         )
         .join(
@@ -2977,6 +2990,10 @@ def _calc_resultado_all_vendedores(
     Mantém as mesmas regras de cálculo (qtd_vendida/valor_total, exclusões DS/CA, match por prefixo+marca),
     apenas removendo o filtro por vendedor.
     """
+    qtd_col = _venda_qtd_col()
+    if qtd_col is None:
+        return {}
+
     emp = str(emp)
 
     campo_match = (getattr(campanha, "campo_match", None) or "codigo").strip().lower()
