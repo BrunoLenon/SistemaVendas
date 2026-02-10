@@ -2740,8 +2740,13 @@ def campanhas_qtd():
     mes = int(request.args.get("mes") or hoje.month)
     ano = int(request.args.get("ano") or hoje.year)
 
+    recalc = str(request.args.get('recalc') or '').strip() in ('1','true','True','yes','YES')
+
     # vendedor alvo
-    vendedor_logado = (_usuario_logado() or "").strip().upper()
+    from authz import get_user_scope
+
+    scope = get_user_scope()
+    vendedor_logado = (str(scope.get("vendedor") or scope.get("usuario") or "")).strip().upper()
 
     # Suporta multi-seleção via querystring: ?vendedor=JOAO&vendedor=MARIA
     vendedores_req = [v.strip().upper() for v in _parse_multi_args("vendedor")]
@@ -2858,8 +2863,85 @@ def campanhas_qtd():
                     # interseção do período
                     periodo_ini = max(c.data_inicio, inicio_mes)
                     periodo_fim = min(c.data_fim, fim_mes)
-                    res = (_calc_resultado_all_vendedores(db, c, emp, ano, mes, periodo_ini, periodo_fim)
-                        if (vend or "").upper() == "__ALL__" else _upsert_resultado(db, c, vend, emp, ano, mes, periodo_ini, periodo_fim))
+                    if (vend or "").upper() == "__ALL__":
+                        # Modo TODOS: para performance, por padrão usamos cache (campanhas_qtd_resultados).
+                        # Recalcular somente quando solicitado via ?recalc=1.
+                        if recalc:
+                            res = _calc_resultado_all_vendedores(db, c, emp, ano, mes, periodo_ini, periodo_fim)
+                        else:
+                            # Agrega snapshots existentes (se houver). Se não houver, fica zerado.
+                            agg = (
+                                db.query(
+                                    func.coalesce(func.sum(CampanhaQtdResultado.qtd_vendida), 0.0),
+                                    func.coalesce(func.sum(CampanhaQtdResultado.valor_vendido), 0.0),
+                                    func.coalesce(func.sum(CampanhaQtdResultado.valor_recompensa), 0.0),
+                                    func.max(CampanhaQtdResultado.atualizado_em),
+                                )
+                                .filter(
+                                    CampanhaQtdResultado.campanha_id == c.id,
+                                    CampanhaQtdResultado.emp == str(emp),
+                                    CampanhaQtdResultado.competencia_ano == int(ano),
+                                    CampanhaQtdResultado.competencia_mes == int(mes),
+                                )
+                                .first()
+                            )
+                            res = CampanhaQtdResultado(
+                                campanha_id=c.id,
+                                vendedor="__ALL__",
+                                emp=str(emp),
+                                competencia_ano=int(ano),
+                                competencia_mes=int(mes),
+                                titulo=c.titulo,
+                                marca=c.marca,
+                                produto_prefixo=c.produto_prefixo,
+                                campo_match=getattr(c, "campo_match", "codigo"),
+                                qtd_minima=c.qtd_minima,
+                                data_inicio=c.data_inicio,
+                                data_fim=c.data_fim,
+                                qtd_vendida=float(agg[0] or 0.0),
+                                valor_vendido=float(agg[1] or 0.0),
+                                valor_recompensa=float(agg[2] or 0.0),
+                                atingiu_minimo=1 if float(agg[2] or 0.0) > 0 else 0,
+                                atualizado_em=agg[3],
+                            )
+                    else:
+                        # Para vendedor específico: usar cache, recalculando somente quando solicitado.
+                        vend_key = (vend or "").strip().upper()
+                        if recalc:
+                            res = _upsert_resultado(db, c, vend_key, emp, ano, mes, periodo_ini, periodo_fim)
+                        else:
+                            res = (
+                                db.query(CampanhaQtdResultado)
+                                .filter(
+                                    CampanhaQtdResultado.campanha_id == c.id,
+                                    CampanhaQtdResultado.vendedor == vend_key,
+                                    CampanhaQtdResultado.emp == str(emp),
+                                    CampanhaQtdResultado.competencia_ano == int(ano),
+                                    CampanhaQtdResultado.competencia_mes == int(mes),
+                                )
+                                .first()
+                            )
+                            if not res:
+                                # Sem cache ainda: retorna um snapshot zerado (para não travar o carregamento).
+                                res = CampanhaQtdResultado(
+                                    campanha_id=c.id,
+                                    vendedor=vend_key,
+                                    emp=str(emp),
+                                    competencia_ano=int(ano),
+                                    competencia_mes=int(mes),
+                                    titulo=c.titulo,
+                                    marca=c.marca,
+                                    produto_prefixo=c.produto_prefixo,
+                                    campo_match=getattr(c, "campo_match", "codigo"),
+                                    qtd_minima=c.qtd_minima,
+                                    data_inicio=c.data_inicio,
+                                    data_fim=c.data_fim,
+                                    qtd_vendida=0.0,
+                                    valor_vendido=0.0,
+                                    atingiu_minimo=0,
+                                    valor_recompensa=0.0,
+                                    atualizado_em=None,
+                                )
                     resultados_calc.append(res)
                     total_recomp += float(res.valor_recompensa or 0.0)
 
@@ -2873,7 +2955,8 @@ def campanhas_qtd():
                     "resultados": resultados_calc,
                     "total": total_recomp,
                 })
-        db.commit()
+        if recalc:
+            db.commit()
 
         # Opções para filtros avançados (labels amigáveis)
     emps_options = _get_emp_options(emps_scope)
@@ -3451,50 +3534,13 @@ def relatorio_campanhas():
             vendedores = [vendedor_logado]
         vendedores_por_emp[emp] = vendedores
 
-    # Performance: NÃO recalcular automaticamente em todo carregamento.
-    # - Recalcula apenas quando o usuário pedir (?recalc=1)
-    # - Ou quando não existir nenhum snapshot salvo para a competência/escopo (primeira vez do mês)
-    recalc = str(request.args.get("recalc") or "").strip() == "1"
-    need_recalc = False
-    if not recalc:
-        try:
-            with SessionLocal() as _dbchk:
-                has_qtd = (
-                    _dbchk.query(CampanhaQtdResultado.id)
-                    .filter(
-                        CampanhaQtdResultado.competencia_ano == int(ano),
-                        CampanhaQtdResultado.competencia_mes == int(mes),
-                        CampanhaQtdResultado.emp.in_([str(e) for e in emps_scope]),
-                    )
-                    .limit(1)
-                    .first()
-                    is not None
-                )
-                has_combo = (
-                    _dbchk.query(CampanhaComboResultado.id)
-                    .filter(
-                        CampanhaComboResultado.competencia_ano == int(ano),
-                        CampanhaComboResultado.competencia_mes == int(mes),
-                        CampanhaComboResultado.emp.in_([str(e) for e in emps_scope]),
-                    )
-                    .limit(1)
-                    .first()
-                    is not None
-                )
-                need_recalc = not (has_qtd or has_combo)
-        except Exception as e:
-            # Se falhar a checagem, não força recálculo (evita deixar a página pesada),
-            # mas deixa rastreável no log.
-            print(f"[RELATORIO_CAMPANHAS] falha checando snapshots existentes: {e}")
-            need_recalc = False
-
-    if recalc or need_recalc:
-        try:
-            _recalcular_resultados_campanhas_para_scope(ano, mes, emps_scope, vendedores_por_emp)
-            _recalcular_resultados_combos_para_scope(ano, mes, emps_scope, vendedores_por_emp)
-        except Exception as e:
-            print(f"[RELATORIO_CAMPANHAS] erro ao recalcular snapshots: {e}")
-            flash("Não foi possível recalcular os resultados das campanhas agora. Exibindo dados já salvos.", "warning")
+    # Recalcula snapshots do escopo para garantir relatório correto
+    try:
+        _recalcular_resultados_campanhas_para_scope(ano, mes, emps_scope, vendedores_por_emp)
+        _recalcular_resultados_combos_para_scope(ano, mes, emps_scope, vendedores_por_emp)
+    except Exception as e:
+        print(f"[RELATORIO_CAMPANHAS] erro ao recalcular snapshots: {e}")
+        flash("Não foi possível recalcular os resultados das campanhas agora. Exibindo dados já salvos.", "warning")
 
     # Carrega resultados e organiza para o template
     emps_todos = []  # para tab A (cadastros)
@@ -3536,26 +3582,11 @@ def relatorio_campanhas():
                 .all()
             )
 
-            # Itens dos combos (para exibir no cadastro igual Campanhas Qtd)
-            combo_ids = [int(c.id) for c in (combos_defs or []) if getattr(c, "id", None) is not None]
-            combos_itens_map: dict[int, list[CampanhaComboItem]] = {}
-            if combo_ids:
-                rows_it = (
-                    db.query(CampanhaComboItem)
-                    .filter(CampanhaComboItem.combo_id.in_(combo_ids))
-                    .order_by(CampanhaComboItem.combo_id.asc(), CampanhaComboItem.ordem.asc(), CampanhaComboItem.id.asc())
-                    .all()
-                )
-                for it in rows_it:
-                    combos_itens_map.setdefault(int(it.combo_id), []).append(it)
-
-
             emps_todos.append({
                 "emp": emp,
                 "fechado": bool(fech_map.get(emp, False)),
                 "campanhas_qtd": campanhas_qtd_defs,
                 "combos": combos_defs,
-                "combos_itens_map": combos_itens_map,
             })
 
             # -------- Resultados (Tab B/C) --------
