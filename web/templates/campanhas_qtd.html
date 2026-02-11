@@ -68,54 +68,9 @@
 
     <div class="col-12 col-md-2 d-grid">
       <button class="btn btn-primary" type="submit">Atualizar</button>
-        <button class="btn btn-outline-secondary" type="submit" name="recalc" value="1">Recalcular</button>
     </div>
   </div>
 </form>
-
-      {# ===== KPI (PowerBI-like) ===== #}
-      {% set ns = namespace(total_qtd=0.0, total_combo=0.0, qtd_n=0, combo_n=0, itens=0, atingidos=0) %}
-      {% for b in blocos or [] %}
-        {% set ns.total_qtd = ns.total_qtd + (b.total or 0.0) %}
-        {% set ns.total_combo = ns.total_combo + (b.total_combo or 0.0) %}
-        {% set ns.qtd_n = ns.qtd_n + ((b.resultados or [])|length) %}
-        {% set ns.combo_n = ns.combo_n + ((b.combos or [])|length) %}
-        {% for r in b.resultados or [] %}
-          {% set ns.itens = ns.itens + 1 %}
-          {% if (r.get('atingiu_minimo', 0) or 0) == 1 %}{% set ns.atingidos = ns.atingidos + 1 %}{% endif %}
-        {% endfor %}
-        {% for c in b.combos or [] %}
-          {% set ns.itens = ns.itens + 1 %}
-          {% if (c.atingiu or 0) == 1 %}{% set ns.atingidos = ns.atingidos + 1 %}{% endif %}
-        {% endfor %}
-      {% endfor %}
-      {% set ns_total = (ns.total_qtd + ns.total_combo) %}
-      {% set taxa = ( (ns.atingidos / ns.itens * 100) if ns.itens else 0 ) %}
-      <div class="kpi-grid mt-3">
-
-        <div class="kpi-card">
-          <div class="kpi-label">Recompensa (Total)</div>
-          <div class="kpi-value mono">R$ {{ '%.2f'|format(ns_total) }}</div>
-          <div class="kpi-sub">{{ "%02d"|format(mes) }}/{{ ano }}</div>
-        </div>
-        <div class="kpi-card">
-          <div class="kpi-label">Campanhas no filtro</div>
-          <div class="kpi-value mono">{{ ns.qtd_n + ns.combo_n }}</div>
-          <div class="kpi-sub">Qtd {{ ns.qtd_n }} • Combo {{ ns.combo_n }}</div>
-        </div>
-        <div class="kpi-card">
-          <div class="kpi-label">Taxa de atingimento</div>
-          <div class="kpi-value mono">{{ '%.0f'|format(taxa) }}%</div>
-          <div class="kpi-bar mt-2"><span style="width: {{ taxa|round(0,'floor') }}%"></span></div>
-          <div class="kpi-sub">{{ ns.atingidos }} / {{ ns.itens }} atingidas</div>
-        </div>
-        <div class="kpi-card">
-          <div class="kpi-label">Escopo</div>
-          <div class="kpi-value mono">{{ (emps_sel|length) if emps_sel else (emps_scope|length) }}</div>
-          <div class="kpi-sub">EMPs consideradas</div>
-        </div>
-      </div>
-
 
     </div>
   </div>
@@ -128,7 +83,7 @@
         {% set total_camps = (b.resultados|length) %}
         {% set pagos = namespace(n=0) %}
         {% for r in b.resultados %}
-          {% if r.get('status_pagamento') == 'PAGO' %}{% set pagos.n = pagos.n + 1 %}{% endif %}
+          {% if r.status_pagamento == 'PAGO' %}{% set pagos.n = pagos.n + 1 %}{% endif %}
         {% endfor %}
 
         <div class="col-12 col-md-6 col-lg-4">
@@ -157,8 +112,8 @@
                 <div class="d-grid gap-1">
                   {% for r in b.resultados[:3] %}
                     <div class="d-flex justify-content-between gap-2 small">
-                      <div class="text-truncate" style="max-width:230px">{{ r.get('titulo') or ('Campanha #' ~ r.get('campanha_id')) }}</div>
-                      <div class="mono">{% if r.get('valor_recompensa', 0) and r.get('valor_recompensa', 0) > 0 %}{{ r.get('valor_recompensa', 0)|brl }}{% else %}-{% endif %}</div>
+                      <div class="text-truncate" style="max-width:230px">{{ r.titulo or ('Campanha #' ~ r.campanha_id) }}</div>
+                      <div class="mono">{% if r.valor_recompensa and r.valor_recompensa > 0 %}{{ r.valor_recompensa|brl }}{% else %}-{% endif %}</div>
                     </div>
                   {% endfor %}
                   {% if total_camps > 3 %}
@@ -191,28 +146,13 @@
               <div class="modal-body">
 
                 <div class="d-flex flex-wrap gap-2 mb-3">
-                  <span class="badge text-bg-light border mono">Total: {{ (b.total + (b.total_combo or 0.0))|brl }}</span>
-                  <span class="badge text-bg-light border mono">Qtd: {{ b.total|brl }}</span>
-                  <span class="badge text-bg-light border mono">Combo: {{ (b.total_combo or 0.0)|brl }}</span>
-                  <span class="badge text-bg-light border mono">Qtd {{ total_camps }}</span>
-                  <span class="badge text-bg-light border mono">Combo {{ (b.combos|length) if b.combos else 0 }}</span>
+                  <span class="badge text-bg-light border mono">Total: {{ b.total|brl }}</span>
+                  <span class="badge text-bg-light border mono">{{ total_camps }} campanha(s)</span>
                   <span class="badge text-bg-success mono">PAGO {{ pagos.n }}</span>
                   <span class="badge text-bg-warning mono">PEND {{ total_camps - pagos.n }}</span>
                 </div>
 
-                
-<ul class="nav nav-pills mb-3" role="tablist">
-  <li class="nav-item" role="presentation">
-    <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tabQtd{{ mid }}" type="button" role="tab">Qtd</button>
-  </li>
-  <li class="nav-item" role="presentation">
-    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabCombo{{ mid }}" type="button" role="tab">Combo</button>
-  </li>
-</ul>
-
-<div class="tab-content">
-  <div class="tab-pane fade show active" id="tabQtd{{ mid }}" role="tabpanel">
-<div class="table-responsive">
+                <div class="table-responsive">
                   <table class="table table-sm align-middle mb-0">
                     <thead class="table-light">
                       <tr>
@@ -230,15 +170,15 @@
                     <tbody>
                       {% for r in b.resultados %}
                         <tr>
-                          <td class="text-truncate" style="max-width:220px">{{ r.get('titulo') or ('Campanha #' ~ r.get('campanha_id')) }}</td>
-                          <td><div class="mono small">{{ r.get('produto_prefixo') }}</div></td>
-                          <td>{{ r.get('marca') }}</td>
-                          <td class="text-end mono">{{ r.get('recompensa_unit', 0)|brl }}</td>
-                          <td class="text-end mono">{% if r.get('qtd_minima', 0) is not none %}{{ r.get('qtd_minima', 0)|int }}{% else %}-{% endif %}</td>
-                          <td class="text-end mono">{{ r.get('qtd_vendida', 0)|int }}</td>
-                          <td class="text-end mono">{% if r.get('valor_recompensa', 0) and r.get('valor_recompensa', 0) > 0 %}<strong>{{ r.get('valor_recompensa', 0)|brl }}</strong>{% else %}-{% endif %}</td>
-                          <td>{% if r.get('status_pagamento') == 'PAGO' %}<span class="badge text-bg-success">PAGO</span>{% else %}<span class="badge text-bg-warning">PENDENTE</span>{% endif %}</td>
-                          <td class="text-muted small">{{ r.get('data_inicio') and r.get('data_inicio').strftime('%d/%m/%Y') or '' }} a {{ r.get('data_fim') and r.get('data_fim').strftime('%d/%m/%Y') or '' }}</td>
+                          <td class="text-truncate" style="max-width:220px">{{ r.titulo or ('Campanha #' ~ r.campanha_id) }}</td>
+                          <td><div class="mono small">{{ r.produto_prefixo }}</div></td>
+                          <td>{{ r.marca }}</td>
+                          <td class="text-end mono">{{ r.recompensa_unit|brl }}</td>
+                          <td class="text-end mono">{% if r.qtd_minima is not none %}{{ r.qtd_minima|int }}{% else %}-{% endif %}</td>
+                          <td class="text-end mono">{{ r.qtd_vendida|int }}</td>
+                          <td class="text-end mono">{% if r.valor_recompensa and r.valor_recompensa > 0 %}<strong>{{ r.valor_recompensa|brl }}</strong>{% else %}-{% endif %}</td>
+                          <td>{% if r.status_pagamento == 'PAGO' %}<span class="badge text-bg-success">PAGO</span>{% else %}<span class="badge text-bg-warning">PENDENTE</span>{% endif %}</td>
+                          <td class="text-muted small">{{ r.data_inicio.strftime('%d/%m/%Y') }} a {{ r.data_fim.strftime('%d/%m/%Y') }}</td>
                         </tr>
                       {% endfor %}
                     </tbody>
@@ -250,156 +190,39 @@
                     {% for r in b.resultados %}
                       <div class="p-3 camp-card">
                         <div class="d-flex justify-content-between align-items-start gap-2">
-                          <div class="fw-semibold">{{ r.get('titulo') or ('Campanha #' ~ r.get('campanha_id')) }}</div>
-                          {% if r.get('status_pagamento') == 'PAGO' %}
+                          <div class="fw-semibold">{{ r.titulo or ('Campanha #' ~ r.campanha_id) }}</div>
+                          {% if r.status_pagamento == 'PAGO' %}
                             <span class="badge text-bg-success">PAGO</span>
                           {% else %}
                             <span class="badge text-bg-warning">PENDENTE</span>
                           {% endif %}
                         </div>
-                        <div class="subtitle small mt-1 mono">{{ r.get('produto_prefixo') }} • {{ r.get('marca') }}</div>
+                        <div class="subtitle small mt-1 mono">{{ r.produto_prefixo }} • {{ r.marca }}</div>
 
                         <div class="row g-2 mt-2">
                           <div class="col-6">
                             <div class="subtitle small">R$/Un</div>
-                            <div class="mono">{{ r.get('recompensa_unit', 0)|brl }}</div>
+                            <div class="mono">{{ r.recompensa_unit|brl }}</div>
                           </div>
                           <div class="col-6 text-end">
                             <div class="subtitle small">Mín</div>
-                            <div class="mono">{% if r.get('qtd_minima', 0) is not none %}{{ r.get('qtd_minima', 0)|int }}{% else %}-{% endif %}</div>
+                            <div class="mono">{% if r.qtd_minima is not none %}{{ r.qtd_minima|int }}{% else %}-{% endif %}</div>
                           </div>
                           <div class="col-6">
                             <div class="subtitle small">Qtd</div>
-                            <div class="mono">{{ r.get('qtd_vendida', 0)|int }}</div>
+                            <div class="mono">{{ r.qtd_vendida|int }}</div>
                           </div>
                           <div class="col-6 text-end">
                             <div class="subtitle small">Valor</div>
-                            <div class="mono">{% if r.get('valor_recompensa', 0) and r.get('valor_recompensa', 0) > 0 %}<strong>{{ r.get('valor_recompensa', 0)|brl }}</strong>{% else %}-{% endif %}</div>
+                            <div class="mono">{% if r.valor_recompensa and r.valor_recompensa > 0 %}<strong>{{ r.valor_recompensa|brl }}</strong>{% else %}-{% endif %}</div>
                           </div>
                         </div>
 
-                        <div class="subtitle small mt-2">Período: {{ r.get('data_inicio') and r.get('data_inicio').strftime('%d/%m/%Y') or '' }} a {{ r.get('data_fim') and r.get('data_fim').strftime('%d/%m/%Y') or '' }}</div>
+                        <div class="subtitle small mt-2">Período: {{ r.data_inicio.strftime('%d/%m/%Y') }} a {{ r.data_fim.strftime('%d/%m/%Y') }}</div>
                       </div>
                     {% endfor %}
                   </div>
-                
-  </div> {# end tab-pane Qtd #}
-
-  <div class="tab-pane fade" id="tabCombo{{ mid }}" role="tabpanel">
-    {% if b.combos and (b.combos|length) > 0 %}
-      <div class="table-responsive">
-        <table class="table table-sm align-middle table-bordered">
-          <thead class="table-light">
-            <tr>
-              <th>Campanha</th>
-              <th>Marca</th>
-              <th>Progresso</th>
-              <th class="text-end">Recompensa</th>
-              <th>Atingiu</th>
-              <th>Vigência</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for c in b.combos %}
-              <tr>
-                <td class="fw-semibold">{{ c.titulo }}</td>
-                <td>{{ c.marca }}</td>
-                <td class="text-muted">
-                  {% if c.parcial %}<div class="small opacity-75">Progresso: {{ c.parcial }}</div>{% endif %}
-                  {% if c.critico_texto %}<div class="small">{{ c.critico_texto }}</div>{% endif %}
-                  {% if c.combo_itens %}
-                    <details class="mt-1">
-                      <summary class="small">Ver itens do kit</summary>
-                      <div class="table-responsive mt-2">
-                        <table class="table table-sm table-bordered align-middle mb-0">
-                          <thead class="table-light">
-                            <tr>
-                              <th>#</th>
-                              <th>Item</th>
-                              <th class="text-end">Mín.</th>
-                              <th class="text-end">Vend.</th>
-                              <th class="text-end">Falta</th>
-                              <th>Status</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {% for itx in c.combo_itens %}
-                              <tr>
-                                <td class="text-muted">{{ loop.index }}</td>
-                                <td>{{ itx.nome }}</td>
-                                <td class="text-end mono">{{ itx.minimo }}</td>
-                                <td class="text-end mono">{{ itx.vendido }}</td>
-                                <td class="text-end mono">{{ itx.falta }}</td>
-                                <td>
-                                  {% if itx.ok %}
-                                    <span class="badge text-bg-success">OK</span>
-                                  {% else %}
-                                    <span class="badge text-bg-secondary">Pendente</span>
-                                  {% endif %}
-                                </td>
-                              </tr>
-                            {% endfor %}
-                          </tbody>
-                        </table>
-                      </div>
-                    </details>
-                  {% endif %}
-                </td>
-                <td class="text-end mono">{{ c.valor_recompensa|brl }}</td>
-                <td>
-                  {% if (c.atingiu or 0) == 1 %}
-                    <span class="badge text-bg-success">SIM</span>
-                  {% else %}
-                    <span class="badge text-bg-secondary">NÃO</span>
-                  {% endif %}
-                </td>
-                <td class="text-muted small">{{ c.periodo }}</td>
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-
-      <div class="mobile-cards mt-3">
-        <div class="d-grid gap-2">
-          {% for c in b.combos %}
-            <div class="card camp-card shadow-sm">
-              <div class="card-body">
-                <div class="d-flex justify-content-between align-items-start gap-2">
-                  <div class="fw-semibold">{{ c.titulo }}</div>
-                  <span class="badge {% if (c.atingiu or 0)==1 %}text-bg-success{% else %}text-bg-secondary{% endif %}">
-                    {% if (c.atingiu or 0)==1 %}SIM{% else %}NÃO{% endif %}
-                  </span>
                 </div>
-                <div class="text-muted small mt-1">{{ c.marca }} • {{ c.periodo }}</div>
-                {% if c.parcial %}<div class="small opacity-75 mt-1">Progresso: {{ c.parcial }}</div>{% endif %}
-                {% if c.critico_texto %}<div class="small">{{ c.critico_texto }}</div>{% endif %}
-                <div class="mt-2 fw-bold mono">{{ c.valor_recompensa|brl }}</div>
-                {% if c.combo_itens %}
-                  <details class="mt-2">
-                    <summary class="small">Itens do kit</summary>
-                    <div class="mt-2">
-                      {% for itx in c.combo_itens %}
-                        <div class="d-flex justify-content-between gap-2 small">
-                          <span>{{ loop.index }}. {{ itx.nome }}</span>
-                          <span class="mono">{{ itx.vendido }}/{{ itx.minimo }}</span>
-                        </div>
-                      {% endfor %}
-                    </div>
-                  </details>
-                {% endif %}
-              </div>
-            </div>
-          {% endfor %}
-        </div>
-      </div>
-    {% else %}
-      <div class="text-muted">Sem combos no período/filtro.</div>
-    {% endif %}
-  </div> {# end tab-pane Combo #}
-</div> {# end tab-content #}
-
-</div>
 
               </div>
             </div>
