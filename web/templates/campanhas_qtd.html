@@ -93,13 +93,10 @@
               <div class="d-flex justify-content-between align-items-start gap-2">
                 <div>
                   <div class="subtitle small">Loja</div>
-                  {% if role and role|lower == "supervisor" and vendedor == "__ALL__" %}
-                  <div class="h5 m-0 fw-bold">{{ b.vendedor }}</div>
-                  <div class="subtitle small">EMP {{ b.emp }}</div>
-                  {% else %}
                   <div class="h5 m-0 fw-bold">EMP {{ b.emp }}</div>
+                  {% if role and role|lower == "supervisor" and vendedor == "__ALL__" %}
+                    <div class="subtitle small mt-1">Vendedor: <strong>{{ b.vendedor }}</strong></div>
                   {% endif %}
-                  
                 </div>
                 <span class="badge text-bg-light border mono">Total {{ b.total|brl }}</span>
               </div>
@@ -142,7 +139,7 @@
                   <div class="fw-bold mono">Competência: {{ "%02d"|format(mes) }}/{{ ano }}</div>
                 </div>
                 <div class="d-flex gap-2">
-                  <a class="btn btn-outline-dark btn-sm" href="/campanhas/pdf?ano={{ ano }}&mes={{ mes }}&vendedor={{ (b.vendedor if (role and role|lower=='supervisor' and vendedor=='__ALL__') else vendedor) }}&emp={{ b.emp }}">Exportar PDF (EMP)</a>
+                  <a class="btn btn-outline-dark btn-sm" href="/campanhas/pdf?ano={{ ano }}&mes={{ mes }}&vendedor={{ vendedor }}&emp={{ b.emp }}">Exportar PDF (EMP)</a>
                   <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Fechar</button>
                 </div>
               </div>
