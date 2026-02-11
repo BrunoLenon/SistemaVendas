@@ -2816,16 +2816,33 @@ def campanhas_qtd():
     # Calcula resultados e agrupa por EMP
     blocos: list[dict] = []
     with SessionLocal() as db:
-        # Para supervisor, permitir comparar a loja inteira (todos os vendedores da EMP)
-        if (vendedor_sel or "").upper() == "__ALL__":
-            # Otimização: em modo TODOS, não iterar por N vendedores. Exibir agregado e permitir drill-down.
-            vendedores_alvo = ["__ALL__"]
-        elif (vendedor_sel or "").upper() == "__MULTI__":
-            vendedores_alvo = [v for v in (vendedores_sel or []) if (v or "").strip().upper() != "__ALL__"]
-        else:
-            vendedores_alvo = [vendedor_sel]
+        # Define vendedores alvo conforme perfil
+        modo_all = (vendedor_sel or "").upper() == "__ALL__"
+        modo_multi = (vendedor_sel or "").upper() == "__MULTI__"
 
         for emp in emps_scope or ([emp_param] if emp_param else []):
+            emp = str(emp)
+
+            # Para SUPERVISOR em modo LOJA TODA, listamos todos os vendedores da EMP no período
+            if (role or "").lower() == "supervisor" and modo_all:
+                try:
+                    vendedores_alvo = _get_vendedores_emp_no_periodo(emp, ano, mes)
+                except Exception:
+                    vendedores_alvo = []
+                if not vendedores_alvo:
+                    try:
+                        # fallback: lista cadastral (pode incluir vendedores sem venda no período)
+                        vendedores_alvo = _get_vendedores_db(role, emp_usuario) or []
+                    except Exception:
+                        vendedores_alvo = []
+            elif modo_all:
+                # ADMIN em modo TODOS: mantém agregado (performance)
+                vendedores_alvo = ["__ALL__"]
+            elif modo_multi:
+                vendedores_alvo = [v for v in (vendedores_sel or []) if (v or "").strip().upper() != "__ALL__"]
+            else:
+                vendedores_alvo = [vendedor_sel]
+
             emp = str(emp)
 
             # campanhas relevantes (overlap do mês)
@@ -3409,17 +3426,6 @@ def relatorio_campanhas():
     vendedor_logado = (_usuario_logado() or "").strip().upper()
     vendedores_sel = [str(v).strip().upper() for v in _parse_multi_args("vendedor") if str(v).strip()]
 
-    # Para SUPERVISOR/VENDEDOR: se não veio EMP no filtro, pré-seleciona automaticamente
-    # evitando tela "Selecione uma EMP" e garantindo que o relatório abra direto no escopo permitido.
-    if role == "supervisor":
-        if not emps_sel and emp_usuario:
-            emps_sel = [str(emp_usuario)]
-    elif role != "admin":
-        # vendedor
-        if not emps_sel:
-            # tenta usar EMPs do vendedor; se ainda não souber, será preenchido após emps_scope
-            emps_sel = []
-
     # Define escopo de EMPs e vendedores    # Define escopo de EMPs e vendedores
     emps_scope: list[str] = []
     vendedores_por_emp: dict[str, list[str]] = {}
@@ -3441,12 +3447,6 @@ def relatorio_campanhas():
         emps_scope = [e for e in base_emps if (not emps_sel or str(e) in {str(x) for x in emps_sel})]
         if not emps_scope:
             flash("Não foi possível identificar a EMP do vendedor pelas vendas.", "warning")
-
-
-    # Se ainda não há seleção explícita de EMP (especialmente para vendedor),
-    # assume o escopo permitido para que o relatório carregue automaticamente.
-    if role != "admin" and not emps_sel and emps_scope:
-        emps_sel = [str(e) for e in emps_scope]
 
     # Vendedores por EMP (limitado por role)
     for emp in emps_scope:
