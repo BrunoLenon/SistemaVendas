@@ -82,7 +82,7 @@
         {% set ns.combo_n = ns.combo_n + ((b.combos or [])|length) %}
         {% for r in b.resultados or [] %}
           {% set ns.itens = ns.itens + 1 %}
-          {% if (r.atingiu_minimo or 0) == 1 %}{% set ns.atingidos = ns.atingidos + 1 %}{% endif %}
+          {% if (r.get('atingiu_minimo') or 0) == 1 %}{% set ns.atingidos = ns.atingidos + 1 %}{% endif %}
         {% endfor %}
         {% for c in b.combos or [] %}
           {% set ns.itens = ns.itens + 1 %}
@@ -128,7 +128,7 @@
         {% set total_camps = (b.resultados|length) %}
         {% set pagos = namespace(n=0) %}
         {% for r in b.resultados %}
-          {% if r.status_pagamento == 'PAGO' %}{% set pagos.n = pagos.n + 1 %}{% endif %}
+          {% if r.get('status_pagamento') == 'PAGO' %}{% set pagos.n = pagos.n + 1 %}{% endif %}
         {% endfor %}
 
         <div class="col-12 col-md-6 col-lg-4">
@@ -157,8 +157,8 @@
                 <div class="d-grid gap-1">
                   {% for r in b.resultados[:3] %}
                     <div class="d-flex justify-content-between gap-2 small">
-                      <div class="text-truncate" style="max-width:230px">{{ r.titulo or ('Campanha #' ~ r.campanha_id) }}</div>
-                      <div class="mono">{% if r.valor_recompensa and r.valor_recompensa > 0 %}{{ r.valor_recompensa|brl }}{% else %}-{% endif %}</div>
+                      <div class="text-truncate" style="max-width:230px">{{ r.get('titulo') or ('Campanha #' ~ r.get('campanha_id')) }}</div>
+                      <div class="mono">{% if r.get('valor_recompensa', 0) and r.get('valor_recompensa', 0) > 0 %}{{ r.get('valor_recompensa', 0)|brl }}{% else %}-{% endif %}</div>
                     </div>
                   {% endfor %}
                   {% if total_camps > 3 %}
@@ -230,15 +230,15 @@
                     <tbody>
                       {% for r in b.resultados %}
                         <tr>
-                          <td class="text-truncate" style="max-width:220px">{{ r.titulo or ('Campanha #' ~ r.campanha_id) }}</td>
-                          <td><div class="mono small">{{ r.produto_prefixo }}</div></td>
-                          <td>{{ r.marca }}</td>
-                          <td class="text-end mono">{{ r.recompensa_unit|brl }}</td>
-                          <td class="text-end mono">{% if r.qtd_minima is not none %}{{ r.qtd_minima|int }}{% else %}-{% endif %}</td>
-                          <td class="text-end mono">{{ r.qtd_vendida|int }}</td>
-                          <td class="text-end mono">{% if r.valor_recompensa and r.valor_recompensa > 0 %}<strong>{{ r.valor_recompensa|brl }}</strong>{% else %}-{% endif %}</td>
-                          <td>{% if r.status_pagamento == 'PAGO' %}<span class="badge text-bg-success">PAGO</span>{% else %}<span class="badge text-bg-warning">PENDENTE</span>{% endif %}</td>
-                          <td class="text-muted small">{{ r.data_inicio.strftime('%d/%m/%Y') }} a {{ r.data_fim.strftime('%d/%m/%Y') }}</td>
+                          <td class="text-truncate" style="max-width:220px">{{ r.get('titulo') or ('Campanha #' ~ r.get('campanha_id')) }}</td>
+                          <td><div class="mono small">{{ r.get('produto_prefixo') }}</div></td>
+                          <td>{{ r.get('marca') }}</td>
+                          <td class="text-end mono">{{ r.get('recompensa_unit')|brl }}</td>
+                          <td class="text-end mono">{% if r.get('qtd_minima', 0) is not none %}{{ r.get('qtd_minima', 0)|int }}{% else %}-{% endif %}</td>
+                          <td class="text-end mono">{{ r.get('qtd_vendida', 0)|int }}</td>
+                          <td class="text-end mono">{% if r.get('valor_recompensa', 0) and r.get('valor_recompensa', 0) > 0 %}<strong>{{ r.get('valor_recompensa', 0)|brl }}</strong>{% else %}-{% endif %}</td>
+                          <td>{% if r.get('status_pagamento') == 'PAGO' %}<span class="badge text-bg-success">PAGO</span>{% else %}<span class="badge text-bg-warning">PENDENTE</span>{% endif %}</td>
+                          <td class="text-muted small">{{ r.get('data_inicio').strftime('%d/%m/%Y') }} a {{ r.get('data_fim').strftime('%d/%m/%Y') }}</td>
                         </tr>
                       {% endfor %}
                     </tbody>
@@ -250,35 +250,35 @@
                     {% for r in b.resultados %}
                       <div class="p-3 camp-card">
                         <div class="d-flex justify-content-between align-items-start gap-2">
-                          <div class="fw-semibold">{{ r.titulo or ('Campanha #' ~ r.campanha_id) }}</div>
-                          {% if r.status_pagamento == 'PAGO' %}
+                          <div class="fw-semibold">{{ r.get('titulo') or ('Campanha #' ~ r.get('campanha_id')) }}</div>
+                          {% if r.get('status_pagamento') == 'PAGO' %}
                             <span class="badge text-bg-success">PAGO</span>
                           {% else %}
                             <span class="badge text-bg-warning">PENDENTE</span>
                           {% endif %}
                         </div>
-                        <div class="subtitle small mt-1 mono">{{ r.produto_prefixo }} • {{ r.marca }}</div>
+                        <div class="subtitle small mt-1 mono">{{ r.get('produto_prefixo') }} • {{ r.get('marca') }}</div>
 
                         <div class="row g-2 mt-2">
                           <div class="col-6">
                             <div class="subtitle small">R$/Un</div>
-                            <div class="mono">{{ r.recompensa_unit|brl }}</div>
+                            <div class="mono">{{ r.get('recompensa_unit')|brl }}</div>
                           </div>
                           <div class="col-6 text-end">
                             <div class="subtitle small">Mín</div>
-                            <div class="mono">{% if r.qtd_minima is not none %}{{ r.qtd_minima|int }}{% else %}-{% endif %}</div>
+                            <div class="mono">{% if r.get('qtd_minima', 0) is not none %}{{ r.get('qtd_minima', 0)|int }}{% else %}-{% endif %}</div>
                           </div>
                           <div class="col-6">
                             <div class="subtitle small">Qtd</div>
-                            <div class="mono">{{ r.qtd_vendida|int }}</div>
+                            <div class="mono">{{ r.get('qtd_vendida', 0)|int }}</div>
                           </div>
                           <div class="col-6 text-end">
                             <div class="subtitle small">Valor</div>
-                            <div class="mono">{% if r.valor_recompensa and r.valor_recompensa > 0 %}<strong>{{ r.valor_recompensa|brl }}</strong>{% else %}-{% endif %}</div>
+                            <div class="mono">{% if r.get('valor_recompensa', 0) and r.get('valor_recompensa', 0) > 0 %}<strong>{{ r.get('valor_recompensa', 0)|brl }}</strong>{% else %}-{% endif %}</div>
                           </div>
                         </div>
 
-                        <div class="subtitle small mt-2">Período: {{ r.data_inicio.strftime('%d/%m/%Y') }} a {{ r.data_fim.strftime('%d/%m/%Y') }}</div>
+                        <div class="subtitle small mt-2">Período: {{ r.get('data_inicio').strftime('%d/%m/%Y') }} a {{ r.get('data_fim').strftime('%d/%m/%Y') }}</div>
                       </div>
                     {% endfor %}
                   </div>
