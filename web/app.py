@@ -2351,6 +2351,17 @@ def _venda_qtd_col():
 
 @app.get("/itens_parados")
 def itens_parados():
+
+    # Detecta coluna de quantidade vendida dinamicamente
+    qtd_col = (
+        getattr(Venda, "qtde_vendida", None)
+        or getattr(Venda, "quantidade", None)
+        or getattr(Venda, "qtd", None)
+    )
+    if qtd_col is None:
+        from sqlalchemy import literal
+        qtd_col = literal(0.0)
+
     """Relatório de itens parados (liquidação) por EMP.
 
     Cadastro é feito pelo ADMIN por EMP.
@@ -2726,6 +2737,17 @@ def _calc_itens_parados_recompensa_por_emp_vendedor(
     """Calcula a recompensa de Itens Parados no período (mês/ano) por vendedor.
 
     Compatível com dois modelos (detecta colunas no ORM):
+
+    # Detecta coluna de quantidade vendida dinamicamente
+    qtd_col = (
+        getattr(Venda, "qtde_vendida", None)
+        or getattr(Venda, "quantidade", None)
+        or getattr(Venda, "qtd", None)
+    )
+    if qtd_col is None:
+        from sqlalchemy import literal
+        qtd_col = literal(0.0)
+
     A) Percentual sobre valor vendido:
        - usa ItemParado.recompensa_pct (0-100) e Venda.valor_total
        - valor = SUM(valor_total) * (pct/100)
