@@ -3246,7 +3246,7 @@ def campanhas_qtd():
                     res = (_calc_resultado_all_vendedores(db, c, emp, ano, mes, periodo_ini, periodo_fim)
                         if (vend or "").upper() == "__ALL__" else _upsert_resultado(db, c, vend, emp, ano, mes, periodo_ini, periodo_fim))
                     resultados_calc.append(res)
-                    total_recomp += float(res.valor_recompensa or 0.0)
+                    total_recomp += float(res.get('valor_recompensa', 0))
 
                 # Não commita a cada vendedor; commit único ao final melhora performance.
                 # Ordena em memória para evitar re-query.
