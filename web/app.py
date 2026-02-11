@@ -2816,16 +2816,33 @@ def campanhas_qtd():
     # Calcula resultados e agrupa por EMP
     blocos: list[dict] = []
     with SessionLocal() as db:
-        # Para supervisor, permitir comparar a loja inteira (todos os vendedores da EMP)
-        if (vendedor_sel or "").upper() == "__ALL__":
-            # Otimização: em modo TODOS, não iterar por N vendedores. Exibir agregado e permitir drill-down.
-            vendedores_alvo = ["__ALL__"]
-        elif (vendedor_sel or "").upper() == "__MULTI__":
-            vendedores_alvo = [v for v in (vendedores_sel or []) if (v or "").strip().upper() != "__ALL__"]
-        else:
-            vendedores_alvo = [vendedor_sel]
+        # Define vendedores alvo conforme perfil
+        modo_all = (vendedor_sel or "").upper() == "__ALL__"
+        modo_multi = (vendedor_sel or "").upper() == "__MULTI__"
 
         for emp in emps_scope or ([emp_param] if emp_param else []):
+            emp = str(emp)
+
+            # Para SUPERVISOR em modo LOJA TODA, listamos todos os vendedores da EMP no período
+            if (role or "").lower() == "supervisor" and modo_all:
+                try:
+                    vendedores_alvo = _get_vendedores_emp_no_periodo(emp, ano, mes)
+                except Exception:
+                    vendedores_alvo = []
+                if not vendedores_alvo:
+                    try:
+                        # fallback: lista cadastral (pode incluir vendedores sem venda no período)
+                        vendedores_alvo = _get_vendedores_db(role, emp_usuario) or []
+                    except Exception:
+                        vendedores_alvo = []
+            elif modo_all:
+                # ADMIN em modo TODOS: mantém agregado (performance)
+                vendedores_alvo = ["__ALL__"]
+            elif modo_multi:
+                vendedores_alvo = [v for v in (vendedores_sel or []) if (v or "").strip().upper() != "__ALL__"]
+            else:
+                vendedores_alvo = [vendedor_sel]
+
             emp = str(emp)
 
             # campanhas relevantes (overlap do mês)
@@ -3531,67 +3548,6 @@ def relatorio_campanhas():
                 .all()
             )
 
-            # -------- Itens Parados (Tab B/C - soma com campanhas) --------
-            # Regra atual de itens parados: recompensa = sum(valor_total OA do código) * (recompensa_pct/100)
-            itens_parados_defs = (
-                db.query(ItemParado)
-                .filter(ItemParado.emp == emp)
-                .filter(ItemParado.ativo == 1)
-                .order_by(ItemParado.codigo.asc())
-                .all()
-            )
-
-            itens_parados_por_vend: dict[str, list[dict]] = {}
-            try:
-                codigos_itens = sorted({(it.codigo or "").strip() for it in (itens_parados_defs or []) if (it.codigo or "").strip()})
-                if codigos_itens and vendedores:
-                    start_p, end_p = _periodo_bounds(int(ano), int(mes))
-                    rows_it = (
-                        db.query(
-                            Venda.vendedor,
-                            Venda.mestre,
-                            func.coalesce(func.sum(Venda.valor_total), 0.0).label("total_vendido"),
-                        )
-                        .filter(Venda.emp == emp)
-                        .filter(Venda.vendedor.in_([v.strip().upper() for v in vendedores]))
-                        .filter(Venda.movimento >= start_p)
-                        .filter(Venda.movimento < end_p)
-                        .filter(Venda.mov_tipo_movto == "OA")
-                        .filter(Venda.mestre.in_(codigos_itens))
-                        .group_by(Venda.vendedor, Venda.mestre)
-                        .all()
-                    )
-                    total_map: dict[tuple[str, str], float] = {}
-                    for vend_x, mestre_x, total_x in (rows_it or []):
-                        vv = (vend_x or "").strip().upper()
-                        mm = (mestre_x or "").strip()
-                        total_map[(vv, mm)] = float(total_x or 0.0)
-
-                    pct_by_codigo = { (it.codigo or "").strip(): float(it.recompensa_pct or 0.0) for it in (itens_parados_defs or []) }
-                    desc_by_codigo = { (it.codigo or "").strip(): (it.descricao or "").strip() for it in (itens_parados_defs or []) }
-
-                    for vv in [v.strip().upper() for v in vendedores]:
-                        for cod in codigos_itens:
-                            total_vendido = float(total_map.get((vv, cod), 0.0) or 0.0)
-                            pct = float(pct_by_codigo.get(cod, 0.0) or 0.0)
-                            recompensa = (total_vendido * (pct / 100.0)) if total_vendido > 0 and pct > 0 else 0.0
-                            if recompensa <= 0:
-                                continue  # evita poluir com itens zerados
-                            itens_parados_por_vend.setdefault(vv, []).append({
-                                "tipo": "ITENS",
-                                "titulo": "Itens Parados",
-                                "marca": "",
-                                "produto": f"{cod} — {desc_by_codigo.get(cod, '')}".strip(" —"),
-                                "qtd": None,
-                                "valor_recompensa": float(recompensa),
-                                "atingiu": 1,
-                                "status_pagamento": None,
-                                "periodo": f"{start_p} → {end_p - timedelta(days=1)}",
-                            })
-            except Exception as _e:
-                print(f"[RELATORIO_CAMPANHAS] aviso: não foi possível calcular Itens Parados: {_e}")
-                itens_parados_por_vend = {}
-
 
             # Pré-calcula detalhes de COMBO para exibição (leve e sem alterar valores salvos)
             combo_items_by_combo: dict[int, list[CampanhaComboItem]] = {}
@@ -3699,16 +3655,7 @@ def relatorio_campanhas():
                     "periodo": f"{r.data_inicio} → {r.data_fim}",
                 })
 
-            
-            # Incorpora Itens Parados (se houver) aos cards do vendedor
-            try:
-                for vv, itens_list in (itens_parados_por_vend or {}).items():
-                    for it in (itens_list or []):
-                        by_vend.setdefault(vv, []).append(it)
-            except Exception:
-                pass
-
-# ordena campanhas dentro do vendedor (maior recompensa primeiro)
+            # ordena campanhas dentro do vendedor (maior recompensa primeiro)
             vendedores_cards = []
             for v in sorted(by_vend.keys()):
                 itens = by_vend[v]
