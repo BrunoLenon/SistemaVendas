@@ -3409,6 +3409,17 @@ def relatorio_campanhas():
     vendedor_logado = (_usuario_logado() or "").strip().upper()
     vendedores_sel = [str(v).strip().upper() for v in _parse_multi_args("vendedor") if str(v).strip()]
 
+    # Para SUPERVISOR/VENDEDOR: se não veio EMP no filtro, pré-seleciona automaticamente
+    # evitando tela "Selecione uma EMP" e garantindo que o relatório abra direto no escopo permitido.
+    if role == "supervisor":
+        if not emps_sel and emp_usuario:
+            emps_sel = [str(emp_usuario)]
+    elif role != "admin":
+        # vendedor
+        if not emps_sel:
+            # tenta usar EMPs do vendedor; se ainda não souber, será preenchido após emps_scope
+            emps_sel = []
+
     # Define escopo de EMPs e vendedores    # Define escopo de EMPs e vendedores
     emps_scope: list[str] = []
     vendedores_por_emp: dict[str, list[str]] = {}
@@ -3430,6 +3441,12 @@ def relatorio_campanhas():
         emps_scope = [e for e in base_emps if (not emps_sel or str(e) in {str(x) for x in emps_sel})]
         if not emps_scope:
             flash("Não foi possível identificar a EMP do vendedor pelas vendas.", "warning")
+
+
+    # Se ainda não há seleção explícita de EMP (especialmente para vendedor),
+    # assume o escopo permitido para que o relatório carregue automaticamente.
+    if role != "admin" and not emps_sel and emps_scope:
+        emps_sel = [str(e) for e in emps_scope]
 
     # Vendedores por EMP (limitado por role)
     for emp in emps_scope:
@@ -3530,67 +3547,6 @@ def relatorio_campanhas():
                 .order_by(CampanhaComboResultado.vendedor.asc(), CampanhaComboResultado.valor_recompensa.desc())
                 .all()
             )
-
-            # -------- Itens Parados (Tab B/C - soma com campanhas) --------
-            # Regra atual de itens parados: recompensa = sum(valor_total OA do código) * (recompensa_pct/100)
-            itens_parados_defs = (
-                db.query(ItemParado)
-                .filter(ItemParado.emp == emp)
-                .filter(ItemParado.ativo == 1)
-                .order_by(ItemParado.codigo.asc())
-                .all()
-            )
-
-            itens_parados_por_vend: dict[str, list[dict]] = {}
-            try:
-                codigos_itens = sorted({(it.codigo or "").strip() for it in (itens_parados_defs or []) if (it.codigo or "").strip()})
-                if codigos_itens and vendedores:
-                    start_p, end_p = _periodo_bounds(int(ano), int(mes))
-                    rows_it = (
-                        db.query(
-                            Venda.vendedor,
-                            Venda.mestre,
-                            func.coalesce(func.sum(Venda.valor_total), 0.0).label("total_vendido"),
-                        )
-                        .filter(Venda.emp == emp)
-                        .filter(Venda.vendedor.in_([v.strip().upper() for v in vendedores]))
-                        .filter(Venda.movimento >= start_p)
-                        .filter(Venda.movimento < end_p)
-                        .filter(Venda.mov_tipo_movto == "OA")
-                        .filter(Venda.mestre.in_(codigos_itens))
-                        .group_by(Venda.vendedor, Venda.mestre)
-                        .all()
-                    )
-                    total_map: dict[tuple[str, str], float] = {}
-                    for vend_x, mestre_x, total_x in (rows_it or []):
-                        vv = (vend_x or "").strip().upper()
-                        mm = (mestre_x or "").strip()
-                        total_map[(vv, mm)] = float(total_x or 0.0)
-
-                    pct_by_codigo = { (it.codigo or "").strip(): float(it.recompensa_pct or 0.0) for it in (itens_parados_defs or []) }
-                    desc_by_codigo = { (it.codigo or "").strip(): (it.descricao or "").strip() for it in (itens_parados_defs or []) }
-
-                    for vv in [v.strip().upper() for v in vendedores]:
-                        for cod in codigos_itens:
-                            total_vendido = float(total_map.get((vv, cod), 0.0) or 0.0)
-                            pct = float(pct_by_codigo.get(cod, 0.0) or 0.0)
-                            recompensa = (total_vendido * (pct / 100.0)) if total_vendido > 0 and pct > 0 else 0.0
-                            if recompensa <= 0:
-                                continue  # evita poluir com itens zerados
-                            itens_parados_por_vend.setdefault(vv, []).append({
-                                "tipo": "ITENS",
-                                "titulo": "Itens Parados",
-                                "marca": "",
-                                "produto": f"{cod} — {desc_by_codigo.get(cod, '')}".strip(" —"),
-                                "qtd": None,
-                                "valor_recompensa": float(recompensa),
-                                "atingiu": 1,
-                                "status_pagamento": None,
-                                "periodo": f"{start_p} → {end_p - timedelta(days=1)}",
-                            })
-            except Exception as _e:
-                print(f"[RELATORIO_CAMPANHAS] aviso: não foi possível calcular Itens Parados: {_e}")
-                itens_parados_por_vend = {}
 
 
             # Pré-calcula detalhes de COMBO para exibição (leve e sem alterar valores salvos)
@@ -3699,16 +3655,7 @@ def relatorio_campanhas():
                     "periodo": f"{r.data_inicio} → {r.data_fim}",
                 })
 
-            
-            # Incorpora Itens Parados (se houver) aos cards do vendedor
-            try:
-                for vv, itens_list in (itens_parados_por_vend or {}).items():
-                    for it in (itens_list or []):
-                        by_vend.setdefault(vv, []).append(it)
-            except Exception:
-                pass
-
-# ordena campanhas dentro do vendedor (maior recompensa primeiro)
+            # ordena campanhas dentro do vendedor (maior recompensa primeiro)
             vendedores_cards = []
             for v in sorted(by_vend.keys()):
                 itens = by_vend[v]

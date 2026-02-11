@@ -167,13 +167,28 @@
   <div class="row g-2 align-items-end">
     {% if role and role|lower in ['admin','supervisor'] %}
       <div class="col-md-4">
-        {{ multiselect("vendedor", vendedores_options or [], vendedores_sel or [], label="Vendedor(es)", placeholder="Todos", all_token="__ALL__", all_label="Todos vendedores") }}
+        {% if role == "vendedor" %}
+      <label class="form-label">Vendedor</label>
+      <input class="form-control" value="{{ vendedor }}" disabled>
+      <input type="hidden" name="vendedor" value="{{ vendedor }}">
+    {% else %}
+      {{ multiselect("vendedor", vendedores_options or [], vendedores_sel or [], label="Vendedor(es)", placeholder="Todos", all_token="__ALL__", all_label="Todos vendedores") }}
+    {% endif %}
         <div class="form-text">Comparação e drill-down por vendedor.</div>
       </div>
     {% endif %}
 
     <div class="col-md-4">
+      {% if role == "admin" %}
       {{ multiselect("emp", emps_options or [], emps_sel or [], label="EMP(s)", placeholder="Todas") }}
+    {% else %}
+      <label class="form-label">EMP(s)</label>
+      <input class="form-control" value="{{ (emps_sel or emps_scope or [])|join(', ') }}" disabled>
+      {# mantém emp(s) no submit #}
+      {% for e in (emps_sel or emps_scope or []) %}
+        <input type="hidden" name="emp" value="{{ e }}">
+      {% endfor %}
+    {% endif %}
       <div class="form-text">Comparação por loja (dentro do seu acesso).</div>
     </div>
 
@@ -352,8 +367,6 @@
                               <td>
                                 {% if it.tipo == 'COMBO' %}
                                   <span class="badge text-bg-purple" style="background:#6f42c1;">COMBO</span>
-                                {% elif it.tipo == 'ITENS' %}
-                                  <span class="badge text-bg-warning text-dark">ITENS</span>
                                 {% else %}
                                   <span class="badge text-bg-primary">QTD</span>
                                 {% endif %}
