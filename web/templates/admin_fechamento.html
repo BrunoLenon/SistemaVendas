@@ -131,47 +131,46 @@
             </table>
           </div>
 
-<hr class="my-3">
+          <hr class="my-4">
 
-<h6 class="mb-2">Consolidado financeiro (o que a empresa deve pagar)</h6>
-<div class="subtitle small mb-2">
-  Soma de <b>Campanhas QTD</b> + <b>Combos</b> + <b>Itens Parados</b> na competência.
-  <span class="text-muted">(Devido = Pendente + A pagar)</span>
-</div>
+          <h6 class="mb-1">Consolidado financeiro (o que a empresa deve pagar)</h6>
+          <div class="subtitle small mb-3">
+            Soma de <b>Campanhas QTD</b> + <b>Combos</b> + <b>Itens Parados</b> na competência.
+            (Devido = Pendente + A pagar)
+          </div>
 
-<div class="table-responsive">
-  <table class="table table-sm align-middle">
-    <thead>
-      <tr>
-        <th>EMP</th>
-        <th class="text-end">QTD</th>
-        <th class="text-end">Combo</th>
-        <th class="text-end">Parados</th>
-        <th class="text-end">Total</th>
-        <th class="text-end">Pendente</th>
-        <th class="text-end">A pagar</th>
-        <th class="text-end">Pago</th>
-        <th class="text-end">Devido</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for e in emps_sel %}
-        {% set t = (totais_por_emp or {}).get(e) %}
-        <tr>
-          <td><b>{{ e }}</b></td>
-          <td class="text-end">{{ '%.2f'|format((t.qtd_total if t else 0) or 0) }}</td>
-          <td class="text-end">{{ '%.2f'|format((t.combo_total if t else 0) or 0) }}</td>
-          <td class="text-end">{{ '%.2f'|format((t.parados_total if t else 0) or 0) }}</td>
-          <td class="text-end"><b>{{ '%.2f'|format((t.total if t else 0) or 0) }}</b></td>
-          <td class="text-end">{{ '%.2f'|format((t.pendente if t else 0) or 0) }}</td>
-          <td class="text-end">{{ '%.2f'|format((t.a_pagar if t else 0) or 0) }}</td>
-          <td class="text-end">{{ '%.2f'|format((t.pago if t else 0) or 0) }}</td>
-          <td class="text-end"><b>{{ '%.2f'|format((t.devido if t else 0) or 0) }}</b></td>
-        </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
+          <div class="table-responsive">
+            <table class="table table-sm align-middle">
+              <thead>
+                <tr>
+                  <th>EMP</th>
+                  <th class="text-end">QTD</th>
+                  <th class="text-end">Combo</th>
+                  <th class="text-end">Parados</th>
+                  <th class="text-end">Total</th>
+                  <th class="text-end">Pendente</th>
+                  <th class="text-end">A pagar</th>
+                  <th class="text-end">Pago</th>
+                  <th class="text-end">Devido</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for r in (consolidado_rows or []) %}
+                  <tr>
+                    <td><b>{{ r.emp }}</b></td>
+                    <td class="text-end">{{ "%.2f"|format(r.qtd or 0) }}</td>
+                    <td class="text-end">{{ "%.2f"|format(r.combo or 0) }}</td>
+                    <td class="text-end">{{ "%.2f"|format(r.parados or 0) }}</td>
+                    <td class="text-end"><b>{{ "%.2f"|format(r.total or 0) }}</b></td>
+                    <td class="text-end">{{ "%.2f"|format(r.pendente or 0) }}</td>
+                    <td class="text-end">{{ "%.2f"|format(r.a_pagar or 0) }}</td>
+                    <td class="text-end">{{ "%.2f"|format(r.pago or 0) }}</td>
+                    <td class="text-end"><b>{{ "%.2f"|format(r.devido or 0) }}</b></td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
 
           <div class="alert alert-secondary small mb-0">
             <b>Dica:</b> Se o mês estiver <span class="badge text-bg-danger">FECHADO</span>, telas que respeitam a trava não devem permitir alteração dos cadastros do período.
