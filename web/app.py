@@ -43,6 +43,10 @@ from db import (
     CampanhaCombo,
     CampanhaComboItem,
     CampanhaComboResultado,
+    CampanhaRankingMarca,
+    CampanhaRankingMarcaEmp,
+    CampanhaRankingMarcaPremio,
+    CampanhaRankingMarcaResultado,
     VendasResumoPeriodo,
     MetaPrograma,
     MetaProgramaEmp,
@@ -1156,6 +1160,60 @@ def _parse_multi_args(name: str) -> list[str]:
         if v not in seen:
             seen.add(v); res.append(v)
     return res
+
+
+def _vendedor_norm(v: str | None) -> str:
+    return (v or "").strip().upper()
+
+
+def _parse_emps_anywhere(param_name: str = "emp") -> list[str]:
+    """Lê EMP(s) de request.args/form/values em formatos comuns:
+    - emp=101&emp=102
+    - emp[]=101&emp[]=102
+    - emp=101,102
+    - emp[]=101,102
+    """
+    vals: list[str] = []
+
+    # 1) values (GET/POST)
+    for key in (param_name, f"{param_name}[]"):
+        try:
+            vals.extend([str(x) for x in request.values.getlist(key) if str(x).strip()])
+        except Exception:
+            pass
+
+    # 2) fallback: args CSV
+    if not vals:
+        try:
+            raw = request.values.get(param_name) or request.values.get(f"{param_name}[]") or ""
+        except Exception:
+            raw = ""
+        raw = str(raw or "").strip()
+        if raw:
+            vals = [raw]
+
+    out: list[str] = []
+    for v in vals:
+        for part in str(v).split(","):
+            p = _emp_norm(part)
+            if p:
+                out.append(p)
+
+    # unique mantendo ordem
+    seen = set()
+    res: list[str] = []
+    for v in out:
+        if v not in seen:
+            seen.add(v)
+            res.append(v)
+    return res
+
+
+def _parse_action_anywhere() -> str:
+    """Lê ação/action de request.form/values com robustez."""
+    raw = (request.form.get("acao") or request.form.get("action") or request.values.get("acao") or request.values.get("action") or "").strip().lower()
+    return raw
+
 
 def _competencia_fechada(db, emp: str, ano: int, mes: int) -> bool:
     """Retorna True se a competência (EMP+ano+mes) estiver marcada como FECHADA."""
@@ -3308,6 +3366,228 @@ def _recalcular_resultados_combos_para_scope(ano: int, mes: int, emps: list[str]
                 db.bulk_save_objects(novos)
             db.commit()
 
+# ---------------------------------------------------------------------
+# Campanhas Ranking por Marca (Top N) - cálculo e snapshot
+# ---------------------------------------------------------------------
+def _valid_vendedores_set(db) -> set[str]:
+    """Set de vendedores válidos (usuarios.role='vendedor')."""
+    try:
+        rows = db.query(Usuario.username).filter(func.lower(Usuario.role) == "vendedor").all()
+        return {(r[0] or "").strip().upper() for r in rows if r and (r[0] or "").strip()}
+    except Exception:
+        return set()
+
+
+def _campanha_rank_marca_periodo(c: CampanhaRankingMarca, ano: int, mes: int) -> tuple[date, date]:
+    """Retorna [inicio, fim_inclusivo] para cálculo da campanha no mês alvo."""
+    # Se a campanha tiver competência fixa, usamos o mês/ano dela; caso contrário, usamos o mês selecionado, mas
+    # respeitando o overlap com data_inicio/data_fim.
+    start_mes, end_mes_excl = _periodo_bounds(int(ano), int(mes))
+    fim_mes = end_mes_excl - timedelta(days=1)
+
+    di = getattr(c, "data_inicio", None) or start_mes
+    df = getattr(c, "data_fim", None) or fim_mes
+
+    # interseção com o mês (evita puxar vendas fora da competência exibida)
+    ini = max(di, start_mes)
+    fim = min(df, fim_mes)
+    return ini, fim
+
+
+def _rank_premios_map(db, campanha_id: int) -> dict[int, float]:
+    try:
+        rows = (
+            db.query(CampanhaRankingMarcaPremio.posicao, CampanhaRankingMarcaPremio.valor_premio)
+            .filter(CampanhaRankingMarcaPremio.campanha_id == int(campanha_id))
+            .all()
+        )
+        mp = {int(p): float(v or 0.0) for p, v in rows if p is not None}
+        return mp
+    except Exception:
+        return {}
+
+
+def _rank_emps_scope(db, c: CampanhaRankingMarca) -> list[str] | None:
+    esc = (getattr(c, "escopo_tipo", "") or "GLOBAL").strip().upper()
+    if esc == "EMPS":
+        try:
+            rows = (
+                db.query(CampanhaRankingMarcaEmp.emp)
+                .filter(CampanhaRankingMarcaEmp.campanha_id == int(c.id))
+                .all()
+            )
+            emps = [str(r[0]).strip() for r in rows if r and str(r[0]).strip()]
+            return sorted(set(emps))
+        except Exception:
+            return []
+    # GLOBAL
+    return None
+
+
+def _recalcular_resultados_ranking_marca_para_competencia(db, ano: int, mes: int, emps_scope: list[str] | None = None) -> None:
+    """Recalcula (upsert) resultados de todas campanhas ranking-marca ativas que cruzem a competência.
+    - emps_scope (opcional): restringe recalculo somente a campanhas que intersectem estas EMPs (otimização em relatórios).
+    """
+    ano = int(ano); mes = int(mes)
+
+    # campanhas ativas que cruzam o mês ou que tenham competência fixa igual
+    start_mes, end_mes_excl = _periodo_bounds(ano, mes)
+    fim_mes = end_mes_excl - timedelta(days=1)
+
+    campanhas = (
+        db.query(CampanhaRankingMarca)
+        .filter(CampanhaRankingMarca.ativo.is_(True))
+        .filter(
+            or_(
+                and_(CampanhaRankingMarca.competencia_ano == ano, CampanhaRankingMarca.competencia_mes == mes),
+                and_(CampanhaRankingMarca.data_inicio <= fim_mes, CampanhaRankingMarca.data_fim >= start_mes),
+            )
+        )
+        .order_by(CampanhaRankingMarca.id.asc())
+        .all()
+    )
+
+    if not campanhas:
+        return
+
+    valid_vendedores = _valid_vendedores_set(db)
+    if not valid_vendedores:
+        # sem usuários cadastrados como vendedor: mantém compat (não recalcula)
+        return
+
+    for c in campanhas:
+        marca_norm = (getattr(c, "marca", "") or "").strip().upper()
+        if not marca_norm:
+            continue
+
+        # escopo de EMPs da campanha
+        camp_emps = _rank_emps_scope(db, c)  # None (GLOBAL) ou lista
+        if camp_emps is not None and not camp_emps:
+            # EMPS sem vínculo: nada a fazer
+            continue
+
+        # Se foi passado emps_scope, e a campanha for EMPS, só recalcula se intersectar (performance em relatórios)
+        if emps_scope and camp_emps is not None:
+            if not (set(camp_emps) & set([str(e) for e in emps_scope])):
+                continue
+
+        ini, fim = _campanha_rank_marca_periodo(c, ano, mes)
+        if fim < ini:
+            continue
+
+        # Premiação (Top N)
+        premios_map = _rank_premios_map(db, int(c.id))
+        if not premios_map:
+            # default 1/2/3
+            premios_map = {1: 300.0, 2: 200.0, 3: 100.0}
+
+        # Query agregada: soma vendas por vendedor+emp no período e marca
+        q = (
+            db.query(func.upper(Venda.vendedor), Venda.emp, func.coalesce(func.sum(Venda.valor_total), 0.0))
+            .filter(Venda.mov_tipo_movto == "OA")
+            .filter(Venda.movimento >= ini, Venda.movimento <= fim)
+            .filter(func.upper(func.coalesce(func.trim(Venda.marca), "")) == marca_norm)
+        )
+
+        if camp_emps is not None:
+            q = q.filter(Venda.emp.in_([str(e) for e in camp_emps]))
+
+        q = q.group_by(func.upper(Venda.vendedor), Venda.emp)
+
+        rows = q.all()
+
+        # agrega por vendedor (somando EMPs); e escolhe EMP do maior volume (para fechamento por EMP)
+        vend_tot: dict[str, float] = {}
+        vend_emp_best: dict[str, tuple[str, float]] = {}  # vendedor -> (emp, valor)
+        for vend_u, emp_v, total in rows:
+            v = _vendedor_norm(vend_u)
+            if not v or v not in valid_vendedores:
+                continue
+            emp_s = _emp_norm(str(emp_v or ""))
+            val = float(total or 0.0)
+            if val <= 0:
+                continue
+            vend_tot[v] = vend_tot.get(v, 0.0) + val
+            if emp_s:
+                prev = vend_emp_best.get(v)
+                if (prev is None) or (val > prev[1]) or (val == prev[1] and emp_s < prev[0]):
+                    vend_emp_best[v] = (emp_s, val)
+
+        # ranking (desc por total; desempate alfabético)
+        ranking = sorted(vend_tot.items(), key=lambda kv: (-float(kv[1]), kv[0]))
+
+        # Atualiza resultados (upsert) somente para Top N (posições que tem prêmio)
+        top_positions = sorted([int(p) for p in premios_map.keys() if int(p) > 0])
+        if not top_positions:
+            continue
+        top_n = max(top_positions)
+
+        now = datetime.utcnow()
+        for idx, (v, tot) in enumerate(ranking[:top_n], start=1):
+            premio = float(premios_map.get(int(idx), 0.0) or 0.0)
+            if premio <= 0:
+                continue
+            emp_attr = None
+            if v in vend_emp_best:
+                emp_attr = vend_emp_best[v][0] or None
+
+            # tenta encontrar registro existente para manter status_pagamento/pago_em
+            rec = (
+                db.query(CampanhaRankingMarcaResultado)
+                .filter(
+                    CampanhaRankingMarcaResultado.campanha_id == int(c.id),
+                    CampanhaRankingMarcaResultado.competencia_ano == ano,
+                    CampanhaRankingMarcaResultado.competencia_mes == mes,
+                    CampanhaRankingMarcaResultado.vendedor == v,
+                    # emp pode variar (atribuição); preferimos match por emp_attr quando houver
+                    or_(
+                        CampanhaRankingMarcaResultado.emp == emp_attr,
+                        CampanhaRankingMarcaResultado.emp.is_(None),
+                        emp_attr is None,
+                    ),
+                )
+                .order_by(CampanhaRankingMarcaResultado.id.desc())
+                .first()
+            )
+            if not rec:
+                rec = CampanhaRankingMarcaResultado(
+                    campanha_id=int(c.id),
+                    competencia_ano=ano,
+                    competencia_mes=mes,
+                    emp=emp_attr,
+                    vendedor=v,
+                    status_pagamento="PENDENTE",
+                )
+                db.add(rec)
+
+            # Atualiza métricas (não zera status)
+            rec.emp = emp_attr
+            rec.valor_vendido = float(tot or 0.0)
+            rec.posicao = int(idx)
+            rec.valor_premio = float(premio or 0.0)
+            rec.atualizado_em = now
+
+        # Opcional: não removemos posições antigas automaticamente (evita apagar histórico por erro de base).
+        # O admin pode apagar manualmente ou recalcular com limpeza se desejar.
+
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        app.logger.exception("Falha ao recalcular ranking marca")
+
+
+def _status_bucket(val: str | None) -> str:
+    s = (val or "").strip().upper()
+    if s in {"PAGO", "PAG", "PAYED"}:
+        return "PAGO"
+    if s in {"A_PAGAR", "APAGAR", "A PAGAR", "A-PAGAR"}:
+        return "A_PAGAR"
+    # default
+    return "PENDENTE"
+
+
+
 
 def _build_campanhas_escolhidas_por_vendedor(campanhas: list[CampanhaQtd], vendedores: list[str]) -> dict[str, list[CampanhaQtd]]:
     """Aplica a regra de prioridade por chave (prefixo+marca): campanha do vendedor substitui campanha geral."""
@@ -3570,6 +3850,12 @@ def relatorio_campanhas():
             })
 
             # -------- Resultados (Tab B/C) --------
+            # garante ranking marca recalculado para esta competência (evita tela vazia se admin não recalculou)
+            try:
+                _recalcular_resultados_ranking_marca_para_competencia(db, ano, mes, emps_scope=[emp])
+            except Exception:
+                pass
+
             resultados_qtd = (
                 db.query(CampanhaQtdResultado)
                 .filter(
@@ -3591,6 +3877,19 @@ def relatorio_campanhas():
                     CampanhaComboResultado.vendedor.in_([v.strip().upper() for v in vendedores]),
                 )
                 .order_by(CampanhaComboResultado.vendedor.asc(), CampanhaComboResultado.valor_recompensa.desc())
+                .all()
+            )
+
+            resultados_ranking_marca = (
+                db.query(CampanhaRankingMarcaResultado)
+                .filter(
+                    CampanhaRankingMarcaResultado.emp == emp,
+                    CampanhaRankingMarcaResultado.competencia_ano == int(ano),
+                    CampanhaRankingMarcaResultado.competencia_mes == int(mes),
+                    CampanhaRankingMarcaResultado.vendedor.in_([v.strip().upper() for v in vendedores]),
+                    CampanhaRankingMarcaResultado.valor_premio > 0,
+                )
+                .order_by(CampanhaRankingMarcaResultado.posicao.asc().nullslast(), CampanhaRankingMarcaResultado.valor_premio.desc())
                 .all()
             )
 
@@ -3745,6 +4044,23 @@ def relatorio_campanhas():
                     "status_pagamento": r.status_pagamento,
                     "periodo": f"{r.data_inicio} → {r.data_fim}",
                 })
+            # adiciona Ranking por Marca no agrupamento (snapshot salvo)
+            for r in (resultados_ranking_marca or []):
+                v = (r.vendedor or "").strip().upper()
+                by_vend.setdefault(v, []).append({
+                    "tipo": "RANKING_MARCA",
+                    "titulo": "Ranking por Marca",
+                    "marca": "",
+                    "produto": f"Posição {int(r.posicao) if r.posicao is not None else '-'}",
+                    "qtd": None,
+                    "valor_vendido": float(getattr(r, "valor_vendido", 0.0) or 0.0),
+                    "valor_recompensa": float(getattr(r, "valor_premio", 0.0) or 0.0),
+                    "atingiu": 1,
+                    "status_pagamento": getattr(r, "status_pagamento", None),
+                    "periodo": f"{ano}-{mes:02d}",
+                })
+
+
 
 
             # adiciona Itens Parados no agrupamento (como "campanha")
@@ -5636,6 +5952,664 @@ def admin_combos():
         ok=ok,
     )
 
+# ---------------------------------------------------------------------
+# Admin — Campanhas: Ranking por Marca (Top N)
+# ---------------------------------------------------------------------
+@app.route("/admin/campanhas/ranking-marca", methods=["GET", "POST"])
+def admin_campanhas_ranking_marca():
+    red = _login_required()
+    if red:
+        return red
+    red = _admin_required()
+    if red:
+        return red
+
+    hoje = date.today()
+    mes = int(request.values.get("mes") or hoje.month)
+    ano = int(request.values.get("ano") or hoje.year)
+
+    erro = None
+    ok = None
+
+    def _parse_date(s: str) -> date | None:
+        s = (s or "").strip()
+        if not s:
+            return None
+        for fmt in ("%Y-%m-%d", "%d/%m/%Y"):
+            try:
+                return datetime.strptime(s, fmt).date()
+            except Exception:
+                continue
+        return None
+
+    def _parse_premios_text(txt: str) -> dict[int, float]:
+        mp: dict[int, float] = {}
+        for line in (txt or "").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            # aceita: 1=300, 1:300, 1 300
+            m2 = re.match(r"^(\d+)\s*[:=\s]\s*([0-9]+(?:[\.,][0-9]+)?)$", line)
+            if not m2:
+                continue
+            pos = int(m2.group(1))
+            val = float(m2.group(2).replace(",", "."))
+            if pos > 0 and val >= 0:
+                mp[pos] = val
+        return mp
+
+    with SessionLocal() as db:
+        # opções de EMP
+        try:
+            emps_all = [str(r.codigo).strip() for r in db.query(Emp).order_by(Emp.codigo.asc()).all()]
+        except Exception:
+            emps_all = []
+        emps_options = _get_emp_options(emps_all or [])
+
+        if request.method == "POST":
+            acao = (request.form.get("acao") or request.values.get("acao") or "").strip().lower()
+            cid = int(request.form.get("id") or 0) if (request.form.get("id") or "").strip() else 0
+
+            try:
+                if acao in {"criar", "editar"}:
+                    titulo = (request.form.get("titulo") or "").strip()
+                    marca = (request.form.get("marca") or "").strip().upper()
+                    data_inicio = _parse_date(request.form.get("data_inicio") or "")
+                    data_fim = _parse_date(request.form.get("data_fim") or "")
+                    escopo_tipo = (request.form.get("escopo_tipo") or "GLOBAL").strip().upper()
+                    ativo = True if (request.form.get("ativo") or "").lower() in {"1", "true", "on", "yes"} else False
+
+                    comp_ano = (request.form.get("competencia_ano") or "").strip()
+                    comp_mes = (request.form.get("competencia_mes") or "").strip()
+                    comp_ano_i = int(comp_ano) if comp_ano.isdigit() else None
+                    comp_mes_i = int(comp_mes) if comp_mes.isdigit() else None
+                    if comp_mes_i is not None and (comp_mes_i < 1 or comp_mes_i > 12):
+                        comp_mes_i = None
+
+                    if not titulo or not marca or not data_inicio or not data_fim:
+                        raise ValueError("Preencha título, marca, início e fim.")
+                    if data_fim < data_inicio:
+                        raise ValueError("Data fim deve ser >= data início.")
+                    if escopo_tipo not in {"GLOBAL", "EMPS"}:
+                        escopo_tipo = "GLOBAL"
+
+                    if acao == "criar":
+                        obj = CampanhaRankingMarca(
+                            titulo=titulo,
+                            marca=marca,
+                            data_inicio=data_inicio,
+                            data_fim=data_fim,
+                            competencia_ano=comp_ano_i,
+                            competencia_mes=comp_mes_i,
+                            escopo_tipo=escopo_tipo,
+                            ativo=ativo,
+                        )
+                        db.add(obj)
+                        db.flush()  # para ter id
+                        cid = int(obj.id)
+                    else:
+                        obj = db.query(CampanhaRankingMarca).filter(CampanhaRankingMarca.id == int(cid)).first()
+                        if not obj:
+                            raise ValueError("Campanha não encontrada.")
+                        obj.titulo = titulo
+                        obj.marca = marca
+                        obj.data_inicio = data_inicio
+                        obj.data_fim = data_fim
+                        obj.competencia_ano = comp_ano_i
+                        obj.competencia_mes = comp_mes_i
+                        obj.escopo_tipo = escopo_tipo
+                        obj.ativo = ativo
+                        obj.updated_at = datetime.utcnow()
+
+                        # limpa vínculos/premios para regravar
+                        db.query(CampanhaRankingMarcaEmp).filter(CampanhaRankingMarcaEmp.campanha_id == int(cid)).delete()
+                        db.query(CampanhaRankingMarcaPremio).filter(CampanhaRankingMarcaPremio.campanha_id == int(cid)).delete()
+
+                    # EMPs (se EMPS)
+                    if escopo_tipo == "EMPS":
+                        emps_sel = _parse_emps_anywhere("emp")
+                        emps_sel = [e for e in emps_sel if e in set(emps_all)]
+                        for e in emps_sel:
+                            db.add(CampanhaRankingMarcaEmp(campanha_id=int(cid), emp=e))
+
+                    # Prêmios
+                    premios_txt = (request.form.get("premios_texto") or "").strip()
+                    premios = _parse_premios_text(premios_txt)
+                    if not premios:
+                        premios = {1: 300.0, 2: 200.0, 3: 100.0}
+                    for pos, val in sorted(premios.items()):
+                        db.add(CampanhaRankingMarcaPremio(campanha_id=int(cid), posicao=int(pos), valor_premio=float(val)))
+
+                    db.commit()
+                    ok = "✅ Campanha salva."
+                elif acao == "remover":
+                    if not cid:
+                        raise ValueError("ID inválido.")
+                    db.query(CampanhaRankingMarcaResultado).filter(CampanhaRankingMarcaResultado.campanha_id == int(cid)).delete()
+                    db.query(CampanhaRankingMarcaEmp).filter(CampanhaRankingMarcaEmp.campanha_id == int(cid)).delete()
+                    db.query(CampanhaRankingMarcaPremio).filter(CampanhaRankingMarcaPremio.campanha_id == int(cid)).delete()
+                    db.query(CampanhaRankingMarca).filter(CampanhaRankingMarca.id == int(cid)).delete()
+                    db.commit()
+                    ok = "🗑️ Campanha removida."
+                elif acao == "recalcular":
+                    if not cid:
+                        raise ValueError("ID inválido.")
+                    # recalcula resultados da competência selecionada
+                    a = int(request.form.get("ano") or ano)
+                    mth = int(request.form.get("mes") or mes)
+                    # restringe emps_scope ao escopo da campanha (otimização)
+                    camp = db.query(CampanhaRankingMarca).filter(CampanhaRankingMarca.id == int(cid)).first()
+                    if camp:
+                        camp_emps = _rank_emps_scope(db, camp)
+                        scope = None
+                        if camp_emps is not None:
+                            scope = camp_emps
+                        _recalcular_resultados_ranking_marca_para_competencia(db, a, mth, emps_scope=scope)
+                    ok = "🔁 Recalculo solicitado."
+                else:
+                    erro = "Ação inválida."
+            except Exception as ex:
+                db.rollback()
+                erro = str(ex)
+
+        # Lista campanhas + vínculos + prêmios
+        campanhas = db.query(CampanhaRankingMarca).order_by(CampanhaRankingMarca.id.desc()).all()
+        emps_map: dict[int, list[str]] = {}
+        premios_map: dict[int, list[dict]] = {}
+        if campanhas:
+            ids = [c.id for c in campanhas]
+            rows = db.query(CampanhaRankingMarcaEmp.campanha_id, CampanhaRankingMarcaEmp.emp).filter(CampanhaRankingMarcaEmp.campanha_id.in_(ids)).all()
+            for cid2, e in rows:
+                emps_map.setdefault(int(cid2), []).append(str(e))
+            rows = db.query(CampanhaRankingMarcaPremio.campanha_id, CampanhaRankingMarcaPremio.posicao, CampanhaRankingMarcaPremio.valor_premio).filter(CampanhaRankingMarcaPremio.campanha_id.in_(ids)).all()
+            for cid2, pos, val in rows:
+                premios_map.setdefault(int(cid2), []).append({"posicao": int(pos), "valor": float(val or 0.0)})
+            for k in premios_map:
+                premios_map[k].sort(key=lambda x: x["posicao"])
+
+    return render_template(
+        "admin_campanhas_ranking_marca.html",
+        ano=ano,
+        mes=mes,
+        erro=erro,
+        ok=ok,
+        emps_options=emps_options,
+        campanhas=campanhas,
+        emps_map=emps_map,
+        premios_map=premios_map,
+    )
+
+
+
+
+# ---------------------------------------------------------------------
+# Fechamento Financeiro (ADMIN) — consolidado e detalhes
+# ---------------------------------------------------------------------
+def _fechamento_status_map(db, ano: int, mes: int, emps: list[str]) -> dict[str, str]:
+    """Retorna status financeiro por EMP ('aberto'|'a_pagar'|'pago')."""
+    out: dict[str, str] = {}
+    if not emps:
+        return out
+    try:
+        rows = (
+            db.query(FechamentoMensal.emp, FechamentoMensal.status)
+            .filter(
+                FechamentoMensal.ano == int(ano),
+                FechamentoMensal.mes == int(mes),
+                FechamentoMensal.emp.in_([str(e) for e in emps]),
+            )
+            .all()
+        )
+        for emp, st in rows:
+            e = _emp_norm(str(emp or ""))
+            if e:
+                out[e] = (st or "aberto").strip().lower()
+    except Exception:
+        return out
+    return out
+
+
+def _fechamento_consolidado_por_emp(db, ano: int, mes: int, emps: list[str]) -> list[dict]:
+    """Consolidado financeiro do mês por EMP.
+    Retorna lista com chaves:
+      emp, qtd, combo, parados, ranking_marca, total,
+      pendente, a_pagar, pago, devido
+    """
+    ano = int(ano); mes = int(mes)
+    emps = [str(_emp_norm(e)) for e in (emps or []) if str(_emp_norm(e))]
+    if not emps:
+        return []
+
+    # status do fechamento para classificar itens parados
+    fech_status = _fechamento_status_map(db, ano, mes, emps)
+
+    # --------- QTD (resultados) ---------
+    qtd_map = {e: {"PENDENTE": 0.0, "A_PAGAR": 0.0, "PAGO": 0.0, "TOTAL": 0.0} for e in emps}
+    try:
+        rows = (
+            db.query(
+                CampanhaQtdResultado.emp,
+                CampanhaQtdResultado.status_pagamento,
+                func.coalesce(func.sum(CampanhaQtdResultado.valor_recompensa), 0.0),
+            )
+            .filter(
+                CampanhaQtdResultado.competencia_ano == ano,
+                CampanhaQtdResultado.competencia_mes == mes,
+                CampanhaQtdResultado.emp.in_(emps),
+                CampanhaQtdResultado.valor_recompensa > 0,
+            )
+            .group_by(CampanhaQtdResultado.emp, CampanhaQtdResultado.status_pagamento)
+            .all()
+        )
+        for emp, st, total in rows:
+            e = _emp_norm(str(emp or ""))
+            if not e or e not in qtd_map:
+                continue
+            bucket = _status_bucket(st)
+            qtd_map[e][bucket] = float(total or 0.0)
+        for e in emps:
+            qtd_map[e]["TOTAL"] = float(qtd_map[e]["PENDENTE"] + qtd_map[e]["A_PAGAR"] + qtd_map[e]["PAGO"])
+    except Exception:
+        pass
+
+    # --------- COMBO (resultados) ---------
+    combo_map = {e: {"PENDENTE": 0.0, "A_PAGAR": 0.0, "PAGO": 0.0, "TOTAL": 0.0} for e in emps}
+    try:
+        rows = (
+            db.query(
+                CampanhaComboResultado.emp,
+                CampanhaComboResultado.status_pagamento,
+                func.coalesce(func.sum(CampanhaComboResultado.valor_recompensa), 0.0),
+            )
+            .filter(
+                CampanhaComboResultado.competencia_ano == ano,
+                CampanhaComboResultado.competencia_mes == mes,
+                CampanhaComboResultado.emp.in_(emps),
+                CampanhaComboResultado.valor_recompensa > 0,
+            )
+            .group_by(CampanhaComboResultado.emp, CampanhaComboResultado.status_pagamento)
+            .all()
+        )
+        for emp, st, total in rows:
+            e = _emp_norm(str(emp or ""))
+            if not e or e not in combo_map:
+                continue
+            bucket = _status_bucket(st)
+            combo_map[e][bucket] = float(total or 0.0)
+        for e in emps:
+            combo_map[e]["TOTAL"] = float(combo_map[e]["PENDENTE"] + combo_map[e]["A_PAGAR"] + combo_map[e]["PAGO"])
+    except Exception:
+        pass
+
+    # --------- RANKING MARCA (resultados) ---------
+    rank_map = {e: {"PENDENTE": 0.0, "A_PAGAR": 0.0, "PAGO": 0.0, "TOTAL": 0.0} for e in emps}
+    try:
+        rows = (
+            db.query(
+                CampanhaRankingMarcaResultado.emp,
+                CampanhaRankingMarcaResultado.status_pagamento,
+                func.coalesce(func.sum(CampanhaRankingMarcaResultado.valor_premio), 0.0),
+            )
+            .filter(
+                CampanhaRankingMarcaResultado.competencia_ano == ano,
+                CampanhaRankingMarcaResultado.competencia_mes == mes,
+                CampanhaRankingMarcaResultado.emp.in_(emps),
+                CampanhaRankingMarcaResultado.valor_premio > 0,
+            )
+            .group_by(CampanhaRankingMarcaResultado.emp, CampanhaRankingMarcaResultado.status_pagamento)
+            .all()
+        )
+        for emp, st, total in rows:
+            e = _emp_norm(str(emp or ""))
+            if not e or e not in rank_map:
+                continue
+            bucket = _status_bucket(st)
+            rank_map[e][bucket] = float(total or 0.0)
+        for e in emps:
+            rank_map[e]["TOTAL"] = float(rank_map[e]["PENDENTE"] + rank_map[e]["A_PAGAR"] + rank_map[e]["PAGO"])
+    except Exception:
+        pass
+
+    # --------- ITENS PARADOS (cálculo ao vivo) ---------
+    par_map = {e: {"PENDENTE": 0.0, "A_PAGAR": 0.0, "PAGO": 0.0, "TOTAL": 0.0} for e in emps}
+    try:
+        start_p, end_p = _periodo_bounds(ano, mes)
+        # join vendas x itens_parados por (emp,codigo==mestre) comparando como string normalizada
+        # Como comparação é por string, evitamos cast no lado da coluna (melhor índice) e normalizamos mestre no SELECT.
+        rows = (
+            db.query(
+                Venda.emp,
+                func.coalesce(func.sum(Venda.valor_total * (ItemParado.recompensa_pct / 100.0)), 0.0),
+            )
+            .join(ItemParado, and_(ItemParado.emp == Venda.emp, cast(Venda.mestre, String) == cast(ItemParado.codigo, String)))
+            .filter(Venda.emp.in_(emps))
+            .filter(Venda.mov_tipo_movto == "OA")
+            .filter(Venda.movimento >= start_p, Venda.movimento < end_p)
+            .filter(ItemParado.ativo == 1)
+            .group_by(Venda.emp)
+            .all()
+        )
+        for emp, total in rows:
+            e = _emp_norm(str(emp or ""))
+            if not e or e not in par_map:
+                continue
+            val = float(total or 0.0)
+            if val <= 0:
+                continue
+            st = (fech_status.get(e) or "aberto").lower()
+            if st == "pago":
+                par_map[e]["PAGO"] = val
+            elif st == "a_pagar":
+                par_map[e]["A_PAGAR"] = val
+            else:
+                par_map[e]["PENDENTE"] = val
+        for e in emps:
+            par_map[e]["TOTAL"] = float(par_map[e]["PENDENTE"] + par_map[e]["A_PAGAR"] + par_map[e]["PAGO"])
+    except Exception:
+        app.logger.exception("Erro ao calcular itens parados no fechamento")
+
+    # Monta linhas finais
+    linhas: list[dict] = []
+    for e in emps:
+        qtd_total = float(qtd_map[e]["TOTAL"])
+        combo_total = float(combo_map[e]["TOTAL"])
+        par_total = float(par_map[e]["TOTAL"])
+        rank_total = float(rank_map[e]["TOTAL"])
+        total = float(qtd_total + combo_total + par_total + rank_total)
+
+        pendente = float(qtd_map[e]["PENDENTE"] + combo_map[e]["PENDENTE"] + par_map[e]["PENDENTE"] + rank_map[e]["PENDENTE"])
+        a_pagar = float(qtd_map[e]["A_PAGAR"] + combo_map[e]["A_PAGAR"] + par_map[e]["A_PAGAR"] + rank_map[e]["A_PAGAR"])
+        pago = float(qtd_map[e]["PAGO"] + combo_map[e]["PAGO"] + par_map[e]["PAGO"] + rank_map[e]["PAGO"])
+        devido = float(pendente + a_pagar)
+
+        linhas.append({
+            "emp": e,
+            "qtd": qtd_total,
+            "combo": combo_total,
+            "parados": par_total,
+            "ranking_marca": rank_total,
+            "total": total,
+            "pendente": pendente,
+            "a_pagar": a_pagar,
+            "pago": pago,
+            "devido": devido,
+            "status_fechamento": (fech_status.get(e) or "aberto"),
+        })
+
+    # ordena por EMP numérico quando possível
+    linhas.sort(key=lambda r: (_emp_to_int_safe(r["emp"]), r["emp"]))
+    return linhas
+
+
+def _fechamento_detalhes_por_vendedor(db, ano: int, mes: int, emp: str) -> list[dict]:
+    """Detalha o fechamento por vendedor (EMP + competência)."""
+    emp = _emp_norm(emp)
+    if not emp:
+        return []
+
+    # vendedores válidos vinculados à EMP (role=vendedor + vínculo ativo)
+    valid_vend: set[str] = set()
+    try:
+        # via usuario_emps (preferencial)
+        rows = (
+            db.query(func.upper(Usuario.username))
+            .join(UsuarioEmp, UsuarioEmp.usuario_id == Usuario.id)
+            .filter(func.lower(Usuario.role) == "vendedor")
+            .filter(UsuarioEmp.ativo.is_(True))
+            .filter(UsuarioEmp.emp == emp)
+            .all()
+        )
+        valid_vend = {(r[0] or "").strip().upper() for r in rows if r and (r[0] or "").strip()}
+    except Exception:
+        valid_vend = set()
+
+    if not valid_vend:
+        # fallback legado: usuarios.emp
+        try:
+            rows = (
+                db.query(func.upper(Usuario.username))
+                .filter(func.lower(Usuario.role) == "vendedor")
+                .filter(func.coalesce(Usuario.emp, "") == emp)
+                .all()
+            )
+            valid_vend = {(r[0] or "").strip().upper() for r in rows if r and (r[0] or "").strip()}
+        except Exception:
+            valid_vend = set()
+
+    # QTD / COMBO / RANKING: agregados por vendedor
+    out: dict[str, dict] = {}
+
+    def _ensure(v: str):
+        if v not in out:
+            out[v] = {"vendedor": v, "qtd": 0.0, "combo": 0.0, "parados": 0.0, "ranking_marca": 0.0, "total": 0.0, "itens": []}
+
+    # QTD resultados
+    try:
+        rows = (
+            db.query(CampanhaQtdResultado.vendedor, func.coalesce(func.sum(CampanhaQtdResultado.valor_recompensa), 0.0))
+            .filter(
+                CampanhaQtdResultado.emp == emp,
+                CampanhaQtdResultado.competencia_ano == int(ano),
+                CampanhaQtdResultado.competencia_mes == int(mes),
+                CampanhaQtdResultado.valor_recompensa > 0,
+            )
+            .group_by(CampanhaQtdResultado.vendedor)
+            .all()
+        )
+        for v, tot in rows:
+            vv = _vendedor_norm(v)
+            if valid_vend and vv not in valid_vend:
+                continue
+            _ensure(vv)
+            out[vv]["qtd"] = float(tot or 0.0)
+    except Exception:
+        pass
+
+    # COMBO resultados
+    try:
+        rows = (
+            db.query(CampanhaComboResultado.vendedor, func.coalesce(func.sum(CampanhaComboResultado.valor_recompensa), 0.0))
+            .filter(
+                CampanhaComboResultado.emp == emp,
+                CampanhaComboResultado.competencia_ano == int(ano),
+                CampanhaComboResultado.competencia_mes == int(mes),
+                CampanhaComboResultado.valor_recompensa > 0,
+            )
+            .group_by(CampanhaComboResultado.vendedor)
+            .all()
+        )
+        for v, tot in rows:
+            vv = _vendedor_norm(v)
+            if valid_vend and vv not in valid_vend:
+                continue
+            _ensure(vv)
+            out[vv]["combo"] = float(tot or 0.0)
+    except Exception:
+        pass
+
+    # RANKING marca resultados (atribuídos à EMP)
+    try:
+        rows = (
+            db.query(CampanhaRankingMarcaResultado.vendedor, func.coalesce(func.sum(CampanhaRankingMarcaResultado.valor_premio), 0.0))
+            .filter(
+                CampanhaRankingMarcaResultado.emp == emp,
+                CampanhaRankingMarcaResultado.competencia_ano == int(ano),
+                CampanhaRankingMarcaResultado.competencia_mes == int(mes),
+                CampanhaRankingMarcaResultado.valor_premio > 0,
+            )
+            .group_by(CampanhaRankingMarcaResultado.vendedor)
+            .all()
+        )
+        for v, tot in rows:
+            vv = _vendedor_norm(v)
+            if valid_vend and vv not in valid_vend:
+                continue
+            _ensure(vv)
+            out[vv]["ranking_marca"] = float(tot or 0.0)
+    except Exception:
+        pass
+
+    # ITENS PARADOS por vendedor (cálculo ao vivo)
+    try:
+        start_p, end_p = _periodo_bounds(int(ano), int(mes))
+        rows = (
+            db.query(func.upper(Venda.vendedor), func.coalesce(func.sum(Venda.valor_total * (ItemParado.recompensa_pct / 100.0)), 0.0))
+            .join(ItemParado, and_(ItemParado.emp == Venda.emp, cast(Venda.mestre, String) == cast(ItemParado.codigo, String)))
+            .filter(Venda.emp == emp)
+            .filter(Venda.mov_tipo_movto == "OA")
+            .filter(Venda.movimento >= start_p, Venda.movimento < end_p)
+            .filter(ItemParado.ativo == 1)
+            .group_by(func.upper(Venda.vendedor))
+            .all()
+        )
+        for v, tot in rows:
+            vv = _vendedor_norm(v)
+            if valid_vend and vv not in valid_vend:
+                continue
+            val = float(tot or 0.0)
+            if val <= 0:
+                continue
+            _ensure(vv)
+            out[vv]["parados"] = float(val)
+    except Exception:
+        pass
+
+    # Itens detalhados (lista) — para expandir no template
+    # QTD/COMBO/RANKING: pega linhas detalhadas por vendedor (sem N+1)
+    vendedores = sorted(out.keys())
+    if not vendedores:
+        return []
+
+    try:
+        qrows = (
+            db.query(CampanhaQtdResultado.vendedor, CampanhaQtdResultado.titulo, CampanhaQtdResultado.marca, CampanhaQtdResultado.produto_prefixo, CampanhaQtdResultado.valor_recompensa, CampanhaQtdResultado.status_pagamento)
+            .filter(
+                CampanhaQtdResultado.emp == emp,
+                CampanhaQtdResultado.competencia_ano == int(ano),
+                CampanhaQtdResultado.competencia_mes == int(mes),
+                CampanhaQtdResultado.vendedor.in_(vendedores),
+                CampanhaQtdResultado.valor_recompensa > 0,
+            )
+            .all()
+        )
+        for v, titulo, marca, prod, valor, st in qrows:
+            vv = _vendedor_norm(v)
+            _ensure(vv)
+            out[vv]["itens"].append({
+                "tipo": "QTD",
+                "titulo": titulo or "Campanha QTD",
+                "marca": marca or "",
+                "item": prod or "",
+                "valor": float(valor or 0.0),
+                "status_pagamento": st or "PENDENTE",
+            })
+    except Exception:
+        pass
+
+    try:
+        crows = (
+            db.query(CampanhaComboResultado.vendedor, CampanhaComboResultado.titulo, CampanhaComboResultado.marca, CampanhaComboResultado.valor_recompensa, CampanhaComboResultado.status_pagamento)
+            .filter(
+                CampanhaComboResultado.emp == emp,
+                CampanhaComboResultado.competencia_ano == int(ano),
+                CampanhaComboResultado.competencia_mes == int(mes),
+                CampanhaComboResultado.vendedor.in_(vendedores),
+                CampanhaComboResultado.valor_recompensa > 0,
+            )
+            .all()
+        )
+        for v, titulo, marca, valor, st in crows:
+            vv = _vendedor_norm(v)
+            _ensure(vv)
+            out[vv]["itens"].append({
+                "tipo": "COMBO",
+                "titulo": titulo or "Campanha Combo",
+                "marca": marca or "",
+                "item": "KIT",
+                "valor": float(valor or 0.0),
+                "status_pagamento": st or "PENDENTE",
+            })
+    except Exception:
+        pass
+
+    try:
+        rrows = (
+            db.query(CampanhaRankingMarcaResultado.vendedor, CampanhaRankingMarcaResultado.posicao, CampanhaRankingMarcaResultado.valor_vendido, CampanhaRankingMarcaResultado.valor_premio, CampanhaRankingMarcaResultado.status_pagamento)
+            .filter(
+                CampanhaRankingMarcaResultado.emp == emp,
+                CampanhaRankingMarcaResultado.competencia_ano == int(ano),
+                CampanhaRankingMarcaResultado.competencia_mes == int(mes),
+                CampanhaRankingMarcaResultado.vendedor.in_(vendedores),
+                CampanhaRankingMarcaResultado.valor_premio > 0,
+            )
+            .all()
+        )
+        for v, pos, vvnd, premio, st in rrows:
+            vv = _vendedor_norm(v)
+            _ensure(vv)
+            out[vv]["itens"].append({
+                "tipo": "RANKING_MARCA",
+                "titulo": "Ranking por Marca",
+                "marca": "",
+                "item": f"Posição {int(pos) if pos is not None else '-'}",
+                "valor_vendido": float(vvnd or 0.0),
+                "valor": float(premio or 0.0),
+                "status_pagamento": st or "PENDENTE",
+            })
+    except Exception:
+        pass
+
+    # Itens Parados detalhados: por vendedor+codigo (sem N+1)
+    try:
+        start_p, end_p = _periodo_bounds(int(ano), int(mes))
+        rows = (
+            db.query(func.upper(Venda.vendedor), cast(Venda.mestre, String), func.coalesce(func.sum(Venda.valor_total), 0.0), ItemParado.recompensa_pct)
+            .join(ItemParado, and_(ItemParado.emp == Venda.emp, cast(Venda.mestre, String) == cast(ItemParado.codigo, String)))
+            .filter(Venda.emp == emp)
+            .filter(Venda.mov_tipo_movto == "OA")
+            .filter(Venda.movimento >= start_p, Venda.movimento < end_p)
+            .filter(ItemParado.ativo == 1)
+            .group_by(func.upper(Venda.vendedor), cast(Venda.mestre, String), ItemParado.recompensa_pct)
+            .all()
+        )
+        for v, codigo, base, pct in rows:
+            vv = _vendedor_norm(v)
+            if vv not in out:
+                continue
+            base_v = float(base or 0.0)
+            pct_v = float(pct or 0.0)
+            valor = base_v * (pct_v / 100.0) if base_v > 0 and pct_v > 0 else 0.0
+            if valor <= 0:
+                continue
+            out[vv]["itens"].append({
+                "tipo": "PARADOS",
+                "titulo": "Itens Parados",
+                "marca": "",
+                "item": str(codigo or ""),
+                "valor_base": base_v,
+                "pct": pct_v,
+                "valor": float(valor),
+                "status_pagamento": "-",  # segue fechamento_mensal
+            })
+    except Exception:
+        pass
+
+    # totaliza e ordena
+    res = []
+    for v in sorted(out.keys()):
+        row = out[v]
+        row["total"] = float(row.get("qtd", 0.0) + row.get("combo", 0.0) + row.get("parados", 0.0) + row.get("ranking_marca", 0.0))
+        # ordena itens por maior valor
+        try:
+            row["itens"].sort(key=lambda x: float(x.get("valor") or 0.0), reverse=True)
+        except Exception:
+            pass
+        res.append(row)
+    # ordena por total desc
+    res.sort(key=lambda r: float(r.get("total") or 0.0), reverse=True)
+    return res
+
+
 
 
 @app.route("/admin/fechamento", methods=["GET", "POST"])
@@ -5653,59 +6627,45 @@ def admin_fechamento():
     ano = int(request.values.get("ano") or hoje.year)
     mes = int(request.values.get("mes") or hoje.month)
 
-    # multi-EMP: fecha em lote quando selecionar mais de uma EMP
-    # multi-EMP: lê tanto querystring (?emp=101&emp=102) quanto POST (inputs hidden name=emp)
-    emps_sel = []
-    try:
-        emps_sel = [str(e).strip() for e in request.values.getlist("emp") if str(e).strip()]
-    except Exception:
-        emps_sel = []
-    if not emps_sel:
-        emps_sel = [str(e).strip() for e in _parse_multi_args("emp") if str(e).strip()]
-    if not emps_sel:
-        # suporte a emp_csv="101,102"
-        csv = request.values.get("emp_csv")
-        if csv:
-            emps_sel = [str(x).strip() for x in str(csv).split(",") if str(x).strip()]
-    if not emps_sel:
-        # fallback: tenta usar emp único (mantém compatibilidade com versões antigas)
-        emp_single = _emp_norm(request.values.get("emp", ""))
-        emps_sel = [emp_single] if emp_single else []
-
-    # Fallback robusto: se o POST não enviou EMP(s) (ex.: form separado no template),
-    # reaproveita o último filtro salvo em sessão.
-    if request.method == "POST" and not emps_sel:
-        try:
-            last = session.get("_fechamento_last", {}) or {}
-            emps_last = last.get("emps") or []
-            emps_sel = [str(e).strip() for e in emps_last if str(e).strip()]
-        except Exception:
-            pass
-
-    # Persiste último filtro (para botões de fechar/reabrir funcionarem mesmo sem enviar EMP no POST)
-    try:
-        if emps_sel:
-            session["_fechamento_last"] = {"emps": list(emps_sel), "ano": int(ano), "mes": int(mes)}
-    except Exception:
-        pass
-
-
     msgs: list[str] = []
     status_por_emp: dict[str, dict] = {}
 
-    # Normaliza a ação vinda do formulário (alguns navegadores/JS podem enviar
-    # variações, ex.: sem underscore, com hífen ou com espaços).
-    acao_raw = (request.form.get("acao") or "").strip().lower()
+    # multi-EMP: aceita emp=101&emp=102, emp[]=101, CSV e POST
+    # Compat: alguns forms antigos usam "emps" ou "emp_sel"
+    emps_sel = _parse_emps_anywhere("emp") or _parse_emps_anywhere("emps") or _parse_emps_anywhere("emp_sel")
+
+    # Fallback robusto: se for POST e não vier EMP, usa última seleção salva em session
+    if request.method == "POST" and not emps_sel:
+        try:
+            last = session.get("fechamento_last_emps") or []
+            if isinstance(last, str):
+                last = [p.strip() for p in last.split(",") if p.strip()]
+            if isinstance(last, list):
+                emps_sel = [str(p).strip() for p in last if str(p).strip()]
+        except Exception:
+            emps_sel = []
+
+    # Salva a seleção atual para o próximo POST (robustez)
+    if request.method == "GET":
+        try:
+            session["fechamento_last_emps"] = [str(e).strip() for e in (emps_sel or [])]
+        except Exception:
+            pass
+
+    # Ação robusta (form/values): acao/action
+    acao_raw = _parse_action_anywhere()
     acao = {
         "fechar_a_pagar": "fechar_a_pagar",
         "fechar_apagar": "fechar_a_pagar",
         "fechar-a-pagar": "fechar_a_pagar",
         "a_pagar": "fechar_a_pagar",
+        "a pagar": "fechar_a_pagar",
         "fechar_pago": "fechar_pago",
         "fechar-pago": "fechar_pago",
         "pago": "fechar_pago",
         "reabrir": "reabrir",
         "abrir": "reabrir",
+        "voltar": "reabrir",
     }.get(acao_raw, acao_raw)
 
     with SessionLocal() as db:
@@ -5720,11 +6680,37 @@ def admin_fechamento():
             except Exception:
                 emps_all = []
 
-        # Garante que as EMPs selecionadas existam nas opções (robustez)
+        emps_options = _get_emp_options(emps_all)
+
+        # Proteção: sempre intersecta seleção com opções válidas
         if emps_sel:
-            emps_sel = [e for e in emps_sel if _emp_norm(e) in set(emps_all)]
+            allowed_set = {str(e).strip() for e in (emps_all or []) if str(e).strip()}
+            emps_sel = [str(e).strip() for e in emps_sel if str(e).strip() in allowed_set]
+
+        # Persiste seleção para POSTs que venham sem EMP (robustez)
+        try:
+            if request.method == "GET":
+                session["fechamento_last_emps"] = ",".join(emps_sel or [])
+                session["fechamento_last_ano"] = int(ano)
+                session["fechamento_last_mes"] = int(mes)
+        except Exception:
+            pass
+
+        # Recalcula ranking por marca para a competência (para garantir fechamento/relatórios)
+        try:
+            _recalcular_resultados_ranking_marca_para_competencia(db, ano, mes, emps_scope=emps_sel or None)
+        except Exception:
+            app.logger.exception("Falha ao recalcular ranking marca no fechamento")
 
         if request.method == "POST" and acao in {"fechar_a_pagar", "fechar_pago", "reabrir"}:
+            # fallback final: se o template não mandou EMP, usa seleção salva no GET
+            if not emps_sel:
+                try:
+                    last = (session.get("fechamento_last_emps") or "").strip()
+                    if last and int(session.get("fechamento_last_ano") or 0) == int(ano) and int(session.get("fechamento_last_mes") or 0) == int(mes):
+                        emps_sel = [e.strip() for e in last.split(",") if e.strip()]
+                except Exception:
+                    pass
             if not emps_sel:
                 msgs.append("⚠️ Selecione ao menos 1 EMP para fechar/reabrir.")
             else:
@@ -5750,6 +6736,9 @@ def admin_fechamento():
                         )
                         if not rec:
                             rec = FechamentoMensal(emp=emp, ano=int(ano), mes=int(mes), fechado=False)
+                            # em bancos antigos o fechado_em pode ter default; garantimos NULL no aberto
+                            if hasattr(rec, "fechado_em"):
+                                rec.fechado_em = None
                             db.add(rec)
 
                         if acao in {"fechar_a_pagar", "fechar_pago"}:
@@ -5772,10 +6761,9 @@ def admin_fechamento():
                     try:
                         db.commit()
                         msgs.append(f"✅ Operação concluída ({updated_count} EMPs).")
-                        try:
-                            return redirect(url_for('admin_fechamento', emp=emps_sel, mes=mes, ano=ano))
-                        except Exception:
-                            pass
+                        # PRG: evita repost e garante recarregar status atualizado
+                        emp_q = ",".join([str(e).strip() for e in (emps_sel or []) if str(e).strip()])
+                        return redirect(url_for("admin_fechamento", ano=int(ano), mes=int(mes), emp=emp_q))
                     except Exception:
                         db.rollback()
                         app.logger.exception("Erro ao commitar fechamento mensal")
@@ -5783,10 +6771,10 @@ def admin_fechamento():
                 else:
                     if not msgs:
                         msgs.append("⚠️ Nenhuma EMP válida para atualizar.")
-        # Status para tela
+        # Status para tela (dentro do contexto do db)
         for emp in (emps_sel or []):
-            emp = _emp_norm(emp)
-            if not emp:
+            emp_n = _emp_norm(emp)
+            if not emp_n:
                 continue
             fechado = False
             fechado_em = None
@@ -5795,23 +6783,54 @@ def admin_fechamento():
                 rec = (
                     db.query(FechamentoMensal)
                     .filter(
-                        FechamentoMensal.emp == emp,
+                        FechamentoMensal.emp == emp_n,
                         FechamentoMensal.ano == int(ano),
                         FechamentoMensal.mes == int(mes),
                     )
                     .first()
                 )
                 if rec:
-                    if getattr(rec, "status", None):
-                        status_fin = rec.status
-                    if rec.fechado:
-                        fechado = True
-                        fechado_em = rec.fechado_em
+                    status_fin = (getattr(rec, "status", None) or "aberto").strip() or "aberto"
+                    fechado = bool(getattr(rec, "fechado", False)) or status_fin in {"a_pagar", "pago"}
+                    fechado_em = getattr(rec, "fechado_em", None)
             except Exception:
-                fechado = False
-            status_por_emp[emp] = {"fechado": fechado, "fechado_em": fechado_em, "status": status_fin}
+                app.logger.exception("Erro ao ler status do fechamento")
+            status_por_emp[emp_n] = {"fechado": fechado, "fechado_em": fechado_em, "status": status_fin}
 
-    emps_options = _get_emp_options(emps_all)
+        # Consolidado financeiro por EMP (QTD/Combo/Parados/Ranking Marca)
+        consolidado: list[dict] = []
+        try:
+            consolidado = _fechamento_consolidado_por_emp(db, ano, mes, emps_sel or [])
+        except Exception:
+            app.logger.exception("Erro ao montar consolidado do fechamento")
+            consolidado = []
+
+    # Exportação Excel (GET) — usa os filtros atuais
+    if request.method == "GET" and (request.args.get("export") or "").strip() in {"1", "true", "True", "yes"}:
+        try:
+            import pandas as _pd
+            from io import BytesIO as _BytesIO
+
+            df = _pd.DataFrame(consolidado or [])
+            cols = ["emp", "qtd", "combo", "parados", "ranking_marca", "total", "pendente", "a_pagar", "pago", "devido", "status_fechamento"]
+            df = df[[c for c in cols if c in df.columns]]
+
+            buf = _BytesIO()
+            with _pd.ExcelWriter(buf, engine="openpyxl") as writer:
+                df.to_excel(writer, sheet_name="Consolidado", index=False)
+            buf.seek(0)
+            filename = f"fechamento_{int(ano)}_{int(mes):02d}.xlsx"
+            return send_file(
+                buf,
+                as_attachment=True,
+                download_name=filename,
+                mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        except Exception:
+            app.logger.exception("Erro ao exportar Excel do fechamento")
+            flash("Não foi possível exportar o Excel agora.", "warning")
+
+        # emps_options já calculado acima
 
     return render_template(
         "admin_fechamento.html",
@@ -5821,8 +6840,106 @@ def admin_fechamento():
         emps_sel=emps_sel,
         emps_options=emps_options,
         status_por_emp=status_por_emp,
+        consolidado=consolidado,
         msgs=msgs,
     )
+
+@app.get("/admin/fechamento/detalhes")
+def admin_fechamento_detalhes():
+    """Drill-down do fechamento (ADMIN): por EMP -> vendedores -> itens."""
+    red = _admin_required()
+    if red:
+        return red
+
+    hoje = datetime.now()
+    ano = int(request.args.get("ano") or hoje.year)
+    mes = int(request.args.get("mes") or hoje.month)
+    emp = _emp_norm(request.args.get("emp") or "")
+
+    if not emp:
+        flash("Informe a EMP para ver detalhes.", "warning")
+        return redirect(url_for("admin_fechamento", ano=ano, mes=mes))
+
+    with SessionLocal() as db:
+        # Segurança: EMP precisa existir nas opções do admin (cadastro) ou ter vendas no período
+        try:
+            emps_all = [str(r.codigo).strip() for r in db.query(Emp).all()]
+        except Exception:
+            emps_all = []
+        if emp not in set(emps_all):
+            try:
+                emps_periodo = set(_get_emps_com_vendas_no_periodo(ano, mes) or [])
+            except Exception:
+                emps_periodo = set()
+            if emp not in emps_periodo:
+                flash("EMP inválida para detalhes.", "warning")
+                return redirect(url_for("admin_fechamento", ano=ano, mes=mes))
+
+        # garante resultados de ranking marca atualizados
+        try:
+            _recalcular_resultados_ranking_marca_para_competencia(db, ano, mes, emps_scope=[emp])
+        except Exception:
+            pass
+
+        detalhes = _fechamento_detalhes_por_vendedor(db, ano, mes, emp)
+
+        # Export Excel
+        if (request.args.get("export") or "").strip() in {"1", "true", "True", "yes"}:
+            try:
+                import pandas as _pd
+                from io import BytesIO as _BytesIO
+
+                rows_flat = []
+                for d in (detalhes or []):
+                    rows_flat.append({
+                        "vendedor": d.get("vendedor"),
+                        "qtd": d.get("qtd", 0.0),
+                        "combo": d.get("combo", 0.0),
+                        "parados": d.get("parados", 0.0),
+                        "ranking_marca": d.get("ranking_marca", 0.0),
+                        "total": d.get("total", 0.0),
+                    })
+                df = _pd.DataFrame(rows_flat or [])
+                buf = _BytesIO()
+                with _pd.ExcelWriter(buf, engine="openpyxl") as writer:
+                    df.to_excel(writer, sheet_name="Vendedores", index=False)
+
+                    # segunda aba: itens detalhados
+                    itens_flat = []
+                    for d in (detalhes or []):
+                        for it in (d.get("itens") or []):
+                            itens_flat.append({
+                                "vendedor": d.get("vendedor"),
+                                "tipo": it.get("tipo"),
+                                "titulo": it.get("titulo"),
+                                "marca": it.get("marca"),
+                                "item": it.get("item"),
+                                "valor_vendido": it.get("valor_vendido", None),
+                                "valor_base": it.get("valor_base", None),
+                                "pct": it.get("pct", None),
+                                "valor": it.get("valor", 0.0),
+                                "status_pagamento": it.get("status_pagamento"),
+                            })
+                    df2 = _pd.DataFrame(itens_flat or [])
+                    if not df2.empty:
+                        df2.to_excel(writer, sheet_name="Itens", index=False)
+
+                buf.seek(0)
+                filename = f"fechamento_{emp}_{int(ano)}_{int(mes):02d}.xlsx"
+                return send_file(buf, as_attachment=True, download_name=filename, mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            except Exception:
+                app.logger.exception("Erro ao exportar detalhes do fechamento")
+                flash("Não foi possível exportar o Excel agora.", "warning")
+
+    return render_template(
+        "admin_fechamento_detalhes.html",
+        emp=emp,
+        ano=ano,
+        mes=mes,
+        detalhes=detalhes,
+    )
+
+
 
 
 @app.route("/admin/campanhas", methods=["GET", "POST"])

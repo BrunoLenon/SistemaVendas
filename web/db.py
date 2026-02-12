@@ -788,8 +788,10 @@ class FechamentoMensal(Base):
     ano = Column(Integer, nullable=False, index=True)
     mes = Column(Integer, nullable=False, index=True)
 
-    fechado = Column(Boolean, nullable=False, default=True)
-    fechado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
+    # Por padrão o período começa ABERTO (não travado)
+    fechado = Column(Boolean, nullable=False, default=False)
+    # Quando ABERTO, este campo deve ser NULL
+    fechado_em = Column(DateTime, nullable=True, default=None)
     # Status do período (controle financeiro): "aberto", "a_pagar", "pago"
     status = Column(String(20), nullable=False, default="aberto", index=True)
 
@@ -1004,6 +1006,31 @@ END $$;
             # Fechamento mensal: status financeiro (aberto/a_pagar/pago)
             conn.execute(text("ALTER TABLE fechamento_mensal ADD COLUMN IF NOT EXISTS status varchar(20) DEFAULT 'aberto';"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_fechamento_mensal_status ON fechamento_mensal (status);"))
+
+            # Ajustes de schema do fechamento para permitir reabrir corretamente:
+            # - fechado deve iniciar como FALSE
+            # - fechado_em deve aceitar NULL quando status='aberto'
+            # Obs: em bancos antigos, defaults errados (fechado=True / fechado_em=now) causam confusão.
+            try:
+                conn.execute(text("ALTER TABLE fechamento_mensal ALTER COLUMN fechado SET DEFAULT false;"))
+            except Exception:
+                pass
+            try:
+                conn.execute(text("ALTER TABLE fechamento_mensal ALTER COLUMN fechado_em DROP NOT NULL;"))
+            except Exception:
+                pass
+            try:
+                conn.execute(text("ALTER TABLE fechamento_mensal ALTER COLUMN fechado_em DROP DEFAULT;"))
+            except Exception:
+                pass
+            try:
+                conn.execute(text("""
+                    UPDATE fechamento_mensal
+                       SET fechado_em = NULL
+                     WHERE (status IS NULL OR status = 'aberto' OR fechado = false);
+                """))
+            except Exception:
+                pass
 
 
             # Campanhas Ranking por Marca (Top N) — tabelas novas
