@@ -1,20 +1,4 @@
-LEIA-ME — Itens Parados no /relatorios/campanhas
+Substitua o arquivo web/app.py pelo deste ZIP.
 
-O que foi feito:
-1) /relatorios/campanhas agora inclui "Itens Parados" como um tipo de campanha (PARADO), somando na recompensa total do vendedor.
-   Regra usada (mesma do /itens_parados):
-   - Base = SUM(vendas.valor_total) apenas de OA, no mês/ano e EMP
-   - Recompensa = base * (recompensa_pct/100) por código (vendas.mestre == itens_parados.codigo)
-
-2) Tab A (Cadastros) agora mostra também a lista de Itens Parados ativos por EMP.
-
-Arquivos alterados:
-- web/app.py
-- web/templates/relatorio_campanhas.html
-
-Como aplicar:
-- Substitua os arquivos acima pelos correspondentes no seu projeto.
-- Faça deploy no Render.
-
-Observação:
-- No consolidado (Tab B/C), mostramos apenas itens parados que tiveram base (>0) no período, para não poluir a tela.
+Mudança: filtros de vendedores agora consideram apenas usuarios.role='vendedor' e, quando aplicável, vínculo em usuario_emps (ativo=True) ou fallback usuarios.emp.
+Impacto: remove vendedores 'fantasmas' (presentes em vendas mas sem usuário) dos dropdowns e relatórios.

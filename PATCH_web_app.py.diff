@@ -1,107 +1,155 @@
---- a/web/app.py
-+++ b/web/app.py
-@@ -3521,6 +3521,13 @@
-                 "fechado": bool(fech_map.get(emp, False)),
-                 "campanhas_qtd": campanhas_qtd_defs,
-                 "combos": combos_defs,
-+                "itens_parados": (
-+                    db.query(ItemParado)
-+                    .filter(ItemParado.emp == emp)
-+                    .filter(ItemParado.ativo == 1)
-+                    .order_by(ItemParado.codigo.asc())
-+                    .all()
-+                ),
-             })
+--- web/app.py.orig
++++ web/app.py
+@@ -767,40 +767,75 @@
+     return None
  
-             # -------- Resultados (Tab B/C) --------
-@@ -3578,6 +3585,51 @@
-                 print(f"[RELATORIO_CAMPANHAS] aviso: não foi possível montar detalhes de combo: {_e}")
-                 combo_items_by_combo = {}
-                 combo_calc_cache = {}
+ def _get_vendedores_db(role: str, emp_usuario: str | None) -> list[str]:
+-    """Lista de vendedores para dropdown sem carregar todas as vendas em memória."""
++    """Lista vendedores para dropdowns (remove 'fantasmas').
++
++    - ADMIN: lista todos os usuários cadastrados como vendedor (role=vendedor)
++    - SUPERVISOR: lista vendedores cadastrados vinculados às EMPs do supervisor
++    """
+     role = (role or "").strip().lower()
+     with SessionLocal() as db:
+-        # Opcional (recomendado): mostrar/filtrar apenas vendedores cadastrados no sistema.
+-        # Isso evita aparecer vendedor "fantasma" que existe nas vendas importadas mas não tem usuário.
+-        try:
+-            vendedores_cadastrados = {
+-                (r[0] or "").strip().upper()
+-                for r in db.query(Usuario.username).filter(func.lower(Usuario.role) == "vendedor").all()
+-            }
+-        except Exception:
+-            vendedores_cadastrados = set()
+-
+-        q = db.query(func.distinct(Venda.vendedor))
++        scope_emps = None
+         if role == "supervisor":
+             emps = _allowed_emps()
+             if emps:
+-                q = q.filter(Venda.emp.in_(emps))
++                scope_emps = emps
+             elif emp_usuario:
+-                q = q.filter(Venda.emp == str(emp_usuario))
++                scope_emps = [str(emp_usuario)]
+             else:
+                 return []
+-        # admin vê tudo; vendedor usa o próprio (não usa dropdown normalmente)
+-        vendedores = [(r[0] or "").strip().upper() for r in q.all()]
+-
+-    vendedores = [v for v in vendedores if v]
+-
+-    # Se houver cadastro, restringe a ele.
+-    # (Mantém compatibilidade: se a base de usuários ainda não estiver completa, não zera a lista.)
+-    if vendedores_cadastrados:
+-        vendedores = [v for v in vendedores if v in vendedores_cadastrados]
+-
+-    vendedores = sorted(vendedores)
+-    return vendedores
++
++        # lista baseada no que existe em vendas (compatibilidade) e filtra para vendedores válidos
++        q = db.query(func.distinct(Venda.vendedor))
++        if role == "supervisor" and scope_emps:
++            q = q.filter(Venda.emp.in_(_normalize_emp_scope(scope_emps) or scope_emps))
++
++        vendedores = [_norm_text(str(r[0])) for r in q.all() if r and (r[0] or "").strip()]
++        if not vendedores:
++            return []
++
++        validos = _get_vendedores_validos(db, emps_scope=scope_emps)
++        if validos:
++            vendedores = [v for v in vendedores if v in validos]
++
++    return sorted(set(vendedores))
 +
 +
-+            # -------- Itens Parados (resultado por vendedor no período) --------
-+            # Regra (igual /itens_parados): recompensa = SUM(valor_total OA) * (recompensa_pct/100) por código
-+            itens_parados_defs = []
-+            itens_parados_por_codigo = {}
-+            try:
-+                itens_parados_defs = (
-+                    db.query(ItemParado)
-+                    .filter(ItemParado.emp == emp)
-+                    .filter(ItemParado.ativo == 1)
-+                    .order_by(ItemParado.codigo.asc())
-+                    .all()
++def _normalize_emp_scope(emp_scope):
++    """Normaliza escopo de EMP para lista[str] ou None."""
++    if emp_scope is None:
++        return None
++    if isinstance(emp_scope, (list, tuple, set)):
++        emps = [_norm_text(str(e)) for e in emp_scope if str(e or '').strip()]
++        return emps or None
++    s = str(emp_scope).strip()
++    if not s:
++        return None
++    return [_norm_text(s)]
++
++def _get_vendedores_validos(db, emps_scope=None) -> set[str]:
++    """Vendedores válidos (usuarios.role=vendedor).
++
++    Se emps_scope informado, restringe a vendedores vinculados via usuario_emps (ativo=True)
++    ou fallback legado usuarios.emp.
++    """
++    emps = _normalize_emp_scope(emps_scope)
++    if emps:
++        q = (
++            db.query(Usuario.username)
++            .outerjoin(UsuarioEmp, UsuarioEmp.usuario_id == Usuario.id)
++            .filter(func.lower(Usuario.role) == "vendedor")
++            .filter(
++                or_(
++                    and_(UsuarioEmp.ativo.is_(True), UsuarioEmp.emp.in_(emps)),
++                    and_(Usuario.emp.isnot(None), Usuario.emp.in_(emps)),
 +                )
-+                for itp in (itens_parados_defs or []):
-+                    cod = (getattr(itp, "codigo", "") or "").strip()
-+                    if cod:
-+                        itens_parados_por_codigo[cod] = itp
-+            except Exception as _e:
-+                print(f"[RELATORIO_CAMPANHAS] aviso: não foi possível carregar itens_parados da EMP {emp}: {_e}")
-+                itens_parados_defs = []
-+                itens_parados_por_codigo = {}
++            )
++        )
++    else:
++        q = db.query(Usuario.username).filter(func.lower(Usuario.role) == "vendedor")
++    rows = q.all()
++    return {_norm_text(str(r[0])) for r in rows if r and (r[0] or '').strip()}
 +
-+            itens_parados_venda_map = {}  # (vendedor, codigo) -> total_vendido
-+            if itens_parados_por_codigo:
-+                try:
-+                    start_p, end_p = _periodo_bounds(int(ano), int(mes))
-+                    codigos = list(itens_parados_por_codigo.keys())
-+                    qpar = (
-+                        db.query(func.upper(Venda.vendedor), Venda.mestre, func.coalesce(func.sum(Venda.valor_total), 0.0))
-+                        .filter(Venda.emp == emp)
-+                        .filter(Venda.movimento >= start_p)
-+                        .filter(Venda.movimento < end_p)
-+                        .filter(Venda.mov_tipo_movto == 'OA')
-+                        .filter(func.upper(Venda.vendedor).in_([v.strip().upper() for v in vendedores]))
-+                        .filter(Venda.mestre.in_(codigos))
-+                        .group_by(func.upper(Venda.vendedor), Venda.mestre)
-+                    )
-+                    for vend_u, mestre, total in qpar.all():
-+                        vv = (vend_u or "").strip().upper()
-+                        cc = (mestre or "").strip()
-+                        itens_parados_venda_map[(vv, cc)] = float(total or 0.0)
-+                except Exception as _e:
-+                    print(f"[RELATORIO_CAMPANHAS] aviso: não foi possível calcular itens_parados da EMP {emp}: {_e}")
-+                    itens_parados_venda_map = {}
  
-             # agrupa por vendedor e unifica (QTD + COMBO)
-             by_vend = {}
-@@ -3655,6 +3707,38 @@
-                     "periodo": f"{r.data_inicio} → {r.data_fim}",
-                 })
+ def _get_emps_vendedor(username: str) -> list[str]:
+     """Lista de EMPs que o vendedor pode acessar.
+@@ -3061,16 +3096,21 @@
+     return emps
  
+ def _get_vendedores_emp_no_periodo(emp: str, ano: int, mes: int) -> list[str]:
++    """Vendedores com venda no período para a EMP, restrito a usuários cadastrados."""
+     inicio_mes, fim_mes = _periodo_bounds(int(ano), int(mes))
+-    emp = str(emp)
++    emp = str(emp).strip()
+     with SessionLocal() as db:
+         rows = (
+             db.query(func.distinct(Venda.vendedor))
+             .filter(Venda.emp == emp, Venda.movimento >= inicio_mes, Venda.movimento <= fim_mes)
+             .all()
+         )
+-    vendedores = sorted({(r[0] or '').strip().upper() for r in rows if r and (r[0] or '').strip()})
+-    return vendedores
++        vendedores = [_norm_text(str(r[0])) for r in rows if r and (r[0] or '').strip()]
++        validos = _get_vendedores_validos(db, emps_scope=[emp])
++        if validos:
++            vendedores = [v for v in vendedores if v in validos]
++    return sorted(set(vendedores))
 +
-+            # adiciona Itens Parados no agrupamento (como "campanha")
-+            if itens_parados_por_codigo:
-+                try:
-+                    start_p, end_p = _periodo_bounds(int(ano), int(mes))
-+                    periodo_txt = f"{start_p} → {end_p}"
-+                except Exception:
-+                    periodo_txt = ""
-+                for (vv, cc), total_base in (itens_parados_venda_map or {}).items():
-+                    itp = (itens_parados_por_codigo or {}).get(cc)
-+                    if not itp:
-+                        continue
-+                    pct = float(getattr(itp, "recompensa_pct", 0.0) or 0.0)
-+                    desc = (getattr(itp, "descricao", None) or "").strip()
-+                    valor = (float(total_base or 0.0) * (pct / 100.0)) if (total_base or 0.0) > 0 and pct > 0 else 0.0
-+                    # para o consolidado, só mostramos itens que geraram base no período (evita poluir a lista)
-+                    if (total_base or 0.0) <= 0:
-+                        continue
-+                    by_vend.setdefault(vv, []).append({
-+                        "tipo": "PARADO",
-+                        "titulo": "Itens Parados",
-+                        "marca": "",
-+                        "produto": cc,
-+                        "descricao": desc,
-+                        "valor_base": float(total_base or 0.0),
-+                        "pct": pct,
-+                        "valor_recompensa": float(valor or 0.0),
-+                        "atingiu": 1 if valor > 0 else 0,
-+                        "status_pagamento": "-",
-+                        "periodo": periodo_txt,
-+                    })
+ 
+ def _calc_vendas_por_vendedor_para_campanha(db, emp: str, campanha: CampanhaQtd, periodo_ini: date, periodo_fim: date) -> dict[str, tuple[float, float]]:
+     """Retorna dict vendedor -> (qtd_vendida, valor_vendido) para uma campanha no período.
+@@ -6638,6 +6678,7 @@
+ 
+ 
+ def _get_vendedores_no_periodo(db, ano: int, mes: int, emps: list[str]) -> list[str]:
++    """Vendedores com venda no período, restrito a usuários cadastrados (remove 'fantasmas')."""
+     inicio, fim = _periodo_bounds_ym(ano, mes)
+     if emps:
+         rows = db.execute(
+@@ -6660,7 +6701,16 @@
+             """),
+             {"ini": inicio, "fim": fim},
+         ).fetchall()
+-    return [str(r[0]).strip() for r in rows if r and r[0] is not None and str(r[0]).strip()]
 +
-             # ordena campanhas dentro do vendedor (maior recompensa primeiro)
-             vendedores_cards = []
-             for v in sorted(by_vend.keys()):
++    vendedores = [_norm_text(str(r[0])) for r in rows if r and r[0] is not None and str(r[0]).strip()]
++    if not vendedores:
++        return []
++
++    validos = _get_vendedores_validos(db, emps_scope=emps)
++    if validos:
++        vendedores = [v for v in vendedores if v in validos]
++
++    return sorted(set(vendedores))
+ 
+ 
+ def _get_emps_no_periodo(db, ano: int, mes: int, emps_allowed: list[str]) -> list[str]:
