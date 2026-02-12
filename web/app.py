@@ -5709,25 +5709,57 @@ def admin_fechamento():
     mes = int(request.values.get("mes") or hoje.month)
 
     # multi-EMP: fecha em lote quando selecionar mais de uma EMP
-    # multi-EMP: lê tanto querystring (?emp=101&emp=102) quanto POST (inputs hidden name=emp)
+    # Lê EMP(s) tanto do GET quanto do POST. Suporta:
+    # - emp=101&emp=102 (querystring)
+    # - inputs hidden name="emp" (POST)
+    # - name="emp[]" (alguns widgets)
+    # - emp="101,102" (lista em string)
+    def _coerce_emps(raw_list):
+        out = []
+        for v in (raw_list or []):
+            if v is None:
+                continue
+            s = str(v).strip()
+            if not s:
+                continue
+            # suporta "101,102"
+            parts = [p.strip() for p in s.split(",") if p.strip()]
+            out.extend(parts if parts else [s])
+        # unique preservando ordem
+        seen = set()
+        uniq = []
+        for e in out:
+            if e not in seen:
+                seen.add(e)
+                uniq.append(e)
+        return uniq
+
     emps_sel = []
     try:
-        emps_sel = [str(e).strip() for e in request.values.getlist("emp") if str(e).strip()]
+        # POST
+        if request.method == "POST":
+            emps_sel = _coerce_emps(request.form.getlist("emp") + request.form.getlist("emp[]"))
+        # GET / geral
+        if not emps_sel:
+            emps_sel = _coerce_emps(request.args.getlist("emp") + request.args.getlist("emp[]"))
+        # fallback: request.values (mantém compatibilidade)
+        if not emps_sel:
+            emps_sel = _coerce_emps(request.values.getlist("emp") + request.values.getlist("emp[]"))
     except Exception:
         emps_sel = []
-    if not emps_sel:
-        emps_sel = [str(e).strip() for e in _parse_multi_args("emp") if str(e).strip()]
+
     if not emps_sel:
         # fallback: tenta usar emp único (mantém compatibilidade com versões antigas)
         emp_single = _emp_norm(request.values.get("emp", ""))
         emps_sel = [emp_single] if emp_single else []
 
     msgs: list[str] = []
+
     status_por_emp: dict[str, dict] = {}
 
     # Normaliza a ação vinda do formulário (alguns navegadores/JS podem enviar
     # variações, ex.: sem underscore, com hífen ou com espaços).
-    acao_raw = (request.form.get("acao") or "").strip().lower()
+    acao_raw = (request.values.get("acao") or "").strip().lower()
     acao = {
         "fechar_a_pagar": "fechar_a_pagar",
         "fechar_apagar": "fechar_a_pagar",
@@ -5835,112 +5867,6 @@ def admin_fechamento():
                 fechado = False
             status_por_emp[emp] = {"fechado": fechado, "fechado_em": fechado_em, "status": status_fin}
 
-        # Totais financeiros do mês por EMP (Campanhas QTD + Combos + Itens Parados)
-        totais_por_emp: dict[str, dict] = {}
-        try:
-            inicio_mes, fim_mes = _periodo_bounds(int(ano), int(mes))
-        except Exception:
-            inicio_mes, fim_mes = None, None
-
-        def _sum_recompensas_por_status(model, emp: str):
-            """Retorna dict com somatórios por status_pagamento para uma tabela de resultados (QTD/COMBO)."""
-            try:
-                st = func.upper(func.coalesce(model.status_pagamento, ""))
-                pend = func.coalesce(func.sum(case((st.in_(["PENDENTE", ""]), model.valor_recompensa), else_=0.0)), 0.0)
-                apg = func.coalesce(func.sum(case((st.in_(["A_PAGAR", "A PAGAR", "APAGAR"]), model.valor_recompensa), else_=0.0)), 0.0)
-                pag = func.coalesce(func.sum(case((st.in_(["PAGO"]), model.valor_recompensa), else_=0.0)), 0.0)
-                tot = func.coalesce(func.sum(model.valor_recompensa), 0.0)
-                row = (
-                    db.query(tot.label("total"), pend.label("pendente"), apg.label("a_pagar"), pag.label("pago"))
-                    .filter(
-                        model.emp == emp,
-                        model.competencia_ano == int(ano),
-                        model.competencia_mes == int(mes),
-                    )
-                    .one()
-                )
-                return {
-                    "total": float(row.total or 0.0),
-                    "pendente": float(row.pendente or 0.0),
-                    "a_pagar": float(row.a_pagar or 0.0),
-                    "pago": float(row.pago or 0.0),
-                }
-            except Exception:
-                return {"total": 0.0, "pendente": 0.0, "a_pagar": 0.0, "pago": 0.0}
-
-        def _total_itens_parados_emp(emp: str) -> float:
-            """Total de recompensa (R$) de Itens Parados no mês para uma EMP (sem tabela de resultados)."""
-            try:
-                itens = (
-                    db.query(ItemParado.codigo, ItemParado.recompensa_pct)
-                    .filter(ItemParado.emp == emp, ItemParado.ativo == 1)
-                    .all()
-                )
-                if not itens:
-                    return 0.0
-                pct_por_codigo = {str(c).strip(): float(p or 0.0) for c, p in itens if c is not None and str(c).strip()}
-                codigos = list(pct_por_codigo.keys())
-                if not codigos or not inicio_mes or not fim_mes:
-                    return 0.0
-                rows = (
-                    db.query(Venda.mestre, func.coalesce(func.sum(Venda.valor_total), 0.0))
-                    .filter(
-                        Venda.emp == emp,
-                        Venda.movimento >= inicio_mes,
-                        Venda.movimento < fim_mes,
-                        Venda.mov_tipo_movto == "OA",
-                        Venda.mestre.in_(codigos),
-                    )
-                    .group_by(Venda.mestre)
-                    .all()
-                )
-                total = 0.0
-                for mestre, base_valor in rows:
-                    cod = str(mestre).strip()
-                    pct = pct_por_codigo.get(cod, 0.0)
-                    total += float(base_valor or 0.0) * (pct / 100.0)
-                return float(total)
-            except Exception:
-                return 0.0
-
-        # Preenche totais para EMPs selecionadas (ou todas, se nada selecionado)
-        emps_para_totais = [str(e).strip() for e in (emps_sel or []) if str(e).strip()]
-        for emp in emps_para_totais:
-            emp = _emp_norm(emp)
-            if not emp:
-                continue
-            qtd = _sum_recompensas_por_status(CampanhaQtdResultado, emp)
-            combo = _sum_recompensas_por_status(CampanhaComboResultado, emp)
-            parados_total = _total_itens_parados_emp(emp)
-
-            # Aloca itens parados no bucket do status financeiro do mês (se existir)
-            st_fin = (status_por_emp.get(emp) or {}).get("status") or "aberto"
-            parados_pend = parados_total
-            parados_apg = 0.0
-            parados_pag = 0.0
-            if str(st_fin).lower() == "a_pagar":
-                parados_pend = 0.0
-                parados_apg = parados_total
-            elif str(st_fin).lower() == "pago":
-                parados_pend = 0.0
-                parados_pag = parados_total
-
-            total = float(qtd["total"] + combo["total"] + parados_total)
-            pendente = float(qtd["pendente"] + combo["pendente"] + parados_pend)
-            a_pagar = float(qtd["a_pagar"] + combo["a_pagar"] + parados_apg)
-            pago = float(qtd["pago"] + combo["pago"] + parados_pag)
-
-            totais_por_emp[emp] = {
-                "qtd_total": qtd["total"],
-                "combo_total": combo["total"],
-                "parados_total": parados_total,
-                "total": total,
-                "pendente": pendente,
-                "a_pagar": a_pagar,
-                "pago": pago,
-                "devido": float(pendente + a_pagar),
-            }
-
     emps_options = _get_emp_options(emps_all)
 
     return render_template(
@@ -5951,7 +5877,6 @@ def admin_fechamento():
         emps_sel=emps_sel,
         emps_options=emps_options,
         status_por_emp=status_por_emp,
-        totais_por_emp=totais_por_emp,
         msgs=msgs,
     )
 
