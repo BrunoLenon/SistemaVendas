@@ -5677,7 +5677,7 @@ def admin_fechamento():
         # fallback legado: emp único
         emp_single = _emp_norm(request.values.get("emp", ""))
         emps_sel = [emp_single] if emp_single else []
-msgs: list[str] = []
+    msgs: list[str] = []
     status_por_emp: dict[str, dict] = {}
 
     # Normaliza a ação vinda do formulário (alguns navegadores/JS podem enviar
