@@ -3841,9 +3841,24 @@ def relatorio_campanhas():
                 emps_abertas.append(emp_payload)
 
 
-    # Opções de EMP para o filtro (multi) — sempre definido para evitar NameError
+    # Opções de EMP para o filtro (multi) — NÃO deve depender do filtro atual,
+    # senão o admin "perde" as outras EMPs após aplicar um filtro e só volta ao recarregar a página.
     try:
-        emps_options = _get_emp_options(emps_scope)
+        emps_for_options: list[str] = []
+        if role == "admin":
+            # Admin: lista todas as EMPs que têm vendas no período (independente do filtro aplicado)
+            emps_for_options = _get_emps_com_vendas_no_periodo(ano, mes)
+        elif role == "supervisor":
+            # Supervisor: lista todas as EMPs permitidas (independente do filtro aplicado)
+            emps_for_options = [str(e).strip() for e in (_allowed_emps() or []) if str(e).strip()]
+            if not emps_for_options and emp_usuario:
+                emps_for_options = [str(emp_usuario).strip()]
+        else:
+            # Vendedor: campo é travado, então tanto faz — mantém o escopo
+            emps_for_options = emps_scope[:]
+
+        emps_for_options = sorted(set([e for e in (emps_for_options or []) if e]))
+        emps_options = _get_emp_options(emps_for_options)
     except Exception:
         emps_options = []
 
