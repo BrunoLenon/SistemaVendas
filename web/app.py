@@ -6469,7 +6469,39 @@ def _sql_valor_marcas_signed(marcas: list[str]):
 
 
 def _query_valor_mes(db, ano: int, mes: int, emp: str, vendedor: str) -> float:
-    inicio, fim = _periodo_bounds_ym(ano, mes)
+    """Retorna o valor do mês para (emp, vendedor, ano, mes).
+
+    IMPORTANTE (base de metas / comparações):
+      - Se existir registro em VendasResumoPeriodo (cadastro manual/importado no /admin/resumos_periodo),
+        ele tem prioridade.
+      - Caso não exista, cai para cálculo direto na tabela vendas.
+
+    Assim, o "Ano Passado" funciona mesmo quando você não tem histórico completo em vendas.
+    """
+
+    emp = (emp or "").strip()
+    vendedor = (vendedor or "").strip().upper()
+
+    # 1) Prioridade: base manual/importada
+    try:
+        rec = (
+            db.query(VendasResumoPeriodo)
+            .filter(
+                VendasResumoPeriodo.emp == emp,
+                VendasResumoPeriodo.vendedor == vendedor,
+                VendasResumoPeriodo.ano == int(ano),
+                VendasResumoPeriodo.mes == int(mes),
+            )
+            .one_or_none()
+        )
+        if rec is not None and rec.valor_venda is not None:
+            return float(rec.valor_venda or 0.0)
+    except Exception:
+        # não quebra metas se o ORM estiver diferente em alguma versão
+        pass
+
+    # 2) Fallback: calcula no vendas
+    inicio, fim = _periodo_bounds_ym(int(ano), int(mes))
     sql = f"""
       SELECT {_sql_valor_mes_signed()} AS valor_mes
       FROM vendas
