@@ -654,102 +654,6 @@ class CampanhaComboResultado(Base):
     )
 
 
-
-
-
-# =========================
-# Campanha Ranking por Marca (Top N) — premiação por colocação
-# =========================
-class CampanhaRankingMarca(Base):
-    __tablename__ = "campanhas_ranking_marca"
-
-    id = Column(Integer, primary_key=True)
-
-    titulo = Column(String(200), nullable=False, default="")
-    marca = Column(String(120), nullable=False, index=True)
-
-    data_inicio = Column(Date, nullable=False, index=True)
-    data_fim = Column(Date, nullable=False, index=True)
-
-    # Opcional: competência fixa (se preenchido, prevalece para cálculo/relatórios)
-    competencia_ano = Column(Integer, nullable=True, index=True)
-    competencia_mes = Column(Integer, nullable=True, index=True)
-
-    # GLOBAL | EMPS
-    escopo_tipo = Column(String(20), nullable=False, default="GLOBAL", index=True)
-
-    ativo = Column(Boolean, nullable=False, default=True)
-
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, server_default=func.now())
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow, server_default=func.now())
-
-    __table_args__ = (
-        Index("ix_rank_marca_periodo", "marca", "data_inicio", "data_fim"),
-    )
-
-
-class CampanhaRankingMarcaEmp(Base):
-    __tablename__ = "campanhas_ranking_marca_emps"
-
-    id = Column(Integer, primary_key=True)
-    campanha_id = Column(Integer, nullable=False, index=True)
-    emp = Column(String(30), nullable=False, index=True)
-
-    __table_args__ = (
-        UniqueConstraint("campanha_id", "emp", name="uq_rank_marca_emp"),
-        Index("ix_rank_marca_emps_emp", "emp"),
-    )
-
-
-class CampanhaRankingMarcaPremio(Base):
-    __tablename__ = "campanhas_ranking_marca_premios"
-
-    id = Column(Integer, primary_key=True)
-    campanha_id = Column(Integer, nullable=False, index=True)
-    posicao = Column(Integer, nullable=False)
-    valor_premio = Column(Float, nullable=False, default=0.0)
-
-    __table_args__ = (
-        UniqueConstraint("campanha_id", "posicao", name="uq_rank_marca_premio"),
-        Index("ix_rank_marca_premios_campanha", "campanha_id"),
-    )
-
-
-class CampanhaRankingMarcaResultado(Base):
-    __tablename__ = "campanhas_ranking_marca_resultados"
-
-    id = Column(Integer, primary_key=True)
-    campanha_id = Column(Integer, nullable=False, index=True)
-
-    competencia_ano = Column(Integer, nullable=False, index=True)
-    competencia_mes = Column(Integer, nullable=False, index=True)
-
-    # Para auditoria/fechamento por EMP: usamos a EMP "atribuída" ao vendedor no período
-    emp = Column(String(30), nullable=True, index=True)
-
-    vendedor = Column(String(80), nullable=False, index=True)
-
-    valor_vendido = Column(Float, nullable=False, default=0.0)
-    posicao = Column(Integer, nullable=True)
-    valor_premio = Column(Float, nullable=False, default=0.0)
-
-    status_pagamento = Column(String(20), nullable=False, default="PENDENTE")
-    pago_em = Column(DateTime, nullable=True)
-
-    atualizado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
-
-    __table_args__ = (
-        UniqueConstraint(
-            "campanha_id",
-            "competencia_ano",
-            "competencia_mes",
-            "emp",
-            "vendedor",
-            name="uq_rank_marca_resultado",
-        ),
-        Index("ix_rank_marca_res_emp_comp", "emp", "competencia_ano", "competencia_mes"),
-        Index("ix_rank_marca_res_vendedor_comp", "vendedor", "competencia_ano", "competencia_mes"),
-    )
 class VendasResumoPeriodo(Base):
     """Resumo mensal manual/importado (ex.: ano passado) por vendedor e EMP.
 
@@ -779,7 +683,12 @@ class VendasResumoPeriodo(Base):
 
 
 class FechamentoMensal(Base):
-    """Controle de fechamento (trava edição) por EMP e competência."""
+    """Controle de fechamento (trava edição) por EMP e competência.
+
+    Regras:
+    - Quando ABERTO: fechado=False, status='aberto', fechado_em=NULL
+    - Quando FECHADO: fechado=True, status in {'a_pagar','pago'}, fechado_em=timestamp
+    """
 
     __tablename__ = "fechamento_mensal"
 
@@ -788,10 +697,11 @@ class FechamentoMensal(Base):
     ano = Column(Integer, nullable=False, index=True)
     mes = Column(Integer, nullable=False, index=True)
 
-    # Por padrão o período começa ABERTO (não travado)
+    # IMPORTANTE: default deve ser ABERTO
     fechado = Column(Boolean, nullable=False, default=False)
-    # Quando ABERTO, este campo deve ser NULL
+    # ABERTO => NULL (não deve ter default automático)
     fechado_em = Column(DateTime, nullable=True, default=None)
+
     # Status do período (controle financeiro): "aberto", "a_pagar", "pago"
     status = Column(String(20), nullable=False, default="aberto", index=True)
 
@@ -1006,97 +916,6 @@ END $$;
             # Fechamento mensal: status financeiro (aberto/a_pagar/pago)
             conn.execute(text("ALTER TABLE fechamento_mensal ADD COLUMN IF NOT EXISTS status varchar(20) DEFAULT 'aberto';"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_fechamento_mensal_status ON fechamento_mensal (status);"))
-
-            # Ajustes de schema do fechamento para permitir reabrir corretamente:
-            # - fechado deve iniciar como FALSE
-            # - fechado_em deve aceitar NULL quando status='aberto'
-            # Obs: em bancos antigos, defaults errados (fechado=True / fechado_em=now) causam confusão.
-            try:
-                conn.execute(text("ALTER TABLE fechamento_mensal ALTER COLUMN fechado SET DEFAULT false;"))
-            except Exception:
-                pass
-            try:
-                conn.execute(text("ALTER TABLE fechamento_mensal ALTER COLUMN fechado_em DROP NOT NULL;"))
-            except Exception:
-                pass
-            try:
-                conn.execute(text("ALTER TABLE fechamento_mensal ALTER COLUMN fechado_em DROP DEFAULT;"))
-            except Exception:
-                pass
-            try:
-                conn.execute(text("""
-                    UPDATE fechamento_mensal
-                       SET fechado_em = NULL
-                     WHERE (status IS NULL OR status = 'aberto' OR fechado = false);
-                """))
-            except Exception:
-                pass
-
-
-            # Campanhas Ranking por Marca (Top N) — tabelas novas
-            conn.execute(text("""
-                CREATE TABLE IF NOT EXISTS campanhas_ranking_marca (
-                    id SERIAL PRIMARY KEY,
-                    titulo VARCHAR(200) NOT NULL,
-                    marca VARCHAR(120) NOT NULL,
-                    data_inicio DATE NOT NULL,
-                    data_fim DATE NOT NULL,
-                    competencia_ano INTEGER,
-                    competencia_mes INTEGER,
-                    escopo_tipo VARCHAR(20) NOT NULL DEFAULT 'GLOBAL',
-                    ativo BOOLEAN NOT NULL DEFAULT TRUE,
-                    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-                    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
-                );
-            """))
-            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_rank_marca_marca ON campanhas_ranking_marca (marca);"))
-            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_rank_marca_periodo ON campanhas_ranking_marca (data_inicio, data_fim);"))
-            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_rank_marca_comp ON campanhas_ranking_marca (competencia_ano, competencia_mes);"))
-            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_rank_marca_escopo ON campanhas_ranking_marca (escopo_tipo);"))
-
-            conn.execute(text("""
-                CREATE TABLE IF NOT EXISTS campanhas_ranking_marca_emps (
-                    id SERIAL PRIMARY KEY,
-                    campanha_id INTEGER NOT NULL,
-                    emp VARCHAR(30) NOT NULL,
-                    CONSTRAINT uq_rank_marca_emp UNIQUE (campanha_id, emp)
-                );
-            """))
-            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_rank_marca_emps_campanha ON campanhas_ranking_marca_emps (campanha_id);"))
-            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_rank_marca_emps_emp ON campanhas_ranking_marca_emps (emp);"))
-
-            conn.execute(text("""
-                CREATE TABLE IF NOT EXISTS campanhas_ranking_marca_premios (
-                    id SERIAL PRIMARY KEY,
-                    campanha_id INTEGER NOT NULL,
-                    posicao INTEGER NOT NULL,
-                    valor_premio DOUBLE PRECISION NOT NULL DEFAULT 0,
-                    CONSTRAINT uq_rank_marca_premio UNIQUE (campanha_id, posicao)
-                );
-            """))
-            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_rank_marca_premios_campanha ON campanhas_ranking_marca_premios (campanha_id);"))
-
-            conn.execute(text("""
-                CREATE TABLE IF NOT EXISTS campanhas_ranking_marca_resultados (
-                    id SERIAL PRIMARY KEY,
-                    campanha_id INTEGER NOT NULL,
-                    competencia_ano INTEGER NOT NULL,
-                    competencia_mes INTEGER NOT NULL,
-                    emp VARCHAR(30),
-                    vendedor VARCHAR(80) NOT NULL,
-                    valor_vendido DOUBLE PRECISION NOT NULL DEFAULT 0,
-                    posicao INTEGER,
-                    valor_premio DOUBLE PRECISION NOT NULL DEFAULT 0,
-                    status_pagamento VARCHAR(20) NOT NULL DEFAULT 'PENDENTE',
-                    pago_em TIMESTAMP,
-                    atualizado_em TIMESTAMP NOT NULL DEFAULT NOW(),
-                    CONSTRAINT uq_rank_marca_resultado UNIQUE (campanha_id, competencia_ano, competencia_mes, emp, vendedor)
-                );
-            """))
-            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_rank_marca_res_emp_comp ON campanhas_ranking_marca_resultados (emp, competencia_ano, competencia_mes);"))
-            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_rank_marca_res_vendedor_comp ON campanhas_ranking_marca_resultados (vendedor, competencia_ano, competencia_mes);"))
-            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_rank_marca_res_status ON campanhas_ranking_marca_resultados (status_pagamento);"))
-
 
             # Bancos mais antigos podem ter criado `status` como ENUM ou com restrições.
             # Neste caso, o valor 'a_pagar' pode não existir e a atualização falha silenciosamente.
