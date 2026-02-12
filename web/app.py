@@ -3600,7 +3600,7 @@ def relatorio_campanhas():
                     .all()
                 )
                 for itp in (itens_parados_defs or []):
-                    cod = str(getattr(itp, "codigo", "") or "").strip()
+                    cod = (getattr(itp, "codigo", "") or "").strip()
                     if cod:
                         itens_parados_por_codigo[cod] = itp
             except Exception as _e:
@@ -3625,7 +3625,7 @@ def relatorio_campanhas():
                     )
                     for vend_u, mestre, total in qpar.all():
                         vv = (vend_u or "").strip().upper()
-                        cc = str(mestre or "").strip()
+                        cc = (mestre or "").strip()
                         itens_parados_venda_map[(vv, cc)] = float(total or 0.0)
                 except Exception as _e:
                     print(f"[RELATORIO_CAMPANHAS] aviso: não foi possível calcular itens_parados da EMP {emp}: {_e}")
@@ -3724,8 +3724,6 @@ def relatorio_campanhas():
                     valor = (float(total_base or 0.0) * (pct / 100.0)) if (total_base or 0.0) > 0 and pct > 0 else 0.0
                     # para o consolidado, só mostramos itens que geraram base no período (evita poluir a lista)
                     if (total_base or 0.0) <= 0:
-                        continue
-                    if valor <= 0:
                         continue
                     by_vend.setdefault(vv, []).append({
                         "tipo": "PARADO",
