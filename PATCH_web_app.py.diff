@@ -1,0 +1,176 @@
+--- web/app.py (original)
++++ web/app.py (fixed)
+@@ -560,30 +560,52 @@
+     return _normalize_role(session.get("role"))
+ 
+ def _emp() -> str | None:
+-    """Retorna a EMP do usuário logado (quando existir)."""
++    """Retorna a EMP default do usuário logado.
++
++    Observações:
++    - A coluna `usuarios.emp` é legada (single-EMP).
++    - O vínculo oficial (multi-EMP) é `usuario_emps` (ativo=True).
++    - Para compatibilidade, se o usuário tiver múltiplas EMPs, retornamos a primeira (ordenada).
++      As telas "multi-EMP" devem usar `_allowed_emps()` para obter o conjunto completo.
++    """
+     emp = session.get("emp")
+-    if emp is not None and emp != "":
++    if emp is not None and str(emp).strip() != "":
+         return str(emp)
++
+     uid = session.get("user_id")
+     if not uid:
+         return None
++
+     try:
+-        db = SessionLocal()
+-        u = db.query(Usuario).filter(Usuario.id == uid).first()
+-        if not u:
+-            return None
+-        emp_val = getattr(u, "emp", None)
+-        if emp_val is None or emp_val == "":
+-            return None
+-        session["emp"] = str(emp_val)
+-        return str(emp_val)
++        with SessionLocal() as db:
++            # 1) tenta via usuário_emps (novo / recomendado)
++            row = (
++                db.query(UsuarioEmp.emp)
++                .filter(UsuarioEmp.usuario_id == uid)
++                .filter(UsuarioEmp.ativo.is_(True))
++                .order_by(UsuarioEmp.emp.asc())
++                .first()
++            )
++            if row and row[0] is not None and str(row[0]).strip() != "":
++                emp_val = str(row[0]).strip()
++                session["emp"] = emp_val
++                # mantém coerência do cache de EMPs
++                if not session.get("allowed_emps"):
++                    session["allowed_emps"] = [emp_val]
++                return emp_val
++
++            # 2) fallback legada: coluna usuarios.emp
++            u = db.query(Usuario).filter(Usuario.id == uid).first()
++            if not u:
++                return None
++            emp_val = getattr(u, "emp", None)
++            if emp_val is None or str(emp_val).strip() == "":
++                return None
++            emp_val = str(emp_val).strip()
++            session["emp"] = emp_val
++            return emp_val
+     except Exception:
+         return None
+-    finally:
+-        try:
+-            db.close()
+-        except Exception:
+-            pass
+ 
+ 
+ 
+@@ -607,13 +629,28 @@
+ 
+     try:
+         with SessionLocal() as db:
+-            rows = db.query(UsuarioEmp.emp).filter(UsuarioEmp.usuario_id == uid).all()
+-            emps_db = sorted({str(r[0]).strip() for r in rows if r and r[0] is not None and str(r[0]).strip()})
+-            # fallback: usa emp do usuário, se existir
++            rows = (
++                db.query(UsuarioEmp.emp)
++                .filter(UsuarioEmp.usuario_id == uid)
++                .filter(UsuarioEmp.ativo.is_(True))
++                .order_by(UsuarioEmp.emp.asc())
++                .all()
++            )
++            emps_db = [str(r[0]).strip() for r in rows if r and r[0] is not None and str(r[0]).strip()]
++
++            # fallback: usa emp do usuário (coluna legada), se existir
+             if not emps_db:
+-                emp_single = _emp()
+-                if emp_single:
++                emp_single = session.get("emp") or None
++                if emp_single is None:
++                    try:
++                        u = db.query(Usuario).filter(Usuario.id == uid).first()
++                        emp_single = getattr(u, "emp", None) if u else None
++                    except Exception:
++                        emp_single = None
++                if emp_single is not None and str(emp_single).strip() != "":
+                     emps_db = [str(emp_single).strip()]
++
++            # cache na sessão
+             session["allowed_emps"] = emps_db
+             return emps_db
+     except Exception:
+@@ -3399,6 +3436,7 @@
+ 
+     role = (_role() or "").strip().lower()
+     emp_usuario = _emp()
++    allowed_emps = _allowed_emps()
+ 
+     hoje = date.today()
+     mes = int(request.args.get("mes") or hoje.month)
+@@ -3412,8 +3450,12 @@
+     # Para SUPERVISOR/VENDEDOR: se não veio EMP no filtro, pré-seleciona automaticamente
+     # evitando tela "Selecione uma EMP" e garantindo que o relatório abra direto no escopo permitido.
+     if role == "supervisor":
+-        if not emps_sel and emp_usuario:
+-            emps_sel = [str(emp_usuario)]
++        # Supervisor: pré-seleciona todas as EMPs permitidas (usuario_emps); fallback para emp_usuario
++        if not emps_sel:
++            if allowed_emps:
++                emps_sel = [str(e) for e in allowed_emps]
++            elif emp_usuario:
++                emps_sel = [str(emp_usuario)]
+     elif role != "admin":
+         # vendedor
+         if not emps_sel:
+@@ -3430,11 +3472,19 @@
+         else:
+             emps_scope = _get_emps_com_vendas_no_periodo(ano, mes)
+     elif role == "supervisor":
+-        if not emp_usuario:
+-            flash("Supervisor sem EMP cadastrada. Ajuste o usuário do supervisor.", "warning")
++        # Supervisor pode ter 1+ EMPs em usuario_emps (novo). Se não houver, usa emp_single (legado).
++        if allowed_emps:
++            # aplica filtro solicitado, mas trava dentro do allowed
++            if emps_sel:
++                allowed_set = {str(e) for e in allowed_emps}
++                emps_scope = [str(e) for e in emps_sel if str(e) in allowed_set]
++            else:
++                emps_scope = [str(e) for e in allowed_emps]
++        elif emp_usuario:
++            emps_scope = [str(emp_usuario)]
++        else:
++            flash("Supervisor sem EMP cadastrada. Cadastre EMPs do supervisor em usuario_emps (ou preencha usuarios.emp).", "warning")
+             emps_scope = []
+-        else:
+-            emps_scope = [str(emp_usuario)]
+     else:
+         # vendedor
+         base_emps = _get_emps_vendedor(vendedor_logado)
+@@ -3729,6 +3779,7 @@
+ 
+     role = (_role() or "").strip().lower()
+     emp_usuario = _emp()
++    allowed_emps = _allowed_emps()
+     vendedor_logado = (_usuario_logado() or "").strip().upper()
+ 
+     hoje = date.today()
+@@ -3982,6 +4033,7 @@
+ 
+     role = (_role() or "").strip().lower()
+     emp_usuario = _emp()
++    allowed_emps = _allowed_emps()
+     vendedor_logado = (_usuario_logado() or "").strip().upper()
+ 
+     emp = (request.args.get("emp") or "").strip()
+@@ -4170,6 +4222,7 @@
+ 
+     role = (_role() or "").strip().lower()
+     emp_usuario = _emp()
++    allowed_emps = _allowed_emps()
+     vendedor_logado = (_usuario_logado() or "").strip().upper()
+ 
+     emp = (request.args.get("emp") or "").strip()

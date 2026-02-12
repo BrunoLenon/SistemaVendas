@@ -1,0 +1,9 @@
+Como aplicar:
+1) Faça backup do seu arquivo atual web/app.py.
+2) Substitua pelo web/app.py deste pacote (ou aplique o diff PATCH_web_app.py.diff).
+3) Reinicie o Render.
+
+O que foi corrigido:
+- _emp(): agora prioriza usuario_emps (ativo=True) antes de usar usuarios.emp (legado).
+- _allowed_emps(): agora filtra apenas vínculos ativos (ativo=True) e evita inconsistência de sessão.
+- /relatorios/campanhas: Supervisor agora respeita todas as EMPs vinculadas em usuario_emps (multi-EMP), e nunca "vaza" para EMP fora do escopo.
