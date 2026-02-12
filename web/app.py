@@ -767,75 +767,40 @@ def _admin_or_supervisor_required():
     return None
 
 def _get_vendedores_db(role: str, emp_usuario: str | None) -> list[str]:
-    """Lista vendedores para dropdowns (remove 'fantasmas').
-
-    - ADMIN: lista todos os usuários cadastrados como vendedor (role=vendedor)
-    - SUPERVISOR: lista vendedores cadastrados vinculados às EMPs do supervisor
-    """
+    """Lista de vendedores para dropdown sem carregar todas as vendas em memória."""
     role = (role or "").strip().lower()
     with SessionLocal() as db:
-        scope_emps = None
+        # Opcional (recomendado): mostrar/filtrar apenas vendedores cadastrados no sistema.
+        # Isso evita aparecer vendedor "fantasma" que existe nas vendas importadas mas não tem usuário.
+        try:
+            vendedores_cadastrados = {
+                (r[0] or "").strip().upper()
+                for r in db.query(Usuario.username).filter(func.lower(Usuario.role) == "vendedor").all()
+            }
+        except Exception:
+            vendedores_cadastrados = set()
+
+        q = db.query(func.distinct(Venda.vendedor))
         if role == "supervisor":
             emps = _allowed_emps()
             if emps:
-                scope_emps = emps
+                q = q.filter(Venda.emp.in_(emps))
             elif emp_usuario:
-                scope_emps = [str(emp_usuario)]
+                q = q.filter(Venda.emp == str(emp_usuario))
             else:
                 return []
+        # admin vê tudo; vendedor usa o próprio (não usa dropdown normalmente)
+        vendedores = [(r[0] or "").strip().upper() for r in q.all()]
 
-        # lista baseada no que existe em vendas (compatibilidade) e filtra para vendedores válidos
-        q = db.query(func.distinct(Venda.vendedor))
-        if role == "supervisor" and scope_emps:
-            q = q.filter(Venda.emp.in_(_normalize_emp_scope(scope_emps) or scope_emps))
+    vendedores = [v for v in vendedores if v]
 
-        vendedores = [_norm_text(str(r[0])) for r in q.all() if r and (r[0] or "").strip()]
-        if not vendedores:
-            return []
+    # Se houver cadastro, restringe a ele.
+    # (Mantém compatibilidade: se a base de usuários ainda não estiver completa, não zera a lista.)
+    if vendedores_cadastrados:
+        vendedores = [v for v in vendedores if v in vendedores_cadastrados]
 
-        validos = _get_vendedores_validos(db, emps_scope=scope_emps)
-        if validos:
-            vendedores = [v for v in vendedores if v in validos]
-
-    return sorted(set(vendedores))
-
-
-def _normalize_emp_scope(emp_scope):
-    """Normaliza escopo de EMP para lista[str] ou None."""
-    if emp_scope is None:
-        return None
-    if isinstance(emp_scope, (list, tuple, set)):
-        emps = [_norm_text(str(e)) for e in emp_scope if str(e or '').strip()]
-        return emps or None
-    s = str(emp_scope).strip()
-    if not s:
-        return None
-    return [_norm_text(s)]
-
-def _get_vendedores_validos(db, emps_scope=None) -> set[str]:
-    """Vendedores válidos (usuarios.role=vendedor).
-
-    Se emps_scope informado, restringe a vendedores vinculados via usuario_emps (ativo=True)
-    ou fallback legado usuarios.emp.
-    """
-    emps = _normalize_emp_scope(emps_scope)
-    if emps:
-        q = (
-            db.query(Usuario.username)
-            .outerjoin(UsuarioEmp, UsuarioEmp.usuario_id == Usuario.id)
-            .filter(func.lower(Usuario.role) == "vendedor")
-            .filter(
-                or_(
-                    and_(UsuarioEmp.ativo.is_(True), UsuarioEmp.emp.in_(emps)),
-                    and_(Usuario.emp.isnot(None), Usuario.emp.in_(emps)),
-                )
-            )
-        )
-    else:
-        q = db.query(Usuario.username).filter(func.lower(Usuario.role) == "vendedor")
-    rows = q.all()
-    return {_norm_text(str(r[0])) for r in rows if r and (r[0] or '').strip()}
-
+    vendedores = sorted(vendedores)
+    return vendedores
 
 def _get_emps_vendedor(username: str) -> list[str]:
     """Lista de EMPs que o vendedor pode acessar.
@@ -3096,21 +3061,16 @@ def _get_emps_com_vendas_no_periodo(ano: int, mes: int) -> list[str]:
     return emps
 
 def _get_vendedores_emp_no_periodo(emp: str, ano: int, mes: int) -> list[str]:
-    """Vendedores com venda no período para a EMP, restrito a usuários cadastrados."""
     inicio_mes, fim_mes = _periodo_bounds(int(ano), int(mes))
-    emp = str(emp).strip()
+    emp = str(emp)
     with SessionLocal() as db:
         rows = (
             db.query(func.distinct(Venda.vendedor))
             .filter(Venda.emp == emp, Venda.movimento >= inicio_mes, Venda.movimento <= fim_mes)
             .all()
         )
-        vendedores = [_norm_text(str(r[0])) for r in rows if r and (r[0] or '').strip()]
-        validos = _get_vendedores_validos(db, emps_scope=[emp])
-        if validos:
-            vendedores = [v for v in vendedores if v in validos]
-    return sorted(set(vendedores))
-
+    vendedores = sorted({(r[0] or '').strip().upper() for r in rows if r and (r[0] or '').strip()})
+    return vendedores
 
 def _calc_vendas_por_vendedor_para_campanha(db, emp: str, campanha: CampanhaQtd, periodo_ini: date, periodo_fim: date) -> dict[str, tuple[float, float]]:
     """Retorna dict vendedor -> (qtd_vendida, valor_vendido) para uma campanha no período.
@@ -3841,24 +3801,9 @@ def relatorio_campanhas():
                 emps_abertas.append(emp_payload)
 
 
-    # Opções de EMP para o filtro (multi) — NÃO deve depender do filtro atual,
-    # senão o admin "perde" as outras EMPs após aplicar um filtro e só volta ao recarregar a página.
+    # Opções de EMP para o filtro (multi) — sempre definido para evitar NameError
     try:
-        emps_for_options: list[str] = []
-        if role == "admin":
-            # Admin: lista todas as EMPs que têm vendas no período (independente do filtro aplicado)
-            emps_for_options = _get_emps_com_vendas_no_periodo(ano, mes)
-        elif role == "supervisor":
-            # Supervisor: lista todas as EMPs permitidas (independente do filtro aplicado)
-            emps_for_options = [str(e).strip() for e in (_allowed_emps() or []) if str(e).strip()]
-            if not emps_for_options and emp_usuario:
-                emps_for_options = [str(emp_usuario).strip()]
-        else:
-            # Vendedor: campo é travado, então tanto faz — mantém o escopo
-            emps_for_options = emps_scope[:]
-
-        emps_for_options = sorted(set([e for e in (emps_for_options or []) if e]))
-        emps_options = _get_emp_options(emps_for_options)
+        emps_options = _get_emp_options(emps_scope)
     except Exception:
         emps_options = []
 
@@ -5727,7 +5672,7 @@ def admin_fechamento():
 
     # Normaliza a ação vinda do formulário (alguns navegadores/JS podem enviar
     # variações, ex.: sem underscore, com hífen ou com espaços).
-    acao_raw = (request.values.get("acao") or "").strip().lower()
+    acao_raw = (request.form.get("acao") or "").strip().lower()
     acao = {
         "fechar_a_pagar": "fechar_a_pagar",
         "fechar_apagar": "fechar_a_pagar",
@@ -6693,7 +6638,6 @@ def _query_share_marca(db, ano: int, mes: int, emp: str, vendedor: str, marcas: 
 
 
 def _get_vendedores_no_periodo(db, ano: int, mes: int, emps: list[str]) -> list[str]:
-    """Vendedores com venda no período, restrito a usuários cadastrados (remove 'fantasmas')."""
     inicio, fim = _periodo_bounds_ym(ano, mes)
     if emps:
         rows = db.execute(
@@ -6716,16 +6660,7 @@ def _get_vendedores_no_periodo(db, ano: int, mes: int, emps: list[str]) -> list[
             """),
             {"ini": inicio, "fim": fim},
         ).fetchall()
-
-    vendedores = [_norm_text(str(r[0])) for r in rows if r and r[0] is not None and str(r[0]).strip()]
-    if not vendedores:
-        return []
-
-    validos = _get_vendedores_validos(db, emps_scope=emps)
-    if validos:
-        vendedores = [v for v in vendedores if v in validos]
-
-    return sorted(set(vendedores))
+    return [str(r[0]).strip() for r in rows if r and r[0] is not None and str(r[0]).strip()]
 
 
 def _get_emps_no_periodo(db, ano: int, mes: int, emps_allowed: list[str]) -> list[str]:
