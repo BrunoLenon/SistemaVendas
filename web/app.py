@@ -1286,74 +1286,21 @@ def _cache_is_fresh(row: DashboardCache) -> bool:
     except Exception:
         return False
 
-
-def _normalize_emp_scope(emp_scope: str | list[str] | None) -> list[str] | None:
-    """Normaliza escopo de EMP para lista de códigos (strings).
-
-    Aceita:
-    - None/"" -> None
-    - "101" -> ["101"]
-    - ["101", "102"] -> ["101", "102"]
-    """
-    if not emp_scope:
-        return None
-    if isinstance(emp_scope, (list, tuple, set)):
-        emps = [str(e).strip() for e in emp_scope if str(e).strip()]
-        return emps or None
-    s = str(emp_scope).strip()
-    return [s] if s else None
-
-def _get_cache_row(vendedor: str, ano: int, mes: int, emp_scope: str | list[str] | None):
+def _get_cache_row(vendedor: str, ano: int, mes: int, emp_scope: str | None):
     vendedor = (vendedor or '').strip().upper()
     if not vendedor:
         return None
     with SessionLocal() as db:
-        emps = _normalize_emp_scope(emp_scope)
-        if emps:
-            # Supervisor/Vendedor com escopo: agrega múltiplas EMPs (ex.: supervisor multi-EMP)
-            rows = db.query(DashboardCache).filter(
-                DashboardCache.emp.in_(emps),
+        if emp_scope:
+            row = db.query(DashboardCache).filter(
+                DashboardCache.emp == str(emp_scope),
                 DashboardCache.vendedor == vendedor,
                 DashboardCache.ano == int(ano),
                 DashboardCache.mes == int(mes),
-            ).all()
-            if not rows:
+            ).first()
+            if not row or not _cache_is_fresh(row):
                 return None
-            # se qualquer linha estiver fora do TTL, considera "sem cache" e força cálculo ao vivo
-            if any(not _cache_is_fresh(r) for r in rows):
-                return None
-            if len(rows) == 1:
-                return rows[0]
-            agg = DashboardCache(emp='*', vendedor=vendedor, ano=int(ano), mes=int(mes))
-            agg.valor_bruto = sum(r.valor_bruto or 0 for r in rows)
-            agg.valor_liquido = sum(r.valor_liquido or 0 for r in rows)
-            agg.devolucoes = sum(r.devolucoes or 0 for r in rows)
-            agg.cancelamentos = sum(r.cancelamentos or 0 for r in rows)
-            agg.pct_devolucao = (agg.devolucoes / agg.valor_bruto * 100.0) if agg.valor_bruto else 0.0
-            agg.mix_produtos = sum(r.mix_produtos or 0 for r in rows)
-            agg.mix_marcas = sum(r.mix_marcas or 0 for r in rows)
-
-            # agrega ranking por marca somando valores
-            marca_map = {}
-            total = 0.0
-            for r in rows:
-                try:
-                    lst = json.loads(r.ranking_json or '[]')
-                except Exception:
-                    lst = []
-                for it in lst:
-                    m = (it.get('marca') or '').strip()
-                    v = float(it.get('valor') or 0.0)
-                    marca_map[m] = marca_map.get(m, 0.0) + v
-                    total += v
-            ranking = sorted([
-                {'marca': m, 'valor': val, 'pct': (val/total*100.0) if total else 0.0}
-                for m, val in marca_map.items()
-            ], key=lambda x: x['valor'], reverse=True)
-            agg.ranking_json = json.dumps(ranking, ensure_ascii=False)
-            agg.ranking_top15_json = json.dumps(ranking[:15], ensure_ascii=False)
-            agg.total_liquido_periodo = total
-            return agg
+            return row
 
         # ADMIN/VENDEDOR sem EMP: soma múltiplas EMPs
         rows = db.query(DashboardCache).filter(
@@ -1398,7 +1345,7 @@ def _get_cache_row(vendedor: str, ano: int, mes: int, emp_scope: str | list[str]
 
 
 
-def _ano_passado_valor_mix(vendedor: str, ano: int, mes: int, emp_scope: str | list[str] | None) -> tuple[float, int]:
+def _ano_passado_valor_mix(vendedor: str, ano: int, mes: int, emp_scope: str | None) -> tuple[float, int]:
     """Retorna (valor_liquido, mix_produtos) para o mesmo mês do ano anterior.
 
     Regra:
@@ -1423,9 +1370,8 @@ def _ano_passado_valor_mix(vendedor: str, ano: int, mes: int, emp_scope: str | l
                 Venda.movimento >= start,
                 Venda.movimento < end,
             )
-            emps = _normalize_emp_scope(emp_scope)
-            if emps:
-                q_cnt = q_cnt.filter(Venda.emp.in_(emps))
+            if emp_scope:
+                q_cnt = q_cnt.filter(Venda.emp == str(emp_scope))
             cnt = int(q_cnt.scalar() or 0)
 
             if cnt > 0:
@@ -1445,34 +1391,30 @@ def _ano_passado_valor_mix(vendedor: str, ano: int, mes: int, emp_scope: str | l
                         Venda.movimento < end,
                     )
                 )
-                if emps:
-                    row = row.filter(Venda.emp.in_(emps))
+                if emp_scope:
+                    row = row.filter(Venda.emp == str(emp_scope))
                 r = row.first()
                 return float(r[0] or 0.0), int(r[1] or 0)
 
             # Fallback: resumo manual (vendas_resumo_periodo)
-            q = (
-                db.query(
-                    func.coalesce(func.sum(VendasResumoPeriodo.valor_venda), 0.0),
-                    func.coalesce(func.sum(VendasResumoPeriodo.mix_produtos), 0),
-                )
-                .select_from(VendasResumoPeriodo)
-                .filter(
-                    VendasResumoPeriodo.vendedor == vendedor,
-                    VendasResumoPeriodo.ano == int(ano_passado),
-                    VendasResumoPeriodo.mes == int(mes),
-                )
-            )
-            if emps:
-                # Se só tiver 1 EMP no escopo, aceita legado (emp vazio/EMPTY) para não zerar vendedor
-                if len(emps) == 1:
-                    q = q.filter(or_(VendasResumoPeriodo.emp == emps[0], VendasResumoPeriodo.emp.in_(['', 'EMPTY']), VendasResumoPeriodo.emp.is_(None)))
-                else:
-                    q = q.filter(VendasResumoPeriodo.emp.in_(emps))
+            base_sql = """
+                select
+                  coalesce(sum(valor_venda), 0) as valor,
+                  coalesce(sum(mix_produtos), 0) as mix
+                from public.vendas_resumo_periodo
+                where vendedor = :vendedor
+                  and ano = :ano
+                  and mes = :mes
+            """
+            params = {"vendedor": vendedor, "ano": int(ano_passado), "mes": int(mes)}
 
-            r = q.first()
-            if r:
-                return float(r[0] or 0.0), int(r[1] or 0)
+            if emp_scope:
+                base_sql += " and coalesce(emp,'') = :emp"
+                params["emp"] = str(emp_scope).strip()
+
+            row_sum = db.execute(text(base_sql), params).mappings().first()
+            if row_sum:
+                return float(row_sum.get('valor', 0) or 0.0), int(row_sum.get('mix', 0) or 0)
 
     except Exception:
         try:
@@ -1507,14 +1449,40 @@ def _dados_from_cache(vendedor_alvo, mes, ano, emp_scope):
 
     total_liquido_periodo = float(getattr(row, "total_liquido_periodo", None) or valor_atual)
 
-    # ---- mês anterior (cache) ----
+    # ---- mês anterior ----
     if mes == 1:
         prev_mes, prev_ano = 12, ano - 1
     else:
         prev_mes, prev_ano = mes - 1, ano
 
     prev_row = _get_cache_row(vendedor_alvo, prev_ano, prev_mes, emp_scope)
-    valor_mes_anterior = float(getattr(prev_row, "valor_liquido", 0) or 0) if prev_row else 0.0
+    if prev_row:
+        valor_mes_anterior = float(getattr(prev_row, "valor_liquido", 0) or 0)
+    else:
+        # Fallback: quando o cache do mês anterior ainda não existe (muito comum),
+        # calcula o líquido do mês anterior ao vivo para não mostrar "R$ 0,00" indevidamente.
+        try:
+            s_ant = date(prev_ano, prev_mes, 1)
+            e_ant = date(prev_ano + 1, 1, 1) if prev_mes == 12 else date(prev_ano, prev_mes + 1, 1)
+
+            with SessionLocal() as db:
+                q = db.query(Venda).filter(Venda.vendedor == vendedor_alvo)
+
+                if emp_scope:
+                    if isinstance(emp_scope, (list, tuple, set)):
+                        emps = [str(e).strip() for e in emp_scope if e is not None and str(e).strip()]
+                        if emps:
+                            q = q.filter(Venda.emp.in_(emps))
+                    else:
+                        q = q.filter(Venda.emp == str(emp_scope))
+
+                signed = case((Venda.mov_tipo_movto.in_(['DS','CA']), -Venda.valor_total), else_=Venda.valor_total)
+                valor_mes_anterior = float(q.filter(Venda.movimento >= s_ant, Venda.movimento < e_ant)
+                                          .with_entities(func.coalesce(func.sum(signed), 0.0))
+                                          .scalar() or 0.0)
+        except Exception:
+            app.logger.exception("Erro ao calcular mês anterior ao vivo")
+            valor_mes_anterior = 0.0
 
     crescimento_mes_anterior = None
     if prev_row and valor_mes_anterior != 0:
