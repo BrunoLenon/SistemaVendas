@@ -67,18 +67,18 @@
           {% for e in (emps_sel or []) %}
             <input type="hidden" name="emp" value="{{ e }}">
           {% endfor %}
-          <input type="hidden" name="emp_csv" value="{{ (emps_sel or [])|join(',') }}">
           <input type="hidden" name="mes" value="{{ mes }}">
           <input type="hidden" name="ano" value="{{ ano }}">
+          <input type="hidden" name="acao" id="acao_fechamento" value="">
 
                   
-<button class="btn btn-primary" type="submit" name="acao" value="fechar_a_pagar" {% if not emps_sel %}disabled{% endif %}>
+<button class="btn btn-primary" type="submit" onclick="document.getElementById('acao_fechamento').value='fechar_a_pagar'" {% if not emps_sel %}disabled{% endif %}>
   Fechar (A pagar)
 </button>
-<button class="btn btn-success" type="submit" name="acao" value="fechar_pago" {% if not emps_sel %}disabled{% endif %}>
+<button class="btn btn-success" type="submit" onclick="document.getElementById('acao_fechamento').value='fechar_pago'" {% if not emps_sel %}disabled{% endif %}>
   Fechar (Pago)
 </button>
-<button class="btn btn-outline-secondary" type="submit" name="acao" value="reabrir" {% if not emps_sel %}disabled{% endif %}>
+<button class="btn btn-outline-secondary" type="submit" onclick="document.getElementById('acao_fechamento').value='reabrir'" {% if not emps_sel %}disabled{% endif %}>
   Reabrir (Voltar para Aberto)
 </button>
 </form>
