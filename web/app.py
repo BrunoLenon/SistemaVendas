@@ -6627,6 +6627,9 @@ def admin_fechamento():
     ano = int(request.values.get("ano") or hoje.year)
     mes = int(request.values.get("mes") or hoje.month)
 
+    msgs = []
+    status_por_emp = {}
+
     # multi-EMP: aceita emp=101&emp=102, emp[]=101, CSV e POST
     emps_sel = _parse_emps_anywhere("emp")
 
@@ -6645,6 +6648,10 @@ def admin_fechamento():
         "abrir": "reabrir",
         "voltar": "reabrir",
     }.get(acao_raw, acao_raw)
+
+    consolidado = []
+    emps_all = []
+    emps_options = []
 
     with SessionLocal() as db:
         # Carrega opções de EMP para o filtro (admin: todas cadastradas, fallback: EMPs com vendas no período)
@@ -6669,6 +6676,7 @@ def admin_fechamento():
         except Exception:
             app.logger.exception("Falha ao recalcular ranking marca no fechamento")
 
+        # POST: fechar/reabrir
         if request.method == "POST" and acao in {"fechar_a_pagar", "fechar_pago", "reabrir"}:
             if not emps_sel:
                 msgs.append("⚠️ Selecione ao menos 1 EMP para fechar/reabrir.")
@@ -6679,6 +6687,7 @@ def admin_fechamento():
                     alvo_status = "a_pagar"
                 elif acao == "fechar_pago":
                     alvo_status = "pago"
+
                 for emp in emps_sel:
                     emp = _emp_norm(emp)
                     if not emp:
@@ -6700,7 +6709,6 @@ def admin_fechamento():
                         if acao in {"fechar_a_pagar", "fechar_pago"}:
                             rec.fechado = True
                             rec.fechado_em = datetime.utcnow()
-                            # status financeiro (controle)
                             if hasattr(rec, "status") and alvo_status:
                                 rec.status = alvo_status
                         else:
@@ -6708,11 +6716,12 @@ def admin_fechamento():
                             rec.fechado_em = None
                             if hasattr(rec, "status"):
                                 rec.status = "aberto"
+
                         updated_count += 1
-                        # commit no final do lote (mais rápido e consistente)
                     except Exception:
                         app.logger.exception("Erro ao preparar fechamento mensal")
                         msgs.append(f"❌ Falha ao atualizar fechamento da EMP {emp}.")
+
                 if updated_count > 0:
                     try:
                         db.commit()
@@ -6722,71 +6731,82 @@ def admin_fechamento():
                         app.logger.exception("Erro ao commitar fechamento mensal")
                         msgs.append("❌ Falha ao salvar alterações no fechamento.")
                 else:
-                    if not msgs:
-                        msgs.append("⚠️ Nenhuma EMP válida para atualizar.")
-    # Status para tela
-    for emp in (emps_sel or []):
-        emp = _emp_norm(emp)
-        if not emp:
-            continue
-        fechado = False
-        fechado_em = None
-        status_fin = "aberto"
-        try:
-            rec = (
-                db.query(FechamentoMensal)
-                .filter(
-                    FechamentoMensal.emp == emp,
-                    FechamentoMensal.ano == int(ano),
-                    FechamentoMensal.mes == int(mes),
-                )
-                .first()
-            )
-            if rec:
-                if getattr(rec, "status", None):
-                    status_fin = rec.status
-                if rec.fechado:
-                    fechado = True
-                    fechado_em = rec.fechado_em
-        except Exception:
+                    msgs.append("⚠️ Nenhuma EMP válida para atualizar.")
+
+        # Status para tela
+        for emp in (emps_sel or []):
+            emp = _emp_norm(emp)
+            if not emp:
+                continue
             fechado = False
+            fechado_em = None
+            status_fin = "aberto"
+            try:
+                rec = (
+                    db.query(FechamentoMensal)
+                    .filter(
+                        FechamentoMensal.emp == emp,
+                        FechamentoMensal.ano == int(ano),
+                        FechamentoMensal.mes == int(mes),
+                    )
+                    .first()
+                )
+                if rec:
+                    if getattr(rec, "status", None):
+                        status_fin = rec.status
+                    if rec.fechado:
+                        fechado = True
+                        fechado_em = rec.fechado_em
+            except Exception:
+                fechado = False
 
-        status_por_emp[emp] = {"fechado": fechado, "fechado_em": fechado_em, "status": status_fin}
+            status_por_emp[emp] = {"fechado": fechado, "fechado_em": fechado_em, "status": status_fin}
 
-    # Consolidado financeiro por EMP (QTD/Combo/Parados/Ranking Marca)
-    consolidado = []
-    try:
-        consolidado = _fechamento_consolidado_por_emp(db, ano, mes, emps_sel or [])
-    except Exception:
-        app.logger.exception("Erro ao montar consolidado do fechamento")
-        consolidado = []
-
-    # Exportação Excel (GET) — usa os filtros atuais
-    if request.method == "GET" and (request.args.get("export") or "").strip() in {"1", "true", "True", "yes"}:
+        # Consolidado financeiro por EMP (QTD/Combo/Parados/Ranking Marca)
         try:
-            import pandas as _pd
-            from io import BytesIO as _BytesIO
-
-            df = _pd.DataFrame(consolidado or [])
-            cols = ["emp", "qtd", "combo", "parados", "ranking_marca", "total", "pendente", "a_pagar", "pago", "devido", "status_fechamento"]
-            df = df[[c for c in cols if c in df.columns]]
-
-            buf = _BytesIO()
-            with _pd.ExcelWriter(buf, engine="openpyxl") as writer:
-                df.to_excel(writer, sheet_name="Consolidado", index=False)
-            buf.seek(0)
-            filename = f"fechamento_{int(ano)}_{int(mes):02d}.xlsx"
-            return send_file(
-                buf,
-                as_attachment=True,
-                download_name=filename,
-                mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            )
+            consolidado = _fechamento_consolidado_por_emp(db, ano, mes, emps_sel or [])
         except Exception:
-            app.logger.exception("Erro ao exportar Excel do fechamento")
-            flash("Não foi possível exportar o Excel agora.", "warning")
+            app.logger.exception("Erro ao montar consolidado do fechamento")
+            consolidado = []
 
         emps_options = _get_emp_options(emps_all)
+
+        # Exportação Excel (GET) — usa os filtros atuais
+        if request.method == "GET" and (request.args.get("export") or "").strip() in {"1", "true", "True", "yes"}:
+            try:
+                import pandas as _pd
+                from io import BytesIO as _BytesIO
+
+                df = _pd.DataFrame(consolidado or [])
+                cols = [
+                    "emp",
+                    "qtd",
+                    "combo",
+                    "parados",
+                    "ranking_marca",
+                    "total",
+                    "pendente",
+                    "a_pagar",
+                    "pago",
+                    "devido",
+                    "status_fechamento",
+                ]
+                df = df[[c for c in cols if c in df.columns]]
+
+                buf = _BytesIO()
+                with _pd.ExcelWriter(buf, engine="openpyxl") as writer:
+                    df.to_excel(writer, sheet_name="Consolidado", index=False)
+                buf.seek(0)
+                filename = f"fechamento_{int(ano)}_{int(mes):02d}.xlsx"
+                return send_file(
+                    buf,
+                    as_attachment=True,
+                    download_name=filename,
+                    mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
+            except Exception:
+                app.logger.exception("Erro ao exportar Excel do fechamento")
+                flash("Não foi possível exportar o Excel agora.", "warning")
 
     return render_template(
         "admin_fechamento.html",
