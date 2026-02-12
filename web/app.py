@@ -4999,6 +4999,17 @@ def admin_resumos_periodo():
     if request.method == 'POST' and acao:
         # alvo do POST (permite editar/cadastrar resumos em um período diferente do filtro)
         emp_alvo = _emp_norm(request.form.get('emp_edit') or emp)
+
+        # Se a EMP não vier no POST (alguns modais não enviam), tenta inferir pelo escopo do usuário.
+        # Importante para que Dashboard/Metas encontrem a base do ano passado corretamente.
+        if not emp_alvo:
+            try:
+                allowed_tmp = session.get('allowed_emps') or _allowed_emps()
+            except Exception:
+                allowed_tmp = []
+            if isinstance(allowed_tmp, (list, tuple)) and len(allowed_tmp) == 1:
+                emp_alvo = _emp_norm(allowed_tmp[0])
+
         try:
             ano_alvo = int(request.form.get('ano_edit') or ano)
         except Exception:
@@ -5340,7 +5351,7 @@ def admin_resumos_periodo():
             VendasResumoPeriodo.mes == mes,
         )
         if emp:
-            q = q.filter(VendasResumoPeriodo.emp == emp)
+            q = q.filter(or_(VendasResumoPeriodo.emp == emp, VendasResumoPeriodo.emp.in_(['', 'EMPTY'])))
         if vendedor:
             q = q.filter(VendasResumoPeriodo.vendedor == vendedor)
         registros = q.order_by(VendasResumoPeriodo.vendedor.asc()).all()
@@ -5351,7 +5362,7 @@ def admin_resumos_periodo():
             VendasResumoPeriodo.ano == ano_passado,
         )
         if emp:
-            q2 = q2.filter(VendasResumoPeriodo.emp == emp)
+            q2 = q2.filter(or_(VendasResumoPeriodo.emp == emp, VendasResumoPeriodo.emp.in_(['', 'EMPTY'])))
         if vendedor:
             q2 = q2.filter(VendasResumoPeriodo.vendedor == vendedor)
 
@@ -6469,39 +6480,43 @@ def _sql_valor_marcas_signed(marcas: list[str]):
 
 
 def _query_valor_mes(db, ano: int, mes: int, emp: str, vendedor: str) -> float:
-    """Retorna o valor do mês para (emp, vendedor, ano, mes).
-
-    IMPORTANTE (base de metas / comparações):
-      - Se existir registro em VendasResumoPeriodo (cadastro manual/importado no /admin/resumos_periodo),
-        ele tem prioridade.
-      - Caso não exista, cai para cálculo direto na tabela vendas.
-
-    Assim, o "Ano Passado" funciona mesmo quando você não tem histórico completo em vendas.
+    """Retorna o valor líquido do mês para (EMP, vendedor).
+    Prioridade:
+      1) Base manual/importada em vendas_resumo_periodo (ano/mes do registro)
+      2) Fallback: cálculo direto na tabela vendas (signed OA/DS/CA)
+    Observação: versões antigas gravaram emp como ''/EMPTY; fazemos fallback seguro.
     """
+    vend = (vendedor or '').strip().upper()
+    emp_n = _emp_norm(emp)
 
-    emp = (emp or "").strip()
-    vendedor = (vendedor or "").strip().upper()
-
-    # 1) Prioridade: base manual/importada
+    # 1) tenta base manual (resumo)
     try:
-        rec = (
-            db.query(VendasResumoPeriodo)
+        q = (
+            db.query(VendasResumoPeriodo.valor_venda)
             .filter(
-                VendasResumoPeriodo.emp == emp,
-                VendasResumoPeriodo.vendedor == vendedor,
-                VendasResumoPeriodo.ano == int(ano),
-                VendasResumoPeriodo.mes == int(mes),
+                VendasResumoPeriodo.vendedor == vend,
+                VendasResumoPeriodo.ano == ano,
+                VendasResumoPeriodo.mes == mes,
             )
-            .one_or_none()
         )
-        if rec is not None and rec.valor_venda is not None:
-            return float(rec.valor_venda or 0.0)
+        if emp_n:
+            q_emp = q.filter(VendasResumoPeriodo.emp == emp_n).one_or_none()
+            if q_emp is not None:
+                return float(q_emp[0] or 0.0)
+            # fallback compat: registros antigos sem emp
+            q_fallback = q.filter(VendasResumoPeriodo.emp.in_(['', 'EMPTY'])).one_or_none()
+            if q_fallback is not None:
+                return float(q_fallback[0] or 0.0)
+        else:
+            # se emp vier vazio, tenta pegar qualquer um (mas preferimos ''/EMPTY)
+            q_fallback = q.filter(VendasResumoPeriodo.emp.in_(['', 'EMPTY'])).one_or_none()
+            if q_fallback is not None:
+                return float(q_fallback[0] or 0.0)
     except Exception:
-        # não quebra metas se o ORM estiver diferente em alguma versão
         pass
 
-    # 2) Fallback: calcula no vendas
-    inicio, fim = _periodo_bounds_ym(int(ano), int(mes))
+    # 2) fallback: cálculo na tabela vendas
+    inicio, fim = _periodo_bounds_ym(ano, mes)
     sql = f"""
       SELECT {_sql_valor_mes_signed()} AS valor_mes
       FROM vendas
@@ -6509,16 +6524,45 @@ def _query_valor_mes(db, ano: int, mes: int, emp: str, vendedor: str) -> float:
         AND vendedor = :vendedor
         AND movimento BETWEEN :ini AND :fim
     """
-    row = db.execute(text(sql), {"emp": emp, "vendedor": vendedor, "ini": inicio, "fim": fim}).fetchone()
+    row = db.execute(text(sql), {"emp": emp_n, "vendedor": vend, "ini": inicio, "fim": fim}).fetchone()
     return float(row[0] or 0.0) if row else 0.0
 
 
 def _query_mix_itens(db, ano: int, mes: int, emp: str, vendedor: str) -> float:
-    """MIX = count de mestre com qtd_liquida > 0, onde:
-       - CA entra como negativo
-       - DS não entra no mix
-       - demais entram positivo
+    """Retorna MIX (qtd de itens/produtos) do mês para (EMP, vendedor).
+    Prioridade:
+      1) Base manual/importada em vendas_resumo_periodo.mix_produtos
+      2) Fallback: cálculo na tabela vendas (qtd_liquida > 0 por mestre)
+    Compat: emp antigo ''/EMPTY.
     """
+    vend = (vendedor or '').strip().upper()
+    emp_n = _emp_norm(emp)
+
+    # 1) tenta base manual (resumo)
+    try:
+        q = (
+            db.query(VendasResumoPeriodo.mix_produtos)
+            .filter(
+                VendasResumoPeriodo.vendedor == vend,
+                VendasResumoPeriodo.ano == ano,
+                VendasResumoPeriodo.mes == mes,
+            )
+        )
+        if emp_n:
+            q_emp = q.filter(VendasResumoPeriodo.emp == emp_n).one_or_none()
+            if q_emp is not None:
+                return float(q_emp[0] or 0.0)
+            q_fallback = q.filter(VendasResumoPeriodo.emp.in_(['', 'EMPTY'])).one_or_none()
+            if q_fallback is not None:
+                return float(q_fallback[0] or 0.0)
+        else:
+            q_fallback = q.filter(VendasResumoPeriodo.emp.in_(['', 'EMPTY'])).one_or_none()
+            if q_fallback is not None:
+                return float(q_fallback[0] or 0.0)
+    except Exception:
+        pass
+
+    # 2) fallback: calcula no detalhe em vendas
     inicio, fim = _periodo_bounds_ym(ano, mes)
     sql = """
       WITH por_produto AS (
@@ -6542,7 +6586,7 @@ def _query_mix_itens(db, ano: int, mes: int, emp: str, vendedor: str) -> float:
       FROM por_produto
       WHERE qtd_liquida > 0
     """
-    row = db.execute(text(sql), {"emp": emp, "vendedor": vendedor, "ini": inicio, "fim": fim}).fetchone()
+    row = db.execute(text(sql), {"emp": emp_n, "vendedor": vend, "ini": inicio, "fim": fim}).fetchone()
     return float(row[0] or 0.0) if row else 0.0
 
 
