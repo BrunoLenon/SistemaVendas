@@ -1,0 +1,272 @@
+--- a/web/templates/relatorio_campanhas.html
++++ b/web/templates/relatorio_campanhas.html
+@@ -226,7 +226,7 @@
+     <ul class="nav nav-tabs mb-3" role="tablist">
+       <li class="nav-item" role="presentation">
+         <button class="nav-link active" id="tab-a" data-bs-toggle="tab" data-bs-target="#pane-a" type="button" role="tab">
+-          A — Cadastros (Qtd/Combo)
++          A — Cadastros (Qtd/Combo/Parados)
+         </button>
+       </li>
+       <li class="nav-item" role="presentation">
+@@ -324,6 +324,32 @@
+                       </table>
+                     </div>
+                   {% endif %}
++
++                  <h6 class="mt-3 mb-2">Itens Parados</h6>
++                  {% if not e.itens_parados or (e.itens_parados|length)==0 %}
++                    <div class="text-muted small">Nenhum item parado ativo cadastrado para a EMP.</div>
++                  {% else %}
++                    <div class="table-responsive">
++                      <table class="table table-sm align-middle">
++                        <thead>
++                          <tr>
++                            <th scope="col">Código</th>
++                            <th scope="col">Descrição</th>
++                            <th scope="col" class="text-end">% Recomp.</th>
++                          </tr>
++                        </thead>
++                        <tbody>
++                          {% for p in e.itens_parados %}
++                            <tr>
++                              <td class="mono">{{ p.codigo }}</td>
++                              <td class="text-truncate" style="max-width: 520px">{{ p.descricao }}</td>
++                              <td class="text-end mono">{{ (p.recompensa_pct or 0)|float|round(2) }}</td>
++                            </tr>
++                          {% endfor %}
++                        </tbody>
++                      </table>
++                    </div>
++                  {% endif %}
+                 </div>
+               </div>
+             </div>
+@@ -367,6 +393,117 @@
+                               <td>
+                                 {% if it.tipo == 'COMBO' %}
+                                   <span class="badge text-bg-purple" style="background:#6f42c1;">COMBO</span>
++                                {% elif it.tipo == 'PARADO' %}
++                                  <span class="badge text-bg-warning">PARADO</span>
++                                {% else %}
++                                  <span class="badge text-bg-primary">QTD</span>
++                                {% endif %}
++                              </td>
++                              <td>{{ it.titulo }}</td>
++                              <td>{{ it.marca }}</td>
++                              <td class="text-muted">
++                                {{ it.produto }}
++                                {% if it.tipo == 'PARADO' %}
++                                  {% if it.descricao %}<div class="small opacity-75 text-truncate" style="max-width: 520px">{{ it.descricao }}</div>{% endif %}
++                                  <div class="small opacity-75">Base: {{ '%.2f'|format(it.valor_base or 0) }} • %: {{ (it.pct or 0)|float|round(2) }}</div>
++                                {% endif %}
++                                {% if it.tipo == 'COMBO' %}
++                                  <div class="small opacity-75">Progresso: {{ it.parcial|default('0/0') }}</div>
++                                  {% if it.critico_texto %}<div class="small">{{ it.critico_texto }}</div>{% endif %}
++                                  {% if it.combo_itens %}
++                                    <details class="mt-1">
++                                      <summary class="small">Ver itens do kit</summary>
++                                      <div class="table-responsive mt-2">
++                                        <table class="table table-sm table-bordered align-middle mb-0">
++                                          <thead class="table-light">
++                                            <tr>
++                                              <th>#</th>
++                                              <th>Item</th>
++                                              <th class="text-end">Mín.</th>
++                                              <th class="text-end">Vend.</th>
++                                              <th class="text-end">Falta</th>
++                                              <th class="text-center">OK</th>
++                                            </tr>
++                                          </thead>
++                                          <tbody>
++                                            {% for d in it.combo_itens %}
++                                              <tr>
++                                                <td class="mono">{{ loop.index }}</td>
++                                                <td class="text-truncate" style="max-width: 420px">{{ d.nome }}</td>
++                                                <td class="text-end mono">{{ d.minimo|int }}</td>
++                                                <td class="text-end mono">{{ d.vendido|int }}</td>
++                                                <td class="text-end mono">{{ d.falta|int }}</td>
++                                                <td class="text-center">
++                                                  {% if d.ok %}
++                                                    <span class="badge text-bg-success">OK</span>
++                                                  {% else %}
++                                                    <span class="badge text-bg-warning">NOK</span>
++                                                  {% endif %}
++                                                </td>
++                                              </tr>
++                                            {% endfor %}
++                                          </tbody>
++                                        </table>
++                                      </div>
++                                      <div class="small opacity-75 mt-2">* A recompensa do combo só é paga quando o gate é atingido. Até lá mostramos apenas o progresso e o que falta.</div>
++                                    </details>
++                                  {% endif %}
++                                {% endif %}
++                              </td>
++                              <td class="text-end">{{ '%.2f'|format(it.valor_recompensa or 0) }}</td>
++                              <td>{% if it.atingiu %}<span class="badge text-bg-success">SIM</span>{% else %}<span class="badge text-bg-secondary">NÃO</span>{% endif %}</td>
++                              <td class="text-muted small">{{ it.periodo }}</td>
++                            </tr>
++                          {% endfor %}
++                        </tbody>
++                      </table>
++                    </div>
++                  </div>
++                {% endfor %}
++              </div>
++            </div>
++          {% endfor %}
++        {% endif %}
++      </div>
++
++      <!-- Tab C: Fechadas -->
++      <div class="tab-pane fade" id="pane-c" role="tabpanel" aria-labelledby="tab-c">
++        {% if not emps_fechadas or (emps_fechadas|length)==0 %}
++          <div class="alert alert-info shadow-sm">Nenhuma campanha fechada para o período/filtros.</div>
++        {% else %}
++          {% for e in emps_fechadas %}
++            <div class="card shadow-sm mb-3">
++              <div class="card-header">
++                <strong>EMP {{ e.emp }}</strong> <span class="badge text-bg-secondary ms-2">FECHADO</span>
++              </div>
++              <div class="card-body">
++                {% for v in e.vendedores %}
++                  <div class="mb-3">
++                    <div class="d-flex justify-content-between align-items-center">
++                      <div class="fw-semibold">{{ v.vendedor }}</div>
++                      <div class="badge text-bg-dark">Total: {{ '%.2f'|format(v.total_recompensa or 0) }}</div>
++                    </div>
++                    <div class="table-responsive mt-2">
++                      <table class="table table-sm align-middle">
++                        <thead>
++                          <tr>
++                            <th scope="col">Tipo</th>
++                            <th scope="col">Campanha</th>
++                            <th scope="col">Marca</th>
++                            <th scope="col">Item</th>
++                            <th scope="col" class="text-end">Recompensa</th>
++                            <th scope="col">Atingiu</th>
++                            <th scope="col">Vigência</th>
++                          </tr>
++                        </thead>
++                        <tbody>
++                          {% for it in v.itens %}
++                            <tr>
++                              <td>
++                                {% if it.tipo == 'COMBO' %}
++                                  <span class="badge text-bg-purple" style="background:#6f42c1;">COMBO</span>
++                                {% elif it.tipo == 'PARADO' %}
++                                  <span class="badge text-bg-warning">PARADO</span>
+                                 {% else %}
+                                   <span class="badge text-bg-primary">QTD</span>
+                                 {% endif %}
+@@ -433,109 +570,6 @@
+           {% endfor %}
+         {% endif %}
+       </div>
+-
+-      <!-- Tab C: Fechadas -->
+-      <div class="tab-pane fade" id="pane-c" role="tabpanel" aria-labelledby="tab-c">
+-        {% if not emps_fechadas or (emps_fechadas|length)==0 %}
+-          <div class="alert alert-info shadow-sm">Nenhuma campanha fechada para o período/filtros.</div>
+-        {% else %}
+-          {% for e in emps_fechadas %}
+-            <div class="card shadow-sm mb-3">
+-              <div class="card-header">
+-                <strong>EMP {{ e.emp }}</strong> <span class="badge text-bg-secondary ms-2">FECHADO</span>
+-              </div>
+-              <div class="card-body">
+-                {% for v in e.vendedores %}
+-                  <div class="mb-3">
+-                    <div class="d-flex justify-content-between align-items-center">
+-                      <div class="fw-semibold">{{ v.vendedor }}</div>
+-                      <div class="badge text-bg-dark">Total: {{ '%.2f'|format(v.total_recompensa or 0) }}</div>
+-                    </div>
+-                    <div class="table-responsive mt-2">
+-                      <table class="table table-sm align-middle">
+-                        <thead>
+-                          <tr>
+-                            <th scope="col">Tipo</th>
+-                            <th scope="col">Campanha</th>
+-                            <th scope="col">Marca</th>
+-                            <th scope="col">Item</th>
+-                            <th scope="col" class="text-end">Recompensa</th>
+-                            <th scope="col">Atingiu</th>
+-                            <th scope="col">Vigência</th>
+-                          </tr>
+-                        </thead>
+-                        <tbody>
+-                          {% for it in v.itens %}
+-                            <tr>
+-                              <td>
+-                                {% if it.tipo == 'COMBO' %}
+-                                  <span class="badge text-bg-purple" style="background:#6f42c1;">COMBO</span>
+-                                {% else %}
+-                                  <span class="badge text-bg-primary">QTD</span>
+-                                {% endif %}
+-                              </td>
+-                              <td>{{ it.titulo }}</td>
+-                              <td>{{ it.marca }}</td>
+-                              <td class="text-muted">
+-                                {{ it.produto }}
+-                                {% if it.tipo == 'COMBO' %}
+-                                  <div class="small opacity-75">Progresso: {{ it.parcial|default('0/0') }}</div>
+-                                  {% if it.critico_texto %}<div class="small">{{ it.critico_texto }}</div>{% endif %}
+-                                  {% if it.combo_itens %}
+-                                    <details class="mt-1">
+-                                      <summary class="small">Ver itens do kit</summary>
+-                                      <div class="table-responsive mt-2">
+-                                        <table class="table table-sm table-bordered align-middle mb-0">
+-                                          <thead class="table-light">
+-                                            <tr>
+-                                              <th>#</th>
+-                                              <th>Item</th>
+-                                              <th class="text-end">Mín.</th>
+-                                              <th class="text-end">Vend.</th>
+-                                              <th class="text-end">Falta</th>
+-                                              <th class="text-center">OK</th>
+-                                            </tr>
+-                                          </thead>
+-                                          <tbody>
+-                                            {% for d in it.combo_itens %}
+-                                              <tr>
+-                                                <td class="mono">{{ loop.index }}</td>
+-                                                <td class="text-truncate" style="max-width: 420px">{{ d.nome }}</td>
+-                                                <td class="text-end mono">{{ d.minimo|int }}</td>
+-                                                <td class="text-end mono">{{ d.vendido|int }}</td>
+-                                                <td class="text-end mono">{{ d.falta|int }}</td>
+-                                                <td class="text-center">
+-                                                  {% if d.ok %}
+-                                                    <span class="badge text-bg-success">OK</span>
+-                                                  {% else %}
+-                                                    <span class="badge text-bg-warning">NOK</span>
+-                                                  {% endif %}
+-                                                </td>
+-                                              </tr>
+-                                            {% endfor %}
+-                                          </tbody>
+-                                        </table>
+-                                      </div>
+-                                      <div class="small opacity-75 mt-2">* A recompensa do combo só é paga quando o gate é atingido. Até lá mostramos apenas o progresso e o que falta.</div>
+-                                    </details>
+-                                  {% endif %}
+-                                {% endif %}
+-                              </td>
+-                              <td class="text-end">{{ '%.2f'|format(it.valor_recompensa or 0) }}</td>
+-                              <td>{% if it.atingiu %}<span class="badge text-bg-success">SIM</span>{% else %}<span class="badge text-bg-secondary">NÃO</span>{% endif %}</td>
+-                              <td class="text-muted small">{{ it.periodo }}</td>
+-                            </tr>
+-                          {% endfor %}
+-                        </tbody>
+-                      </table>
+-                    </div>
+-                  </div>
+-                {% endfor %}
+-              </div>
+-            </div>
+-          {% endfor %}
+-        {% endif %}
+-      </div>
+     </div>
+   {% endif %}
+ 
