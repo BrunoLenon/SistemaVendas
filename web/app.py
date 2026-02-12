@@ -3841,9 +3841,24 @@ def relatorio_campanhas():
                 emps_abertas.append(emp_payload)
 
 
-    # Opções de EMP para o filtro (multi) — sempre definido para evitar NameError
+    # Opções de EMP para o filtro (multi) — NÃO deve depender do filtro atual,
+    # senão o admin "perde" as outras EMPs após aplicar um filtro e só volta ao recarregar a página.
     try:
-        emps_options = _get_emp_options(emps_scope)
+        emps_for_options: list[str] = []
+        if role == "admin":
+            # Admin: lista todas as EMPs que têm vendas no período (independente do filtro aplicado)
+            emps_for_options = _get_emps_com_vendas_no_periodo(ano, mes)
+        elif role == "supervisor":
+            # Supervisor: lista todas as EMPs permitidas (independente do filtro aplicado)
+            emps_for_options = [str(e).strip() for e in (_allowed_emps() or []) if str(e).strip()]
+            if not emps_for_options and emp_usuario:
+                emps_for_options = [str(emp_usuario).strip()]
+        else:
+            # Vendedor: campo é travado, então tanto faz — mantém o escopo
+            emps_for_options = emps_scope[:]
+
+        emps_for_options = sorted(set([e for e in (emps_for_options or []) if e]))
+        emps_options = _get_emp_options(emps_for_options)
     except Exception:
         emps_options = []
 
@@ -5712,7 +5727,7 @@ def admin_fechamento():
 
     # Normaliza a ação vinda do formulário (alguns navegadores/JS podem enviar
     # variações, ex.: sem underscore, com hífen ou com espaços).
-    acao_raw = (request.form.get("acao") or "").strip().lower()
+    acao_raw = (request.values.get("acao") or "").strip().lower()
     acao = {
         "fechar_a_pagar": "fechar_a_pagar",
         "fechar_apagar": "fechar_a_pagar",
@@ -5820,129 +5835,6 @@ def admin_fechamento():
                 fechado = False
             status_por_emp[emp] = {"fechado": fechado, "fechado_em": fechado_em, "status": status_fin}
 
-        # -----------------------------
-        # Consolidado financeiro (por EMP)
-        # -----------------------------
-        # Soma de Campanhas QTD + Combos + Itens Parados na competência.
-        # Regras:
-        # - Só conta itens que geraram valor de recompensa (> 0)
-        # - Distribui Pendente/A pagar/Pago com base em fechamento_mensal.status
-        #   (mantém consistência operacional do sistema).
-        consolidado_por_emp: dict[str, dict] = {}
-
-        def _ensure_row(emp_code: str) -> dict:
-            emp_code = _emp_norm(emp_code)
-            if emp_code not in consolidado_por_emp:
-                consolidado_por_emp[emp_code] = {
-                    "emp": emp_code,
-                    "qtd": 0.0,
-                    "combo": 0.0,
-                    "parados": 0.0,
-                }
-            return consolidado_por_emp[emp_code]
-
-        # Campanhas QTD (resultados cacheados)
-        try:
-            rows_qtd = (
-                db.query(
-                    CampanhaQtdResultado.emp.label("emp"),
-                    func.coalesce(func.sum(CampanhaQtdResultado.valor_recompensa), 0.0).label("total"),
-                )
-                .filter(CampanhaQtdResultado.emp.in_([_emp_norm(e) for e in (emps_sel or []) if _emp_norm(e)]))
-                .filter(CampanhaQtdResultado.competencia_ano == int(ano))
-                .filter(CampanhaQtdResultado.competencia_mes == int(mes))
-                .filter(CampanhaQtdResultado.valor_recompensa > 0)
-                .group_by(CampanhaQtdResultado.emp)
-                .all()
-            )
-            for r in rows_qtd:
-                _ensure_row(str(r.emp))["qtd"] = float(r.total or 0.0)
-        except Exception:
-            app.logger.exception("Falha ao calcular consolidado QTD")
-
-        # Campanhas Combo (resultados cacheados)
-        try:
-            rows_combo = (
-                db.query(
-                    CampanhaComboResultado.emp.label("emp"),
-                    func.coalesce(func.sum(CampanhaComboResultado.valor_recompensa), 0.0).label("total"),
-                )
-                .filter(CampanhaComboResultado.emp.in_([_emp_norm(e) for e in (emps_sel or []) if _emp_norm(e)]))
-                .filter(CampanhaComboResultado.competencia_ano == int(ano))
-                .filter(CampanhaComboResultado.competencia_mes == int(mes))
-                .filter(CampanhaComboResultado.valor_recompensa > 0)
-                .group_by(CampanhaComboResultado.emp)
-                .all()
-            )
-            for r in rows_combo:
-                _ensure_row(str(r.emp))["combo"] = float(r.total or 0.0)
-        except Exception:
-            app.logger.exception("Falha ao calcular consolidado COMBO")
-
-        # Itens Parados (não possui tabela de resultados; calcula por vendas no período)
-        try:
-            if emps_sel:
-                start, end = _periodo_bounds(int(ano), int(mes))
-                rows_parados = (
-                    db.query(
-                        ItemParado.emp.label("emp"),
-                        func.coalesce(func.sum(Venda.valor_total * (func.coalesce(ItemParado.recompensa_pct, 0.0) / 100.0)), 0.0).label("total"),
-                    )
-                    .join(
-                        Venda,
-                        and_(
-                            Venda.emp == ItemParado.emp,
-                            Venda.mestre == ItemParado.codigo,
-                        ),
-                    )
-                    .filter(ItemParado.ativo == 1)
-                    .filter(ItemParado.emp.in_([_emp_norm(e) for e in (emps_sel or []) if _emp_norm(e)]))
-                    .filter(Venda.mov_tipo_movto == 'OA')
-                    .filter(Venda.movimento >= start)
-                    .filter(Venda.movimento < end)
-                    .group_by(ItemParado.emp)
-                    .all()
-                )
-                for r in rows_parados:
-                    _ensure_row(str(r.emp))["parados"] = float(r.total or 0.0)
-        except Exception:
-            app.logger.exception("Falha ao calcular consolidado ITENS PARADOS")
-
-        # Finaliza: total e buckets por status
-        consolidado_rows: list[dict] = []
-        for emp_code in ([_emp_norm(e) for e in (emps_sel or []) if _emp_norm(e)]):
-            row = _ensure_row(emp_code)
-            qtd_v = float(row.get("qtd") or 0.0)
-            combo_v = float(row.get("combo") or 0.0)
-            parados_v = float(row.get("parados") or 0.0)
-            total = qtd_v + combo_v + parados_v
-
-            st = status_por_emp.get(emp_code) or {}
-            fin_status = (st.get("status") or "aberto").strip().lower()
-
-            pendente = a_pagar = pago = 0.0
-            if total > 0:
-                if fin_status == "pago":
-                    pago = total
-                elif fin_status == "a_pagar":
-                    a_pagar = total
-                else:
-                    pendente = total
-
-            consolidado_rows.append(
-                {
-                    "emp": emp_code,
-                    "qtd": round(qtd_v, 2),
-                    "combo": round(combo_v, 2),
-                    "parados": round(parados_v, 2),
-                    "total": round(total, 2),
-                    "pendente": round(pendente, 2),
-                    "a_pagar": round(a_pagar, 2),
-                    "pago": round(pago, 2),
-                    "devido": round(pendente + a_pagar, 2),
-                }
-            )
-
     emps_options = _get_emp_options(emps_all)
 
     return render_template(
@@ -5953,7 +5845,6 @@ def admin_fechamento():
         emps_sel=emps_sel,
         emps_options=emps_options,
         status_por_emp=status_por_emp,
-        consolidado_rows=consolidado_rows,
         msgs=msgs,
     )
 
