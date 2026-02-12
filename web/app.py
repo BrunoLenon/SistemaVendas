@@ -560,52 +560,30 @@ def _role() -> str | None:
     return _normalize_role(session.get("role"))
 
 def _emp() -> str | None:
-    """Retorna a EMP default do usuário logado.
-
-    Observações:
-    - A coluna `usuarios.emp` é legada (single-EMP).
-    - O vínculo oficial (multi-EMP) é `usuario_emps` (ativo=True).
-    - Para compatibilidade, se o usuário tiver múltiplas EMPs, retornamos a primeira (ordenada).
-      As telas "multi-EMP" devem usar `_allowed_emps()` para obter o conjunto completo.
-    """
+    """Retorna a EMP do usuário logado (quando existir)."""
     emp = session.get("emp")
-    if emp is not None and str(emp).strip() != "":
+    if emp is not None and emp != "":
         return str(emp)
-
     uid = session.get("user_id")
     if not uid:
         return None
-
     try:
-        with SessionLocal() as db:
-            # 1) tenta via usuário_emps (novo / recomendado)
-            row = (
-                db.query(UsuarioEmp.emp)
-                .filter(UsuarioEmp.usuario_id == uid)
-                .filter(UsuarioEmp.ativo.is_(True))
-                .order_by(UsuarioEmp.emp.asc())
-                .first()
-            )
-            if row and row[0] is not None and str(row[0]).strip() != "":
-                emp_val = str(row[0]).strip()
-                session["emp"] = emp_val
-                # mantém coerência do cache de EMPs
-                if not session.get("allowed_emps"):
-                    session["allowed_emps"] = [emp_val]
-                return emp_val
-
-            # 2) fallback legada: coluna usuarios.emp
-            u = db.query(Usuario).filter(Usuario.id == uid).first()
-            if not u:
-                return None
-            emp_val = getattr(u, "emp", None)
-            if emp_val is None or str(emp_val).strip() == "":
-                return None
-            emp_val = str(emp_val).strip()
-            session["emp"] = emp_val
-            return emp_val
+        db = SessionLocal()
+        u = db.query(Usuario).filter(Usuario.id == uid).first()
+        if not u:
+            return None
+        emp_val = getattr(u, "emp", None)
+        if emp_val is None or emp_val == "":
+            return None
+        session["emp"] = str(emp_val)
+        return str(emp_val)
     except Exception:
         return None
+    finally:
+        try:
+            db.close()
+        except Exception:
+            pass
 
 
 
@@ -629,28 +607,13 @@ def _allowed_emps() -> list[str]:
 
     try:
         with SessionLocal() as db:
-            rows = (
-                db.query(UsuarioEmp.emp)
-                .filter(UsuarioEmp.usuario_id == uid)
-                .filter(UsuarioEmp.ativo.is_(True))
-                .order_by(UsuarioEmp.emp.asc())
-                .all()
-            )
-            emps_db = [str(r[0]).strip() for r in rows if r and r[0] is not None and str(r[0]).strip()]
-
-            # fallback: usa emp do usuário (coluna legada), se existir
+            rows = db.query(UsuarioEmp.emp).filter(UsuarioEmp.usuario_id == uid).all()
+            emps_db = sorted({str(r[0]).strip() for r in rows if r and r[0] is not None and str(r[0]).strip()})
+            # fallback: usa emp do usuário, se existir
             if not emps_db:
-                emp_single = session.get("emp") or None
-                if emp_single is None:
-                    try:
-                        u = db.query(Usuario).filter(Usuario.id == uid).first()
-                        emp_single = getattr(u, "emp", None) if u else None
-                    except Exception:
-                        emp_single = None
-                if emp_single is not None and str(emp_single).strip() != "":
+                emp_single = _emp()
+                if emp_single:
                     emps_db = [str(emp_single).strip()]
-
-            # cache na sessão
             session["allowed_emps"] = emps_db
             return emps_db
     except Exception:
@@ -3436,7 +3399,6 @@ def relatorio_campanhas():
 
     role = (_role() or "").strip().lower()
     emp_usuario = _emp()
-    allowed_emps = _allowed_emps()
 
     hoje = date.today()
     mes = int(request.args.get("mes") or hoje.month)
@@ -3450,12 +3412,8 @@ def relatorio_campanhas():
     # Para SUPERVISOR/VENDEDOR: se não veio EMP no filtro, pré-seleciona automaticamente
     # evitando tela "Selecione uma EMP" e garantindo que o relatório abra direto no escopo permitido.
     if role == "supervisor":
-        # Supervisor: pré-seleciona todas as EMPs permitidas (usuario_emps); fallback para emp_usuario
-        if not emps_sel:
-            if allowed_emps:
-                emps_sel = [str(e) for e in allowed_emps]
-            elif emp_usuario:
-                emps_sel = [str(emp_usuario)]
+        if not emps_sel and emp_usuario:
+            emps_sel = [str(emp_usuario)]
     elif role != "admin":
         # vendedor
         if not emps_sel:
@@ -3472,19 +3430,11 @@ def relatorio_campanhas():
         else:
             emps_scope = _get_emps_com_vendas_no_periodo(ano, mes)
     elif role == "supervisor":
-        # Supervisor pode ter 1+ EMPs em usuario_emps (novo). Se não houver, usa emp_single (legado).
-        if allowed_emps:
-            # aplica filtro solicitado, mas trava dentro do allowed
-            if emps_sel:
-                allowed_set = {str(e) for e in allowed_emps}
-                emps_scope = [str(e) for e in emps_sel if str(e) in allowed_set]
-            else:
-                emps_scope = [str(e) for e in allowed_emps]
-        elif emp_usuario:
-            emps_scope = [str(emp_usuario)]
-        else:
-            flash("Supervisor sem EMP cadastrada. Cadastre EMPs do supervisor em usuario_emps (ou preencha usuarios.emp).", "warning")
+        if not emp_usuario:
+            flash("Supervisor sem EMP cadastrada. Ajuste o usuário do supervisor.", "warning")
             emps_scope = []
+        else:
+            emps_scope = [str(emp_usuario)]
     else:
         # vendedor
         base_emps = _get_emps_vendedor(vendedor_logado)
@@ -3571,6 +3521,13 @@ def relatorio_campanhas():
                 "fechado": bool(fech_map.get(emp, False)),
                 "campanhas_qtd": campanhas_qtd_defs,
                 "combos": combos_defs,
+                "itens_parados": (
+                    db.query(ItemParado)
+                    .filter(ItemParado.emp == emp)
+                    .filter(ItemParado.ativo == 1)
+                    .order_by(ItemParado.codigo.asc())
+                    .all()
+                ),
             })
 
             # -------- Resultados (Tab B/C) --------
@@ -3628,6 +3585,51 @@ def relatorio_campanhas():
                 print(f"[RELATORIO_CAMPANHAS] aviso: não foi possível montar detalhes de combo: {_e}")
                 combo_items_by_combo = {}
                 combo_calc_cache = {}
+
+
+            # -------- Itens Parados (resultado por vendedor no período) --------
+            # Regra (igual /itens_parados): recompensa = SUM(valor_total OA) * (recompensa_pct/100) por código
+            itens_parados_defs = []
+            itens_parados_por_codigo = {}
+            try:
+                itens_parados_defs = (
+                    db.query(ItemParado)
+                    .filter(ItemParado.emp == emp)
+                    .filter(ItemParado.ativo == 1)
+                    .order_by(ItemParado.codigo.asc())
+                    .all()
+                )
+                for itp in (itens_parados_defs or []):
+                    cod = str(getattr(itp, "codigo", "") or "").strip()
+                    if cod:
+                        itens_parados_por_codigo[cod] = itp
+            except Exception as _e:
+                print(f"[RELATORIO_CAMPANHAS] aviso: não foi possível carregar itens_parados da EMP {emp}: {_e}")
+                itens_parados_defs = []
+                itens_parados_por_codigo = {}
+
+            itens_parados_venda_map = {}  # (vendedor, codigo) -> total_vendido
+            if itens_parados_por_codigo:
+                try:
+                    start_p, end_p = _periodo_bounds(int(ano), int(mes))
+                    codigos = list(itens_parados_por_codigo.keys())
+                    qpar = (
+                        db.query(func.upper(Venda.vendedor), Venda.mestre, func.coalesce(func.sum(Venda.valor_total), 0.0))
+                        .filter(Venda.emp == emp)
+                        .filter(Venda.movimento >= start_p)
+                        .filter(Venda.movimento < end_p)
+                        .filter(Venda.mov_tipo_movto == 'OA')
+                        .filter(func.upper(Venda.vendedor).in_([v.strip().upper() for v in vendedores]))
+                        .filter(Venda.mestre.in_(codigos))
+                        .group_by(func.upper(Venda.vendedor), Venda.mestre)
+                    )
+                    for vend_u, mestre, total in qpar.all():
+                        vv = (vend_u or "").strip().upper()
+                        cc = str(mestre or "").strip()
+                        itens_parados_venda_map[(vv, cc)] = float(total or 0.0)
+                except Exception as _e:
+                    print(f"[RELATORIO_CAMPANHAS] aviso: não foi possível calcular itens_parados da EMP {emp}: {_e}")
+                    itens_parados_venda_map = {}
 
             # agrupa por vendedor e unifica (QTD + COMBO)
             by_vend = {}
@@ -3705,6 +3707,40 @@ def relatorio_campanhas():
                     "periodo": f"{r.data_inicio} → {r.data_fim}",
                 })
 
+
+            # adiciona Itens Parados no agrupamento (como "campanha")
+            if itens_parados_por_codigo:
+                try:
+                    start_p, end_p = _periodo_bounds(int(ano), int(mes))
+                    periodo_txt = f"{start_p} → {end_p}"
+                except Exception:
+                    periodo_txt = ""
+                for (vv, cc), total_base in (itens_parados_venda_map or {}).items():
+                    itp = (itens_parados_por_codigo or {}).get(cc)
+                    if not itp:
+                        continue
+                    pct = float(getattr(itp, "recompensa_pct", 0.0) or 0.0)
+                    desc = (getattr(itp, "descricao", None) or "").strip()
+                    valor = (float(total_base or 0.0) * (pct / 100.0)) if (total_base or 0.0) > 0 and pct > 0 else 0.0
+                    # para o consolidado, só mostramos itens que geraram base no período (evita poluir a lista)
+                    if (total_base or 0.0) <= 0:
+                        continue
+                    if valor <= 0:
+                        continue
+                    by_vend.setdefault(vv, []).append({
+                        "tipo": "PARADO",
+                        "titulo": "Itens Parados",
+                        "marca": "",
+                        "produto": cc,
+                        "descricao": desc,
+                        "valor_base": float(total_base or 0.0),
+                        "pct": pct,
+                        "valor_recompensa": float(valor or 0.0),
+                        "atingiu": 1 if valor > 0 else 0,
+                        "status_pagamento": "-",
+                        "periodo": periodo_txt,
+                    })
+
             # ordena campanhas dentro do vendedor (maior recompensa primeiro)
             vendedores_cards = []
             for v in sorted(by_vend.keys()):
@@ -3779,7 +3815,6 @@ def relatorio_cidades_clientes():
 
     role = (_role() or "").strip().lower()
     emp_usuario = _emp()
-    allowed_emps = _allowed_emps()
     vendedor_logado = (_usuario_logado() or "").strip().upper()
 
     hoje = date.today()
@@ -4033,7 +4068,6 @@ def relatorio_cidade_clientes_api():
 
     role = (_role() or "").strip().lower()
     emp_usuario = _emp()
-    allowed_emps = _allowed_emps()
     vendedor_logado = (_usuario_logado() or "").strip().upper()
 
     emp = (request.args.get("emp") or "").strip()
@@ -4222,7 +4256,6 @@ def relatorio_cliente_itens_api():
 
     role = (_role() or "").strip().lower()
     emp_usuario = _emp()
-    allowed_emps = _allowed_emps()
     vendedor_logado = (_usuario_logado() or "").strip().upper()
 
     emp = (request.args.get("emp") or "").strip()
