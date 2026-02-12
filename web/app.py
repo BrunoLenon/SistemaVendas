@@ -560,38 +560,58 @@ def _role() -> str | None:
     return _normalize_role(session.get("role"))
 
 def _emp() -> str | None:
-    """Retorna a EMP do usuário logado (quando existir)."""
+    """Retorna a EMP *default* do usuário logado.
+
+    Regras:
+    - Se houver session['emp'], usa.
+    - Se existir vínculo ativo em usuario_emps, usa a 1ª EMP (ordenada) como default.
+    - Fallback legado: usuarios.emp (single-EMP).
+    """
     emp = session.get("emp")
-    if emp is not None and emp != "":
-        return str(emp)
+    if emp is not None and str(emp).strip():
+        return str(emp).strip()
+
     uid = session.get("user_id")
     if not uid:
         return None
+
     try:
-        db = SessionLocal()
-        u = db.query(Usuario).filter(Usuario.id == uid).first()
-        if not u:
-            return None
-        emp_val = getattr(u, "emp", None)
-        if emp_val is None or emp_val == "":
-            return None
-        session["emp"] = str(emp_val)
-        return str(emp_val)
+        with SessionLocal() as db:
+            # 1) Multi-EMP (ativo)
+            try:
+                rows = (
+                    db.query(UsuarioEmp.emp)
+                    .filter(UsuarioEmp.usuario_id == uid, UsuarioEmp.ativo.is_(True))
+                    .order_by(UsuarioEmp.emp.asc())
+                    .all()
+                )
+                emps_db = [str(r[0]).strip() for r in (rows or []) if r and r[0] is not None and str(r[0]).strip()]
+                if emps_db:
+                    session["emp"] = emps_db[0]
+                    # também mantém allowed_emps coerente
+                    session["allowed_emps"] = sorted(set(emps_db))
+                    return emps_db[0]
+            except Exception:
+                pass
+
+            # 2) Fallback legado: usuarios.emp
+            u = db.query(Usuario).filter(Usuario.id == uid).first()
+            if not u:
+                return None
+            emp_val = getattr(u, "emp", None)
+            if emp_val is None or not str(emp_val).strip():
+                return None
+            session["emp"] = str(emp_val).strip()
+            return str(emp_val).strip()
     except Exception:
         return None
-    finally:
-        try:
-            db.close()
-        except Exception:
-            pass
-
 
 
 def _allowed_emps() -> list[str]:
     """Lista de EMPs permitidas para o usuário logado via tabela usuario_emps.
 
-    - Admin (recomendado): acesso total (retorna []) e usa flag session['admin_all_emps'].
-    - Supervisor/Vendedor: retorna session['allowed_emps'] ou carrega do banco.
+    - Admin: se session['admin_all_emps'] for True, retorna [] (significa 'todas').
+    - Supervisor/Vendedor: retorna a lista de EMPs ativas do usuário.
     """
     role = (_role() or "").lower()
     if role == "admin" and session.get("admin_all_emps"):
@@ -607,24 +627,23 @@ def _allowed_emps() -> list[str]:
 
     try:
         with SessionLocal() as db:
-            rows = db.query(UsuarioEmp.emp).filter(UsuarioEmp.usuario_id == uid).all()
-            emps_db = sorted({str(r[0]).strip() for r in rows if r and r[0] is not None and str(r[0]).strip()})
-            # fallback: usa emp do usuário, se existir
+            rows = (
+                db.query(UsuarioEmp.emp)
+                .filter(UsuarioEmp.usuario_id == uid, UsuarioEmp.ativo.is_(True))
+                .all()
+            )
+            emps_db = sorted({str(r[0]).strip() for r in (rows or []) if r and r[0] is not None and str(r[0]).strip()})
+
+            # fallback legado: usa emp do usuário, se existir
             if not emps_db:
                 emp_single = _emp()
                 if emp_single:
                     emps_db = [str(emp_single).strip()]
+
             session["allowed_emps"] = emps_db
             return emps_db
     except Exception:
         return []
-def _is_date_in_range(today: date, inicio: date | None, fim: date | None) -> bool:
-    if inicio and today < inicio:
-        return False
-    if fim and today > fim:
-        return False
-    return True
-
 
 def _find_pending_blocking_message(db) -> Mensagem | None:
     """Retorna a primeira mensagem bloqueante pendente para o usuário (hoje)."""
@@ -3412,12 +3431,14 @@ def relatorio_campanhas():
     # Para SUPERVISOR/VENDEDOR: se não veio EMP no filtro, pré-seleciona automaticamente
     # evitando tela "Selecione uma EMP" e garantindo que o relatório abra direto no escopo permitido.
     if role == "supervisor":
-        if not emps_sel and emp_usuario:
-            emps_sel = [str(emp_usuario)]
+        allowed = _allowed_emps()
+        # Se não veio filtro, pré-seleciona TODAS as EMPs permitidas do supervisor
+        if not emps_sel and allowed:
+            emps_sel = allowed[:]
     elif role != "admin":
         # vendedor
         if not emps_sel:
-            # tenta usar EMPs do vendedor; se ainda não souber, será preenchido após emps_scope
+            # será preenchido após emps_scope (com base nas EMPs do vendedor)
             emps_sel = []
 
     # Define escopo de EMPs e vendedores    # Define escopo de EMPs e vendedores
@@ -3430,12 +3451,20 @@ def relatorio_campanhas():
         else:
             emps_scope = _get_emps_com_vendas_no_periodo(ano, mes)
     elif role == "supervisor":
-        if not emp_usuario:
+        allowed = _allowed_emps()
+        if not allowed:
+            # fallback legado (single-EMP)
+            if emp_usuario:
+                allowed = [str(emp_usuario).strip()]
+        if not allowed:
             flash("Supervisor sem EMP cadastrada. Ajuste o usuário do supervisor.", "warning")
             emps_scope = []
         else:
-            emps_scope = [str(emp_usuario)]
-    else:
+            # se veio seleção, mantém apenas o que está no escopo permitido
+            if emps_sel:
+                emps_scope = [e for e in emps_sel if e in allowed]
+            else:
+                emps_scope = allowed[:]    else:
         # vendedor
         base_emps = _get_emps_vendedor(vendedor_logado)
         emps_scope = [e for e in base_emps if (not emps_sel or str(e) in {str(x) for x in emps_sel})]
@@ -3600,7 +3629,7 @@ def relatorio_campanhas():
                     .all()
                 )
                 for itp in (itens_parados_defs or []):
-                    cod = (getattr(itp, "codigo", "") or "").strip()
+                    cod = str(getattr(itp, "codigo", "") or "").strip()
                     if cod:
                         itens_parados_por_codigo[cod] = itp
             except Exception as _e:
@@ -3625,7 +3654,7 @@ def relatorio_campanhas():
                     )
                     for vend_u, mestre, total in qpar.all():
                         vv = (vend_u or "").strip().upper()
-                        cc = (mestre or "").strip()
+                        cc = str(mestre or "").strip()
                         itens_parados_venda_map[(vv, cc)] = float(total or 0.0)
                 except Exception as _e:
                     print(f"[RELATORIO_CAMPANHAS] aviso: não foi possível calcular itens_parados da EMP {emp}: {_e}")
@@ -3723,7 +3752,7 @@ def relatorio_campanhas():
                     desc = (getattr(itp, "descricao", None) or "").strip()
                     valor = (float(total_base or 0.0) * (pct / 100.0)) if (total_base or 0.0) > 0 and pct > 0 else 0.0
                     # para o consolidado, só mostramos itens que geraram base no período (evita poluir a lista)
-                    if (total_base or 0.0) <= 0:
+                    if (valor or 0.0) <= 0:
                         continue
                     by_vend.setdefault(vv, []).append({
                         "tipo": "PARADO",
