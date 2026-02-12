@@ -6725,7 +6725,20 @@ def admin_fechamento():
                 if updated_count > 0:
                     try:
                         db.commit()
-                        msgs.append(f"✅ Operação concluída ({updated_count} EMPs).")
+                        # PRG: evita re-submissão e garante leitura atualizada no GET
+                        try:
+                            flash(f"✅ Operação concluída ({updated_count} EMPs).", "success")
+                        except Exception:
+                            # fallback caso flash não esteja disponível por algum motivo
+                            msgs.append(f"✅ Operação concluída ({updated_count} EMPs).")
+                        qs = {}
+                        if emps_sel:
+                            qs["emp"] = list(emps_sel)
+                        qs["mes"] = str(mes)
+                        qs["ano"] = str(ano)
+                        from urllib.parse import urlencode
+                        return redirect(url_for("admin_fechamento") + "?" + urlencode(qs, doseq=True))
+
                     except Exception:
                         db.rollback()
                         app.logger.exception("Erro ao commitar fechamento mensal")
