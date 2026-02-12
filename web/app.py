@@ -5654,37 +5654,35 @@ def admin_fechamento():
     mes = int(request.values.get("mes") or hoje.month)
 
     # multi-EMP: fecha em lote quando selecionar mais de uma EMP
-    # Aceita emp (padrão), emp[] (alguns multiselects), e CSV.
-    def _read_multi(name: str) -> list[str]:
-        vals: list[str] = []
+    # multi-EMP: lê tanto querystring (?emp=101&emp=102) quanto POST (inputs hidden name=emp)
+    emps_sel = []
+    # Aceita emp, emp[] e emp_csv em GET/POST (robusto)
+    try:
+        emps_sel = [str(e).strip() for e in request.values.getlist("emp") if str(e).strip()]
+    except Exception:
+        emps_sel = []
+    if not emps_sel:
         try:
-            vals = [str(v).strip() for v in request.values.getlist(name) if str(v).strip()]
+            emps_sel = [str(e).strip() for e in request.values.getlist("emp[]") if str(e).strip()]
         except Exception:
-            vals = []
-        return vals
-
-    emps_sel = _read_multi("emp")
+            emps_sel = []
     if not emps_sel:
-        emps_sel = _read_multi("emp[]")
-    if not emps_sel:
-        # querystring (?emp=101&emp=102) e compat legado
-        emps_sel = [str(e).strip() for e in _parse_multi_args("emp") if str(e).strip()]
-    if not emps_sel:
-        # aceita CSV no POST/GET
         emp_csv = (request.values.get("emp_csv") or request.values.get("emps") or "").strip()
         if emp_csv:
-            emps_sel = [p.strip() for p in emp_csv.split(",") if p.strip()]
+            emps_sel = [e.strip() for e in emp_csv.split(",") if e.strip()]
     if not emps_sel:
-        # fallback: tenta usar emp único (mantém compatibilidade com versões antigas)
-        emp_single = _emp_norm(request.values.get("emp", "") or request.values.get("emp[]", ""))
+        # querystring repetida (?emp=101&emp=102)
+        emps_sel = [str(e).strip() for e in _parse_multi_args("emp") if str(e).strip()]
+    if not emps_sel:
+        # fallback legado: emp único
+        emp_single = _emp_norm(request.values.get("emp", ""))
         emps_sel = [emp_single] if emp_single else []
-
-    msgs: list[str] = []
+msgs: list[str] = []
     status_por_emp: dict[str, dict] = {}
 
     # Normaliza a ação vinda do formulário (alguns navegadores/JS podem enviar
     # variações, ex.: sem underscore, com hífen ou com espaços).
-    acao_raw = (request.values.get("acao") or request.values.get("action") or "").strip().lower()
+    acao_raw = (request.values.get("acao") or request.form.get("acao") or request.values.get("action") or request.form.get("action") or "").strip().lower()
     acao = {
         "fechar_a_pagar": "fechar_a_pagar",
         "fechar_apagar": "fechar_a_pagar",
@@ -5756,9 +5754,8 @@ def admin_fechamento():
                 if updated_count > 0:
                     try:
                         db.commit()
-                        # PRG: garante que a tela recarregue via GET e mostre status atualizado
-                        qs = [("emp", e) for e in emps_sel] + [("mes", str(mes)), ("ano", str(ano))]
-                        return redirect(url_for("admin_fechamento") + "?" + urlencode(qs))
+                        msgs.append(f"✅ Operação concluída ({updated_count} EMPs).")
+                        return redirect(url_for("admin_fechamento", emp=emps_sel, mes=mes, ano=ano))
                     except Exception:
                         db.rollback()
                         app.logger.exception("Erro ao commitar fechamento mensal")

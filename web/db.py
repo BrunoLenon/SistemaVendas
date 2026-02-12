@@ -683,12 +683,7 @@ class VendasResumoPeriodo(Base):
 
 
 class FechamentoMensal(Base):
-    """Controle de fechamento (trava edição) por EMP e competência.
-
-    Regras:
-    - Quando ABERTO: fechado=False, status='aberto', fechado_em=NULL
-    - Quando FECHADO: fechado=True, status in {'a_pagar','pago'}, fechado_em=timestamp
-    """
+    """Controle de fechamento (trava edição) por EMP e competência."""
 
     __tablename__ = "fechamento_mensal"
 
@@ -697,11 +692,8 @@ class FechamentoMensal(Base):
     ano = Column(Integer, nullable=False, index=True)
     mes = Column(Integer, nullable=False, index=True)
 
-    # IMPORTANTE: default deve ser ABERTO
     fechado = Column(Boolean, nullable=False, default=False)
-    # ABERTO => NULL (não deve ter default automático)
     fechado_em = Column(DateTime, nullable=True, default=None)
-
     # Status do período (controle financeiro): "aberto", "a_pagar", "pago"
     status = Column(String(20), nullable=False, default="aberto", index=True)
 
