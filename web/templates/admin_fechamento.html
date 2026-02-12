@@ -67,6 +67,7 @@
           {% for e in (emps_sel or []) %}
             <input type="hidden" name="emp" value="{{ e }}">
           {% endfor %}
+          <input type="hidden" name="emp_csv" value="{{ (emps_sel or [])|join(',') }}">
           <input type="hidden" name="mes" value="{{ mes }}">
           <input type="hidden" name="ano" value="{{ ano }}">
 
@@ -138,72 +139,6 @@
       </div>
     </div>
   </div>
-
-{% if emps_sel %}
-<div class="card shadow-sm mt-3">
-  <div class="card-body">
-    <div class="d-flex flex-wrap justify-content-between align-items-start gap-2">
-      <div>
-        <h5 class="m-0">Consolidado Financeiro por EMP</h5>
-        <div class="subtitle small mt-1">Somente recompensas <b>&gt; 0</b> no mês. Inclui QTD, Combo, Itens Parados e Ranking por Marca.</div>
-      </div>
-      <div class="d-flex gap-2">
-        <a class="btn btn-outline-success btn-sm"
-           href="{{ url_for('admin_fechamento', emp=emps_sel, mes=mes, ano=ano, export=1) }}">
-          Exportar Excel
-        </a>
-      </div>
-    </div>
-
-    {% if not consolidado %}
-      <div class="alert alert-warning mt-3 mb-0">Nenhum valor encontrado para o período/EMP(s) selecionadas.</div>
-    {% else %}
-      <div class="table-responsive mt-3">
-        <table class="table table-sm align-middle">
-          <thead>
-            <tr>
-              <th>EMP</th>
-              <th class="text-end">QTD</th>
-              <th class="text-end">Combo</th>
-              <th class="text-end">Parados</th>
-              <th class="text-end">Ranking Marca</th>
-              <th class="text-end">Total</th>
-              <th class="text-end">Pendente</th>
-              <th class="text-end">A pagar</th>
-              <th class="text-end">Pago</th>
-              <th class="text-end">Devido</th>
-              <th class="text-end">Detalhes</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for r in consolidado %}
-              <tr>
-                <td><b>{{ r.emp }}</b></td>
-                <td class="text-end">{{ "%.2f"|format(r.qtd or 0) }}</td>
-                <td class="text-end">{{ "%.2f"|format(r.combo or 0) }}</td>
-                <td class="text-end">{{ "%.2f"|format(r.parados or 0) }}</td>
-                <td class="text-end">{{ "%.2f"|format(r.ranking_marca or 0) }}</td>
-                <td class="text-end"><b>{{ "%.2f"|format(r.total or 0) }}</b></td>
-                <td class="text-end">{{ "%.2f"|format(r.pendente or 0) }}</td>
-                <td class="text-end">{{ "%.2f"|format(r.a_pagar or 0) }}</td>
-                <td class="text-end">{{ "%.2f"|format(r.pago or 0) }}</td>
-                <td class="text-end"><b>{{ "%.2f"|format(r.devido or 0) }}</b></td>
-                <td class="text-end">
-                  <a class="btn btn-outline-primary btn-sm"
-                     href="{{ url_for('admin_fechamento_detalhes', emp=r.emp, ano=ano, mes=mes) }}">
-                    Ver detalhes
-                  </a>
-                </td>
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    {% endif %}
-  </div>
-</div>
-{% endif %}
-
 
 </div>
 {% endblock %}
