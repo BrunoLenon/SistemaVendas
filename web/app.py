@@ -5656,33 +5656,23 @@ def admin_fechamento():
     # multi-EMP: fecha em lote quando selecionar mais de uma EMP
     # multi-EMP: lê tanto querystring (?emp=101&emp=102) quanto POST (inputs hidden name=emp)
     emps_sel = []
-    # Aceita emp, emp[] e emp_csv em GET/POST (robusto)
     try:
         emps_sel = [str(e).strip() for e in request.values.getlist("emp") if str(e).strip()]
     except Exception:
         emps_sel = []
     if not emps_sel:
-        try:
-            emps_sel = [str(e).strip() for e in request.values.getlist("emp[]") if str(e).strip()]
-        except Exception:
-            emps_sel = []
-    if not emps_sel:
-        emp_csv = (request.values.get("emp_csv") or request.values.get("emps") or "").strip()
-        if emp_csv:
-            emps_sel = [e.strip() for e in emp_csv.split(",") if e.strip()]
-    if not emps_sel:
-        # querystring repetida (?emp=101&emp=102)
         emps_sel = [str(e).strip() for e in _parse_multi_args("emp") if str(e).strip()]
     if not emps_sel:
-        # fallback legado: emp único
+        # fallback: tenta usar emp único (mantém compatibilidade com versões antigas)
         emp_single = _emp_norm(request.values.get("emp", ""))
         emps_sel = [emp_single] if emp_single else []
+
     msgs: list[str] = []
     status_por_emp: dict[str, dict] = {}
 
     # Normaliza a ação vinda do formulário (alguns navegadores/JS podem enviar
     # variações, ex.: sem underscore, com hífen ou com espaços).
-    acao_raw = (request.values.get("acao") or request.form.get("acao") or request.values.get("action") or request.form.get("action") or "").strip().lower()
+    acao_raw = (request.values.get("acao") or request.values.get("action") or request.form.get("acao") or request.form.get("action") or "").strip().lower()
     acao = {
         "fechar_a_pagar": "fechar_a_pagar",
         "fechar_apagar": "fechar_a_pagar",
@@ -5743,7 +5733,7 @@ def admin_fechamento():
                                 rec.status = alvo_status
                         else:
                             rec.fechado = False
-                            rec.fechado_em = None
+                            rec.fechado_em = None  # reabrir: zera timestamp
                             if hasattr(rec, "status"):
                                 rec.status = "aberto"
                         updated_count += 1
@@ -5754,7 +5744,8 @@ def admin_fechamento():
                 if updated_count > 0:
                     try:
                         db.commit()
-                        msgs.append(f"✅ Operação concluída ({updated_count} EMPs).")
+                        flash(f"✅ Operação concluída ({updated_count} EMPs).", "success")
+                        # PRG: evita re-POST e garante recarregar status
                         return redirect(url_for("admin_fechamento", emp=emps_sel, mes=mes, ano=ano))
                     except Exception:
                         db.rollback()
