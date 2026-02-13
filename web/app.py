@@ -6459,20 +6459,8 @@ def _money2(v: Decimal) -> Decimal:
     return v.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
-def _allowed_emps() -> list[str]:
-    if session.get("admin_all_emps"):
-        return []
-    emps = session.get("allowed_emps") or []
-    # normaliza para string
-    out = []
-    for e in emps:
-        if e is None:
-            continue
-        s = str(e).strip()
-        if s:
-            out.append(s)
-    return sorted(set(out))
-
+# NOTE: _allowed_emps() is defined once earlier in this file (loads from DB when needed).
+# Do not duplicate it below — duplicated defs silently override the correct version.
 
 def _meta_pick_bonus(escalas: list[MetaEscala], valor_metric: float) -> float:
     """Retorna o bonus_percentual da maior faixa cujo limite_min <= valor_metric."""
