@@ -8,6 +8,7 @@ from sqlalchemy import text
 
 from db import SessionLocal, Usuario, UsuarioEmp
 from security_utils import audit, normalize_role
+from services.scope import set_session_emps
 
 
 bp = Blueprint("auth", __name__)
@@ -54,13 +55,13 @@ def login():
         # Admin recomendado: acesso total, independente de cadastros em usuario_emps
         if role == "admin":
             session["admin_all_emps"] = True
-            session["allowed_emps"] = []
+            set_session_emps([])
         else:
             emps = _load_allowed_emps(db, u.id)
             # fallback: se não houver vínculos ainda, usa EMP do usuário (se existir)
             if (not emps) and session.get("emp"):
                 emps = [str(session.get("emp")).strip()]
-            session["allowed_emps"] = emps
+            set_session_emps(emps)
 
     # Redireciona para a melhor primeira tela por perfil
     if role in ("vendedor", "supervisor"):

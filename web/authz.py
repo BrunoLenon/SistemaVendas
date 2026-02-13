@@ -73,7 +73,7 @@ def get_user_scope() -> UserScope:
     """Retorna escopo do usuário logado (baseado na sessão)."""
     usuario = session.get("usuario")
     role = normalize_role(session.get("role"))
-    emps = _to_int_list(session.get("emps"))
+    emps = _to_int_list(session.get("emps") or session.get("allowed_emps"))
     emp_default = session.get("emp")
     try:
         emp_default = int(emp_default) if emp_default is not None and str(emp_default).strip() != "" else None

@@ -1,3 +1,4 @@
+from services.scope import get_session_emps, refresh_session_emps, set_session_emps
 import os
 import re
 import mimetypes
@@ -599,16 +600,17 @@ def _emp() -> str | None:
 def _allowed_emps() -> list[str]:
     """Lista de EMPs permitidas para o usuário logado via tabela usuario_emps.
 
-    - Admin (recomendado): acesso total (retorna []) e usa flag session['admin_all_emps'].
-    - Supervisor/Vendedor: retorna session['allowed_emps'] ou carrega do banco.
+    Compat:
+      - session['emps'] (novo / recomendado)
+      - session['allowed_emps'] (legado)
     """
     role = (_role() or "").lower()
     if role == "admin" and session.get("admin_all_emps"):
         return []
 
-    emps = session.get("allowed_emps")
-    if isinstance(emps, list) and emps:
-        return [str(e).strip() for e in emps if e is not None and str(e).strip()]
+    emps_int = get_session_emps()
+    if emps_int:
+        return [str(e) for e in emps_int]
 
     uid = session.get("user_id")
     if not uid:
@@ -616,18 +618,9 @@ def _allowed_emps() -> list[str]:
 
     try:
         with SessionLocal() as db:
-            rows = (db.query(UsuarioEmp.emp)
-                    .filter(UsuarioEmp.usuario_id == uid)
-                    .filter(UsuarioEmp.ativo.is_(True))
-                    .all())
-            emps_db = sorted({str(r[0]).strip() for r in rows if r and r[0] is not None and str(r[0]).strip()})
-            # fallback: usa emp do usuário, se existir
-            if not emps_db:
-                emp_single = _emp()
-                if emp_single:
-                    emps_db = [str(emp_single).strip()]
-            session["allowed_emps"] = emps_db
-            return emps_db
+            refresh_session_emps(db, usuario_id=int(uid), fallback_emp=_emp())
+            emps_int = get_session_emps()
+            return [str(e) for e in emps_int]
     except Exception:
         return []
 def _is_date_in_range(today: date, inicio: date | None, fim: date | None) -> bool:
