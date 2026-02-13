@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime
+import datetime
 from typing import Any, Callable
 
 from sqlalchemy import or_
@@ -143,7 +144,9 @@ def build_relatorio_campanhas_context(
         except Exception:
             fech_map = {}
 
-        for emp in emps_scope:
+        emps_process = emps_sel or emps_scope
+
+        for emp in emps_process:
             emp = str(emp)
             vendedores = vendedores_por_emp.get(emp) or []
             if not vendedores:
@@ -304,15 +307,27 @@ def build_relatorio_campanhas_context(
                 df = getattr(r, "data_fim", None) or getattr(r, "campanha_data_fim", None)
 
                 # Fallback: buscar vigência no cadastro da campanha
-                if (not di or not df) and getattr(r, "campanha_id", None) is not None:
-                    cdef = qtd_camp_map.get(int(getattr(r, "campanha_id")))
+                camp_id = getattr(r, "campanha_id", None)
+                if camp_id is None:
+                    camp_id = getattr(r, "campanha_qtd_id", None)
+                if (not di or not df) and camp_id is not None:
+                    cdef = qtd_camp_map.get(int(camp_id))
                     if cdef is not None:
                         di = di or getattr(cdef, "data_inicio", None)
                         df = df or getattr(cdef, "data_fim", None)
                 vig = ""
                 try:
+                    def _fmt(d):
+                        if not d:
+                            return ""
+                        if isinstance(d, datetime.datetime):
+                            d = d.date()
+                        if isinstance(d, datetime.date):
+                            return d.strftime("%d/%m/%Y")
+                        return str(d)
+
                     if di and df:
-                        vig = f"{di} → {df}"
+                        vig = f"{_fmt(di)} → {_fmt(df)}"
                 except Exception:
                     vig = ""
 

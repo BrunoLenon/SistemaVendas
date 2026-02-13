@@ -228,7 +228,8 @@ def build_relatorio_campanhas_scope(
     vendedores_por_emp: dict[str, list[str]] = {}
 
     if role_l == "admin":
-        emps_scope = emps_sel[:] if emps_sel else deps.get_emps_com_vendas_no_periodo(ano, mes)
+        emps_scope = deps.get_emps_com_vendas_no_periodo(ano, mes)
+        # emps_sel é apenas filtro; não deve reduzir emps_scope (senão some do dropdown)
     elif role_l == "supervisor":
         allowed = [str(e).strip() for e in (deps.resolver_emp_scope_para_usuario(vendedor_logado, role_l, emp_usuario) or []) if str(e).strip()]
         allowed = sorted(set(allowed))
