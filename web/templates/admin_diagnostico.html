@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container py-4">
+  <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+    <div>
+      <h2 class="mb-0">Diagnóstico do Sistema</h2>
+      <div class="text-muted">Checagens rápidas de integridade (ADMIN)</div>
+    </div>
+    <div class="d-flex gap-2">
+      <a class="btn btn-outline-secondary" href="{{ url_for('admin_fechamento') }}">Ir para Fechamento</a>
+      <a class="btn btn-outline-secondary" href="{{ url_for('dashboard') }}">Dashboard</a>
+    </div>
+  </div>
+
+  {% if info.ok %}
+    <div class="alert alert-success">✅ Diagnóstico executado. Veja os resultados abaixo.</div>
+  {% else %}
+    <div class="alert alert-warning">⚠️ Diagnóstico executado com alertas. Veja os detalhes abaixo.</div>
+  {% endif %}
+
+  <div class="row g-3">
+    {% for c in info.checks %}
+      <div class="col-12">
+        <div class="card shadow-sm">
+          <div class="card-body">
+            <div class="d-flex align-items-start justify-content-between gap-3 flex-wrap">
+              <div>
+                <h5 class="card-title mb-1">{{ c.name }}</h5>
+                {% if c.ok %}
+                  <span class="badge bg-success">OK</span>
+                {% else %}
+                  <span class="badge bg-danger">Falha</span>
+                {% endif %}
+              </div>
+              {% if c.detail %}
+                <div class="text-muted small" style="max-width: 1000px; word-break: break-word;">
+                  {{ c.detail }}
+                </div>
+              {% endif %}
+            </div>
+
+            {% if c.rows %}
+              <div class="table-responsive mt-3">
+                <table class="table table-sm table-striped align-middle mb-0">
+                  <thead>
+                    <tr>
+                      {% for k in c.rows[0].keys() %}
+                        <th>{{ k }}</th>
+                      {% endfor %}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for r in c.rows %}
+                      <tr>
+                        {% for v in r.values() %}
+                          <td>{{ v }}</td>
+                        {% endfor %}
+                      </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}
