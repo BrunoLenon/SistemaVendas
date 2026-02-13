@@ -1449,14 +1449,40 @@ def _dados_from_cache(vendedor_alvo, mes, ano, emp_scope):
 
     total_liquido_periodo = float(getattr(row, "total_liquido_periodo", None) or valor_atual)
 
-    # ---- mês anterior (cache) ----
+    # ---- mês anterior ----
     if mes == 1:
         prev_mes, prev_ano = 12, ano - 1
     else:
         prev_mes, prev_ano = mes - 1, ano
 
     prev_row = _get_cache_row(vendedor_alvo, prev_ano, prev_mes, emp_scope)
-    valor_mes_anterior = float(getattr(prev_row, "valor_liquido", 0) or 0) if prev_row else 0.0
+    if prev_row:
+        valor_mes_anterior = float(getattr(prev_row, "valor_liquido", 0) or 0)
+    else:
+        # Fallback: quando o cache do mês anterior ainda não existe (muito comum),
+        # calcula o líquido do mês anterior ao vivo para não mostrar "R$ 0,00" indevidamente.
+        try:
+            s_ant = date(prev_ano, prev_mes, 1)
+            e_ant = date(prev_ano + 1, 1, 1) if prev_mes == 12 else date(prev_ano, prev_mes + 1, 1)
+
+            with SessionLocal() as db:
+                q = db.query(Venda).filter(Venda.vendedor == vendedor_alvo)
+
+                if emp_scope:
+                    if isinstance(emp_scope, (list, tuple, set)):
+                        emps = [str(e).strip() for e in emp_scope if e is not None and str(e).strip()]
+                        if emps:
+                            q = q.filter(Venda.emp.in_(emps))
+                    else:
+                        q = q.filter(Venda.emp == str(emp_scope))
+
+                signed = case((Venda.mov_tipo_movto.in_(['DS','CA']), -Venda.valor_total), else_=Venda.valor_total)
+                valor_mes_anterior = float(q.filter(Venda.movimento >= s_ant, Venda.movimento < e_ant)
+                                          .with_entities(func.coalesce(func.sum(signed), 0.0))
+                                          .scalar() or 0.0)
+        except Exception:
+            app.logger.exception("Erro ao calcular mês anterior ao vivo")
+            valor_mes_anterior = 0.0
 
     crescimento_mes_anterior = None
     if prev_row and valor_mes_anterior != 0:
@@ -4999,6 +5025,17 @@ def admin_resumos_periodo():
     if request.method == 'POST' and acao:
         # alvo do POST (permite editar/cadastrar resumos em um período diferente do filtro)
         emp_alvo = _emp_norm(request.form.get('emp_edit') or emp)
+
+        # Se a EMP não vier no POST (alguns modais não enviam), tenta inferir pelo escopo do usuário.
+        # Importante para que Dashboard/Metas encontrem a base do ano passado corretamente.
+        if not emp_alvo:
+            try:
+                allowed_tmp = session.get('allowed_emps') or _allowed_emps()
+            except Exception:
+                allowed_tmp = []
+            if isinstance(allowed_tmp, (list, tuple)) and len(allowed_tmp) == 1:
+                emp_alvo = _emp_norm(allowed_tmp[0])
+
         try:
             ano_alvo = int(request.form.get('ano_edit') or ano)
         except Exception:
@@ -5340,7 +5377,7 @@ def admin_resumos_periodo():
             VendasResumoPeriodo.mes == mes,
         )
         if emp:
-            q = q.filter(VendasResumoPeriodo.emp == emp)
+            q = q.filter(or_(VendasResumoPeriodo.emp == emp, VendasResumoPeriodo.emp.in_(['', 'EMPTY'])))
         if vendedor:
             q = q.filter(VendasResumoPeriodo.vendedor == vendedor)
         registros = q.order_by(VendasResumoPeriodo.vendedor.asc()).all()
@@ -5351,7 +5388,7 @@ def admin_resumos_periodo():
             VendasResumoPeriodo.ano == ano_passado,
         )
         if emp:
-            q2 = q2.filter(VendasResumoPeriodo.emp == emp)
+            q2 = q2.filter(or_(VendasResumoPeriodo.emp == emp, VendasResumoPeriodo.emp.in_(['', 'EMPTY'])))
         if vendedor:
             q2 = q2.filter(VendasResumoPeriodo.vendedor == vendedor)
 
@@ -5635,7 +5672,7 @@ def admin_fechamento():
 
     # Normaliza a ação vinda do formulário (alguns navegadores/JS podem enviar
     # variações, ex.: sem underscore, com hífen ou com espaços).
-    acao_raw = (request.form.get("acao") or "").strip().lower()
+    acao_raw = (request.values.get("acao") or request.values.get("action") or request.form.get("acao") or "").strip().lower()
     acao = {
         "fechar_a_pagar": "fechar_a_pagar",
         "fechar_apagar": "fechar_a_pagar",
@@ -5661,6 +5698,7 @@ def admin_fechamento():
                 emps_all = []
 
         if request.method == "POST" and acao in {"fechar_a_pagar", "fechar_pago", "reabrir"}:
+            app.logger.info("FECHAMENTO POST: form=%s values=%s", dict(request.form), {k: request.values.getlist(k) for k in request.values.keys()})
             if not emps_sel:
                 msgs.append("⚠️ Selecione ao menos 1 EMP para fechar/reabrir.")
             else:
@@ -5696,7 +5734,7 @@ def admin_fechamento():
                                 rec.status = alvo_status
                         else:
                             rec.fechado = False
-                            rec.fechado_em = datetime.utcnow()  # mantém não-nulo
+                            rec.fechado_em = None  # reabrir zera timestamp
                             if hasattr(rec, "status"):
                                 rec.status = "aberto"
                         updated_count += 1
@@ -5708,6 +5746,8 @@ def admin_fechamento():
                     try:
                         db.commit()
                         msgs.append(f"✅ Operação concluída ({updated_count} EMPs).")
+                        # PRG: evita reenvio e garante recarregar status
+                        return redirect(url_for('admin_fechamento', emp=emps_sel, mes=mes, ano=ano))
                     except Exception:
                         db.rollback()
                         app.logger.exception("Erro ao commitar fechamento mensal")
@@ -6469,6 +6509,42 @@ def _sql_valor_marcas_signed(marcas: list[str]):
 
 
 def _query_valor_mes(db, ano: int, mes: int, emp: str, vendedor: str) -> float:
+    """Retorna o valor líquido do mês para (EMP, vendedor).
+    Prioridade:
+      1) Base manual/importada em vendas_resumo_periodo (ano/mes do registro)
+      2) Fallback: cálculo direto na tabela vendas (signed OA/DS/CA)
+    Observação: versões antigas gravaram emp como ''/EMPTY; fazemos fallback seguro.
+    """
+    vend = (vendedor or '').strip().upper()
+    emp_n = _emp_norm(emp)
+
+    # 1) tenta base manual (resumo)
+    try:
+        q = (
+            db.query(VendasResumoPeriodo.valor_venda)
+            .filter(
+                VendasResumoPeriodo.vendedor == vend,
+                VendasResumoPeriodo.ano == ano,
+                VendasResumoPeriodo.mes == mes,
+            )
+        )
+        if emp_n:
+            q_emp = q.filter(VendasResumoPeriodo.emp == emp_n).one_or_none()
+            if q_emp is not None:
+                return float(q_emp[0] or 0.0)
+            # fallback compat: registros antigos sem emp
+            q_fallback = q.filter(VendasResumoPeriodo.emp.in_(['', 'EMPTY'])).one_or_none()
+            if q_fallback is not None:
+                return float(q_fallback[0] or 0.0)
+        else:
+            # se emp vier vazio, tenta pegar qualquer um (mas preferimos ''/EMPTY)
+            q_fallback = q.filter(VendasResumoPeriodo.emp.in_(['', 'EMPTY'])).one_or_none()
+            if q_fallback is not None:
+                return float(q_fallback[0] or 0.0)
+    except Exception:
+        pass
+
+    # 2) fallback: cálculo na tabela vendas
     inicio, fim = _periodo_bounds_ym(ano, mes)
     sql = f"""
       SELECT {_sql_valor_mes_signed()} AS valor_mes
@@ -6477,16 +6553,45 @@ def _query_valor_mes(db, ano: int, mes: int, emp: str, vendedor: str) -> float:
         AND vendedor = :vendedor
         AND movimento BETWEEN :ini AND :fim
     """
-    row = db.execute(text(sql), {"emp": emp, "vendedor": vendedor, "ini": inicio, "fim": fim}).fetchone()
+    row = db.execute(text(sql), {"emp": emp_n, "vendedor": vend, "ini": inicio, "fim": fim}).fetchone()
     return float(row[0] or 0.0) if row else 0.0
 
 
 def _query_mix_itens(db, ano: int, mes: int, emp: str, vendedor: str) -> float:
-    """MIX = count de mestre com qtd_liquida > 0, onde:
-       - CA entra como negativo
-       - DS não entra no mix
-       - demais entram positivo
+    """Retorna MIX (qtd de itens/produtos) do mês para (EMP, vendedor).
+    Prioridade:
+      1) Base manual/importada em vendas_resumo_periodo.mix_produtos
+      2) Fallback: cálculo na tabela vendas (qtd_liquida > 0 por mestre)
+    Compat: emp antigo ''/EMPTY.
     """
+    vend = (vendedor or '').strip().upper()
+    emp_n = _emp_norm(emp)
+
+    # 1) tenta base manual (resumo)
+    try:
+        q = (
+            db.query(VendasResumoPeriodo.mix_produtos)
+            .filter(
+                VendasResumoPeriodo.vendedor == vend,
+                VendasResumoPeriodo.ano == ano,
+                VendasResumoPeriodo.mes == mes,
+            )
+        )
+        if emp_n:
+            q_emp = q.filter(VendasResumoPeriodo.emp == emp_n).one_or_none()
+            if q_emp is not None:
+                return float(q_emp[0] or 0.0)
+            q_fallback = q.filter(VendasResumoPeriodo.emp.in_(['', 'EMPTY'])).one_or_none()
+            if q_fallback is not None:
+                return float(q_fallback[0] or 0.0)
+        else:
+            q_fallback = q.filter(VendasResumoPeriodo.emp.in_(['', 'EMPTY'])).one_or_none()
+            if q_fallback is not None:
+                return float(q_fallback[0] or 0.0)
+    except Exception:
+        pass
+
+    # 2) fallback: calcula no detalhe em vendas
     inicio, fim = _periodo_bounds_ym(ano, mes)
     sql = """
       WITH por_produto AS (
@@ -6510,7 +6615,7 @@ def _query_mix_itens(db, ano: int, mes: int, emp: str, vendedor: str) -> float:
       FROM por_produto
       WHERE qtd_liquida > 0
     """
-    row = db.execute(text(sql), {"emp": emp, "vendedor": vendedor, "ini": inicio, "fim": fim}).fetchone()
+    row = db.execute(text(sql), {"emp": emp_n, "vendedor": vend, "ini": inicio, "fim": fim}).fetchone()
     return float(row[0] or 0.0) if row else 0.0
 
 
