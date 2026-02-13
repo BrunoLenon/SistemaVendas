@@ -5672,7 +5672,7 @@ def admin_fechamento():
 
     # Normaliza a ação vinda do formulário (alguns navegadores/JS podem enviar
     # variações, ex.: sem underscore, com hífen ou com espaços).
-    acao_raw = (request.form.get("acao") or "").strip().lower()
+    acao_raw = (request.values.get("acao") or request.values.get("action") or request.form.get("acao") or "").strip().lower()
     acao = {
         "fechar_a_pagar": "fechar_a_pagar",
         "fechar_apagar": "fechar_a_pagar",
@@ -5698,6 +5698,7 @@ def admin_fechamento():
                 emps_all = []
 
         if request.method == "POST" and acao in {"fechar_a_pagar", "fechar_pago", "reabrir"}:
+            app.logger.info("FECHAMENTO POST: form=%s values=%s", dict(request.form), {k: request.values.getlist(k) for k in request.values.keys()})
             if not emps_sel:
                 msgs.append("⚠️ Selecione ao menos 1 EMP para fechar/reabrir.")
             else:
@@ -5733,7 +5734,7 @@ def admin_fechamento():
                                 rec.status = alvo_status
                         else:
                             rec.fechado = False
-                            rec.fechado_em = datetime.utcnow()  # mantém não-nulo
+                            rec.fechado_em = None  # reabrir zera timestamp
                             if hasattr(rec, "status"):
                                 rec.status = "aberto"
                         updated_count += 1
@@ -5745,6 +5746,8 @@ def admin_fechamento():
                     try:
                         db.commit()
                         msgs.append(f"✅ Operação concluída ({updated_count} EMPs).")
+                        # PRG: evita reenvio e garante recarregar status
+                        return redirect(url_for('admin_fechamento', emp=emps_sel, mes=mes, ano=ano))
                     except Exception:
                         db.rollback()
                         app.logger.exception("Erro ao commitar fechamento mensal")
