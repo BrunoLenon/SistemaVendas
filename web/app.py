@@ -5734,6 +5734,9 @@ def admin_fechamento():
     # multi-EMP: lê tanto querystring (?emp=101&emp=102) quanto POST (inputs hidden name=emp)
     emps_sel = _parse_emps_from_request(request)
 
+    # Mensagens informativas/erros mostrados na tela
+    msgs: list[str] = []
+
     status_por_emp: dict[str, dict] = {}
 
     # Normaliza a ação vinda do formulário (alguns navegadores/JS podem enviar
