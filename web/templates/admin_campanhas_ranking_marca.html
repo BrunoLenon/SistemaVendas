@@ -1,0 +1,242 @@
+{% extends "base.html" %}
+{% from "partials/multiselect.html" import multiselect %}
+
+{% block title %}Campanhas — Ranking por Marca{% endblock %}
+
+{% block extra_head %}
+<style>
+  .page-title{font-weight:800; letter-spacing:-.3px}
+  .subtitle{color:var(--bs-secondary-color)}
+  .mono{font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;}
+  textarea.form-control{min-height:120px}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+
+  <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+    <div>
+      <h3 class="m-0 page-title">🏁 Campanhas — Ranking por Marca (Top N)</h3>
+      <div class="subtitle mt-1">Premiação fixa por colocação (1º,2º,3º...). ADMIN apenas.</div>
+    </div>
+    <div class="d-flex gap-2">
+      <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin_fechamento') }}">Fechamento</a>
+      <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('relatorios_campanhas') }}">Relatório de Campanhas</a>
+    </div>
+  </div>
+
+  {% if erro %}<div class="alert alert-danger">{{ erro }}</div>{% endif %}
+  {% if ok %}<div class="alert alert-success">{{ ok }}</div>{% endif %}
+
+  <div class="card shadow-sm mb-3">
+    <div class="card-body">
+      <h5 class="m-0">Criar campanha</h5>
+      <div class="subtitle small mt-1">Dica: se não preencher prêmios, o default é 1=300, 2=200, 3=100.</div>
+
+      <form method="post" class="mt-3">
+        <input type="hidden" name="acao" value="criar">
+
+        <div class="row g-2">
+          <div class="col-md-6">
+            <label class="form-label">Título</label>
+            <input class="form-control" name="titulo" placeholder="Ranking MAGNETRON Fevereiro" required>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Marca</label>
+            <input class="form-control mono" name="marca" placeholder="MAGNETRON" required>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Escopo</label>
+            <select class="form-select" name="escopo_tipo">
+              <option value="GLOBAL" selected>GLOBAL (geral)</option>
+              <option value="EMPS">EMPS (selecionar EMPs)</option>
+            </select>
+          </div>
+
+          <div class="col-md-3">
+            <label class="form-label">Data início</label>
+            <input class="form-control" type="date" name="data_inicio" required>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Data fim</label>
+            <input class="form-control" type="date" name="data_fim" required>
+          </div>
+
+          <div class="col-md-3">
+            <label class="form-label">Competência (ano)</label>
+            <input class="form-control" name="competencia_ano" placeholder="{{ ano }}">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Competência (mês)</label>
+            <input class="form-control" name="competencia_mes" placeholder="{{ mes }}">
+          </div>
+
+          <div class="col-md-6">
+            {{ multiselect("emp", emps_options or [], [], label="EMPs (se escopo=EMPS)", placeholder="Selecione EMP(s)") }}
+          </div>
+
+          <div class="col-md-6">
+            <label class="form-label">Prêmios (um por linha)</label>
+            <textarea class="form-control mono" name="premios_texto" placeholder="1=300\n2=200\n3=100"></textarea>
+            <div class="form-text">Formatos aceitos: <span class="mono">1=300</span>, <span class="mono">1:300</span> ou <span class="mono">1 300</span>.</div>
+          </div>
+
+          <div class="col-12 d-flex align-items-center gap-3 mt-2">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" name="ativo" id="ativoNew" checked>
+              <label class="form-check-label" for="ativoNew">Ativo</label>
+            </div>
+            <button class="btn btn-primary" type="submit">Salvar</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="card shadow-sm">
+    <div class="card-body">
+      <h5 class="m-0">Campanhas cadastradas</h5>
+      <div class="subtitle small mt-1">Editar (regrava vínculos/prêmios), remover, ou recalcular resultados para a competência.</div>
+
+      {% if not campanhas %}
+        <div class="alert alert-warning mt-3 mb-0">Nenhuma campanha cadastrada.</div>
+      {% else %}
+        <div class="accordion mt-3" id="accRankMarca">
+          {% for c in campanhas %}
+            {% set cid = c.id %}
+            {% set emps = (emps_map.get(cid) or []) %}
+            {% set premios = (premios_map.get(cid) or []) %}
+            <div class="accordion-item">
+              <h2 class="accordion-header" id="h{{ cid }}">
+                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#c{{ cid }}" aria-expanded="false" aria-controls="c{{ cid }}">
+                  <b class="me-2">#{{ cid }}</b> {{ c.titulo }} — <span class="mono ms-2">{{ c.marca }}</span>
+                  {% if not c.ativo %}<span class="badge text-bg-secondary ms-2">INATIVA</span>{% endif %}
+                  <span class="badge text-bg-info ms-2">{{ (c.escopo_tipo or 'GLOBAL')|upper }}</span>
+                </button>
+              </h2>
+              <div id="c{{ cid }}" class="accordion-collapse collapse" aria-labelledby="h{{ cid }}" data-bs-parent="#accRankMarca">
+                <div class="accordion-body">
+                  <div class="row g-2">
+                    <div class="col-md-6">
+                      <div class="small text-muted">Período</div>
+                      <div>{{ c.data_inicio }} → {{ c.data_fim }}</div>
+                      <div class="small text-muted mt-2">Competência fixa</div>
+                      <div>{{ c.competencia_mes or '-' }}/{{ c.competencia_ano or '-' }}</div>
+                    </div>
+                    <div class="col-md-6">
+                      <div class="small text-muted">EMPs (escopo)</div>
+                      {% if (c.escopo_tipo or '').upper() == 'EMPS' %}
+                        <div class="mono">{{ emps|join(', ') if emps else '—' }}</div>
+                      {% else %}
+                        <div>GLOBAL (todas)</div>
+                      {% endif %}
+                      <div class="small text-muted mt-2">Prêmios</div>
+                      <div class="mono">
+                        {% for p in premios %}
+                          {{ p.posicao }}={{ "%.2f"|format(p.valor) }}{% if not loop.last %}, {% endif %}
+                        {% endfor %}
+                      </div>
+                    </div>
+                  </div>
+
+                  <hr>
+
+                  <div class="row g-2">
+                    <div class="col-md-6">
+                      <form method="post" class="border rounded p-3">
+                        <input type="hidden" name="acao" value="editar">
+                        <input type="hidden" name="id" value="{{ cid }}">
+
+                        <div class="row g-2">
+                          <div class="col-12">
+                            <label class="form-label">Título</label>
+                            <input class="form-control" name="titulo" value="{{ c.titulo }}" required>
+                          </div>
+                          <div class="col-6">
+                            <label class="form-label">Marca</label>
+                            <input class="form-control mono" name="marca" value="{{ c.marca }}" required>
+                          </div>
+                          <div class="col-6">
+                            <label class="form-label">Escopo</label>
+                            <select class="form-select" name="escopo_tipo">
+                              <option value="GLOBAL" {% if (c.escopo_tipo or '').upper() == 'GLOBAL' %}selected{% endif %}>GLOBAL</option>
+                              <option value="EMPS" {% if (c.escopo_tipo or '').upper() == 'EMPS' %}selected{% endif %}>EMPS</option>
+                            </select>
+                          </div>
+
+                          <div class="col-6">
+                            <label class="form-label">Data início</label>
+                            <input class="form-control" type="date" name="data_inicio" value="{{ c.data_inicio }}" required>
+                          </div>
+                          <div class="col-6">
+                            <label class="form-label">Data fim</label>
+                            <input class="form-control" type="date" name="data_fim" value="{{ c.data_fim }}" required>
+                          </div>
+
+                          <div class="col-6">
+                            <label class="form-label">Competência (ano)</label>
+                            <input class="form-control" name="competencia_ano" value="{{ c.competencia_ano or '' }}">
+                          </div>
+                          <div class="col-6">
+                            <label class="form-label">Competência (mês)</label>
+                            <input class="form-control" name="competencia_mes" value="{{ c.competencia_mes or '' }}">
+                          </div>
+
+                          <div class="col-12">
+                            {{ multiselect("emp", emps_options or [], emps, label="EMPs (se escopo=EMPS)", placeholder="Selecione EMP(s)") }}
+                          </div>
+
+                          <div class="col-12">
+                            <label class="form-label">Prêmios (um por linha)</label>
+                            <textarea class="form-control mono" name="premios_texto">{% for p in premios %}{{ p.posicao }}={{ "%.2f"|format(p.valor) }}{% if not loop.last %}\n{% endif %}{% endfor %}</textarea>
+                          </div>
+
+                          <div class="col-12 d-flex align-items-center gap-3">
+                            <div class="form-check">
+                              <input class="form-check-input" type="checkbox" name="ativo" id="ativo{{ cid }}" {% if c.ativo %}checked{% endif %}>
+                              <label class="form-check-label" for="ativo{{ cid }}">Ativo</label>
+                            </div>
+                            <button class="btn btn-primary" type="submit">Salvar alterações</button>
+                          </div>
+                        </div>
+                      </form>
+                    </div>
+
+                    <div class="col-md-6">
+                      <div class="border rounded p-3">
+                        <h6 class="m-0">Ações</h6>
+
+                        <form method="post" class="mt-2 d-flex flex-wrap gap-2">
+                          <input type="hidden" name="acao" value="recalcular">
+                          <input type="hidden" name="id" value="{{ cid }}">
+                          <input type="hidden" name="ano" value="{{ ano }}">
+                          <input type="hidden" name="mes" value="{{ mes }}">
+                          <button class="btn btn-outline-primary" type="submit">Recalcular ({{ mes }}/{{ ano }})</button>
+                        </form>
+
+                        <form method="post" class="mt-2" onsubmit="return confirm('Remover a campanha #{{ cid }}? Isso também remove resultados.');">
+                          <input type="hidden" name="acao" value="remover">
+                          <input type="hidden" name="id" value="{{ cid }}">
+                          <button class="btn btn-outline-danger" type="submit">Remover</button>
+                        </form>
+
+                        <div class="text-muted small mt-3">
+                          Resultados aparecem em <b>/relatorios/campanhas</b> e entram no <b>/admin/fechamento</b> quando houver prêmio.
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                </div>
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+
+    </div>
+  </div>
+
+</div>
+{% endblock %}
