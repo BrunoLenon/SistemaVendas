@@ -108,9 +108,17 @@ def build_relatorio_campanhas_context(
         emps_sel = [str(e) for e in emps_scope]
 
     # Recalcula snapshots do escopo para garantir relatório correto
+    # Compatibilidade: em versões antigas o helper recebe `emps`, em outras `emps_scope`.
     try:
-        deps.recalcular_resultados_campanhas_para_scope(ano=ano, mes=mes, emps_scope=emps_scope, vendedores_por_emp=vendedores_por_emp)
-        deps.recalcular_resultados_combos_para_scope(ano=ano, mes=mes, emps_scope=emps_scope, vendedores_por_emp=vendedores_por_emp)
+        try:
+            deps.recalcular_resultados_campanhas_para_scope(ano=ano, mes=mes, emps=emps_scope, vendedores_por_emp=vendedores_por_emp)
+        except TypeError:
+            deps.recalcular_resultados_campanhas_para_scope(ano=ano, mes=mes, emps_scope=emps_scope, vendedores_por_emp=vendedores_por_emp)
+
+        try:
+            deps.recalcular_resultados_combos_para_scope(ano=ano, mes=mes, emps=emps_scope, vendedores_por_emp=vendedores_por_emp)
+        except TypeError:
+            deps.recalcular_resultados_combos_para_scope(ano=ano, mes=mes, emps_scope=emps_scope, vendedores_por_emp=vendedores_por_emp)
     except Exception as e:
         print(f"[RELATORIO_CAMPANHAS] erro ao recalcular snapshots: {e}")
         flash("Não foi possível recalcular os resultados das campanhas agora. Exibindo dados já salvos.", "warning")
@@ -259,9 +267,14 @@ def build_relatorio_campanhas_context(
                             parados_por_vendedor.setdefault(v, []).append({
                                 "tipo": "PARADO",
                                 "titulo": f"Parado: {ip.descricao or ip.codigo}",
+                                # campos esperados pelo template
+                                "marca": "",
+                                "item": f"Base: {float(base_val):.2f} - %: {float(pct):.1f}",
                                 "qtd_vendida": None,
                                 "valor_vendido": float(base_val),
                                 "valor_recompensa": float(recompensa),
+                                "atingiu": True,
+                                "vigencia": "",
                                 "status_pagamento": "PENDENTE",
                                 "origem": "PARADO",
                             })
@@ -272,12 +285,43 @@ def build_relatorio_campanhas_context(
             by_vend: dict[str, list[dict[str, Any]]] = {v: [] for v in vendedores}
 
             for r in qtd_rows:
+                # Monta campos completos p/ o template (Marca/Item/Atingiu/Vigência)
+                di = getattr(r, "data_inicio", None) or getattr(r, "campanha_data_inicio", None)
+                df = getattr(r, "data_fim", None) or getattr(r, "campanha_data_fim", None)
+                vig = ""
+                try:
+                    if di and df:
+                        vig = f"{di} → {df}"
+                except Exception:
+                    vig = ""
+
+                marca = (getattr(r, "marca", None) or getattr(r, "campanha_marca", None) or "").strip()
+
+                # Melhor esforço para descrever o critério de match
+                mestre_pref = getattr(r, "produto_prefixo", None) or getattr(r, "mestre_prefixo", None) or ""
+                desc_pref = getattr(r, "descricao_prefixo", None) or ""
+                if mestre_pref:
+                    item_desc = f"MESTRE: {mestre_pref}"
+                elif desc_pref:
+                    item_desc = f"DESCRIÇÃO: {desc_pref}"
+                else:
+                    item_desc = (getattr(r, "campo_match", None) or getattr(r, "match", None) or "").strip()
+
+                atingiu = getattr(r, "atingiu_minimo", None)
+                if atingiu is None:
+                    # fallback: se gerou recompensa > 0, atingiu
+                    atingiu = float(getattr(r, "valor_recompensa", 0) or 0) > 0
+
                 by_vend.setdefault((r.vendedor or "").strip().upper(), []).append({
                     "tipo": "QTD",
                     "titulo": getattr(r, "titulo", None) or getattr(r, "campanha_titulo", None) or "Campanha QTD",
+                    "marca": marca,
+                    "item": item_desc,
                     "qtd_vendida": float(getattr(r, "qtd_vendida", 0) or 0),
                     "valor_vendido": float(getattr(r, "valor_vendido", 0) or 0),
                     "valor_recompensa": float(getattr(r, "valor_recompensa", 0) or 0),
+                    "atingiu": bool(atingiu),
+                    "vigencia": vig,
                     "status_pagamento": getattr(r, "status_pagamento", None) or "PENDENTE",
                     "origem": "QTD",
                 })
@@ -305,9 +349,13 @@ def build_relatorio_campanhas_context(
                 payload = {
                     "tipo": "COMBO",
                     "titulo": titulo,
+                    "marca": "",
+                    "item": "",
                     "qtd_vendida": None,
                     "valor_vendido": None,
                     "valor_recompensa": float(getattr(r, "valor_recompensa", 0) or 0),
+                    "atingiu": bool(getattr(r, "atingiu_gate", None) if getattr(r, "atingiu_gate", None) is not None else (float(getattr(r, "valor_recompensa", 0) or 0) > 0)),
+                    "vigencia": "",
                     "status_pagamento": getattr(r, "status_pagamento", None) or "PENDENTE",
                     "origem": "COMBO",
                     "combo_id": cid,
@@ -318,6 +366,12 @@ def build_relatorio_campanhas_context(
                 try:
                     c = db.query(CampanhaCombo).filter(CampanhaCombo.id == cid).first()
                     marca = (getattr(c, "marca", "") or "").strip()
+                    payload["marca"] = marca
+                    try:
+                        if getattr(c, "data_inicio", None) and getattr(c, "data_fim", None):
+                            payload["vigencia"] = f"{c.data_inicio} → {c.data_fim}"
+                    except Exception:
+                        pass
                     itens = combos_itens_map.get(cid) or []
                     if itens:
                         qtds = []
@@ -338,6 +392,8 @@ def build_relatorio_campanhas_context(
                                 "valor_unitario": float(getattr(it, "valor_unitario", 0) or 0),
                             })
                         payload["combo_itens"] = qtds
+                        # Texto curto para coluna "Item" (mantém layout atual)
+                        payload["item"] = ", ".join([q["nome_item"] for q in qtds][:3])
                 except Exception as _e:
                     print(f"[RELATORIO_CAMPANHAS] erro ao montar detalhe do combo: {_e}")
 
