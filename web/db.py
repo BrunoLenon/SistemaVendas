@@ -692,8 +692,8 @@ class FechamentoMensal(Base):
     ano = Column(Integer, nullable=False, index=True)
     mes = Column(Integer, nullable=False, index=True)
 
-    fechado = Column(Boolean, nullable=False, default=False)
-    fechado_em = Column(DateTime, nullable=True, default=None)
+    fechado = Column(Boolean, nullable=False, default=True)
+    fechado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
     # Status do período (controle financeiro): "aberto", "a_pagar", "pago"
     status = Column(String(20), nullable=False, default="aberto", index=True)
 
