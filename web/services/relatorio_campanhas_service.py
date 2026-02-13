@@ -315,19 +315,35 @@ def build_relatorio_campanhas_context(
                     if cdef is not None:
                         di = di or getattr(cdef, "data_inicio", None)
                         df = df or getattr(cdef, "data_fim", None)
-                vig = ""
+                                vig = ""
                 try:
-                    def _fmt(d):
+                    def _to_date(d):
                         if not d:
-                            return ""
+                            return None
                         if isinstance(d, datetime.datetime):
-                            d = d.date()
+                            return d.date()
                         if isinstance(d, datetime.date):
-                            return d.strftime("%d/%m/%Y")
-                        return str(d)
+                            return d
+                        # aceita string 'YYYY-MM-DD'
+                        try:
+                            return datetime.datetime.fromisoformat(str(d)).date()
+                        except Exception:
+                            return None
 
-                    if di and df:
-                        vig = f"{_fmt(di)} → {_fmt(df)}"
+                    di_d = _to_date(di)
+                    df_d = _to_date(df)
+
+                    def _fmt(d):
+                        return d.strftime("%d/%m/%Y") if d else ""
+
+                    if di_d and df_d:
+                        vig = f"{_fmt(di_d)} → {_fmt(df_d)}"
+                        if date.today() > df_d:
+                            vig = f"{vig} (ENCERRADA)"
+                    elif di_d:
+                        vig = f"Desde {_fmt(di_d)}"
+                    elif df_d:
+                        vig = f"Até {_fmt(df_d)}"
                 except Exception:
                     vig = ""
 
