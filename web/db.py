@@ -295,7 +295,7 @@ class ItemParado(Base):
     # Percentual de recompensa (ex: 10 para 10%)
     recompensa_pct = Column(Float, nullable=False, default=0.0)
 
-    ativo = Column(Integer, nullable=False, default=1)  # 1=ativo, 0=inativo
+    ativo = Column(Boolean, nullable=False, default=True)
 
     criado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
     atualizado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
