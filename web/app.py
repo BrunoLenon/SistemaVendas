@@ -5653,26 +5653,50 @@ def admin_fechamento():
     ano = int(request.values.get("ano") or hoje.year)
     mes = int(request.values.get("mes") or hoje.month)
 
-    # multi-EMP: fecha em lote quando selecionar mais de uma EMP
-    # multi-EMP: lê tanto querystring (?emp=101&emp=102) quanto POST (inputs hidden name=emp)
-    emps_sel = []
-    try:
-        emps_sel = [str(e).strip() for e in request.values.getlist("emp") if str(e).strip()]
-    except Exception:
-        emps_sel = []
-    if not emps_sel:
-        emps_sel = [str(e).strip() for e in _parse_multi_args("emp") if str(e).strip()]
-    if not emps_sel:
-        # fallback: tenta usar emp único (mantém compatibilidade com versões antigas)
-        emp_single = _emp_norm(request.values.get("emp", ""))
-        emps_sel = [emp_single] if emp_single else []
+
+    # multi-EMP: suporta várias formas de envio (GET/POST):
+    # - emp=101&emp=102
+    # - emp[]=101&emp[]=102
+    # - emp="101,102"
+    # - emps / emps[] (compat)
+    def _parse_emps_from_request() -> list[str]:
+        raw: list[str] = []
+        for k in ("emp", "emp[]", "emps", "emps[]"):
+            try:
+                raw.extend([str(v) for v in request.values.getlist(k)])
+            except Exception:
+                pass
+        # compat: alguns fluxos enviam apenas 1 string (CSV)
+        if not raw:
+            for k in ("emp", "emps", "emp[]", "emps[]"):
+                v = (request.values.get(k) or "").strip()
+                if v:
+                    raw.append(v)
+                    break
+        out: list[str] = []
+        for v in raw:
+            for part in str(v).split(","):
+                p = _emp_norm(part)
+                if p:
+                    out.append(p)
+        # unique mantendo ordem
+        seen: set[str] = set()
+        res: list[str] = []
+        for v in out:
+            if v not in seen:
+                seen.add(v)
+                res.append(v)
+        return res
+
+    emps_sel = _parse_emps_from_request()
+
 
     msgs: list[str] = []
     status_por_emp: dict[str, dict] = {}
 
     # Normaliza a ação vinda do formulário (alguns navegadores/JS podem enviar
     # variações, ex.: sem underscore, com hífen ou com espaços).
-    acao_raw = (request.values.get("acao") or request.values.get("action") or request.form.get("acao") or "").strip().lower()
+    acao = (request.values.get("acao") or request.values.get("action") or "").strip().lower()
     acao = {
         "fechar_a_pagar": "fechar_a_pagar",
         "fechar_apagar": "fechar_a_pagar",
@@ -5683,7 +5707,7 @@ def admin_fechamento():
         "pago": "fechar_pago",
         "reabrir": "reabrir",
         "abrir": "reabrir",
-    }.get(acao_raw, acao_raw)
+    }.get(acao, acao)
 
     with SessionLocal() as db:
         # Carrega opções de EMP para o filtro (admin: todas cadastradas, fallback: EMPs com vendas no período)
@@ -5697,8 +5721,13 @@ def admin_fechamento():
             except Exception:
                 emps_all = []
 
+        # Intersecta seleção com EMPs válidas/permitidas (ADMIN: todas cadastradas ou com vendas no período)
+        if emps_all:
+            allowed = set([str(e).strip() for e in emps_all if str(e).strip()])
+            emps_sel = [e for e in (emps_sel or []) if e in allowed]
+
         if request.method == "POST" and acao in {"fechar_a_pagar", "fechar_pago", "reabrir"}:
-            app.logger.info("FECHAMENTO POST: form=%s values=%s", dict(request.form), {k: request.values.getlist(k) for k in request.values.keys()})
+            app.logger.info("FECHAMENTO POST: acao=%s form=%s values=%s", acao, dict(request.form), {k: request.values.getlist(k) for k in request.values.keys()})
             if not emps_sel:
                 msgs.append("⚠️ Selecione ao menos 1 EMP para fechar/reabrir.")
             else:
@@ -5730,13 +5759,12 @@ def admin_fechamento():
                             rec.fechado = True
                             rec.fechado_em = datetime.utcnow()
                             # status financeiro (controle)
-                            if hasattr(rec, "status") and alvo_status:
+                            if alvo_status:
                                 rec.status = alvo_status
                         else:
                             rec.fechado = False
                             rec.fechado_em = None  # reabrir zera timestamp
-                            if hasattr(rec, "status"):
-                                rec.status = "aberto"
+                            rec.status = "aberto"
                         updated_count += 1
                         # commit no final do lote (mais rápido e consistente)
                     except Exception:

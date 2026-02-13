@@ -72,13 +72,13 @@
           <input type="hidden" name="acao" id="acao_fechamento" value="">
 
                   
-<button class="btn btn-primary" type="submit" onclick="document.getElementById('acao_fechamento').value='fechar_a_pagar'" {% if not emps_sel %}disabled{% endif %}>
+<button class="btn btn-primary" type="button" onclick="document.getElementById('acao_fechamento').value='fechar_a_pagar'; this.form.submit()" {% if not emps_sel %}disabled{% endif %}>
   Fechar (A pagar)
 </button>
-<button class="btn btn-success" type="submit" onclick="document.getElementById('acao_fechamento').value='fechar_pago'" {% if not emps_sel %}disabled{% endif %}>
+<button class="btn btn-success" type="button" onclick="document.getElementById('acao_fechamento').value='fechar_pago'; this.form.submit()" {% if not emps_sel %}disabled{% endif %}>
   Fechar (Pago)
 </button>
-<button class="btn btn-outline-secondary" type="submit" onclick="document.getElementById('acao_fechamento').value='reabrir'" {% if not emps_sel %}disabled{% endif %}>
+<button class="btn btn-outline-secondary" type="button" onclick="document.getElementById('acao_fechamento').value='reabrir'; this.form.submit()" {% if not emps_sel %}disabled{% endif %}>
   Reabrir (Voltar para Aberto)
 </button>
 </form>
