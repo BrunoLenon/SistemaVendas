@@ -2275,7 +2275,8 @@ def itens_parados():
         else:
             # admin sem filtro: mostrar todas as EMPs que possuem itens cadastrados
             with SessionLocal() as db:
-                emp_scopes = [str(x[0]) for x in db.query(ItemParado.emp).filter(ItemParado.ativo == 1).distinct().all()]
+                # `itens_parados.ativo` is boolean in the database (TRUE/FALSE)
+                emp_scopes = [str(x[0]) for x in db.query(ItemParado.emp).filter(ItemParado.ativo.is_(True)).distinct().all()]
 
     elif role == 'supervisor':
         emps = _allowed_emps()
@@ -2300,7 +2301,7 @@ def itens_parados():
         itens_all = (
             db.query(ItemParado)
             .filter(ItemParado.emp.in_(emp_scopes))
-            .filter(ItemParado.ativo == 1)
+            .filter(ItemParado.ativo.is_(True))
             .order_by(ItemParado.emp.asc(), ItemParado.codigo.asc())
             .all()
         )
@@ -2395,7 +2396,8 @@ def itens_parados_pdf():
             emp_scopes = [str(emp_param)]
         else:
             with SessionLocal() as db:
-                emp_scopes = [str(x[0]) for x in db.query(ItemParado.emp).filter(ItemParado.ativo == 1).distinct().all()]
+                # `itens_parados.ativo` is boolean in the database (TRUE/FALSE)
+                emp_scopes = [str(x[0]) for x in db.query(ItemParado.emp).filter(ItemParado.ativo.is_(True)).distinct().all()]
     elif role == 'supervisor':
         emps = _allowed_emps()
         emp_scopes = emps if emps else ([str(_emp())] if _emp() else [])
@@ -2412,7 +2414,7 @@ def itens_parados_pdf():
         itens_all = (
             db.query(ItemParado)
             .filter(ItemParado.emp.in_(emp_scopes))
-            .filter(ItemParado.ativo == 1)
+            .filter(ItemParado.ativo.is_(True))
             .order_by(ItemParado.emp.asc(), ItemParado.codigo.asc())
             .all()
         )
