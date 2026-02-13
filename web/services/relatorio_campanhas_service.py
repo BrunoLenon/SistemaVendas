@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any, Callable
 
-from sqlalchemy import or_
+from sqlalchemy import or_, Boolean
 
 from db import (
     SessionLocal,
@@ -18,6 +18,17 @@ from db import (
 )
 
 from services.campanhas_service import CampanhasDeps
+
+
+def _ativo_true_filter(col) -> Any:
+    """Compatível com bancos onde `ativo` é BOOLEAN ou INTEGER(0/1)."""
+    try:
+        if isinstance(getattr(col, 'type', None), Boolean):
+            return col.is_(True)
+    except Exception:
+        pass
+    # fallback para integer (0/1)
+    return col == 1
 
 
 def _calc_qtd_por_vendedor_para_combo_item(
@@ -109,8 +120,8 @@ def build_relatorio_campanhas_context(
 
     # Recalcula snapshots do escopo para garantir relatório correto
     try:
-        deps.recalcular_resultados_campanhas_para_scope(ano=ano, mes=mes, emps_scope=emps_scope, vendedores_por_emp=vendedores_por_emp)
-        deps.recalcular_resultados_combos_para_scope(ano=ano, mes=mes, emps_scope=emps_scope, vendedores_por_emp=vendedores_por_emp)
+        deps.recalcular_resultados_campanhas_para_scope(ano=ano, mes=mes, emps=emps_scope, vendedores_por_emp=vendedores_por_emp)
+        deps.recalcular_resultados_combos_para_scope(ano=ano, mes=mes, emps=emps_scope, vendedores_por_emp=vendedores_por_emp)
     except Exception as e:
         print(f"[RELATORIO_CAMPANHAS] erro ao recalcular snapshots: {e}")
         flash("Não foi possível recalcular os resultados das campanhas agora. Exibindo dados já salvos.", "warning")
@@ -176,7 +187,7 @@ def build_relatorio_campanhas_context(
             try:
                 itens_parados_defs = (
                     db.query(ItemParado)
-                    .filter(ItemParado.ativo.is_(True), ItemParado.emp == emp)
+                    .filter(_ativo_true_filter(ItemParado.ativo), ItemParado.emp == emp)
                     .order_by(ItemParado.descricao.asc())
                     .all()
                 )
