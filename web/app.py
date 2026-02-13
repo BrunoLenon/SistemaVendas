@@ -1,4 +1,9 @@
 from services.scope import get_session_emps, refresh_session_emps, set_session_emps
+from services.campanhas_service import (
+    CampanhasDeps,
+    build_campanhas_page_context,
+    build_relatorio_campanhas_scope,
+)
 import os
 import re
 import mimetypes
@@ -1162,6 +1167,42 @@ def _parse_multi_args(name: str) -> list[str]:
             seen.add(v); res.append(v)
     return res
 
+
+def _parse_multi_args_from(args, name: str) -> list[str]:
+    """Versão sem dependência direta de `request`, para uso em services."""
+    vals = []
+    try:
+        if hasattr(args, "getlist"):
+            vals = list(args.getlist(name))
+        else:
+            v = args.get(name) if hasattr(args, "get") else None
+            vals = [v] if v else []
+    except Exception:
+        vals = []
+
+    if not vals:
+        try:
+            v = (args.get(name) or "").strip()
+        except Exception:
+            v = ""
+        if v:
+            vals = [v]
+
+    out: list[str] = []
+    for v in vals:
+        for part in str(v).split(","):
+            p = part.strip()
+            if p:
+                out.append(p)
+
+    seen = set()
+    res = []
+    for v in out:
+        if v not in seen:
+            seen.add(v)
+            res.append(v)
+    return res
+
 def _competencia_fechada(db, emp: str, ano: int, mes: int) -> bool:
     """Retorna True se a competência (EMP+ano+mes) estiver marcada como FECHADA."""
     emp = _emp_norm(emp)
@@ -1220,6 +1261,19 @@ def _get_emp_options(codigos: list[str]) -> list[dict]:
             label = c
         out.append({"value": c, "label": label})
     return out
+
+
+# Compat: services recebem `args` explicitamente (evita dependência direta do `request` no service).
+def _parse_multi_args_from(args, name: str) -> list[str]:
+    try:
+        if hasattr(args, "getlist"):
+            vals = args.getlist(name)
+        else:
+            vals = args.get(name)
+            vals = vals if isinstance(vals, list) else ([vals] if vals else [])
+        return [str(v).strip() for v in vals if str(v).strip()]
+    except Exception:
+        return []
 
 
 
@@ -2751,6 +2805,28 @@ def _resolver_emp_scope_para_usuario(vendedor: str, role: str, emp_usuario: str 
 
     return _get_emps_vendedor(vendedor)
 
+
+# --------------------------
+# Services (injeção de deps)
+# --------------------------
+_campanhas_deps = CampanhasDeps(
+    SessionLocal=SessionLocal,
+    parse_multi_args=_parse_multi_args_from,
+    get_emp_options=_get_emp_options,
+    get_vendedores_db=_get_vendedores_db,
+    get_emps_vendedor=_get_emps_vendedor,
+    get_all_emp_codigos=_get_all_emp_codigos,
+    periodo_bounds=_periodo_bounds,
+    resolver_emp_scope_para_usuario=_resolver_emp_scope_para_usuario,
+    campanhas_mes_overlap=_campanhas_mes_overlap,
+    upsert_resultado=_upsert_resultado,
+    calc_resultado_all_vendedores=_calc_resultado_all_vendedores,
+    get_emps_com_vendas_no_periodo=_get_emps_com_vendas_no_periodo,
+    get_vendedores_emp_no_periodo=_get_vendedores_emp_no_periodo,
+    recalcular_resultados_campanhas_para_scope=_recalcular_resultados_campanhas_para_scope,
+    recalcular_resultados_combos_para_scope=_recalcular_resultados_combos_para_scope,
+)
+
 @app.get("/campanhas")
 def campanhas_qtd():
     """Relatório de campanhas de recompensa por quantidade.
@@ -2765,179 +2841,17 @@ def campanhas_qtd():
 
     role = _role() or ""
     emp_usuario = _emp()
-
-    # período
-    hoje = date.today()
-    mes = int(request.args.get("mes") or hoje.month)
-    ano = int(request.args.get("ano") or hoje.year)
-
-    # vendedor alvo
     vendedor_logado = (_usuario_logado() or "").strip().upper()
 
-    # Suporta multi-seleção via querystring: ?vendedor=JOAO&vendedor=MARIA
-    vendedores_req = [v.strip().upper() for v in _parse_multi_args("vendedor")]
-
-    # Supervisor pode ver "a loja toda" (comparação entre vendedores)
-    if (role or "").lower() == "supervisor":
-        if not vendedores_req or "__ALL__" in vendedores_req:
-            # Visão geral (loja toda). Não pré-marca todos os checkboxes; o token __ALL__ representa "todos".
-            vendedor_sel = "__ALL__"
-            vendedores_sel = []
-        else:
-            vendedor_sel = "__MULTI__" if len(vendedores_req) > 1 else vendedores_req[0]
-            vendedores_sel = vendedores_req
-    else:
-        # Admin pode escolher livremente; vendedor só pode ver ele mesmo
-        if (role or "").lower() == "admin":
-            if not vendedores_req or "__ALL__" in vendedores_req:
-                # Visão geral (todos vendedores). Token __ALL__ representa "todos".
-                vendedor_sel = "__ALL__"
-                vendedores_sel = []
-            else:
-                vendedor_sel = "__MULTI__" if len(vendedores_req) > 1 else vendedores_req[0]
-                vendedores_sel = vendedores_req
-        else:
-            vendedor_sel = vendedor_logado
-            vendedores_sel = [vendedor_logado] if vendedor_logado else []
-    # EMP scope (suporta multi-seleção: ?emp=101&emp=102)
-    emp_list = _parse_multi_args("emp")
-    emp_param = (emp_list[0] if (len(emp_list) == 1) else "")  # compat (usado em alguns templates)
-    emps_sel = [str(e).strip() for e in (emp_list or []) if str(e).strip()]
-
-    emps_scope: list[str] = []
-    if (role or "").lower() == "admin":
-        if emps_sel:
-            emps_scope = emps_sel
-        else:
-            # Admin em modo __ALL__ (todos vendedores): mostrar todas as EMPs cadastradas
-            if vendedor_sel == "__ALL__":
-                emps_scope = _get_all_emp_codigos(apenas_ativas=True)
-            else:
-                emps_scope = _get_emps_vendedor(vendedor_sel if vendedor_sel != "__MULTI__" else (vendedores_sel[0] if vendedores_sel else vendedor_logado))
-    else:
-        # vendedor/supervisor: restringe ao escopo permitido
-        base_scope = _resolver_emp_scope_para_usuario(
-            vendedor_sel if vendedor_sel != "__MULTI__" else (vendedores_sel[0] if vendedores_sel else vendedor_logado),
-            role,
-            emp_usuario,
-        )
-        if emps_sel:
-            emps_scope = [e for e in base_scope if str(e) in {str(x) for x in emps_sel}]
-        else:
-            emps_scope = base_scope
-
-    # (Filtro por EMP já aplicado acima via emps_sel)
-
-    # Se não temos EMP, não dá pra montar relatório
-    if not emps_scope and (role or "").lower() != "admin":
-        flash("Não foi possível identificar a EMP do vendedor pelas vendas. Verifique se já existem vendas importadas.", "warning")
-
-    inicio_mes, fim_mes = _periodo_bounds(ano, mes)
-
-    # Busca vendedores dropdown
-    vendedores_dropdown = []
-    try:
-        vendedores_dropdown = _get_vendedores_db(role, emp_usuario)
-    except Exception:
-        vendedores_dropdown = []
-
-    # Nota: "Todos" é tratado via token __ALL__ (querystring) e pelo checkbox "Selecionar todos".
-    # Não adicionamos "__ALL__" como opção real na lista para evitar URLs gigantes.
-
-    # Calcula resultados e agrupa por EMP
-    blocos: list[dict] = []
-    with SessionLocal() as db:
-        # Para supervisor, permitir comparar a loja inteira (todos os vendedores da EMP)
-        if (vendedor_sel or "").upper() == "__ALL__":
-            # Otimização: em modo TODOS, não iterar por N vendedores. Exibir agregado e permitir drill-down.
-            vendedores_alvo = ["__ALL__"]
-        elif (vendedor_sel or "").upper() == "__MULTI__":
-            vendedores_alvo = [v for v in (vendedores_sel or []) if (v or "").strip().upper() != "__ALL__"]
-        else:
-            vendedores_alvo = [vendedor_sel]
-
-        for emp in emps_scope or ([emp_param] if emp_param else []):
-            emp = str(emp)
-
-            # campanhas relevantes (overlap do mês)
-            campanhas = _campanhas_mes_overlap(ano, mes, emp)
-
-            for vend in vendedores_alvo:
-                vend = (vend or "").strip().upper()
-                if not vend:
-                    continue
-
-                # aplica prioridade: regras do vendedor substituem regras gerais
-                # chave: (produto_prefixo, marca)
-                by_key: dict[tuple[str, str, str], CampanhaQtd] = {}
-                for c in campanhas:
-                    campo_match = (getattr(c, "campo_match", None) or "codigo").strip().lower()
-                    if campo_match == "descricao":
-                        pref = (getattr(c, "descricao_prefixo", "") or "").strip() or (c.produto_prefixo or "").strip()
-                        key = ("descricao", pref.lower().strip(), (c.marca or "").strip().upper())
-                    else:
-                        key = ("codigo", (c.produto_prefixo or "").strip().upper(), (c.marca or "").strip().upper())
-                    if c.vendedor and c.vendedor.strip().upper() == vend:
-                        by_key[key] = c
-                    else:
-                        by_key.setdefault(key, c)
-                campanhas_final = list(by_key.values())
-
-                total_recomp = 0.0
-                resultados_calc: list[CampanhaQtdResultado] = []
-                for c in campanhas_final:
-                    # interseção do período
-                    periodo_ini = max(c.data_inicio, inicio_mes)
-                    periodo_fim = min(c.data_fim, fim_mes)
-                    res = (_calc_resultado_all_vendedores(db, c, emp, ano, mes, periodo_ini, periodo_fim)
-                        if (vend or "").upper() == "__ALL__" else _upsert_resultado(db, c, vend, emp, ano, mes, periodo_ini, periodo_fim))
-                    resultados_calc.append(res)
-                    total_recomp += float(res.valor_recompensa or 0.0)
-
-                # Não commita a cada vendedor; commit único ao final melhora performance.
-                # Ordena em memória para evitar re-query.
-                resultados_calc.sort(key=lambda r: float(getattr(r, "valor_recompensa", 0.0) or 0.0), reverse=True)
-
-                blocos.append({
-                    "emp": emp,
-                    "vendedor": vend,
-                    "resultados": resultados_calc,
-                    "total": total_recomp,
-                })
-        db.commit()
-
-        # Opções para filtros avançados (labels amigáveis)
-    emps_options = _get_emp_options(emps_scope)
-    vendedores_options = []
-    if vendedores_dropdown:
-        for v in vendedores_dropdown:
-            vv = (v or "").strip().upper()
-            if not vv:
-                continue
-            vendedores_options.append({"value": vv, "label": vv})
-
-    vendedor_display = (
-        ("LOJA TODA" if (role or "").lower()=="supervisor" else "TODOS VENDEDORES") if (vendedor_sel or "").upper() == "__ALL__"
-        else (f"{len(vendedores_sel)} selecionados" if (vendedor_sel or "").upper() == "__MULTI__" else vendedor_sel)
-    )
-
-    return render_template(
-        "campanhas_qtd.html",
+    ctx = build_campanhas_page_context(
+        _campanhas_deps,
         role=role,
-        ano=ano,
-        mes=mes,
-        vendedor=vendedor_sel,
-        vendedor_display=vendedor_display,
+        emp_usuario=emp_usuario,
         vendedor_logado=vendedor_logado,
-        vendedores=vendedores_dropdown,
-        vendedores_options=vendedores_options,
-        vendedores_sel=vendedores_sel,
-        blocos=blocos,
-        emps_scope=emps_scope,
-        emps_options=emps_options,
-        emps_sel=emps_sel,
-        emp_param=emp_param,
+        args=request.args,
     )
+    return render_template("campanhas_qtd.html", **ctx)
+
 
 @app.get("/campanhas/pdf")
 def campanhas_qtd_pdf():
@@ -3431,86 +3345,26 @@ def relatorio_campanhas():
     role = (_role() or "").strip().lower()
     emp_usuario = _emp()
 
-    hoje = date.today()
-    mes = int(request.args.get("mes") or hoje.month)
-    ano = int(request.args.get("ano") or hoje.year)
-
-    # Suporta multi-seleção via querystring (?emp=101&emp=102 / ?vendedor=JOAO&vendedor=MARIA)
-    emps_sel = [str(e).strip() for e in _parse_multi_args("emp") if str(e).strip()]
     vendedor_logado = (_usuario_logado() or "").strip().upper()
-    vendedores_sel = [str(v).strip().upper() for v in _parse_multi_args("vendedor") if str(v).strip()]
+    scope = build_relatorio_campanhas_scope(
+        _campanhas_deps,
+        role=role,
+        emp_usuario=emp_usuario,
+        vendedor_logado=vendedor_logado,
+        args=request.args,
+        flash=flash,
+    )
+    ano = int(scope["ano"])
+    mes = int(scope["mes"])
+    emps_sel = scope["emps_sel"]
+    vendedores_sel = scope["vendedores_sel"]
+    emps_scope = scope["emps_scope"]
+    vendedores_por_emp = scope["vendedores_por_emp"]
 
-    # Para SUPERVISOR/VENDEDOR: se não veio EMP no filtro, vamos preencher depois com o escopo permitido
-    # (evita tela "Selecione uma EMP" e garante que o relatório carregue direto no acesso do usuário).
-
-    # Define escopo de EMPs e vendedores
-    emps_scope: list[str] = []
-    vendedores_por_emp: dict[str, list[str]] = {}
-
-    if role == "admin":
-        # Admin: pode ver todas as EMPs com vendas no período, ou filtrar por EMP(s)
-        if emps_sel:
-            emps_scope = emps_sel
-        else:
-            emps_scope = _get_emps_com_vendas_no_periodo(ano, mes)
-
-    elif role == "supervisor":
-        # Supervisor: sempre restrito às EMP(s) permitidas do usuário (usuario_emps ativo, com fallback no campo legado usuarios.emp)
-        allowed = [str(e).strip() for e in (_allowed_emps() or []) if str(e).strip()]
-        if not allowed and emp_usuario:
-            allowed = [str(emp_usuario).strip()]
-        allowed = sorted(set(allowed))
-
-        if not allowed:
-            flash("Supervisor sem EMP vinculada. Ajuste o vínculo do usuário (usuario_emps).", "warning")
-            emps_scope = []
-        else:
-            if emps_sel:
-                pick = [str(e).strip() for e in emps_sel if str(e).strip() in set(allowed)]
-                emps_scope = pick if pick else allowed[:]
-            else:
-                emps_scope = allowed[:]
-
-    else:
-        # Vendedor: sempre restrito ao próprio vendedor, e às EMPs onde ele tem vendas (ou vínculos)
-        base_emps = [str(e).strip() for e in (_get_emps_vendedor(vendedor_logado) or []) if str(e).strip()]
-        if not base_emps:
-            # fallback: se existir vínculo em usuario_emps, usa como escopo
-            base_emps = [str(e).strip() for e in (_allowed_emps() or []) if str(e).strip()]
-        base_emps = sorted(set(base_emps))
-
-        if emps_sel:
-            wanted = {str(x).strip() for x in emps_sel if str(x).strip()}
-            emps_scope = [e for e in base_emps if e in wanted]
-        else:
-            emps_scope = base_emps[:]
-
-        if not emps_scope:
-            flash("Não foi possível identificar a EMP do vendedor.", "warning")
-# Se ainda não há seleção explícita de EMP (especialmente para vendedor),
+    # Se ainda não há seleção explícita de EMP (especialmente para vendedor/supervisor),
     # assume o escopo permitido para que o relatório carregue automaticamente.
     if role != "admin" and not emps_sel and emps_scope:
         emps_sel = [str(e) for e in emps_scope]
-
-    # Vendedores por EMP (limitado por role)
-    for emp in emps_scope:
-        emp = str(emp)
-        if role == "admin":
-            # admin: todos os vendedores que venderam no período na EMP
-            vendedores = _get_vendedores_emp_no_periodo(emp, ano, mes)
-            # aplica filtro de vendedores (multi) se fornecido
-            if vendedores_sel:
-                allowed_set = {v.strip().upper() for v in vendedores}
-                pick = [v for v in vendedores_sel if v in allowed_set]
-                vendedores = pick if pick else []
-        elif role == "supervisor":
-            vendedores = _get_vendedores_emp_no_periodo(emp, ano, mes)
-            if vendedores_sel and "__ALL__" not in vendedores_sel:
-                allowed_set = {v.strip().upper() for v in vendedores}
-                vendedores = [v for v in vendedores_sel if v in allowed_set]
-        else:
-            vendedores = [vendedor_logado]
-        vendedores_por_emp[emp] = vendedores
 
     # Recalcula snapshots do escopo para garantir relatório correto
     try:
