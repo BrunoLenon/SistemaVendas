@@ -1123,83 +1123,6 @@ def _parse_num_ptbr(val: str | None) -> float:
         return 0.0
 
 
-
-
-def _normalize_emp_str(v) -> str:
-    """Normaliza EMP para comparação/uso em rotas e forms (sempre string)."""
-    if v is None:
-        return ""
-    s = str(v).strip()
-    # remove espaços internos comuns (ex: " 101 ")
-    s = re.sub(r"\s+", "", s)
-    return s
-
-def _parse_emps_any(value):
-    """Aceita lista/str ('101,102') e retorna lista de EMPs (strings) sem vazios."""
-    emps = []
-    if value is None:
-        return emps
-    if isinstance(value, (list, tuple, set)):
-        for it in value:
-            emps.extend(_parse_emps_any(it))
-        return emps
-    s = str(value).strip()
-    if not s:
-        return emps
-    # suporta "101,102" ou "101;102"
-    parts = re.split(r"[;,\s]+", s)
-    for p in parts:
-        p = _normalize_emp_str(p)
-        if p:
-            emps.append(p)
-    # remove duplicados preservando ordem
-    seen=set()
-    out=[]
-    for e in emps:
-        if e not in seen:
-            seen.add(e); out.append(e)
-    return out
-
-def _parse_emps_from_request(req):
-    """Lê EMP(s) de request.form/request.values de forma robusta."""
-    candidates = []
-    # padrões comuns
-    for key in ("emp", "emp[]", "emps", "emps[]", "emp_select", "emp_sel"):
-        try:
-            vals = req.values.getlist(key)
-        except Exception:
-            vals = []
-        if vals:
-            candidates.extend(vals)
-    # fallback (às vezes vem como string única)
-    for key in ("emp", "emps"):
-        v = req.values.get(key)
-        if v:
-            candidates.append(v)
-    return _parse_emps_any(candidates)
-
-def _parse_action_from_request(req) -> str:
-    """Lê ação de botões/inputs: acao/action."""
-    for key in ("acao", "action", "btn", "op"):
-        v = req.values.get(key)
-        if v:
-            return str(v).strip().lower()
-    # fallback: detectar qualquer key conhecida com value
-    for k in req.values.keys():
-        if str(k).lower() in ("acao", "action"):
-            try:
-                v=req.values.get(k)
-                if v:
-                    return str(v).strip().lower()
-            except Exception:
-                pass
-    return ""
-
-def _url_emp_param(emps_list):
-    # para url_for: emp=101 (se 1) ou emp=101,102
-    emps_list = _parse_emps_any(emps_list)
-    return ",".join(emps_list) if emps_list else ""
-
 def _emp_norm(emp: str | None) -> str:
     """Normaliza EMP para armazenamento ('' quando nulo)."""
     return (emp or "").strip()
@@ -2970,11 +2893,60 @@ def campanhas_qtd():
                 # Ordena em memória para evitar re-query.
                 resultados_calc.sort(key=lambda r: float(getattr(r, "valor_recompensa", 0.0) or 0.0), reverse=True)
 
+                # Detalhamento por vendedor (Admin/Supervisor) no modo "LOJA TODA".
+                # Isso reintroduz o drill-down: ao abrir os detalhes de uma EMP, o usuário
+                # consegue ver quais vendedores contribuíram para o resultado.
+                vendedores_detalhe = None
+                if (vend or "").upper() == "__ALL__" and role in ("admin", "supervisor"):
+                    try:
+                        # Vendedores que tiveram vendas no período/EMP
+                        vendedores_periodo_rows = (
+                            db.query(Venda.vendedor)
+                            .filter(
+                                Venda.emp == emp,
+                                Venda.movimento >= periodo_ini,
+                                Venda.movimento <= periodo_fim,
+                            )
+                            .distinct()
+                            .all()
+                        )
+                        vendedores_periodo = [
+                            (row[0] or "").strip().upper()
+                            for row in vendedores_periodo_rows
+                            if (row and (row[0] or "").strip())
+                        ]
+
+                        # Limite defensivo para não travar páginas com muitas pessoas
+                        vendedores_periodo = vendedores_periodo[:50]
+
+                        vendedores_detalhe = []
+                        for v_det in vendedores_periodo:
+                            total_v = 0.0
+                            for c_det in campanhas_final:
+                                res_det = _upsert_resultado(
+                                    db,
+                                    c_det,
+                                    v_det,
+                                    emp,
+                                    ano,
+                                    mes,
+                                    periodo_ini,
+                                    periodo_fim,
+                                )
+                                total_v += float(getattr(res_det, "valor_recompensa", 0.0) or 0.0)
+                            vendedores_detalhe.append({"vendedor": v_det, "total": total_v})
+
+                        vendedores_detalhe.sort(key=lambda x: float(x.get("total") or 0.0), reverse=True)
+                    except Exception:
+                        # Não quebra a página se algo inesperado ocorrer nesse detalhe.
+                        vendedores_detalhe = None
+
                 blocos.append({
                     "emp": emp,
                     "vendedor": vend,
                     "resultados": resultados_calc,
                     "total": total_recomp,
+                    "vendedores_detalhe": vendedores_detalhe,
                 })
         db.commit()
 
@@ -5732,16 +5704,24 @@ def admin_fechamento():
 
     # multi-EMP: fecha em lote quando selecionar mais de uma EMP
     # multi-EMP: lê tanto querystring (?emp=101&emp=102) quanto POST (inputs hidden name=emp)
-    emps_sel = _parse_emps_from_request(request)
+    emps_sel = []
+    try:
+        emps_sel = [str(e).strip() for e in request.values.getlist("emp") if str(e).strip()]
+    except Exception:
+        emps_sel = []
+    if not emps_sel:
+        emps_sel = [str(e).strip() for e in _parse_multi_args("emp") if str(e).strip()]
+    if not emps_sel:
+        # fallback: tenta usar emp único (mantém compatibilidade com versões antigas)
+        emp_single = _emp_norm(request.values.get("emp", ""))
+        emps_sel = [emp_single] if emp_single else []
 
-    # Mensagens informativas/erros mostrados na tela
     msgs: list[str] = []
-
     status_por_emp: dict[str, dict] = {}
 
     # Normaliza a ação vinda do formulário (alguns navegadores/JS podem enviar
     # variações, ex.: sem underscore, com hífen ou com espaços).
-    acao_raw = _parse_action_from_request(request)
+    acao_raw = (request.values.get("acao") or request.values.get("action") or request.form.get("acao") or "").strip().lower()
     acao = {
         "fechar_a_pagar": "fechar_a_pagar",
         "fechar_apagar": "fechar_a_pagar",
@@ -5816,7 +5796,7 @@ def admin_fechamento():
                         db.commit()
                         msgs.append(f"✅ Operação concluída ({updated_count} EMPs).")
                         # PRG: evita reenvio e garante recarregar status
-                        return redirect(url_for('admin_fechamento', emp=_url_emp_param(emps_sel), mes=mes, ano=ano))
+                        return redirect(url_for('admin_fechamento', emp=emps_sel, mes=mes, ano=ano))
                     except Exception:
                         db.rollback()
                         app.logger.exception("Erro ao commitar fechamento mensal")
@@ -5864,75 +5844,6 @@ def admin_fechamento():
         status_por_emp=status_por_emp,
         msgs=msgs,
     )
-
-
-@app.route("/admin/diagnostico")
-def admin_diagnostico():
-    """Diagnóstico rápido (ADMIN) para validar integridade de permissões/fechamento."""
-    if not session.get("user_id"):
-        return redirect(url_for("login"))
-    if _role() != "admin":
-        flash("Acesso restrito ao ADMIN.", "danger")
-        return redirect(url_for("dashboard"))
-
-    db = SessionLocal()
-    info = {"ok": True, "checks": []}
-    try:
-        db.execute(text("select 1"))
-        info["checks"].append({"name": "DB conexão", "ok": True, "detail": "OK"})
-    except Exception as e:
-        info["ok"] = False
-        info["checks"].append({"name": "DB conexão", "ok": False, "detail": str(e)})
-
-    # Checagens de fechamento
-    try:
-        dup = db.execute(text("""
-            select emp, ano, mes, count(*) as n
-            from fechamento_mensal
-            group by emp, ano, mes
-            having count(*) > 1
-            order by n desc
-            limit 50
-        """)).mappings().all()
-        info["checks"].append({"name": "Duplicidade fechamento_mensal (emp/ano/mes)", "ok": len(dup) == 0, "rows": dup})
-    except Exception as e:
-        info["ok"] = False
-        info["checks"].append({"name": "Duplicidade fechamento_mensal", "ok": False, "detail": str(e)})
-
-    try:
-        inco = db.execute(text("""
-            select emp, ano, mes, fechado, status, fechado_em
-            from fechamento_mensal
-            where (fechado = true and status = 'aberto')
-               or (fechado = false and status in ('a_pagar','pago'))
-            order by ano desc, mes desc
-            limit 50
-        """)).mappings().all()
-        info["checks"].append({"name": "Inconsistência (fechado/status)", "ok": len(inco) == 0, "rows": inco})
-    except Exception as e:
-        info["ok"] = False
-        info["checks"].append({"name": "Inconsistência (fechado/status)", "ok": False, "detail": str(e)})
-
-    # Checagem de permissões / vínculo usuario_emps
-    try:
-        sem_vinc = db.execute(text("""
-            select u.id, u.nome, u.role
-            from usuarios u
-            left join usuario_emps ue on ue.usuario_id = u.id
-            where u.role in ('supervisor','vendedor')
-            group by u.id, u.nome, u.role
-            having count(ue.emp) = 0
-            order by u.nome
-            limit 50
-        """)).mappings().all()
-        info["checks"].append({"name": "Usuários sem vínculo em usuario_emps", "ok": len(sem_vinc) == 0, "rows": sem_vinc})
-    except Exception as e:
-        info["ok"] = False
-        info["checks"].append({"name": "Usuários sem vínculo em usuario_emps", "ok": False, "detail": str(e)})
-
-    db.close()
-    return render_template("admin_diagnostico.html", info=info)
-
 
 
 @app.route("/admin/campanhas", methods=["GET", "POST"])
