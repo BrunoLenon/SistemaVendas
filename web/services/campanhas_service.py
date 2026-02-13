@@ -223,17 +223,13 @@ def build_relatorio_campanhas_scope(
 
     emps_sel = [str(e).strip() for e in deps.parse_multi_args(args, "emp") if str(e).strip()]
     vendedores_sel = [str(v).strip().upper() for v in deps.parse_multi_args(args, "vendedor") if str(v).strip()]
-    # Multi-select pode enviar token "__ALL__" quando "selecionar todos" está marcado.
-    # Trate isso como "sem filtro" (todas as opções), para não encolher o dropdown.
-    def _clean_all_token(vals: list[str]) -> list[str]:
-        vset = {(v or "").strip() for v in (vals or []) if (v or "").strip()}
-        if "__ALL__" in vset or "__all__" in vset:
-            return []
-        return [v for v in (vals or []) if (v or "").strip() and (v or "").strip() not in {"__ALL__", "__all__"}]
-
-    emps_sel = _clean_all_token(emps_sel)
-    vendedores_sel = _clean_all_token(vendedores_sel)
-
+    
+    # Alguns multi-selects enviam token especial '__ALL__'.
+    # Quando presente, tratamos como 'sem filtro' (todas as opções), para não encolher o dropdown.
+    if "__ALL__" in emps_sel:
+        emps_sel = []
+    if "__ALL__" in vendedores_sel:
+        vendedores_sel = []
 
     emps_scope: list[str] = []
     vendedores_por_emp: dict[str, list[str]] = {}

@@ -223,7 +223,13 @@ def build_relatorio_campanhas_context(
             # Mapear campanhas QTD (para vigência quando não estiver duplicada no resultado)
             qtd_camp_map: dict[int, Any] = {}
             try:
-                qtd_ids = {getattr(r, "campanha_id", None) for r in qtd_rows}
+                qtd_ids = set()
+                for r in (qtd_rows or []):
+                    cid = getattr(r, "campanha_id", None)
+                    if cid is None:
+                        cid = getattr(r, "campanha_qtd_id", None)
+                    if cid is not None:
+                        qtd_ids.add(cid)
                 qtd_ids = {i for i in qtd_ids if i is not None}
                 if qtd_ids:
                     for c in db.query(CampanhaQtd).filter(CampanhaQtd.id.in_(qtd_ids)).all():
@@ -315,38 +321,32 @@ def build_relatorio_campanhas_context(
                     if cdef is not None:
                         di = di or getattr(cdef, "data_inicio", None)
                         df = df or getattr(cdef, "data_fim", None)
-                                vig = ""
+                vig = ""
                 try:
-                    def _to_date(d):
+                    def _as_date(d):
                         if not d:
                             return None
                         if isinstance(d, datetime.datetime):
                             return d.date()
                         if isinstance(d, datetime.date):
                             return d
-                        # aceita string 'YYYY-MM-DD'
                         try:
-                            return datetime.datetime.fromisoformat(str(d)).date()
+                            return datetime.date.fromisoformat(str(d)[:10])
                         except Exception:
                             return None
-
-                    di_d = _to_date(di)
-                    df_d = _to_date(df)
-
-                    def _fmt(d):
-                        return d.strftime("%d/%m/%Y") if d else ""
-
+                
+                    di_d = _as_date(di)
+                    df_d = _as_date(df)
                     if di_d and df_d:
-                        vig = f"{_fmt(di_d)} → {_fmt(df_d)}"
-                        if date.today() > df_d:
-                            vig = f"{vig} (ENCERRADA)"
-                    elif di_d:
-                        vig = f"Desde {_fmt(di_d)}"
-                    elif df_d:
-                        vig = f"Até {_fmt(df_d)}"
+                        vig = f"{di_d.strftime('%d/%m/%Y')} → {df_d.strftime('%d/%m/%Y')}"
+                        if datetime.date.today() > df_d:
+                            vig += " (ENCERRADA)"
+                    elif di_d and not df_d:
+                        vig = f"Desde {di_d.strftime('%d/%m/%Y')}"
+                    elif df_d and not di_d:
+                        vig = f"Até {df_d.strftime('%d/%m/%Y')}"
                 except Exception:
                     vig = ""
-
                 marca = (getattr(r, "marca", None) or getattr(r, "campanha_marca", None) or "").strip()
 
                 # Melhor esforço para descrever o critério de match
