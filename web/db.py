@@ -692,8 +692,8 @@ class FechamentoMensal(Base):
     ano = Column(Integer, nullable=False, index=True)
     mes = Column(Integer, nullable=False, index=True)
 
-    fechado = Column(Boolean, nullable=False, default=True)
-    fechado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
+    fechado = Column(Boolean, nullable=False, default=False)
+    fechado_em = Column(DateTime, nullable=True)
     # Status do período (controle financeiro): "aberto", "a_pagar", "pago"
     status = Column(String(20), nullable=False, default="aberto", index=True)
 
@@ -908,6 +908,16 @@ END $$;
             # Fechamento mensal: status financeiro (aberto/a_pagar/pago)
             conn.execute(text("ALTER TABLE fechamento_mensal ADD COLUMN IF NOT EXISTS status varchar(20) DEFAULT 'aberto';"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_fechamento_mensal_status ON fechamento_mensal (status);"))
+
+            # Fix default/nullable do fechamento (mes nasce aberto)
+            try:
+                conn.execute(text("ALTER TABLE fechamento_mensal ALTER COLUMN fechado SET DEFAULT FALSE;"))
+            except Exception:
+                pass
+            try:
+                conn.execute(text("ALTER TABLE fechamento_mensal ALTER COLUMN fechado_em DROP NOT NULL;"))
+            except Exception:
+                pass
 
             # Bancos mais antigos podem ter criado `status` como ENUM ou com restrições.
             # Neste caso, o valor 'a_pagar' pode não existir e a atualização falha silenciosamente.

@@ -14,7 +14,10 @@ bp = Blueprint("auth", __name__)
 
 
 def _load_allowed_emps(db, usuario_id: int) -> list[str]:
-    rows = db.query(UsuarioEmp.emp).filter(UsuarioEmp.usuario_id == usuario_id).all()
+    rows = (db.query(UsuarioEmp.emp)
+            .filter(UsuarioEmp.usuario_id == usuario_id)
+            .filter(UsuarioEmp.ativo.is_(True))
+            .all())
     emps = sorted({str(r[0]).strip() for r in rows if r and r[0] is not None and str(r[0]).strip()})
     return emps
 

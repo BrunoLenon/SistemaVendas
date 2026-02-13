@@ -607,7 +607,10 @@ def _allowed_emps() -> list[str]:
 
     try:
         with SessionLocal() as db:
-            rows = db.query(UsuarioEmp.emp).filter(UsuarioEmp.usuario_id == uid).all()
+            rows = (db.query(UsuarioEmp.emp)
+                    .filter(UsuarioEmp.usuario_id == uid)
+                    .filter(UsuarioEmp.ativo.is_(True))
+                    .all())
             emps_db = sorted({str(r[0]).strip() for r in rows if r and r[0] is not None and str(r[0]).strip()})
             # fallback: usa emp do usuário, se existir
             if not emps_db:

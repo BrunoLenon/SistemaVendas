@@ -154,7 +154,7 @@ def importar_vendas_xlsx(
     for _, r in df.iterrows():
         row = {
             "mestre": str(r["MESTRE"]).strip(),
-            "marca": str(r["MARCA"]).strip().upper(),
+            "marca": "" if pd.isna(r.get("MARCA")) else str(r.get("MARCA")).strip().upper(),
             "vendedor": str(r["VENDEDOR"]).strip().upper(),
             # No banco a coluna e' 'movimento' (data da venda)
             "movimento": r["DATA"],
@@ -163,12 +163,12 @@ def importar_vendas_xlsx(
             "valor_total": float(r["VALOR_TOTAL"]),
         }
         if tem_nota and "NOTA" in df.columns:
-            row["nota"] = None if pd.isna(r.get("NOTA")) else str(r.get("NOTA")).strip()
+            row["nota"] = "" if pd.isna(r.get("NOTA")) else str(r.get("NOTA")).strip()
         # No banco, EMP e' armazenado como texto (compatibilidade com Supabase).
         # Nao converta para int; isso pode quebrar filtros (ex: 101 != '101').
         if tem_emp and "EMP" in df.columns:
             v = r.get("EMP")
-            row["emp"] = None if pd.isna(v) else str(v).strip()
+            row["emp"] = "" if pd.isna(v) else str(v).strip()
         rows.append(row)
 
     inseridas = 0
