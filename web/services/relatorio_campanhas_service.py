@@ -229,7 +229,7 @@ def build_relatorio_campanhas_context(
                             qtd_camp_map[int(cid)] = c
             except Exception:
                 qtd_camp_map = {}
-combo_rows = (
+            combo_rows = (
                 db.query(CampanhaComboResultado)
                 .filter(
                     CampanhaComboResultado.competencia_ano == int(ano),
