@@ -10,6 +10,7 @@ from db import (
     SessionLocal,
     Venda,
     CampanhaQtdResultado,
+    CampanhaQtd,
     CampanhaCombo,
     CampanhaComboItem,
     CampanhaComboResultado,
@@ -215,7 +216,20 @@ def build_relatorio_campanhas_context(
             )
 
             # Combo resultados
-            combo_rows = (
+            
+            # Mapear campanhas QTD (para vigência quando não estiver duplicada no resultado)
+            qtd_camp_map: dict[int, Any] = {}
+            try:
+                qtd_ids = {getattr(r, "campanha_id", None) for r in qtd_rows}
+                qtd_ids = {i for i in qtd_ids if i is not None}
+                if qtd_ids:
+                    for c in db.query(CampanhaQtd).filter(CampanhaQtd.id.in_(qtd_ids)).all():
+                        cid = getattr(c, "id", None)
+                        if cid is not None:
+                            qtd_camp_map[int(cid)] = c
+            except Exception:
+                qtd_camp_map = {}
+combo_rows = (
                 db.query(CampanhaComboResultado)
                 .filter(
                     CampanhaComboResultado.competencia_ano == int(ano),
@@ -288,6 +302,13 @@ def build_relatorio_campanhas_context(
                 # Monta campos completos p/ o template (Marca/Item/Atingiu/Vigência)
                 di = getattr(r, "data_inicio", None) or getattr(r, "campanha_data_inicio", None)
                 df = getattr(r, "data_fim", None) or getattr(r, "campanha_data_fim", None)
+
+                # Fallback: buscar vigência no cadastro da campanha
+                if (not di or not df) and getattr(r, "campanha_id", None) is not None:
+                    cdef = qtd_camp_map.get(int(getattr(r, "campanha_id")))
+                    if cdef is not None:
+                        di = di or getattr(cdef, "data_inicio", None)
+                        df = df or getattr(cdef, "data_fim", None)
                 vig = ""
                 try:
                     if di and df:
