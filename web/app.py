@@ -3409,41 +3409,54 @@ def relatorio_campanhas():
     vendedor_logado = (_usuario_logado() or "").strip().upper()
     vendedores_sel = [str(v).strip().upper() for v in _parse_multi_args("vendedor") if str(v).strip()]
 
-    # Para SUPERVISOR/VENDEDOR: se não veio EMP no filtro, pré-seleciona automaticamente
-    # evitando tela "Selecione uma EMP" e garantindo que o relatório abra direto no escopo permitido.
-    if role == "supervisor":
-        if not emps_sel and emp_usuario:
-            emps_sel = [str(emp_usuario)]
-    elif role != "admin":
-        # vendedor
-        if not emps_sel:
-            # tenta usar EMPs do vendedor; se ainda não souber, será preenchido após emps_scope
-            emps_sel = []
+    # Para SUPERVISOR/VENDEDOR: se não veio EMP no filtro, vamos preencher depois com o escopo permitido
+    # (evita tela "Selecione uma EMP" e garante que o relatório carregue direto no acesso do usuário).
 
-    # Define escopo de EMPs e vendedores    # Define escopo de EMPs e vendedores
+    # Define escopo de EMPs e vendedores
     emps_scope: list[str] = []
     vendedores_por_emp: dict[str, list[str]] = {}
 
     if role == "admin":
+        # Admin: pode ver todas as EMPs com vendas no período, ou filtrar por EMP(s)
         if emps_sel:
             emps_scope = emps_sel
         else:
             emps_scope = _get_emps_com_vendas_no_periodo(ano, mes)
+
     elif role == "supervisor":
-        if not emp_usuario:
-            flash("Supervisor sem EMP cadastrada. Ajuste o usuário do supervisor.", "warning")
+        # Supervisor: sempre restrito às EMP(s) permitidas do usuário (usuario_emps ativo, com fallback no campo legado usuarios.emp)
+        allowed = [str(e).strip() for e in (_allowed_emps() or []) if str(e).strip()]
+        if not allowed and emp_usuario:
+            allowed = [str(emp_usuario).strip()]
+        allowed = sorted(set(allowed))
+
+        if not allowed:
+            flash("Supervisor sem EMP vinculada. Ajuste o vínculo do usuário (usuario_emps).", "warning")
             emps_scope = []
         else:
-            emps_scope = [str(emp_usuario)]
+            if emps_sel:
+                pick = [str(e).strip() for e in emps_sel if str(e).strip() in set(allowed)]
+                emps_scope = pick if pick else allowed[:]
+            else:
+                emps_scope = allowed[:]
+
     else:
-        # vendedor
-        base_emps = _get_emps_vendedor(vendedor_logado)
-        emps_scope = [e for e in base_emps if (not emps_sel or str(e) in {str(x) for x in emps_sel})]
+        # Vendedor: sempre restrito ao próprio vendedor, e às EMPs onde ele tem vendas (ou vínculos)
+        base_emps = [str(e).strip() for e in (_get_emps_vendedor(vendedor_logado) or []) if str(e).strip()]
+        if not base_emps:
+            # fallback: se existir vínculo em usuario_emps, usa como escopo
+            base_emps = [str(e).strip() for e in (_allowed_emps() or []) if str(e).strip()]
+        base_emps = sorted(set(base_emps))
+
+        if emps_sel:
+            wanted = {str(x).strip() for x in emps_sel if str(x).strip()}
+            emps_scope = [e for e in base_emps if e in wanted]
+        else:
+            emps_scope = base_emps[:]
+
         if not emps_scope:
-            flash("Não foi possível identificar a EMP do vendedor pelas vendas.", "warning")
-
-
-    # Se ainda não há seleção explícita de EMP (especialmente para vendedor),
+            flash("Não foi possível identificar a EMP do vendedor.", "warning")
+# Se ainda não há seleção explícita de EMP (especialmente para vendedor),
     # assume o escopo permitido para que o relatório carregue automaticamente.
     if role != "admin" and not emps_sel and emps_scope:
         emps_sel = [str(e) for e in emps_scope]
@@ -3521,6 +3534,13 @@ def relatorio_campanhas():
                 "fechado": bool(fech_map.get(emp, False)),
                 "campanhas_qtd": campanhas_qtd_defs,
                 "combos": combos_defs,
+                "itens_parados": (
+                    db.query(ItemParado)
+                    .filter(ItemParado.emp == emp)
+                    .filter(ItemParado.ativo == 1)
+                    .order_by(ItemParado.codigo.asc())
+                    .all()
+                ),
             })
 
             # -------- Resultados (Tab B/C) --------
@@ -3578,6 +3598,51 @@ def relatorio_campanhas():
                 print(f"[RELATORIO_CAMPANHAS] aviso: não foi possível montar detalhes de combo: {_e}")
                 combo_items_by_combo = {}
                 combo_calc_cache = {}
+
+
+            # -------- Itens Parados (resultado por vendedor no período) --------
+            # Regra (igual /itens_parados): recompensa = SUM(valor_total OA) * (recompensa_pct/100) por código
+            itens_parados_defs = []
+            itens_parados_por_codigo = {}
+            try:
+                itens_parados_defs = (
+                    db.query(ItemParado)
+                    .filter(ItemParado.emp == emp)
+                    .filter(ItemParado.ativo == 1)
+                    .order_by(ItemParado.codigo.asc())
+                    .all()
+                )
+                for itp in (itens_parados_defs or []):
+                    cod = str(getattr(itp, "codigo", "") or "").strip()
+                    if cod:
+                        itens_parados_por_codigo[cod] = itp
+            except Exception as _e:
+                print(f"[RELATORIO_CAMPANHAS] aviso: não foi possível carregar itens_parados da EMP {emp}: {_e}")
+                itens_parados_defs = []
+                itens_parados_por_codigo = {}
+
+            itens_parados_venda_map = {}  # (vendedor, codigo) -> total_vendido
+            if itens_parados_por_codigo:
+                try:
+                    start_p, end_p = _periodo_bounds(int(ano), int(mes))
+                    codigos = list(itens_parados_por_codigo.keys())
+                    qpar = (
+                        db.query(func.upper(Venda.vendedor), Venda.mestre, func.coalesce(func.sum(Venda.valor_total), 0.0))
+                        .filter(Venda.emp == emp)
+                        .filter(Venda.movimento >= start_p)
+                        .filter(Venda.movimento < end_p)
+                        .filter(Venda.mov_tipo_movto == 'OA')
+                        .filter(func.upper(Venda.vendedor).in_([v.strip().upper() for v in vendedores]))
+                        .filter(Venda.mestre.in_(codigos))
+                        .group_by(func.upper(Venda.vendedor), Venda.mestre)
+                    )
+                    for vend_u, mestre, total in qpar.all():
+                        vv = (vend_u or "").strip().upper()
+                        cc = str(mestre or "").strip()
+                        itens_parados_venda_map[(vv, cc)] = float(total or 0.0)
+                except Exception as _e:
+                    print(f"[RELATORIO_CAMPANHAS] aviso: não foi possível calcular itens_parados da EMP {emp}: {_e}")
+                    itens_parados_venda_map = {}
 
             # agrupa por vendedor e unifica (QTD + COMBO)
             by_vend = {}
@@ -3654,6 +3719,38 @@ def relatorio_campanhas():
                     "status_pagamento": r.status_pagamento,
                     "periodo": f"{r.data_inicio} → {r.data_fim}",
                 })
+
+
+            # adiciona Itens Parados no agrupamento (como "campanha")
+            if itens_parados_por_codigo:
+                try:
+                    start_p, end_p = _periodo_bounds(int(ano), int(mes))
+                    periodo_txt = f"{start_p} → {end_p}"
+                except Exception:
+                    periodo_txt = ""
+                for (vv, cc), total_base in (itens_parados_venda_map or {}).items():
+                    itp = (itens_parados_por_codigo or {}).get(cc)
+                    if not itp:
+                        continue
+                    pct = float(getattr(itp, "recompensa_pct", 0.0) or 0.0)
+                    desc = (getattr(itp, "descricao", None) or "").strip()
+                    valor = (float(total_base or 0.0) * (pct / 100.0)) if (total_base or 0.0) > 0 and pct > 0 else 0.0
+                    # para o consolidado, só mostramos itens que geraram VALOR de recompensa no período
+                    if float(valor or 0.0) <= 0.0:
+                        continue
+                    by_vend.setdefault(vv, []).append({
+                        "tipo": "PARADO",
+                        "titulo": "Itens Parados",
+                        "marca": "",
+                        "produto": cc,
+                        "descricao": desc,
+                        "valor_base": float(total_base or 0.0),
+                        "pct": pct,
+                        "valor_recompensa": float(valor or 0.0),
+                        "atingiu": 1 if valor > 0 else 0,
+                        "status_pagamento": "-",
+                        "periodo": periodo_txt,
+                    })
 
             # ordena campanhas dentro do vendedor (maior recompensa primeiro)
             vendedores_cards = []
