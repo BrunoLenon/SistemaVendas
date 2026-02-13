@@ -174,12 +174,21 @@ def _idle_timeout():
     return None
 
 
-# Garante tabelas
-try:
-    criar_tabelas()
-except Exception:
-    app.logger.exception("Falha ao criar/verificar tabelas")
-
+# Schema / migrações
+# IMPORTANTE:
+# - Evite executar alterações de schema automaticamente no startup do app (request path).
+# - Para ambientes de DEV/primeiro deploy, habilite explicitamente via env var.
+#
+# Como usar:
+#   AUTO_MIGRATE=1  -> executa criar_tabelas() na inicialização
+#
+# Em produção, mantenha AUTO_MIGRATE=0 e rode migrações de forma controlada.
+if os.getenv("AUTO_MIGRATE", "0") == "1":
+    try:
+        criar_tabelas()
+        app.logger.info("AUTO_MIGRATE=1 -> criar_tabelas() executado com sucesso")
+    except Exception:
+        app.logger.exception("Falha ao criar/verificar tabelas (AUTO_MIGRATE=1)")
 # Blueprints (organização do app)
 try:
     from blueprints.auth import bp as auth_bp
