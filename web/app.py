@@ -2821,10 +2821,10 @@ _campanhas_deps = CampanhasDeps(
     campanhas_mes_overlap=_campanhas_mes_overlap,
     upsert_resultado=_upsert_resultado,
     calc_resultado_all_vendedores=_calc_resultado_all_vendedores,
-    get_emps_com_vendas_no_periodo=_get_emps_com_vendas_no_periodo,
-    get_vendedores_emp_no_periodo=_get_vendedores_emp_no_periodo,
-    recalcular_resultados_campanhas_para_scope=_recalcular_resultados_campanhas_para_scope,
-    recalcular_resultados_combos_para_scope=_recalcular_resultados_combos_para_scope,
+    get_emps_com_vendas_no_periodo=lambda ano, mes: _get_emps_com_vendas_no_periodo(ano, mes),
+    get_vendedores_emp_no_periodo=lambda emp, ano, mes: _get_vendedores_emp_no_periodo(emp, ano, mes),
+    recalcular_resultados_campanhas_para_scope=lambda **kwargs: _recalcular_resultados_campanhas_para_scope(**kwargs),
+    recalcular_resultados_combos_para_scope=lambda **kwargs: _recalcular_resultados_combos_para_scope(**kwargs),
 )
 
 @app.get("/campanhas")
