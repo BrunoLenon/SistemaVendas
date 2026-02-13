@@ -1449,40 +1449,14 @@ def _dados_from_cache(vendedor_alvo, mes, ano, emp_scope):
 
     total_liquido_periodo = float(getattr(row, "total_liquido_periodo", None) or valor_atual)
 
-    # ---- mês anterior ----
+    # ---- mês anterior (cache) ----
     if mes == 1:
         prev_mes, prev_ano = 12, ano - 1
     else:
         prev_mes, prev_ano = mes - 1, ano
 
     prev_row = _get_cache_row(vendedor_alvo, prev_ano, prev_mes, emp_scope)
-    if prev_row:
-        valor_mes_anterior = float(getattr(prev_row, "valor_liquido", 0) or 0)
-    else:
-        # Fallback: quando o cache do mês anterior ainda não existe (muito comum),
-        # calcula o líquido do mês anterior ao vivo para não mostrar "R$ 0,00" indevidamente.
-        try:
-            s_ant = date(prev_ano, prev_mes, 1)
-            e_ant = date(prev_ano + 1, 1, 1) if prev_mes == 12 else date(prev_ano, prev_mes + 1, 1)
-
-            with SessionLocal() as db:
-                q = db.query(Venda).filter(Venda.vendedor == vendedor_alvo)
-
-                if emp_scope:
-                    if isinstance(emp_scope, (list, tuple, set)):
-                        emps = [str(e).strip() for e in emp_scope if e is not None and str(e).strip()]
-                        if emps:
-                            q = q.filter(Venda.emp.in_(emps))
-                    else:
-                        q = q.filter(Venda.emp == str(emp_scope))
-
-                signed = case((Venda.mov_tipo_movto.in_(['DS','CA']), -Venda.valor_total), else_=Venda.valor_total)
-                valor_mes_anterior = float(q.filter(Venda.movimento >= s_ant, Venda.movimento < e_ant)
-                                          .with_entities(func.coalesce(func.sum(signed), 0.0))
-                                          .scalar() or 0.0)
-        except Exception:
-            app.logger.exception("Erro ao calcular mês anterior ao vivo")
-            valor_mes_anterior = 0.0
+    valor_mes_anterior = float(getattr(prev_row, "valor_liquido", 0) or 0) if prev_row else 0.0
 
     crescimento_mes_anterior = None
     if prev_row and valor_mes_anterior != 0:
@@ -3435,54 +3409,41 @@ def relatorio_campanhas():
     vendedor_logado = (_usuario_logado() or "").strip().upper()
     vendedores_sel = [str(v).strip().upper() for v in _parse_multi_args("vendedor") if str(v).strip()]
 
-    # Para SUPERVISOR/VENDEDOR: se não veio EMP no filtro, vamos preencher depois com o escopo permitido
-    # (evita tela "Selecione uma EMP" e garante que o relatório carregue direto no acesso do usuário).
+    # Para SUPERVISOR/VENDEDOR: se não veio EMP no filtro, pré-seleciona automaticamente
+    # evitando tela "Selecione uma EMP" e garantindo que o relatório abra direto no escopo permitido.
+    if role == "supervisor":
+        if not emps_sel and emp_usuario:
+            emps_sel = [str(emp_usuario)]
+    elif role != "admin":
+        # vendedor
+        if not emps_sel:
+            # tenta usar EMPs do vendedor; se ainda não souber, será preenchido após emps_scope
+            emps_sel = []
 
-    # Define escopo de EMPs e vendedores
+    # Define escopo de EMPs e vendedores    # Define escopo de EMPs e vendedores
     emps_scope: list[str] = []
     vendedores_por_emp: dict[str, list[str]] = {}
 
     if role == "admin":
-        # Admin: pode ver todas as EMPs com vendas no período, ou filtrar por EMP(s)
         if emps_sel:
             emps_scope = emps_sel
         else:
             emps_scope = _get_emps_com_vendas_no_periodo(ano, mes)
-
     elif role == "supervisor":
-        # Supervisor: sempre restrito às EMP(s) permitidas do usuário (usuario_emps ativo, com fallback no campo legado usuarios.emp)
-        allowed = [str(e).strip() for e in (_allowed_emps() or []) if str(e).strip()]
-        if not allowed and emp_usuario:
-            allowed = [str(emp_usuario).strip()]
-        allowed = sorted(set(allowed))
-
-        if not allowed:
-            flash("Supervisor sem EMP vinculada. Ajuste o vínculo do usuário (usuario_emps).", "warning")
+        if not emp_usuario:
+            flash("Supervisor sem EMP cadastrada. Ajuste o usuário do supervisor.", "warning")
             emps_scope = []
         else:
-            if emps_sel:
-                pick = [str(e).strip() for e in emps_sel if str(e).strip() in set(allowed)]
-                emps_scope = pick if pick else allowed[:]
-            else:
-                emps_scope = allowed[:]
-
+            emps_scope = [str(emp_usuario)]
     else:
-        # Vendedor: sempre restrito ao próprio vendedor, e às EMPs onde ele tem vendas (ou vínculos)
-        base_emps = [str(e).strip() for e in (_get_emps_vendedor(vendedor_logado) or []) if str(e).strip()]
-        if not base_emps:
-            # fallback: se existir vínculo em usuario_emps, usa como escopo
-            base_emps = [str(e).strip() for e in (_allowed_emps() or []) if str(e).strip()]
-        base_emps = sorted(set(base_emps))
-
-        if emps_sel:
-            wanted = {str(x).strip() for x in emps_sel if str(x).strip()}
-            emps_scope = [e for e in base_emps if e in wanted]
-        else:
-            emps_scope = base_emps[:]
-
+        # vendedor
+        base_emps = _get_emps_vendedor(vendedor_logado)
+        emps_scope = [e for e in base_emps if (not emps_sel or str(e) in {str(x) for x in emps_sel})]
         if not emps_scope:
-            flash("Não foi possível identificar a EMP do vendedor.", "warning")
-# Se ainda não há seleção explícita de EMP (especialmente para vendedor),
+            flash("Não foi possível identificar a EMP do vendedor pelas vendas.", "warning")
+
+
+    # Se ainda não há seleção explícita de EMP (especialmente para vendedor),
     # assume o escopo permitido para que o relatório carregue automaticamente.
     if role != "admin" and not emps_sel and emps_scope:
         emps_sel = [str(e) for e in emps_scope]
@@ -3560,13 +3521,6 @@ def relatorio_campanhas():
                 "fechado": bool(fech_map.get(emp, False)),
                 "campanhas_qtd": campanhas_qtd_defs,
                 "combos": combos_defs,
-                "itens_parados": (
-                    db.query(ItemParado)
-                    .filter(ItemParado.emp == emp)
-                    .filter(ItemParado.ativo == 1)
-                    .order_by(ItemParado.codigo.asc())
-                    .all()
-                ),
             })
 
             # -------- Resultados (Tab B/C) --------
@@ -3624,51 +3578,6 @@ def relatorio_campanhas():
                 print(f"[RELATORIO_CAMPANHAS] aviso: não foi possível montar detalhes de combo: {_e}")
                 combo_items_by_combo = {}
                 combo_calc_cache = {}
-
-
-            # -------- Itens Parados (resultado por vendedor no período) --------
-            # Regra (igual /itens_parados): recompensa = SUM(valor_total OA) * (recompensa_pct/100) por código
-            itens_parados_defs = []
-            itens_parados_por_codigo = {}
-            try:
-                itens_parados_defs = (
-                    db.query(ItemParado)
-                    .filter(ItemParado.emp == emp)
-                    .filter(ItemParado.ativo == 1)
-                    .order_by(ItemParado.codigo.asc())
-                    .all()
-                )
-                for itp in (itens_parados_defs or []):
-                    cod = str(getattr(itp, "codigo", "") or "").strip()
-                    if cod:
-                        itens_parados_por_codigo[cod] = itp
-            except Exception as _e:
-                print(f"[RELATORIO_CAMPANHAS] aviso: não foi possível carregar itens_parados da EMP {emp}: {_e}")
-                itens_parados_defs = []
-                itens_parados_por_codigo = {}
-
-            itens_parados_venda_map = {}  # (vendedor, codigo) -> total_vendido
-            if itens_parados_por_codigo:
-                try:
-                    start_p, end_p = _periodo_bounds(int(ano), int(mes))
-                    codigos = list(itens_parados_por_codigo.keys())
-                    qpar = (
-                        db.query(func.upper(Venda.vendedor), Venda.mestre, func.coalesce(func.sum(Venda.valor_total), 0.0))
-                        .filter(Venda.emp == emp)
-                        .filter(Venda.movimento >= start_p)
-                        .filter(Venda.movimento < end_p)
-                        .filter(Venda.mov_tipo_movto == 'OA')
-                        .filter(func.upper(Venda.vendedor).in_([v.strip().upper() for v in vendedores]))
-                        .filter(Venda.mestre.in_(codigos))
-                        .group_by(func.upper(Venda.vendedor), Venda.mestre)
-                    )
-                    for vend_u, mestre, total in qpar.all():
-                        vv = (vend_u or "").strip().upper()
-                        cc = str(mestre or "").strip()
-                        itens_parados_venda_map[(vv, cc)] = float(total or 0.0)
-                except Exception as _e:
-                    print(f"[RELATORIO_CAMPANHAS] aviso: não foi possível calcular itens_parados da EMP {emp}: {_e}")
-                    itens_parados_venda_map = {}
 
             # agrupa por vendedor e unifica (QTD + COMBO)
             by_vend = {}
@@ -3745,38 +3654,6 @@ def relatorio_campanhas():
                     "status_pagamento": r.status_pagamento,
                     "periodo": f"{r.data_inicio} → {r.data_fim}",
                 })
-
-
-            # adiciona Itens Parados no agrupamento (como "campanha")
-            if itens_parados_por_codigo:
-                try:
-                    start_p, end_p = _periodo_bounds(int(ano), int(mes))
-                    periodo_txt = f"{start_p} → {end_p}"
-                except Exception:
-                    periodo_txt = ""
-                for (vv, cc), total_base in (itens_parados_venda_map or {}).items():
-                    itp = (itens_parados_por_codigo or {}).get(cc)
-                    if not itp:
-                        continue
-                    pct = float(getattr(itp, "recompensa_pct", 0.0) or 0.0)
-                    desc = (getattr(itp, "descricao", None) or "").strip()
-                    valor = (float(total_base or 0.0) * (pct / 100.0)) if (total_base or 0.0) > 0 and pct > 0 else 0.0
-                    # para o consolidado, só mostramos itens que geraram VALOR de recompensa no período
-                    if float(valor or 0.0) <= 0.0:
-                        continue
-                    by_vend.setdefault(vv, []).append({
-                        "tipo": "PARADO",
-                        "titulo": "Itens Parados",
-                        "marca": "",
-                        "produto": cc,
-                        "descricao": desc,
-                        "valor_base": float(total_base or 0.0),
-                        "pct": pct,
-                        "valor_recompensa": float(valor or 0.0),
-                        "atingiu": 1 if valor > 0 else 0,
-                        "status_pagamento": "-",
-                        "periodo": periodo_txt,
-                    })
 
             # ordena campanhas dentro do vendedor (maior recompensa primeiro)
             vendedores_cards = []
@@ -5025,17 +4902,6 @@ def admin_resumos_periodo():
     if request.method == 'POST' and acao:
         # alvo do POST (permite editar/cadastrar resumos em um período diferente do filtro)
         emp_alvo = _emp_norm(request.form.get('emp_edit') or emp)
-
-        # Se a EMP não vier no POST (alguns modais não enviam), tenta inferir pelo escopo do usuário.
-        # Importante para que Dashboard/Metas encontrem a base do ano passado corretamente.
-        if not emp_alvo:
-            try:
-                allowed_tmp = session.get('allowed_emps') or _allowed_emps()
-            except Exception:
-                allowed_tmp = []
-            if isinstance(allowed_tmp, (list, tuple)) and len(allowed_tmp) == 1:
-                emp_alvo = _emp_norm(allowed_tmp[0])
-
         try:
             ano_alvo = int(request.form.get('ano_edit') or ano)
         except Exception:
@@ -5377,7 +5243,7 @@ def admin_resumos_periodo():
             VendasResumoPeriodo.mes == mes,
         )
         if emp:
-            q = q.filter(or_(VendasResumoPeriodo.emp == emp, VendasResumoPeriodo.emp.in_(['', 'EMPTY'])))
+            q = q.filter(VendasResumoPeriodo.emp == emp)
         if vendedor:
             q = q.filter(VendasResumoPeriodo.vendedor == vendedor)
         registros = q.order_by(VendasResumoPeriodo.vendedor.asc()).all()
@@ -5388,7 +5254,7 @@ def admin_resumos_periodo():
             VendasResumoPeriodo.ano == ano_passado,
         )
         if emp:
-            q2 = q2.filter(or_(VendasResumoPeriodo.emp == emp, VendasResumoPeriodo.emp.in_(['', 'EMPTY'])))
+            q2 = q2.filter(VendasResumoPeriodo.emp == emp)
         if vendedor:
             q2 = q2.filter(VendasResumoPeriodo.vendedor == vendedor)
 
@@ -6506,42 +6372,6 @@ def _sql_valor_marcas_signed(marcas: list[str]):
 
 
 def _query_valor_mes(db, ano: int, mes: int, emp: str, vendedor: str) -> float:
-    """Retorna o valor líquido do mês para (EMP, vendedor).
-    Prioridade:
-      1) Base manual/importada em vendas_resumo_periodo (ano/mes do registro)
-      2) Fallback: cálculo direto na tabela vendas (signed OA/DS/CA)
-    Observação: versões antigas gravaram emp como ''/EMPTY; fazemos fallback seguro.
-    """
-    vend = (vendedor or '').strip().upper()
-    emp_n = _emp_norm(emp)
-
-    # 1) tenta base manual (resumo)
-    try:
-        q = (
-            db.query(VendasResumoPeriodo.valor_venda)
-            .filter(
-                VendasResumoPeriodo.vendedor == vend,
-                VendasResumoPeriodo.ano == ano,
-                VendasResumoPeriodo.mes == mes,
-            )
-        )
-        if emp_n:
-            q_emp = q.filter(VendasResumoPeriodo.emp == emp_n).one_or_none()
-            if q_emp is not None:
-                return float(q_emp[0] or 0.0)
-            # fallback compat: registros antigos sem emp
-            q_fallback = q.filter(VendasResumoPeriodo.emp.in_(['', 'EMPTY'])).one_or_none()
-            if q_fallback is not None:
-                return float(q_fallback[0] or 0.0)
-        else:
-            # se emp vier vazio, tenta pegar qualquer um (mas preferimos ''/EMPTY)
-            q_fallback = q.filter(VendasResumoPeriodo.emp.in_(['', 'EMPTY'])).one_or_none()
-            if q_fallback is not None:
-                return float(q_fallback[0] or 0.0)
-    except Exception:
-        pass
-
-    # 2) fallback: cálculo na tabela vendas
     inicio, fim = _periodo_bounds_ym(ano, mes)
     sql = f"""
       SELECT {_sql_valor_mes_signed()} AS valor_mes
@@ -6550,45 +6380,16 @@ def _query_valor_mes(db, ano: int, mes: int, emp: str, vendedor: str) -> float:
         AND vendedor = :vendedor
         AND movimento BETWEEN :ini AND :fim
     """
-    row = db.execute(text(sql), {"emp": emp_n, "vendedor": vend, "ini": inicio, "fim": fim}).fetchone()
+    row = db.execute(text(sql), {"emp": emp, "vendedor": vendedor, "ini": inicio, "fim": fim}).fetchone()
     return float(row[0] or 0.0) if row else 0.0
 
 
 def _query_mix_itens(db, ano: int, mes: int, emp: str, vendedor: str) -> float:
-    """Retorna MIX (qtd de itens/produtos) do mês para (EMP, vendedor).
-    Prioridade:
-      1) Base manual/importada em vendas_resumo_periodo.mix_produtos
-      2) Fallback: cálculo na tabela vendas (qtd_liquida > 0 por mestre)
-    Compat: emp antigo ''/EMPTY.
+    """MIX = count de mestre com qtd_liquida > 0, onde:
+       - CA entra como negativo
+       - DS não entra no mix
+       - demais entram positivo
     """
-    vend = (vendedor or '').strip().upper()
-    emp_n = _emp_norm(emp)
-
-    # 1) tenta base manual (resumo)
-    try:
-        q = (
-            db.query(VendasResumoPeriodo.mix_produtos)
-            .filter(
-                VendasResumoPeriodo.vendedor == vend,
-                VendasResumoPeriodo.ano == ano,
-                VendasResumoPeriodo.mes == mes,
-            )
-        )
-        if emp_n:
-            q_emp = q.filter(VendasResumoPeriodo.emp == emp_n).one_or_none()
-            if q_emp is not None:
-                return float(q_emp[0] or 0.0)
-            q_fallback = q.filter(VendasResumoPeriodo.emp.in_(['', 'EMPTY'])).one_or_none()
-            if q_fallback is not None:
-                return float(q_fallback[0] or 0.0)
-        else:
-            q_fallback = q.filter(VendasResumoPeriodo.emp.in_(['', 'EMPTY'])).one_or_none()
-            if q_fallback is not None:
-                return float(q_fallback[0] or 0.0)
-    except Exception:
-        pass
-
-    # 2) fallback: calcula no detalhe em vendas
     inicio, fim = _periodo_bounds_ym(ano, mes)
     sql = """
       WITH por_produto AS (
@@ -6612,7 +6413,7 @@ def _query_mix_itens(db, ano: int, mes: int, emp: str, vendedor: str) -> float:
       FROM por_produto
       WHERE qtd_liquida > 0
     """
-    row = db.execute(text(sql), {"emp": emp_n, "vendedor": vend, "ini": inicio, "fim": fim}).fetchone()
+    row = db.execute(text(sql), {"emp": emp, "vendedor": vendedor, "ini": inicio, "fim": fim}).fetchone()
     return float(row[0] or 0.0) if row else 0.0
 
 
