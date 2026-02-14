@@ -224,10 +224,6 @@ def build_relatorio_campanhas_scope(
     emps_sel = [str(e).strip() for e in deps.parse_multi_args(args, "emp") if str(e).strip()]
     vendedores_sel = [str(v).strip().upper() for v in deps.parse_multi_args(args, "vendedor") if str(v).strip()]
 
-    # Multi-select pode enviar "__ALL__" quando "Selecionar todos" está marcado
-    emps_sel = [e for e in emps_sel if (e or "").strip() != "__ALL__"]
-    vendedores_sel = [v for v in vendedores_sel if (v or "").strip().upper() != "__ALL__"]
-
     emps_scope: list[str] = []
     vendedores_por_emp: dict[str, list[str]] = {}
 

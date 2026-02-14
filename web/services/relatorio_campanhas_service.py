@@ -5,11 +5,7 @@ from datetime import date, datetime
 import datetime
 from typing import Any, Callable
 
-from flask import request
-
-from services.cache_policy import wants_recalc, is_stale
-
-from sqlalchemy import or_, func
+from sqlalchemy import or_
 
 from db import (
     SessionLocal,
@@ -103,9 +99,6 @@ def build_relatorio_campanhas_context(
     vendedores_sel: list[str],
     vendedores_por_emp: dict[str, list[str]],
     flash: Callable[[str, str], None],
-    force_recalc: bool | None = None,
-    cache_ttl_minutes: int | None = None,
-    **_ignored: Any,
 ) -> dict[str, Any]:
     """Monta o contexto completo do template relatorio_campanhas.html.
 
@@ -118,89 +111,21 @@ def build_relatorio_campanhas_context(
     if role_l != "admin" and not emps_sel and emps_scope:
         emps_sel = [str(e) for e in emps_scope]
 
-    # Normaliza seleção de EMPs (evita tokens especiais do dropdown)
-    emps_sel = [
-        str(e) for e in (emps_sel or [])
-        if str(e).strip() and str(e) not in ("__ALL__", "ALL", "*")
-    ]
-    emps_process = emps_sel or emps_scope
-
-    # Evita 'vendedores fantasmas' (nomes vindos do histórico de vendas sem usuário cadastrado)
-    vendedores_por_emp = _filtrar_vendedores_por_emp(db, emps_process, vendedores_por_emp)
-
-    # Cache policy: por padrão NÃO recalcula ao abrir a página.
-    # Recalcula somente quando:
-    #   - usuário pediu explicitamente (?recalc=1), OU
-    #   - não existe nenhum resultado salvo (cache miss), OU
-    #   - resultados estão "stale" (TTL).
-    recalc = wants_recalc(request)
-    if force_recalc is not None:
-        recalc = bool(force_recalc)
-    ttl_minutes = int(cache_ttl_minutes) if cache_ttl_minutes is not None else 30
-
+    # Recalcula snapshots do escopo para garantir relatório correto
+    # Compatibilidade: em versões antigas o helper recebe `emps`, em outras `emps_scope`.
     try:
-        with deps.SessionLocal() as _db:
-            # cache miss: se não há nenhum resultado salvo para o escopo
-            any_qtd = _db.query(CampanhaQtdResultado.id).filter(
-                CampanhaQtdResultado.competencia_ano == int(ano),
-                CampanhaQtdResultado.competencia_mes == int(mes),
-                CampanhaQtdResultado.emp.in_([str(e) for e in emps_process]),
-            ).first()
-            any_combo = _db.query(CampanhaComboResultado.id).filter(
-                CampanhaComboResultado.competencia_ano == int(ano),
-                CampanhaComboResultado.competencia_mes == int(mes),
-                CampanhaComboResultado.emp.in_([str(e) for e in emps_process]),
-            ).first()
-
-            if not recalc and not (any_qtd or any_combo):
-                recalc = True
-
-            if not recalc:
-                last_qtd = _db.query(func.max(CampanhaQtdResultado.atualizado_em)).filter(
-                    CampanhaQtdResultado.competencia_ano == int(ano),
-                    CampanhaQtdResultado.competencia_mes == int(mes),
-                    CampanhaQtdResultado.emp.in_([str(e) for e in emps_process]),
-                ).scalar()
-
-                last_combo = _db.query(func.max(CampanhaComboResultado.atualizado_em)).filter(
-                    CampanhaComboResultado.competencia_ano == int(ano),
-                    CampanhaComboResultado.competencia_mes == int(mes),
-                    CampanhaComboResultado.emp.in_([str(e) for e in emps_process]),
-                ).scalar()
-
-                latest = last_qtd or last_combo
-                if last_qtd and last_combo:
-                    latest = max(last_qtd, last_combo)
-
-                if is_stale(latest, ttl_minutes):
-                    recalc = True
-    except Exception:
-        # Se não conseguimos avaliar cache, não recalcula automaticamente
-        pass
-
-    if recalc:
         try:
-            # Compatibilidade: em versões antigas o helper recebe `emps`, em outras `emps_scope`.
-            try:
-                deps.recalcular_resultados_campanhas_para_scope(
-                    ano=ano, mes=mes, emps=emps_process, vendedores_por_emp=vendedores_por_emp
-                )
-            except TypeError:
-                deps.recalcular_resultados_campanhas_para_scope(
-                    ano=ano, mes=mes, emps_scope=emps_process, vendedores_por_emp=vendedores_por_emp
-                )
+            deps.recalcular_resultados_campanhas_para_scope(ano=ano, mes=mes, emps=emps_scope, vendedores_por_emp=vendedores_por_emp)
+        except TypeError:
+            deps.recalcular_resultados_campanhas_para_scope(ano=ano, mes=mes, emps_scope=emps_scope, vendedores_por_emp=vendedores_por_emp)
 
-            try:
-                deps.recalcular_resultados_combos_para_scope(
-                    ano=ano, mes=mes, emps=emps_process, vendedores_por_emp=vendedores_por_emp
-                )
-            except TypeError:
-                deps.recalcular_resultados_combos_para_scope(
-                    ano=ano, mes=mes, emps_scope=emps_process, vendedores_por_emp=vendedores_por_emp
-                )
-        except Exception as e:
-            print(f"[RELATORIO_CAMPANHAS] erro ao recalcular snapshots: {e}")
-            flash("Não foi possível recalcular os resultados das campanhas agora. Exibindo dados já salvos.", "warning")
+        try:
+            deps.recalcular_resultados_combos_para_scope(ano=ano, mes=mes, emps=emps_scope, vendedores_por_emp=vendedores_por_emp)
+        except TypeError:
+            deps.recalcular_resultados_combos_para_scope(ano=ano, mes=mes, emps_scope=emps_scope, vendedores_por_emp=vendedores_por_emp)
+    except Exception as e:
+        print(f"[RELATORIO_CAMPANHAS] erro ao recalcular snapshots: {e}")
+        flash("Não foi possível recalcular os resultados das campanhas agora. Exibindo dados já salvos.", "warning")
 
     emps_todos: list[dict[str, Any]] = []  # tab A (cadastros)
     emps_abertas: list[dict[str, Any]] = []
@@ -221,10 +146,36 @@ def build_relatorio_campanhas_context(
         except Exception:
             fech_map = {}
 
+        emps_process = emps_sel or emps_scope
+
+        # Evita "vendedores fantasmas": usa apenas vendedores cadastrados (role=vendedor) vinculados à EMP.
+        vendedores_cad_por_emp: dict[str, set[str]] = {}
+        try:
+            emps_q = [str(e) for e in (emps_process or []) if str(e).strip()]
+            if emps_q:
+                rows_v = (
+                    db.query(Usuario.username, UsuarioEmp.emp)
+                    .join(UsuarioEmp, UsuarioEmp.usuario_id == Usuario.id)
+                    .filter(Usuario.role == "vendedor")
+                    .filter(UsuarioEmp.ativo.is_(True))
+                    .filter(UsuarioEmp.emp.in_(emps_q))
+                    .all()
+                )
+                for uname, empv in rows_v:
+                    vendedores_cad_por_emp.setdefault(str(empv), set()).add(str(uname).upper())
+        except Exception:
+            vendedores_cad_por_emp = {}
+
 
         for emp in emps_process:
             emp = str(emp)
             vendedores = vendedores_por_emp.get(emp) or []
+
+            # filtra para manter somente vendedores cadastrados nesta EMP (se disponível)
+            cad = vendedores_cad_por_emp.get(str(emp)) if vendedores_cad_por_emp else None
+            if cad:
+                vendedores = [v for v in vendedores if str(v).upper() in cad]
+
             if not vendedores:
                 continue
 
@@ -300,8 +251,7 @@ def build_relatorio_campanhas_context(
             qtd_camp_map: dict[int, Any] = {}
             try:
                 qtd_ids = {getattr(r, "campanha_id", None) for r in qtd_rows}
-                qtd_ids |= {getattr(r, "campanha_qtd_id", None) for r in qtd_rows}
-                qtd_ids = {int(i) for i in qtd_ids if i is not None}
+                qtd_ids = {i for i in qtd_ids if i is not None}
                 if qtd_ids:
                     for c in db.query(CampanhaQtd).filter(CampanhaQtd.id.in_(qtd_ids)).all():
                         cid = getattr(c, "id", None)
@@ -368,7 +318,7 @@ def build_relatorio_campanhas_context(
                                 "valor_vendido": float(base_val),
                                 "valor_recompensa": float(recompensa),
                                 "atingiu": True,
-                                "vigencia": f"Competência {int(mes):02d}/{int(ano)}",
+                                "vigencia": "",
                                 "status_pagamento": "PENDENTE",
                                 "origem": "PARADO",
                             })
@@ -405,14 +355,6 @@ def build_relatorio_campanhas_context(
 
                     if di and df:
                         vig = f"{_fmt(di)} → {_fmt(df)}"
-                        try:
-                            _df = df
-                            if isinstance(_df, datetime.datetime):
-                                _df = _df.date()
-                            if isinstance(_df, datetime.date) and datetime.date.today() > _df:
-                                vig += " (ENCERRADA)"
-                        except Exception:
-                            pass
                 except Exception:
                     vig = ""
 
@@ -490,12 +432,7 @@ def build_relatorio_campanhas_context(
                     payload["marca"] = marca
                     try:
                         if getattr(c, "data_inicio", None) and getattr(c, "data_fim", None):
-                            payload["vigencia"] = f"{c.data_inicio.strftime('%d/%m/%Y')} → {c.data_fim.strftime('%d/%m/%Y')}"
-                            try:
-                                if datetime.date.today() > c.data_fim:
-                                    payload["vigencia"] += " (ENCERRADA)"
-                            except Exception:
-                                pass
+                            payload["vigencia"] = f"{c.data_inicio} → {c.data_fim}"
                     except Exception:
                         pass
                     itens = combos_itens_map.get(cid) or []
@@ -583,39 +520,4 @@ def build_relatorio_campanhas_context(
         "vendedores_sel": vendedores_sel,
         "vendedores_options": vendedores_options,
         "vendedor": vendedor_logado,
-    
     }
-
-def _filtrar_vendedores_por_emp(session, emps: list[str], vendedores_por_emp: dict[str, list[str]] | None) -> dict[str, list[str]]:
-    """Remove 'vendedores fantasmas' (não cadastrados como usuário vendedor) do mapa emp->vendedores.
-    Mantém apenas usuários com role 'vendedor' e com vínculo com a EMP (Usuario.emp ou UsuarioEmp.emp).
-    """
-    if not emps:
-        return {}
-    # Coleta usuários vendedores vinculados às emps
-    q = session.query(Usuario.username).filter(Usuario.role == "vendedor")
-    # vínculo direto (coluna emp) OU via tabela de vínculo UsuarioEmp
-    q = q.filter(
-        or_(
-            Usuario.emp.in_(emps),
-            Usuario.id.in_(
-                session.query(UsuarioEmp.usuario_id).filter(UsuarioEmp.emp.in_(emps))
-            ),
-        )
-    )
-    valid = {r[0] for r in q.all()}
-    out: dict[str, list[str]] = {}
-    base = vendedores_por_emp or {}
-    for emp in emps:
-        lst = list(base.get(emp, []))
-        # filtra e remove duplicados preservando ordem
-        seen = set()
-        clean = []
-        for u in lst:
-            if u in valid and u not in seen:
-                seen.add(u)
-                clean.append(u)
-        out[emp] = clean
-    return out
-
-
