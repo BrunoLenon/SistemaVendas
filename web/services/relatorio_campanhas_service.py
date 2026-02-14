@@ -9,7 +9,7 @@ from flask import request
 
 from services.cache_policy import wants_recalc, is_stale
 
-from sqlalchemy import or_, and_, func
+from sqlalchemy import or_, func
 
 from db import (
     SessionLocal,
@@ -91,49 +91,6 @@ def _calc_qtd_por_vendedor_para_combo_item(
     return out
 
 
-
-
-def _vendedores_validos_por_emp(
-    db,
-    *,
-    emp: str,
-    vendedores_sel: list[str] | None,
-) -> list[str]:
-    """Retorna lista de vendedores (usuarios.role='vendedor') válidos para a EMP.
-
-    Regra:
-      - Preferência: vínculo em usuario_emps (ativo=true) para a EMP
-      - Fallback legado: usuarios.emp == EMP
-
-    Observação: sempre devolve nomes em UPPER e ordenados.
-    """
-    emp = str(emp).strip()
-
-    # normaliza seleção de vendedores
-    sel = [str(v).strip().upper() for v in (vendedores_sel or []) if str(v).strip()]
-    sel = [v for v in sel if v not in ("__ALL__", "ALL", "*", "TODOS", "TODAS")]
-
-    q = (
-        db.query(Usuario.username)
-        .outerjoin(UsuarioEmp, UsuarioEmp.usuario_id == Usuario.id)
-        .filter(
-            Usuario.role == "vendedor",
-            or_(
-                and_(UsuarioEmp.emp == emp, UsuarioEmp.ativo.is_(True)),
-                Usuario.emp == emp,
-            ),
-        )
-        .distinct()
-    )
-
-    if sel:
-        q = q.filter(func.upper(Usuario.username).in_(sel))
-
-    rows = q.all()
-    out = sorted({(r[0] or "").strip().upper() for r in rows if (r and r[0])})
-    return out
-
-
 def build_relatorio_campanhas_context(
     deps: CampanhasDeps,
     *,
@@ -146,6 +103,9 @@ def build_relatorio_campanhas_context(
     vendedores_sel: list[str],
     vendedores_por_emp: dict[str, list[str]],
     flash: Callable[[str, str], None],
+    force_recalc: bool | None = None,
+    cache_ttl_minutes: int | None = None,
+    **_ignored: Any,
 ) -> dict[str, Any]:
     """Monta o contexto completo do template relatorio_campanhas.html.
 
@@ -165,22 +125,8 @@ def build_relatorio_campanhas_context(
     ]
     emps_process = emps_sel or emps_scope
 
-    # (Anti 'vendedores fantasmas') Recalcula e exibe vendedores APENAS dos usuários cadastrados.
-    # Isso evita incluir vendedores que aparecem em vendas/importações mas não existem em `usuarios`.
-    vendedores_por_emp_valid: dict[str, list[str]] = {}
-    try:
-        with deps.SessionLocal() as _dbv:
-            for _emp in emps_process:
-                _emp = str(_emp)
-                vendedores_por_emp_valid[_emp] = _vendedores_validos_por_emp(
-                    _dbv, emp=_emp, vendedores_sel=vendedores_sel
-                )
-    except Exception:
-        # fallback: mantém o mapping recebido da rota
-        vendedores_por_emp_valid = vendedores_por_emp or {}
-
-    vendedores_por_emp = vendedores_por_emp_valid
-
+    # Evita 'vendedores fantasmas' (nomes vindos do histórico de vendas sem usuário cadastrado)
+    vendedores_por_emp = _filtrar_vendedores_por_emp(db, emps_process, vendedores_por_emp)
 
     # Cache policy: por padrão NÃO recalcula ao abrir a página.
     # Recalcula somente quando:
@@ -188,7 +134,9 @@ def build_relatorio_campanhas_context(
     #   - não existe nenhum resultado salvo (cache miss), OU
     #   - resultados estão "stale" (TTL).
     recalc = wants_recalc(request)
-    ttl_minutes = 30
+    if force_recalc is not None:
+        recalc = bool(force_recalc)
+    ttl_minutes = int(cache_ttl_minutes) if cache_ttl_minutes is not None else 30
 
     try:
         with deps.SessionLocal() as _db:
@@ -277,8 +225,6 @@ def build_relatorio_campanhas_context(
         for emp in emps_process:
             emp = str(emp)
             vendedores = vendedores_por_emp.get(emp) or []
-            if role_l == "vendedor":
-                vendedores = [str(vendedor_logado).strip().upper()]
             if not vendedores:
                 continue
 
@@ -637,4 +583,38 @@ def build_relatorio_campanhas_context(
         "vendedores_sel": vendedores_sel,
         "vendedores_options": vendedores_options,
         "vendedor": vendedor_logado,
-    }
+    
+def _filtrar_vendedores_por_emp(session, emps: list[str], vendedores_por_emp: dict[str, list[str]] | None) -> dict[str, list[str]]:
+    """Remove 'vendedores fantasmas' (não cadastrados como usuário vendedor) do mapa emp->vendedores.
+    Mantém apenas usuários com role 'vendedor' e com vínculo com a EMP (Usuario.emp ou UsuarioEmp.emp).
+    """
+    if not emps:
+        return {}
+    # Coleta usuários vendedores vinculados às emps
+    q = session.query(Usuario.username).filter(Usuario.role == "vendedor")
+    # vínculo direto (coluna emp) OU via tabela de vínculo UsuarioEmp
+    q = q.filter(
+        or_(
+            Usuario.emp.in_(emps),
+            Usuario.id.in_(
+                session.query(UsuarioEmp.usuario_id).filter(UsuarioEmp.emp.in_(emps))
+            ),
+        )
+    )
+    valid = {r[0] for r in q.all()}
+    out: dict[str, list[str]] = {}
+    base = vendedores_por_emp or {}
+    for emp in emps:
+        lst = list(base.get(emp, []))
+        # filtra e remove duplicados preservando ordem
+        seen = set()
+        clean = []
+        for u in lst:
+            if u in valid and u not in seen:
+                seen.add(u)
+                clean.append(u)
+        out[emp] = clean
+    return out
+
+
+}
