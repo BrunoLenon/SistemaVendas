@@ -584,6 +584,8 @@ def build_relatorio_campanhas_context(
         "vendedores_options": vendedores_options,
         "vendedor": vendedor_logado,
     
+    }
+
 def _filtrar_vendedores_por_emp(session, emps: list[str], vendedores_por_emp: dict[str, list[str]] | None) -> dict[str, list[str]]:
     """Remove 'vendedores fantasmas' (não cadastrados como usuário vendedor) do mapa emp->vendedores.
     Mantém apenas usuários com role 'vendedor' e com vínculo com a EMP (Usuario.emp ou UsuarioEmp.emp).
@@ -617,4 +619,3 @@ def _filtrar_vendedores_por_emp(session, emps: list[str], vendedores_por_emp: di
     return out
 
 
-}
