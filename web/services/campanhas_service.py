@@ -87,22 +87,27 @@ def build_campanhas_page_context(
     emp_param = (emp_list[0] if (len(emp_list) == 1) else "")
     emps_sel = [str(e).strip() for e in (emp_list or []) if str(e).strip()]
 
+    # Multi-select pode enviar "__ALL__" quando "Selecionar todos" está marcado
+    emps_sel = [e for e in emps_sel if (e or "").strip() != "__ALL__"]
+
     if role_l == "admin":
-        if emps_sel:
-            emps_scope = emps_sel
+        # Para admin, o dropdown deve sempre listar todas as EMPs elegíveis (não encolher após filtrar).
+        if vendedor_sel == "__ALL__":
+            emps_scope_all = deps.get_all_emp_codigos(True)
         else:
-            if vendedor_sel == "__ALL__":
-                emps_scope = deps.get_all_emp_codigos(True)
-            else:
-                base_v = vendedor_sel if vendedor_sel != "__MULTI__" else (vendedores_sel[0] if vendedores_sel else vendedor_logado)
-                emps_scope = deps.get_emps_vendedor(base_v)
+            base_v = vendedor_sel if vendedor_sel != "__MULTI__" else (vendedores_sel[0] if vendedores_sel else vendedor_logado)
+            emps_scope_all = deps.get_emps_vendedor(base_v) or deps.get_all_emp_codigos(True)
+        emps_scope = emps_scope_all
+        emps_process = emps_sel if emps_sel else emps_scope_all
     else:
         base_scope = deps.resolver_emp_scope_para_usuario(vendedor_logado, role_l, emp_usuario)
+        base_scope = [str(e).strip() for e in (base_scope or []) if str(e).strip()]
         if emps_sel:
             wanted = {str(x).strip() for x in emps_sel}
             emps_scope = [e for e in base_scope if str(e) in wanted]
         else:
             emps_scope = base_scope
+        emps_process = emps_scope
 
     inicio_mes, fim_mes = deps.periodo_bounds(ano, mes)
 
@@ -121,7 +126,7 @@ def build_campanhas_page_context(
         else:
             vendedores_alvo = [vendedor_sel]
 
-        for emp in emps_scope or ([emp_param] if emp_param else []):
+        for emp in emps_process or ([emp_param] if emp_param else []):
             emp = str(emp)
             campanhas = deps.campanhas_mes_overlap(ano, mes, emp)
 
