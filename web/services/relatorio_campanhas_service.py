@@ -5,7 +5,11 @@ from datetime import date, datetime
 import datetime
 from typing import Any, Callable
 
-from sqlalchemy import or_
+from flask import request
+
+from services.cache_policy import wants_recalc, is_stale
+
+from sqlalchemy import or_, func
 
 from db import (
     SessionLocal,
@@ -109,21 +113,84 @@ def build_relatorio_campanhas_context(
     if role_l != "admin" and not emps_sel and emps_scope:
         emps_sel = [str(e) for e in emps_scope]
 
-    # Recalcula snapshots do escopo para garantir relatório correto
-    # Compatibilidade: em versões antigas o helper recebe `emps`, em outras `emps_scope`.
-    try:
-        try:
-            deps.recalcular_resultados_campanhas_para_scope(ano=ano, mes=mes, emps=emps_scope, vendedores_por_emp=vendedores_por_emp)
-        except TypeError:
-            deps.recalcular_resultados_campanhas_para_scope(ano=ano, mes=mes, emps_scope=emps_scope, vendedores_por_emp=vendedores_por_emp)
+    # Normaliza seleção de EMPs (evita tokens especiais do dropdown)
+    emps_sel = [
+        str(e) for e in (emps_sel or [])
+        if str(e).strip() and str(e) not in ("__ALL__", "ALL", "*")
+    ]
+    emps_process = emps_sel or emps_scope
 
+    # Cache policy: por padrão NÃO recalcula ao abrir a página.
+    # Recalcula somente quando:
+    #   - usuário pediu explicitamente (?recalc=1), OU
+    #   - não existe nenhum resultado salvo (cache miss), OU
+    #   - resultados estão "stale" (TTL).
+    recalc = wants_recalc(request)
+    ttl_minutes = 30
+
+    try:
+        with deps.SessionLocal() as _db:
+            # cache miss: se não há nenhum resultado salvo para o escopo
+            any_qtd = _db.query(CampanhaQtdResultado.id).filter(
+                CampanhaQtdResultado.competencia_ano == int(ano),
+                CampanhaQtdResultado.competencia_mes == int(mes),
+                CampanhaQtdResultado.emp.in_([str(e) for e in emps_process]),
+            ).first()
+            any_combo = _db.query(CampanhaComboResultado.id).filter(
+                CampanhaComboResultado.competencia_ano == int(ano),
+                CampanhaComboResultado.competencia_mes == int(mes),
+                CampanhaComboResultado.emp.in_([str(e) for e in emps_process]),
+            ).first()
+
+            if not recalc and not (any_qtd or any_combo):
+                recalc = True
+
+            if not recalc:
+                last_qtd = _db.query(func.max(CampanhaQtdResultado.atualizado_em)).filter(
+                    CampanhaQtdResultado.competencia_ano == int(ano),
+                    CampanhaQtdResultado.competencia_mes == int(mes),
+                    CampanhaQtdResultado.emp.in_([str(e) for e in emps_process]),
+                ).scalar()
+
+                last_combo = _db.query(func.max(CampanhaComboResultado.atualizado_em)).filter(
+                    CampanhaComboResultado.competencia_ano == int(ano),
+                    CampanhaComboResultado.competencia_mes == int(mes),
+                    CampanhaComboResultado.emp.in_([str(e) for e in emps_process]),
+                ).scalar()
+
+                latest = last_qtd or last_combo
+                if last_qtd and last_combo:
+                    latest = max(last_qtd, last_combo)
+
+                if is_stale(latest, ttl_minutes):
+                    recalc = True
+    except Exception:
+        # Se não conseguimos avaliar cache, não recalcula automaticamente
+        pass
+
+    if recalc:
         try:
-            deps.recalcular_resultados_combos_para_scope(ano=ano, mes=mes, emps=emps_scope, vendedores_por_emp=vendedores_por_emp)
-        except TypeError:
-            deps.recalcular_resultados_combos_para_scope(ano=ano, mes=mes, emps_scope=emps_scope, vendedores_por_emp=vendedores_por_emp)
-    except Exception as e:
-        print(f"[RELATORIO_CAMPANHAS] erro ao recalcular snapshots: {e}")
-        flash("Não foi possível recalcular os resultados das campanhas agora. Exibindo dados já salvos.", "warning")
+            # Compatibilidade: em versões antigas o helper recebe `emps`, em outras `emps_scope`.
+            try:
+                deps.recalcular_resultados_campanhas_para_scope(
+                    ano=ano, mes=mes, emps=emps_process, vendedores_por_emp=vendedores_por_emp
+                )
+            except TypeError:
+                deps.recalcular_resultados_campanhas_para_scope(
+                    ano=ano, mes=mes, emps_scope=emps_process, vendedores_por_emp=vendedores_por_emp
+                )
+
+            try:
+                deps.recalcular_resultados_combos_para_scope(
+                    ano=ano, mes=mes, emps=emps_process, vendedores_por_emp=vendedores_por_emp
+                )
+            except TypeError:
+                deps.recalcular_resultados_combos_para_scope(
+                    ano=ano, mes=mes, emps_scope=emps_process, vendedores_por_emp=vendedores_por_emp
+                )
+        except Exception as e:
+            print(f"[RELATORIO_CAMPANHAS] erro ao recalcular snapshots: {e}")
+            flash("Não foi possível recalcular os resultados das campanhas agora. Exibindo dados já salvos.", "warning")
 
     emps_todos: list[dict[str, Any]] = []  # tab A (cadastros)
     emps_abertas: list[dict[str, Any]] = []
@@ -144,7 +211,6 @@ def build_relatorio_campanhas_context(
         except Exception:
             fech_map = {}
 
-        emps_process = emps_sel or emps_scope
 
         for emp in emps_process:
             emp = str(emp)
