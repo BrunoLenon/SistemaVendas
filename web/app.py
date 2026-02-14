@@ -213,14 +213,6 @@ def _maintenance_guard():
     if request.path.startswith("/healthz"):
         return None
 
-    # Render health-check / port-scan: não tocar banco em "/"
-    ua = (request.headers.get("User-Agent") or "").lower()
-    if request.path == "/" and (request.method == "HEAD" or "go-http-client" in ua):
-        return None
-    if request.path == "/favicon.ico":
-        return None
-
-
     # Sempre permitir login/logout
     if request.path.startswith("/login") or request.path.startswith("/logout"):
         return None
@@ -3373,6 +3365,12 @@ def relatorio_campanhas():
     vendedores_por_emp = scope["vendedores_por_emp"]
 
 
+    recalc = (request.args.get("recalc") == "1")
+    try:
+        cache_ttl_minutes = int(os.getenv("RELATORIO_CAMPANHAS_CACHE_TTL_MINUTES", "15"))
+    except Exception:
+        cache_ttl_minutes = 15
+
     ctx = build_relatorio_campanhas_context(
         _campanhas_deps,
         role=role,
@@ -3384,6 +3382,8 @@ def relatorio_campanhas():
         vendedores_sel=vendedores_sel,
         vendedores_por_emp=vendedores_por_emp,
         flash=flash,
+        recalc=recalc,
+        cache_ttl_minutes=cache_ttl_minutes,
     )
     return render_template("relatorio_campanhas.html", **ctx)
 

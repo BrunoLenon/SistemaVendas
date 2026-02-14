@@ -5,10 +5,6 @@ from datetime import date, datetime
 import datetime
 from typing import Any, Callable
 
-from flask import request
-
-from services.cache_policy import wants_recalc, is_stale
-
 from sqlalchemy import or_, func
 
 from db import (
@@ -101,6 +97,8 @@ def build_relatorio_campanhas_context(
     vendedores_sel: list[str],
     vendedores_por_emp: dict[str, list[str]],
     flash: Callable[[str, str], None],
+    recalc: bool = False,
+    cache_ttl_minutes: int = 15,
 ) -> dict[str, Any]:
     """Monta o contexto completo do template relatorio_campanhas.html.
 
@@ -113,81 +111,67 @@ def build_relatorio_campanhas_context(
     if role_l != "admin" and not emps_sel and emps_scope:
         emps_sel = [str(e) for e in emps_scope]
 
-    # Normaliza seleção de EMPs (evita tokens especiais do dropdown)
-    emps_sel = [
-        str(e) for e in (emps_sel or [])
-        if str(e).strip() and str(e) not in ("__ALL__", "ALL", "*")
-    ]
-    emps_process = emps_sel or emps_scope
+    def _should_recalc_snapshots(db) -> bool:
+        """Recalcula somente quando necessário.
 
-    # Cache policy: por padrão NÃO recalcula ao abrir a página.
-    # Recalcula somente quando:
-    #   - usuário pediu explicitamente (?recalc=1), OU
-    #   - não existe nenhum resultado salvo (cache miss), OU
-    #   - resultados estão "stale" (TTL).
-    recalc = wants_recalc(request)
-    ttl_minutes = 30
+        Motivo: /relatorios/campanhas é uma página pesada e pode derrubar o worker se recalcular tudo em todo load.
+        """
+        if recalc:
+            return True
+        if not emps_scope:
+            return False
 
-    try:
-        with deps.SessionLocal() as _db:
-            # cache miss: se não há nenhum resultado salvo para o escopo
-            any_qtd = _db.query(CampanhaQtdResultado.id).filter(
+        # Se ainda não existe nenhum snapshot para a competência/escopo, calcula.
+        max_qtd = (
+            db.query(func.max(CampanhaQtdResultado.atualizado_em))
+            .filter(
                 CampanhaQtdResultado.competencia_ano == int(ano),
                 CampanhaQtdResultado.competencia_mes == int(mes),
-                CampanhaQtdResultado.emp.in_([str(e) for e in emps_process]),
-            ).first()
-            any_combo = _db.query(CampanhaComboResultado.id).filter(
+                CampanhaQtdResultado.emp.in_([str(e) for e in emps_scope]),
+            )
+            .scalar()
+        )
+        max_combo = (
+            db.query(func.max(CampanhaComboResultado.atualizado_em))
+            .filter(
                 CampanhaComboResultado.competencia_ano == int(ano),
                 CampanhaComboResultado.competencia_mes == int(mes),
-                CampanhaComboResultado.emp.in_([str(e) for e in emps_process]),
-            ).first()
+                CampanhaComboResultado.emp.in_([str(e) for e in emps_scope]),
+            )
+            .scalar()
+        )
 
-            if not recalc and not (any_qtd or any_combo):
-                recalc = True
+        if max_qtd is None and max_combo is None:
+            return True
 
-            if not recalc:
-                last_qtd = _db.query(func.max(CampanhaQtdResultado.atualizado_em)).filter(
-                    CampanhaQtdResultado.competencia_ano == int(ano),
-                    CampanhaQtdResultado.competencia_mes == int(mes),
-                    CampanhaQtdResultado.emp.in_([str(e) for e in emps_process]),
-                ).scalar()
-
-                last_combo = _db.query(func.max(CampanhaComboResultado.atualizado_em)).filter(
-                    CampanhaComboResultado.competencia_ano == int(ano),
-                    CampanhaComboResultado.competencia_mes == int(mes),
-                    CampanhaComboResultado.emp.in_([str(e) for e in emps_process]),
-                ).scalar()
-
-                latest = last_qtd or last_combo
-                if last_qtd and last_combo:
-                    latest = max(last_qtd, last_combo)
-
-                if is_stale(latest, ttl_minutes):
-                    recalc = True
-    except Exception:
-        # Se não conseguimos avaliar cache, não recalcula automaticamente
-        pass
-
-    if recalc:
+        # TTL simples: se o snapshot mais recente é antigo, recalcula.
         try:
-            # Compatibilidade: em versões antigas o helper recebe `emps`, em outras `emps_scope`.
+            latest = max([d for d in [max_qtd, max_combo] if d is not None])
+        except ValueError:
+            return True
+
+        cutoff = datetime.datetime.utcnow() - datetime.timedelta(minutes=int(cache_ttl_minutes or 15))
+        return latest < cutoff
+
+    # Recalcula snapshots apenas quando necessário (ou quando forçado via ?recalc=1)
+    try:
+        with deps.SessionLocal() as _db:
+            do_recalc = _should_recalc_snapshots(_db)
+    except Exception:
+        do_recalc = bool(recalc)
+
+    if do_recalc:
+        # Compatibilidade: em versões antigas o helper recebe `emps`, em outras `emps_scope`.
+        try:
             try:
-                deps.recalcular_resultados_campanhas_para_scope(
-                    ano=ano, mes=mes, emps=emps_process, vendedores_por_emp=vendedores_por_emp
-                )
+                deps.recalcular_resultados_campanhas_para_scope(ano=ano, mes=mes, emps=emps_scope, vendedores_por_emp=vendedores_por_emp)
             except TypeError:
-                deps.recalcular_resultados_campanhas_para_scope(
-                    ano=ano, mes=mes, emps_scope=emps_process, vendedores_por_emp=vendedores_por_emp
-                )
+                deps.recalcular_resultados_campanhas_para_scope(ano=ano, mes=mes, emps_scope=emps_scope, vendedores_por_emp=vendedores_por_emp)
 
             try:
-                deps.recalcular_resultados_combos_para_scope(
-                    ano=ano, mes=mes, emps=emps_process, vendedores_por_emp=vendedores_por_emp
-                )
+                deps.recalcular_resultados_combos_para_scope(ano=ano, mes=mes, emps=emps_scope, vendedores_por_emp=vendedores_por_emp)
             except TypeError:
-                deps.recalcular_resultados_combos_para_scope(
-                    ano=ano, mes=mes, emps_scope=emps_process, vendedores_por_emp=vendedores_por_emp
-                )
+                deps.recalcular_resultados_combos_para_scope(ano=ano, mes=mes, emps_scope=emps_scope, vendedores_por_emp=vendedores_por_emp)
         except Exception as e:
             print(f"[RELATORIO_CAMPANHAS] erro ao recalcular snapshots: {e}")
             flash("Não foi possível recalcular os resultados das campanhas agora. Exibindo dados já salvos.", "warning")
@@ -211,6 +195,7 @@ def build_relatorio_campanhas_context(
         except Exception:
             fech_map = {}
 
+        emps_process = emps_sel or emps_scope
 
         for emp in emps_process:
             emp = str(emp)
@@ -290,8 +275,7 @@ def build_relatorio_campanhas_context(
             qtd_camp_map: dict[int, Any] = {}
             try:
                 qtd_ids = {getattr(r, "campanha_id", None) for r in qtd_rows}
-                qtd_ids |= {getattr(r, "campanha_qtd_id", None) for r in qtd_rows}
-                qtd_ids = {int(i) for i in qtd_ids if i is not None}
+                qtd_ids = {i for i in qtd_ids if i is not None}
                 if qtd_ids:
                     for c in db.query(CampanhaQtd).filter(CampanhaQtd.id.in_(qtd_ids)).all():
                         cid = getattr(c, "id", None)
@@ -316,7 +300,12 @@ def build_relatorio_campanhas_context(
             parados_por_vendedor: dict[str, list[dict[str, Any]]] = {v: [] for v in vendedores}
 
             if parados_itens:
+                # Otimização: em vez de 1 query por item parado, faz 1 query agregada
+                # (vendedor, mestre) e distribui o resultado.
                 try:
+                    codigo_to_item: dict[str, ItemParado] = {}
+                    codigo_to_pct: dict[str, float] = {}
+                    codigos: list[str] = []
                     for ip in parados_itens:
                         codigo = (ip.codigo or "").strip()
                         if not codigo:
@@ -324,41 +313,54 @@ def build_relatorio_campanhas_context(
                         pct = float(ip.recompensa_pct or 0.0)
                         if pct <= 0:
                             continue
+                        codigo_to_item[codigo] = ip
+                        codigo_to_pct[codigo] = pct
+                        codigos.append(codigo)
 
-                        rows = (
-                            db.query(Venda.vendedor, Venda.valor_total)
+                    if codigos:
+                        agg = (
+                            db.query(
+                                func.upper(Venda.vendedor),
+                                Venda.mestre,
+                                func.sum(Venda.valor_total),
+                            )
                             .filter(
                                 Venda.emp == emp,
                                 Venda.movimento >= periodo_ini,
                                 Venda.movimento <= periodo_fim,
                                 ~Venda.mov_tipo_movto.in_(["DS", "CA"]),
-                                Venda.mestre == codigo,
+                                Venda.mestre.in_(codigos),
                                 Venda.vendedor.in_(vendedores),
                             )
+                            .group_by(func.upper(Venda.vendedor), Venda.mestre)
                             .all()
                         )
-                        base_por_v: dict[str, float] = {}
-                        for vend, val in rows:
-                            v = (vend or "").strip().upper()
-                            if not v:
-                                continue
-                            base_por_v[v] = float(base_por_v.get(v, 0.0) + float(val or 0.0))
 
-                        for v, base_val in base_por_v.items():
-                            recompensa = float(base_val) * (pct / 100.0)
+                        for vend_up, mestre, base_val in agg:
+                            v = (vend_up or "").strip().upper()
+                            codigo = (mestre or "").strip()
+                            if not v or not codigo:
+                                continue
+                            ip = codigo_to_item.get(codigo)
+                            pct = float(codigo_to_pct.get(codigo, 0.0) or 0.0)
+                            if ip is None or pct <= 0:
+                                continue
+                            base_val_f = float(base_val or 0.0)
+                            if base_val_f <= 0:
+                                continue
+                            recompensa = base_val_f * (pct / 100.0)
                             if recompensa <= 0:
                                 continue
                             parados_por_vendedor.setdefault(v, []).append({
                                 "tipo": "PARADO",
                                 "titulo": f"Parado: {ip.descricao or ip.codigo}",
-                                # campos esperados pelo template
                                 "marca": "",
-                                "item": f"Base: {float(base_val):.2f} - %: {float(pct):.1f}",
+                                "item": f"Base: {base_val_f:.2f} - %: {pct:.1f}",
                                 "qtd_vendida": None,
-                                "valor_vendido": float(base_val),
+                                "valor_vendido": base_val_f,
                                 "valor_recompensa": float(recompensa),
                                 "atingiu": True,
-                                "vigencia": f"Competência {int(mes):02d}/{int(ano)}",
+                                "vigencia": "",
                                 "status_pagamento": "PENDENTE",
                                 "origem": "PARADO",
                             })
@@ -399,8 +401,8 @@ def build_relatorio_campanhas_context(
                             _df = df
                             if isinstance(_df, datetime.datetime):
                                 _df = _df.date()
-                            if isinstance(_df, datetime.date) and datetime.date.today() > _df:
-                                vig += " (ENCERRADA)"
+                            if isinstance(_df, datetime.date) and _df < date.today():
+                                vig = f"{vig} • ENCERRADA"
                         except Exception:
                             pass
                 except Exception:
@@ -479,11 +481,23 @@ def build_relatorio_campanhas_context(
                     marca = (getattr(c, "marca", "") or "").strip()
                     payload["marca"] = marca
                     try:
-                        if getattr(c, "data_inicio", None) and getattr(c, "data_fim", None):
-                            payload["vigencia"] = f"{c.data_inicio.strftime('%d/%m/%Y')} → {c.data_fim.strftime('%d/%m/%Y')}"
+                        di = getattr(c, "data_inicio", None)
+                        df = getattr(c, "data_fim", None)
+                        if di and df:
+                            def _fmt(_d: Any) -> str:
+                                if isinstance(_d, datetime.datetime):
+                                    _d = _d.date()
+                                if isinstance(_d, datetime.date):
+                                    return _d.strftime("%d/%m/%Y")
+                                return str(_d)
+
+                            payload["vigencia"] = f"{_fmt(di)} → {_fmt(df)}"
                             try:
-                                if datetime.date.today() > c.data_fim:
-                                    payload["vigencia"] += " (ENCERRADA)"
+                                _df = df
+                                if isinstance(_df, datetime.datetime):
+                                    _df = _df.date()
+                                if isinstance(_df, datetime.date) and _df < datetime.date.today():
+                                    payload["vigencia"] += " • ENCERRADA"
                             except Exception:
                                 pass
                     except Exception:
