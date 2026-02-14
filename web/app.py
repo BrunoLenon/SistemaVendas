@@ -213,6 +213,14 @@ def _maintenance_guard():
     if request.path.startswith("/healthz"):
         return None
 
+    # Render health-check / port-scan: não tocar banco em "/"
+    ua = (request.headers.get("User-Agent") or "").lower()
+    if request.path == "/" and (request.method == "HEAD" or "go-http-client" in ua):
+        return None
+    if request.path == "/favicon.ico":
+        return None
+
+
     # Sempre permitir login/logout
     if request.path.startswith("/login") or request.path.startswith("/logout"):
         return None
@@ -1079,26 +1087,7 @@ def _bootstrap_admin_if_needed():
         db.commit()
         app.logger.info("Usuario ADMIN criado automaticamente (%s)", admin_user)
 
-
-
-# Bootstrap ADMIN (lazy): evita travar o start do Render caso o banco esteja lento.
-_BOOTSTRAP_ADMIN_DONE = False
-
-@app.before_request
-def _maybe_bootstrap_admin_once():
-    global _BOOTSTRAP_ADMIN_DONE
-    if _BOOTSTRAP_ADMIN_DONE:
-        return
-    # não tocar banco em health check / arquivos estáticos
-    if request.path in ("/healthz", "/health") or request.path.startswith("/static/"):
-        return
-    _BOOTSTRAP_ADMIN_DONE = True
-    try:
-        _bootstrap_admin_if_needed()
-    except Exception:
-        # nunca derrubar o app por bootstrap
-        app.logger.exception("Falha ao executar bootstrap do usuário ADMIN")
-
+_bootstrap_admin_if_needed()
 
 def _mes_ano_from_request() -> tuple[int, int]:
     mes = int(request.args.get("mes") or datetime.now().month)
