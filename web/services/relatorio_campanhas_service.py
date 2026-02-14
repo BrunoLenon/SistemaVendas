@@ -99,6 +99,11 @@ def build_relatorio_campanhas_context(
     vendedores_sel: list[str],
     vendedores_por_emp: dict[str, list[str]],
     flash: Callable[[str, str], None],
+    # Performance: por padrão NÃO recalcula; usa snapshots/tabelas já existentes.
+    # Só recalcula quando o usuário clicar em “Atualizar” (recalc=True).
+    recalc: bool = False,
+    # Cache em memória (por worker). 0 desliga.
+    cache_ttl_minutes: int = 0,
 ) -> dict[str, Any]:
     """Monta o contexto completo do template relatorio_campanhas.html.
 
@@ -111,21 +116,41 @@ def build_relatorio_campanhas_context(
     if role_l != "admin" and not emps_sel and emps_scope:
         emps_sel = [str(e) for e in emps_scope]
 
-    # Recalcula snapshots do escopo para garantir relatório correto
-    # Compatibilidade: em versões antigas o helper recebe `emps`, em outras `emps_scope`.
-    try:
-        try:
-            deps.recalcular_resultados_campanhas_para_scope(ano=ano, mes=mes, emps=emps_scope, vendedores_por_emp=vendedores_por_emp)
-        except TypeError:
-            deps.recalcular_resultados_campanhas_para_scope(ano=ano, mes=mes, emps_scope=emps_scope, vendedores_por_emp=vendedores_por_emp)
+    # ------------------------------------------------------------
+    # Cache em memória (somente quando NÃO está recalculando)
+    # ------------------------------------------------------------
+    cache_key = None
+    if cache_ttl_minutes and cache_ttl_minutes > 0 and not recalc:
+        cache_key = (
+            "relatorio_campanhas_v1",
+            role_l,
+            str(vendedor_logado or ""),
+            int(ano),
+            int(mes),
+            tuple(sorted([str(x) for x in (emps_scope or [])])),
+            tuple(sorted([str(x) for x in (emps_sel or [])])),
+            tuple(sorted([str(x) for x in (vendedores_sel or [])])),
+        )
+        cached = _LOCAL_CACHE_GET(cache_key, ttl_minutes=cache_ttl_minutes)
+        if cached is not None:
+            return cached
 
+    # Recalcula snapshots SOMENTE quando solicitado
+    if recalc:
+        # Compatibilidade: em versões antigas o helper recebe `emps`, em outras `emps_scope`.
         try:
-            deps.recalcular_resultados_combos_para_scope(ano=ano, mes=mes, emps=emps_scope, vendedores_por_emp=vendedores_por_emp)
-        except TypeError:
-            deps.recalcular_resultados_combos_para_scope(ano=ano, mes=mes, emps_scope=emps_scope, vendedores_por_emp=vendedores_por_emp)
-    except Exception as e:
-        print(f"[RELATORIO_CAMPANHAS] erro ao recalcular snapshots: {e}")
-        flash("Não foi possível recalcular os resultados das campanhas agora. Exibindo dados já salvos.", "warning")
+            try:
+                deps.recalcular_resultados_campanhas_para_scope(ano=ano, mes=mes, emps=emps_scope, vendedores_por_emp=vendedores_por_emp)
+            except TypeError:
+                deps.recalcular_resultados_campanhas_para_scope(ano=ano, mes=mes, emps_scope=emps_scope, vendedores_por_emp=vendedores_por_emp)
+
+            try:
+                deps.recalcular_resultados_combos_para_scope(ano=ano, mes=mes, emps=emps_scope, vendedores_por_emp=vendedores_por_emp)
+            except TypeError:
+                deps.recalcular_resultados_combos_para_scope(ano=ano, mes=mes, emps_scope=emps_scope, vendedores_por_emp=vendedores_por_emp)
+        except Exception as e:
+            print(f"[RELATORIO_CAMPANHAS] erro ao recalcular snapshots: {e}")
+            flash("Não foi possível recalcular os resultados das campanhas agora. Exibindo dados já salvos.", "warning")
 
     emps_todos: list[dict[str, Any]] = []  # tab A (cadastros)
     emps_abertas: list[dict[str, Any]] = []
@@ -507,7 +532,7 @@ def build_relatorio_campanhas_context(
     except Exception:
         vendedores_options = []
 
-    return {
+    ctx = {
         "role": role,
         "ano": int(ano),
         "mes": int(mes),
@@ -521,3 +546,39 @@ def build_relatorio_campanhas_context(
         "vendedores_options": vendedores_options,
         "vendedor": vendedor_logado,
     }
+
+    if cache_key is not None and cache_ttl_minutes and cache_ttl_minutes > 0 and not recalc:
+        _LOCAL_CACHE_SET(cache_key, ctx)
+
+    return ctx
+
+
+# ------------------------------------------------------------
+# Cache simples em memória (por processo). Evita recomputar contexto.
+# ------------------------------------------------------------
+import time as _time
+
+_LOCAL_CACHE = {}
+
+
+def _LOCAL_CACHE_GET(key, *, ttl_minutes: int):
+    try:
+        ts_val = _LOCAL_CACHE.get(key)
+        if not ts_val:
+            return None
+        ts, val = ts_val
+        if ttl_minutes <= 0:
+            return None
+        if (_time.time() - ts) > (ttl_minutes * 60):
+            _LOCAL_CACHE.pop(key, None)
+            return None
+        return val
+    except Exception:
+        return None
+
+
+def _LOCAL_CACHE_SET(key, val) -> None:
+    try:
+        _LOCAL_CACHE[key] = (_time.time(), val)
+    except Exception:
+        pass

@@ -3364,6 +3364,9 @@ def relatorio_campanhas():
     emps_scope = scope["emps_scope"]
     vendedores_por_emp = scope["vendedores_por_emp"]
 
+    # Performance: só recalcula quando solicitado (clique no botão Atualizar)
+    recalc = (request.args.get("recalc") == "1") or (request.args.get("recalcular") == "1") or (request.args.get("atualizar") == "1")
+    cache_ttl_minutes = 5
 
     ctx = build_relatorio_campanhas_context(
         _campanhas_deps,
@@ -3376,6 +3379,8 @@ def relatorio_campanhas():
         vendedores_sel=vendedores_sel,
         vendedores_por_emp=vendedores_por_emp,
         flash=flash,
+        recalc=recalc,
+        cache_ttl_minutes=cache_ttl_minutes,
     )
     return render_template("relatorio_campanhas.html", **ctx)
 
