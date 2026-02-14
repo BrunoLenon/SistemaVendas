@@ -328,7 +328,7 @@ def _mensagens_bloqueantes_guard():
 
 @app.route('/admin/configuracoes', methods=['GET', 'POST'])
 def admin_configuracoes():
-    red = _admin_required()
+    red = _admin_or_finance_required()
     if red:
         return red
 
@@ -766,6 +766,19 @@ def _admin_required():
     if _role() != "admin":
         flash("Acesso restrito ao administrador.", "warning")
         audit("admin_forbidden")
+        return redirect(url_for("dashboard"))
+    return None
+
+def _admin_or_finance_required():
+    """Garante acesso ADMIN ou FINANCEIRO.
+
+    FINANCEIRO é um perfil centralizado para operar pagamentos/fechamento
+    (marcar A_PAGAR/PAGO, exportar), sem permissões de cadastro.
+    """
+    r = _role()
+    if r not in ("admin", "financeiro"):
+        flash("Acesso restrito.", "warning")
+        audit("forbidden", role=r, allowed=["admin","financeiro"])
         return redirect(url_for("dashboard"))
     return None
 
@@ -3364,9 +3377,6 @@ def relatorio_campanhas():
     emps_scope = scope["emps_scope"]
     vendedores_por_emp = scope["vendedores_por_emp"]
 
-    # Performance: só recalcula quando solicitado (clique no botão Atualizar)
-    recalc = (request.args.get("recalc") == "1") or (request.args.get("recalcular") == "1") or (request.args.get("atualizar") == "1")
-    cache_ttl_minutes = 5
 
     ctx = build_relatorio_campanhas_context(
         _campanhas_deps,
@@ -3379,8 +3389,6 @@ def relatorio_campanhas():
         vendedores_sel=vendedores_sel,
         vendedores_por_emp=vendedores_por_emp,
         flash=flash,
-        recalc=recalc,
-        cache_ttl_minutes=cache_ttl_minutes,
     )
     return render_template("relatorio_campanhas.html", **ctx)
 
@@ -3995,7 +4003,7 @@ def admin_usuarios():
                     desired_emps = sorted({e for e in emps_sel if e})
                     if len(nova_senha) < 4:
                         raise ValueError("Senha muito curta (mín. 4).")
-                    if role not in {"admin", "supervisor", "vendedor"}:
+                    if role not in {"admin", "supervisor", "vendedor", "financeiro"}:
                         role = "vendedor"
                     # Regras:
                     # - Vendedor/Supervisor: precisam ter ao menos 1 EMP ativa

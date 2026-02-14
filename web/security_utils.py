@@ -18,11 +18,21 @@ from flask import current_app, request, session
 
 
 def normalize_role(role: str | None) -> str:
+    """Normaliza o role vindo do banco/sessão.
+
+    Mantém compatibilidade com valores legados (administrador/sup) e adiciona
+    o perfil 'financeiro' (centralizado, multi-EMP).
+    """
     r = (role or "").strip().lower()
     if r in ("admin", "administrador"):
         return "admin"
+    if r in ("financeiro", "fin", "finance", "financial"):
+        return "financeiro"
     if r in ("supervisor", "sup"):
         return "supervisor"
+    if r in ("vendedor", "vend", "sales"):
+        return "vendedor"
+    # fallback seguro
     return "vendedor"
 
 
