@@ -68,6 +68,104 @@ SessionLocal = sessionmaker(
 Base = declarative_base()
 
 
+# =====================
+# Campaign Engine v2 (Enterprise) - Tabelas universais
+# =====================
+
+
+class CampanhaMasterV2(Base):
+    """Cadastro universal de campanhas (V2).
+
+    OBS: Mantemos como tabelas separadas das campanhas atuais (QTD/Combo/Parados)
+    para evitar regressões. A integração no relatório é aditiva.
+    """
+
+    __tablename__ = "campanhas_master_v2"
+
+    id = Column(Integer, primary_key=True)
+    titulo = Column(String(180), nullable=False)
+    tipo = Column(String(40), nullable=False, index=True)
+    # 'GLOBAL' ou 'EMP'
+    escopo = Column(String(20), nullable=False, default="EMP", index=True)
+    # JSON serializado (lista de EMPs alvo) - apenas quando escopo='EMP'
+    emps_json = Column(Text, nullable=True)
+
+    # filtros opcionais
+    marca_alvo = Column(String(120), nullable=True, index=True)
+
+    # vigência (não é competência; apenas janela de validade)
+    data_inicio = Column(Date, nullable=True, index=True)
+    data_fim = Column(Date, nullable=True, index=True)
+
+    # regras e premiações (JSON)
+    regras_json = Column(Text, nullable=True)
+    premiacao_json = Column(Text, nullable=True)
+
+    ativo = Column(Boolean, nullable=False, default=True, index=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class CampanhaResultadoV2(Base):
+    __tablename__ = "campanhas_resultados_v2"
+
+    id = Column(Integer, primary_key=True)
+    campanha_id = Column(Integer, nullable=False, index=True)
+    tipo = Column(String(40), nullable=False, index=True)
+
+    competencia_ano = Column(Integer, nullable=False, index=True)
+    competencia_mes = Column(Integer, nullable=False, index=True)
+    # EMP do resultado. Para campanhas globais usamos '__GLOBAL__'
+    emp = Column(String(30), nullable=False, index=True)
+    vendedor = Column(String(80), nullable=False, index=True)
+
+    base_num = Column(Float, nullable=False, default=0.0)
+    base_ref = Column(Float, nullable=True)
+    pct_real = Column(Float, nullable=True)
+    pct_meta = Column(Float, nullable=True)
+    atingiu = Column(Boolean, nullable=False, default=False)
+
+    valor_recompensa = Column(Float, nullable=False, default=0.0)
+    detalhes_json = Column(Text, nullable=True)
+
+    vigencia_ini = Column(Date, nullable=True)
+    vigencia_fim = Column(Date, nullable=True)
+
+    status_pagamento = Column(String(20), nullable=False, default="PENDENTE", index=True)
+    pago_em = Column(DateTime, nullable=True)
+    atualizado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "campanha_id",
+            "emp",
+            "vendedor",
+            "competencia_ano",
+            "competencia_mes",
+            name="uq_camp_res_v2",
+        ),
+        Index("ix_camp_res_v2_comp", "competencia_ano", "competencia_mes"),
+        Index("ix_camp_res_v2_emp_vend", "emp", "vendedor"),
+    )
+
+
+class CampanhaAuditV2(Base):
+    __tablename__ = "campanhas_audit_v2"
+
+    id = Column(Integer, primary_key=True)
+    campanha_id = Column(Integer, nullable=True, index=True)
+    competencia_ano = Column(Integer, nullable=True, index=True)
+    competencia_mes = Column(Integer, nullable=True, index=True)
+    emp = Column(String(30), nullable=True, index=True)
+    vendedor = Column(String(80), nullable=True, index=True)
+    acao = Column(String(40), nullable=False)
+    de_status = Column(String(20), nullable=True)
+    para_status = Column(String(20), nullable=True)
+    usuario = Column(String(80), nullable=True)
+    payload_json = Column(Text, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
 class Usuario(Base):
     __tablename__ = "usuarios"
 

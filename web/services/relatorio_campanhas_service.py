@@ -19,7 +19,14 @@ from db import (
     CampanhaComboResultado,
     ItemParado,
     FechamentoMensal,
+    CampanhaMasterV2,
+    CampanhaResultadoV2,
 )
+
+try:
+    from services.campanhas_v2_engine import GLOBAL_EMP_TOKEN
+except Exception:
+    GLOBAL_EMP_TOKEN = "__GLOBAL__"
 
 from services.campanhas_service import CampanhasDeps
 
@@ -99,11 +106,6 @@ def build_relatorio_campanhas_context(
     vendedores_sel: list[str],
     vendedores_por_emp: dict[str, list[str]],
     flash: Callable[[str, str], None],
-    # Performance: por padrão NÃO recalcula; usa snapshots/tabelas já existentes.
-    # Só recalcula quando o usuário clicar em “Atualizar” (recalc=True).
-    recalc: bool = False,
-    # Cache em memória (por worker). 0 desliga.
-    cache_ttl_minutes: int = 0,
 ) -> dict[str, Any]:
     """Monta o contexto completo do template relatorio_campanhas.html.
 
@@ -116,41 +118,21 @@ def build_relatorio_campanhas_context(
     if role_l != "admin" and not emps_sel and emps_scope:
         emps_sel = [str(e) for e in emps_scope]
 
-    # ------------------------------------------------------------
-    # Cache em memória (somente quando NÃO está recalculando)
-    # ------------------------------------------------------------
-    cache_key = None
-    if cache_ttl_minutes and cache_ttl_minutes > 0 and not recalc:
-        cache_key = (
-            "relatorio_campanhas_v1",
-            role_l,
-            str(vendedor_logado or ""),
-            int(ano),
-            int(mes),
-            tuple(sorted([str(x) for x in (emps_scope or [])])),
-            tuple(sorted([str(x) for x in (emps_sel or [])])),
-            tuple(sorted([str(x) for x in (vendedores_sel or [])])),
-        )
-        cached = _LOCAL_CACHE_GET(cache_key, ttl_minutes=cache_ttl_minutes)
-        if cached is not None:
-            return cached
-
-    # Recalcula snapshots SOMENTE quando solicitado
-    if recalc:
-        # Compatibilidade: em versões antigas o helper recebe `emps`, em outras `emps_scope`.
+    # Recalcula snapshots do escopo para garantir relatório correto
+    # Compatibilidade: em versões antigas o helper recebe `emps`, em outras `emps_scope`.
+    try:
         try:
-            try:
-                deps.recalcular_resultados_campanhas_para_scope(ano=ano, mes=mes, emps=emps_scope, vendedores_por_emp=vendedores_por_emp)
-            except TypeError:
-                deps.recalcular_resultados_campanhas_para_scope(ano=ano, mes=mes, emps_scope=emps_scope, vendedores_por_emp=vendedores_por_emp)
+            deps.recalcular_resultados_campanhas_para_scope(ano=ano, mes=mes, emps=emps_scope, vendedores_por_emp=vendedores_por_emp)
+        except TypeError:
+            deps.recalcular_resultados_campanhas_para_scope(ano=ano, mes=mes, emps_scope=emps_scope, vendedores_por_emp=vendedores_por_emp)
 
-            try:
-                deps.recalcular_resultados_combos_para_scope(ano=ano, mes=mes, emps=emps_scope, vendedores_por_emp=vendedores_por_emp)
-            except TypeError:
-                deps.recalcular_resultados_combos_para_scope(ano=ano, mes=mes, emps_scope=emps_scope, vendedores_por_emp=vendedores_por_emp)
-        except Exception as e:
-            print(f"[RELATORIO_CAMPANHAS] erro ao recalcular snapshots: {e}")
-            flash("Não foi possível recalcular os resultados das campanhas agora. Exibindo dados já salvos.", "warning")
+        try:
+            deps.recalcular_resultados_combos_para_scope(ano=ano, mes=mes, emps=emps_scope, vendedores_por_emp=vendedores_por_emp)
+        except TypeError:
+            deps.recalcular_resultados_combos_para_scope(ano=ano, mes=mes, emps_scope=emps_scope, vendedores_por_emp=vendedores_por_emp)
+    except Exception as e:
+        print(f"[RELATORIO_CAMPANHAS] erro ao recalcular snapshots: {e}")
+        flash("Não foi possível recalcular os resultados das campanhas agora. Exibindo dados já salvos.", "warning")
 
     emps_todos: list[dict[str, Any]] = []  # tab A (cadastros)
     emps_abertas: list[dict[str, Any]] = []
@@ -492,6 +474,75 @@ def build_relatorio_campanhas_context(
                 if itens:
                     by_vend.setdefault(v, []).extend(itens)
 
+            # -------- Campanhas V2 (Enterprise) - Aditivo --------
+            try:
+                # carrega cadastros para título/marca/vigência
+                v2_rows = (
+                    db.query(CampanhaResultadoV2)
+                    .filter(
+                        CampanhaResultadoV2.competencia_ano == int(ano),
+                        CampanhaResultadoV2.competencia_mes == int(mes),
+                        CampanhaResultadoV2.vendedor.in_(vendedores),
+                        CampanhaResultadoV2.valor_recompensa > 0,
+                        or_(CampanhaResultadoV2.emp == emp, CampanhaResultadoV2.emp == GLOBAL_EMP_TOKEN),
+                    )
+                    .all()
+                )
+
+                if v2_rows:
+                    camp_ids = sorted({int(r.campanha_id) for r in v2_rows if getattr(r, "campanha_id", None) is not None})
+                    cmap: dict[int, Any] = {}
+                    if camp_ids:
+                        for cc in db.query(CampanhaMasterV2).filter(CampanhaMasterV2.id.in_(camp_ids)).all():
+                            cid = getattr(cc, "id", None)
+                            if cid is not None:
+                                cmap[int(cid)] = cc
+
+                    for r in v2_rows:
+                        vend = (getattr(r, "vendedor", "") or "").strip().upper()
+                        cc = cmap.get(int(getattr(r, "campanha_id", 0) or 0))
+                        titulo = getattr(cc, "titulo", None) if cc is not None else f"Campanha {getattr(r, 'tipo', '')}"
+                        marca = ""
+                        try:
+                            marca = (getattr(cc, "marca_alvo", None) or "").strip() if cc is not None else ""
+                        except Exception:
+                            marca = ""
+
+                        # vigência formatada + tag encerrada
+                        vig = ""
+                        try:
+                            di = getattr(r, "vigencia_ini", None) or (getattr(cc, "data_inicio", None) if cc is not None else None)
+                            df = getattr(r, "vigencia_fim", None) or (getattr(cc, "data_fim", None) if cc is not None else None)
+                            if di and df:
+                                # normaliza para date
+                                if isinstance(di, datetime.datetime):
+                                    di = di.date()
+                                if isinstance(df, datetime.datetime):
+                                    df = df.date()
+                                vig = f"{di.strftime('%d/%m/%Y')} → {df.strftime('%d/%m/%Y')}"
+                                if isinstance(df, date) and df < date.today():
+                                    vig = f"{vig} (ENCERRADA)"
+                        except Exception:
+                            vig = ""
+
+                        by_vend.setdefault(vend, []).append({
+                            "tipo": "V2",
+                            "titulo": titulo or "Campanha",
+                            "marca": marca,
+                            "item": getattr(r, "tipo", "") or "",
+                            "qtd_vendida": None,
+                            "valor_vendido": float(getattr(r, "base_num", 0) or 0),
+                            "valor_recompensa": float(getattr(r, "valor_recompensa", 0) or 0),
+                            "atingiu": bool(getattr(r, "atingiu", True)),
+                            "vigencia": vig,
+                            "status_pagamento": getattr(r, "status_pagamento", None) or "PENDENTE",
+                            "origem": "V2",
+                            "campanha_id": int(getattr(r, "campanha_id", 0) or 0),
+                        })
+            except Exception as _e:
+                # se tabela não existe / SQL falhou, não derruba página
+                pass
+
             vendedores_cards = []
             for v in vendedores:
                 v = (v or "").strip().upper()
@@ -532,7 +583,7 @@ def build_relatorio_campanhas_context(
     except Exception:
         vendedores_options = []
 
-    ctx = {
+    return {
         "role": role,
         "ano": int(ano),
         "mes": int(mes),
@@ -546,39 +597,3 @@ def build_relatorio_campanhas_context(
         "vendedores_options": vendedores_options,
         "vendedor": vendedor_logado,
     }
-
-    if cache_key is not None and cache_ttl_minutes and cache_ttl_minutes > 0 and not recalc:
-        _LOCAL_CACHE_SET(cache_key, ctx)
-
-    return ctx
-
-
-# ------------------------------------------------------------
-# Cache simples em memória (por processo). Evita recomputar contexto.
-# ------------------------------------------------------------
-import time as _time
-
-_LOCAL_CACHE = {}
-
-
-def _LOCAL_CACHE_GET(key, *, ttl_minutes: int):
-    try:
-        ts_val = _LOCAL_CACHE.get(key)
-        if not ts_val:
-            return None
-        ts, val = ts_val
-        if ttl_minutes <= 0:
-            return None
-        if (_time.time() - ts) > (ttl_minutes * 60):
-            _LOCAL_CACHE.pop(key, None)
-            return None
-        return val
-    except Exception:
-        return None
-
-
-def _LOCAL_CACHE_SET(key, val) -> None:
-    try:
-        _LOCAL_CACHE[key] = (_time.time(), val)
-    except Exception:
-        pass
