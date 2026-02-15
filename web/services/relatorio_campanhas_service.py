@@ -26,10 +26,21 @@ from db import (
 try:
     from services.campanhas_v2_engine import GLOBAL_EMP_TOKEN
 except Exception:
+    _safe_rollback(db)
     GLOBAL_EMP_TOKEN = "__GLOBAL__"
 
 from services.campanhas_service import CampanhasDeps
 
+
+
+def _safe_rollback(db_session):
+    """Rollback defensivo: evita 'current transaction is aborted' quando um SELECT falha e a exceção é tratada."""
+    if db_session is None:
+        return
+    try:
+        db_session.rollback()
+    except Exception:
+        pass
 
 def _calc_qtd_por_vendedor_para_combo_item(
     db,
@@ -131,6 +142,7 @@ def build_relatorio_campanhas_context(
         except TypeError:
             deps.recalcular_resultados_combos_para_scope(ano=ano, mes=mes, emps_scope=emps_scope, vendedores_por_emp=vendedores_por_emp)
     except Exception as e:
+        _safe_rollback(db)
         print(f"[RELATORIO_CAMPANHAS] erro ao recalcular snapshots: {e}")
         flash("Não foi possível recalcular os resultados das campanhas agora. Exibindo dados já salvos.", "warning")
 
@@ -151,6 +163,7 @@ def build_relatorio_campanhas_context(
             ).all()
             fech_map = {str(e): bool(f) for e, f in rows_f}
         except Exception:
+            _safe_rollback(db)
             fech_map = {}
 
         emps_process = emps_sel or emps_scope
@@ -171,6 +184,7 @@ def build_relatorio_campanhas_context(
                 for uname, empv in rows_v:
                     vendedores_cad_por_emp.setdefault(str(empv), set()).add(str(uname).upper())
         except Exception:
+            _safe_rollback(db)
             vendedores_cad_por_emp = {}
 
 
@@ -214,6 +228,7 @@ def build_relatorio_campanhas_context(
                     )
                     combos_payload.append({"combo": c, "itens": itens})
                 except Exception as _e:
+                    _safe_rollback(db)
                     print(f"[RELATORIO_CAMPANHAS] erro ao montar detalhes de combo: {_e}")
                     combos_payload.append({"combo": c, "itens": []})
 
@@ -227,6 +242,7 @@ def build_relatorio_campanhas_context(
                     .all()
                 )
             except Exception as _e:
+                _safe_rollback(db)
                 print(f"[RELATORIO_CAMPANHAS] erro ao carregar itens_parados da EMP {emp}: {_e}")
                 itens_parados_defs = []
 
@@ -265,6 +281,7 @@ def build_relatorio_campanhas_context(
                         if cid is not None:
                             qtd_camp_map[int(cid)] = c
             except Exception:
+                _safe_rollback(db)
                 qtd_camp_map = {}
             combo_rows = (
                 db.query(CampanhaComboResultado)
@@ -330,6 +347,7 @@ def build_relatorio_campanhas_context(
                                 "origem": "PARADO",
                             })
                 except Exception as _e:
+                    _safe_rollback(db)
                     print(f"[RELATORIO_CAMPANHAS] erro ao calcular itens_parados da EMP {emp}: {_e}")
 
             # Monta itens por vendedor (QTD + Combo + Parados)
@@ -363,6 +381,7 @@ def build_relatorio_campanhas_context(
                     if di and df:
                         vig = f"{_fmt(di)} → {_fmt(df)}"
                 except Exception:
+                    _safe_rollback(db)
                     vig = ""
 
                 marca = (getattr(r, "marca", None) or getattr(r, "campanha_marca", None) or "").strip()
@@ -410,6 +429,7 @@ def build_relatorio_campanhas_context(
                     for it in itens_all:
                         combos_itens_map.setdefault(int(it.combo_id), []).append(it)
             except Exception as _e:
+                _safe_rollback(db)
                 print(f"[RELATORIO_CAMPANHAS] erro ao carregar itens de combos: {_e}")
                 combos_itens_map = {}
 
@@ -441,6 +461,7 @@ def build_relatorio_campanhas_context(
                         if getattr(c, "data_inicio", None) and getattr(c, "data_fim", None):
                             payload["vigencia"] = f"{c.data_inicio} → {c.data_fim}"
                     except Exception:
+                        _safe_rollback(db)
                         pass
                     itens = combos_itens_map.get(cid) or []
                     if itens:
@@ -465,6 +486,7 @@ def build_relatorio_campanhas_context(
                         # Texto curto para coluna "Item" (mantém layout atual)
                         payload["item"] = ", ".join([q["nome_item"] for q in qtds][:3])
                 except Exception as _e:
+                    _safe_rollback(db)
                     print(f"[RELATORIO_CAMPANHAS] erro ao montar detalhe do combo: {_e}")
 
                 by_vend.setdefault((r.vendedor or "").strip().upper(), []).append(payload)
@@ -506,6 +528,7 @@ def build_relatorio_campanhas_context(
                         try:
                             marca = (getattr(cc, "marca_alvo", None) or "").strip() if cc is not None else ""
                         except Exception:
+                            _safe_rollback(db)
                             marca = ""
 
                         # vigência formatada + tag encerrada
@@ -523,6 +546,7 @@ def build_relatorio_campanhas_context(
                                 if isinstance(df, date) and df < date.today():
                                     vig = f"{vig} (ENCERRADA)"
                         except Exception:
+                            _safe_rollback(db)
                             vig = ""
 
                         by_vend.setdefault(vend, []).append({
@@ -540,6 +564,7 @@ def build_relatorio_campanhas_context(
                             "campanha_id": int(getattr(r, "campanha_id", 0) or 0),
                         })
             except Exception as _e:
+                _safe_rollback(db)
                 # se tabela não existe / SQL falhou, não derruba página
                 pass
 
@@ -569,6 +594,7 @@ def build_relatorio_campanhas_context(
     try:
         emps_options = deps.get_emp_options(emps_scope)
     except Exception:
+        _safe_rollback(db)
         emps_options = []
 
     # Opções de vendedor para o filtro (multi)
@@ -581,6 +607,7 @@ def build_relatorio_campanhas_context(
                     vset.append(vv)
         vendedores_options = [{"value": v, "label": v} for v in vset]
     except Exception:
+        _safe_rollback(db)
         vendedores_options = []
 
     return {
