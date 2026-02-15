@@ -822,6 +822,16 @@ class CampanhaV2Audit(Base):
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
 
+# --------------------------
+# Backwards-compatible aliases (some patches referenced alternate names)
+# --------------------------
+# These aliases avoid ImportError if other modules expect the V2 models
+# to be exposed with different identifiers.
+CampanhaMasterV2 = CampanhaV2Master
+CampanhaResultadoV2 = CampanhaV2Resultado
+CampanhaAuditV2 = CampanhaV2Audit
+
+
 def criar_tabelas():
     """Cria tabelas e aplica ajustes leves de schema (compatibilidade).
 
