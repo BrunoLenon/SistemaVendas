@@ -1,84 +1,61 @@
--- ==========================================================
--- SistemaVendas - Campaign Engine V2 (Enterprise)
--- Tabelas universais para campanhas avançadas (sem Margem)
--- ==========================================================
+-- Campaign Engine V2 (Enterprise) - SEM MARGEM
+-- Rode este arquivo 1x no Supabase SQL Editor.
 
-create table if not exists campanhas_master_v2 (
-  id bigserial primary key,
-  titulo varchar(180) not null,
-  tipo varchar(40) not null,
-  escopo varchar(20) not null default 'EMP',
-  emps_json text null,
-  marca_alvo varchar(120) null,
-  data_inicio date null,
-  data_fim date null,
-  regras_json text null,
-  premiacao_json text null,
-  ativo boolean not null default true,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+CREATE TABLE IF NOT EXISTS campanhas_master_v2 (
+  id BIGSERIAL PRIMARY KEY,
+  titulo VARCHAR(160) NOT NULL,
+  tipo VARCHAR(40) NOT NULL,
+  escopo VARCHAR(20) NOT NULL DEFAULT 'EMP',
+  emps_json TEXT,
+  vigencia_ini DATE NOT NULL,
+  vigencia_fim DATE NOT NULL,
+  ativo BOOLEAN NOT NULL DEFAULT TRUE,
+  regras_json TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-create index if not exists ix_camp_master_v2_tipo on campanhas_master_v2(tipo);
-create index if not exists ix_camp_master_v2_escopo on campanhas_master_v2(escopo);
-create index if not exists ix_camp_master_v2_ativo on campanhas_master_v2(ativo);
-create index if not exists ix_camp_master_v2_marca on campanhas_master_v2(marca_alvo);
+CREATE INDEX IF NOT EXISTS ix_camp_v2_tipo_ativo ON campanhas_master_v2(tipo, ativo);
+CREATE INDEX IF NOT EXISTS ix_camp_v2_escopo ON campanhas_master_v2(escopo);
 
-create table if not exists campanhas_resultados_v2 (
-  id bigserial primary key,
-  campanha_id bigint not null,
-  tipo varchar(40) not null,
-  competencia_ano int not null,
-  competencia_mes int not null,
-  emp varchar(30) not null,
-  vendedor varchar(80) not null,
-  base_num double precision not null default 0,
-  base_ref double precision null,
-  pct_real double precision null,
-  pct_meta double precision null,
-  atingiu boolean not null default false,
-  valor_recompensa double precision not null default 0,
-  detalhes_json text null,
-  vigencia_ini date null,
-  vigencia_fim date null,
-  status_pagamento varchar(20) not null default 'PENDENTE',
-  pago_em timestamptz null,
-  atualizado_em timestamptz not null default now(),
-  constraint uq_camp_res_v2 unique (campanha_id, emp, vendedor, competencia_ano, competencia_mes)
+CREATE TABLE IF NOT EXISTS campanhas_resultados_v2 (
+  id BIGSERIAL PRIMARY KEY,
+  campanha_id BIGINT NOT NULL,
+  competencia_ano INT NOT NULL,
+  competencia_mes INT NOT NULL,
+  emp INT NOT NULL,
+  vendedor VARCHAR(80) NOT NULL,
+  tipo VARCHAR(40) NOT NULL,
+  base_num DOUBLE PRECISION NOT NULL DEFAULT 0,
+  atingiu BOOLEAN NOT NULL DEFAULT FALSE,
+  valor_recompensa DOUBLE PRECISION NOT NULL DEFAULT 0,
+  detalhes_json TEXT,
+  vigencia_ini DATE,
+  vigencia_fim DATE,
+  status_pagamento VARCHAR(20) NOT NULL DEFAULT 'PENDENTE',
+  pago_em TIMESTAMPTZ,
+  atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT uq_camp_v2_res UNIQUE (campanha_id, competencia_ano, competencia_mes, emp, vendedor)
 );
 
-create index if not exists ix_camp_res_v2_comp on campanhas_resultados_v2(competencia_ano, competencia_mes);
-create index if not exists ix_camp_res_v2_emp_vend on campanhas_resultados_v2(emp, vendedor);
-create index if not exists ix_camp_res_v2_status on campanhas_resultados_v2(status_pagamento);
+CREATE INDEX IF NOT EXISTS ix_camp_v2_res_comp_emp ON campanhas_resultados_v2(competencia_ano, competencia_mes, emp);
+CREATE INDEX IF NOT EXISTS ix_camp_v2_res_vendedor ON campanhas_resultados_v2(vendedor);
+CREATE INDEX IF NOT EXISTS ix_camp_v2_res_status ON campanhas_resultados_v2(status_pagamento);
 
-create table if not exists campanhas_audit_v2 (
-  id bigserial primary key,
-  campanha_id bigint null,
-  competencia_ano int null,
-  competencia_mes int null,
-  emp varchar(30) null,
-  vendedor varchar(80) null,
-  acao varchar(40) not null,
-  de_status varchar(20) null,
-  para_status varchar(20) null,
-  usuario varchar(80) null,
-  payload_json text null,
-  created_at timestamptz not null default now()
+CREATE TABLE IF NOT EXISTS campanhas_audit_v2 (
+  id BIGSERIAL PRIMARY KEY,
+  campanha_id BIGINT,
+  competencia_ano INT,
+  competencia_mes INT,
+  emp INT,
+  vendedor VARCHAR(80),
+  acao VARCHAR(60) NOT NULL,
+  de_status VARCHAR(20),
+  para_status VARCHAR(20),
+  actor VARCHAR(60),
+  payload_json TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-create index if not exists ix_camp_audit_v2_comp on campanhas_audit_v2(competencia_ano, competencia_mes);
-create index if not exists ix_camp_audit_v2_emp on campanhas_audit_v2(emp);
-create index if not exists ix_camp_audit_v2_usuario on campanhas_audit_v2(usuario);
-
--- ----------------------------------------------------------
--- Seeds opcionais (padrões). Execute apenas se desejar.
--- Ranking Top 1/2/3 (geral). Meta % 10%. Meta abs 100k. Mix 10. Acum 3m.
--- ----------------------------------------------------------
--- insert into campanhas_master_v2 (titulo, tipo, escopo, regras_json, premiacao_json, ativo)
--- values
--- ('Ranking por valor (Top 1/2/3) - Geral', 'RANKING_VALOR', 'EMP', '{"mov_tipo":"OA"}', '{"top":[{"pos":1,"valor":300},{"pos":2,"valor":200},{"pos":3,"valor":100}]}', true),
--- ('Meta % vs Mês Anterior (10%)', 'META_PCT_MOM', 'EMP', '{"pct_meta":10}', '{"premio":0}', true),
--- ('Meta % vs Ano Passado (10%)', 'META_PCT_YOY', 'EMP', '{"pct_meta":10}', '{"premio":0}', true),
--- ('Meta Absoluta (R$ 100.000)', 'META_ABS', 'EMP', '{"meta_valor":100000}', '{"premio":0}', true),
--- ('Mix (10 produtos distintos)', 'MIX_MESTRE', 'EMP', '{"minimo":10}', '{"premio":0}', true),
--- ('Acumulativa (3 meses)', 'ACUM_3M', 'EMP', '{"meses":3,"meta_valor":0}', '{"premio":0}', true);
+CREATE INDEX IF NOT EXISTS ix_camp_v2_audit_comp ON campanhas_audit_v2(competencia_ano, competencia_mes);
+CREATE INDEX IF NOT EXISTS ix_camp_v2_audit_emp ON campanhas_audit_v2(emp);

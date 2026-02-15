@@ -35,6 +35,9 @@ class UserScope:
     def is_vendedor(self) -> bool:
         return self.role == "vendedor"
 
+    def is_financeiro(self) -> bool:
+        return self.role == "financeiro"
+
 
 def _to_int_list(value: Any) -> list[int]:
     """Normaliza lista de EMPs a partir do que estiver na sessão.
@@ -146,4 +149,22 @@ def admin_or_supervisor_required(fn: Callable):
             audit("admin_or_supervisor_forbidden")
             return red
         return fn(*args, **kwargs)
+    return wrapper
+
+
+def admin_or_financeiro_required(fn: Callable):
+    """Permite ADMIN ou FINANCEIRO."""
+
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        red = require_login_redirect()
+        if red:
+            return red
+        red = require_role(["admin", "financeiro"])
+        if red:
+            flash("Acesso restrito ao administrador/financeiro.", "warning")
+            audit("admin_or_financeiro_forbidden")
+            return red
+        return fn(*args, **kwargs)
+
     return wrapper

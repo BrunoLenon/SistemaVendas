@@ -1,0 +1,167 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="container-fluid py-3">
+  <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+    <div>
+      <h3 class="mb-0">Admin • Campanhas V2 (Engine Enterprise)</h3>
+      <div class="text-muted">Cadastro universal (Ranking, Metas, Mix, Acumulativa). Margem fica em stand-by.</div>
+    </div>
+    <div class="d-flex gap-2">
+      <form method="post" class="m-0">
+        <input type="hidden" name="action" value="seed_defaults" />
+        <button class="btn btn-outline-primary" type="submit">Criar modelos padrão</button>
+      </form>
+      <a class="btn btn-outline-secondary" href="{{ url_for('financeiro_campanhas_v2') }}">Ir para Financeiro</a>
+    </div>
+  </div>
+
+  <hr/>
+
+  <div class="row g-3">
+    <div class="col-lg-5">
+      <div class="card shadow-sm">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <strong>{{ 'Editar' if edit_obj else 'Nova' }} campanha</strong>
+          {% if edit_obj %}
+            <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('admin_campanhas_v2') }}">Limpar</a>
+          {% endif %}
+        </div>
+        <div class="card-body">
+          <form method="post">
+            <input type="hidden" name="action" value="save" />
+            <input type="hidden" name="id" value="{{ edit_obj.id if edit_obj else '' }}" />
+
+            <div class="mb-2">
+              <label class="form-label">Título</label>
+              <input class="form-control" name="titulo" required value="{{ edit_obj.titulo if edit_obj else '' }}" />
+            </div>
+
+            <div class="row g-2">
+              <div class="col-md-6">
+                <label class="form-label">Tipo</label>
+                <select class="form-select" name="tipo" required>
+                  {% set t = (edit_obj.tipo if edit_obj else '') %}
+                  <option value="RANKING_VALOR" {{ 'selected' if t=='RANKING_VALOR' else '' }}>RANKING_VALOR</option>
+                  <option value="META_PERCENTUAL" {{ 'selected' if t=='META_PERCENTUAL' else '' }}>META_PERCENTUAL</option>
+                  <option value="META_ABSOLUTA" {{ 'selected' if t=='META_ABSOLUTA' else '' }}>META_ABSOLUTA</option>
+                  <option value="MIX" {{ 'selected' if t=='MIX' else '' }}>MIX</option>
+                  <option value="ACUMULATIVA" {{ 'selected' if t=='ACUMULATIVA' else '' }}>ACUMULATIVA</option>
+                  <option value="MARGEM" {{ 'selected' if t=='MARGEM' else '' }}>MARGEM (stand-by)</option>
+                </select>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">Escopo</label>
+                {% set e = (edit_obj.escopo if edit_obj else 'EMP') %}
+                <select class="form-select" name="escopo">
+                  <option value="EMP" {{ 'selected' if e=='EMP' else '' }}>EMP</option>
+                  <option value="GLOBAL" {{ 'selected' if e=='GLOBAL' else '' }}>GLOBAL</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="mt-2">
+              <label class="form-label">EMPs (somente se Escopo=EMP)</label>
+              <input class="form-control" name="emps" placeholder="101, 1001" value="{{ edit_obj.emps_json if edit_obj and edit_obj.emps_json else '' }}" />
+              <div class="form-text">Pode deixar vazio para “todas as EMPs” (dentro do escopo do usuário que visualizar).</div>
+            </div>
+
+            <div class="row g-2 mt-1">
+              <div class="col-md-6">
+                <label class="form-label">Vigência início</label>
+                <input type="date" class="form-control" name="vigencia_ini" value="{{ (edit_obj.vigencia_ini|string) if edit_obj else (today.replace(day=1)|string) }}" />
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">Vigência fim</label>
+                <input type="date" class="form-control" name="vigencia_fim" value="{{ (edit_obj.vigencia_fim|string) if edit_obj else (today.replace(month=12, day=31)|string) }}" />
+              </div>
+            </div>
+
+            <div class="form-check form-switch mt-2">
+              <input class="form-check-input" type="checkbox" role="switch" name="ativo" {% if edit_obj is none or edit_obj.ativo %}checked{% endif %}>
+              <label class="form-check-label">Ativa</label>
+            </div>
+
+            <div class="mt-2">
+              <label class="form-label">Regras (JSON)</label>
+              <textarea class="form-control" name="regras_json" rows="8">{{ edit_obj.regras_json if edit_obj and edit_obj.regras_json else '{\n  "exemplo": true\n}' }}</textarea>
+              <div class="form-text">
+                Exemplos rápidos:<br/>
+                <code>{"marca":"MAGNETRON","escopo_ranking":"EMP","top":[{"pos":1,"valor":300},{"pos":2,"valor":200},{"pos":3,"valor":100}]}</code><br/>
+                <code>{"ref_tipo":"MES_ANTERIOR","pct":10,"premio":300}</code> • <code>{"ref_tipo":"ANO_PASSADO","pct":10,"premio":300}</code><br/>
+                <code>{"meta":100000,"premio":300}</code> • <code>{"min_distintos":10,"premio":200}</code> • <code>{"janela_meses":3,"meta":250000,"premio":500}</code>
+              </div>
+            </div>
+
+            <div class="d-grid mt-3">
+              <button class="btn btn-primary" type="submit">Salvar</button>
+            </div>
+          </form>
+
+          <hr/>
+
+          <form method="post" class="row g-2 align-items-end">
+            <input type="hidden" name="action" value="recalc" />
+            <div class="col-6">
+              <label class="form-label">Ano</label>
+              <input class="form-control" name="ano" value="{{ today.year }}" />
+            </div>
+            <div class="col-6">
+              <label class="form-label">Mês</label>
+              <input class="form-control" name="mes" value="{{ '%02d'|format(today.month) }}" />
+            </div>
+            <div class="col-12">
+              <button class="btn btn-outline-success w-100" type="submit">Recalcular V2 (gera resultados)</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-7">
+      <div class="card shadow-sm">
+        <div class="card-header"><strong>Campanhas cadastradas</strong></div>
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-sm table-striped mb-0">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Título</th>
+                  <th>Tipo</th>
+                  <th>Escopo</th>
+                  <th>Vigência</th>
+                  <th>Ativa</th>
+                  <th class="text-end">Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for c in campanhas %}
+                <tr>
+                  <td>{{ c.id }}</td>
+                  <td style="max-width: 420px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                    {{ c.titulo }}
+                  </td>
+                  <td><code>{{ c.tipo }}</code></td>
+                  <td>{{ c.escopo }}</td>
+                  <td>{{ c.vigencia_ini }} → {{ c.vigencia_fim }}</td>
+                  <td>{% if c.ativo %}<span class="badge bg-success">SIM</span>{% else %}<span class="badge bg-secondary">NÃO</span>{% endif %}</td>
+                  <td class="text-end">
+                    <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin_campanhas_v2', edit=c.id) }}">Editar</a>
+                    <form method="post" action="{{ url_for('admin_campanhas_v2_delete', cid=c.id) }}" class="d-inline" onsubmit="return confirm('Remover campanha V2?');">
+                      <button class="btn btn-sm btn-outline-danger" type="submit">Excluir</button>
+                    </form>
+                  </td>
+                </tr>
+                {% endfor %}
+                {% if campanhas|length == 0 %}
+                <tr><td colspan="7" class="text-center text-muted py-4">Nenhuma campanha V2 cadastrada.</td></tr>
+                {% endif %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
