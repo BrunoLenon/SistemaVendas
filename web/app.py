@@ -5,14 +5,6 @@ from services.campanhas_service import (
     build_relatorio_campanhas_scope,
 )
 from services.relatorio_campanhas_service import build_relatorio_campanhas_context
-from services.campanhas_v2_service import (
-    list_campanhas_v2,
-    upsert_campanha_v2,
-    delete_campanha_v2,
-    seed_defaults_if_empty,
-    recalc_v2_for_competencia,
-    update_status_pagamento_v2,
-)
 import os
 import re
 import mimetypes
@@ -68,8 +60,6 @@ from db import (
     FechamentoMensal,
     AppSetting,
     BrandingTheme,
-    CampanhaV2Master,
-    CampanhaV2Resultado,
     criar_tabelas,
 )
 from importar_excel import importar_planilha
@@ -782,14 +772,6 @@ def _admin_required():
 def _admin_or_supervisor_required():
     """Garante acesso ADMIN ou SUPERVISOR."""
     if (_role() or "").lower() not in ["admin", "supervisor"]:
-        flash("Acesso restrito.", "warning")
-        audit("forbidden", path=request.path)
-        return redirect(url_for("dashboard"))
-    return None
-
-def _admin_or_financeiro_required():
-    """Garante acesso ADMIN ou FINANCEIRO."""
-    if (_role() or "").lower() not in ["admin", "financeiro"]:
         flash("Acesso restrito.", "warning")
         audit("forbidden", path=request.path)
         return redirect(url_for("dashboard"))
@@ -1746,9 +1728,10 @@ def _resolver_vendedor_e_lista(df: pd.DataFrame | None) -> tuple[str | None, lis
     return vendedor_alvo, vendedores, emp_usuario, None
 
 # ------------- Rotas -------------
-@app.get("/healthz")
+@app.route("/healthz", methods=["GET", "HEAD"])
 def healthz():
-    return {"ok": True}
+    # Health check must be ultra-light and never require auth/DB
+    return ("OK", 200)
 
 @app.route("/", methods=["GET", "HEAD"])
 def home():
@@ -6750,251 +6733,6 @@ def admin_meta_bases_salvar(meta_id: int):
 
     flash(f"Bases manuais salvas ({updated} alterações).", "success")
     return redirect(url_for("admin_meta_bases", meta_id=meta_id))
-
-
-# ==============================
-# Campaign Engine V2 (Enterprise) - Admin/Finance
-# ==============================
-
-
-@app.route("/admin/campanhas_v2", methods=["GET", "POST"])
-def admin_campanhas_v2():
-    red = _login_required()
-    if red:
-        return red
-    red = _admin_required()
-    if red:
-        return red
-
-    action = (request.form.get("action") or request.args.get("action") or "").strip().lower()
-
-    with SessionLocal() as db:
-        if request.method == "POST" and action == "seed_defaults":
-            created = seed_defaults_if_empty(db)
-            flash(f"Modelos padrão criados: {created}", "success")
-            return redirect(url_for("admin_campanhas_v2"))
-
-        if request.method == "POST" and action == "save":
-            cid = request.form.get("id")
-            campanha_id = int(cid) if cid and str(cid).isdigit() else None
-            titulo = request.form.get("titulo") or ""
-            tipo = request.form.get("tipo") or ""
-            escopo = request.form.get("escopo") or "EMP"
-            emps_raw = request.form.get("emps") or ""
-            emps = []
-            for p in emps_raw.replace(";", ",").split(","):
-                p = p.strip()
-                if not p:
-                    continue
-                try:
-                    emps.append(int(p))
-                except Exception:
-                    continue
-
-            try:
-                ini = datetime.strptime((request.form.get("vigencia_ini") or "").strip(), "%Y-%m-%d").date()
-            except Exception:
-                ini = date(date.today().year, 1, 1)
-            try:
-                fim = datetime.strptime((request.form.get("vigencia_fim") or "").strip(), "%Y-%m-%d").date()
-            except Exception:
-                fim = date(date.today().year, 12, 31)
-
-            ativo = (request.form.get("ativo") or "").lower() in ("1", "true", "on", "yes")
-
-            regras_raw = request.form.get("regras_json") or "{}"
-            try:
-                regras = json.loads(regras_raw)
-                if not isinstance(regras, dict):
-                    regras = {}
-            except Exception:
-                regras = {}
-
-            upsert_campanha_v2(
-                db,
-                campanha_id=campanha_id,
-                titulo=titulo,
-                tipo=tipo,
-                escopo=escopo,
-                emps=emps,
-                vigencia_ini=ini,
-                vigencia_fim=fim,
-                ativo=ativo,
-                regras=regras,
-            )
-            flash("Campanha V2 salva.", "success")
-            return redirect(url_for("admin_campanhas_v2"))
-
-        if request.method == "POST" and action == "recalc":
-            try:
-                ano = int(request.form.get("ano") or 0)
-                mes = int(request.form.get("mes") or 0)
-            except Exception:
-                ano, mes = date.today().year, date.today().month
-            stats = recalc_v2_for_competencia(ano, mes, actor=session.get("usuario") or "admin")
-            flash(
-                f"Recalculo V2 concluído. Campanhas: {stats.campanhas_processadas} | Resultados: {stats.resultados_upsertados}",
-                "success",
-            )
-            return redirect(url_for("financeiro_campanhas_v2", ano=ano, mes=mes))
-
-        edit_id = request.args.get("edit")
-        edit_obj = None
-        if edit_id and str(edit_id).isdigit():
-            edit_obj = db.query(CampanhaV2Master).filter(CampanhaV2Master.id == int(edit_id)).first()
-
-        campanhas = list_campanhas_v2(db, include_inactive=True)
-
-    return render_template(
-        "admin_campanhas_v2.html",
-        campanhas=campanhas,
-        edit_obj=edit_obj,
-        today=date.today(),
-    )
-
-
-@app.route("/admin/campanhas_v2/delete/<int:cid>", methods=["POST"])
-def admin_campanhas_v2_delete(cid: int):
-    red = _login_required()
-    if red:
-        return red
-    red = _admin_required()
-    if red:
-        return red
-    with SessionLocal() as db:
-        delete_campanha_v2(db, cid)
-    flash("Campanha V2 removida.", "success")
-    return redirect(url_for("admin_campanhas_v2"))
-
-
-@app.route("/financeiro/campanhas_v2", methods=["GET", "POST"])
-def financeiro_campanhas_v2():
-    red = _login_required()
-    if red:
-        return red
-    red = _admin_or_financeiro_required()
-    if red:
-        return red
-
-    try:
-        ano = int(request.values.get("ano") or date.today().year)
-        mes = int(request.values.get("mes") or date.today().month)
-    except Exception:
-        ano, mes = date.today().year, date.today().month
-
-    if request.method == "POST":
-        action = (request.form.get("action") or "").strip().lower()
-        if action == "set_status":
-            try:
-                campanha_id = int(request.form.get("campanha_id") or 0)
-                emp = int(request.form.get("emp") or 0)
-            except Exception:
-                campanha_id, emp = 0, 0
-            vendedor = (request.form.get("vendedor") or "").strip().upper()
-            status = (request.form.get("status") or "").strip().upper()
-            ok = update_status_pagamento_v2(
-                campanha_id=campanha_id,
-                ano=ano,
-                mes=mes,
-                emp=emp,
-                vendedor=vendedor,
-                novo_status=status,
-                actor=session.get("usuario") or "financeiro",
-            )
-            flash("Status atualizado." if ok else "Não foi possível atualizar o status.", "success" if ok else "warning")
-            return redirect(url_for("financeiro_campanhas_v2", ano=ano, mes=mes))
-
-    with SessionLocal() as db:
-        q = db.query(CampanhaV2Resultado).filter(
-            CampanhaV2Resultado.competencia_ano == ano,
-            CampanhaV2Resultado.competencia_mes == mes,
-        )
-
-        # hardening: supervisor/vendedor não deveriam acessar (mas por garantia filtra)
-        if (_role() or "").lower() == "supervisor":
-            emps = _allowed_emps()
-            emps_int = [int(e) for e in emps if str(e).isdigit()]
-            if emps_int:
-                q = q.filter(CampanhaV2Resultado.emp.in_(emps_int))
-        if (_role() or "").lower() == "vendedor":
-            q = q.filter(CampanhaV2Resultado.vendedor == (session.get("usuario") or "").strip().upper())
-
-        resultados = q.order_by(CampanhaV2Resultado.emp.asc(), CampanhaV2Resultado.vendedor.asc()).all()
-
-        camp_ids = sorted({r.campanha_id for r in resultados})
-        cmap = {}
-        if camp_ids:
-            for c in db.query(CampanhaV2Master).filter(CampanhaV2Master.id.in_(camp_ids)).all():
-                cmap[c.id] = c
-
-    return render_template(
-        "financeiro_campanhas_v2.html",
-        ano=ano,
-        mes=mes,
-        resultados=resultados,
-        campanhas_map=cmap,
-        role=_role(),
-    )
-
-
-@app.route("/financeiro/campanhas_v2/export", methods=["GET"])
-def financeiro_campanhas_v2_export():
-    red = _login_required()
-    if red:
-        return red
-    red = _admin_or_financeiro_required()
-    if red:
-        return red
-
-    try:
-        ano = int(request.args.get("ano") or date.today().year)
-        mes = int(request.args.get("mes") or date.today().month)
-    except Exception:
-        ano, mes = date.today().year, date.today().month
-
-    with SessionLocal() as db:
-        q = db.query(CampanhaV2Resultado).filter(
-            CampanhaV2Resultado.competencia_ano == ano,
-            CampanhaV2Resultado.competencia_mes == mes,
-        )
-        res = q.all()
-        camp_ids = sorted({r.campanha_id for r in res})
-        cmap = {}
-        if camp_ids:
-            for c in db.query(CampanhaV2Master).filter(CampanhaV2Master.id.in_(camp_ids)).all():
-                cmap[c.id] = c
-
-    rows = []
-    for r in res:
-        c = cmap.get(r.campanha_id)
-        rows.append(
-            {
-                "ano": r.competencia_ano,
-                "mes": r.competencia_mes,
-                "emp": r.emp,
-                "vendedor": r.vendedor,
-                "campanha_id": r.campanha_id,
-                "campanha": (c.titulo if c else ""),
-                "tipo": r.tipo,
-                "base": r.base_num,
-                "recompensa": r.valor_recompensa,
-                "status": r.status_pagamento,
-                "pago_em": (r.pago_em.isoformat() if r.pago_em else ""),
-            }
-        )
-
-    df = pd.DataFrame(rows)
-    buf = BytesIO()
-    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
-        df.to_excel(writer, index=False, sheet_name="campanhas_v2")
-    buf.seek(0)
-    fname = f"campanhas_v2_{ano}_{mes:02d}.xlsx"
-    return send_file(
-        buf,
-        as_attachment=True,
-        download_name=fname,
-        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    )
 
 
 
