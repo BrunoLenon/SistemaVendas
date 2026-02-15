@@ -1,5 +1,31 @@
 from __future__ import annotations
 
+def _sanitize_emps(emp_list):
+    """Normalize lista de EMPs vindas de args/sessão.
+
+    Remove None/'' e tokens tipo 'todas', mantendo ordem e sem duplicar.
+    Campanhas globais devem ser tratadas via emp IS NULL ou emp == '' no SQL,
+    então NÃO incluímos '' na lista selecionada.
+    """
+    if not emp_list:
+        return []
+    out = []
+    seen = set()
+    for e in emp_list:
+        if e is None:
+            continue
+        s = str(e).strip()
+        if not s:
+            continue
+        sl = s.lower()
+        if sl in ("todas", "todos", "all", "*"):
+            continue
+        if s not in seen:
+            out.append(s)
+            seen.add(s)
+    return out
+
+
 from dataclasses import dataclass
 from datetime import date, datetime
 import datetime
@@ -9,8 +35,6 @@ from sqlalchemy import or_
 
 from db import (
     SessionLocal,
-    Usuario,
-    UsuarioEmp,
     Venda,
     CampanhaQtdResultado,
     CampanhaQtd,
@@ -19,14 +43,7 @@ from db import (
     CampanhaComboResultado,
     ItemParado,
     FechamentoMensal,
-    CampanhaMasterV2,
-    CampanhaResultadoV2,
 )
-
-try:
-    from services.campanhas_v2_engine import GLOBAL_EMP_TOKEN
-except Exception:
-    GLOBAL_EMP_TOKEN = "__GLOBAL__"
 
 from services.campanhas_service import CampanhasDeps
 
@@ -114,6 +131,10 @@ def build_relatorio_campanhas_context(
     """
     role_l = (role or "").strip().lower()
 
+    # Sanitiza EMPs (evita '' quebrar queries)
+    emps_scope = _sanitize_emps(emps_scope)
+    emps_sel = _sanitize_emps(emps_sel)
+
     # Para vendedor/supervisor: se não selecionou explicitamente EMP, assume escopo permitido
     if role_l != "admin" and not emps_sel and emps_scope:
         emps_sel = [str(e) for e in emps_scope]
@@ -132,6 +153,10 @@ def build_relatorio_campanhas_context(
             deps.recalcular_resultados_combos_para_scope(ano=ano, mes=mes, emps_scope=emps_scope, vendedores_por_emp=vendedores_por_emp)
     except Exception as e:
         print(f"[RELATORIO_CAMPANHAS] erro ao recalcular snapshots: {e}")
+        try:
+            deps.db.rollback()
+        except Exception:
+            pass
         flash("Não foi possível recalcular os resultados das campanhas agora. Exibindo dados já salvos.", "warning")
 
     emps_todos: list[dict[str, Any]] = []  # tab A (cadastros)
@@ -155,34 +180,9 @@ def build_relatorio_campanhas_context(
 
         emps_process = emps_sel or emps_scope
 
-        # Evita "vendedores fantasmas": usa apenas vendedores cadastrados (role=vendedor) vinculados à EMP.
-        vendedores_cad_por_emp: dict[str, set[str]] = {}
-        try:
-            emps_q = [str(e) for e in (emps_process or []) if str(e).strip()]
-            if emps_q:
-                rows_v = (
-                    db.query(Usuario.username, UsuarioEmp.emp)
-                    .join(UsuarioEmp, UsuarioEmp.usuario_id == Usuario.id)
-                    .filter(Usuario.role == "vendedor")
-                    .filter(UsuarioEmp.ativo.is_(True))
-                    .filter(UsuarioEmp.emp.in_(emps_q))
-                    .all()
-                )
-                for uname, empv in rows_v:
-                    vendedores_cad_por_emp.setdefault(str(empv), set()).add(str(uname).upper())
-        except Exception:
-            vendedores_cad_por_emp = {}
-
-
         for emp in emps_process:
             emp = str(emp)
             vendedores = vendedores_por_emp.get(emp) or []
-
-            # filtra para manter somente vendedores cadastrados nesta EMP (se disponível)
-            cad = vendedores_cad_por_emp.get(str(emp)) if vendedores_cad_por_emp else None
-            if cad:
-                vendedores = [v for v in vendedores if str(v).upper() in cad]
-
             if not vendedores:
                 continue
 
@@ -218,10 +218,9 @@ def build_relatorio_campanhas_context(
                     combos_payload.append({"combo": c, "itens": []})
 
             # Itens Parados ativos por EMP
-            itens_parados_defs_orm: list[ItemParado] = []
-            itens_parados_defs_payload: list[dict[str, Any]] = []
+            itens_parados_defs: list[ItemParado] = []
             try:
-                itens_parados_defs_orm = (
+                itens_parados_defs = (
                     db.query(ItemParado)
                     .filter(ItemParado.ativo.is_(True), ItemParado.emp == emp)
                     .order_by(ItemParado.descricao.asc())
@@ -229,37 +228,14 @@ def build_relatorio_campanhas_context(
                 )
             except Exception as _e:
                 print(f"[RELATORIO_CAMPANHAS] erro ao carregar itens_parados da EMP {emp}: {_e}")
-                itens_parados_defs_orm = []
-                itens_parados_defs_payload = []
-
-            # Payload safe (avoid DetachedInstanceError in templates after session closes)
-            if itens_parados_defs_orm and not itens_parados_defs_payload:
-                itens_parados_defs_payload = [
-                    {
-                        "id": getattr(p, "id", None),
-                        "codigo": getattr(p, "codigo", getattr(p, "mestre", getattr(p, "match_mestre", None))),
-                        "mestre": getattr(p, "mestre", None),
-                        "match_mestre": getattr(p, "match_mestre", None),
-                        "descricao": getattr(p, "descricao", getattr(p, "nome", getattr(p, "nome_item", None))),
-                        "premio": getattr(p, "premio", getattr(p, "valor", getattr(p, "valor_premio", None))),
-                        "valor": getattr(p, "valor", None),
-                        "percentual": getattr(p, "percentual", getattr(p, "pct", None)),
-                        "base": getattr(p, "base", None),
-                        "data_inicio": getattr(p, "data_inicio", None),
-                        "data_fim": getattr(p, "data_fim", None),
-                        "vigencia": getattr(p, "vigencia", None),
-                        "emp": getattr(p, "emp", emp),
-                        "ativo": getattr(p, "ativo", True),
-                    }
-                    for p in itens_parados_defs_orm
-                ]
+                itens_parados_defs = []
 
             emps_todos.append({
                 "emp": emp,
                 "fechado": bool(fech_map.get(emp, False)),
                 "campanhas_qtd": campanhas_qtd_defs,
                 "combos": combos_payload,
-                "itens_parados": itens_parados_defs_payload,
+                "itens_parados": itens_parados_defs,
             })
 
             # -------- Resultados (Tabs B/C) --------
@@ -303,7 +279,7 @@ def build_relatorio_campanhas_context(
             )
 
             # Itens Parados resultados (calculado ao vivo com base em vendas)
-            parados_itens = itens_parados_defs_orm or []
+            parados_itens = itens_parados_defs or []
             parados_por_vendedor: dict[str, list[dict[str, Any]]] = {v: [] for v in vendedores}
 
             if parados_itens:
@@ -497,75 +473,6 @@ def build_relatorio_campanhas_context(
             for v, itens in (parados_por_vendedor or {}).items():
                 if itens:
                     by_vend.setdefault(v, []).extend(itens)
-
-            # -------- Campanhas V2 (Enterprise) - Aditivo --------
-            try:
-                # carrega cadastros para título/marca/vigência
-                v2_rows = (
-                    db.query(CampanhaResultadoV2)
-                    .filter(
-                        CampanhaResultadoV2.competencia_ano == int(ano),
-                        CampanhaResultadoV2.competencia_mes == int(mes),
-                        CampanhaResultadoV2.vendedor.in_(vendedores),
-                        CampanhaResultadoV2.valor_recompensa > 0,
-                        or_(CampanhaResultadoV2.emp == emp, CampanhaResultadoV2.emp == GLOBAL_EMP_TOKEN),
-                    )
-                    .all()
-                )
-
-                if v2_rows:
-                    camp_ids = sorted({int(r.campanha_id) for r in v2_rows if getattr(r, "campanha_id", None) is not None})
-                    cmap: dict[int, Any] = {}
-                    if camp_ids:
-                        for cc in db.query(CampanhaMasterV2).filter(CampanhaMasterV2.id.in_(camp_ids)).all():
-                            cid = getattr(cc, "id", None)
-                            if cid is not None:
-                                cmap[int(cid)] = cc
-
-                    for r in v2_rows:
-                        vend = (getattr(r, "vendedor", "") or "").strip().upper()
-                        cc = cmap.get(int(getattr(r, "campanha_id", 0) or 0))
-                        titulo = getattr(cc, "titulo", None) if cc is not None else f"Campanha {getattr(r, 'tipo', '')}"
-                        marca = ""
-                        try:
-                            marca = (getattr(cc, "marca_alvo", None) or "").strip() if cc is not None else ""
-                        except Exception:
-                            marca = ""
-
-                        # vigência formatada + tag encerrada
-                        vig = ""
-                        try:
-                            di = getattr(r, "vigencia_ini", None) or (getattr(cc, "data_inicio", None) if cc is not None else None)
-                            df = getattr(r, "vigencia_fim", None) or (getattr(cc, "data_fim", None) if cc is not None else None)
-                            if di and df:
-                                # normaliza para date
-                                if isinstance(di, datetime.datetime):
-                                    di = di.date()
-                                if isinstance(df, datetime.datetime):
-                                    df = df.date()
-                                vig = f"{di.strftime('%d/%m/%Y')} → {df.strftime('%d/%m/%Y')}"
-                                if isinstance(df, date) and df < date.today():
-                                    vig = f"{vig} (ENCERRADA)"
-                        except Exception:
-                            vig = ""
-
-                        by_vend.setdefault(vend, []).append({
-                            "tipo": "V2",
-                            "titulo": titulo or "Campanha",
-                            "marca": marca,
-                            "item": getattr(r, "tipo", "") or "",
-                            "qtd_vendida": None,
-                            "valor_vendido": float(getattr(r, "base_num", 0) or 0),
-                            "valor_recompensa": float(getattr(r, "valor_recompensa", 0) or 0),
-                            "atingiu": bool(getattr(r, "atingiu", True)),
-                            "vigencia": vig,
-                            "status_pagamento": getattr(r, "status_pagamento", None) or "PENDENTE",
-                            "origem": "V2",
-                            "campanha_id": int(getattr(r, "campanha_id", 0) or 0),
-                        })
-            except Exception as _e:
-                # se tabela não existe / SQL falhou, não derruba página
-                pass
 
             vendedores_cards = []
             for v in vendedores:
