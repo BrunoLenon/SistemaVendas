@@ -149,7 +149,7 @@
             <td>
               <strong>{{ p.vendedor }}</strong>
               <div class="muted" style="font-size:12px;">
-                <a href="/financeiro/extrato?ano={{ ano }}&mes={{ mes }}&vendedor={{ p.vendedor }}{% if p.emp is not none %}&emp={{ p.emp }}{% endif %}">Extrato</a>
+                <a href="/financeiro/extrato?ano={{ ano }}&mes={{ mes }}&vendedor={{ p.vendedor }}">Extrato</a>
               </div>
             </td>
             <td class="text-end">R$ {{ (p.valor_premio or 0)|brl }}</td>
