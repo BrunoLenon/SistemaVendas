@@ -6749,7 +6749,7 @@ def err_500(e):
 # ==========================
 
 @app.route("/admin/campanhas_v2", methods=["GET", "POST"])
-@admin_required
+@_admin_required
 def admin_campanhas_v2():
     from datetime import date
     ano = int(request.args.get("ano") or date.today().year)
@@ -6787,7 +6787,7 @@ def admin_campanhas_v2():
 
 
 @app.route("/admin/campanhas_v2/recalcular", methods=["GET"])
-@admin_required
+@_admin_required
 def admin_campanhas_v2_recalcular():
     from datetime import date
     ano = int(request.args.get("ano") or date.today().year)
