@@ -65,6 +65,7 @@ from db import (
     AppSetting,
     BrandingTheme,
     criar_tabelas,
+)
 
 # ------------------------------------------------------------
 # Compatibilidade: alguns deploys ainda expõem os modelos V2 com sufixo *New
@@ -80,7 +81,6 @@ except Exception:  # ImportError em ambientes com nomes *New
         CampanhaV2ScopeEMPNew as CampanhaV2ScopeEMP,
         CampanhaV2ResultadoNew as CampanhaV2Resultado,
     )
-)
 from importar_excel import importar_planilha
 
 # Flask app (Render/Gunicorn expects `app` at module level: web/app.py -> app:app)
