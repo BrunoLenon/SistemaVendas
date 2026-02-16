@@ -32,6 +32,8 @@ from flask import (
     jsonify,
 )
 from werkzeug.security import check_password_hash, generate_password_hash
+from functools import wraps
+
 
 from dados_db import carregar_df, limpar_cache_df
 from db import (
@@ -771,6 +773,16 @@ def _admin_required():
         audit("admin_forbidden")
         return redirect(url_for("dashboard"))
     return None
+
+
+def admin_required(fn):
+    @wraps(fn)
+    def _wrapper(*args, **kwargs):
+        red = _admin_required()
+        if red:
+            return red
+        return fn(*args, **kwargs)
+    return _wrapper
 
 def _admin_or_supervisor_required():
     """Garante acesso ADMIN ou SUPERVISOR."""
