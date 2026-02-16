@@ -145,6 +145,25 @@ def recalcular_campanhas_v2(
         db.commit()
     except Exception:
         db.rollback()
+def recalc_v2_competencia(
+    db,
+    *,
+    ano: int,
+    mes: int,
+    actor: str = "system",
+    emps_scope: list[str] | None = None,
+    **kwargs,
+):
+    """Compat: alias esperado pelo app.py.
+
+    Alguns patches/rotas chamam `recalc_v2_competencia(...)`. A implementação oficial do motor V2 é
+    `recalcular_campanhas_v2(...)`. Mantemos este wrapper para evitar quebra de import e permitir
+    chamadas com kwargs extras (ex.: actor).
+    """
+    if emps_scope is None:
+        emps_scope = []
+    return recalcular_campanhas_v2(db, ano=ano, mes=mes, emps_scope=emps_scope, actor=actor)
+
 
 
 def _upsert_resultados(db, c: CampanhaMasterV2, ano: int, mes: int, rows: list[CampanhaV2ResultRow], *, force: bool) -> None:
