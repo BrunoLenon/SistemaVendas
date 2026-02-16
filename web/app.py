@@ -15,6 +15,8 @@ from datetime import date, datetime, timedelta
 import calendar
 from io import BytesIO
 
+from functools import wraps
+
 from decimal import Decimal, ROUND_HALF_UP
 
 import pandas as pd
@@ -32,8 +34,6 @@ from flask import (
     jsonify,
 )
 from werkzeug.security import check_password_hash, generate_password_hash
-from functools import wraps
-
 
 from dados_db import carregar_df, limpar_cache_df
 from db import (
@@ -775,7 +775,9 @@ def _admin_required():
     return None
 
 
+
 def admin_required(fn):
+    """Decorator: exige role ADMIN (usa _admin_required)."""
     @wraps(fn)
     def _wrapper(*args, **kwargs):
         red = _admin_required()
@@ -783,7 +785,6 @@ def admin_required(fn):
             return red
         return fn(*args, **kwargs)
     return _wrapper
-
 def _admin_or_supervisor_required():
     """Garante acesso ADMIN ou SUPERVISOR."""
     if (_role() or "").lower() not in ["admin", "supervisor"]:
@@ -792,6 +793,30 @@ def _admin_or_supervisor_required():
         return redirect(url_for("dashboard"))
     return None
 
+
+
+def _financeiro_required():
+    """Garante acesso FINANCEIRO (ou ADMIN).
+
+    Retorna um redirect quando não tiver permissão; caso contrário retorna None.
+    """
+    r = (_role() or "").lower()
+    if r not in ("financeiro", "admin"):
+        flash("Acesso restrito ao financeiro.", "warning")
+        audit("financeiro_forbidden", path=request.path)
+        return redirect(url_for("dashboard"))
+    return None
+
+
+def financeiro_required(fn):
+    """Decorator: exige role FINANCEIRO (ou ADMIN)."""
+    @wraps(fn)
+    def _wrapper(*args, **kwargs):
+        red = _financeiro_required()
+        if red:
+            return red
+        return fn(*args, **kwargs)
+    return _wrapper
 def _get_vendedores_db(role: str, emp_usuario: str | None) -> list[str]:
     """Lista de vendedores para dropdown sem carregar todas as vendas em memória."""
     role = (role or "").strip().lower()
