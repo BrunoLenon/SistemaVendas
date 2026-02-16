@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Any, Callable
 
+from services.filter_scope import apply_selected_filter
+
 
 @dataclass(frozen=True)
 class CampanhasDeps:
@@ -228,34 +230,40 @@ def build_relatorio_campanhas_scope(
     emps_sel = [str(e).strip() for e in deps.parse_multi_args(args, "emp") if str(e).strip()]
     vendedores_sel = [str(v).strip().upper() for v in deps.parse_multi_args(args, "vendedor") if str(v).strip()]
 
+    # emps_base: lista completa para dropdown (NUNCA deve encolher após filtro)
+    # emps_scope: lista efetiva para consulta/cálculo (pode ser filtrada)
+    emps_base: list[str] = []
     emps_scope: list[str] = []
     vendedores_por_emp: dict[str, list[str]] = {}
 
     if role_l == "admin":
-        emps_scope = deps.get_emps_com_vendas_no_periodo(ano, mes)
-        # emps_sel é apenas filtro; não deve reduzir emps_scope (senão some do dropdown)
+        # ADMIN: base = todas EMPs com vendas no período (fallback: cadastro de EMPs)
+        emps_base = deps.get_emps_com_vendas_no_periodo(ano, mes) or []
+        if not emps_base:
+            try:
+                emps_base = deps.get_all_emp_codigos(True) or []
+            except Exception:
+                emps_base = []
+
+        emps_base, emps_scope = apply_selected_filter(emps_base, emps_sel)
     elif role_l == "supervisor":
         allowed = [str(e).strip() for e in (deps.resolver_emp_scope_para_usuario(vendedor_logado, role_l, emp_usuario) or []) if str(e).strip()]
         allowed = sorted(set(allowed))
         if not allowed:
             flash("Supervisor sem EMP vinculada. Ajuste o vínculo do usuário (usuario_emps).", "warning")
+            emps_base = []
             emps_scope = []
         else:
-            if emps_sel:
-                pick = [str(e).strip() for e in emps_sel if str(e).strip() in set(allowed)]
-                emps_scope = pick if pick else allowed[:]
-            else:
-                emps_scope = allowed[:]
+            emps_base = allowed[:]
+            # supervisor pode filtrar EMPs dentro do escopo permitido
+            emps_base, emps_scope = apply_selected_filter(emps_base, emps_sel)
     else:
         base_emps = [str(e).strip() for e in (deps.get_emps_vendedor(vendedor_logado) or []) if str(e).strip()]
         if not base_emps:
             base_emps = [str(e).strip() for e in (deps.resolver_emp_scope_para_usuario(vendedor_logado, role_l, emp_usuario) or []) if str(e).strip()]
         base_emps = sorted(set(base_emps))
-        if emps_sel:
-            wanted = {str(x).strip() for x in emps_sel if str(x).strip()}
-            emps_scope = [e for e in base_emps if e in wanted]
-        else:
-            emps_scope = base_emps[:]
+        emps_base = base_emps[:]
+        emps_base, emps_scope = apply_selected_filter(emps_base, emps_sel)
         if not emps_scope:
             flash("Não foi possível identificar a EMP do vendedor.", "warning")
 
@@ -282,6 +290,7 @@ def build_relatorio_campanhas_scope(
         "mes": mes,
         "emps_sel": emps_sel,
         "vendedores_sel": vendedores_sel,
+        "emps_base": emps_base,
         "emps_scope": emps_scope,
         "vendedores_por_emp": vendedores_por_emp,
     }

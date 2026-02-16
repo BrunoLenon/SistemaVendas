@@ -3418,6 +3418,7 @@ def relatorio_campanhas():
     mes = int(scope["mes"])
     emps_sel = scope["emps_sel"]
     vendedores_sel = scope["vendedores_sel"]
+    emps_base = scope.get("emps_base") or scope.get("emps_scope") or []
     emps_scope = scope["emps_scope"]
     vendedores_por_emp = scope["vendedores_por_emp"]
 
@@ -3429,6 +3430,7 @@ def relatorio_campanhas():
         ano=ano,
         mes=mes,
         emps_scope=emps_scope,
+        emps_base=emps_base,
         emps_sel=emps_sel,
         vendedores_sel=vendedores_sel,
         vendedores_por_emp=vendedores_por_emp,

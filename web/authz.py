@@ -168,3 +168,58 @@ def admin_or_financeiro_required(fn: Callable):
         return fn(*args, **kwargs)
 
     return wrapper
+
+
+# =====================
+# Policies (camada única de autorização)
+# =====================
+
+def _norm_emp(emp: Any) -> str:
+    return str(emp).strip()
+
+
+def can_view_emp(user: UserScope, emp: Any) -> bool:
+    """Regra única: usuário pode ver a EMP?
+
+    - admin: sempre
+    - financeiro: visão centralizada (se tiver lista de EMPs, respeita; se não tiver, libera)
+    - supervisor/vendedor: precisa estar em `user.emps` (quando definido) ou bater com `emp_default`
+    """
+    emp_s = _norm_emp(emp)
+    if not emp_s:
+        return False
+    if user.is_admin():
+        return True
+    if user.is_financeiro():
+        # se o financeiro tiver EMPs explicitadas, respeita; caso contrário, é centralizado
+        return True if not user.emps else (emp_s in {str(e) for e in user.emps})
+    if user.emps:
+        return emp_s in {str(e) for e in user.emps}
+    if user.emp_default is not None:
+        return emp_s == str(user.emp_default)
+    return False
+
+
+def can_close_payment(user: UserScope) -> bool:
+    """Fechamento/pagamento: ADMIN ou FINANCEIRO."""
+    return user.is_admin() or user.is_financeiro()
+
+
+def can_edit_campaign(user: UserScope) -> bool:
+    """Administra campanha (criar/editar/remover): somente ADMIN."""
+    return user.is_admin()
+
+
+def can_view_vendedor(user: UserScope, vendedor: Any) -> bool:
+    """Regra única: usuário pode ver esse vendedor?
+
+    - admin/supervisor/financeiro: permitido (o recorte final deve vir do filtro de EMP)
+    - vendedor: apenas ele mesmo (session['vendedor'])
+    """
+    v = (str(vendedor or "").strip().upper())
+    if not v:
+        return False
+    if user.is_vendedor():
+        me = (user.vendedor or "").strip().upper()
+        return bool(me) and v == me
+    return True
