@@ -7019,8 +7019,11 @@ def financeiro_pagamentos():
         totais = {
             "pendente_qtd": pend_q,
             "pendente_valor": pend_v,
+            # compat: template antigo usa apagar_*
             "a_pagar_qtd": ap_q,
             "a_pagar_valor": ap_v,
+            "apagar_qtd": ap_q,
+            "apagar_valor": ap_v,
             "pago_qtd": pg_q,
             "pago_valor": pg_v,
         }
@@ -7037,10 +7040,97 @@ def financeiro_pagamentos():
     )
 
 
+
+
+@app.route("/financeiro/extrato", methods=["GET"])
+@financeiro_required
+def financeiro_extrato():
+    """Extrato detalhado: lista TODAS as campanhas/pagamentos do vendedor na competência."""
+    ano = int(request.args.get("ano") or datetime.utcnow().year)
+    mes = int(request.args.get("mes") or datetime.utcnow().month)
+    vendedor = (request.args.get("vendedor") or "").strip()
+    status = (request.args.get("status") or "").strip().upper() or None
+    emp = (request.args.get("emp") or "").strip()
+
+    if not vendedor:
+        flash("Informe o vendedor para ver o extrato.", "warning")
+        return redirect(url_for("financeiro_pagamentos", ano=ano, mes=mes))
+
+    with SessionLocal() as db:
+        q = (
+            db.query(FinanceiroPagamento)
+            .filter(FinanceiroPagamento.ano == ano, FinanceiroPagamento.mes == mes)
+            .filter(FinanceiroPagamento.vendedor == vendedor)
+        )
+
+        if status in {"PENDENTE", "A_PAGAR", "PAGO"}:
+            q = q.filter(FinanceiroPagamento.status == status)
+
+        if emp:
+            try:
+                q = q.filter(FinanceiroPagamento.emp == int(emp))
+            except Exception:
+                pass
+
+        rows = q.order_by(
+            FinanceiroPagamento.status.asc(),
+            FinanceiroPagamento.origem_tipo.asc(),
+            FinanceiroPagamento.campanha_nome.asc().nullslast(),
+            FinanceiroPagamento.emp.asc().nullsfirst(),
+        ).all()
+
+        total_valor = float(
+            db.query(func.coalesce(func.sum(FinanceiroPagamento.valor_premio), 0.0))
+            .filter(FinanceiroPagamento.ano == ano, FinanceiroPagamento.mes == mes, FinanceiroPagamento.vendedor == vendedor)
+            .scalar()
+            or 0.0
+        )
+
+        def _tot(st):
+            tq = db.query(
+                func.count(FinanceiroPagamento.id),
+                func.coalesce(func.sum(FinanceiroPagamento.valor_premio), 0.0),
+            ).filter(FinanceiroPagamento.ano == ano, FinanceiroPagamento.mes == mes, FinanceiroPagamento.vendedor == vendedor, FinanceiroPagamento.status == st)
+            if emp:
+                try:
+                    tq = tq.filter(FinanceiroPagamento.emp == int(emp))
+                except Exception:
+                    pass
+            c, s = tq.first() or (0, 0.0)
+            return int(c or 0), float(s or 0.0)
+
+        pend_q, pend_v = _tot("PENDENTE")
+        ap_q, ap_v = _tot("A_PAGAR")
+        pg_q, pg_v = _tot("PAGO")
+
+        totais = {
+            "pendente_qtd": pend_q,
+            "pendente_valor": pend_v,
+            "a_pagar_qtd": ap_q,
+            "a_pagar_valor": ap_v,
+            "apagar_qtd": ap_q,
+            "apagar_valor": ap_v,
+            "pago_qtd": pg_q,
+            "pago_valor": pg_v,
+            "total_valor": total_valor,
+        }
+
+    return render_template(
+        "financeiro_extrato.html",
+        ano=ano,
+        mes=mes,
+        vendedor=vendedor,
+        emp=emp,
+        status=status,
+        pagamentos=rows,
+        totais=totais,
+    )
+
+
 @app.route("/financeiro/pagamentos/status", methods=["POST"])
 @financeiro_required
 def financeiro_pagamentos_status():
-    pagamento_id = int(request.form.get("pagamento_id") or 0)
+    pagamento_id = int(request.form.get("pagamento_id") or request.form.get("id") or 0)
     novo_status = (request.form.get("novo_status") or "").strip().upper()
 
     if novo_status not in {"PENDENTE", "A_PAGAR", "PAGO"}:
@@ -7069,6 +7159,9 @@ def financeiro_pagamentos_status():
 def financeiro_pagamentos_status_lote():
     novo_status = (request.form.get("novo_status") or "").strip().upper()
     ids = request.form.getlist("ids") or []
+    ids_csv = (request.form.get("ids") or "").strip()
+    if ids_csv:
+        ids += [x.strip() for x in ids_csv.split(",") if x.strip()]
 
     if novo_status not in {"PENDENTE", "A_PAGAR", "PAGO"}:
         flash("Status inválido.", "danger")

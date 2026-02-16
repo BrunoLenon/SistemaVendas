@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Financeiro • Extrato</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body { background: #0b0f14; color: #e9eef5; }
+    .card { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); }
+    .table { color: #e9eef5; }
+    .table thead th { border-bottom: 1px solid rgba(255,255,255,0.18); }
+    .table td, .table th { border-top: 1px solid rgba(255,255,255,0.10); }
+    .form-control, .form-select { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); color: #e9eef5; }
+    .form-control:focus, .form-select:focus { box-shadow: none; border-color: rgba(255,255,255,0.35); }
+    .btn-outline-light { border-color: rgba(255,255,255,0.35); }
+    .badge { font-weight: 600; }
+    a { color: #9fd3ff; }
+    .muted { color: rgba(233,238,245,0.65); }
+  </style>
+</head>
+<body>
+<div class="container py-4">
+
+  <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+    <div>
+      <h3 class="mb-0">Financeiro • Extrato</h3>
+      <div class="muted">
+        Vendedor: <strong>{{ vendedor }}</strong> • Competência: <strong>{{ "%02d"|format(mes) }}/{{ ano }}</strong>
+        {% if emp %} • EMP: <strong>{{ emp }}</strong>{% endif %}
+      </div>
+    </div>
+    <div class="d-flex gap-2">
+      <a class="btn btn-outline-light" href="/financeiro/pagamentos?ano={{ ano }}&mes={{ mes }}{% if emp %}&emp={{ emp }}{% endif %}&vendedor={{ vendedor }}">Voltar</a>
+      <a class="btn btn-outline-light" href="/dashboard">Dashboard</a>
+    </div>
+  </div>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for category, message in messages %}
+        <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+          {{ message }}
+          <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
+
+  <div class="card p-3 mb-3">
+    <form class="row g-2 align-items-end" method="get" action="/financeiro/extrato">
+      <input type="hidden" name="ano" value="{{ ano }}">
+      <input type="hidden" name="mes" value="{{ mes }}">
+      <input type="hidden" name="vendedor" value="{{ vendedor }}">
+      <div class="col-12 col-md-3">
+        <label class="form-label">Status</label>
+        <select class="form-select" name="status">
+          <option value="" {% if not status %}selected{% endif %}>Todos</option>
+          <option value="PENDENTE" {% if status=='PENDENTE' %}selected{% endif %}>PENDENTE</option>
+          <option value="A_PAGAR" {% if status=='A_PAGAR' %}selected{% endif %}>A_PAGAR</option>
+          <option value="PAGO" {% if status=='PAGO' %}selected{% endif %}>PAGO</option>
+        </select>
+      </div>
+      <div class="col-12 col-md-3">
+        <label class="form-label">EMP</label>
+        <input class="form-control" type="text" name="emp" value="{{ emp or '' }}" placeholder="ex: 101 (vazio = todas)">
+      </div>
+      <div class="col-12 col-md-6 d-flex gap-2 mt-2">
+        <button class="btn btn-primary" type="submit">Filtrar</button>
+        <a class="btn btn-outline-light" href="/financeiro/extrato?ano={{ ano }}&mes={{ mes }}&vendedor={{ vendedor }}{% if emp %}&emp={{ emp }}{% endif %}">Limpar</a>
+      </div>
+    </form>
+  </div>
+
+  <div class="row g-2 mb-3">
+    <div class="col-12 col-md-4">
+      <div class="card p-3">
+        <div class="muted">Total PENDENTE</div>
+        <div class="fs-5">{{ totais.pendente_qtd }} • R$ {{ (totais.pendente_valor or 0)|brl }}</div>
+      </div>
+    </div>
+    <div class="col-12 col-md-4">
+      <div class="card p-3">
+        <div class="muted">Total A_PAGAR</div>
+        <div class="fs-5">{{ totais.apagar_qtd }} • R$ {{ (totais.apagar_valor or 0)|brl }}</div>
+      </div>
+    </div>
+    <div class="col-12 col-md-4">
+      <div class="card p-3">
+        <div class="muted">Total PAGO</div>
+        <div class="fs-5">{{ totais.pago_qtd }} • R$ {{ (totais.pago_valor or 0)|brl }}</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card p-0 overflow-hidden">
+    <div class="table-responsive">
+      <table class="table table-hover table-sm mb-0 align-middle">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Origem</th>
+            <th>Campanha</th>
+            <th>EMP</th>
+            <th class="text-end">Valor</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for p in pagamentos %}
+          <tr>
+            <td class="muted">{{ p.id }}</td>
+            <td><span class="badge text-bg-secondary">{{ p.origem_tipo }}</span></td>
+            <td>{{ p.campanha_nome or "-" }}</td>
+            <td>{{ p.emp if p.emp is not none else "GLOBAL" }}</td>
+            <td class="text-end">R$ {{ (p.valor_premio or 0)|brl }}</td>
+            <td>
+              {% if p.status == 'PENDENTE' %}
+                <span class="badge text-bg-light">PENDENTE</span>
+              {% elif p.status == 'A_PAGAR' %}
+                <span class="badge text-bg-warning">A_PAGAR</span>
+              {% else %}
+                <span class="badge text-bg-success">PAGO</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+          {% if not pagamentos %}
+          <tr><td colspan="6" class="p-4 muted">Nenhum registro encontrado para este vendedor/competência.</td></tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

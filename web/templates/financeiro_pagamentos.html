@@ -146,7 +146,12 @@
             <td><span class="badge text-bg-secondary">{{ p.origem_tipo }}</span></td>
             <td>{{ p.campanha_nome or "-" }}</td>
             <td>{{ p.emp if p.emp is not none else "GLOBAL" }}</td>
-            <td><strong>{{ p.vendedor }}</strong></td>
+            <td>
+              <strong>{{ p.vendedor }}</strong>
+              <div class="muted" style="font-size:12px;">
+                <a href="/financeiro/extrato?ano={{ ano }}&mes={{ mes }}&vendedor={{ p.vendedor }}{% if p.emp is not none %}&emp={{ p.emp }}{% endif %}">Extrato</a>
+              </div>
+            </td>
             <td class="text-end">R$ {{ (p.valor_premio or 0)|brl }}</td>
             <td>
               {% if p.status == 'PENDENTE' %}
