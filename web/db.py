@@ -766,29 +766,6 @@ class CampanhaV2Master(Base):
     )
 
 
-
-
-class CampanhaV2ScopeEMP(Base):
-    """Mapeia o escopo por EMP de uma campanha V2.
-
-    Usado quando a campanha V2 é cadastrada com lista de EMPs (ex.: "101,1001").
-    Mantemos em tabela separada para facilitar filtros/joins e evitar depender
-    de JSON/texto no banco.
-    """
-
-    __tablename__ = "campanhas_scope_emp_v2"
-
-    id = Column(Integer, primary_key=True)
-    campanha_id = Column(Integer, nullable=False, index=True)
-    emp = Column(Integer, nullable=False, index=True)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-
-    __table_args__ = (
-        UniqueConstraint("campanha_id", "emp", name="uq_camp_v2_scope_emp"),
-        Index("ix_camp_v2_scope_emp_lookup", "emp", "campanha_id"),
-    )
-
-
 class CampanhaV2Resultado(Base):
     __tablename__ = "campanhas_resultados_v2"
 
@@ -854,6 +831,158 @@ CampanhaMasterV2 = CampanhaV2Master
 CampanhaResultadoV2 = CampanhaV2Resultado
 CampanhaAuditV2 = CampanhaV2Audit
 
+
+
+
+# ==========================
+# Campaign Engine V2 (NEW schema - 2026-02)
+# These map to the new tables created via Supabase SQL:
+#   campanhas_v2_master, campanhas_scope_emp_v2, campanhas_v2_resultados
+# and are used by the Financeiro module (pagamentos) and the V2 engine going forward.
+# They coexist with the older V2 tables (campanhas_master_v2 / campanhas_resultados_v2)
+# to avoid breaking older deployments.
+# ==========================
+
+class CampanhaV2MasterNew(Base):
+    __tablename__ = "campanhas_v2_master"
+
+    id = Column(Integer, primary_key=True)
+    nome = Column(Text, nullable=False)
+    tipo = Column(String(40), nullable=False, index=True)
+
+    ativo = Column(Boolean, nullable=False, default=True)
+
+    vigencia_inicio = Column(Date, nullable=True)
+    vigencia_fim = Column(Date, nullable=True)
+
+    scope_mode = Column(String(20), nullable=False, default="GLOBAL")  # GLOBAL | POR_EMP
+
+    marca_alvo = Column(Text, nullable=True)
+
+    meta_valor = Column(Float, nullable=True)
+    meta_percentual = Column(Float, nullable=True)
+
+    mix_qtd_min = Column(Integer, nullable=True)
+
+    janela_meses = Column(Integer, nullable=False, default=1)
+
+    premio_tipo = Column(String(20), nullable=False, default="FIXO")  # FIXO | PERCENTUAL
+    premio_top1 = Column(Float, nullable=True)
+    premio_top2 = Column(Float, nullable=True)
+    premio_top3 = Column(Float, nullable=True)
+    premio_percentual = Column(Float, nullable=True)
+
+    base_minima_valor = Column(Float, nullable=False, default=0.0)
+
+    criado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
+    atualizado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class CampanhaV2ScopeEMPNew(Base):
+    __tablename__ = "campanhas_scope_emp_v2"
+
+    id = Column(Integer, primary_key=True)
+    campanha_id = Column(Integer, nullable=False, index=True)
+    emp = Column(Integer, nullable=False, index=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("campanha_id", "emp", name="uq_camp_v2_scope_emp"),
+        Index("ix_camp_v2_scope_emp_emp", "emp"),
+    )
+
+
+class CampanhaV2ResultadoNew(Base):
+    __tablename__ = "campanhas_v2_resultados"
+
+    id = Column(Integer, primary_key=True)
+    campanha_id = Column(Integer, nullable=False, index=True)
+
+    ano = Column(Integer, nullable=False, index=True)
+    mes = Column(Integer, nullable=False, index=True)
+
+    emp = Column(Integer, nullable=True, index=True)  # null quando GLOBAL
+    vendedor = Column(String(80), nullable=False, index=True)
+
+    valor_base = Column(Float, nullable=True)
+    valor_atual = Column(Float, nullable=True)
+    pct = Column(Float, nullable=True)
+    mix = Column(Integer, nullable=True)
+
+    posicao = Column(Integer, nullable=True)
+    atingiu = Column(Boolean, nullable=False, default=False)
+    premio = Column(Float, nullable=False, default=0.0)
+
+    detalhes_json = Column(Text, nullable=True)
+    calculado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("campanha_id", "ano", "mes", "emp", "vendedor", name="uq_camp_v2_result_key"),
+        Index("ix_camp_v2_result_competencia", "ano", "mes"),
+        Index("ix_camp_v2_result_emp_competencia", "emp", "ano", "mes"),
+        Index("ix_camp_v2_result_vendedor_competencia", "vendedor", "ano", "mes"),
+    )
+
+
+# ==========================
+# Financeiro (pagamentos + audit)
+# Tables:
+#   financeiro_pagamentos, financeiro_audit
+# ==========================
+
+class FinanceiroPagamento(Base):
+    __tablename__ = "financeiro_pagamentos"
+
+    id = Column(Integer, primary_key=True)
+
+    ano = Column(Integer, nullable=False, index=True)
+    mes = Column(Integer, nullable=False, index=True)
+
+    origem_tipo = Column(String(20), nullable=False, index=True)  # V1_QTD | V1_COMBO | V1_PARADOS | V2
+    origem_id = Column(Integer, nullable=False, index=True)
+
+    campanha_nome = Column(Text, nullable=True)
+
+    emp = Column(Integer, nullable=True, index=True)
+    vendedor = Column(String(80), nullable=False, index=True)
+
+    valor_premio = Column(Float, nullable=False, default=0.0)
+    status = Column(String(20), nullable=False, default="PENDENTE", index=True)
+
+    atualizado_por = Column(Text, nullable=True)
+    atualizado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    criado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("ano", "mes", "origem_tipo", "origem_id", "emp", "vendedor", name="uq_fin_pag_key"),
+        Index("ix_fin_pag_competencia", "ano", "mes"),
+        Index("ix_fin_pag_status", "status"),
+        Index("ix_fin_pag_emp_competencia", "emp", "ano", "mes"),
+        Index("ix_fin_pag_vendedor_competencia", "vendedor", "ano", "mes"),
+        Index("ix_fin_pag_origem", "origem_tipo", "origem_id"),
+    )
+
+
+class FinanceiroAudit(Base):
+    __tablename__ = "financeiro_audit"
+
+    id = Column(Integer, primary_key=True)
+    pagamento_id = Column(Integer, nullable=False, index=True)
+
+    acao = Column(String(40), nullable=False)
+    de_status = Column(String(20), nullable=True)
+    para_status = Column(String(20), nullable=True)
+
+    usuario = Column(Text, nullable=True)
+    criado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    meta = Column(Text, nullable=True)
+
+    __table_args__ = (
+        Index("ix_fin_audit_pagamento", "pagamento_id"),
+        Index("ix_fin_audit_criado_em", "criado_em"),
+    )
 
 def criar_tabelas():
     """Cria tabelas e aplica ajustes leves de schema (compatibilidade).

@@ -1,0 +1,100 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container" style="max-width: 1200px;">
+  <h2 style="margin: 18px 0 8px;">Financeiro • Pagamentos</h2>
+  <p style="margin: 0 0 16px; opacity: .8;">Competência: <b>{{ ano }}</b>/<b>{{ '%02d'|format(mes) }}</b></p>
+
+  <form method="get" style="display:flex; gap:10px; flex-wrap:wrap; align-items:end; margin-bottom: 14px;">
+    <div>
+      <label>Ano</label>
+      <input name="ano" value="{{ ano }}" class="form-control" style="min-width:110px;" />
+    </div>
+    <div>
+      <label>Mês</label>
+      <input name="mes" value="{{ mes }}" class="form-control" style="min-width:90px;" />
+    </div>
+    <div>
+      <label>Status</label>
+      <select name="status" class="form-control" style="min-width:160px;">
+        <option value="" {% if not filtro_status %}selected{% endif %}>Todos</option>
+        {% for s in ['PENDENTE','A_PAGAR','PAGO'] %}
+          <option value="{{s}}" {% if filtro_status==s %}selected{% endif %}>{{s}}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label>EMP</label>
+      <input name="emp" value="{{ filtro_emp or '' }}" class="form-control" style="min-width:110px;" placeholder="(opcional)" />
+    </div>
+    <div>
+      <label>Vendedor</label>
+      <input name="vendedor" value="{{ filtro_vendedor or '' }}" class="form-control" style="min-width:180px;" placeholder="(opcional)" />
+    </div>
+    <div>
+      <button class="btn btn-primary" type="submit">Filtrar</button>
+    </div>
+  </form>
+
+  <form method="post" action="{{ url_for('financeiro_sync_v2') }}" style="margin-bottom: 14px;">
+    <input type="hidden" name="ano" value="{{ ano }}" />
+    <input type="hidden" name="mes" value="{{ mes }}" />
+    <button class="btn btn-outline-secondary" type="submit">Sincronizar V2 → Financeiro</button>
+    <span style="margin-left:10px; opacity:.75;">Cria/atualiza pagamentos a partir de <code>campanhas_v2_resultados</code>.</span>
+  </form>
+
+  <div class="card" style="border-radius: 14px;">
+    <div class="card-body">
+      <div style="overflow:auto;">
+        <table class="table table-sm table-hover" style="min-width: 1000px;">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Origem</th>
+              <th>Campanha</th>
+              <th>EMP</th>
+              <th>Vendedor</th>
+              <th style="text-align:right;">Prêmio</th>
+              <th>Status</th>
+              <th>Ações</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for p in pagamentos %}
+            <tr>
+              <td>{{ p.id }}</td>
+              <td>{{ p.origem_tipo }} #{{ p.origem_id }}</td>
+              <td>{{ p.campanha_nome or '-' }}</td>
+              <td>{{ p.emp if p.emp is not none else '-' }}</td>
+              <td>{{ p.vendedor }}</td>
+              <td style="text-align:right;">R$ {{ '%.2f'|format(p.valor_premio or 0) }}</td>
+              <td><b>{{ p.status }}</b></td>
+              <td>
+                <form method="post" action="{{ url_for('financeiro_update_status') }}" style="display:inline-flex; gap:6px;">
+                  <input type="hidden" name="id" value="{{ p.id }}" />
+                  <input type="hidden" name="ano" value="{{ ano }}" />
+                  <input type="hidden" name="mes" value="{{ mes }}" />
+                  <input type="hidden" name="status" value="A_PAGAR" />
+                  <button class="btn btn-sm btn-warning" type="submit" {% if p.status!='PENDENTE' %}disabled{% endif %}>A_PAGAR</button>
+                </form>
+                <form method="post" action="{{ url_for('financeiro_update_status') }}" style="display:inline-flex; gap:6px;">
+                  <input type="hidden" name="id" value="{{ p.id }}" />
+                  <input type="hidden" name="ano" value="{{ ano }}" />
+                  <input type="hidden" name="mes" value="{{ mes }}" />
+                  <input type="hidden" name="status" value="PAGO" />
+                  <button class="btn btn-sm btn-success" type="submit" {% if p.status=='PAGO' %}disabled{% endif %}>PAGO</button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+
+            {% if pagamentos|length == 0 %}
+            <tr><td colspan="8" style="opacity:.7;">Nenhum pagamento encontrado para os filtros selecionados.</td></tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

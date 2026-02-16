@@ -38,6 +38,8 @@ from werkzeug.security import check_password_hash, generate_password_hash
 from dados_db import carregar_df, limpar_cache_df
 from db import (
     CampanhaV2Master, CampanhaV2ScopeEMP, CampanhaV2Resultado,
+    CampanhaV2MasterNew, CampanhaV2ResultadoNew,
+    FinanceiroPagamento, FinanceiroAudit,
 
     SessionLocal,
     Usuario,
@@ -68,6 +70,7 @@ from db import (
     criar_tabelas,
 )
 from importar_excel import importar_planilha
+from services.financeiro_service import sync_pagamentos_v2, atualizar_status_pagamento
 
 # Flask app (Render/Gunicorn expects `app` at module level: web/app.py -> app:app)
 app = Flask(__name__, template_folder="templates")
@@ -785,21 +788,11 @@ def admin_required(fn):
             return red
         return fn(*args, **kwargs)
     return _wrapper
-def _admin_or_supervisor_required():
-    """Garante acesso ADMIN ou SUPERVISOR."""
-    if (_role() or "").lower() not in ["admin", "supervisor"]:
-        flash("Acesso restrito.", "warning")
-        audit("forbidden", path=request.path)
-        return redirect(url_for("dashboard"))
-    return None
 
 
 
 def _financeiro_required():
-    """Garante acesso FINANCEIRO (ou ADMIN).
-
-    Retorna um redirect quando não tiver permissão; caso contrário retorna None.
-    """
+    """Garante acesso FINANCEIRO (ou ADMIN). Retorna redirect se negar."""
     r = (_role() or "").lower()
     if r not in ("financeiro", "admin"):
         flash("Acesso restrito ao financeiro.", "warning")
@@ -817,6 +810,15 @@ def financeiro_required(fn):
             return red
         return fn(*args, **kwargs)
     return _wrapper
+
+def _admin_or_supervisor_required():
+    """Garante acesso ADMIN ou SUPERVISOR."""
+    if (_role() or "").lower() not in ["admin", "supervisor"]:
+        flash("Acesso restrito.", "warning")
+        audit("forbidden", path=request.path)
+        return redirect(url_for("dashboard"))
+    return None
+
 def _get_vendedores_db(role: str, emp_usuario: str | None) -> list[str]:
     """Lista de vendedores para dropdown sem carregar todas as vendas em memória."""
     role = (role or "").strip().lower()
@@ -6878,6 +6880,95 @@ def financeiro_fechamento_v2():
         return render_template("financeiro_fechamento_v2.html", resultados=resultados, ano=ano, mes=mes)
     finally:
         db.close()
+
+
+
+@app.route("/financeiro/pagamentos", methods=["GET"])
+@financeiro_required
+def financeiro_pagamentos():
+    """Tela Financeiro: lista pagamentos consolidados (V1/V2) por competência."""
+    try:
+        ano = int(request.args.get("ano") or date.today().year)
+        mes = int(request.args.get("mes") or date.today().month)
+    except Exception:
+        ano = date.today().year
+        mes = date.today().month
+
+    filtro_status = (request.args.get("status") or "").strip().upper() or None
+    filtro_emp_raw = (request.args.get("emp") or "").strip()
+    filtro_emp = int(filtro_emp_raw) if filtro_emp_raw.isdigit() else None
+    filtro_vendedor = (request.args.get("vendedor") or "").strip().upper() or None
+
+    db = SessionLocal()
+    try:
+        q = db.query(FinanceiroPagamento).filter(
+            FinanceiroPagamento.ano == ano,
+            FinanceiroPagamento.mes == mes,
+        )
+
+        if filtro_status:
+            q = q.filter(FinanceiroPagamento.status == filtro_status)
+        if filtro_emp is not None:
+            q = q.filter(FinanceiroPagamento.emp == filtro_emp)
+        if filtro_vendedor:
+            q = q.filter(FinanceiroPagamento.vendedor == filtro_vendedor)
+
+        pagamentos = q.order_by(FinanceiroPagamento.status.asc(), FinanceiroPagamento.valor_premio.desc()).all()
+        return render_template(
+            "financeiro_pagamentos.html",
+            ano=ano,
+            mes=mes,
+            pagamentos=pagamentos,
+            filtro_status=filtro_status,
+            filtro_emp=filtro_emp_raw,
+            filtro_vendedor=filtro_vendedor,
+        )
+    finally:
+        db.close()
+
+
+@app.route("/financeiro/pagamentos/sync_v2", methods=["POST"])
+@financeiro_required
+def financeiro_sync_v2():
+    """Sincroniza pagamentos com resultados V2 (new schema)."""
+    try:
+        ano = int(request.form.get("ano") or date.today().year)
+        mes = int(request.form.get("mes") or date.today().month)
+    except Exception:
+        ano = date.today().year
+        mes = date.today().month
+
+    actor = (session.get("usuario") or "").strip().upper() or None
+    try:
+        info = sync_pagamentos_v2(ano=ano, mes=mes, actor=actor)
+        flash(f"Sincronização V2 concluída. Criados: {info.get('created')}, Atualizados: {info.get('updated')}.", "success")
+    except Exception as e:
+        flash(f"Erro ao sincronizar V2: {e}", "danger")
+
+    return redirect(url_for("financeiro_pagamentos", ano=ano, mes=mes))
+
+
+@app.route("/financeiro/pagamentos/status", methods=["POST"])
+@financeiro_required
+def financeiro_update_status():
+    """Atualiza status (A_PAGAR / PAGO) e grava auditoria."""
+    pid = request.form.get("id")
+    novo = (request.form.get("status") or "").strip().upper()
+    try:
+        ano = int(request.form.get("ano") or date.today().year)
+        mes = int(request.form.get("mes") or date.today().month)
+    except Exception:
+        ano = date.today().year
+        mes = date.today().month
+
+    actor = (session.get("usuario") or "").strip().upper() or None
+    try:
+        atualizar_status_pagamento(pagamento_id=int(pid), novo_status=novo, actor=actor)
+        flash("Status atualizado com sucesso.", "success")
+    except Exception as e:
+        flash(f"Erro ao atualizar status: {e}", "danger")
+
+    return redirect(url_for("financeiro_pagamentos", ano=ano, mes=mes))
 
 
 @app.route("/financeiro/fechamento_v2/status", methods=["POST"])
