@@ -13,6 +13,7 @@ import logging
 import json
 from datetime import date, datetime, timedelta
 import calendar
+from functools import wraps
 from io import BytesIO
 
 from decimal import Decimal, ROUND_HALF_UP
@@ -69,6 +70,58 @@ from importar_excel import importar_planilha
 
 # Flask app (Render/Gunicorn expects `app` at module level: web/app.py -> app:app)
 app = Flask(__name__, template_folder="templates")
+
+
+# ============================================================
+# Decorators de permissão (definidos ANTES do uso nas rotas)
+# Evita NameError em @admin_required / @financeiro_required no boot
+# ============================================================
+
+def admin_required(fn):
+    """Decorator: exige role ADMIN. Usa _admin_required() se existir."""
+    @wraps(fn)
+    def _wrapper(*args, **kwargs):
+        guard = globals().get("_admin_required")
+        if callable(guard):
+            red = guard()
+            if red:
+                return red
+        else:
+            # Fallback ultra-seguro: se por algum motivo o guard não existir
+            # não deixa passar silenciosamente
+            try:
+                flash("Acesso restrito (admin).", "warning")
+            except Exception:
+                pass
+            try:
+                return redirect(url_for("dashboard"))
+            except Exception:
+                return ("Forbidden", 403)
+        return fn(*args, **kwargs)
+    return _wrapper
+
+
+def financeiro_required(fn):
+    """Decorator: exige role FINANCEIRO (ou ADMIN). Usa _financeiro_required() se existir."""
+    @wraps(fn)
+    def _wrapper(*args, **kwargs):
+        guard = globals().get("_financeiro_required")
+        if callable(guard):
+            red = guard()
+            if red:
+                return red
+        else:
+            # Fallback: se o guard não existir, impede acesso
+            try:
+                flash("Acesso restrito (financeiro).", "warning")
+            except Exception:
+                pass
+            try:
+                return redirect(url_for("dashboard"))
+            except Exception:
+                return ("Forbidden", 403)
+        return fn(*args, **kwargs)
+    return _wrapper
 app.secret_key = os.getenv("SECRET_KEY", "dev")
 # Sessão expira após 1h sem atividade
 app.permanent_session_lifetime = timedelta(hours=1)
@@ -6868,161 +6921,3 @@ def financeiro_fechamento_v2_status():
 
 
 
-
-
-# ---------------------------------------------------------------------
-# Financeiro - Pagamentos (enterprise)
-# ---------------------------------------------------------------------
-@app.route("/financeiro/pagamentos", methods=["GET"])
-@financeiro_required
-def financeiro_pagamentos():
-    from datetime import date
-    from sqlalchemy import func
-
-    ano = int(request.args.get("ano") or date.today().year)
-    mes = int(request.args.get("mes") or date.today().month)
-    status = (request.args.get("status") or "").strip().upper() or None
-    emp = (request.args.get("emp") or "").strip() or None
-    vendedor = (request.args.get("vendedor") or "").strip().upper() or None
-
-    # imports locais para evitar quebrar startup caso módulo falte
-    from db import FinanceiroPagamento
-
-    with SessionLocal() as db:
-        q = db.query(FinanceiroPagamento).filter(FinanceiroPagamento.ano == ano, FinanceiroPagamento.mes == mes)
-        if status:
-            q = q.filter(FinanceiroPagamento.status == status)
-        if emp:
-            try:
-                q = q.filter(FinanceiroPagamento.emp == int(emp))
-            except Exception:
-                pass
-        if vendedor:
-            q = q.filter(func.upper(FinanceiroPagamento.vendedor) == vendedor)
-
-        pagamentos = q.order_by(FinanceiroPagamento.status.asc(), FinanceiroPagamento.emp.asc().nullsfirst(), FinanceiroPagamento.vendedor.asc()).all()
-
-        # Totais (sempre do mês/ano filtrado; independe de status filtrado)
-        tq = db.query(
-            FinanceiroPagamento.status,
-            func.count(FinanceiroPagamento.id),
-            func.coalesce(func.sum(FinanceiroPagamento.valor_premio), 0.0),
-        ).filter(FinanceiroPagamento.ano == ano, FinanceiroPagamento.mes == mes).group_by(FinanceiroPagamento.status).all()
-        totals_map = {s: {"qtd": int(c or 0), "valor": float(v or 0.0)} for s, c, v in tq}
-        totais = {
-            "pendente_qtd": totals_map.get("PENDENTE", {}).get("qtd", 0),
-            "pendente_valor": totals_map.get("PENDENTE", {}).get("valor", 0.0),
-            "apagar_qtd": totals_map.get("A_PAGAR", {}).get("qtd", 0),
-            "apagar_valor": totals_map.get("A_PAGAR", {}).get("valor", 0.0),
-            "pago_qtd": totals_map.get("PAGO", {}).get("qtd", 0),
-            "pago_valor": totals_map.get("PAGO", {}).get("valor", 0.0),
-        }
-
-    return render_template(
-        "financeiro_pagamentos.html",
-        ano=ano,
-        mes=mes,
-        status=status,
-        emp=emp,
-        vendedor=vendedor,
-        pagamentos=pagamentos,
-        totais=totais,
-        role=_role(),
-        usuario=_usuario_logado(),
-    )
-
-
-@app.route("/financeiro/pagamentos/sync_v2", methods=["POST"])
-@financeiro_required
-def financeiro_pagamentos_sync_v2():
-    from datetime import date
-    ano = int(request.form.get("ano") or request.args.get("ano") or date.today().year)
-    mes = int(request.form.get("mes") or request.args.get("mes") or date.today().month)
-    actor = (session.get("username") or session.get("usuario") or "financeiro")
-
-    try:
-        from services.financeiro_service import sync_pagamentos_v2
-    except Exception:
-        from financeiro_service import sync_pagamentos_v2  # fallback
-
-    with SessionLocal() as db:
-        try:
-            result = sync_pagamentos_v2(db, ano=ano, mes=mes, actor=str(actor))
-            db.commit()
-            flash(f"Sync V2 concluído: +{result.get('created')} criados, {result.get('updated')} atualizados, {result.get('skipped')} ignorados.", "success")
-        except Exception as e:
-            db.rollback()
-            app.logger.exception("Erro no sync V2 -> Financeiro")
-            flash(f"Erro ao sincronizar V2: {e}", "danger")
-
-    return redirect(url_for("financeiro_pagamentos", ano=ano, mes=mes))
-
-
-@app.route("/financeiro/pagamentos/status", methods=["POST"])
-@financeiro_required
-def financeiro_pagamentos_status():
-    from datetime import date
-    pid = int(request.form.get("id") or 0)
-    novo_status = (request.form.get("novo_status") or "").strip().upper()
-    ano = int(request.form.get("ano") or request.args.get("ano") or date.today().year)
-    mes = int(request.form.get("mes") or request.args.get("mes") or date.today().month)
-    actor = (session.get("username") or session.get("usuario") or "financeiro")
-
-    try:
-        from services.financeiro_service import atualizar_status_pagamentos
-    except Exception:
-        from financeiro_service import atualizar_status_pagamentos  # fallback
-
-    with SessionLocal() as db:
-        try:
-            n = atualizar_status_pagamentos(db, [pid], novo_status=novo_status, actor=str(actor))
-            db.commit()
-            if n:
-                flash(f"Status atualizado para {novo_status}.", "success")
-            else:
-                flash("Nada para atualizar.", "warning")
-        except Exception as e:
-            db.rollback()
-            app.logger.exception("Erro ao atualizar status (financeiro)")
-            flash(f"Erro ao atualizar status: {e}", "danger")
-
-    return redirect(url_for("financeiro_pagamentos", ano=ano, mes=mes))
-
-
-@app.route("/financeiro/pagamentos/status_lote", methods=["POST"])
-@financeiro_required
-def financeiro_pagamentos_status_lote():
-    from datetime import date
-    ids_raw = (request.form.get("ids") or "").strip()
-    novo_status = (request.form.get("novo_status") or "").strip().upper()
-    ano = int(request.form.get("ano") or request.args.get("ano") or date.today().year)
-    mes = int(request.form.get("mes") or request.args.get("mes") or date.today().month)
-    actor = (session.get("username") or session.get("usuario") or "financeiro")
-
-    ids = []
-    if ids_raw:
-        for p in ids_raw.split(","):
-            p = p.strip()
-            if p.isdigit():
-                ids.append(int(p))
-
-    if not ids:
-        flash("Selecione ao menos 1 pagamento.", "warning")
-        return redirect(url_for("financeiro_pagamentos", ano=ano, mes=mes))
-
-    try:
-        from services.financeiro_service import atualizar_status_pagamentos
-    except Exception:
-        from financeiro_service import atualizar_status_pagamentos  # fallback
-
-    with SessionLocal() as db:
-        try:
-            n = atualizar_status_pagamentos(db, ids, novo_status=novo_status, actor=str(actor))
-            db.commit()
-            flash(f"{n} pagamento(s) atualizado(s) para {novo_status}.", "success")
-        except Exception as e:
-            db.rollback()
-            app.logger.exception("Erro ao atualizar status em lote (financeiro)")
-            flash(f"Erro ao atualizar status em lote: {e}", "danger")
-
-    return redirect(url_for("financeiro_pagamentos", ano=ano, mes=mes))
