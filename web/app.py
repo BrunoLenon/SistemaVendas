@@ -36,8 +36,6 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 from dados_db import carregar_df, limpar_cache_df
 from db import (
-    CampanhaV2Master, CampanhaV2ScopeEMP, CampanhaV2Resultado,
-
     SessionLocal,
     Usuario,
     UsuarioEmp,
@@ -62,9 +60,26 @@ from db import (
     MetaBaseManual,
     MetaResultado,
     FechamentoMensal,
+    FinanceiroPagamento,
+    FinanceiroAudit,
     AppSetting,
     BrandingTheme,
     criar_tabelas,
+
+# ------------------------------------------------------------
+# Compatibilidade: alguns deploys ainda expõem os modelos V2 com sufixo *New
+# (CampanhaV2MasterNew/CampanhaV2ScopeEMPNew/CampanhaV2ResultadoNew).
+# Este bloco garante que CampanhaV2Master/CampanhaV2ScopeEMP/CampanhaV2Resultado
+# sempre existam para o restante do app.
+# ------------------------------------------------------------
+try:
+    from db import CampanhaV2Master, CampanhaV2ScopeEMP, CampanhaV2Resultado
+except Exception:  # ImportError em ambientes com nomes *New
+    from db import (
+        CampanhaV2MasterNew as CampanhaV2Master,
+        CampanhaV2ScopeEMPNew as CampanhaV2ScopeEMP,
+        CampanhaV2ResultadoNew as CampanhaV2Resultado,
+    )
 )
 from importar_excel import importar_planilha
 
@@ -6921,3 +6936,232 @@ def financeiro_fechamento_v2_status():
 
 
 
+
+
+# ============================================================
+# FINANCEIRO — Pagamentos (centralizado)
+#   - Lista pagamentos por competência (ano/mes) + filtros
+#   - Sincroniza premiações da Engine V2 para a tabela financeiro_pagamentos
+#   - Permite alterar status em lote ou individual (PENDENTE/A_PAGAR/PAGO)
+#   - Grava auditoria em financeiro_audit
+# ============================================================
+
+def _current_user_label():
+    u = session.get("vendedor") or session.get("user") or session.get("username")
+    if u:
+        return str(u)
+    usr = session.get("usuario")
+    if isinstance(usr, dict):
+        return str(usr.get("nome") or usr.get("login") or "usuario")
+    return "sistema"
+
+def _fin_audit(db, pagamento_id: int, acao: str, de_status: str | None, para_status: str | None, meta: dict | None = None):
+    try:
+        row = FinanceiroAudit(
+            pagamento_id=int(pagamento_id),
+            acao=str(acao),
+            de_status=de_status,
+            para_status=para_status,
+            usuario=_current_user_label(),
+            meta=json.dumps(meta, ensure_ascii=False) if meta else None,
+        )
+        db.add(row)
+    except Exception:
+        # auditoria nunca deve derrubar a operação principal
+        pass
+
+@app.route("/financeiro/pagamentos", methods=["GET"])
+@financeiro_required
+def financeiro_pagamentos():
+    ano = int(request.args.get("ano") or datetime.utcnow().year)
+    mes = int(request.args.get("mes") or datetime.utcnow().month)
+    status = (request.args.get("status") or "").strip().upper() or None
+    emp = (request.args.get("emp") or "").strip()
+    vendedor = (request.args.get("vendedor") or "").strip()
+
+    with SessionLocal() as db:
+        q = db.query(FinanceiroPagamento).filter(FinanceiroPagamento.ano == ano, FinanceiroPagamento.mes == mes)
+
+        if status in {"PENDENTE", "A_PAGAR", "PAGO"}:
+            q = q.filter(FinanceiroPagamento.status == status)
+
+        if emp:
+            # emp no banco é Integer (nullable)
+            try:
+                q = q.filter(FinanceiroPagamento.emp == int(emp))
+            except Exception:
+                pass
+
+        if vendedor:
+            q = q.filter(FinanceiroPagamento.vendedor.ilike(f"%{vendedor}%"))
+
+        pagamentos = q.order_by(FinanceiroPagamento.status.asc(), FinanceiroPagamento.emp.asc().nullsfirst(), FinanceiroPagamento.vendedor.asc()).all()
+
+        def _totais_for(st: str):
+            tq = db.query(
+                func.count(FinanceiroPagamento.id),
+                func.coalesce(func.sum(FinanceiroPagamento.valor_premio), 0.0),
+            ).filter(FinanceiroPagamento.ano == ano, FinanceiroPagamento.mes == mes, FinanceiroPagamento.status == st)
+            if emp:
+                try:
+                    tq = tq.filter(FinanceiroPagamento.emp == int(emp))
+                except Exception:
+                    pass
+            if vendedor:
+                tq = tq.filter(FinanceiroPagamento.vendedor.ilike(f"%{vendedor}%"))
+            c, s = tq.first() or (0, 0.0)
+            return int(c or 0), float(s or 0.0)
+
+        pend_q, pend_v = _totais_for("PENDENTE")
+        ap_q, ap_v = _totais_for("A_PAGAR")
+        pg_q, pg_v = _totais_for("PAGO")
+
+        totais = {
+            "pendente_qtd": pend_q,
+            "pendente_valor": pend_v,
+            "a_pagar_qtd": ap_q,
+            "a_pagar_valor": ap_v,
+            "pago_qtd": pg_q,
+            "pago_valor": pg_v,
+        }
+
+    return render_template(
+        "financeiro_pagamentos.html",
+        ano=ano,
+        mes=mes,
+        status=status,
+        emp=emp,
+        vendedor=vendedor,
+        pagamentos=pagamentos,
+        totais=totais,
+    )
+
+
+@app.route("/financeiro/pagamentos/status", methods=["POST"])
+@financeiro_required
+def financeiro_pagamentos_status():
+    pagamento_id = int(request.form.get("pagamento_id") or 0)
+    novo_status = (request.form.get("novo_status") or "").strip().upper()
+
+    if novo_status not in {"PENDENTE", "A_PAGAR", "PAGO"}:
+        flash("Status inválido.", "danger")
+        return redirect(request.referrer or url_for("financeiro_pagamentos"))
+
+    with SessionLocal() as db:
+        row = db.query(FinanceiroPagamento).filter(FinanceiroPagamento.id == pagamento_id).first()
+        if not row:
+            flash("Pagamento não encontrado.", "warning")
+            return redirect(request.referrer or url_for("financeiro_pagamentos"))
+
+        de_status = row.status
+        row.status = novo_status
+        row.atualizado_por = _current_user_label()
+        row.atualizado_em = datetime.utcnow()
+        _fin_audit(db, row.id, "STATUS", de_status, novo_status, meta={"origem_tipo": row.origem_tipo, "origem_id": row.origem_id})
+        db.commit()
+
+    flash(f"Status atualizado: {novo_status}", "success")
+    return redirect(request.referrer or url_for("financeiro_pagamentos"))
+
+
+@app.route("/financeiro/pagamentos/status_lote", methods=["POST"])
+@financeiro_required
+def financeiro_pagamentos_status_lote():
+    novo_status = (request.form.get("novo_status") or "").strip().upper()
+    ids = request.form.getlist("ids") or []
+
+    if novo_status not in {"PENDENTE", "A_PAGAR", "PAGO"}:
+        flash("Status inválido.", "danger")
+        return redirect(request.referrer or url_for("financeiro_pagamentos"))
+
+    ids_int = []
+    for x in ids:
+        try:
+            ids_int.append(int(x))
+        except Exception:
+            pass
+
+    if not ids_int:
+        flash("Selecione pelo menos 1 pagamento.", "warning")
+        return redirect(request.referrer or url_for("financeiro_pagamentos"))
+
+    with SessionLocal() as db:
+        rows = db.query(FinanceiroPagamento).filter(FinanceiroPagamento.id.in_(ids_int)).all()
+        for row in rows:
+            de_status = row.status
+            row.status = novo_status
+            row.atualizado_por = _current_user_label()
+            row.atualizado_em = datetime.utcnow()
+            _fin_audit(db, row.id, "STATUS_LOTE", de_status, novo_status, meta={"origem_tipo": row.origem_tipo, "origem_id": row.origem_id})
+        db.commit()
+
+    flash(f"Lote atualizado para {novo_status} ({len(ids_int)} registros).", "success")
+    return redirect(request.referrer or url_for("financeiro_pagamentos"))
+
+
+@app.route("/financeiro/pagamentos/sync_v2", methods=["POST"])
+@financeiro_required
+def financeiro_pagamentos_sync_v2():
+    ano = int(request.form.get("ano") or datetime.utcnow().year)
+    mes = int(request.form.get("mes") or datetime.utcnow().month)
+
+    # Regra: sincroniza apenas prêmios > 0
+    with SessionLocal() as db:
+        # join no master p/ trazer nome
+        results = (
+            db.query(CampanhaV2Resultado, CampanhaV2Master)
+            .join(CampanhaV2Master, CampanhaV2Master.id == CampanhaV2Resultado.campanha_id)
+            .filter(CampanhaV2Resultado.ano == ano, CampanhaV2Resultado.mes == mes)
+            .filter(CampanhaV2Resultado.premio > 0.0)
+            .all()
+        )
+
+        upserted = 0
+        for r, mrow in results:
+            # chave única: (ano,mes,origem_tipo,origem_id,emp,vendedor)
+            origem_tipo = "V2"
+            origem_id = int(r.campanha_id)
+
+            existing = (
+                db.query(FinanceiroPagamento)
+                .filter(
+                    FinanceiroPagamento.ano == ano,
+                    FinanceiroPagamento.mes == mes,
+                    FinanceiroPagamento.origem_tipo == origem_tipo,
+                    FinanceiroPagamento.origem_id == origem_id,
+                    FinanceiroPagamento.emp == r.emp,
+                    FinanceiroPagamento.vendedor == r.vendedor,
+                )
+                .first()
+            )
+
+            if existing:
+                # mantém status se já avançou (A_PAGAR/PAGO)
+                existing.valor_premio = float(r.premio or 0.0)
+                existing.campanha_nome = mrow.nome if hasattr(mrow, "nome") else getattr(mrow, "titulo", None)
+                existing.atualizado_por = _current_user_label()
+                existing.atualizado_em = datetime.utcnow()
+                upserted += 1
+            else:
+                row = FinanceiroPagamento(
+                    ano=ano,
+                    mes=mes,
+                    origem_tipo=origem_tipo,
+                    origem_id=origem_id,
+                    campanha_nome=mrow.nome if hasattr(mrow, "nome") else getattr(mrow, "titulo", None),
+                    emp=r.emp,
+                    vendedor=r.vendedor,
+                    valor_premio=float(r.premio or 0.0),
+                    status="PENDENTE",
+                    atualizado_por=_current_user_label(),
+                    atualizado_em=datetime.utcnow(),
+                )
+                db.add(row)
+                db.flush()  # gera id
+                _fin_audit(db, row.id, "SYNC_V2", None, row.status, meta={"campanha_id": origem_id, "premio": float(r.premio or 0.0)})
+                upserted += 1
+
+        db.commit()
+
+    flash(f"Sincronização V2 concluída: {upserted} registros.", "success")
+    return redirect(url_for("financeiro_pagamentos", ano=ano, mes=mes))
