@@ -98,6 +98,15 @@ app.config.update(
 )
 
 from security_utils import audit, rate_limit, normalize_role
+from authz import (
+    login_required,
+    admin_required,
+    admin_or_supervisor_required,
+    supervisor_required,
+    vendedor_required,
+    financeiro_required,
+)
+
 
 @app.before_request
 def _security_rate_limits():
@@ -331,7 +340,7 @@ def _mensagens_bloqueantes_guard():
 
 @app.route('/admin/configuracoes', methods=['GET', 'POST'])
 def admin_configuracoes():
-    red = _admin_guard()
+    red = _admin_required()
     if red:
         return red
 
@@ -761,7 +770,7 @@ def _login_required():
         return redirect(url_for("auth.login"))
     return None
 
-def _admin_guard():
+def _admin_required():
     """Garante acesso ADMIN.
 
     Retorna um redirect quando não for admin; caso contrário retorna None.
@@ -771,20 +780,6 @@ def _admin_guard():
         audit("admin_forbidden")
         return redirect(url_for("dashboard"))
     return None
-
-
-def _admin_required(fn):
-    """Decorator: exige perfil ADMIN."""
-    def _wrapped(*args, **kwargs):
-        resp = _admin_guard()
-        if resp is not None:
-            return resp
-        return fn(*args, **kwargs)
-    return _wrapped
-
-
-# Compat: código antigo pode usar @admin_required
-admin_required = _admin_required
 
 def _admin_or_supervisor_required():
     """Garante acesso ADMIN ou SUPERVISOR."""
@@ -3980,7 +3975,7 @@ def admin_usuarios():
     red = _login_required()
     if red:
         return red
-    red = _admin_guard()
+    red = _admin_required()
     if red:
         return red
 
@@ -4008,7 +4003,7 @@ def admin_usuarios():
                     desired_emps = sorted({e for e in emps_sel if e})
                     if len(nova_senha) < 4:
                         raise ValueError("Senha muito curta (mín. 4).")
-                    if role not in {"admin", "supervisor", "vendedor", "financeiro"}:
+                    if role not in {"admin", "supervisor", "vendedor"}:
                         role = "vendedor"
                     # Regras:
                     # - Vendedor/Supervisor: precisam ter ao menos 1 EMP ativa
@@ -4304,7 +4299,7 @@ def admin_emps():
     red = _login_required()
     if red:
         return red
-    red = _admin_guard()
+    red = _admin_required()
     if red:
         return red
 
@@ -4390,7 +4385,7 @@ def admin_cache_refresh():
     red = _login_required()
     if red:
         return red
-    red2 = _admin_guard()
+    red2 = _admin_required()
     if red2:
         return red2
 
@@ -4415,7 +4410,7 @@ def admin_importar():
     red = _login_required()
     if red:
         return red
-    red = _admin_guard()
+    red = _admin_required()
     if red:
         return red
 
@@ -4494,7 +4489,7 @@ def admin_itens_parados():
     red = _login_required()
     if red:
         return red
-    red = _admin_guard()
+    red = _admin_required()
     if red:
         return red
 
@@ -4570,7 +4565,7 @@ def admin_itens_parados():
 
 @app.route('/admin/resumos_periodo', methods=['GET', 'POST'])
 def admin_resumos_periodo():
-    red = _admin_guard()
+    red = _admin_required()
     if red:
         return red
 
@@ -5009,7 +5004,7 @@ def admin_combos():
     red = _login_required()
     if red:
         return red
-    red = _admin_guard()
+    red = _admin_required()
     if red:
         return red
 
@@ -5206,7 +5201,7 @@ def admin_fechamento():
     Responsável por travar/reativar a competência (EMP + mês/ano), servindo de base
     para relatórios consolidados e impedindo alterações em campanhas/resumos quando fechado.
     """
-    red = _admin_guard()
+    red = _admin_required()
     if red:
         return red
 
@@ -5374,7 +5369,7 @@ def admin_campanhas_qtd():
     red = _login_required()
     if red:
         return red
-    red = _admin_guard()
+    red = _admin_required()
     if red:
         return red
 
@@ -5582,7 +5577,7 @@ def admin_apagar_vendas():
     red = _login_required()
     if red:
         return red
-    red = _admin_guard()
+    red = _admin_required()
     if red:
         return red
 
