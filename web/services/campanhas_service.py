@@ -235,6 +235,7 @@ def build_relatorio_campanhas_scope(
     emps_base: list[str] = []
     emps_scope: list[str] = []
     vendedores_por_emp: dict[str, list[str]] = {}
+    vendedores_base_por_emp: dict[str, list[str]] = {}
 
     if role_l == "admin":
         # ADMIN: base = todas EMPs com vendas no período (fallback: cadastro de EMPs)
@@ -270,19 +271,34 @@ def build_relatorio_campanhas_scope(
     # Vendedores por EMP
     for emp in emps_scope:
         emp = str(emp)
+
         if role_l == "admin":
-            vendedores = deps.get_vendedores_emp_no_periodo(emp, ano, mes)
-            if vendedores_sel:
-                allowed_set = {v.strip().upper() for v in vendedores}
+            # lista base (para dropdown) = todos vendedores da EMP no período
+            vendedores_all = deps.get_vendedores_emp_no_periodo(emp, ano, mes) or []
+            vendedores_all = [str(v).strip().upper() for v in vendedores_all if str(v).strip()]
+            vendedores_base_por_emp[emp] = vendedores_all
+
+            # scope (para cálculo) pode ser filtrado
+            vendedores = vendedores_all
+            if vendedores_sel and "__ALL__" not in vendedores_sel:
+                allowed_set = set(vendedores_all)
                 pick = [v for v in vendedores_sel if v in allowed_set]
                 vendedores = pick if pick else []
+
         elif role_l == "supervisor":
-            vendedores = deps.get_vendedores_emp_no_periodo(emp, ano, mes)
+            vendedores_all = deps.get_vendedores_emp_no_periodo(emp, ano, mes) or []
+            vendedores_all = [str(v).strip().upper() for v in vendedores_all if str(v).strip()]
+            vendedores_base_por_emp[emp] = vendedores_all
+
+            vendedores = vendedores_all
             if vendedores_sel and "__ALL__" not in vendedores_sel:
-                allowed_set = {v.strip().upper() for v in vendedores}
+                allowed_set = set(vendedores_all)
                 vendedores = [v for v in vendedores_sel if v in allowed_set]
+
         else:
+            vendedores_base_por_emp[emp] = [vendedor_logado] if vendedor_logado else []
             vendedores = [vendedor_logado]
+
         vendedores_por_emp[emp] = vendedores
 
     return {
@@ -293,4 +309,5 @@ def build_relatorio_campanhas_scope(
         "emps_base": emps_base,
         "emps_scope": emps_scope,
         "vendedores_por_emp": vendedores_por_emp,
+        "vendedores_base_por_emp": vendedores_base_por_emp,
     }

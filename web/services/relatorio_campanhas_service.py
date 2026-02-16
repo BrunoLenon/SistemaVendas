@@ -123,6 +123,7 @@ def build_relatorio_campanhas_context(
     emps_sel: list[str],
     vendedores_sel: list[str],
     vendedores_por_emp: dict[str, list[str]],
+    vendedores_base_por_emp: dict[str, list[str]] | None = None,
     flash: Callable[[str, str], None],
 ) -> dict[str, Any]:
     """Monta o contexto completo do template relatorio_campanhas.html.
@@ -506,7 +507,8 @@ def build_relatorio_campanhas_context(
     # Opções de vendedor para o filtro (multi)
     try:
         vset: list[str] = []
-        for _emp, vs in (vendedores_por_emp or {}).items():
+        base_map = vendedores_base_por_emp or vendedores_por_emp or {}
+        for _emp, vs in (base_map or {}).items():
             for v in (vs or []):
                 vv = (v or "").strip().upper()
                 if vv and vv not in vset:

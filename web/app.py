@@ -3421,6 +3421,7 @@ def relatorio_campanhas():
     emps_base = scope.get("emps_base") or scope.get("emps_scope") or []
     emps_scope = scope["emps_scope"]
     vendedores_por_emp = scope["vendedores_por_emp"]
+    vendedores_base_por_emp = scope.get("vendedores_base_por_emp")
 
 
     ctx = build_relatorio_campanhas_context(
@@ -3434,6 +3435,7 @@ def relatorio_campanhas():
         emps_sel=emps_sel,
         vendedores_sel=vendedores_sel,
         vendedores_por_emp=vendedores_por_emp,
+        vendedores_base_por_emp=vendedores_base_por_emp,
         flash=flash,
     )
     return render_template("relatorio_campanhas.html", **ctx)
