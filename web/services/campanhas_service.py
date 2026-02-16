@@ -87,22 +87,35 @@ def build_campanhas_page_context(
     emp_param = (emp_list[0] if (len(emp_list) == 1) else "")
     emps_sel = [str(e).strip() for e in (emp_list or []) if str(e).strip()]
 
+    # Base de EMPs disponíveis para o dropdown (não deve "sumir" ao selecionar um filtro)
     if role_l == "admin":
-        if emps_sel:
-            emps_scope = emps_sel
+        if vendedor_sel == "__ALL__":
+            emps_base = deps.get_all_emp_codigos(True)
+        elif vendedor_sel == "__MULTI__":
+            # união de EMPs dos vendedores selecionados (fallback para o logado)
+            base_vs = vendedores_sel or ([vendedor_logado] if vendedor_logado else [])
+            seen=set()
+            emps_base=[]
+            for v in base_vs:
+                for e in deps.get_emps_vendedor(v):
+                    if e not in seen:
+                        seen.add(e); emps_base.append(e)
+            if not emps_base:
+                emps_base = deps.get_all_emp_codigos(True)
         else:
-            if vendedor_sel == "__ALL__":
-                emps_scope = deps.get_all_emp_codigos(True)
-            else:
-                base_v = vendedor_sel if vendedor_sel != "__MULTI__" else (vendedores_sel[0] if vendedores_sel else vendedor_logado)
-                emps_scope = deps.get_emps_vendedor(base_v)
+            base_v = vendedor_sel or vendedor_logado
+            emps_base = deps.get_emps_vendedor(base_v)
+            if not emps_base:
+                emps_base = deps.get_all_emp_codigos(True)
     else:
-        base_scope = deps.resolver_emp_scope_para_usuario(vendedor_logado, role_l, emp_usuario)
-        if emps_sel:
-            wanted = {str(x).strip() for x in emps_sel}
-            emps_scope = [e for e in base_scope if str(e) in wanted]
-        else:
-            emps_scope = base_scope
+        emps_base = deps.resolver_emp_scope_para_usuario(vendedor_logado, role_l, emp_usuario)
+
+    # EMP scope efetivo (aplica filtro selecionado, mas mantém o dropdown completo)
+    if emps_sel:
+        wanted = {str(x).strip() for x in emps_sel}
+        emps_scope = [e for e in emps_base if str(e) in wanted]
+    else:
+        emps_scope = emps_base
 
     inicio_mes, fim_mes = deps.periodo_bounds(ano, mes)
 
@@ -170,7 +183,7 @@ def build_campanhas_page_context(
 
         db.commit()
 
-    emps_options = deps.get_emp_options(emps_scope)
+    emps_options = deps.get_emp_options(emps_base)
     vendedores_options: list[dict[str, str]] = []
     for v in (vendedores_dropdown or []):
         vv = (v or "").strip().upper()
@@ -195,6 +208,7 @@ def build_campanhas_page_context(
         "vendedores_sel": vendedores_sel,
         "blocos": blocos,
         "emps_scope": emps_scope,
+        "emps_base": emps_base,
         "emps_options": emps_options,
         "emps_sel": emps_sel,
         "emp_param": emp_param,
@@ -225,18 +239,22 @@ def build_relatorio_campanhas_scope(
     vendedores_sel = [str(v).strip().upper() for v in deps.parse_multi_args(args, "vendedor") if str(v).strip()]
 
     emps_scope: list[str] = []
+    emps_base: list[str] = []  # para dropdown (não deve encolher ao filtrar)
     vendedores_por_emp: dict[str, list[str]] = {}
 
     if role_l == "admin":
         emps_scope = deps.get_emps_com_vendas_no_periodo(ano, mes)
-        # emps_sel é apenas filtro; não deve reduzir emps_scope (senão some do dropdown)
+        emps_base = emps_scope[:]  # dropdown
+        # emps_sel é apenas filtro; não deve reduzir emps_base
     elif role_l == "supervisor":
         allowed = [str(e).strip() for e in (deps.resolver_emp_scope_para_usuario(vendedor_logado, role_l, emp_usuario) or []) if str(e).strip()]
         allowed = sorted(set(allowed))
         if not allowed:
             flash("Supervisor sem EMP vinculada. Ajuste o vínculo do usuário (usuario_emps).", "warning")
+            emps_base = []
             emps_scope = []
         else:
+            emps_base = allowed[:]  # dropdown
             if emps_sel:
                 pick = [str(e).strip() for e in emps_sel if str(e).strip() in set(allowed)]
                 emps_scope = pick if pick else allowed[:]
@@ -247,6 +265,7 @@ def build_relatorio_campanhas_scope(
         if not base_emps:
             base_emps = [str(e).strip() for e in (deps.resolver_emp_scope_para_usuario(vendedor_logado, role_l, emp_usuario) or []) if str(e).strip()]
         base_emps = sorted(set(base_emps))
+        emps_base = base_emps[:]  # dropdown
         if emps_sel:
             wanted = {str(x).strip() for x in emps_sel if str(x).strip()}
             emps_scope = [e for e in base_emps if e in wanted]
@@ -279,5 +298,6 @@ def build_relatorio_campanhas_scope(
         "emps_sel": emps_sel,
         "vendedores_sel": vendedores_sel,
         "emps_scope": emps_scope,
+        "emps_base": emps_base,
         "vendedores_por_emp": vendedores_por_emp,
     }

@@ -134,6 +134,7 @@ def build_relatorio_campanhas_context(
     # Sanitiza EMPs (evita '' quebrar queries)
     emps_scope = _sanitize_emps(emps_scope)
     emps_sel = _sanitize_emps(emps_sel)
+    emps_base = _sanitize_emps(emps_base) if emps_base is not None else emps_scope[:]
 
     # Para vendedor/supervisor: se não selecionou explicitamente EMP, assume escopo permitido
     if role_l != "admin" and not emps_sel and emps_scope:
@@ -498,7 +499,7 @@ def build_relatorio_campanhas_context(
 
     # Opções de EMP para o filtro (multi)
     try:
-        emps_options = deps.get_emp_options(emps_scope)
+        emps_options = deps.get_emp_options(emps_base)
     except Exception:
         emps_options = []
 
