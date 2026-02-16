@@ -930,27 +930,6 @@ class CampanhaV2ResultadoNew(Base):
 #   financeiro_pagamentos, financeiro_audit
 # ==========================
 
-
-# --------------------------
-# Backwards-compatible aliases for NEW V2 schema (2026-02)
-# Some parts of the app import these names directly.
-# --------------------------
-try:
-    CampanhaV2ScopeEMP
-except NameError:
-    CampanhaV2ScopeEMP = CampanhaV2ScopeEMPNew  # new schema: campanhas_scope_emp_v2
-
-try:
-    CampanhaV2ResultadoNewSchema
-except NameError:
-    CampanhaV2ResultadoNewSchema = CampanhaV2ResultadoNew
-
-try:
-    CampanhaV2MasterNewSchema
-except NameError:
-    CampanhaV2MasterNewSchema = CampanhaV2MasterNew
-
-
 class FinanceiroPagamento(Base):
     __tablename__ = "financeiro_pagamentos"
 
