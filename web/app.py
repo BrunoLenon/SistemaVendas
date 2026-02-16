@@ -756,6 +756,51 @@ def _normalize_cols(df: pd.DataFrame) -> pd.DataFrame:
 
     return df
 
+
+# =========================
+# Auth helpers / decorators
+# =========================
+from functools import wraps
+
+def _role():
+    """Retorna o papel/perfil normalizado do usuário logado (admin/supervisor/vendedor/financeiro)."""
+    try:
+        return normalize_role(session.get("role"))
+    except Exception:
+        # fallback defensivo
+        val = session.get("role") or session.get("perfil") or ""
+        return str(val).strip().lower()
+
+def login_required(view_func):
+    """Decorator: exige usuário logado."""
+    @wraps(view_func)
+    def _wrapped(*args, **kwargs):
+        red = _login_required()
+        if red:
+            return red
+        return view_func(*args, **kwargs)
+    return _wrapped
+
+def admin_required(view_func):
+    """Decorator: exige ADMIN."""
+    @wraps(view_func)
+    def _wrapped(*args, **kwargs):
+        red = _admin_required()
+        if red:
+            return red
+        return view_func(*args, **kwargs)
+    return _wrapped
+
+def financeiro_required(view_func):
+    """Decorator: exige FINANCEIRO (ou ADMIN)."""
+    @wraps(view_func)
+    def _wrapped(*args, **kwargs):
+        if _role() not in ("financeiro", "admin"):
+            flash("Acesso restrito ao Financeiro.", "warning")
+            return redirect(url_for("dashboard"))
+        return view_func(*args, **kwargs)
+    return _wrapped
+
 def _login_required():
     if not _usuario_logado():
         return redirect(url_for("auth.login"))
@@ -3992,10 +4037,6 @@ def admin_usuarios():
                                 emps_sel.append(str(part).strip())
                     # normaliza e remove duplicadas
                     desired_emps = sorted({e for e in emps_sel if e})
-
-                    # Financeiro é centralizado: não precisa (nem deve depender) de EMP selecionada
-                    if role == "financeiro":
-                        desired_emps = []
                     if len(nova_senha) < 4:
                         raise ValueError("Senha muito curta (mín. 4).")
                     if role not in {"admin", "supervisor", "vendedor"}:
