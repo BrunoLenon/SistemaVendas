@@ -6743,10 +6743,8 @@ def admin_meta_bases_salvar(meta_id: int):
 @app.errorhandler(500)
 def err_500(e):
     app.logger.exception("Erro 500: %s", e)
-    return (
-        "Erro interno. Verifique os logs no Render (ou fale com o admin).",
-        500,
-    # ==========================
+    return ("Erro interno. Verifique os logs no Render (ou fale com o admin).", 500)
+
 # Campanhas V2 (Enterprise)
 # ==========================
 
@@ -6870,4 +6868,3 @@ def financeiro_fechamento_v2_status():
 
 
 
-)
