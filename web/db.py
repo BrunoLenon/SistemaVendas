@@ -843,7 +843,7 @@ CampanhaAuditV2 = CampanhaV2Audit
 # to avoid breaking older deployments.
 # ==========================
 
-class CampanhaV2MasterNew(Base):
+class CampanhaV2Master(Base):
     __tablename__ = "campanhas_v2_master"
 
     id = Column(Integer, primary_key=True)
@@ -878,7 +878,7 @@ class CampanhaV2MasterNew(Base):
     atualizado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
 
 
-class CampanhaV2ScopeEMPNew(Base):
+class CampanhaV2ScopeEMP(Base):
     __tablename__ = "campanhas_scope_emp_v2"
 
     id = Column(Integer, primary_key=True)
@@ -892,7 +892,7 @@ class CampanhaV2ScopeEMPNew(Base):
     )
 
 
-class CampanhaV2ResultadoNew(Base):
+class CampanhaV2Resultado(Base):
     __tablename__ = "campanhas_v2_resultados"
 
     id = Column(Integer, primary_key=True)
