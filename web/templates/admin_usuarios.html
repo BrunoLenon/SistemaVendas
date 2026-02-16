@@ -106,7 +106,7 @@
                     {% endfor %}
                   </div>
                   <div class="form-text">
-                    Marque 1+ empresas. <strong>Vendedor/Supervisor</strong> precisam de ao menos 1 empresa ativa. <strong>Admin/Financeiro</strong> é opcional.
+                    Marque 1+ empresas. <strong>Vendedor/Supervisor</strong> precisam de ao menos 1 empresa ativa. <strong>Admin</strong> é opcional.
                   </div>
                 {% else %}
                   <input class="form-control" name="emps_text" placeholder="Ex.: 101, 102, 103">
@@ -179,7 +179,7 @@
                     {% endfor %}
                   </div>
                   <div class="form-text">
-                    <strong>Vendedor/Supervisor</strong> precisam de ao menos 1 empresa ativa. <strong>Admin/Financeiro</strong> é opcional.
+                    <strong>Vendedor/Supervisor</strong> precisam de ao menos 1 empresa ativa. <strong>Admin</strong> é opcional.
                   </div>
                 {% else %}
                   <input class="form-control" name="emps" placeholder="Ex.: 101, 102, 103" required>
@@ -241,6 +241,8 @@
                           <span class="badge text-bg-dark">admin</span>
                         {% elif u.role == 'supervisor' %}
                           <span class="badge text-bg-primary">supervisor</span>
+                        {% elif u.role == 'financeiro' %}
+                          <span class="badge" style="background:#7c3aed">financeiro</span>
                         {% else %}
                           <span class="badge text-bg-secondary">vendedor</span>
                         {% endif %}
