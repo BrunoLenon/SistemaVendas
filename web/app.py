@@ -1,3 +1,11 @@
+import os
+import sys
+
+# --- Path shim: permite rodar tanto como 'app:app' (--chdir web) quanto 'web.app:app' ---
+_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+if _BASE_DIR not in sys.path:
+    sys.path.insert(0, _BASE_DIR)
+
 from services.scope import get_session_emps, refresh_session_emps, set_session_emps
 from services.campanhas_service import (
     CampanhasDeps,
@@ -4039,11 +4047,11 @@ def admin_usuarios():
                     desired_emps = sorted({e for e in emps_sel if e})
                     if len(nova_senha) < 4:
                         raise ValueError("Senha muito curta (mín. 4).")
-                    if role not in {"admin", "supervisor", "vendedor"}:
+                    if role not in {"admin", "supervisor", "vendedor", "financeiro"}:
                         role = "vendedor"
                     # Regras:
                     # - Vendedor/Supervisor: precisam ter ao menos 1 EMP ativa
-                    # - Admin: EMP é opcional
+                    # - Admin/Financeiro: EMP é opcional (Financeiro enxerga todas as EMPs)
                     if role in {"vendedor", "supervisor"} and not desired_emps:
                         raise ValueError("Selecione ao menos 1 EMP para vendedor/supervisor.")
 
