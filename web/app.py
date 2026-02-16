@@ -98,15 +98,6 @@ app.config.update(
 )
 
 from security_utils import audit, rate_limit, normalize_role
-from authz import (
-    login_required,
-    admin_required,
-    admin_or_supervisor_required,
-    supervisor_required,
-    vendedor_required,
-    financeiro_required,
-)
-
 
 @app.before_request
 def _security_rate_limits():
@@ -4001,6 +3992,10 @@ def admin_usuarios():
                                 emps_sel.append(str(part).strip())
                     # normaliza e remove duplicadas
                     desired_emps = sorted({e for e in emps_sel if e})
+
+                    # Financeiro é centralizado: não precisa (nem deve depender) de EMP selecionada
+                    if role == "financeiro":
+                        desired_emps = []
                     if len(nova_senha) < 4:
                         raise ValueError("Senha muito curta (mín. 4).")
                     if role not in {"admin", "supervisor", "vendedor"}:
