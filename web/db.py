@@ -766,6 +766,29 @@ class CampanhaV2Master(Base):
     )
 
 
+
+
+class CampanhaV2ScopeEMP(Base):
+    """Mapeia o escopo por EMP de uma campanha V2.
+
+    Usado quando a campanha V2 é cadastrada com lista de EMPs (ex.: "101,1001").
+    Mantemos em tabela separada para facilitar filtros/joins e evitar depender
+    de JSON/texto no banco.
+    """
+
+    __tablename__ = "campanhas_scope_emp_v2"
+
+    id = Column(Integer, primary_key=True)
+    campanha_id = Column(Integer, nullable=False, index=True)
+    emp = Column(Integer, nullable=False, index=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("campanha_id", "emp", name="uq_camp_v2_scope_emp"),
+        Index("ix_camp_v2_scope_emp_lookup", "emp", "campanha_id"),
+    )
+
+
 class CampanhaV2Resultado(Base):
     __tablename__ = "campanhas_resultados_v2"
 
