@@ -843,7 +843,7 @@ CampanhaAuditV2 = CampanhaV2Audit
 # to avoid breaking older deployments.
 # ==========================
 
-class CampanhaV2Master(Base):
+class CampanhaV2MasterNew(Base):
     __tablename__ = "campanhas_v2_master"
 
     id = Column(Integer, primary_key=True)
@@ -878,7 +878,7 @@ class CampanhaV2Master(Base):
     atualizado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
 
 
-class CampanhaV2ScopeEMP(Base):
+class CampanhaV2ScopeEMPNew(Base):
     __tablename__ = "campanhas_scope_emp_v2"
 
     id = Column(Integer, primary_key=True)
@@ -892,7 +892,7 @@ class CampanhaV2ScopeEMP(Base):
     )
 
 
-class CampanhaV2Resultado(Base):
+class CampanhaV2ResultadoNew(Base):
     __tablename__ = "campanhas_v2_resultados"
 
     id = Column(Integer, primary_key=True)
@@ -929,6 +929,27 @@ class CampanhaV2Resultado(Base):
 # Tables:
 #   financeiro_pagamentos, financeiro_audit
 # ==========================
+
+
+# --------------------------
+# Backwards-compatible aliases for NEW V2 schema (2026-02)
+# Some parts of the app import these names directly.
+# --------------------------
+try:
+    CampanhaV2ScopeEMP
+except NameError:
+    CampanhaV2ScopeEMP = CampanhaV2ScopeEMPNew  # new schema: campanhas_scope_emp_v2
+
+try:
+    CampanhaV2ResultadoNewSchema
+except NameError:
+    CampanhaV2ResultadoNewSchema = CampanhaV2ResultadoNew
+
+try:
+    CampanhaV2MasterNewSchema
+except NameError:
+    CampanhaV2MasterNewSchema = CampanhaV2MasterNew
+
 
 class FinanceiroPagamento(Base):
     __tablename__ = "financeiro_pagamentos"
