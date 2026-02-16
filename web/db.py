@@ -924,6 +924,28 @@ class CampanhaV2ResultadoNew(Base):
     )
 
 
+
+# ==========================
+# Aliases de compatibilidade (IMPORTS do app.py)
+# O app.py (legado) importa CampanhaV2Master / CampanhaV2ScopeEMP / CampanhaV2Resultado.
+# Neste arquivo existem duas "V2":
+#   - V2 antiga: campanhas_master_v2 / campanhas_resultados_v2  (classes CampanhaV2Master, CampanhaV2Resultado)
+#   - V2 nova (2026-02): campanhas_v2_master / campanhas_scope_emp_v2 / campanhas_v2_resultados
+#
+# Para o Financeiro + Engine V2 nova, o app precisa encontrar CampanhaV2ScopeEMP.
+# Portanto, expomos CampanhaV2ScopeEMP apontando para o model da V2 nova.
+# Mantemos CampanhaV2Master e CampanhaV2Resultado como V2 antiga (para não quebrar rotas antigas),
+# e também expomos aliases explícitos para a V2 nova quando necessário.
+# ==========================
+
+# V2 NOVA (2026-02) - nomes explícitos
+CampanhaV2MasterNewSchema = CampanhaV2MasterNew
+CampanhaV2ResultadoNewSchema = CampanhaV2ResultadoNew
+CampanhaV2ScopeEMPNewSchema = CampanhaV2ScopeEMPNew
+
+# Nome esperado pelo app.py / patches anteriores
+CampanhaV2ScopeEMP = CampanhaV2ScopeEMPNew
+
 # ==========================
 # Financeiro (pagamentos + audit)
 # Tables:
