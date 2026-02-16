@@ -60,3 +60,17 @@
   <div class="my-2 border-top border-light-subtle"></div>
   <a class="nav-link text-danger" href="/logout">🚪 Sair</a>
 </nav>
+
+{% if role == "FINANCEIRO" %}
+  <div class="sidebar-section-title">FINANCEIRO</div>
+  <a href="/financeiro/campanhas_v2" class="sidebar-link">
+    <span class="sidebar-icon">💰</span>
+    Campanhas (Financeiro)
+  </a>
+  <a href="/financeiro/fechamento_v2" class="sidebar-link">
+    <span class="sidebar-icon">✅</span>
+    Fechamento (V2)
+  </a>
+{% endif %}
+
+

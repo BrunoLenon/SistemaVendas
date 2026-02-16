@@ -5,6 +5,7 @@ from services.campanhas_service import (
     build_relatorio_campanhas_scope,
 )
 from services.relatorio_campanhas_service import build_relatorio_campanhas_context
+from services.campanhas_v2_engine import recalc_v2_competencia
 import os
 import re
 import mimetypes
@@ -34,6 +35,8 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 from dados_db import carregar_df, limpar_cache_df
 from db import (
+    CampanhaV2Master, CampanhaV2ScopeEMP, CampanhaV2Resultado,
+
     SessionLocal,
     Usuario,
     UsuarioEmp,
@@ -6743,4 +6746,128 @@ def err_500(e):
     return (
         "Erro interno. Verifique os logs no Render (ou fale com o admin).",
         500,
-    )
+    # ==========================
+# Campanhas V2 (Enterprise)
+# ==========================
+
+@app.route("/admin/campanhas_v2", methods=["GET", "POST"])
+@admin_required
+def admin_campanhas_v2():
+    from datetime import date
+    ano = int(request.args.get("ano") or date.today().year)
+    mes = int(request.args.get("mes") or date.today().month)
+    db = SessionLocal()
+    try:
+        if request.method == "POST":
+            titulo = (request.form.get("titulo") or "").strip()
+            tipo = (request.form.get("tipo") or "RANKING_VALOR").strip().upper()
+            ativo = (request.form.get("ativo") or "1") == "1"
+            regras_json = (request.form.get("regras_json") or "").strip() or "{}"
+            c = CampanhaV2Master(titulo=titulo, tipo=tipo, ativo=ativo, regras_json=regras_json)
+            db.add(c)
+            db.flush()
+
+            emps_raw = (request.form.get("emps") or "").strip()
+            if emps_raw:
+                for p in emps_raw.split(","):
+                    p = p.strip()
+                    if not p:
+                        continue
+                    try:
+                        db.add(CampanhaV2ScopeEMP(campanha_id=c.id, emp=int(p)))
+                    except Exception:
+                        continue
+
+            db.commit()
+            flash("Campanha V2 criada.", "success")
+            return redirect(url_for("admin_campanhas_v2", ano=ano, mes=mes))
+
+        campanhas = db.query(CampanhaV2Master).order_by(CampanhaV2Master.id.desc()).all()
+        return render_template("admin_campanhas_v2.html", campanhas=campanhas, ano=ano, mes=mes)
+    finally:
+        db.close()
+
+
+@app.route("/admin/campanhas_v2/recalcular", methods=["GET"])
+@admin_required
+def admin_campanhas_v2_recalcular():
+    from datetime import date
+    ano = int(request.args.get("ano") or date.today().year)
+    mes = int(request.args.get("mes") or date.today().month)
+    db = SessionLocal()
+    try:
+        actor = session.get("username") or "admin"
+        recalc_v2_competencia(db, ano=ano, mes=mes, actor=str(actor))
+        flash(f"Recalculo V2 concluído para {mes}/{ano}.", "success")
+    except Exception as e:
+        db.rollback()
+        flash(f"Erro ao recalcular: {e}", "danger")
+    finally:
+        db.close()
+    return redirect(url_for("admin_campanhas_v2", ano=ano, mes=mes))
+
+
+@app.route("/financeiro/campanhas_v2", methods=["GET"])
+@financeiro_required
+def financeiro_campanhas_v2():
+    # por enquanto, redireciona para o fechamento (mesma visão)
+    return redirect(url_for("financeiro_fechamento_v2"))
+
+
+@app.route("/financeiro/fechamento_v2", methods=["GET"])
+@financeiro_required
+def financeiro_fechamento_v2():
+    from datetime import date
+    ano = int(request.args.get("ano") or date.today().year)
+    mes = int(request.args.get("mes") or date.today().month)
+    db = SessionLocal()
+    try:
+        rows = (
+            db.query(CampanhaV2Resultado, CampanhaV2Master.titulo)
+            .join(CampanhaV2Master, CampanhaV2Master.id==CampanhaV2Resultado.campanha_id)
+            .filter(CampanhaV2Resultado.ano==ano, CampanhaV2Resultado.mes==mes)
+            .order_by(CampanhaV2Resultado.status_financeiro.asc(), CampanhaV2Resultado.recompensa.desc())
+            .all()
+        )
+        resultados=[]
+        for r, titulo in rows:
+            resultados.append({
+                "id": r.id,
+                "campanha_titulo": titulo,
+                "emp": r.emp,
+                "vendedor": r.vendedor,
+                "valor_base": r.valor_base,
+                "recompensa": r.recompensa,
+                "status_financeiro": r.status_financeiro,
+            })
+        return render_template("financeiro_fechamento_v2.html", resultados=resultados, ano=ano, mes=mes)
+    finally:
+        db.close()
+
+
+@app.route("/financeiro/fechamento_v2/status", methods=["POST"])
+@financeiro_required
+def financeiro_fechamento_v2_status():
+    rid = int(request.form.get("resultado_id") or 0)
+    status = (request.form.get("status_financeiro") or "PENDENTE").strip().upper()
+    if status not in ("PENDENTE", "A_PAGAR", "PAGO"):
+        status = "PENDENTE"
+    db = SessionLocal()
+    try:
+        r = db.query(CampanhaV2Resultado).filter(CampanhaV2Resultado.id==rid).first()
+        if not r:
+            flash("Resultado não encontrado.", "danger")
+            return redirect(url_for("financeiro_fechamento_v2"))
+        r.status_financeiro = status
+        db.commit()
+        flash("Status atualizado.", "success")
+    except Exception as e:
+        db.rollback()
+        flash(f"Erro ao atualizar status: {e}", "danger")
+    finally:
+        db.close()
+    return redirect(url_for("financeiro_fechamento_v2"))
+
+
+
+)
