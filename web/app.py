@@ -4049,7 +4049,7 @@ def admin_usuarios():
                 if acao == "criar":
                     novo_usuario = (request.form.get("novo_usuario") or "").strip().upper()
                     nova_senha = request.form.get("nova_senha") or ""
-                    role = (request.form.get("role") or "vendedor").strip().lower()
+                    role = (request.form.get("role") or "").strip().lower()
 
                     # EMPs vinculadas (preferencialmente via multi-select). Aceita também texto (compatibilidade).
                     emps_sel = [str(x).strip() for x in (request.form.getlist("emps_multi") or []) if str(x).strip()]
@@ -4062,9 +4062,15 @@ def admin_usuarios():
                     desired_emps = sorted({e for e in emps_sel if e})
                     if len(nova_senha) < 4:
                         raise ValueError("Senha muito curta (mín. 4).")
-                    if role not in {"admin", "supervisor", "vendedor"}:
-                        role = "vendedor"
+                    if role not in {"admin", "supervisor", "vendedor", "financeiro"}:
+                        raise ValueError("Perfil inválido. Selecione um perfil válido.")
+
+                    # Financeiro é global: não exige (e não mantém) vínculos de EMP
+                    if role == "financeiro":
+                        desired_emps = []
+
                     # Regras:
+
                     # - Vendedor/Supervisor: precisam ter ao menos 1 EMP ativa
                     # - Admin: EMP é opcional
                     if role in {"vendedor", "supervisor"} and not desired_emps:
@@ -4154,6 +4160,9 @@ def admin_usuarios():
                     if not u:
                         raise ValueError("Usuário não encontrado.")
                     # Admin pode ter 0+ vínculos (opcional). Vendedor/Supervisor precisam de 1+.
+                    # Financeiro é global e não deve manter vínculos de EMP.
+                    if u.role == "financeiro":
+                        emps = []
                     if u.role in ("vendedor", "supervisor") and not emps:
                         raise ValueError("Vendedor/Supervisor precisam ter ao menos 1 EMP.")
                     desired = set(emps)
