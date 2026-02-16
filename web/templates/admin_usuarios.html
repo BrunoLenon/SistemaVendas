@@ -241,10 +241,9 @@
                           <span class="badge text-bg-dark">admin</span>
                         {% elif u.role == 'supervisor' %}
                           <span class="badge text-bg-primary">supervisor</span>
+                        {% elif u.role == 'financeiro' %}
+                          <span class="badge text-bg-warning">financeiro</span>
                         {% else %}
-              {% elif u.role == 'financeiro' %}
-                <span class=\"badge badge-fin\">financeiro</span>
-              {% else %}
                           <span class="badge text-bg-secondary">vendedor</span>
                         {% endif %}
                       </td>
