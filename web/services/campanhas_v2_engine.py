@@ -219,22 +219,18 @@ def _upsert_resultados(db, c: CampanhaMasterV2, ano: int, mes: int, rows: list[C
 
 
 def _calc_ranking_valor(db, c: CampanhaMasterV2, ano: int, mes: int, emps_calc: list[str]) -> list[CampanhaV2ResultRow]:
-    regras = _safe_json_load(c.regras_json, {})
-    premiacao = _safe_json_load(c.premiacao_json, {})
+    regras = _safe_json_load(getattr(c, 'regras_json', None), {})
+    premiacao = _safe_json_load(getattr(c, 'premiacao_json', None), {})
+    if not premiacao:
+        # compat: alguns cadastros gravam premiação dentro das regras
+        premiacao = regras.get('premiacao') or regras.get('premios') or {}
     mov_tipo = (regras.get("mov_tipo") or "OA").strip().upper()
-    marca_alvo = (c.marca_alvo or regras.get("marca") or "").strip()
-    # valor mínimo para entrar no ranking (ex.: 10000.00)
-    # Aceita chaves alternativas para compatibilidade com configs antigas.
+    marca_alvo = (getattr(c, 'marca_alvo', None) or regras.get("marca") or "").strip()
+    escopo = (getattr(c, 'escopo', None) or "EMP").strip().upper()
     try:
-        min_total = float(
-            regras.get("min_total")
-            or regras.get("valor_minimo")
-            or regras.get("min_valor")
-            or 0.0
-        )
+        min_total = float(regras.get('min_total') or regras.get('min_valor') or regras.get('valor_minimo') or 0)
     except Exception:
         min_total = 0.0
-    escopo = (c.escopo or "EMP").strip().upper()
 
     q = (
         db.query(
@@ -253,29 +249,23 @@ def _calc_ranking_valor(db, c: CampanhaMasterV2, ano: int, mes: int, emps_calc: 
     if escopo == "GLOBAL":
         q = q.group_by(Venda.vendedor)
         rows = q.all()
-        if min_total and min_total > 0:
-            rows = [r for r in rows if float(r[2] or 0.0) >= float(min_total)]
+        if min_total:
+            rows = [r for r in rows if float(r[2] or 0.0) >= min_total]
         rows = sorted(rows, key=lambda x: float(x[2] or 0.0), reverse=True)
-        out = _top3_rows(rows, emp_token=GLOBAL_EMP_TOKEN, marca=marca_alvo, premiacao=premiacao)
-        for rr in out:
-            rr.detalhes["min_total"] = float(min_total)
-        return out
+        return _top3_rows(rows, emp_token=GLOBAL_EMP_TOKEN, marca=marca_alvo, premiacao=premiacao)
     else:
         q = q.group_by(Venda.emp, Venda.vendedor)
         rows = q.all()
+        if min_total:
+            rows = [r for r in rows if float(r[2] or 0.0) >= min_total]
         # agrupa por emp
         por_emp: dict[str, list[tuple[str, str, float]]] = {}
         for emp, vend, total in rows:
             por_emp.setdefault(str(emp), []).append((str(emp), str(vend), float(total or 0.0)))
         out: list[CampanhaV2ResultRow] = []
         for emp, lst in por_emp.items():
-            if min_total and min_total > 0:
-                lst = [x for x in lst if float(x[2] or 0.0) >= float(min_total)]
             lst_sorted = sorted(lst, key=lambda x: x[2], reverse=True)
-            sub = _top3_rows(lst_sorted, emp_token=emp, marca=marca_alvo, premiacao=premiacao)
-            for rr in sub:
-                rr.detalhes["min_total"] = float(min_total)
-            out.extend(sub)
+            out.extend(_top3_rows(lst_sorted, emp_token=emp, marca=marca_alvo, premiacao=premiacao))
         return out
 
 

@@ -22,7 +22,6 @@ import json
 from datetime import date, datetime, timedelta
 import calendar
 from io import BytesIO
-import secrets
 
 from decimal import Decimal, ROUND_HALF_UP
 
@@ -5398,195 +5397,6 @@ def admin_fechamento():
     )
 
 
-@app.route("/admin/diagnostico", methods=["GET", "POST"])
-def admin_diagnostico():
-    """Diagnóstico de cadastros (ADMIN).
-
-    - EMPs presentes em vendas mas ausentes em `emps`.
-    - Vendedores presentes em vendas mas ausentes em `usuarios`.
-    - Ações rápidas para saneamento (cadastro automático).
-    """
-
-    red = _admin_required()
-    if red:
-        return red
-
-    acao = (request.form.get("acao") or "").strip().lower()
-    emp_code = (request.form.get("emp_code") or "").strip()
-    vendedor_nome = (request.form.get("vendedor_nome") or "").strip()
-
-    created_emp = None
-    created_user = None
-    created_temp_pass = None
-
-    with SessionLocal() as db:
-        # --- Ações (POST) ---
-        if request.method == "POST":
-            if acao in {"cadastrar_emp", "cadastrar_emp_lote"}:
-                emps_to_create: list[str] = []
-                if acao == "cadastrar_emp" and emp_code:
-                    emps_to_create = [emp_code]
-                elif acao == "cadastrar_emp_lote":
-                    emps_cadastradas_sq = db.query(Emp.codigo)
-                    rows = (
-                        db.query(Venda.emp)
-                        .filter(Venda.emp.isnot(None))
-                        .filter(func.trim(Venda.emp) != "")
-                        .filter(~Venda.emp.in_(emps_cadastradas_sq))
-                        .distinct()
-                        .all()
-                    )
-                    emps_to_create = [str(r[0]).strip() for r in rows if r and r[0]]
-
-                if emps_to_create:
-                    created = 0
-                    for code in emps_to_create:
-                        code_n = _emp_norm(code)
-                        if not code_n:
-                            continue
-                        exists = db.query(Emp).filter(Emp.codigo == code_n).first()
-                        if exists:
-                            continue
-                        novo = Emp(
-                            codigo=code_n,
-                            nome=f"EMP {code_n}",
-                            ativo=True,
-                            created_at=datetime.utcnow(),
-                            updated_at=datetime.utcnow(),
-                        )
-                        db.add(novo)
-                        created += 1
-                        created_emp = code_n
-                    db.commit()
-                    flash(f"✅ {created} EMP(s) cadastrada(s) automaticamente.", "success")
-                else:
-                    flash("⚠️ Nenhuma EMP para cadastrar.", "warning")
-
-            elif acao == "criar_vendedor" and vendedor_nome:
-                username = (vendedor_nome or "").strip().upper()
-                if not username:
-                    flash("⚠️ Informe o vendedor.", "warning")
-                else:
-                    existe = db.query(Usuario).filter(Usuario.username == username).first()
-                    if existe:
-                        flash("⚠️ Já existe um usuário com esse nome.", "warning")
-                    else:
-                        temp_pass = secrets.token_urlsafe(8)
-                        u = Usuario(
-                            username=username,
-                            senha_hash=generate_password_hash(temp_pass),
-                            role="vendedor",
-                            emp=None,
-                        )
-                        db.add(u)
-                        db.commit()
-                        created_user = username
-                        created_temp_pass = temp_pass
-                        flash(
-                            f"✅ Usuário vendedor criado: {username}. Senha temporária: {temp_pass}",
-                            "success",
-                        )
-
-        # --- Coleta do diagnóstico ---
-        # EMPs faltantes em vendas
-        emps_cadastradas_sq = db.query(Emp.codigo)
-        emps_faltantes_rows = (
-            db.query(
-                func.trim(Venda.emp).label("emp"),
-                func.count(Venda.id).label("vendas"),
-                func.min(Venda.movimento).label("primeiro"),
-                func.max(Venda.movimento).label("ultimo"),
-            )
-            .filter(Venda.emp.isnot(None))
-            .filter(func.trim(Venda.emp) != "")
-            .filter(~func.trim(Venda.emp).in_(emps_cadastradas_sq))
-            .group_by(func.trim(Venda.emp))
-            .order_by(func.count(Venda.id).desc())
-            .all()
-        )
-        emps_faltantes = [
-            {
-                "EMP": str(r.emp),
-                "Vendas": int(r.vendas or 0),
-                "Primeiro": (r.primeiro.isoformat() if r.primeiro else ""),
-                "Último": (r.ultimo.isoformat() if r.ultimo else ""),
-            }
-            for r in emps_faltantes_rows
-        ]
-
-        # EMPs cadastradas porém INATIVAS
-        emps_inativas_rows = (
-            db.query(Emp.codigo, Emp.nome)
-            .filter(Emp.ativo.is_(False))
-            .order_by(Emp.codigo.asc())
-            .all()
-        )
-        emps_inativas = [{"EMP": e.codigo, "Nome": e.nome} for e in emps_inativas_rows]
-
-        # Vendedores faltantes em vendas
-        usuarios_sq = db.query(Usuario.username)
-        vendedores_faltantes_rows = (
-            db.query(
-                func.trim(Venda.vendedor).label("vendedor"),
-                func.count(Venda.id).label("vendas"),
-                func.min(Venda.movimento).label("primeiro"),
-                func.max(Venda.movimento).label("ultimo"),
-            )
-            .filter(Venda.vendedor.isnot(None))
-            .filter(func.trim(Venda.vendedor) != "")
-            .filter(~func.upper(func.trim(Venda.vendedor)).in_(usuarios_sq))
-            .group_by(func.trim(Venda.vendedor))
-            .order_by(func.count(Venda.id).desc())
-            .all()
-        )
-        vendedores_faltantes = [
-            {
-                "Vendedor": str(r.vendedor).strip().upper(),
-                "Vendas": int(r.vendas or 0),
-                "Primeiro": (r.primeiro.isoformat() if r.primeiro else ""),
-                "Último": (r.ultimo.isoformat() if r.ultimo else ""),
-            }
-            for r in vendedores_faltantes_rows
-        ]
-
-    checks = [
-        {
-            "name": "EMPs em vendas que NÃO estão cadastradas em EMPs",
-            "ok": len(emps_faltantes) == 0,
-            "detail": (
-                "Nenhuma EMP faltante encontrada." if len(emps_faltantes) == 0 else f"{len(emps_faltantes)} EMP(s) faltante(s)."
-            ),
-            "rows": emps_faltantes,
-        },
-        {
-            "name": "EMPs cadastradas porém INATIVAS",
-            "ok": len(emps_inativas) == 0,
-            "detail": (
-                "Nenhuma EMP inativa." if len(emps_inativas) == 0 else f"{len(emps_inativas)} EMP(s) inativa(s)."
-            ),
-            "rows": emps_inativas,
-        },
-        {
-            "name": "Vendedores em vendas que NÃO estão cadastrados em Usuários",
-            "ok": len(vendedores_faltantes) == 0,
-            "detail": (
-                "Nenhum vendedor faltante." if len(vendedores_faltantes) == 0 else f"{len(vendedores_faltantes)} vendedor(es) faltante(s)."
-            ),
-            "rows": vendedores_faltantes,
-        },
-    ]
-
-    info = {
-        "ok": all(bool(c.get("ok")) for c in checks),
-        "checks": checks,
-        "created_emp": created_emp,
-        "created_user": created_user,
-        "created_temp_pass": created_temp_pass,
-    }
-
-    return render_template("admin_diagnostico.html", info=info)
-
-
 @app.route("/admin/campanhas", methods=["GET", "POST"])
 def admin_campanhas_qtd():
     """Cadastro de campanhas de recompensa por quantidade.
@@ -5801,6 +5611,267 @@ def admin_campanhas_qtd():
             erro=erro,
             ok=ok,
         )
+@app.route("/admin/campanhas/ranking_marca", methods=["GET", "POST"])
+def admin_campanhas_ranking_marca():
+    """
+    Cadastro de campanhas de Ranking por Marca (Top 3 por valor).
+    - Escopo GLOBAL ou por EMP(s) selecionadas.
+    - Premiação por posição (1º,2º,3º...)
+    - Valor mínimo para entrar na corrida (min_total).
+    Implementação usa Campanhas V2 (tipo=RANKING_VALOR) com regras_json contendo marca/min_total/premiacao.
+    """
+    red = _login_required()
+    if red:
+        return red
+    red = _admin_required()
+    if red:
+        return red
+
+    erro = None
+    ok = None
+    hoje = date.today()
+    mes = int(request.values.get("mes") or hoje.month)
+    ano = int(request.values.get("ano") or hoje.year)
+
+    def _parse_premios(texto: str | None):
+        """Aceita linhas: 1=300, 2:200, 3 100"""
+        if not texto:
+            return {"top": [{"pos": 1, "valor": 300.0}, {"pos": 2, "valor": 200.0}, {"pos": 3, "valor": 100.0}]}
+        top = []
+        for ln in (texto or "").splitlines():
+            ln = ln.strip()
+            if not ln:
+                continue
+            ln = ln.replace(":", "=")
+            if "=" in ln:
+                a, b = ln.split("=", 1)
+            else:
+                parts = ln.split()
+                if len(parts) >= 2:
+                    a, b = parts[0], parts[1]
+                else:
+                    continue
+            try:
+                pos = int(str(a).strip())
+                val = float(str(b).strip().replace(".", "").replace(",", ".")) if "," in str(b) else float(str(b).strip())
+                top.append({"pos": pos, "valor": val})
+            except Exception:
+                continue
+        top = sorted(top, key=lambda x: int(x.get("pos") or 0))
+        if not top:
+            top = [{"pos": 1, "valor": 300.0}, {"pos": 2, "valor": 200.0}, {"pos": 3, "valor": 100.0}]
+        return {"top": top}
+
+    with SessionLocal() as db:
+        # EMPs cadastradas (ativas)
+        emps_options = [e.codigo for e in db.query(Emp).filter(Emp.ativo == True).order_by(Emp.codigo.asc()).all()]
+
+        if request.method == "POST":
+            acao = (request.form.get("acao") or "").strip().lower()
+            try:
+                if acao in {"criar", "editar"}:
+                    cid = int(request.form.get("id") or 0) if acao == "editar" else None
+                    titulo = (request.form.get("titulo") or "").strip()
+                    marca = (request.form.get("marca") or "").strip().upper()
+                    escopo_tipo = (request.form.get("escopo_tipo") or "GLOBAL").strip().upper()
+                    data_inicio = request.form.get("data_inicio")
+                    data_fim = request.form.get("data_fim")
+                    competencia_ano = (request.form.get("competencia_ano") or "").strip()
+                    competencia_mes = (request.form.get("competencia_mes") or "").strip()
+                    ativo = True if request.form.get("ativo") else False
+                    premios = _parse_premios(request.form.get("premios_texto"))
+                    try:
+                        min_total = float((request.form.get("min_total") or "").replace(".", "").replace(",", ".")) if request.form.get("min_total") else 0.0
+                    except Exception:
+                        min_total = 0.0
+
+                    regras = {
+                        "marca": marca,
+                        "premiacao": premios,
+                    }
+                    if min_total:
+                        regras["min_total"] = min_total
+                    # opcional: fixa competência para exibição
+                    if competencia_ano.isdigit():
+                        regras["competencia_ano"] = int(competencia_ano)
+                    if competencia_mes.isdigit():
+                        regras["competencia_mes"] = int(competencia_mes)
+
+                    # valida datas
+                    di = datetime.strptime(data_inicio, "%Y-%m-%d").date()
+                    df = datetime.strptime(data_fim, "%Y-%m-%d").date()
+
+                    if acao == "criar":
+                        c = CampanhaV2Master(
+                            titulo=titulo,
+                            tipo="RANKING_VALOR",
+                            ativo=ativo,
+                            regras_json=json.dumps(regras, ensure_ascii=False),
+                        )
+                        # compat: se existir campo escopo/vigencia no schema antigo
+                        if hasattr(CampanhaV2Master, "escopo"):
+                            c.escopo = "GLOBAL" if escopo_tipo == "GLOBAL" else "EMP"
+                        if hasattr(CampanhaV2Master, "vigencia_ini"):
+                            c.vigencia_ini = di
+                            c.vigencia_fim = df
+                        db.add(c)
+                        db.flush()
+                        cid = c.id
+                        # audit
+                        try:
+                            db.add(CampanhaV2Audit(
+                                campanha_id=cid,
+                                competencia_ano=ano,
+                                competencia_mes=mes,
+                                acao="ranking_marca_create",
+                                actor=session.get("username") or "admin",
+                                payload_json=json.dumps({"marca": marca, "min_total": min_total, "premios": premios}, ensure_ascii=False),
+                            ))
+                        except Exception:
+                            pass
+                    else:
+                        c = db.query(CampanhaV2Master).filter(CampanhaV2Master.id == cid).first()
+                        if not c:
+                            raise Exception("Campanha não encontrada.")
+                        c.titulo = titulo
+                        c.ativo = ativo
+                        c.tipo = "RANKING_VALOR"
+                        c.regras_json = json.dumps(regras, ensure_ascii=False)
+                        if hasattr(c, "escopo"):
+                            c.escopo = "GLOBAL" if escopo_tipo == "GLOBAL" else "EMP"
+                        if hasattr(c, "vigencia_ini"):
+                            c.vigencia_ini = di
+                            c.vigencia_fim = df
+                        try:
+                            db.add(CampanhaV2Audit(
+                                campanha_id=cid,
+                                competencia_ano=ano,
+                                competencia_mes=mes,
+                                acao="ranking_marca_update",
+                                actor=session.get("username") or "admin",
+                                payload_json=json.dumps({"marca": marca, "min_total": min_total, "premios": premios}, ensure_ascii=False),
+                            ))
+                        except Exception:
+                            pass
+
+                    # scope EMPs
+                    emps_sel = request.form.getlist("emp")
+                    # normalize to int where possible
+                    db.query(CampanhaV2ScopeEMP).filter(CampanhaV2ScopeEMP.campanha_id == cid).delete(synchronize_session=False)
+                    if escopo_tipo == "EMPS":
+                        for emp_code in emps_sel:
+                            emp_code = str(emp_code).strip()
+                            if not emp_code:
+                                continue
+                            try:
+                                db.add(CampanhaV2ScopeEMP(campanha_id=cid, emp=int(emp_code)))
+                            except Exception:
+                                # se emp não for numérico, tenta mapear por código
+                                try:
+                                    emp_obj = db.query(Emp).filter(Emp.codigo == emp_code).first()
+                                    if emp_obj:
+                                        db.add(CampanhaV2ScopeEMP(campanha_id=cid, emp=int(emp_obj.codigo)))
+                                except Exception:
+                                    continue
+
+                    db.commit()
+                    flash("Campanha de Ranking por Marca salva.", "success")
+                    return redirect(url_for("admin_campanhas_ranking_marca", ano=ano, mes=mes))
+
+                elif acao == "remover":
+                    cid = int(request.form.get("id") or 0)
+                    db.query(CampanhaV2ScopeEMP).filter(CampanhaV2ScopeEMP.campanha_id == cid).delete(synchronize_session=False)
+                    db.query(CampanhaV2Resultado).filter(CampanhaV2Resultado.campanha_id == cid).delete(synchronize_session=False)
+                    db.query(CampanhaV2Master).filter(CampanhaV2Master.id == cid).delete(synchronize_session=False)
+                    try:
+                        db.add(CampanhaV2Audit(
+                            campanha_id=cid,
+                            competencia_ano=ano,
+                            competencia_mes=mes,
+                            acao="ranking_marca_delete",
+                            actor=session.get("username") or "admin",
+                        ))
+                    except Exception:
+                        pass
+                    db.commit()
+                    flash(f"Campanha #{cid} removida.", "success")
+                    return redirect(url_for("admin_campanhas_ranking_marca", ano=ano, mes=mes))
+
+                elif acao == "recalcular":
+                    actor = session.get("username") or "admin"
+                    recalc_v2_competencia(db, ano=ano, mes=mes, actor=str(actor))
+                    db.commit()
+                    flash(f"Recalculo V2 concluído para {mes}/{ano}.", "success")
+                    return redirect(url_for("admin_campanhas_ranking_marca", ano=ano, mes=mes))
+
+            except Exception as e:
+                db.rollback()
+                erro = str(e)
+
+        # Listar campanhas do tipo ranking por marca (tipo ranking valor + regras com 'marca')
+        all_camps = db.query(CampanhaV2Master).order_by(CampanhaV2Master.id.desc()).all()
+        campanhas = []
+        for c in all_camps:
+            try:
+                regras = json.loads(c.regras_json or "{}")
+            except Exception:
+                regras = {}
+            marca = (regras.get("marca") or "").strip()
+            premiacao = regras.get("premiacao") or regras.get("premios") or {}
+            min_total = regras.get("min_total") or regras.get("valor_minimo") or 0
+            if (c.tipo or "").upper() == "RANKING_VALOR" and marca:
+                # viewmodel
+                vm = type("C", (), {})()
+                vm.id = c.id
+                vm.titulo = c.titulo
+                vm.marca = marca
+                vm.min_total = float(min_total or 0) if min_total else 0
+                vm.ativo = getattr(c, "ativo", True)
+                # map schema differences
+                vm.data_inicio = getattr(c, "vigencia_ini", None)
+                vm.data_fim = getattr(c, "vigencia_fim", None)
+                vm.competencia_mes = regras.get("competencia_mes")
+                vm.competencia_ano = regras.get("competencia_ano")
+                escopo = getattr(c, "escopo", None)
+                vm.escopo_tipo = "GLOBAL" if str(escopo or "").upper() == "GLOBAL" else "EMPS"
+                campanhas.append(vm)
+
+        # emps_map
+        ids = [c.id for c in campanhas]
+        emps_map = {cid: [] for cid in ids}
+        if ids:
+            scopes = db.query(CampanhaV2ScopeEMP).filter(CampanhaV2ScopeEMP.campanha_id.in_(ids)).all()
+            for s in scopes:
+                emps_map.setdefault(int(s.campanha_id), []).append(str(s.emp))
+            # ensure sorted unique
+            for cid in list(emps_map.keys()):
+                emps_map[cid] = sorted(list({str(x) for x in emps_map[cid]}), key=lambda x: (len(x), x))
+
+        # premios_map
+        premios_map = {}
+        for c in campanhas:
+            try:
+                regras = json.loads(db.query(CampanhaV2Master).filter(CampanhaV2Master.id == c.id).first().regras_json or "{}")
+            except Exception:
+                regras = {}
+            prem = regras.get("premiacao") or {}
+            top = prem.get("top") or []
+            premios_map[c.id] = [{"posicao": int(x.get("pos") or 0), "valor": float(x.get("valor") or 0)} for x in top if isinstance(x, dict)]
+
+        return render_template(
+            "admin_campanhas_ranking_marca.html",
+            campanhas=campanhas,
+            emps_map=emps_map,
+            premios_map=premios_map,
+            emps_options=emps_options,
+            mes=mes,
+            ano=ano,
+            erro=erro,
+            ok=ok,
+        )
+
+
+
 
 @app.route("/admin/apagar_vendas", methods=["POST"])
 def admin_apagar_vendas():

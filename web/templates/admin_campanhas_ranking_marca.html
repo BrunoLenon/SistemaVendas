@@ -131,7 +131,9 @@
                       {% else %}
                         <div>GLOBAL (todas)</div>
                       {% endif %}
-                      <div class="small text-muted mt-2">Prêmios</div>
+                      <div class="small text-muted mt-2">Valor mínimo</div>
+                       <div class="mono">{{ "%.2f"|format(c.min_total) if c.min_total else "—" }}</div>
+                       <div class="small text-muted mt-2">Prêmios</div>
                       <div class="mono">
                         {% for p in premios %}
                           {{ p.posicao }}={{ "%.2f"|format(p.valor) }}{% if not loop.last %}, {% endif %}
