@@ -6,9 +6,9 @@ from typing import Any, Iterable
 from sqlalchemy import func, and_, or_
 
 from db import (
-    CampanhaMasterV2,
-    CampanhaResultadoV2,
-    CampanhaAuditV2,
+    CampanhaV2Master,
+    CampanhaV2Resultado,
+    CampanhaV2Audit,
     Venda,
 )
 
@@ -82,7 +82,7 @@ def recalcular_campanhas_v2(
 
     try:
         # Smoke test: se a tabela não existe, esta query vai falhar
-        db.query(func.count(CampanhaMasterV2.id)).first()
+        db.query(func.count(CampanhaV2Master.id)).first()
     except Exception:
         return
 
@@ -91,8 +91,8 @@ def recalcular_campanhas_v2(
 
     # Carrega campanhas ativas que tenham interseção com a competência (por vigência)
     camps = (
-        db.query(CampanhaMasterV2)
-        .filter(CampanhaMasterV2.ativo.is_(True))
+        db.query(CampanhaV2Master)
+        .filter(CampanhaV2Master.ativo.is_(True))
         .all()
     )
 
@@ -166,14 +166,14 @@ def recalc_v2_competencia(
 
 
 
-def _upsert_resultados(db, c: CampanhaMasterV2, ano: int, mes: int, rows: list[CampanhaV2ResultRow], *, force: bool) -> None:
+def _upsert_resultados(db, c: CampanhaV2Master, ano: int, mes: int, rows: list[CampanhaV2ResultRow], *, force: bool) -> None:
     # estratégia simples: delete+insert quando force, senão upsert individual
     if force:
         try:
-            db.query(CampanhaResultadoV2).filter(
-                CampanhaResultadoV2.campanha_id == int(c.id),
-                CampanhaResultadoV2.competencia_ano == int(ano),
-                CampanhaResultadoV2.competencia_mes == int(mes),
+            db.query(CampanhaV2Resultado).filter(
+                CampanhaV2Resultado.campanha_id == int(c.id),
+                CampanhaV2Resultado.competencia_ano == int(ano),
+                CampanhaV2Resultado.competencia_mes == int(mes),
             ).delete(synchronize_session=False)
             db.flush()
         except Exception:
@@ -182,18 +182,18 @@ def _upsert_resultados(db, c: CampanhaMasterV2, ano: int, mes: int, rows: list[C
     for r in rows:
         try:
             obj = (
-                db.query(CampanhaResultadoV2)
+                db.query(CampanhaV2Resultado)
                 .filter(
-                    CampanhaResultadoV2.campanha_id == int(c.id),
-                    CampanhaResultadoV2.emp == str(r.emp),
-                    CampanhaResultadoV2.vendedor == str(r.vendedor),
-                    CampanhaResultadoV2.competencia_ano == int(ano),
-                    CampanhaResultadoV2.competencia_mes == int(mes),
+                    CampanhaV2Resultado.campanha_id == int(c.id),
+                    CampanhaV2Resultado.emp == str(r.emp),
+                    CampanhaV2Resultado.vendedor == str(r.vendedor),
+                    CampanhaV2Resultado.competencia_ano == int(ano),
+                    CampanhaV2Resultado.competencia_mes == int(mes),
                 )
                 .one_or_none()
             )
             if obj is None:
-                obj = CampanhaResultadoV2(
+                obj = CampanhaV2Resultado(
                     campanha_id=int(c.id),
                     tipo=str(c.tipo),
                     competencia_ano=int(ano),
@@ -218,7 +218,7 @@ def _upsert_resultados(db, c: CampanhaMasterV2, ano: int, mes: int, rows: list[C
             print(f"[CAMPANHAS_V2] erro upsert: {e}")
 
 
-def _calc_ranking_valor(db, c: CampanhaMasterV2, ano: int, mes: int, emps_calc: list[str]) -> list[CampanhaV2ResultRow]:
+def _calc_ranking_valor(db, c: CampanhaV2Master, ano: int, mes: int, emps_calc: list[str]) -> list[CampanhaV2ResultRow]:
     regras = _safe_json_load(c.regras_json, {})
     premiacao = _safe_json_load(c.premiacao_json, {})
     mov_tipo = (regras.get("mov_tipo") or "OA").strip().upper()
@@ -285,7 +285,7 @@ def _top3_rows(rows: list[Any], *, emp_token: str, marca: str, premiacao: dict[s
     return out
 
 
-def _calc_meta_pct_mom(db, c: CampanhaMasterV2, ano: int, mes: int, emps_calc: list[str]) -> list[CampanhaV2ResultRow]:
+def _calc_meta_pct_mom(db, c: CampanhaV2Master, ano: int, mes: int, emps_calc: list[str]) -> list[CampanhaV2ResultRow]:
     regras = _safe_json_load(c.regras_json, {})
     premiacao = _safe_json_load(c.premiacao_json, {})
     pct_meta = float(regras.get("pct_meta") or 0.0)
@@ -322,7 +322,7 @@ def _calc_meta_pct_mom(db, c: CampanhaMasterV2, ano: int, mes: int, emps_calc: l
     return out
 
 
-def _calc_meta_pct_yoy(db, c: CampanhaMasterV2, ano: int, mes: int, emps_calc: list[str]) -> list[CampanhaV2ResultRow]:
+def _calc_meta_pct_yoy(db, c: CampanhaV2Master, ano: int, mes: int, emps_calc: list[str]) -> list[CampanhaV2ResultRow]:
     regras = _safe_json_load(c.regras_json, {})
     premiacao = _safe_json_load(c.premiacao_json, {})
     pct_meta = float(regras.get("pct_meta") or 0.0)
@@ -356,7 +356,7 @@ def _calc_meta_pct_yoy(db, c: CampanhaMasterV2, ano: int, mes: int, emps_calc: l
     return out
 
 
-def _calc_meta_abs(db, c: CampanhaMasterV2, ano: int, mes: int, emps_calc: list[str]) -> list[CampanhaV2ResultRow]:
+def _calc_meta_abs(db, c: CampanhaV2Master, ano: int, mes: int, emps_calc: list[str]) -> list[CampanhaV2ResultRow]:
     regras = _safe_json_load(c.regras_json, {})
     premiacao = _safe_json_load(c.premiacao_json, {})
     meta_val = float(regras.get("meta_valor") or 0.0)
@@ -383,7 +383,7 @@ def _calc_meta_abs(db, c: CampanhaMasterV2, ano: int, mes: int, emps_calc: list[
     return out
 
 
-def _calc_mix_mestre(db, c: CampanhaMasterV2, ano: int, mes: int, emps_calc: list[str]) -> list[CampanhaV2ResultRow]:
+def _calc_mix_mestre(db, c: CampanhaV2Master, ano: int, mes: int, emps_calc: list[str]) -> list[CampanhaV2ResultRow]:
     regras = _safe_json_load(c.regras_json, {})
     premiacao = _safe_json_load(c.premiacao_json, {})
     minimo = int(regras.get("minimo") or 0)
@@ -424,7 +424,7 @@ def _calc_mix_mestre(db, c: CampanhaMasterV2, ano: int, mes: int, emps_calc: lis
     return out
 
 
-def _calc_acumulativa(db, c: CampanhaMasterV2, ano: int, mes: int, emps_calc: list[str]) -> list[CampanhaV2ResultRow]:
+def _calc_acumulativa(db, c: CampanhaV2Master, ano: int, mes: int, emps_calc: list[str]) -> list[CampanhaV2ResultRow]:
     regras = _safe_json_load(c.regras_json, {})
     premiacao = _safe_json_load(c.premiacao_json, {})
     meses_n = int(regras.get("meses") or 3)
@@ -513,13 +513,13 @@ def atualizar_status_pagamento_v2(
 
     try:
         obj = (
-            db.query(CampanhaResultadoV2)
+            db.query(CampanhaV2Resultado)
             .filter(
-                CampanhaResultadoV2.campanha_id == int(campanha_id),
-                CampanhaResultadoV2.competencia_ano == int(ano),
-                CampanhaResultadoV2.competencia_mes == int(mes),
-                CampanhaResultadoV2.emp == str(emp),
-                CampanhaResultadoV2.vendedor == str(vendedor).strip().upper(),
+                CampanhaV2Resultado.campanha_id == int(campanha_id),
+                CampanhaV2Resultado.competencia_ano == int(ano),
+                CampanhaV2Resultado.competencia_mes == int(mes),
+                CampanhaV2Resultado.emp == str(emp),
+                CampanhaV2Resultado.vendedor == str(vendedor).strip().upper(),
             )
             .one_or_none()
         )
@@ -531,7 +531,7 @@ def atualizar_status_pagamento_v2(
         obj.pago_em = datetime.datetime.utcnow() if novo == "PAGO" else None
         obj.atualizado_em = datetime.datetime.utcnow()
 
-        audit = CampanhaAuditV2(
+        audit = CampanhaV2Audit(
             campanha_id=int(campanha_id),
             competencia_ano=int(ano),
             competencia_mes=int(mes),

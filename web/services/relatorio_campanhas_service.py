@@ -45,6 +45,8 @@ from db import (
     FechamentoMensal,
 )
 
+from services.campanhas_v2_service import list_resultados_v2
+
 from services.campanhas_service import CampanhasDeps
 
 
@@ -124,7 +126,6 @@ def build_relatorio_campanhas_context(
     vendedores_sel: list[str],
     vendedores_por_emp: dict[str, list[str]],
     flash: Callable[[str, str], None],
-    force_recalc: bool = False,
 ) -> dict[str, Any]:
     """Monta o contexto completo do template relatorio_campanhas.html.
 
@@ -141,27 +142,25 @@ def build_relatorio_campanhas_context(
     if role_l != "admin" and not emps_sel and emps_scope:
         emps_sel = [str(e) for e in emps_scope]
 
-    # Recalcula snapshots SOMENTE quando solicitado (admin) via ?recalc=1
-    # Isso é o ganho de performance: páginas leem snapshots existentes e não recalculam a cada request.
+    # Recalcula snapshots do escopo para garantir relatório correto
     # Compatibilidade: em versões antigas o helper recebe `emps`, em outras `emps_scope`.
-    if force_recalc:
+    try:
         try:
-            try:
-                deps.recalcular_resultados_campanhas_para_scope(ano=ano, mes=mes, emps=emps_scope, vendedores_por_emp=vendedores_por_emp)
-            except TypeError:
-                deps.recalcular_resultados_campanhas_para_scope(ano=ano, mes=mes, emps_scope=emps_scope, vendedores_por_emp=vendedores_por_emp)
+            deps.recalcular_resultados_campanhas_para_scope(ano=ano, mes=mes, emps=emps_scope, vendedores_por_emp=vendedores_por_emp)
+        except TypeError:
+            deps.recalcular_resultados_campanhas_para_scope(ano=ano, mes=mes, emps_scope=emps_scope, vendedores_por_emp=vendedores_por_emp)
 
-            try:
-                deps.recalcular_resultados_combos_para_scope(ano=ano, mes=mes, emps=emps_scope, vendedores_por_emp=vendedores_por_emp)
-            except TypeError:
-                deps.recalcular_resultados_combos_para_scope(ano=ano, mes=mes, emps_scope=emps_scope, vendedores_por_emp=vendedores_por_emp)
-        except Exception as e:
-            print(f"[RELATORIO_CAMPANHAS] erro ao recalcular snapshots: {e}")
-            try:
-                deps.db.rollback()
-            except Exception:
-                pass
-            flash("Não foi possível recalcular os resultados das campanhas agora. Exibindo dados já salvos.", "warning")
+        try:
+            deps.recalcular_resultados_combos_para_scope(ano=ano, mes=mes, emps=emps_scope, vendedores_por_emp=vendedores_por_emp)
+        except TypeError:
+            deps.recalcular_resultados_combos_para_scope(ano=ano, mes=mes, emps_scope=emps_scope, vendedores_por_emp=vendedores_por_emp)
+    except Exception as e:
+        print(f"[RELATORIO_CAMPANHAS] erro ao recalcular snapshots: {e}")
+        try:
+            deps.db.rollback()
+        except Exception:
+            pass
+        flash("Não foi possível recalcular os resultados das campanhas agora. Exibindo dados já salvos.", "warning")
 
     emps_todos: list[dict[str, Any]] = []  # tab A (cadastros)
     emps_abertas: list[dict[str, Any]] = []

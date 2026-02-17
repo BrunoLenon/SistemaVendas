@@ -3,8 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 from typing import Any, Callable
-
-from db import CampanhaQtdResultado
+from services.campanhas_v2_service import list_resultados_v2
 
 
 @dataclass(frozen=True)
@@ -61,10 +60,6 @@ def build_campanhas_page_context(
     hoje = date.today()
     mes = int(args.get("mes") or hoje.month)
     ano = int(args.get("ano") or hoje.year)
-
-    # Performance: usa snapshots existentes e só recalcula quando solicitado via ?recalc=1 (ADMIN)
-    recalc_req = (args.get("recalc") or "").strip() == "1"
-    force_recalc = bool(recalc_req and role_l == "admin")
 
     vendedores_req = [v.strip().upper() for v in deps.parse_multi_args(args, "vendedor")]
 
@@ -165,27 +160,7 @@ def build_campanhas_page_context(
                     if (vend or "").upper() == "__ALL__":
                         res = deps.calc_resultado_all_vendedores(db, c, emp, ano, mes, periodo_ini, periodo_fim)
                     else:
-                        # Snapshot: se já existe resultado salvo para o mês, reaproveita (não recalcula em request-time)
-                        res = None
-                        if not force_recalc:
-                            try:
-                                res = (
-                                    db.query(CampanhaQtdResultado)
-                                    .filter(
-                                        CampanhaQtdResultado.campanha_id == getattr(c, "id"),
-                                        CampanhaQtdResultado.emp == emp,
-                                        CampanhaQtdResultado.ano == int(ano),
-                                        CampanhaQtdResultado.mes == int(mes),
-                                        CampanhaQtdResultado.vendedor == vend,
-                                    )
-                                    .first()
-                                )
-                            except Exception:
-                                res = None
-
-                        if res is None:
-                            # Recalcula/Upsert quando solicitado ou quando ainda não existe snapshot
-                            res = deps.upsert_resultado(db, c, vend, emp, ano, mes, periodo_ini, periodo_fim)
+                        res = deps.upsert_resultado(db, c, vend, emp, ano, mes, periodo_ini, periodo_fim)
                     resultados_calc.append(res)
                     total_recomp += float(getattr(res, "valor_recompensa", 0.0) or 0.0)
 
@@ -212,6 +187,23 @@ def build_campanhas_page_context(
         if (vendedor_sel or "").upper() == "__ALL__"
         else (f"{len(vendedores_sel)} selecionados" if (vendedor_sel or "").upper() == "__MULTI__" else vendedor_sel)
     )
+    # Campanhas V2 (Enterprise) — resultados pré-calculados (snapshot)
+    try:
+        v2_vendedores_scope: list[str] = []
+        if role_l == "vendedor":
+            v2_vendedores_scope = [vendedor_logado]
+        elif vendedores_sel:
+            v2_vendedores_scope = vendedores_sel
+        campanhas_v2_resultados = list_resultados_v2(
+            db,
+            ano=ano,
+            mes=mes,
+            emps_scope=[int(e) for e in emps_scope],
+            vendedores_scope=v2_vendedores_scope,
+        )
+    except Exception:
+        campanhas_v2_resultados = []
+
 
     return {
         "role": role,
@@ -227,7 +219,8 @@ def build_campanhas_page_context(
         "emps_scope": emps_scope,
         "emps_options": emps_options,
         "emps_sel": emps_sel,
-        "emp_param": emp_param,
+        "emp_param": emp_param,        "campanhas_v2_resultados": campanhas_v2_resultados,
+
     }
 
 
@@ -250,10 +243,6 @@ def build_relatorio_campanhas_scope(
     hoje = date.today()
     mes = int(args.get("mes") or hoje.month)
     ano = int(args.get("ano") or hoje.year)
-
-    # Performance: usa snapshots existentes e só recalcula quando solicitado via ?recalc=1 (ADMIN)
-    recalc_req = (args.get("recalc") or "").strip() == "1"
-    force_recalc = bool(recalc_req and role_l == "admin")
 
     emps_sel = [str(e).strip() for e in deps.parse_multi_args(args, "emp") if str(e).strip()]
     vendedores_sel = [str(v).strip().upper() for v in deps.parse_multi_args(args, "vendedor") if str(v).strip()]

@@ -205,11 +205,9 @@
       <button class="btn btn-primary" type="submit">Atualizar</button>
     </div>
 
-    {% if role == "admin" %}
     <div class="col-12 col-md-2 d-grid">
       <button class="btn btn-outline-secondary" type="submit" name="recalc" value="1">Recalcular</button>
     </div>
-    {% endif %}
 
     <div class="col-12">
       <span class="subtitle small">Dica: <strong>Atualizar</strong> usa cache (mais rápido). Use <strong>Recalcular</strong> quando importar vendas ou alterar cadastros.</span>
@@ -581,4 +579,59 @@
 
 
 </div>
+<!-- ========================= -->
+<!-- Campanhas V2 (Enterprise) -->
+<!-- ========================= -->
+{% if campanhas_v2_resultados %}
+<div class="card mt-3">
+  <div class="card-header d-flex align-items-center justify-content-between">
+    <div>
+      <strong>Campanhas V2 (Enterprise)</strong>
+      <div class="text-muted" style="font-size: 12px;">Resultados pré-calculados (snapshot) para {{ mes }}/{{ ano }}</div>
+    </div>
+    {% if role == 'admin' %}
+      <a class="btn btn-sm btn-outline-primary" href="/admin/campanhas_v2?ano={{ ano }}&mes={{ mes }}">Gerenciar V2</a>
+    {% endif %}
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-sm table-striped mb-0">
+        <thead>
+          <tr>
+            <th>Campanha</th>
+            <th>Tipo</th>
+            <th>EMP</th>
+            <th>Vendedor</th>
+            <th class="text-end">Base</th>
+            <th class="text-end">Recompensa</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in campanhas_v2_resultados %}
+          <tr>
+            <td>#{{ r.campanha_id }} — {{ r.titulo }}</td>
+            <td>{{ r.tipo }}</td>
+            <td>{{ r.emp }}</td>
+            <td>{{ r.vendedor }}</td>
+            <td class="text-end">{{ '%.2f'|format(r.base_num) }}</td>
+            <td class="text-end">{{ '%.2f'|format(r.valor_recompensa) }}</td>
+            <td>
+              {% if r.status_pagamento == 'PAGO' %}
+                <span class="badge bg-success">PAGO</span>
+              {% elif r.status_pagamento == 'A_PAGAR' %}
+                <span class="badge bg-warning text-dark">A PAGAR</span>
+              {% else %}
+                <span class="badge bg-secondary">PENDENTE</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+
 {% endblock %}

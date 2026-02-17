@@ -711,3 +711,54 @@ def update_status_pagamento_v2(
 
         session.commit()
         return True
+
+
+
+def list_resultados_v2(
+    db,
+    *,
+    ano: int,
+    mes: int,
+    emps_scope: list[int] | None = None,
+    vendedores_scope: list[str] | None = None,
+) -> list[dict]:
+    """Lista resultados V2 já calculados (snapshot) para uma competência.
+
+    Retorna dados enriquecidos com título/tipo da campanha para uso em páginas /campanhas e /relatorios/campanhas.
+    - emps_scope: lista de EMPs permitidas/selecionadas (None = todas)
+    - vendedores_scope: lista de vendedores permitidos/selecionados (None = todos)
+    """
+    emps_scope = emps_scope or []
+    vendedores_scope = [v.strip().upper() for v in (vendedores_scope or []) if v and str(v).strip()]
+    q = (
+        db.query(CampanhaV2Resultado, CampanhaV2Master)
+        .join(CampanhaV2Master, CampanhaV2Master.id == CampanhaV2Resultado.campanha_id)
+        .filter(CampanhaV2Resultado.competencia_ano == int(ano))
+        .filter(CampanhaV2Resultado.competencia_mes == int(mes))
+    )
+
+    if emps_scope:
+        q = q.filter(CampanhaV2Resultado.emp.in_(emps_scope))
+
+    if vendedores_scope:
+        q = q.filter(func.upper(CampanhaV2Resultado.vendedor).in_(vendedores_scope))
+
+    rows = q.order_by(CampanhaV2Master.id.desc(), CampanhaV2Resultado.emp.asc(), CampanhaV2Resultado.vendedor.asc()).all()
+
+    out: list[dict] = []
+    for r, c in rows:
+        out.append(
+            {
+                "campanha_id": c.id,
+                "titulo": c.titulo,
+                "tipo": c.tipo,
+                "emp": int(r.emp or 0),
+                "vendedor": (r.vendedor or "").strip().upper(),
+                "base_num": float(r.base_num or 0.0),
+                "atingiu": bool(r.atingiu),
+                "valor_recompensa": float(r.valor_recompensa or 0.0),
+                "status_pagamento": (r.status_pagamento or "PENDENTE"),
+                "detalhes_json": r.detalhes_json,
+            }
+        )
+    return out
