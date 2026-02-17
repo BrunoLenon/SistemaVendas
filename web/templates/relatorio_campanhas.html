@@ -205,9 +205,11 @@
       <button class="btn btn-primary" type="submit">Atualizar</button>
     </div>
 
+    {% if role == "admin" %}
     <div class="col-12 col-md-2 d-grid">
       <button class="btn btn-outline-secondary" type="submit" name="recalc" value="1">Recalcular</button>
     </div>
+    {% endif %}
 
     <div class="col-12">
       <span class="subtitle small">Dica: <strong>Atualizar</strong> usa cache (mais rápido). Use <strong>Recalcular</strong> quando importar vendas ou alterar cadastros.</span>

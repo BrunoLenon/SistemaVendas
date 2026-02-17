@@ -3418,10 +3418,14 @@ def relatorio_campanhas():
     mes = int(scope["mes"])
     emps_sel = scope["emps_sel"]
     vendedores_sel = scope["vendedores_sel"]
-    emps_base = scope.get("emps_base") or scope.get("emps_scope") or []
     emps_scope = scope["emps_scope"]
     vendedores_por_emp = scope["vendedores_por_emp"]
-    vendedores_base_por_emp = scope.get("vendedores_base_por_emp")
+
+    recalc_req = (request.args.get("recalc") or "").strip() == "1"
+    force_recalc = bool(recalc_req and role == "admin")
+    if recalc_req and role != "admin":
+        flash("Apenas ADMIN pode recalcular os snapshots. Exibindo dados já salvos.", "warning")
+
 
 
     ctx = build_relatorio_campanhas_context(
@@ -3431,12 +3435,11 @@ def relatorio_campanhas():
         ano=ano,
         mes=mes,
         emps_scope=emps_scope,
-        emps_base=emps_base,
         emps_sel=emps_sel,
         vendedores_sel=vendedores_sel,
         vendedores_por_emp=vendedores_por_emp,
-        vendedores_base_por_emp=vendedores_base_por_emp,
         flash=flash,
+        force_recalc=force_recalc,
     )
     return render_template("relatorio_campanhas.html", **ctx)
 

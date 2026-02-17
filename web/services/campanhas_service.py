@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Any, Callable
 
-from services.filter_scope import apply_selected_filter
+from db import CampanhaQtdResultado
 
 
 @dataclass(frozen=True)
@@ -61,6 +61,10 @@ def build_campanhas_page_context(
     hoje = date.today()
     mes = int(args.get("mes") or hoje.month)
     ano = int(args.get("ano") or hoje.year)
+
+    # Performance: usa snapshots existentes e só recalcula quando solicitado via ?recalc=1 (ADMIN)
+    recalc_req = (args.get("recalc") or "").strip() == "1"
+    force_recalc = bool(recalc_req and role_l == "admin")
 
     vendedores_req = [v.strip().upper() for v in deps.parse_multi_args(args, "vendedor")]
 
@@ -161,7 +165,27 @@ def build_campanhas_page_context(
                     if (vend or "").upper() == "__ALL__":
                         res = deps.calc_resultado_all_vendedores(db, c, emp, ano, mes, periodo_ini, periodo_fim)
                     else:
-                        res = deps.upsert_resultado(db, c, vend, emp, ano, mes, periodo_ini, periodo_fim)
+                        # Snapshot: se já existe resultado salvo para o mês, reaproveita (não recalcula em request-time)
+                        res = None
+                        if not force_recalc:
+                            try:
+                                res = (
+                                    db.query(CampanhaQtdResultado)
+                                    .filter(
+                                        CampanhaQtdResultado.campanha_id == getattr(c, "id"),
+                                        CampanhaQtdResultado.emp == emp,
+                                        CampanhaQtdResultado.ano == int(ano),
+                                        CampanhaQtdResultado.mes == int(mes),
+                                        CampanhaQtdResultado.vendedor == vend,
+                                    )
+                                    .first()
+                                )
+                            except Exception:
+                                res = None
+
+                        if res is None:
+                            # Recalcula/Upsert quando solicitado ou quando ainda não existe snapshot
+                            res = deps.upsert_resultado(db, c, vend, emp, ano, mes, periodo_ini, periodo_fim)
                     resultados_calc.append(res)
                     total_recomp += float(getattr(res, "valor_recompensa", 0.0) or 0.0)
 
@@ -227,78 +251,60 @@ def build_relatorio_campanhas_scope(
     mes = int(args.get("mes") or hoje.month)
     ano = int(args.get("ano") or hoje.year)
 
+    # Performance: usa snapshots existentes e só recalcula quando solicitado via ?recalc=1 (ADMIN)
+    recalc_req = (args.get("recalc") or "").strip() == "1"
+    force_recalc = bool(recalc_req and role_l == "admin")
+
     emps_sel = [str(e).strip() for e in deps.parse_multi_args(args, "emp") if str(e).strip()]
     vendedores_sel = [str(v).strip().upper() for v in deps.parse_multi_args(args, "vendedor") if str(v).strip()]
 
-    # emps_base: lista completa para dropdown (NUNCA deve encolher após filtro)
-    # emps_scope: lista efetiva para consulta/cálculo (pode ser filtrada)
-    emps_base: list[str] = []
     emps_scope: list[str] = []
     vendedores_por_emp: dict[str, list[str]] = {}
-    vendedores_base_por_emp: dict[str, list[str]] = {}
 
     if role_l == "admin":
-        # ADMIN: base = todas EMPs com vendas no período (fallback: cadastro de EMPs)
-        emps_base = deps.get_emps_com_vendas_no_periodo(ano, mes) or []
-        if not emps_base:
-            try:
-                emps_base = deps.get_all_emp_codigos(True) or []
-            except Exception:
-                emps_base = []
-
-        emps_base, emps_scope = apply_selected_filter(emps_base, emps_sel)
+        emps_scope = deps.get_emps_com_vendas_no_periodo(ano, mes)
+        # emps_sel é apenas filtro; não deve reduzir emps_scope (senão some do dropdown)
     elif role_l == "supervisor":
         allowed = [str(e).strip() for e in (deps.resolver_emp_scope_para_usuario(vendedor_logado, role_l, emp_usuario) or []) if str(e).strip()]
         allowed = sorted(set(allowed))
         if not allowed:
             flash("Supervisor sem EMP vinculada. Ajuste o vínculo do usuário (usuario_emps).", "warning")
-            emps_base = []
             emps_scope = []
         else:
-            emps_base = allowed[:]
-            # supervisor pode filtrar EMPs dentro do escopo permitido
-            emps_base, emps_scope = apply_selected_filter(emps_base, emps_sel)
+            if emps_sel:
+                pick = [str(e).strip() for e in emps_sel if str(e).strip() in set(allowed)]
+                emps_scope = pick if pick else allowed[:]
+            else:
+                emps_scope = allowed[:]
     else:
         base_emps = [str(e).strip() for e in (deps.get_emps_vendedor(vendedor_logado) or []) if str(e).strip()]
         if not base_emps:
             base_emps = [str(e).strip() for e in (deps.resolver_emp_scope_para_usuario(vendedor_logado, role_l, emp_usuario) or []) if str(e).strip()]
         base_emps = sorted(set(base_emps))
-        emps_base = base_emps[:]
-        emps_base, emps_scope = apply_selected_filter(emps_base, emps_sel)
+        if emps_sel:
+            wanted = {str(x).strip() for x in emps_sel if str(x).strip()}
+            emps_scope = [e for e in base_emps if e in wanted]
+        else:
+            emps_scope = base_emps[:]
         if not emps_scope:
             flash("Não foi possível identificar a EMP do vendedor.", "warning")
 
     # Vendedores por EMP
     for emp in emps_scope:
         emp = str(emp)
-
         if role_l == "admin":
-            # lista base (para dropdown) = todos vendedores da EMP no período
-            vendedores_all = deps.get_vendedores_emp_no_periodo(emp, ano, mes) or []
-            vendedores_all = [str(v).strip().upper() for v in vendedores_all if str(v).strip()]
-            vendedores_base_por_emp[emp] = vendedores_all
-
-            # scope (para cálculo) pode ser filtrado
-            vendedores = vendedores_all
-            if vendedores_sel and "__ALL__" not in vendedores_sel:
-                allowed_set = set(vendedores_all)
+            vendedores = deps.get_vendedores_emp_no_periodo(emp, ano, mes)
+            if vendedores_sel:
+                allowed_set = {v.strip().upper() for v in vendedores}
                 pick = [v for v in vendedores_sel if v in allowed_set]
                 vendedores = pick if pick else []
-
         elif role_l == "supervisor":
-            vendedores_all = deps.get_vendedores_emp_no_periodo(emp, ano, mes) or []
-            vendedores_all = [str(v).strip().upper() for v in vendedores_all if str(v).strip()]
-            vendedores_base_por_emp[emp] = vendedores_all
-
-            vendedores = vendedores_all
+            vendedores = deps.get_vendedores_emp_no_periodo(emp, ano, mes)
             if vendedores_sel and "__ALL__" not in vendedores_sel:
-                allowed_set = set(vendedores_all)
+                allowed_set = {v.strip().upper() for v in vendedores}
                 vendedores = [v for v in vendedores_sel if v in allowed_set]
-
         else:
-            vendedores_base_por_emp[emp] = [vendedor_logado] if vendedor_logado else []
             vendedores = [vendedor_logado]
-
         vendedores_por_emp[emp] = vendedores
 
     return {
@@ -306,8 +312,6 @@ def build_relatorio_campanhas_scope(
         "mes": mes,
         "emps_sel": emps_sel,
         "vendedores_sel": vendedores_sel,
-        "emps_base": emps_base,
         "emps_scope": emps_scope,
         "vendedores_por_emp": vendedores_por_emp,
-        "vendedores_base_por_emp": vendedores_base_por_emp,
     }
