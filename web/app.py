@@ -13,7 +13,7 @@ from services.campanhas_service import (
     build_relatorio_campanhas_scope,
 )
 from services.relatorio_campanhas_service import build_relatorio_campanhas_context
-from services.campanhas_v2_engine import recalc_v2_competencia
+from services.campanhas_v2_engine import recalc_v2_competencia, recalc_v2_campanha
 import os
 import re
 import mimetypes
@@ -7002,6 +7002,125 @@ def admin_campanhas_v2_delete(cid: int):
         db.close()
     return redirect(url_for("admin_campanhas_v2"))
 
+
+
+@app.route("/admin/campanhas_v2/<int:cid>/toggle", methods=["POST"])
+@admin_required
+def admin_campanhas_v2_toggle(cid: int):
+    """Ativa/Desativa campanha V2 (toggle)."""
+    db = SessionLocal()
+    try:
+        actor = session.get("username") or "admin"
+        c = db.query(CampanhaV2Master).filter(CampanhaV2Master.id == int(cid)).first()
+        if not c:
+            flash("Campanha não encontrada.", "warning")
+            return redirect(url_for("admin_campanhas_v2"))
+        before = bool(c.ativo)
+        c.ativo = not bool(c.ativo)
+        try:
+            db.add(CampanhaV2Audit(
+                campanha_id=c.id,
+                acao="config_toggle",
+                actor=str(actor),
+                payload_json=json.dumps({"de": before, "para": bool(c.ativo)}, ensure_ascii=False),
+            ))
+        except Exception:
+            pass
+        db.commit()
+        flash(f"Campanha V2 {'ativada' if c.ativo else 'desativada' }.", "success")
+        return redirect(url_for("admin_campanhas_v2", edit=c.id))
+    except Exception as e:
+        db.rollback()
+        flash(f"Erro ao alternar ativo: {e}", "danger")
+        return redirect(url_for("admin_campanhas_v2"))
+    finally:
+        db.close()
+
+
+@app.route("/admin/campanhas_v2/<int:cid>/duplicar", methods=["POST"])
+@admin_required
+def admin_campanhas_v2_duplicar(cid: int):
+    """Duplica campanha V2 (1 clique)."""
+    db = SessionLocal()
+    try:
+        actor = session.get("username") or "admin"
+        c = db.query(CampanhaV2Master).filter(CampanhaV2Master.id == int(cid)).first()
+        if not c:
+            flash("Campanha não encontrada.", "warning")
+            return redirect(url_for("admin_campanhas_v2"))
+
+        # Cria cópia como INATIVA por padrão para evitar duplicidade de pagamento.
+        copia = CampanhaV2Master(
+            titulo=(c.titulo or "") + " (Cópia)",
+            tipo=c.tipo,
+            escopo=c.escopo,
+            emps_json=c.emps_json,
+            vigencia_ini=c.vigencia_ini,
+            vigencia_fim=c.vigencia_fim,
+            ativo=False,
+            regras_json=c.regras_json,
+        )
+        db.add(copia)
+        db.flush()
+
+        try:
+            db.add(CampanhaV2Audit(
+                campanha_id=copia.id,
+                acao="config_duplicate",
+                actor=str(actor),
+                payload_json=json.dumps({"origem_id": c.id, "origem_titulo": c.titulo}, ensure_ascii=False),
+            ))
+        except Exception:
+            pass
+
+        db.commit()
+        flash("Campanha duplicada (criada como INATIVA).", "success")
+        return redirect(url_for("admin_campanhas_v2", edit=copia.id))
+    except Exception as e:
+        db.rollback()
+        flash(f"Erro ao duplicar: {e}", "danger")
+        return redirect(url_for("admin_campanhas_v2"))
+    finally:
+        db.close()
+
+
+@app.route("/admin/campanhas_v2/<int:cid>/recalcular", methods=["POST"])
+@admin_required
+def admin_campanhas_v2_recalcular_uma(cid: int):
+    """Recalcula resultados V2 apenas desta campanha (por competência)."""
+    from datetime import date
+    ano = int(request.form.get("ano") or request.args.get("ano") or date.today().year)
+    mes = int(request.form.get("mes") or request.args.get("mes") or date.today().month)
+
+    db = SessionLocal()
+    try:
+        actor = session.get("username") or "admin"
+
+        # Emps_scope vazio => motor calcula no escopo disponível (quando aplicável)
+        # Se você quiser restringir por EMP no futuro, passamos emps_scope aqui.
+        recalc_v2_campanha(db, campanha_id=int(cid), ano=ano, mes=mes, actor=str(actor), emps_scope=[])
+
+        try:
+            db.add(CampanhaV2Audit(
+                campanha_id=int(cid),
+                competencia_ano=int(ano),
+                competencia_mes=int(mes),
+                acao="recalc_campanha",
+                actor=str(actor),
+                payload_json=json.dumps({"ano": ano, "mes": mes}, ensure_ascii=False),
+            ))
+            db.commit()
+        except Exception:
+            db.rollback()
+
+        flash(f"Recalculo desta campanha concluído para {mes:02d}/{ano}.", "success")
+    except Exception as e:
+        db.rollback()
+        flash(f"Erro ao recalcular campanha: {e}", "danger")
+    finally:
+        db.close()
+
+    return redirect(url_for("admin_campanhas_v2", edit=cid))
 
 @app.route("/admin/campanhas_v2/recalcular", methods=["GET"])
 @admin_required
