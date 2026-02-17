@@ -1,5 +1,4 @@
 import os
-import threading
 import sys
 
 # --- Path shim: permite rodar tanto como 'app:app' (--chdir web) quanto 'web.app:app' ---
@@ -16,7 +15,6 @@ from services.campanhas_service import (
 from services.relatorio_campanhas_service import build_relatorio_campanhas_context
 from services.campanhas_v2_engine import recalc_v2_competencia
 import os
-import threading
 import re
 import mimetypes
 import logging
@@ -204,19 +202,11 @@ def _idle_timeout():
 #
 # Em produção, mantenha AUTO_MIGRATE=0 e rode migrações de forma controlada.
 if os.getenv("AUTO_MIGRATE", "0") == "1":
-    # Não bloquear o boot do Gunicorn/Render. Rodar migração em background.
-    def _auto_migrate_bg():
-        try:
-            criar_tabelas()
-            app.logger.info("AUTO_MIGRATE=1 -> criar_tabelas() executado com sucesso (bg)")
-        except Exception:
-            app.logger.exception("Falha ao criar/verificar tabelas (AUTO_MIGRATE=1, bg)")
-
     try:
-        threading.Thread(target=_auto_migrate_bg, daemon=True).start()
-        app.logger.info("AUTO_MIGRATE=1 -> criar_tabelas() agendado em background")
+        criar_tabelas()
+        app.logger.info("AUTO_MIGRATE=1 -> criar_tabelas() executado com sucesso")
     except Exception:
-        app.logger.exception("Falha ao iniciar thread de AUTO_MIGRATE=1")
+        app.logger.exception("Falha ao criar/verificar tabelas (AUTO_MIGRATE=1)")
 # Blueprints (organização do app)
 try:
     from blueprints.auth import bp as auth_bp
@@ -6931,3 +6921,82 @@ def financeiro_fechamento_v2_status():
 
 
 
+
+
+# ==========================
+# Admin - Ranking por Marca
+# ==========================
+@app.route("/admin/campanhas/ranking_marca", methods=["GET", "POST"])
+def admin_campanhas_ranking_marca():
+    if not session.get("user"):
+        return redirect(url_for("login"))
+    if session.get("perfil") != "admin":
+        flash("Acesso negado.", "error")
+        return redirect(url_for("dashboard"))
+
+    # Competência (mês/ano)
+    try:
+        mes = int(request.values.get("mes") or datetime.utcnow().month)
+        ano = int(request.values.get("ano") or datetime.utcnow().year)
+    except Exception:
+        mes = datetime.utcnow().month
+        ano = datetime.utcnow().year
+
+    # Imports locais para evitar circular import
+    try:
+        from services.campanhas_v2_engine import (
+            criar_ou_atualizar_ranking_marca_v2,
+            listar_campanhas_ranking_marca_v2,
+            excluir_campanha_v2,
+            recalcular_ranking_marca_v2,
+            toggle_ativa_campanha_v2,
+            duplicar_campanha_v2,
+        )
+    except Exception:
+        # Se sua base estiver com nomes diferentes, ao menos renderiza a tela
+        criar_ou_atualizar_ranking_marca_v2 = None
+        listar_campanhas_ranking_marca_v2 = None
+        excluir_campanha_v2 = None
+        recalcular_ranking_marca_v2 = None
+        toggle_ativa_campanha_v2 = None
+        duplicar_campanha_v2 = None
+
+    action = request.values.get("action") or request.values.get("acao") or ""
+
+    if request.method == "POST":
+        try:
+            if action in ("salvar", "criar", "editar") and criar_ou_atualizar_ranking_marca_v2:
+                criar_ou_atualizar_ranking_marca_v2(request.form)
+                flash("Campanha salva.", "success")
+            elif action == "excluir" and excluir_campanha_v2:
+                cid = request.form.get("id")
+                if cid:
+                    excluir_campanha_v2(int(cid))
+                    flash("Campanha removida.", "success")
+            elif action == "recalcular" and recalcular_ranking_marca_v2:
+                cid = request.form.get("id")
+                recalcular_ranking_marca_v2(mes=mes, ano=ano, campanha_id=cid)
+                flash("Recalculo executado.", "success")
+            elif action == "toggle" and toggle_ativa_campanha_v2:
+                cid = request.form.get("id")
+                if cid:
+                    toggle_ativa_campanha_v2(int(cid))
+                    flash("Status atualizado.", "success")
+            elif action == "duplicar" and duplicar_campanha_v2:
+                cid = request.form.get("id")
+                if cid:
+                    duplicar_campanha_v2(int(cid))
+                    flash("Campanha duplicada (inativa).", "success")
+        except Exception as e:
+            app.logger.exception("Erro admin ranking_marca")
+            flash(f"Erro: {e}", "error")
+        return redirect(url_for("admin_campanhas_ranking_marca", mes=mes, ano=ano))
+
+    campanhas = listar_campanhas_ranking_marca_v2() if listar_campanhas_ranking_marca_v2 else []
+
+    return render_template(
+        "admin_campanhas_ranking_marca.html",
+        campanhas=campanhas,
+        mes=mes,
+        ano=ano,
+    )
