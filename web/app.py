@@ -22,6 +22,7 @@ import json
 from datetime import date, datetime, timedelta
 import calendar
 from io import BytesIO
+import secrets
 
 from decimal import Decimal, ROUND_HALF_UP
 
@@ -627,7 +628,7 @@ def _allowed_emps() -> list[str]:
 
     emps_int = get_session_emps()
     if emps_int:
-        return _filter_emps_cadastradas([str(e) for e in emps_int], apenas_ativas=True)
+        return [str(e) for e in emps_int]
 
     uid = session.get("user_id")
     if not uid:
@@ -637,7 +638,7 @@ def _allowed_emps() -> list[str]:
         with SessionLocal() as db:
             refresh_session_emps(db, usuario_id=int(uid), fallback_emp=_emp())
             emps_int = get_session_emps()
-            return _filter_emps_cadastradas([str(e) for e in emps_int], apenas_ativas=True)
+            return [str(e) for e in emps_int]
     except Exception:
         return []
 def _is_date_in_range(today: date, inicio: date | None, fim: date | None) -> bool:
@@ -883,7 +884,7 @@ def _get_emps_vendedor(username: str) -> list[str]:
     if (_usuario_logado() or "").strip().upper() == username:
         emps = _allowed_emps()
         if emps:
-            return _filter_emps_cadastradas(sorted({str(e).strip() for e in emps if e is not None and str(e).strip()}), apenas_ativas=True)
+            return sorted({str(e).strip() for e in emps if e is not None and str(e).strip()})
 
     # Fallback: inferir pelas vendas (compatibilidade)
     with SessionLocal() as db:
@@ -893,7 +894,7 @@ def _get_emps_vendedor(username: str) -> list[str]:
             .all()
         )
     emps = sorted({str(r[0]).strip() for r in rows if r and r[0] is not None and str(r[0]).strip() != ""})
-    return _filter_emps_cadastradas(emps, apenas_ativas=True)
+    return emps
 
 def _fetch_cache_row(vendedor: str, ano: int, mes: int, emp_scope: str | None) -> dict | None:
     """Busca dados do cache para o vendedor/período.
@@ -1318,70 +1319,6 @@ def _get_emp_options(codigos: list[str]) -> list[dict]:
             label = c
         out.append({"value": c, "label": label})
     return out
-
-
-def _filter_emps_cadastradas(codigos: list[str], apenas_ativas: bool = True) -> list[str]:
-    """Remove EMPs que não estão cadastradas na tabela `emps` (ou inativas, se `apenas_ativas`).
-    Mantém ordem e faz strip.
-    """
-    codigos = [str(c).strip() for c in (codigos or []) if str(c).strip()]
-    if not codigos:
-        return []
-    # mantém ordem
-    uniq = []
-    seen = set()
-    for c in codigos:
-        if c not in seen:
-            seen.add(c)
-            uniq.append(c)
-
-    try:
-        with SessionLocal() as db:
-            q = db.query(Emp.codigo)
-            q = q.filter(Emp.codigo.in_(uniq))
-            if apenas_ativas:
-                q = q.filter(Emp.ativo.is_(True))
-            rows = q.all()
-            ok = {str(r[0]).strip() for r in rows if r and r[0] is not None and str(r[0]).strip()}
-    except Exception:
-        ok = set()
-
-    if not ok:
-        # Sem cadastro disponível/consultável → não filtra (compatibilidade)
-        return uniq
-
-    return [c for c in uniq if c in ok]
-
-
-def _get_vendedores_cadastrados_por_emp(emp: str) -> set[str]:
-    """Retorna conjunto de vendedores cadastrados e vinculados à EMP (via usuario_emps).
-    Se não houver vínculo, retorna conjunto global de vendedores cadastrados.
-    """
-    emp = (emp or "").strip()
-    if not emp:
-        return set()
-
-    try:
-        with SessionLocal() as db:
-            # 1) Vendedores vinculados à EMP
-            rows = (
-                db.query(Usuario.username)
-                .join(UsuarioEmp, UsuarioEmp.usuario_id == Usuario.id)
-                .filter(func.lower(Usuario.role) == "vendedor")
-                .filter(UsuarioEmp.ativo.is_(True))
-                .filter(UsuarioEmp.emp == emp)
-                .all()
-            )
-            vinc = {(r[0] or "").strip().upper() for r in rows if r and (r[0] or "").strip()}
-            if vinc:
-                return vinc
-
-            # 2) fallback: vendedores cadastrados (global)
-            rows2 = db.query(Usuario.username).filter(func.lower(Usuario.role) == "vendedor").all()
-            glob = {(r[0] or "").strip().upper() for r in rows2 if r and (r[0] or "").strip()}
-            return glob
-    except Exception:
-        return set()
 
 
 # Compat: services recebem `args` explicitamente (evita dependência direta do `request` no service).
@@ -3101,7 +3038,7 @@ def _get_emps_com_vendas_no_periodo(ano: int, mes: int) -> list[str]:
             .all()
         )
     emps = sorted({str(r[0]).strip() for r in rows if r and r[0] is not None and str(r[0]).strip() != ""})
-    return _filter_emps_cadastradas(emps, apenas_ativas=True)
+    return emps
 
 def _get_vendedores_emp_no_periodo(emp: str, ano: int, mes: int) -> list[str]:
     inicio_mes, fim_mes = _periodo_bounds(int(ano), int(mes))
@@ -3113,10 +3050,6 @@ def _get_vendedores_emp_no_periodo(emp: str, ano: int, mes: int) -> list[str]:
             .all()
         )
     vendedores = sorted({(r[0] or '').strip().upper() for r in rows if r and (r[0] or '').strip()})
-    # Remove vendedores não cadastrados (usuários inexistentes)
-    cad = _get_vendedores_cadastrados_por_emp(emp)
-    if cad:
-        vendedores = [v for v in vendedores if v in cad]
     return vendedores
 
 def _calc_vendas_por_vendedor_para_campanha(db, emp: str, campanha: CampanhaQtd, periodo_ini: date, periodo_fim: date) -> dict[str, tuple[float, float]]:
@@ -5463,6 +5396,195 @@ def admin_fechamento():
         status_por_emp=status_por_emp,
         msgs=msgs,
     )
+
+
+@app.route("/admin/diagnostico", methods=["GET", "POST"])
+def admin_diagnostico():
+    """Diagnóstico de cadastros (ADMIN).
+
+    - EMPs presentes em vendas mas ausentes em `emps`.
+    - Vendedores presentes em vendas mas ausentes em `usuarios`.
+    - Ações rápidas para saneamento (cadastro automático).
+    """
+
+    red = _admin_required()
+    if red:
+        return red
+
+    acao = (request.form.get("acao") or "").strip().lower()
+    emp_code = (request.form.get("emp_code") or "").strip()
+    vendedor_nome = (request.form.get("vendedor_nome") or "").strip()
+
+    created_emp = None
+    created_user = None
+    created_temp_pass = None
+
+    with SessionLocal() as db:
+        # --- Ações (POST) ---
+        if request.method == "POST":
+            if acao in {"cadastrar_emp", "cadastrar_emp_lote"}:
+                emps_to_create: list[str] = []
+                if acao == "cadastrar_emp" and emp_code:
+                    emps_to_create = [emp_code]
+                elif acao == "cadastrar_emp_lote":
+                    emps_cadastradas_sq = db.query(Emp.codigo)
+                    rows = (
+                        db.query(Venda.emp)
+                        .filter(Venda.emp.isnot(None))
+                        .filter(func.trim(Venda.emp) != "")
+                        .filter(~Venda.emp.in_(emps_cadastradas_sq))
+                        .distinct()
+                        .all()
+                    )
+                    emps_to_create = [str(r[0]).strip() for r in rows if r and r[0]]
+
+                if emps_to_create:
+                    created = 0
+                    for code in emps_to_create:
+                        code_n = _emp_norm(code)
+                        if not code_n:
+                            continue
+                        exists = db.query(Emp).filter(Emp.codigo == code_n).first()
+                        if exists:
+                            continue
+                        novo = Emp(
+                            codigo=code_n,
+                            nome=f"EMP {code_n}",
+                            ativo=True,
+                            created_at=datetime.utcnow(),
+                            updated_at=datetime.utcnow(),
+                        )
+                        db.add(novo)
+                        created += 1
+                        created_emp = code_n
+                    db.commit()
+                    flash(f"✅ {created} EMP(s) cadastrada(s) automaticamente.", "success")
+                else:
+                    flash("⚠️ Nenhuma EMP para cadastrar.", "warning")
+
+            elif acao == "criar_vendedor" and vendedor_nome:
+                username = (vendedor_nome or "").strip().upper()
+                if not username:
+                    flash("⚠️ Informe o vendedor.", "warning")
+                else:
+                    existe = db.query(Usuario).filter(Usuario.username == username).first()
+                    if existe:
+                        flash("⚠️ Já existe um usuário com esse nome.", "warning")
+                    else:
+                        temp_pass = secrets.token_urlsafe(8)
+                        u = Usuario(
+                            username=username,
+                            senha_hash=generate_password_hash(temp_pass),
+                            role="vendedor",
+                            emp=None,
+                        )
+                        db.add(u)
+                        db.commit()
+                        created_user = username
+                        created_temp_pass = temp_pass
+                        flash(
+                            f"✅ Usuário vendedor criado: {username}. Senha temporária: {temp_pass}",
+                            "success",
+                        )
+
+        # --- Coleta do diagnóstico ---
+        # EMPs faltantes em vendas
+        emps_cadastradas_sq = db.query(Emp.codigo)
+        emps_faltantes_rows = (
+            db.query(
+                func.trim(Venda.emp).label("emp"),
+                func.count(Venda.id).label("vendas"),
+                func.min(Venda.movimento).label("primeiro"),
+                func.max(Venda.movimento).label("ultimo"),
+            )
+            .filter(Venda.emp.isnot(None))
+            .filter(func.trim(Venda.emp) != "")
+            .filter(~func.trim(Venda.emp).in_(emps_cadastradas_sq))
+            .group_by(func.trim(Venda.emp))
+            .order_by(func.count(Venda.id).desc())
+            .all()
+        )
+        emps_faltantes = [
+            {
+                "EMP": str(r.emp),
+                "Vendas": int(r.vendas or 0),
+                "Primeiro": (r.primeiro.isoformat() if r.primeiro else ""),
+                "Último": (r.ultimo.isoformat() if r.ultimo else ""),
+            }
+            for r in emps_faltantes_rows
+        ]
+
+        # EMPs cadastradas porém INATIVAS
+        emps_inativas_rows = (
+            db.query(Emp.codigo, Emp.nome)
+            .filter(Emp.ativo.is_(False))
+            .order_by(Emp.codigo.asc())
+            .all()
+        )
+        emps_inativas = [{"EMP": e.codigo, "Nome": e.nome} for e in emps_inativas_rows]
+
+        # Vendedores faltantes em vendas
+        usuarios_sq = db.query(Usuario.username)
+        vendedores_faltantes_rows = (
+            db.query(
+                func.trim(Venda.vendedor).label("vendedor"),
+                func.count(Venda.id).label("vendas"),
+                func.min(Venda.movimento).label("primeiro"),
+                func.max(Venda.movimento).label("ultimo"),
+            )
+            .filter(Venda.vendedor.isnot(None))
+            .filter(func.trim(Venda.vendedor) != "")
+            .filter(~func.upper(func.trim(Venda.vendedor)).in_(usuarios_sq))
+            .group_by(func.trim(Venda.vendedor))
+            .order_by(func.count(Venda.id).desc())
+            .all()
+        )
+        vendedores_faltantes = [
+            {
+                "Vendedor": str(r.vendedor).strip().upper(),
+                "Vendas": int(r.vendas or 0),
+                "Primeiro": (r.primeiro.isoformat() if r.primeiro else ""),
+                "Último": (r.ultimo.isoformat() if r.ultimo else ""),
+            }
+            for r in vendedores_faltantes_rows
+        ]
+
+    checks = [
+        {
+            "name": "EMPs em vendas que NÃO estão cadastradas em EMPs",
+            "ok": len(emps_faltantes) == 0,
+            "detail": (
+                "Nenhuma EMP faltante encontrada." if len(emps_faltantes) == 0 else f"{len(emps_faltantes)} EMP(s) faltante(s)."
+            ),
+            "rows": emps_faltantes,
+        },
+        {
+            "name": "EMPs cadastradas porém INATIVAS",
+            "ok": len(emps_inativas) == 0,
+            "detail": (
+                "Nenhuma EMP inativa." if len(emps_inativas) == 0 else f"{len(emps_inativas)} EMP(s) inativa(s)."
+            ),
+            "rows": emps_inativas,
+        },
+        {
+            "name": "Vendedores em vendas que NÃO estão cadastrados em Usuários",
+            "ok": len(vendedores_faltantes) == 0,
+            "detail": (
+                "Nenhum vendedor faltante." if len(vendedores_faltantes) == 0 else f"{len(vendedores_faltantes)} vendedor(es) faltante(s)."
+            ),
+            "rows": vendedores_faltantes,
+        },
+    ]
+
+    info = {
+        "ok": all(bool(c.get("ok")) for c in checks),
+        "checks": checks,
+        "created_emp": created_emp,
+        "created_user": created_user,
+        "created_temp_pass": created_temp_pass,
+    }
+
+    return render_template("admin_diagnostico.html", info=info)
 
 
 @app.route("/admin/campanhas", methods=["GET", "POST"])
