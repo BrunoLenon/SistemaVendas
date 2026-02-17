@@ -13,7 +13,7 @@ from services.campanhas_service import (
     build_relatorio_campanhas_scope,
 )
 from services.relatorio_campanhas_service import build_relatorio_campanhas_context
-from services.campanhas_v2_engine import recalc_v2_competencia, recalc_v2_campanha
+from services.campanhas_v2_engine import recalc_v2_competencia
 import os
 import re
 import mimetypes
@@ -627,7 +627,7 @@ def _allowed_emps() -> list[str]:
 
     emps_int = get_session_emps()
     if emps_int:
-        return [str(e) for e in emps_int]
+        return _filter_emps_cadastradas([str(e) for e in emps_int], apenas_ativas=True)
 
     uid = session.get("user_id")
     if not uid:
@@ -637,7 +637,7 @@ def _allowed_emps() -> list[str]:
         with SessionLocal() as db:
             refresh_session_emps(db, usuario_id=int(uid), fallback_emp=_emp())
             emps_int = get_session_emps()
-            return [str(e) for e in emps_int]
+            return _filter_emps_cadastradas([str(e) for e in emps_int], apenas_ativas=True)
     except Exception:
         return []
 def _is_date_in_range(today: date, inicio: date | None, fim: date | None) -> bool:
@@ -883,7 +883,7 @@ def _get_emps_vendedor(username: str) -> list[str]:
     if (_usuario_logado() or "").strip().upper() == username:
         emps = _allowed_emps()
         if emps:
-            return sorted({str(e).strip() for e in emps if e is not None and str(e).strip()})
+            return _filter_emps_cadastradas(sorted({str(e).strip() for e in emps if e is not None and str(e).strip()}), apenas_ativas=True)
 
     # Fallback: inferir pelas vendas (compatibilidade)
     with SessionLocal() as db:
@@ -893,7 +893,7 @@ def _get_emps_vendedor(username: str) -> list[str]:
             .all()
         )
     emps = sorted({str(r[0]).strip() for r in rows if r and r[0] is not None and str(r[0]).strip() != ""})
-    return emps
+    return _filter_emps_cadastradas(emps, apenas_ativas=True)
 
 def _fetch_cache_row(vendedor: str, ano: int, mes: int, emp_scope: str | None) -> dict | None:
     """Busca dados do cache para o vendedor/período.
@@ -1318,6 +1318,70 @@ def _get_emp_options(codigos: list[str]) -> list[dict]:
             label = c
         out.append({"value": c, "label": label})
     return out
+
+
+def _filter_emps_cadastradas(codigos: list[str], apenas_ativas: bool = True) -> list[str]:
+    """Remove EMPs que não estão cadastradas na tabela `emps` (ou inativas, se `apenas_ativas`).
+    Mantém ordem e faz strip.
+    """
+    codigos = [str(c).strip() for c in (codigos or []) if str(c).strip()]
+    if not codigos:
+        return []
+    # mantém ordem
+    uniq = []
+    seen = set()
+    for c in codigos:
+        if c not in seen:
+            seen.add(c)
+            uniq.append(c)
+
+    try:
+        with SessionLocal() as db:
+            q = db.query(Emp.codigo)
+            q = q.filter(Emp.codigo.in_(uniq))
+            if apenas_ativas:
+                q = q.filter(Emp.ativo.is_(True))
+            rows = q.all()
+            ok = {str(r[0]).strip() for r in rows if r and r[0] is not None and str(r[0]).strip()}
+    except Exception:
+        ok = set()
+
+    if not ok:
+        # Sem cadastro disponível/consultável → não filtra (compatibilidade)
+        return uniq
+
+    return [c for c in uniq if c in ok]
+
+
+def _get_vendedores_cadastrados_por_emp(emp: str) -> set[str]:
+    """Retorna conjunto de vendedores cadastrados e vinculados à EMP (via usuario_emps).
+    Se não houver vínculo, retorna conjunto global de vendedores cadastrados.
+    """
+    emp = (emp or "").strip()
+    if not emp:
+        return set()
+
+    try:
+        with SessionLocal() as db:
+            # 1) Vendedores vinculados à EMP
+            rows = (
+                db.query(Usuario.username)
+                .join(UsuarioEmp, UsuarioEmp.usuario_id == Usuario.id)
+                .filter(func.lower(Usuario.role) == "vendedor")
+                .filter(UsuarioEmp.ativo.is_(True))
+                .filter(UsuarioEmp.emp == emp)
+                .all()
+            )
+            vinc = {(r[0] or "").strip().upper() for r in rows if r and (r[0] or "").strip()}
+            if vinc:
+                return vinc
+
+            # 2) fallback: vendedores cadastrados (global)
+            rows2 = db.query(Usuario.username).filter(func.lower(Usuario.role) == "vendedor").all()
+            glob = {(r[0] or "").strip().upper() for r in rows2 if r and (r[0] or "").strip()}
+            return glob
+    except Exception:
+        return set()
 
 
 # Compat: services recebem `args` explicitamente (evita dependência direta do `request` no service).
@@ -3037,7 +3101,7 @@ def _get_emps_com_vendas_no_periodo(ano: int, mes: int) -> list[str]:
             .all()
         )
     emps = sorted({str(r[0]).strip() for r in rows if r and r[0] is not None and str(r[0]).strip() != ""})
-    return emps
+    return _filter_emps_cadastradas(emps, apenas_ativas=True)
 
 def _get_vendedores_emp_no_periodo(emp: str, ano: int, mes: int) -> list[str]:
     inicio_mes, fim_mes = _periodo_bounds(int(ano), int(mes))
@@ -3049,6 +3113,10 @@ def _get_vendedores_emp_no_periodo(emp: str, ano: int, mes: int) -> list[str]:
             .all()
         )
     vendedores = sorted({(r[0] or '').strip().upper() for r in rows if r and (r[0] or '').strip()})
+    # Remove vendedores não cadastrados (usuários inexistentes)
+    cad = _get_vendedores_cadastrados_por_emp(emp)
+    if cad:
+        vendedores = [v for v in vendedores if v in cad]
     return vendedores
 
 def _calc_vendas_por_vendedor_para_campanha(db, emp: str, campanha: CampanhaQtd, periodo_ini: date, periodo_fim: date) -> dict[str, tuple[float, float]]:
@@ -6801,326 +6869,43 @@ def err_500(e):
 # Campanhas V2 (Enterprise)
 # ==========================
 
-
 @app.route("/admin/campanhas_v2", methods=["GET", "POST"])
 @admin_required
 def admin_campanhas_v2():
-    """CRUD básico + recálculo V2 (config vs resultados).
-
-    Esta tela é propositalmente 'server-rendered' e simples, para manter o padrão do sistema.
-    """
     from datetime import date
+    ano = int(request.args.get("ano") or date.today().year)
+    mes = int(request.args.get("mes") or date.today().month)
     db = SessionLocal()
-    today = date.today()
     try:
-        # Edit (GET ?edit=ID)
-        edit_id = request.args.get("edit")
-        edit_obj = None
-        if edit_id:
-            try:
-                edit_obj = db.query(CampanhaV2Master).filter(CampanhaV2Master.id == int(edit_id)).first()
-            except Exception:
-                edit_obj = None
-
         if request.method == "POST":
-            action = (request.form.get("action") or "save").strip().lower()
-            actor = session.get("username") or "admin"
-
-            def _audit(acao: str, campanha_id: int | None = None, payload: dict | None = None, ano: int | None = None, mes: int | None = None):
-                try:
-                    db.add(CampanhaV2Audit(
-                        campanha_id=campanha_id,
-                        competencia_ano=ano,
-                        competencia_mes=mes,
-                        acao=acao,
-                        actor=str(actor),
-                        payload_json=json.dumps(payload or {}, ensure_ascii=False),
-                    ))
-                except Exception:
-                    # auditoria não pode derrubar operação
-                    pass
-
-            if action == "seed_defaults":
-                # cria alguns modelos padrão se ainda não existirem
-                exists = db.query(CampanhaV2Master.id).first()
-                if not exists:
-                    ini = today.replace(day=1)
-                    fim = today.replace(month=12, day=31)
-                    modelos = [
-                        ("Ranking por Marca (MAGNETRON)", "RANKING_VALOR", {"marca":"MAGNETRON","top":[{"pos":1,"valor":300},{"pos":2,"valor":200},{"pos":3,"valor":100}]}),
-                        ("Meta Absoluta (exemplo)", "META_ABSOLUTA", {"meta":100000,"premio":300}),
-                        ("Meta Percentual (exemplo)", "META_PERCENTUAL", {"ref_tipo":"MES_ANTERIOR","pct":10,"premio":300}),
-                        ("Mix de Produtos (exemplo)", "MIX", {"min_distintos":10,"premio":200}),
-                        ("Acumulativa 3 meses (exemplo)", "ACUMULATIVA", {"janela_meses":3,"meta":250000,"premio":500}),
-                    ]
-                    for titulo, tipo, regras in modelos:
-                        c = CampanhaV2Master(
-                            titulo=titulo,
-                            tipo=tipo,
-                            escopo="EMP",
-                            emps_json=None,
-                            vigencia_ini=ini,
-                            vigencia_fim=fim,
-                            ativo=True,
-                            regras_json=json.dumps(regras, ensure_ascii=False),
-                        )
-                        db.add(c)
-                        db.flush()
-                        _audit("config_create", campanha_id=c.id, payload={"seed": True, "tipo": tipo})
-                    db.commit()
-                    flash("Modelos padrão criados.", "success")
-                else:
-                    flash("Já existem campanhas V2 cadastradas; não criei modelos padrão.", "info")
-                return redirect(url_for("admin_campanhas_v2"))
-
-            if action == "recalc":
-                # recálculo por competência (gera resultados)
-                try:
-                    ano = int(request.form.get("ano") or today.year)
-                    mes = int(request.form.get("mes") or today.month)
-                    recalc_v2_competencia(db, ano=ano, mes=mes, actor=str(actor))
-                    _audit("recalc_competencia", campanha_id=None, payload={"ano": ano, "mes": mes}, ano=ano, mes=mes)
-                    db.commit()
-                    flash(f"Recalculo V2 concluído para {mes:02d}/{ano}.", "success")
-                except Exception as e:
-                    db.rollback()
-                    flash(f"Erro ao recalcular: {e}", "danger")
-                return redirect(url_for("admin_campanhas_v2", ano=ano, mes=mes))
-
-            # SAVE (create/update)
-            cid_raw = (request.form.get("id") or "").strip()
             titulo = (request.form.get("titulo") or "").strip()
             tipo = (request.form.get("tipo") or "RANKING_VALOR").strip().upper()
-            escopo = (request.form.get("escopo") or "EMP").strip().upper()
-            ativo = True if request.form.get("ativo") else False
+            ativo = (request.form.get("ativo") or "1") == "1"
             regras_json = (request.form.get("regras_json") or "").strip() or "{}"
+            c = CampanhaV2Master(titulo=titulo, tipo=tipo, ativo=ativo, regras_json=regras_json)
+            db.add(c)
+            db.flush()
 
-            # EMPs: aceita "101,1001" e armazena como JSON string "[101,1001]"
             emps_raw = (request.form.get("emps") or "").strip()
-            emps_list = []
-            if escopo == "EMP" and emps_raw:
+            if emps_raw:
                 for p in emps_raw.split(","):
                     p = p.strip()
                     if not p:
                         continue
                     try:
-                        emps_list.append(int(p))
+                        db.add(CampanhaV2ScopeEMP(campanha_id=c.id, emp=int(p)))
                     except Exception:
                         continue
-            emps_json = json.dumps(emps_list, ensure_ascii=False) if emps_list else None
 
-            # Vigência
-            def _parse_date(s: str | None):
-                if not s:
-                    return None
-                try:
-                    return datetime.strptime(s, "%Y-%m-%d").date()
-                except Exception:
-                    return None
-
-            vig_ini = _parse_date(request.form.get("vigencia_ini"))
-            vig_fim = _parse_date(request.form.get("vigencia_fim"))
-            if not vig_ini:
-                vig_ini = today.replace(day=1)
-            if not vig_fim:
-                vig_fim = today.replace(month=12, day=31)
-
-            try:
-                if cid_raw:
-                    c = db.query(CampanhaV2Master).filter(CampanhaV2Master.id == int(cid_raw)).first()
-                    if not c:
-                        flash("Campanha não encontrada para editar.", "warning")
-                        return redirect(url_for("admin_campanhas_v2"))
-                    before = {"titulo": c.titulo, "tipo": c.tipo, "escopo": c.escopo, "emps_json": c.emps_json, "vigencia_ini": str(c.vigencia_ini), "vigencia_fim": str(c.vigencia_fim), "ativo": c.ativo, "regras_json": c.regras_json}
-                    c.titulo = titulo
-                    c.tipo = tipo
-                    c.escopo = escopo
-                    c.emps_json = emps_json
-                    c.vigencia_ini = vig_ini
-                    c.vigencia_fim = vig_fim
-                    c.ativo = ativo
-                    c.regras_json = regras_json
-                    _audit("config_update", campanha_id=c.id, payload={"before": before, "after": {"titulo": titulo, "tipo": tipo, "escopo": escopo, "emps_json": emps_json, "vigencia_ini": str(vig_ini), "vigencia_fim": str(vig_fim), "ativo": ativo}})
-                    db.commit()
-                    flash("Campanha V2 atualizada.", "success")
-                else:
-                    c = CampanhaV2Master(
-                        titulo=titulo,
-                        tipo=tipo,
-                        escopo=escopo,
-                        emps_json=emps_json,
-                        vigencia_ini=vig_ini,
-                        vigencia_fim=vig_fim,
-                        ativo=ativo,
-                        regras_json=regras_json,
-                    )
-                    db.add(c)
-                    db.flush()
-                    _audit("config_create", campanha_id=c.id, payload={"tipo": tipo, "escopo": escopo})
-                    db.commit()
-                    flash("Campanha V2 criada.", "success")
-                return redirect(url_for("admin_campanhas_v2", edit=c.id))
-            except Exception as e:
-                db.rollback()
-                flash(f"Erro ao salvar: {e}", "danger")
-                return redirect(url_for("admin_campanhas_v2"))
-
-        # listagem
-        campanhas = db.query(CampanhaV2Master).order_by(CampanhaV2Master.id.desc()).all()
-        return render_template("admin_campanhas_v2.html", campanhas=campanhas, edit_obj=edit_obj, today=today)
-    finally:
-        db.close()
-
-
-@app.route("/admin/campanhas_v2/<int:cid>/delete", methods=["POST"])
-@admin_required
-def admin_campanhas_v2_delete(cid: int):
-    db = SessionLocal()
-    try:
-        actor = session.get("username") or "admin"
-        c = db.query(CampanhaV2Master).filter(CampanhaV2Master.id == int(cid)).first()
-        if not c:
-            flash("Campanha não encontrada.", "warning")
-            return redirect(url_for("admin_campanhas_v2"))
-        # Auditoria
-        try:
-            db.add(CampanhaV2Audit(
-                campanha_id=c.id,
-                acao="config_delete",
-                actor=str(actor),
-                payload_json=json.dumps({"titulo": c.titulo, "tipo": c.tipo}, ensure_ascii=False),
-            ))
-        except Exception:
-            pass
-        db.delete(c)
-        db.commit()
-        flash("Campanha V2 removida.", "success")
-    except Exception as e:
-        db.rollback()
-        flash(f"Erro ao excluir: {e}", "danger")
-    finally:
-        db.close()
-    return redirect(url_for("admin_campanhas_v2"))
-
-
-
-@app.route("/admin/campanhas_v2/<int:cid>/toggle", methods=["POST"])
-@admin_required
-def admin_campanhas_v2_toggle(cid: int):
-    """Ativa/Desativa campanha V2 (toggle)."""
-    db = SessionLocal()
-    try:
-        actor = session.get("username") or "admin"
-        c = db.query(CampanhaV2Master).filter(CampanhaV2Master.id == int(cid)).first()
-        if not c:
-            flash("Campanha não encontrada.", "warning")
-            return redirect(url_for("admin_campanhas_v2"))
-        before = bool(c.ativo)
-        c.ativo = not bool(c.ativo)
-        try:
-            db.add(CampanhaV2Audit(
-                campanha_id=c.id,
-                acao="config_toggle",
-                actor=str(actor),
-                payload_json=json.dumps({"de": before, "para": bool(c.ativo)}, ensure_ascii=False),
-            ))
-        except Exception:
-            pass
-        db.commit()
-        flash(f"Campanha V2 {'ativada' if c.ativo else 'desativada' }.", "success")
-        return redirect(url_for("admin_campanhas_v2", edit=c.id))
-    except Exception as e:
-        db.rollback()
-        flash(f"Erro ao alternar ativo: {e}", "danger")
-        return redirect(url_for("admin_campanhas_v2"))
-    finally:
-        db.close()
-
-
-@app.route("/admin/campanhas_v2/<int:cid>/duplicar", methods=["POST"])
-@admin_required
-def admin_campanhas_v2_duplicar(cid: int):
-    """Duplica campanha V2 (1 clique)."""
-    db = SessionLocal()
-    try:
-        actor = session.get("username") or "admin"
-        c = db.query(CampanhaV2Master).filter(CampanhaV2Master.id == int(cid)).first()
-        if not c:
-            flash("Campanha não encontrada.", "warning")
-            return redirect(url_for("admin_campanhas_v2"))
-
-        # Cria cópia como INATIVA por padrão para evitar duplicidade de pagamento.
-        copia = CampanhaV2Master(
-            titulo=(c.titulo or "") + " (Cópia)",
-            tipo=c.tipo,
-            escopo=c.escopo,
-            emps_json=c.emps_json,
-            vigencia_ini=c.vigencia_ini,
-            vigencia_fim=c.vigencia_fim,
-            ativo=False,
-            regras_json=c.regras_json,
-        )
-        db.add(copia)
-        db.flush()
-
-        try:
-            db.add(CampanhaV2Audit(
-                campanha_id=copia.id,
-                acao="config_duplicate",
-                actor=str(actor),
-                payload_json=json.dumps({"origem_id": c.id, "origem_titulo": c.titulo}, ensure_ascii=False),
-            ))
-        except Exception:
-            pass
-
-        db.commit()
-        flash("Campanha duplicada (criada como INATIVA).", "success")
-        return redirect(url_for("admin_campanhas_v2", edit=copia.id))
-    except Exception as e:
-        db.rollback()
-        flash(f"Erro ao duplicar: {e}", "danger")
-        return redirect(url_for("admin_campanhas_v2"))
-    finally:
-        db.close()
-
-
-@app.route("/admin/campanhas_v2/<int:cid>/recalcular", methods=["POST"])
-@admin_required
-def admin_campanhas_v2_recalcular_uma(cid: int):
-    """Recalcula resultados V2 apenas desta campanha (por competência)."""
-    from datetime import date
-    ano = int(request.form.get("ano") or request.args.get("ano") or date.today().year)
-    mes = int(request.form.get("mes") or request.args.get("mes") or date.today().month)
-
-    db = SessionLocal()
-    try:
-        actor = session.get("username") or "admin"
-
-        # Emps_scope vazio => motor calcula no escopo disponível (quando aplicável)
-        # Se você quiser restringir por EMP no futuro, passamos emps_scope aqui.
-        recalc_v2_campanha(db, campanha_id=int(cid), ano=ano, mes=mes, actor=str(actor), emps_scope=[])
-
-        try:
-            db.add(CampanhaV2Audit(
-                campanha_id=int(cid),
-                competencia_ano=int(ano),
-                competencia_mes=int(mes),
-                acao="recalc_campanha",
-                actor=str(actor),
-                payload_json=json.dumps({"ano": ano, "mes": mes}, ensure_ascii=False),
-            ))
             db.commit()
-        except Exception:
-            db.rollback()
+            flash("Campanha V2 criada.", "success")
+            return redirect(url_for("admin_campanhas_v2", ano=ano, mes=mes))
 
-        flash(f"Recalculo desta campanha concluído para {mes:02d}/{ano}.", "success")
-    except Exception as e:
-        db.rollback()
-        flash(f"Erro ao recalcular campanha: {e}", "danger")
+        campanhas = db.query(CampanhaV2Master).order_by(CampanhaV2Master.id.desc()).all()
+        return render_template("admin_campanhas_v2.html", campanhas=campanhas, ano=ano, mes=mes)
     finally:
         db.close()
 
-    return redirect(url_for("admin_campanhas_v2", edit=cid))
 
 @app.route("/admin/campanhas_v2/recalcular", methods=["GET"])
 @admin_required
@@ -7201,5 +6986,6 @@ def financeiro_fechamento_v2_status():
     finally:
         db.close()
     return redirect(url_for("financeiro_fechamento_v2"))
+
 
 
