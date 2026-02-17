@@ -69,6 +69,8 @@ from db import (
     MetaBaseManual,
     MetaResultado,
     FechamentoMensal,
+    FinanceiroPagamento,
+    FinanceiroPagamentoAudit,
     AppSetting,
     BrandingTheme,
     criar_tabelas,
@@ -3421,12 +3423,6 @@ def relatorio_campanhas():
     emps_scope = scope["emps_scope"]
     vendedores_por_emp = scope["vendedores_por_emp"]
 
-    recalc_req = (request.args.get("recalc") or "").strip() == "1"
-    force_recalc = bool(recalc_req and role == "admin")
-    if recalc_req and role != "admin":
-        flash("Apenas ADMIN pode recalcular os snapshots. Exibindo dados já salvos.", "warning")
-
-
 
     ctx = build_relatorio_campanhas_context(
         _campanhas_deps,
@@ -3439,7 +3435,6 @@ def relatorio_campanhas():
         vendedores_sel=vendedores_sel,
         vendedores_por_emp=vendedores_por_emp,
         flash=flash,
-        force_recalc=force_recalc,
     )
     return render_template("relatorio_campanhas.html", **ctx)
 
@@ -6865,11 +6860,340 @@ def admin_campanhas_v2_recalcular():
     return redirect(url_for("admin_campanhas_v2", ano=ano, mes=mes))
 
 
+# ==========================
+# Financeiro (Pagamentos consolidados + Auditoria)
+# ==========================
+
+def _norm_fin_status(s: str) -> str:
+    s = (s or "PENDENTE").strip().upper()
+    return s if s in ("PENDENTE", "A_PAGAR", "PAGO") else "PENDENTE"
+
+
+def _financeiro_actor() -> str:
+    return str(session.get("username") or session.get("usuario") or "financeiro")
+
+
+def _apply_status_to_origem(db, origem_tipo: str, origem_id: int, new_status: str):
+    """Espelha status no registro de origem."""
+    new_status = _norm_fin_status(new_status)
+    if origem_tipo == "QTD":
+        r = db.query(CampanhaQtdResultado).filter(CampanhaQtdResultado.id == origem_id).first()
+        if r:
+            r.status_pagamento = new_status
+            r.pago_em = datetime.utcnow() if new_status == "PAGO" else None
+    elif origem_tipo == "COMBO":
+        r = db.query(CampanhaComboResultado).filter(CampanhaComboResultado.id == origem_id).first()
+        if r:
+            r.status_pagamento = new_status
+            r.pago_em = datetime.utcnow() if new_status == "PAGO" else None
+    elif origem_tipo == "V2":
+        r = db.query(CampanhaV2Resultado).filter(CampanhaV2Resultado.id == origem_id).first()
+        if r:
+            r.status_financeiro = new_status
+            # (V2 pode ter seu próprio pago_em no futuro; hoje só espelhamos o status)
+
+
+def _upsert_financeiro_pagamento(db, *, ano: int, mes: int, origem_tipo: str, origem_id: int,
+                                campanha_nome: str, emp: str | None, vendedor: str,
+                                valor_premio: float, status: str):
+    status = _norm_fin_status(status)
+    rec = (
+        db.query(FinanceiroPagamento)
+        .filter(
+            FinanceiroPagamento.ano == int(ano),
+            FinanceiroPagamento.mes == int(mes),
+            FinanceiroPagamento.origem_tipo == origem_tipo,
+            FinanceiroPagamento.origem_id == int(origem_id),
+        )
+        .first()
+    )
+    if not rec:
+        rec = FinanceiroPagamento(
+            ano=int(ano),
+            mes=int(mes),
+            origem_tipo=origem_tipo,
+            origem_id=int(origem_id),
+            campanha_nome=(campanha_nome or "")[:200],
+            emp=(str(emp).strip() if emp is not None else None),
+            vendedor=(vendedor or "")[:80],
+            valor_premio=float(valor_premio or 0.0),
+            status=status,
+            pago_em=(datetime.utcnow() if status == "PAGO" else None),
+        )
+        db.add(rec)
+        return rec
+
+    # atualiza campos "imutáveis" de exibição sem sobrescrever status se já foi pago
+    rec.campanha_nome = (campanha_nome or rec.campanha_nome or "")[:200]
+    rec.emp = (str(emp).strip() if emp is not None else rec.emp)
+    rec.vendedor = (vendedor or rec.vendedor or "")[:80]
+    rec.valor_premio = float(valor_premio or 0.0)
+    if rec.status != "PAGO":
+        rec.status = status
+        rec.pago_em = datetime.utcnow() if status == "PAGO" else None
+    return rec
+
+
+def _sync_financeiro_pagamentos(db, ano: int, mes: int) -> int:
+    """Sincroniza resultados (qtd/combo/v2) -> FinanceiroPagamento."""
+    ano = int(ano)
+    mes = int(mes)
+    created_or_updated = 0
+
+    # QTD
+    qtd_rows = (
+        db.query(CampanhaQtdResultado)
+        .filter(CampanhaQtdResultado.competencia_ano == ano, CampanhaQtdResultado.competencia_mes == mes)
+        .all()
+    )
+    for r in qtd_rows:
+        _upsert_financeiro_pagamento(
+            db,
+            ano=ano,
+            mes=mes,
+            origem_tipo="QTD",
+            origem_id=r.id,
+            campanha_nome=r.titulo or "Campanha QTD",
+            emp=r.emp,
+            vendedor=r.vendedor,
+            valor_premio=r.valor_recompensa,
+            status=r.status_pagamento,
+        )
+        created_or_updated += 1
+
+    # COMBO
+    combo_rows = (
+        db.query(CampanhaComboResultado)
+        .filter(CampanhaComboResultado.competencia_ano == ano, CampanhaComboResultado.competencia_mes == mes)
+        .all()
+    )
+    for r in combo_rows:
+        _upsert_financeiro_pagamento(
+            db,
+            ano=ano,
+            mes=mes,
+            origem_tipo="COMBO",
+            origem_id=r.id,
+            campanha_nome=r.titulo or "Campanha COMBO",
+            emp=r.emp,
+            vendedor=r.vendedor,
+            valor_premio=r.valor_recompensa,
+            status=r.status_pagamento,
+        )
+        created_or_updated += 1
+
+    # V2
+    v2_rows = (
+        db.query(CampanhaV2Resultado, CampanhaV2Master.titulo)
+        .join(CampanhaV2Master, CampanhaV2Master.id == CampanhaV2Resultado.campanha_id)
+        .filter(CampanhaV2Resultado.ano == ano, CampanhaV2Resultado.mes == mes)
+        .all()
+    )
+    for r, titulo in v2_rows:
+        _upsert_financeiro_pagamento(
+            db,
+            ano=ano,
+            mes=mes,
+            origem_tipo="V2",
+            origem_id=r.id,
+            campanha_nome=titulo or "Campanha V2",
+            emp=str(r.emp) if r.emp is not None else None,
+            vendedor=r.vendedor,
+            valor_premio=r.recompensa,
+            status=r.status_financeiro,
+        )
+        created_or_updated += 1
+
+    return created_or_updated
+
+
+@app.route("/financeiro/pagamentos", methods=["GET"])
+@financeiro_required
+def financeiro_pagamentos():
+    from datetime import date
+    ano = int(request.args.get("ano") or date.today().year)
+    mes = int(request.args.get("mes") or date.today().month)
+    status = _norm_fin_status(request.args.get("status") or "") if request.args.get("status") else ""
+    emp = (request.args.get("emp") or "").strip()
+    vendedor = (request.args.get("vendedor") or "").strip()
+
+    with SessionLocal() as db:
+        q = db.query(FinanceiroPagamento).filter(FinanceiroPagamento.ano == ano, FinanceiroPagamento.mes == mes)
+        if status:
+            q = q.filter(FinanceiroPagamento.status == status)
+        if emp:
+            q = q.filter(FinanceiroPagamento.emp == emp)
+        if vendedor:
+            q = q.filter(FinanceiroPagamento.vendedor.ilike(f"%{vendedor}%"))
+
+        pagamentos_rows = (
+            q.order_by(FinanceiroPagamento.status.asc(), FinanceiroPagamento.valor_premio.desc())
+            .all()
+        )
+
+        pagamentos = []
+        totais = {
+            "pendente_qtd": 0,
+            "pendente_valor": 0.0,
+            "apagar_qtd": 0,
+            "apagar_valor": 0.0,
+            "pago_qtd": 0,
+            "pago_valor": 0.0,
+        }
+
+        for p in pagamentos_rows:
+            pagamentos.append({
+                "id": p.id,
+                "ano": p.ano,
+                "mes": p.mes,
+                "origem_tipo": p.origem_tipo,
+                "campanha_nome": p.campanha_nome,
+                "emp": p.emp,
+                "vendedor": p.vendedor,
+                "valor_premio": p.valor_premio,
+                "status": p.status,
+            })
+            if p.status == "PENDENTE":
+                totais["pendente_qtd"] += 1
+                totais["pendente_valor"] += float(p.valor_premio or 0)
+            elif p.status == "A_PAGAR":
+                totais["apagar_qtd"] += 1
+                totais["apagar_valor"] += float(p.valor_premio or 0)
+            else:
+                totais["pago_qtd"] += 1
+                totais["pago_valor"] += float(p.valor_premio or 0)
+
+    return render_template(
+        "financeiro_pagamentos.html",
+        ano=ano,
+        mes=mes,
+        status=status,
+        emp=emp,
+        vendedor=vendedor,
+        pagamentos=pagamentos,
+        totais=totais,
+    )
+
+
+@app.route("/financeiro/pagamentos/sync_v2", methods=["POST"])
+@financeiro_required
+def financeiro_pagamentos_sync():
+    ano = int(request.form.get("ano") or datetime.utcnow().year)
+    mes = int(request.form.get("mes") or datetime.utcnow().month)
+    with SessionLocal() as db:
+        try:
+            n = _sync_financeiro_pagamentos(db, ano, mes)
+            db.commit()
+            flash(f"Sincronização concluída ({n} registros processados).", "success")
+        except Exception as e:
+            db.rollback()
+            app.logger.exception("Erro ao sincronizar pagamentos")
+            flash(f"Erro ao sincronizar pagamentos: {e}", "danger")
+    return redirect(url_for("financeiro_pagamentos", ano=ano, mes=mes))
+
+
+def _audit_pagamento(db, p: FinanceiroPagamento, status_de: str | None, status_para: str, actor: str):
+    a = FinanceiroPagamentoAudit(
+        pagamento_id=int(p.id),
+        ano=int(p.ano),
+        mes=int(p.mes),
+        emp=p.emp,
+        vendedor=p.vendedor,
+        origem_tipo=p.origem_tipo,
+        origem_id=int(p.origem_id),
+        status_de=status_de,
+        status_para=status_para,
+        actor=(actor or "")[:120],
+    )
+    db.add(a)
+
+
+@app.route("/financeiro/pagamentos/status", methods=["POST"])
+@financeiro_required
+def financeiro_pagamentos_status():
+    pid = int(request.form.get("id") or 0)
+    novo_status = _norm_fin_status(request.form.get("novo_status") or "PENDENTE")
+    ano = int(request.form.get("ano") or datetime.utcnow().year)
+    mes = int(request.form.get("mes") or datetime.utcnow().month)
+
+    with SessionLocal() as db:
+        try:
+            p = db.query(FinanceiroPagamento).filter(FinanceiroPagamento.id == pid).first()
+            if not p:
+                flash("Pagamento não encontrado.", "danger")
+                return redirect(url_for("financeiro_pagamentos", ano=ano, mes=mes))
+            status_de = p.status
+            if status_de == novo_status:
+                flash("Status já estava atualizado.", "info")
+                return redirect(url_for("financeiro_pagamentos", ano=ano, mes=mes))
+
+            p.status = novo_status
+            p.pago_em = datetime.utcnow() if novo_status == "PAGO" else None
+
+            _apply_status_to_origem(db, p.origem_tipo, int(p.origem_id), novo_status)
+            _audit_pagamento(db, p, status_de, novo_status, _financeiro_actor())
+
+            db.commit()
+            flash("Status atualizado.", "success")
+        except Exception as e:
+            db.rollback()
+            app.logger.exception("Erro ao atualizar status do pagamento")
+            flash(f"Erro ao atualizar status: {e}", "danger")
+
+    return redirect(url_for("financeiro_pagamentos", ano=ano, mes=mes))
+
+
+@app.route("/financeiro/pagamentos/status_lote", methods=["POST"])
+@financeiro_required
+def financeiro_pagamentos_status_lote():
+    ids_raw = (request.form.get("ids") or "").strip()
+    novo_status = _norm_fin_status(request.form.get("novo_status") or "PENDENTE")
+    ano = int(request.form.get("ano") or datetime.utcnow().year)
+    mes = int(request.form.get("mes") or datetime.utcnow().month)
+
+    ids = []
+    for part in ids_raw.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            ids.append(int(part))
+        except Exception:
+            continue
+
+    if not ids:
+        flash("Selecione ao menos 1 registro.", "warning")
+        return redirect(url_for("financeiro_pagamentos", ano=ano, mes=mes))
+
+    actor = _financeiro_actor()
+    updated = 0
+    with SessionLocal() as db:
+        try:
+            rows = db.query(FinanceiroPagamento).filter(FinanceiroPagamento.id.in_(ids)).all()
+            for p in rows:
+                status_de = p.status
+                if status_de == novo_status:
+                    continue
+                p.status = novo_status
+                p.pago_em = datetime.utcnow() if novo_status == "PAGO" else None
+                _apply_status_to_origem(db, p.origem_tipo, int(p.origem_id), novo_status)
+                _audit_pagamento(db, p, status_de, novo_status, actor)
+                updated += 1
+            db.commit()
+            flash(f"Atualização em lote concluída ({updated} registros).", "success")
+        except Exception as e:
+            db.rollback()
+            app.logger.exception("Erro ao atualizar status em lote")
+            flash(f"Erro no lote: {e}", "danger")
+
+    return redirect(url_for("financeiro_pagamentos", ano=ano, mes=mes))
+
+
 @app.route("/financeiro/campanhas_v2", methods=["GET"])
 @financeiro_required
 def financeiro_campanhas_v2():
-    # por enquanto, redireciona para o fechamento (mesma visão)
-    return redirect(url_for("financeiro_fechamento_v2"))
+    # visão consolidada de pagamentos (inclui V2)
+    return redirect(url_for("financeiro_pagamentos"))
 
 
 @app.route("/financeiro/fechamento_v2", methods=["GET"])
