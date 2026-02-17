@@ -27,6 +27,23 @@ import calendar
 from io import BytesIO
 
 from decimal import Decimal, ROUND_HALF_UP
+
+# ------------------------------------------------------------
+# Lazy import de pandas (evita travar boot no Render/Gunicorn)
+# ------------------------------------------------------------
+class _LazyPandas:
+    _mod = None
+
+    def _load(self):
+        if self._mod is None:
+            import pandas as _pd  # import pesado (somente quando necessário)
+            self._mod = _pd
+        return self._mod
+
+    def __getattr__(self, name):
+        return getattr(self._load(), name)
+
+pd = _LazyPandas()
 import requests
 from sqlalchemy import and_, or_, func, case, cast, String, text, extract
 from flask import (
