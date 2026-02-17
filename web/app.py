@@ -69,8 +69,6 @@ from db import (
     MetaBaseManual,
     MetaResultado,
     FechamentoMensal,
-    FinanceiroPagamento,
-    FinanceiroPagamentoAudit,
     AppSetting,
     BrandingTheme,
     criar_tabelas,
@@ -5285,9 +5283,6 @@ def admin_fechamento():
         "pago": "fechar_pago",
         "reabrir": "reabrir",
         "abrir": "reabrir",
-        "gerar_fechamento": "gerar_fechamento",
-        "gerar": "gerar_fechamento",
-        "fechar": "gerar_fechamento",
     }.get(acao_raw, acao_raw)
 
     with SessionLocal() as db:
@@ -5302,22 +5297,14 @@ def admin_fechamento():
             except Exception:
                 emps_all = []
 
-        if request.method == "POST" and acao in {"gerar_fechamento", "fechar_a_pagar", "fechar_pago", "reabrir"}:
+        if request.method == "POST" and acao in {"fechar_a_pagar", "fechar_pago", "reabrir"}:
             app.logger.info("FECHAMENTO POST: form=%s values=%s", dict(request.form), {k: request.values.getlist(k) for k in request.values.keys()})
             if not emps_sel:
                 msgs.append("⚠️ Selecione ao menos 1 EMP para fechar/reabrir.")
             else:
-                # Para fechar/congelar o mês, primeiro sincroniza resultados → Financeiro (snapshot idempotente)
-                if acao in {"gerar_fechamento", "fechar_a_pagar", "fechar_pago"}:
-                    try:
-                        _sync_financeiro_pagamentos(db, ano, mes)
-                    except Exception:
-                        app.logger.exception("Falha ao sincronizar financeiro no fechamento")
                 alvo_status = None
                 updated_count = 0
-                if acao == "gerar_fechamento":
-                    alvo_status = "fechado"
-                elif acao == "fechar_a_pagar":
+                if acao == "fechar_a_pagar":
                     alvo_status = "a_pagar"
                 elif acao == "fechar_pago":
                     alvo_status = "pago"
@@ -5339,36 +5326,18 @@ def admin_fechamento():
                             rec = FechamentoMensal(emp=emp, ano=int(ano), mes=int(mes), fechado=False)
                             db.add(rec)
 
-                        if acao in {"gerar_fechamento", "fechar_a_pagar", "fechar_pago", "reabrir"}:
-                            # Auditoria (de -> para)
-                            fechado_de = bool(getattr(rec, "fechado", False))
-                            status_de = getattr(rec, "status", None)
-
-                            if acao != "reabrir":
-                                rec.fechado = True
-                                rec.fechado_em = datetime.utcnow()
-                                # status financeiro (controle/trava)
-                                if hasattr(rec, "status") and alvo_status:
-                                    rec.status = alvo_status
-                            else:
-                                rec.fechado = False
-                                rec.fechado_em = None  # reabrir zera timestamp
-                                if hasattr(rec, "status"):
-                                    rec.status = "aberto"
-                            actor = _usuario_logado() or ""
-                            _audit_fechamento(
-                                db,
-                                emp=emp,
-                                ano=ano,
-                                mes=mes,
-                                acao=acao,
-                                fechado_de=fechado_de,
-                                fechado_para=bool(getattr(rec, "fechado", False)),
-                                status_de=status_de,
-                                status_para=getattr(rec, "status", None),
-                                actor=actor,
-                            )
-                            updated_count += 1
+                        if acao in {"fechar_a_pagar", "fechar_pago"}:
+                            rec.fechado = True
+                            rec.fechado_em = datetime.utcnow()
+                            # status financeiro (controle)
+                            if hasattr(rec, "status") and alvo_status:
+                                rec.status = alvo_status
+                        else:
+                            rec.fechado = False
+                            rec.fechado_em = None  # reabrir zera timestamp
+                            if hasattr(rec, "status"):
+                                rec.status = "aberto"
+                        updated_count += 1
                         # commit no final do lote (mais rápido e consistente)
                     except Exception:
                         app.logger.exception("Erro ao preparar fechamento mensal")
@@ -6832,42 +6801,206 @@ def err_500(e):
 # Campanhas V2 (Enterprise)
 # ==========================
 
+
 @app.route("/admin/campanhas_v2", methods=["GET", "POST"])
 @admin_required
 def admin_campanhas_v2():
+    """CRUD básico + recálculo V2 (config vs resultados).
+
+    Esta tela é propositalmente 'server-rendered' e simples, para manter o padrão do sistema.
+    """
     from datetime import date
-    ano = int(request.args.get("ano") or date.today().year)
-    mes = int(request.args.get("mes") or date.today().month)
     db = SessionLocal()
+    today = date.today()
     try:
+        # Edit (GET ?edit=ID)
+        edit_id = request.args.get("edit")
+        edit_obj = None
+        if edit_id:
+            try:
+                edit_obj = db.query(CampanhaV2Master).filter(CampanhaV2Master.id == int(edit_id)).first()
+            except Exception:
+                edit_obj = None
+
         if request.method == "POST":
+            action = (request.form.get("action") or "save").strip().lower()
+            actor = session.get("username") or "admin"
+
+            def _audit(acao: str, campanha_id: int | None = None, payload: dict | None = None, ano: int | None = None, mes: int | None = None):
+                try:
+                    db.add(CampanhaV2Audit(
+                        campanha_id=campanha_id,
+                        competencia_ano=ano,
+                        competencia_mes=mes,
+                        acao=acao,
+                        actor=str(actor),
+                        payload_json=json.dumps(payload or {}, ensure_ascii=False),
+                    ))
+                except Exception:
+                    # auditoria não pode derrubar operação
+                    pass
+
+            if action == "seed_defaults":
+                # cria alguns modelos padrão se ainda não existirem
+                exists = db.query(CampanhaV2Master.id).first()
+                if not exists:
+                    ini = today.replace(day=1)
+                    fim = today.replace(month=12, day=31)
+                    modelos = [
+                        ("Ranking por Marca (MAGNETRON)", "RANKING_VALOR", {"marca":"MAGNETRON","top":[{"pos":1,"valor":300},{"pos":2,"valor":200},{"pos":3,"valor":100}]}),
+                        ("Meta Absoluta (exemplo)", "META_ABSOLUTA", {"meta":100000,"premio":300}),
+                        ("Meta Percentual (exemplo)", "META_PERCENTUAL", {"ref_tipo":"MES_ANTERIOR","pct":10,"premio":300}),
+                        ("Mix de Produtos (exemplo)", "MIX", {"min_distintos":10,"premio":200}),
+                        ("Acumulativa 3 meses (exemplo)", "ACUMULATIVA", {"janela_meses":3,"meta":250000,"premio":500}),
+                    ]
+                    for titulo, tipo, regras in modelos:
+                        c = CampanhaV2Master(
+                            titulo=titulo,
+                            tipo=tipo,
+                            escopo="EMP",
+                            emps_json=None,
+                            vigencia_ini=ini,
+                            vigencia_fim=fim,
+                            ativo=True,
+                            regras_json=json.dumps(regras, ensure_ascii=False),
+                        )
+                        db.add(c)
+                        db.flush()
+                        _audit("config_create", campanha_id=c.id, payload={"seed": True, "tipo": tipo})
+                    db.commit()
+                    flash("Modelos padrão criados.", "success")
+                else:
+                    flash("Já existem campanhas V2 cadastradas; não criei modelos padrão.", "info")
+                return redirect(url_for("admin_campanhas_v2"))
+
+            if action == "recalc":
+                # recálculo por competência (gera resultados)
+                try:
+                    ano = int(request.form.get("ano") or today.year)
+                    mes = int(request.form.get("mes") or today.month)
+                    recalc_v2_competencia(db, ano=ano, mes=mes, actor=str(actor))
+                    _audit("recalc_competencia", campanha_id=None, payload={"ano": ano, "mes": mes}, ano=ano, mes=mes)
+                    db.commit()
+                    flash(f"Recalculo V2 concluído para {mes:02d}/{ano}.", "success")
+                except Exception as e:
+                    db.rollback()
+                    flash(f"Erro ao recalcular: {e}", "danger")
+                return redirect(url_for("admin_campanhas_v2", ano=ano, mes=mes))
+
+            # SAVE (create/update)
+            cid_raw = (request.form.get("id") or "").strip()
             titulo = (request.form.get("titulo") or "").strip()
             tipo = (request.form.get("tipo") or "RANKING_VALOR").strip().upper()
-            ativo = (request.form.get("ativo") or "1") == "1"
+            escopo = (request.form.get("escopo") or "EMP").strip().upper()
+            ativo = True if request.form.get("ativo") else False
             regras_json = (request.form.get("regras_json") or "").strip() or "{}"
-            c = CampanhaV2Master(titulo=titulo, tipo=tipo, ativo=ativo, regras_json=regras_json)
-            db.add(c)
-            db.flush()
 
+            # EMPs: aceita "101,1001" e armazena como JSON string "[101,1001]"
             emps_raw = (request.form.get("emps") or "").strip()
-            if emps_raw:
+            emps_list = []
+            if escopo == "EMP" and emps_raw:
                 for p in emps_raw.split(","):
                     p = p.strip()
                     if not p:
                         continue
                     try:
-                        db.add(CampanhaV2ScopeEMP(campanha_id=c.id, emp=int(p)))
+                        emps_list.append(int(p))
                     except Exception:
                         continue
+            emps_json = json.dumps(emps_list, ensure_ascii=False) if emps_list else None
 
-            db.commit()
-            flash("Campanha V2 criada.", "success")
-            return redirect(url_for("admin_campanhas_v2", ano=ano, mes=mes))
+            # Vigência
+            def _parse_date(s: str | None):
+                if not s:
+                    return None
+                try:
+                    return datetime.strptime(s, "%Y-%m-%d").date()
+                except Exception:
+                    return None
 
+            vig_ini = _parse_date(request.form.get("vigencia_ini"))
+            vig_fim = _parse_date(request.form.get("vigencia_fim"))
+            if not vig_ini:
+                vig_ini = today.replace(day=1)
+            if not vig_fim:
+                vig_fim = today.replace(month=12, day=31)
+
+            try:
+                if cid_raw:
+                    c = db.query(CampanhaV2Master).filter(CampanhaV2Master.id == int(cid_raw)).first()
+                    if not c:
+                        flash("Campanha não encontrada para editar.", "warning")
+                        return redirect(url_for("admin_campanhas_v2"))
+                    before = {"titulo": c.titulo, "tipo": c.tipo, "escopo": c.escopo, "emps_json": c.emps_json, "vigencia_ini": str(c.vigencia_ini), "vigencia_fim": str(c.vigencia_fim), "ativo": c.ativo, "regras_json": c.regras_json}
+                    c.titulo = titulo
+                    c.tipo = tipo
+                    c.escopo = escopo
+                    c.emps_json = emps_json
+                    c.vigencia_ini = vig_ini
+                    c.vigencia_fim = vig_fim
+                    c.ativo = ativo
+                    c.regras_json = regras_json
+                    _audit("config_update", campanha_id=c.id, payload={"before": before, "after": {"titulo": titulo, "tipo": tipo, "escopo": escopo, "emps_json": emps_json, "vigencia_ini": str(vig_ini), "vigencia_fim": str(vig_fim), "ativo": ativo}})
+                    db.commit()
+                    flash("Campanha V2 atualizada.", "success")
+                else:
+                    c = CampanhaV2Master(
+                        titulo=titulo,
+                        tipo=tipo,
+                        escopo=escopo,
+                        emps_json=emps_json,
+                        vigencia_ini=vig_ini,
+                        vigencia_fim=vig_fim,
+                        ativo=ativo,
+                        regras_json=regras_json,
+                    )
+                    db.add(c)
+                    db.flush()
+                    _audit("config_create", campanha_id=c.id, payload={"tipo": tipo, "escopo": escopo})
+                    db.commit()
+                    flash("Campanha V2 criada.", "success")
+                return redirect(url_for("admin_campanhas_v2", edit=c.id))
+            except Exception as e:
+                db.rollback()
+                flash(f"Erro ao salvar: {e}", "danger")
+                return redirect(url_for("admin_campanhas_v2"))
+
+        # listagem
         campanhas = db.query(CampanhaV2Master).order_by(CampanhaV2Master.id.desc()).all()
-        return render_template("admin_campanhas_v2.html", campanhas=campanhas, ano=ano, mes=mes)
+        return render_template("admin_campanhas_v2.html", campanhas=campanhas, edit_obj=edit_obj, today=today)
     finally:
         db.close()
+
+
+@app.route("/admin/campanhas_v2/<int:cid>/delete", methods=["POST"])
+@admin_required
+def admin_campanhas_v2_delete(cid: int):
+    db = SessionLocal()
+    try:
+        actor = session.get("username") or "admin"
+        c = db.query(CampanhaV2Master).filter(CampanhaV2Master.id == int(cid)).first()
+        if not c:
+            flash("Campanha não encontrada.", "warning")
+            return redirect(url_for("admin_campanhas_v2"))
+        # Auditoria
+        try:
+            db.add(CampanhaV2Audit(
+                campanha_id=c.id,
+                acao="config_delete",
+                actor=str(actor),
+                payload_json=json.dumps({"titulo": c.titulo, "tipo": c.tipo}, ensure_ascii=False),
+            ))
+        except Exception:
+            pass
+        db.delete(c)
+        db.commit()
+        flash("Campanha V2 removida.", "success")
+    except Exception as e:
+        db.rollback()
+        flash(f"Erro ao excluir: {e}", "danger")
+    finally:
+        db.close()
+    return redirect(url_for("admin_campanhas_v2"))
 
 
 @app.route("/admin/campanhas_v2/recalcular", methods=["GET"])
@@ -6889,385 +7022,11 @@ def admin_campanhas_v2_recalcular():
     return redirect(url_for("admin_campanhas_v2", ano=ano, mes=mes))
 
 
-# ==========================
-# Financeiro (Pagamentos consolidados + Auditoria)
-# ==========================
-
-
-def _is_mes_emp_fechado(db, emp: str | None, ano: int, mes: int) -> bool:
-    """Retorna True se a competência estiver fechada para a EMP.
-    Para registros globais (emp vazio), retorna True (não bloqueia).
-    """
-    emp_norm = _emp_norm(emp or "")
-    if not emp_norm:
-        return True
-    try:
-        rec = (
-            db.query(FechamentoMensal)
-            .filter(FechamentoMensal.emp == emp_norm)
-            .filter(FechamentoMensal.ano == int(ano))
-            .filter(FechamentoMensal.mes == int(mes))
-            .first()
-        )
-        return bool(rec and rec.fechado)
-    except Exception:
-        return False
-
-def _norm_fin_status(s: str) -> str:
-    s = (s or "PENDENTE").strip().upper()
-    return s if s in ("PENDENTE", "A_PAGAR", "PAGO") else "PENDENTE"
-
-
-def _financeiro_actor() -> str:
-    return str(session.get("username") or session.get("usuario") or "financeiro")
-
-
-def _apply_status_to_origem(db, origem_tipo: str, origem_id: int, new_status: str):
-    """Espelha status no registro de origem."""
-    new_status = _norm_fin_status(new_status)
-    if origem_tipo == "QTD":
-        r = db.query(CampanhaQtdResultado).filter(CampanhaQtdResultado.id == origem_id).first()
-        if r:
-            r.status_pagamento = new_status
-            r.pago_em = datetime.utcnow() if new_status == "PAGO" else None
-    elif origem_tipo == "COMBO":
-        r = db.query(CampanhaComboResultado).filter(CampanhaComboResultado.id == origem_id).first()
-        if r:
-            r.status_pagamento = new_status
-            r.pago_em = datetime.utcnow() if new_status == "PAGO" else None
-    elif origem_tipo == "V2":
-        r = db.query(CampanhaV2Resultado).filter(CampanhaV2Resultado.id == origem_id).first()
-        if r:
-            r.status_financeiro = new_status
-            # (V2 pode ter seu próprio pago_em no futuro; hoje só espelhamos o status)
-
-
-def _upsert_financeiro_pagamento(db, *, ano: int, mes: int, origem_tipo: str, origem_id: int,
-                                campanha_nome: str, emp: str | None, vendedor: str,
-                                valor_premio: float, status: str):
-    status = _norm_fin_status(status)
-    rec = (
-        db.query(FinanceiroPagamento)
-        .filter(
-            FinanceiroPagamento.ano == int(ano),
-            FinanceiroPagamento.mes == int(mes),
-            FinanceiroPagamento.origem_tipo == origem_tipo,
-            FinanceiroPagamento.origem_id == int(origem_id),
-        )
-        .first()
-    )
-    if not rec:
-        rec = FinanceiroPagamento(
-            ano=int(ano),
-            mes=int(mes),
-            origem_tipo=origem_tipo,
-            origem_id=int(origem_id),
-            campanha_nome=(campanha_nome or "")[:200],
-            emp=(str(emp).strip() if emp is not None else None),
-            vendedor=(vendedor or "")[:80],
-            valor_premio=float(valor_premio or 0.0),
-            status=status,
-            pago_em=(datetime.utcnow() if status == "PAGO" else None),
-        )
-        db.add(rec)
-        return rec
-
-    # atualiza campos "imutáveis" de exibição sem sobrescrever status se já foi pago
-    rec.campanha_nome = (campanha_nome or rec.campanha_nome or "")[:200]
-    rec.emp = (str(emp).strip() if emp is not None else rec.emp)
-    rec.vendedor = (vendedor or rec.vendedor or "")[:80]
-    rec.valor_premio = float(valor_premio or 0.0)
-    if rec.status != "PAGO":
-        rec.status = status
-        rec.pago_em = datetime.utcnow() if status == "PAGO" else None
-    return rec
-
-
-def _sync_financeiro_pagamentos(db, ano: int, mes: int) -> int:
-    """Sincroniza resultados (qtd/combo/v2) -> FinanceiroPagamento."""
-    ano = int(ano)
-    mes = int(mes)
-    created_or_updated = 0
-
-    # QTD
-    qtd_rows = (
-        db.query(CampanhaQtdResultado)
-        .filter(CampanhaQtdResultado.competencia_ano == ano, CampanhaQtdResultado.competencia_mes == mes)
-        .all()
-    )
-    for r in qtd_rows:
-        _upsert_financeiro_pagamento(
-            db,
-            ano=ano,
-            mes=mes,
-            origem_tipo="QTD",
-            origem_id=r.id,
-            campanha_nome=r.titulo or "Campanha QTD",
-            emp=r.emp,
-            vendedor=r.vendedor,
-            valor_premio=r.valor_recompensa,
-            status=r.status_pagamento,
-        )
-        created_or_updated += 1
-
-    # COMBO
-    combo_rows = (
-        db.query(CampanhaComboResultado)
-        .filter(CampanhaComboResultado.competencia_ano == ano, CampanhaComboResultado.competencia_mes == mes)
-        .all()
-    )
-    for r in combo_rows:
-        _upsert_financeiro_pagamento(
-            db,
-            ano=ano,
-            mes=mes,
-            origem_tipo="COMBO",
-            origem_id=r.id,
-            campanha_nome=r.titulo or "Campanha COMBO",
-            emp=r.emp,
-            vendedor=r.vendedor,
-            valor_premio=r.valor_recompensa,
-            status=r.status_pagamento,
-        )
-        created_or_updated += 1
-
-    # V2
-    v2_rows = (
-        db.query(CampanhaV2Resultado, CampanhaV2Master.titulo)
-        .join(CampanhaV2Master, CampanhaV2Master.id == CampanhaV2Resultado.campanha_id)
-        .filter(CampanhaV2Resultado.ano == ano, CampanhaV2Resultado.mes == mes)
-        .all()
-    )
-    for r, titulo in v2_rows:
-        _upsert_financeiro_pagamento(
-            db,
-            ano=ano,
-            mes=mes,
-            origem_tipo="V2",
-            origem_id=r.id,
-            campanha_nome=titulo or "Campanha V2",
-            emp=str(r.emp) if r.emp is not None else None,
-            vendedor=r.vendedor,
-            valor_premio=r.recompensa,
-            status=r.status_financeiro,
-        )
-        created_or_updated += 1
-
-    return created_or_updated
-
-
-@app.route("/financeiro/pagamentos", methods=["GET"])
-@financeiro_required
-def financeiro_pagamentos():
-    from datetime import date
-    ano = int(request.args.get("ano") or date.today().year)
-    mes = int(request.args.get("mes") or date.today().month)
-    status = _norm_fin_status(request.args.get("status") or "") if request.args.get("status") else ""
-    emp = (request.args.get("emp") or "").strip()
-    vendedor = (request.args.get("vendedor") or "").strip()
-
-    with SessionLocal() as db:
-        q = db.query(FinanceiroPagamento).filter(FinanceiroPagamento.ano == ano, FinanceiroPagamento.mes == mes)
-        if status:
-            q = q.filter(FinanceiroPagamento.status == status)
-        if emp:
-            q = q.filter(FinanceiroPagamento.emp == emp)
-        if vendedor:
-            q = q.filter(FinanceiroPagamento.vendedor.ilike(f"%{vendedor}%"))
-
-        pagamentos_rows = (
-            q.order_by(FinanceiroPagamento.status.asc(), FinanceiroPagamento.valor_premio.desc())
-            .all()
-        )
-
-        pagamentos = []
-        totais = {
-            "pendente_qtd": 0,
-            "pendente_valor": 0.0,
-            "apagar_qtd": 0,
-            "apagar_valor": 0.0,
-            "pago_qtd": 0,
-            "pago_valor": 0.0,
-        }
-        locked_cache: dict[str, bool] = {}
-        for p in pagamentos_rows:
-            pagamentos.append({
-                "id": p.id,
-                "ano": p.ano,
-                "mes": p.mes,
-                "origem_tipo": p.origem_tipo,
-                "campanha_nome": p.campanha_nome,
-                "emp": p.emp,
-                "vendedor": p.vendedor,
-                "valor_premio": p.valor_premio,
-                "status": p.status,
-                "locked": locked_cache.setdefault(str(p.emp or ""), _is_mes_emp_fechado(db, p.emp, ano, mes)),
-            })
-            if p.status == "PENDENTE":
-                totais["pendente_qtd"] += 1
-                totais["pendente_valor"] += float(p.valor_premio or 0)
-            elif p.status == "A_PAGAR":
-                totais["apagar_qtd"] += 1
-                totais["apagar_valor"] += float(p.valor_premio or 0)
-            else:
-                totais["pago_qtd"] += 1
-                totais["pago_valor"] += float(p.valor_premio or 0)
-
-        mes_fechado = True
-        if emp:
-            mes_fechado = _is_mes_emp_fechado(db, emp, ano, mes)
-
-        return render_template(
-            "financeiro_pagamentos.html",
-            ano=ano,
-            mes=mes,
-            status=status,
-            emp=emp,
-            vendedor=vendedor,
-            pagamentos=pagamentos,
-            totais=totais,
-            mes_fechado=mes_fechado,
-        )
-
-
-
-@app.route("/financeiro/pagamentos/sync_v2", methods=["POST"])
-@financeiro_required
-def financeiro_pagamentos_sync():
-    ano = int(request.form.get("ano") or datetime.utcnow().year)
-    mes = int(request.form.get("mes") or datetime.utcnow().month)
-    with SessionLocal() as db:
-        try:
-            n = _sync_financeiro_pagamentos(db, ano, mes)
-            db.commit()
-            flash(f"Sincronização concluída ({n} registros processados).", "success")
-        except Exception as e:
-            db.rollback()
-            app.logger.exception("Erro ao sincronizar pagamentos")
-            flash(f"Erro ao sincronizar pagamentos: {e}", "danger")
-
-
-def _audit_pagamento(db, p: FinanceiroPagamento, status_de: str | None, status_para: str, actor: str):
-    a = FinanceiroPagamentoAudit(
-        pagamento_id=int(p.id),
-        ano=int(p.ano),
-        mes=int(p.mes),
-        emp=p.emp,
-        vendedor=p.vendedor,
-        origem_tipo=p.origem_tipo,
-        origem_id=int(p.origem_id),
-        status_de=status_de,
-        status_para=status_para,
-        actor=(actor or "")[:120],
-    )
-    db.add(a)
-
-
-def _audit_fechamento(db, emp: str, ano: int, mes: int, acao: str, fechado_de, fechado_para, status_de, status_para, actor: str):
-    try:
-        a = FechamentoMensalAudit(
-            emp=(emp or "")[:30],
-            ano=int(ano),
-            mes=int(mes),
-            acao=(acao or "")[:30],
-            fechado_de=fechado_de,
-            fechado_para=fechado_para,
-            status_de=(status_de or None),
-            status_para=(status_para or None),
-            actor=(actor or "")[:120],
-        )
-        db.add(a)
-    except Exception:
-        # Auditoria não pode derrubar o fluxo principal
-        app.logger.exception("Falha ao registrar auditoria de fechamento")
-
-
-@app.route("/financeiro/pagamentos/status", methods=["POST"])
-@financeiro_required
-def financeiro_pagamentos_status():
-    pid = int(request.form.get("id") or 0)
-    novo_status = _norm_fin_status(request.form.get("novo_status") or "PENDENTE")
-    ano = int(request.form.get("ano") or datetime.utcnow().year)
-    mes = int(request.form.get("mes") or datetime.utcnow().month)
-
-    with SessionLocal() as db:
-        try:
-            p = db.query(FinanceiroPagamento).filter(FinanceiroPagamento.id == pid).first()
-            if not p:
-                flash("Pagamento não encontrado.", "danger")
-            # Só permite pagar se o mês estiver FECHADO para a EMP (admin fecha em /admin/fechamento)
-            if not _is_mes_emp_fechado(db, p.emp, int(p.ano), int(p.mes)):
-                flash("Competência não está FECHADA para esta EMP. Peça ao ADMIN para gerar/fechar o mês em /admin/fechamento.", "warning")
-
-            status_de = p.status
-            if status_de == novo_status:
-                flash("Status já estava atualizado.", "info")
-
-            p.status = novo_status
-            p.pago_em = datetime.utcnow() if novo_status == "PAGO" else None
-
-            _apply_status_to_origem(db, p.origem_tipo, int(p.origem_id), novo_status)
-            _audit_pagamento(db, p, status_de, novo_status, _financeiro_actor())
-
-            db.commit()
-            flash("Status atualizado.", "success")
-        except Exception as e:
-            db.rollback()
-            app.logger.exception("Erro ao atualizar status do pagamento")
-            flash(f"Erro ao atualizar status: {e}", "danger")
-
-
-
-@app.route("/financeiro/pagamentos/status_lote", methods=["POST"])
-@financeiro_required
-def financeiro_pagamentos_status_lote():
-    ids_raw = (request.form.get("ids") or "").strip()
-    novo_status = _norm_fin_status(request.form.get("novo_status") or "PENDENTE")
-    ano = int(request.form.get("ano") or datetime.utcnow().year)
-    mes = int(request.form.get("mes") or datetime.utcnow().month)
-
-    ids = []
-    for part in ids_raw.split(","):
-        part = part.strip()
-        if not part:
-            continue
-        try:
-            ids.append(int(part))
-        except Exception:
-            continue
-
-    if not ids:
-        flash("Selecione ao menos 1 registro.", "warning")
-        return redirect(url_for("financeiro_pagamentos", ano=ano, mes=mes))
-
-    actor = _financeiro_actor()
-    updated = 0
-    with SessionLocal() as db:
-        try:
-            rows = db.query(FinanceiroPagamento).filter(FinanceiroPagamento.id.in_(ids)).all()
-            for p in rows:
-                status_de = p.status
-                if status_de == novo_status:
-                    continue
-                p.status = novo_status
-                p.pago_em = datetime.utcnow() if novo_status == "PAGO" else None
-                _apply_status_to_origem(db, p.origem_tipo, int(p.origem_id), novo_status)
-                _audit_pagamento(db, p, status_de, novo_status, actor)
-                updated += 1
-            db.commit()
-            flash(f"Atualização em lote concluída ({updated} registros).", "success")
-        except Exception as e:
-            db.rollback()
-            app.logger.exception("Erro ao atualizar status em lote")
-            flash(f"Erro no lote: {e}", "danger")
-
-
-
 @app.route("/financeiro/campanhas_v2", methods=["GET"])
 @financeiro_required
 def financeiro_campanhas_v2():
-    # visão consolidada de pagamentos (inclui V2)
-    return redirect(url_for("financeiro_pagamentos"))
+    # por enquanto, redireciona para o fechamento (mesma visão)
+    return redirect(url_for("financeiro_fechamento_v2"))
 
 
 @app.route("/financeiro/fechamento_v2", methods=["GET"])
@@ -7323,6 +7082,5 @@ def financeiro_fechamento_v2_status():
     finally:
         db.close()
     return redirect(url_for("financeiro_fechamento_v2"))
-
 
 
