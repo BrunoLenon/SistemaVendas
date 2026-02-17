@@ -166,93 +166,6 @@ def recalc_v2_competencia(
 
 
 
-def recalc_v2_campanha(
-    db,
-    *,
-    campanha_id: int,
-    ano: int,
-    mes: int,
-    actor: str = "system",
-    emps_scope: list[str] | None = None,
-    force: bool = True,
-):
-    """Recalcula apenas UMA campanha V2 para a competência.
-
-    Motivo: permite operação rápida no Admin sem precisar recalcular o mês inteiro.
-
-    - Se a campanha não existir ou não estiver ativa/vigente, não faz nada.
-    - Usa o mesmo motor interno (funções _calc_* + _upsert_resultados).
-    """
-    if emps_scope is None:
-        emps_scope = []
-
-    try:
-        # Smoke test (tabela existe?)
-        db.query(func.count(CampanhaMasterV2.id)).first()
-    except Exception:
-        return
-
-    periodo_ini, periodo_fim = _periodo_bounds(int(ano), int(mes))
-
-    c = db.query(CampanhaMasterV2).filter(CampanhaMasterV2.id == int(campanha_id)).one_or_none()
-    if not c:
-        return
-
-    # Apenas campanhas ativas
-    try:
-        if not bool(getattr(c, 'ativo', True)):
-            return
-    except Exception:
-        pass
-
-    # Vigência (interseção com competência)
-    try:
-        di = getattr(c, 'data_inicio', None)
-        df = getattr(c, 'data_fim', None)
-        if di and df:
-            if df < periodo_ini or di > periodo_fim:
-                return
-    except Exception:
-        pass
-
-    # Escopo EMP
-    escopo = (getattr(c, 'escopo', None) or '').strip().upper() or 'EMP'
-    if escopo == 'EMP':
-        emps_alvo = [str(e) for e in _safe_json_load(getattr(c, 'emps_json', None), []) if str(e).strip()]
-        if emps_alvo:
-            emps_calc = [e for e in emps_scope if e in emps_alvo]
-        else:
-            emps_calc = list(emps_scope)
-    else:
-        emps_calc = list(emps_scope)
-
-    tipo = (getattr(c, 'tipo', None) or '').strip().upper()
-
-    if tipo == 'RANKING_VALOR':
-        rows = _calc_ranking_valor(db, c, ano, mes, emps_calc)
-    elif tipo == 'META_PCT_MOM':
-        rows = _calc_meta_pct_mom(db, c, ano, mes, emps_calc)
-    elif tipo == 'META_PCT_YOY':
-        rows = _calc_meta_pct_yoy(db, c, ano, mes, emps_calc)
-    elif tipo == 'META_ABS':
-        rows = _calc_meta_abs(db, c, ano, mes, emps_calc)
-    elif tipo == 'MIX_MESTRE':
-        rows = _calc_mix_mestre(db, c, ano, mes, emps_calc)
-    elif tipo in ('ACUM_3M', 'ACUMULATIVA'):
-        rows = _calc_acumulativa(db, c, ano, mes, emps_calc)
-    elif tipo == 'MARGEM':
-        return
-    else:
-        return
-
-    _upsert_resultados(db, c, ano, mes, rows, force=bool(force))
-
-    try:
-        db.commit()
-    except Exception:
-        db.rollback()
-
-
 def _upsert_resultados(db, c: CampanhaMasterV2, ano: int, mes: int, rows: list[CampanhaV2ResultRow], *, force: bool) -> None:
     # estratégia simples: delete+insert quando force, senão upsert individual
     if force:
@@ -310,6 +223,17 @@ def _calc_ranking_valor(db, c: CampanhaMasterV2, ano: int, mes: int, emps_calc: 
     premiacao = _safe_json_load(c.premiacao_json, {})
     mov_tipo = (regras.get("mov_tipo") or "OA").strip().upper()
     marca_alvo = (c.marca_alvo or regras.get("marca") or "").strip()
+    # valor mínimo para entrar no ranking (ex.: 10000.00)
+    # Aceita chaves alternativas para compatibilidade com configs antigas.
+    try:
+        min_total = float(
+            regras.get("min_total")
+            or regras.get("valor_minimo")
+            or regras.get("min_valor")
+            or 0.0
+        )
+    except Exception:
+        min_total = 0.0
     escopo = (c.escopo or "EMP").strip().upper()
 
     q = (
@@ -329,8 +253,13 @@ def _calc_ranking_valor(db, c: CampanhaMasterV2, ano: int, mes: int, emps_calc: 
     if escopo == "GLOBAL":
         q = q.group_by(Venda.vendedor)
         rows = q.all()
+        if min_total and min_total > 0:
+            rows = [r for r in rows if float(r[2] or 0.0) >= float(min_total)]
         rows = sorted(rows, key=lambda x: float(x[2] or 0.0), reverse=True)
-        return _top3_rows(rows, emp_token=GLOBAL_EMP_TOKEN, marca=marca_alvo, premiacao=premiacao)
+        out = _top3_rows(rows, emp_token=GLOBAL_EMP_TOKEN, marca=marca_alvo, premiacao=premiacao)
+        for rr in out:
+            rr.detalhes["min_total"] = float(min_total)
+        return out
     else:
         q = q.group_by(Venda.emp, Venda.vendedor)
         rows = q.all()
@@ -340,8 +269,13 @@ def _calc_ranking_valor(db, c: CampanhaMasterV2, ano: int, mes: int, emps_calc: 
             por_emp.setdefault(str(emp), []).append((str(emp), str(vend), float(total or 0.0)))
         out: list[CampanhaV2ResultRow] = []
         for emp, lst in por_emp.items():
+            if min_total and min_total > 0:
+                lst = [x for x in lst if float(x[2] or 0.0) >= float(min_total)]
             lst_sorted = sorted(lst, key=lambda x: x[2], reverse=True)
-            out.extend(_top3_rows(lst_sorted, emp_token=emp, marca=marca_alvo, premiacao=premiacao))
+            sub = _top3_rows(lst_sorted, emp_token=emp, marca=marca_alvo, premiacao=premiacao)
+            for rr in sub:
+                rr.detalhes["min_total"] = float(min_total)
+            out.extend(sub)
         return out
 
 
