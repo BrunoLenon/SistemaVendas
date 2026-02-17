@@ -1,8 +1,8 @@
+from __future__ import annotations
+
 import os
 import threading
 import time
-
-import pandas as pd
 from sqlalchemy import text
 
 from db import engine
@@ -21,7 +21,7 @@ _DF_CACHE_LOCK = threading.Lock()
 _DF_CACHE: dict[str, object] = {"df": None, "ts": 0.0}
 
 
-def carregar_df(force: bool = False) -> pd.DataFrame:
+def carregar_df(force: bool = False):
     """Carrega dataframe de vendas do banco.
 
     Usa cache em memória com TTL (segundos). Configure com:
@@ -29,6 +29,7 @@ def carregar_df(force: bool = False) -> pd.DataFrame:
 
     Use force=True para ignorar o cache (ex.: após importação ou limpeza).
     """
+    import pandas as pd
 
     ttl = int(os.getenv("DF_CACHE_SECONDS", "60") or 60)
     now = time.time()

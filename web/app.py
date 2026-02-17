@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 import threading
 import sys
@@ -25,8 +27,6 @@ import calendar
 from io import BytesIO
 
 from decimal import Decimal, ROUND_HALF_UP
-
-import pandas as pd
 import requests
 from sqlalchemy import and_, or_, func, case, cast, String, text, extract
 from flask import (
@@ -74,8 +74,6 @@ from db import (
     BrandingTheme,
     criar_tabelas,
 )
-from importar_excel import importar_planilha
-
 # Flask app (Render/Gunicorn expects `app` at module level: web/app.py -> app:app)
 app = Flask(__name__, template_folder="templates")
 app.secret_key = os.getenv("SECRET_KEY", "dev")
@@ -732,7 +730,8 @@ def _find_pending_blocking_message(db) -> Mensagem | None:
 
 
 
-def _normalize_cols(df: pd.DataFrame) -> pd.DataFrame:
+def _normalize_cols(df: object) -> object:
+    import pandas as pd
     """Normaliza nomes/tipos de colunas vindas do banco.
 
     Regras do app:
@@ -1003,7 +1002,8 @@ def _fetch_cache_value(vendedor: str, ano: int, mes: int, emp_scope: str | None)
 # NOTE: existe uma versão tipada desta função mais abaixo.
 # Mantemos apenas uma definição para evitar confusão/override.
 
-def _calcular_dados(df: pd.DataFrame, vendedor: str, mes: int, ano: int):
+def _calcular_dados(df: object, vendedor: str, mes: int, ano: int):
+    import pandas as pd
     """Calcula os números do dashboard a partir do DF carregado do banco."""
     if df is None or df.empty:
         return None
@@ -1039,7 +1039,7 @@ def _calcular_dados(df: pd.DataFrame, vendedor: str, mes: int, ano: int):
         (df_v["MOVIMENTO"].dt.year == ano_ant) & (df_v["MOVIMENTO"].dt.month == mes_ant)
     ].copy()
 
-    def _mix(df_in: pd.DataFrame) -> int:
+    def _mix(df_in: object) -> int:
         """Mix de produtos (por MESTRE), abatendo DS/CA e sem ficar negativo.
 
         Regra:
@@ -1055,19 +1055,19 @@ def _calcular_dados(df: pd.DataFrame, vendedor: str, mes: int, ano: int):
         saldo = tmp.groupby("MESTRE")["_s"].sum()
         return int((saldo > 0).sum())
 
-    def _valor_liquido(df_in: pd.DataFrame) -> float:
+    def _valor_liquido(df_in: object) -> float:
         if df_in.empty:
             return 0.0
         neg = df_in["MOV_TIPO_MOVTO"].isin(["DS", "CA"])
         return float(df_in["VALOR_TOTAL"].where(~neg, -df_in["VALOR_TOTAL"]).sum())
 
-    def _valor_bruto(df_in: pd.DataFrame) -> float:
+    def _valor_bruto(df_in: object) -> float:
         if df_in.empty:
             return 0.0
         vendas = df_in[~df_in["MOV_TIPO_MOVTO"].isin(["DS", "CA"])]
         return float(vendas["VALOR_TOTAL"].sum())
 
-    def _valor_devolvido(df_in: pd.DataFrame) -> float:
+    def _valor_devolvido(df_in: object) -> float:
         if df_in.empty:
             return 0.0
         dev = df_in[df_in["MOV_TIPO_MOVTO"].isin(["DS", "CA"])]
@@ -1091,7 +1091,7 @@ def _calcular_dados(df: pd.DataFrame, vendedor: str, mes: int, ano: int):
 
     # Ranking por marca (líquido)
     if df_mes.empty:
-        ranking = pd.Series(dtype=float)
+        ranking = object(dtype=float)
     else:
         neg = df_mes["MOV_TIPO_MOVTO"].isin(["DS", "CA"])
         df_mes = df_mes.copy()
@@ -1738,7 +1738,7 @@ def _dados_ao_vivo(vendedor: str, mes: int, ano: int, emp_scope: str | list[str]
             'ranking_top15_list': ranking_list[:15],
             'total_liquido_periodo': total,
         }
-def _resolver_vendedor_e_lista(df: pd.DataFrame | None) -> tuple[str | None, list[str], str | None, str | None]:
+def _resolver_vendedor_e_lista(df: object | None) -> tuple[str | None, list[str], str | None, str | None]:
     """Resolve qual vendedor o usuário pode ver.
 
     Retorna: (vendedor_alvo, lista_vendedores, emp_usuario, aviso)
@@ -4498,6 +4498,7 @@ def admin_importar():
         tmp_path = tmp.name
 
     try:
+        from importar_excel import importar_planilha
         resumo = importar_planilha(tmp_path, modo=modo, chave=chave)
         if not resumo.get("ok"):
             faltando = resumo.get("faltando")
@@ -4842,6 +4843,7 @@ def admin_resumos_periodo():
                         filename = (file.filename or '').lower()
                         try:
                             if filename.endswith('.csv'):
+                                import pandas as pd
                                 df = pd.read_csv(file, dtype=str)
                             else:
                                 df = pd.read_excel(file, dtype=str)
