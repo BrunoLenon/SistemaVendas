@@ -699,11 +699,31 @@ class FechamentoMensal(Base):
 
     __table_args__ = (
         UniqueConstraint("emp", "ano", "mes", name="uq_fechamento_mensal_raw"),
+        {'extend_existing': True},
     )
+class FechamentoMensalAudit(Base):
+    """Auditoria de fechamento mensal (quem/quando/de->para)."""
 
+    __tablename__ = "fechamento_mensal_audit"
 
+    id = Column(Integer, primary_key=True)
+    emp = Column(String(30), nullable=False, default="", index=True)
+    ano = Column(Integer, nullable=False, index=True)
+    mes = Column(Integer, nullable=False, index=True)
 
+    acao = Column(String(30), nullable=False, default="", index=True)  # gerar_fechamento, fechar_a_pagar, fechar_pago, reabrir
+    fechado_de = Column(Boolean, nullable=True)
+    fechado_para = Column(Boolean, nullable=True)
+    status_de = Column(String(20), nullable=True)
+    status_para = Column(String(20), nullable=True)
 
+    actor = Column(String(120), nullable=True, default="")
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        Index("ix_fech_audit_emp_ano_mes", "emp", "ano", "mes"),
+        {'extend_existing': True},
+    )
 class AppSetting(Base):
     __tablename__ = "app_settings"
 

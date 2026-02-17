@@ -5285,6 +5285,9 @@ def admin_fechamento():
         "pago": "fechar_pago",
         "reabrir": "reabrir",
         "abrir": "reabrir",
+        "gerar_fechamento": "gerar_fechamento",
+        "gerar": "gerar_fechamento",
+        "fechar": "gerar_fechamento",
     }.get(acao_raw, acao_raw)
 
     with SessionLocal() as db:
@@ -5299,14 +5302,22 @@ def admin_fechamento():
             except Exception:
                 emps_all = []
 
-        if request.method == "POST" and acao in {"fechar_a_pagar", "fechar_pago", "reabrir"}:
+        if request.method == "POST" and acao in {"gerar_fechamento", "fechar_a_pagar", "fechar_pago", "reabrir"}:
             app.logger.info("FECHAMENTO POST: form=%s values=%s", dict(request.form), {k: request.values.getlist(k) for k in request.values.keys()})
             if not emps_sel:
                 msgs.append("⚠️ Selecione ao menos 1 EMP para fechar/reabrir.")
             else:
+                # Para fechar/congelar o mês, primeiro sincroniza resultados → Financeiro (snapshot idempotente)
+                if acao in {"gerar_fechamento", "fechar_a_pagar", "fechar_pago"}:
+                    try:
+                        _sync_financeiro_pagamentos(db, ano, mes)
+                    except Exception:
+                        app.logger.exception("Falha ao sincronizar financeiro no fechamento")
                 alvo_status = None
                 updated_count = 0
-                if acao == "fechar_a_pagar":
+                if acao == "gerar_fechamento":
+                    alvo_status = "fechado"
+                elif acao == "fechar_a_pagar":
                     alvo_status = "a_pagar"
                 elif acao == "fechar_pago":
                     alvo_status = "pago"
@@ -5328,18 +5339,36 @@ def admin_fechamento():
                             rec = FechamentoMensal(emp=emp, ano=int(ano), mes=int(mes), fechado=False)
                             db.add(rec)
 
-                        if acao in {"fechar_a_pagar", "fechar_pago"}:
-                            rec.fechado = True
-                            rec.fechado_em = datetime.utcnow()
-                            # status financeiro (controle)
-                            if hasattr(rec, "status") and alvo_status:
-                                rec.status = alvo_status
-                        else:
-                            rec.fechado = False
-                            rec.fechado_em = None  # reabrir zera timestamp
-                            if hasattr(rec, "status"):
-                                rec.status = "aberto"
-                        updated_count += 1
+                        if acao in {"gerar_fechamento", "fechar_a_pagar", "fechar_pago", "reabrir"}:
+                            # Auditoria (de -> para)
+                            fechado_de = bool(getattr(rec, "fechado", False))
+                            status_de = getattr(rec, "status", None)
+
+                            if acao != "reabrir":
+                                rec.fechado = True
+                                rec.fechado_em = datetime.utcnow()
+                                # status financeiro (controle/trava)
+                                if hasattr(rec, "status") and alvo_status:
+                                    rec.status = alvo_status
+                            else:
+                                rec.fechado = False
+                                rec.fechado_em = None  # reabrir zera timestamp
+                                if hasattr(rec, "status"):
+                                    rec.status = "aberto"
+                            actor = _usuario_logado() or ""
+                            _audit_fechamento(
+                                db,
+                                emp=emp,
+                                ano=ano,
+                                mes=mes,
+                                acao=acao,
+                                fechado_de=fechado_de,
+                                fechado_para=bool(getattr(rec, "fechado", False)),
+                                status_de=status_de,
+                                status_para=getattr(rec, "status", None),
+                                actor=actor,
+                            )
+                            updated_count += 1
                         # commit no final do lote (mais rápido e consistente)
                     except Exception:
                         app.logger.exception("Erro ao preparar fechamento mensal")
@@ -6864,6 +6893,26 @@ def admin_campanhas_v2_recalcular():
 # Financeiro (Pagamentos consolidados + Auditoria)
 # ==========================
 
+
+def _is_mes_emp_fechado(db, emp: str | None, ano: int, mes: int) -> bool:
+    """Retorna True se a competência estiver fechada para a EMP.
+    Para registros globais (emp vazio), retorna True (não bloqueia).
+    """
+    emp_norm = _emp_norm(emp or "")
+    if not emp_norm:
+        return True
+    try:
+        rec = (
+            db.query(FechamentoMensal)
+            .filter(FechamentoMensal.emp == emp_norm)
+            .filter(FechamentoMensal.ano == int(ano))
+            .filter(FechamentoMensal.mes == int(mes))
+            .first()
+        )
+        return bool(rec and rec.fechado)
+    except Exception:
+        return False
+
 def _norm_fin_status(s: str) -> str:
     s = (s or "PENDENTE").strip().upper()
     return s if s in ("PENDENTE", "A_PAGAR", "PAGO") else "PENDENTE"
@@ -7040,7 +7089,7 @@ def financeiro_pagamentos():
             "pago_qtd": 0,
             "pago_valor": 0.0,
         }
-
+        locked_cache: dict[str, bool] = {}
         for p in pagamentos_rows:
             pagamentos.append({
                 "id": p.id,
@@ -7052,6 +7101,7 @@ def financeiro_pagamentos():
                 "vendedor": p.vendedor,
                 "valor_premio": p.valor_premio,
                 "status": p.status,
+                "locked": locked_cache.setdefault(str(p.emp or ""), _is_mes_emp_fechado(db, p.emp, ano, mes)),
             })
             if p.status == "PENDENTE":
                 totais["pendente_qtd"] += 1
@@ -7063,16 +7113,22 @@ def financeiro_pagamentos():
                 totais["pago_qtd"] += 1
                 totais["pago_valor"] += float(p.valor_premio or 0)
 
-    return render_template(
-        "financeiro_pagamentos.html",
-        ano=ano,
-        mes=mes,
-        status=status,
-        emp=emp,
-        vendedor=vendedor,
-        pagamentos=pagamentos,
-        totais=totais,
-    )
+        mes_fechado = True
+        if emp:
+            mes_fechado = _is_mes_emp_fechado(db, emp, ano, mes)
+
+        return render_template(
+            "financeiro_pagamentos.html",
+            ano=ano,
+            mes=mes,
+            status=status,
+            emp=emp,
+            vendedor=vendedor,
+            pagamentos=pagamentos,
+            totais=totais,
+            mes_fechado=mes_fechado,
+        )
+
 
 
 @app.route("/financeiro/pagamentos/sync_v2", methods=["POST"])
@@ -7089,7 +7145,6 @@ def financeiro_pagamentos_sync():
             db.rollback()
             app.logger.exception("Erro ao sincronizar pagamentos")
             flash(f"Erro ao sincronizar pagamentos: {e}", "danger")
-    return redirect(url_for("financeiro_pagamentos", ano=ano, mes=mes))
 
 
 def _audit_pagamento(db, p: FinanceiroPagamento, status_de: str | None, status_para: str, actor: str):
@@ -7108,6 +7163,25 @@ def _audit_pagamento(db, p: FinanceiroPagamento, status_de: str | None, status_p
     db.add(a)
 
 
+def _audit_fechamento(db, emp: str, ano: int, mes: int, acao: str, fechado_de, fechado_para, status_de, status_para, actor: str):
+    try:
+        a = FechamentoMensalAudit(
+            emp=(emp or "")[:30],
+            ano=int(ano),
+            mes=int(mes),
+            acao=(acao or "")[:30],
+            fechado_de=fechado_de,
+            fechado_para=fechado_para,
+            status_de=(status_de or None),
+            status_para=(status_para or None),
+            actor=(actor or "")[:120],
+        )
+        db.add(a)
+    except Exception:
+        # Auditoria não pode derrubar o fluxo principal
+        app.logger.exception("Falha ao registrar auditoria de fechamento")
+
+
 @app.route("/financeiro/pagamentos/status", methods=["POST"])
 @financeiro_required
 def financeiro_pagamentos_status():
@@ -7121,11 +7195,13 @@ def financeiro_pagamentos_status():
             p = db.query(FinanceiroPagamento).filter(FinanceiroPagamento.id == pid).first()
             if not p:
                 flash("Pagamento não encontrado.", "danger")
-                return redirect(url_for("financeiro_pagamentos", ano=ano, mes=mes))
+            # Só permite pagar se o mês estiver FECHADO para a EMP (admin fecha em /admin/fechamento)
+            if not _is_mes_emp_fechado(db, p.emp, int(p.ano), int(p.mes)):
+                flash("Competência não está FECHADA para esta EMP. Peça ao ADMIN para gerar/fechar o mês em /admin/fechamento.", "warning")
+
             status_de = p.status
             if status_de == novo_status:
                 flash("Status já estava atualizado.", "info")
-                return redirect(url_for("financeiro_pagamentos", ano=ano, mes=mes))
 
             p.status = novo_status
             p.pago_em = datetime.utcnow() if novo_status == "PAGO" else None
@@ -7140,7 +7216,6 @@ def financeiro_pagamentos_status():
             app.logger.exception("Erro ao atualizar status do pagamento")
             flash(f"Erro ao atualizar status: {e}", "danger")
 
-    return redirect(url_for("financeiro_pagamentos", ano=ano, mes=mes))
 
 
 @app.route("/financeiro/pagamentos/status_lote", methods=["POST"])
@@ -7186,7 +7261,6 @@ def financeiro_pagamentos_status_lote():
             app.logger.exception("Erro ao atualizar status em lote")
             flash(f"Erro no lote: {e}", "danger")
 
-    return redirect(url_for("financeiro_pagamentos", ano=ano, mes=mes))
 
 
 @app.route("/financeiro/campanhas_v2", methods=["GET"])

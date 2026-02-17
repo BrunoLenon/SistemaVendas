@@ -71,7 +71,10 @@
           <input type="hidden" name="ano" value="{{ ano }}">
           <input type="hidden" name="acao" id="acao_fechamento" value="">
 
-                  
+<button class="btn btn-outline-primary" type="submit" onclick="document.getElementById('acao_fechamento').value='gerar_fechamento'" {% if not emps_sel %}disabled{% endif %}>
+  Gerar Fechamento (Congelar)
+</button>
+
 <button class="btn btn-primary" type="submit" onclick="document.getElementById('acao_fechamento').value='fechar_a_pagar'" {% if not emps_sel %}disabled{% endif %}>
   Fechar (A pagar)
 </button>
@@ -115,6 +118,8 @@
                         <span class="badge text-bg-primary">PAGO</span>
                       {% elif st and st.status == "a_pagar" %}
                         <span class="badge text-bg-warning">A PAGAR</span>
+                      {% elif st and st.status == "fechado" %}
+                        <span class="badge text-bg-info">FECHADO</span>
                       {% else %}
                         <span class="badge text-bg-secondary">ABERTO</span>
                       {% endif %}

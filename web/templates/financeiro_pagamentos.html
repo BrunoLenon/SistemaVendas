@@ -44,6 +44,14 @@
     {% endif %}
   {% endwith %}
 
+
+{% if not mes_fechado %}
+  <div class="alert alert-warning">
+    Competência <b>{{ "%02d"|format(mes) }}/{{ ano }}</b> <b>NÃO está FECHADA</b> para a EMP filtrada.
+    O Financeiro só pode marcar <b>A_PAGAR</b>/<b>PAGO</b após o ADMIN gerar/fechar o mês em <a href="/admin/fechamento">/admin/fechamento</a>.
+  </div>
+{% endif %}
+
   <div class="card p-3 mb-3">
     <form class="row g-2 align-items-end" method="get" action="/financeiro/pagamentos">
       <div class="col-6 col-md-2">
@@ -112,8 +120,8 @@
           <input type="hidden" name="ano" value="{{ ano }}">
           <input type="hidden" name="mes" value="{{ mes }}">
           <input type="hidden" name="ids" id="idsInput" value="">
-          <button class="btn btn-warning" type="submit" name="novo_status" value="A_PAGAR">Marcar A_PAGAR (seleção)</button>
-          <button class="btn btn-success" type="submit" name="novo_status" value="PAGO">Marcar PAGO (seleção)</button>
+          <button class="btn btn-warning" type="submit" name="novo_status" value="A_PAGAR" {% if not mes_fechado %}disabled{% endif %}>Marcar A_PAGAR (seleção)</button>
+          <button class="btn btn-success" type="submit" name="novo_status" value="PAGO" {% if not mes_fechado %}disabled{% endif %}>Marcar PAGO (seleção)</button>
         </form>
       </div>
       <div class="muted">Registros: {{ pagamentos|length }}</div>
@@ -140,7 +148,7 @@
         <tbody>
           {% for p in pagamentos %}
           <tr>
-            <td><input class="form-check-input ckRow" type="checkbox" value="{{ p.id }}"></td>
+            <td><input class="form-check-input ckRow" type="checkbox" value="{{ p.id }}" {% if not p.locked %}disabled{% endif %}></td>
             <td class="muted">{{ p.id }}</td>
             <td>{{ "%02d"|format(p.mes) }}/{{ p.ano }}</td>
             <td><span class="badge text-bg-secondary">{{ p.origem_tipo }}</span></td>
@@ -167,8 +175,8 @@
                 <input type="hidden" name="id" value="{{ p.id }}">
                 <input type="hidden" name="ano" value="{{ ano }}">
                 <input type="hidden" name="mes" value="{{ mes }}">
-                <button class="btn btn-sm btn-warning" name="novo_status" value="A_PAGAR" type="submit">A_PAGAR</button>
-                <button class="btn btn-sm btn-success" name="novo_status" value="PAGO" type="submit">PAGO</button>
+                <button class="btn btn-sm btn-warning" name="novo_status" value="A_PAGAR" type="submit" {% if not p.locked %}disabled{% endif %}>A_PAGAR</button>
+                <button class="btn btn-sm btn-success" name="novo_status" value="PAGO" type="submit" {% if not p.locked %}disabled{% endif %}>PAGO</button>
               </form>
             </td>
           </tr>
