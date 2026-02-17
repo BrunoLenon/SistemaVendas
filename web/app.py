@@ -44,6 +44,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 from dados_db import carregar_df, limpar_cache_df
 from db import (
     CampanhaV2Master, CampanhaV2ScopeEMP, CampanhaV2Resultado,
+    CampanhaV2Audit,
 
     SessionLocal,
     Usuario,
@@ -5611,14 +5612,15 @@ def admin_campanhas_qtd():
             erro=erro,
             ok=ok,
         )
+
+
 @app.route("/admin/campanhas/ranking_marca", methods=["GET", "POST"])
 def admin_campanhas_ranking_marca():
-    """
-    Cadastro de campanhas de Ranking por Marca (Top 3 por valor).
-    - Escopo GLOBAL ou por EMP(s) selecionadas.
-    - Premiação por posição (1º,2º,3º...)
-    - Valor mínimo para entrar na corrida (min_total).
-    Implementação usa Campanhas V2 (tipo=RANKING_VALOR) com regras_json contendo marca/min_total/premiacao.
+    """Cadastro de Ranking por Marca (por valor) usando o Campaign Engine V2 (schema antigo).
+
+    - GLOBAL ou por EMP(s) selecionadas
+    - Top 3 com premiação fixa
+    - Mínimo de vendas para entrar na corrida
     """
     red = _login_required()
     if red:
@@ -5629,249 +5631,191 @@ def admin_campanhas_ranking_marca():
 
     erro = None
     ok = None
+
     hoje = date.today()
     mes = int(request.values.get("mes") or hoje.month)
     ano = int(request.values.get("ano") or hoje.year)
 
-    def _parse_premios(texto: str | None):
-        """Aceita linhas: 1=300, 2:200, 3 100"""
+    def _parse_premios(texto: str | None) -> list[dict]:
+        out: list[dict] = []
         if not texto:
-            return {"top": [{"pos": 1, "valor": 300.0}, {"pos": 2, "valor": 200.0}, {"pos": 3, "valor": 100.0}]}
-        top = []
-        for ln in (texto or "").splitlines():
-            ln = ln.strip()
-            if not ln:
+            return out
+        for ln in str(texto).splitlines():
+            s = (ln or "").strip()
+            if not s:
                 continue
-            ln = ln.replace(":", "=")
-            if "=" in ln:
-                a, b = ln.split("=", 1)
-            else:
-                parts = ln.split()
-                if len(parts) >= 2:
-                    a, b = parts[0], parts[1]
-                else:
-                    continue
+            s = s.replace(";", " ").replace("=", " ").replace(":", " ")
+            parts = [p for p in s.split() if p]
+            if len(parts) < 2:
+                continue
             try:
-                pos = int(str(a).strip())
-                val = float(str(b).strip().replace(".", "").replace(",", ".")) if "," in str(b) else float(str(b).strip())
-                top.append({"pos": pos, "valor": val})
+                pos = int(float(parts[0]))
+                val = float(str(parts[1]).replace(".", "").replace(",", "."))
+                if pos > 0:
+                    out.append({"pos": pos, "valor": val})
             except Exception:
                 continue
-        top = sorted(top, key=lambda x: int(x.get("pos") or 0))
-        if not top:
-            top = [{"pos": 1, "valor": 300.0}, {"pos": 2, "valor": 200.0}, {"pos": 3, "valor": 100.0}]
-        return {"top": top}
+        out.sort(key=lambda x: x.get("pos", 999999))
+        return out
+
+    def _safe_float(v: str | None, default: float = 0.0) -> float:
+        if v is None:
+            return default
+        s = str(v).strip()
+        if not s:
+            return default
+        try:
+            return float(s.replace(".", "").replace(",", "."))
+        except Exception:
+            return default
 
     with SessionLocal() as db:
-        # EMPs cadastradas (ativas)
-        emps_options = [e.codigo for e in db.query(Emp).filter(Emp.ativo == True).order_by(Emp.codigo.asc()).all()]
+        # EMPs cadastradas/ativas (para escopo)
+        try:
+            emps_all = [str(r.codigo).strip() for r in db.query(Emp).filter(Emp.ativo.is_(True)).order_by(Emp.codigo.asc()).all()]
+        except Exception:
+            emps_all = []
+        emps_options = _get_emp_options(emps_all)
 
         if request.method == "POST":
             acao = (request.form.get("acao") or "").strip().lower()
             try:
                 if acao in {"criar", "editar"}:
-                    cid = int(request.form.get("id") or 0) if acao == "editar" else None
+                    cid = int(request.form.get("id") or 0)
                     titulo = (request.form.get("titulo") or "").strip()
                     marca = (request.form.get("marca") or "").strip().upper()
                     escopo_tipo = (request.form.get("escopo_tipo") or "GLOBAL").strip().upper()
-                    data_inicio = request.form.get("data_inicio")
-                    data_fim = request.form.get("data_fim")
-                    competencia_ano = (request.form.get("competencia_ano") or "").strip()
-                    competencia_mes = (request.form.get("competencia_mes") or "").strip()
+
+                    data_inicio = (request.form.get("data_inicio") or "").strip()
+                    data_fim = (request.form.get("data_fim") or "").strip()
                     ativo = True if request.form.get("ativo") else False
+
+                    min_total = _safe_float(request.form.get("min_total"), 0.0)
                     premios = _parse_premios(request.form.get("premios_texto"))
-                    try:
-                        min_total = float((request.form.get("min_total") or "").replace(".", "").replace(",", ".")) if request.form.get("min_total") else 0.0
-                    except Exception:
-                        min_total = 0.0
+                    if not premios:
+                        premios = [{"pos": 1, "valor": 300.0}, {"pos": 2, "valor": 200.0}, {"pos": 3, "valor": 100.0}]
+
+                    emps_sel = _parse_multi_args_from(request.form, "emp")
+                    emps_sel = [e for e in emps_sel if e in (emps_all or [])]
 
                     regras = {
                         "marca": marca,
-                        "premiacao": premios,
+                        "min_total": float(min_total or 0.0),
+                        "top": premios,
                     }
-                    if min_total:
-                        regras["min_total"] = min_total
-                    # opcional: fixa competência para exibição
-                    if competencia_ano.isdigit():
-                        regras["competencia_ano"] = int(competencia_ano)
-                    if competencia_mes.isdigit():
-                        regras["competencia_mes"] = int(competencia_mes)
 
-                    # valida datas
-                    di = datetime.strptime(data_inicio, "%Y-%m-%d").date()
-                    df = datetime.strptime(data_fim, "%Y-%m-%d").date()
+                    vi = datetime.strptime(data_inicio, "%Y-%m-%d").date() if data_inicio else date(int(ano), int(mes), 1)
+                    vf = datetime.strptime(data_fim, "%Y-%m-%d").date() if data_fim else date(int(ano), int(mes), 28)
 
                     if acao == "criar":
-                        c = CampanhaV2Master(
+                        obj = CampanhaV2Master(
                             titulo=titulo,
                             tipo="RANKING_VALOR",
+                            escopo=("EMP" if escopo_tipo == "EMPS" else "GLOBAL"),
+                            emps_json=(json.dumps([int(e) for e in emps_sel]) if escopo_tipo == "EMPS" else None),
+                            vigencia_ini=vi,
+                            vigencia_fim=vf,
                             ativo=ativo,
                             regras_json=json.dumps(regras, ensure_ascii=False),
                         )
-                        # compat: se existir campo escopo/vigencia no schema antigo
-                        if hasattr(CampanhaV2Master, "escopo"):
-                            c.escopo = "GLOBAL" if escopo_tipo == "GLOBAL" else "EMP"
-                        if hasattr(CampanhaV2Master, "vigencia_ini"):
-                            c.vigencia_ini = di
-                            c.vigencia_fim = df
-                        db.add(c)
-                        db.flush()
-                        cid = c.id
-                        # audit
+                        db.add(obj)
+                        db.commit()
+                        ok = "Ranking por marca criado."
                         try:
-                            db.add(CampanhaV2Audit(
-                                campanha_id=cid,
-                                competencia_ano=ano,
-                                competencia_mes=mes,
-                                acao="ranking_marca_create",
-                                actor=session.get("username") or "admin",
-                                payload_json=json.dumps({"marca": marca, "min_total": min_total, "premios": premios}, ensure_ascii=False),
-                            ))
+                            db.add(CampanhaV2Audit(campanha_id=obj.id, acao="config_create", actor=_user() or "admin", payload_json=obj.regras_json))
+                            db.commit()
                         except Exception:
-                            pass
+                            db.rollback()
                     else:
-                        c = db.query(CampanhaV2Master).filter(CampanhaV2Master.id == cid).first()
-                        if not c:
-                            raise Exception("Campanha não encontrada.")
-                        c.titulo = titulo
-                        c.ativo = ativo
-                        c.tipo = "RANKING_VALOR"
-                        c.regras_json = json.dumps(regras, ensure_ascii=False)
-                        if hasattr(c, "escopo"):
-                            c.escopo = "GLOBAL" if escopo_tipo == "GLOBAL" else "EMP"
-                        if hasattr(c, "vigencia_ini"):
-                            c.vigencia_ini = di
-                            c.vigencia_fim = df
+                        obj = db.query(CampanhaV2Master).filter(CampanhaV2Master.id == cid).first()
+                        if not obj:
+                            raise Exception("Campanha não encontrada")
+                        obj.titulo = titulo
+                        obj.tipo = "RANKING_VALOR"
+                        obj.escopo = ("EMP" if escopo_tipo == "EMPS" else "GLOBAL")
+                        obj.emps_json = (json.dumps([int(e) for e in emps_sel]) if escopo_tipo == "EMPS" else None)
+                        obj.vigencia_ini = vi
+                        obj.vigencia_fim = vf
+                        obj.ativo = ativo
+                        obj.regras_json = json.dumps(regras, ensure_ascii=False)
+                        db.commit()
+                        ok = "Ranking por marca atualizado."
                         try:
-                            db.add(CampanhaV2Audit(
-                                campanha_id=cid,
-                                competencia_ano=ano,
-                                competencia_mes=mes,
-                                acao="ranking_marca_update",
-                                actor=session.get("username") or "admin",
-                                payload_json=json.dumps({"marca": marca, "min_total": min_total, "premios": premios}, ensure_ascii=False),
-                            ))
+                            db.add(CampanhaV2Audit(campanha_id=obj.id, acao="config_update", actor=_user() or "admin", payload_json=obj.regras_json))
+                            db.commit()
                         except Exception:
-                            pass
-
-                    # scope EMPs
-                    emps_sel = request.form.getlist("emp")
-                    # normalize to int where possible
-                    db.query(CampanhaV2ScopeEMP).filter(CampanhaV2ScopeEMP.campanha_id == cid).delete(synchronize_session=False)
-                    if escopo_tipo == "EMPS":
-                        for emp_code in emps_sel:
-                            emp_code = str(emp_code).strip()
-                            if not emp_code:
-                                continue
-                            try:
-                                db.add(CampanhaV2ScopeEMP(campanha_id=cid, emp=int(emp_code)))
-                            except Exception:
-                                # se emp não for numérico, tenta mapear por código
-                                try:
-                                    emp_obj = db.query(Emp).filter(Emp.codigo == emp_code).first()
-                                    if emp_obj:
-                                        db.add(CampanhaV2ScopeEMP(campanha_id=cid, emp=int(emp_obj.codigo)))
-                                except Exception:
-                                    continue
-
-                    db.commit()
-                    flash("Campanha de Ranking por Marca salva.", "success")
-                    return redirect(url_for("admin_campanhas_ranking_marca", ano=ano, mes=mes))
+                            db.rollback()
 
                 elif acao == "remover":
                     cid = int(request.form.get("id") or 0)
-                    db.query(CampanhaV2ScopeEMP).filter(CampanhaV2ScopeEMP.campanha_id == cid).delete(synchronize_session=False)
                     db.query(CampanhaV2Resultado).filter(CampanhaV2Resultado.campanha_id == cid).delete(synchronize_session=False)
                     db.query(CampanhaV2Master).filter(CampanhaV2Master.id == cid).delete(synchronize_session=False)
-                    try:
-                        db.add(CampanhaV2Audit(
-                            campanha_id=cid,
-                            competencia_ano=ano,
-                            competencia_mes=mes,
-                            acao="ranking_marca_delete",
-                            actor=session.get("username") or "admin",
-                        ))
-                    except Exception:
-                        pass
                     db.commit()
-                    flash(f"Campanha #{cid} removida.", "success")
-                    return redirect(url_for("admin_campanhas_ranking_marca", ano=ano, mes=mes))
+                    ok = "Ranking removido."
+                    try:
+                        db.add(CampanhaV2Audit(campanha_id=cid, acao="config_delete", actor=_user() or "admin"))
+                        db.commit()
+                    except Exception:
+                        db.rollback()
 
                 elif acao == "recalcular":
-                    actor = session.get("username") or "admin"
-                    recalc_v2_competencia(db, ano=ano, mes=mes, actor=str(actor))
-                    db.commit()
-                    flash(f"Recalculo V2 concluído para {mes}/{ano}.", "success")
-                    return redirect(url_for("admin_campanhas_ranking_marca", ano=ano, mes=mes))
-
+                    # recalcula a competência atual (engine V2 calcula apenas campanhas ativas)
+                    from services.campanhas_v2_engine import recalcular_campanhas_v2
+                    recalcular_campanhas_v2(db, ano=ano, mes=mes, emps_scope=emps_all, force=True)
+                    ok = f"Recalculo executado para {mes:02d}/{ano}."
             except Exception as e:
                 db.rollback()
                 erro = str(e)
 
-        # Listar campanhas do tipo ranking por marca (tipo ranking valor + regras com 'marca')
-        all_camps = db.query(CampanhaV2Master).order_by(CampanhaV2Master.id.desc()).all()
-        campanhas = []
-        for c in all_camps:
-            try:
-                regras = json.loads(c.regras_json or "{}")
-            except Exception:
-                regras = {}
-            marca = (regras.get("marca") or "").strip()
-            premiacao = regras.get("premiacao") or regras.get("premios") or {}
-            min_total = regras.get("min_total") or regras.get("valor_minimo") or 0
-            if (c.tipo or "").upper() == "RANKING_VALOR" and marca:
-                # viewmodel
-                vm = type("C", (), {})()
-                vm.id = c.id
-                vm.titulo = c.titulo
-                vm.marca = marca
-                vm.min_total = float(min_total or 0) if min_total else 0
-                vm.ativo = getattr(c, "ativo", True)
-                # map schema differences
-                vm.data_inicio = getattr(c, "vigencia_ini", None)
-                vm.data_fim = getattr(c, "vigencia_fim", None)
-                vm.competencia_mes = regras.get("competencia_mes")
-                vm.competencia_ano = regras.get("competencia_ano")
-                escopo = getattr(c, "escopo", None)
-                vm.escopo_tipo = "GLOBAL" if str(escopo or "").upper() == "GLOBAL" else "EMPS"
-                campanhas.append(vm)
+        campanhas = (
+            db.query(CampanhaV2Master)
+            .filter(CampanhaV2Master.tipo == "RANKING_VALOR")
+            .order_by(CampanhaV2Master.id.desc())
+            .all()
+        )
 
-        # emps_map
-        ids = [c.id for c in campanhas]
-        emps_map = {cid: [] for cid in ids}
-        if ids:
-            scopes = db.query(CampanhaV2ScopeEMP).filter(CampanhaV2ScopeEMP.campanha_id.in_(ids)).all()
-            for s in scopes:
-                emps_map.setdefault(int(s.campanha_id), []).append(str(s.emp))
-            # ensure sorted unique
-            for cid in list(emps_map.keys()):
-                emps_map[cid] = sorted(list({str(x) for x in emps_map[cid]}), key=lambda x: (len(x), x))
+        emps_map: dict[int, list[str]] = {}
+        premios_map: dict[int, list[dict]] = {}
+        marca_map: dict[int, str] = {}
+        min_map: dict[int, float] = {}
 
-        # premios_map
-        premios_map = {}
         for c in campanhas:
             try:
-                regras = json.loads(db.query(CampanhaV2Master).filter(CampanhaV2Master.id == c.id).first().regras_json or "{}")
+                emps = []
+                if (c.escopo or "").upper() == "EMP":
+                    emps = [str(x) for x in (json.loads(c.emps_json or "[]") or [])]
+                emps_map[int(c.id)] = emps
+            except Exception:
+                emps_map[int(c.id)] = []
+            try:
+                regras = json.loads(c.regras_json or "{}") or {}
             except Exception:
                 regras = {}
-            prem = regras.get("premiacao") or {}
-            top = prem.get("top") or []
-            premios_map[c.id] = [{"posicao": int(x.get("pos") or 0), "valor": float(x.get("valor") or 0)} for x in top if isinstance(x, dict)]
+            marca_map[int(c.id)] = str(regras.get("marca") or "").upper()
+            min_map[int(c.id)] = float(regras.get("min_total") or 0.0)
+            top = regras.get("top") or []
+            premios = []
+            for p in top:
+                try:
+                    premios.append({"posicao": int(p.get("pos")), "valor": float(p.get("valor"))})
+                except Exception:
+                    continue
+            premios.sort(key=lambda x: x.get("posicao", 999999))
+            premios_map[int(c.id)] = premios
 
         return render_template(
             "admin_campanhas_ranking_marca.html",
             campanhas=campanhas,
+            emps_options=emps_options,
             emps_map=emps_map,
             premios_map=premios_map,
-            emps_options=emps_options,
-            mes=mes,
+            marca_map=marca_map,
+            min_map=min_map,
             ano=ano,
+            mes=mes,
             erro=erro,
             ok=ok,
         )
-
-
-
 
 @app.route("/admin/apagar_vendas", methods=["POST"])
 def admin_apagar_vendas():
