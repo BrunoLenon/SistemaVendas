@@ -1807,7 +1807,8 @@ def home():
         return ("OK", 200)
 
     # Browser/users: redirect to the right place
-    if session.get("vendedor") and session.get("role"):
+    # (A sessão usa `usuario` como chave principal do username.)
+    if session.get("usuario") and session.get("role"):
         return redirect(url_for("dashboard"))
     return redirect(url_for("auth.login"))
 

@@ -216,7 +216,9 @@ def recalc_v2_competencia(
     """
     if emps_scope is None:
         emps_scope = []
-    return recalcular_campanhas_v2(db, ano=ano, mes=mes, emps_scope=emps_scope, actor=actor)
+    # A função oficial do motor V2 não recebe `actor`. Mantemos o parâmetro aqui apenas
+    # para compatibilidade com rotas antigas.
+    return recalcular_campanhas_v2(db, ano=ano, mes=mes, emps_scope=emps_scope)
 
 
 
