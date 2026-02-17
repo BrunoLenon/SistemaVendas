@@ -702,70 +702,6 @@ class FechamentoMensal(Base):
     )
 
 
-class FinanceiroPagamento(Base):
-    """Fila consolidada de pagamentos do Financeiro.
-
-    Objetivo:
-    - Centralizar o controle de status (PENDENTE/A_PAGAR/PAGO)
-    - Permitir tela única (multi-EMP) sem depender do tipo da campanha
-    - Manter rastreabilidade via auditoria
-
-    OBS: Mantemos a referência de origem (tipo + id) para sincronizar com as
-    tabelas de resultados (qtd/combo/v2).
-    """
-
-    __tablename__ = "financeiro_pagamentos"
-
-    id = Column(Integer, primary_key=True)
-
-    ano = Column(Integer, nullable=False, index=True)
-    mes = Column(Integer, nullable=False, index=True)
-
-    origem_tipo = Column(String(30), nullable=False, index=True)  # QTD | COMBO | V2
-    origem_id = Column(Integer, nullable=False, index=True)
-
-    campanha_nome = Column(String(200), nullable=True)
-
-    emp = Column(String(30), nullable=True, index=True)  # pode ser NULL/None para GLOBAL
-    vendedor = Column(String(80), nullable=False, index=True)
-
-    valor_premio = Column(Float, nullable=False, default=0.0)
-    status = Column(String(20), nullable=False, default="PENDENTE", index=True)
-    pago_em = Column(DateTime, nullable=True)
-
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
-
-    __table_args__ = (
-        UniqueConstraint("ano", "mes", "origem_tipo", "origem_id", name="uq_fin_pag_origem"),
-        Index("ix_fin_pag_emp_comp", "emp", "ano", "mes"),
-        Index("ix_fin_pag_status_comp", "status", "ano", "mes"),
-    )
-
-
-class FinanceiroPagamentoAudit(Base):
-    """Auditoria de alterações de status em FinanceiroPagamento."""
-
-    __tablename__ = "financeiro_pagamentos_audit"
-
-    id = Column(Integer, primary_key=True)
-    pagamento_id = Column(Integer, nullable=False, index=True)
-
-    ano = Column(Integer, nullable=False, index=True)
-    mes = Column(Integer, nullable=False, index=True)
-    emp = Column(String(30), nullable=True, index=True)
-    vendedor = Column(String(80), nullable=True, index=True)
-
-    origem_tipo = Column(String(30), nullable=False, index=True)
-    origem_id = Column(Integer, nullable=False, index=True)
-
-    status_de = Column(String(20), nullable=True)
-    status_para = Column(String(20), nullable=False)
-
-    actor = Column(String(120), nullable=True)
-    criado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
-
-
 
 
 class AppSetting(Base):
@@ -1018,6 +954,8 @@ CampanhaV2ScopeEMP = CampanhaV2ScopeEMPNew
 
 class FinanceiroPagamento(Base):
     __tablename__ = "financeiro_pagamentos"
+
+    __table_args__ = ({'extend_existing': True},)
 
     id = Column(Integer, primary_key=True)
 
@@ -1293,3 +1231,31 @@ END $$;
     except Exception:
         # Se não tiver permissão ou der algum erro, não derruba o app.
         pass
+
+# ==========================
+# Financeiro Pagamentos Audit (idempotente)
+# ==========================
+
+class FinanceiroPagamentoAudit(Base):
+    __tablename__ = "financeiro_pagamentos_audit"
+    __table_args__ = ({'extend_existing': True},)
+
+    id = Column(Integer, primary_key=True)
+
+    pagamento_id = Column(Integer, nullable=False, index=True)
+    ano = Column(Integer, nullable=False, index=True)
+    mes = Column(Integer, nullable=False, index=True)
+
+    origem_tipo = Column(String(20), nullable=False, index=True)  # V1_QTD | V1_COMBO | V2 | etc
+    origem_id = Column(Integer, nullable=False, index=True)
+
+    emp = Column(String(30), nullable=True, index=True)
+    vendedor = Column(String(80), nullable=True, index=True)
+
+    status_de = Column(String(20), nullable=True)
+    status_para = Column(String(20), nullable=False)
+
+    alterado_por = Column(String(80), nullable=True)  # username
+    alterado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    motivo = Column(Text, nullable=True)
