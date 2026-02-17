@@ -204,8 +204,7 @@ def _idle_timeout():
 #
 # Em produção, mantenha AUTO_MIGRATE=0 e rode migrações de forma controlada.
 if os.getenv("AUTO_MIGRATE", "0") == "1":
-    # IMPORTANTE: não bloqueie o boot do Gunicorn/Render com migração de schema.
-    # Rodamos em background para o /healthz responder imediatamente.
+    # Não bloquear o boot do Gunicorn/Render. Rodar migração em background.
     def _auto_migrate_bg():
         try:
             criar_tabelas()
@@ -215,7 +214,7 @@ if os.getenv("AUTO_MIGRATE", "0") == "1":
 
     try:
         threading.Thread(target=_auto_migrate_bg, daemon=True).start()
-        app.logger.info("AUTO_MIGRATE=1 -> criar_tabelas() agendado em background (não bloqueia boot)")
+        app.logger.info("AUTO_MIGRATE=1 -> criar_tabelas() agendado em background")
     except Exception:
         app.logger.exception("Falha ao iniciar thread de AUTO_MIGRATE=1")
 # Blueprints (organização do app)
