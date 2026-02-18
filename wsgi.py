@@ -1,117 +1,115 @@
+"""WSGI entrypoint PORT-SAFE for Render.
+
+Why this exists:
+- Render does an HTTP port scan + health check very early.
+- If your app import is slow (pandas/pyarrow) or blocks, Gunicorn may be listening
+  but no worker responds yet, causing: "No open HTTP ports detected".
+
+This module returns an immediate lightweight WSGI app that answers:
+- GET/HEAD /healthz -> 200 OK
+- Any path -> 200 (warmup page)
+
+In background, it imports the real Flask app from web/app.py (app:app).
+Once loaded, it proxies all requests to the real app.
+
+If the real app fails to import, it keeps serving warmup and logs the traceback.
+You can temporarily expose the traceback at /__boot_error by setting:
+  BOOT_ERROR_PUBLIC=1
+"""
+
+from __future__ import annotations
+
 import os
 import sys
+import time
 import threading
 import traceback
-import importlib
+from typing import Optional, Callable
 
-# -----------------------------------------------------------------------------
-# Render-safe WSGI bootstrap
-# - Responde imediatamente em /healthz e / para o port-scan/healthcheck do Render.
-# - Carrega o app real (web/app.py -> variavel 'app') em background.
-# - Evita travar o boot por imports pesados no startup.
-# -----------------------------------------------------------------------------
+from flask import Flask, Response
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-WEB_DIR = os.path.join(BASE_DIR, "web")
-
-# Garante que `import app` encontre SistemaVendas/web/app.py
-if WEB_DIR not in sys.path:
-    sys.path.insert(0, WEB_DIR)
-
-_real_app = None
-_real_app_error = None
-_loader_started = False
-_loader_lock = threading.Lock()
+# --- bootstrap web app (fast) ---
+_bootstrap = Flask("bootstrap")
+_started_at = time.time()
+_real_wsgi: Optional[Callable] = None
+_boot_error: Optional[str] = None
 
 
-def _load_real_app():
-    global _real_app, _real_app_error
-    try:
-        mod = importlib.import_module("app")
-        flask_app = getattr(mod, "app", None)
-        if flask_app is None:
-            raise RuntimeError("Nao encontrei a variavel 'app' dentro de web/app.py")
-        _real_app = flask_app
-    except Exception:
-        _real_app_error = traceback.format_exc()
+@_bootstrap.route("/healthz", methods=["GET", "HEAD"])  # Render health check
+def healthz():
+    # Always return 200 so deploy doesn't fail while the real app warms up.
+    return "OK", 200
 
 
-def _start_loader():
-    global _loader_started
-    if _loader_started:
-        return
-    with _loader_lock:
-        if _loader_started:
-            return
-        _loader_started = True
-        t = threading.Thread(target=_load_real_app, daemon=True)
-        t.start()
-
-
-def _respond(start_response, status: str, body: bytes, headers=None):
-    headers = headers or []
-    if not any(h[0].lower() == "content-type" for h in headers):
-        headers.append(("Content-Type", "text/plain; charset=utf-8"))
-    headers.append(("Content-Length", str(len(body))))
-    start_response(status, headers)
-    return [body]
-
-
-def _warmup_html() -> bytes:
-    return (
-        "<!doctype html>\n"
-        "<html lang='pt-br'>\n"
-        "<head>\n"
-        "  <meta charset='utf-8'/>\n"
-        "  <meta name='viewport' content='width=device-width, initial-scale=1'/>\n"
-        "  <meta http-equiv='refresh' content='2;url=/login'/>\n"
-        "  <title>SistemaVendas - Iniciando</title>\n"
-        "  <style>body{font-family:system-ui,Segoe UI,Arial;margin:40px} .box{max-width:760px} code{background:#f2f2f2;padding:2px 6px;border-radius:6px}</style>\n"
-        "</head>\n"
-        "<body>\n"
-        "  <div class='box'>\n"
-        "    <h2>SistemaVendas está iniciando…</h2>\n"
-        "    <p>O servidor já está no ar. Estou carregando o aplicativo. Em instantes você será redirecionado para <code>/login</code>.</p>\n"
-        "    <p>Se não redirecionar automaticamente, aperte F5.</p>\n"
-        "  </div>\n"
-        "</body>\n"
-        "</html>\n"
-    ).encode("utf-8")
-
-
-# WSGI callable
-def app(environ, start_response):
-    path = environ.get("PATH_INFO") or "/"
-
-    # Healthcheck do Render
-    if path == "/healthz":
-        return _respond(start_response, "200 OK", b"OK")
-
-    # Inicia loader em background sem bloquear
-    _start_loader()
-
-    # Se o app real carregou, delega
-    if _real_app is not None:
-        return _real_app(environ, start_response)
-
-    # Se o app real deu erro, exponha o traceback (facilita corrigir)
-    if _real_app_error:
-        body = ("ERRO AO INICIAR APLICACAO\n\n" + _real_app_error).encode("utf-8")
-        return _respond(start_response, "500 Internal Server Error", body)
-
-    # Enquanto carrega, responda rapido para o port-scan do Render
-    if path == "/" or path == "":
-        body = _warmup_html()
-        return _respond(
-            start_response,
-            "200 OK",
-            body,
-            headers=[("Content-Type", "text/html; charset=utf-8")],
-        )
-
-    return _respond(
-        start_response,
-        "503 Service Unavailable",
-        b"Warming up...",
-        headers=[("Retry-After", "3")],
+@_bootstrap.route("/__boot_status", methods=["GET", "HEAD"])
+def boot_status():
+    ready = _real_wsgi is not None
+    err = _boot_error is not None
+    body = (
+        f"ready={int(ready)}\n"
+        f"error={int(err)}\n"
+        f"uptime_s={int(time.time() - _started_at)}\n"
     )
+    return Response(body, mimetype="text/plain")
+
+
+@_bootstrap.route("/__boot_error", methods=["GET", "HEAD"])
+def boot_error():
+    if os.getenv("BOOT_ERROR_PUBLIC") != "1":
+        return Response("disabled", status=403, mimetype="text/plain")
+    if _boot_error:
+        return Response(_boot_error, status=500, mimetype="text/plain")
+    return Response("no error", mimetype="text/plain")
+
+
+@_bootstrap.route("/", defaults={"path": ""}, methods=[
+    "GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"
+])
+@_bootstrap.route("/<path:path>", methods=[
+    "GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"
+])
+def warmup(path: str):
+    # Friendly warmup page; once real app loads, proxy will take over.
+    # Keep it light & always 200 so Render port scan succeeds.
+    msg = (
+        "SistemaVendas está iniciando…\n\n"
+        "Se esta tela permanecer por muito tempo, verifique /__boot_status\n"
+    )
+    return Response(msg, mimetype="text/plain")
+
+
+def _load_real_app() -> None:
+    """Import the real Flask app without blocking Render health/port checks."""
+    global _real_wsgi, _boot_error
+    try:
+        root = os.path.dirname(os.path.abspath(__file__))
+        web_dir = os.path.join(root, "web")
+        if web_dir not in sys.path:
+            sys.path.insert(0, web_dir)
+
+        # Import web/app.py as module "app" (because web_dir is on sys.path)
+        import importlib
+
+        real_module = importlib.import_module("app")
+        flask_app = getattr(real_module, "app", None)
+        if flask_app is None:
+            raise RuntimeError("Não encontrei 'app' em web/app.py (esperado: app = Flask(...))")
+
+        _real_wsgi = flask_app.wsgi_app
+        print("[BOOT] App real carregado com sucesso.")
+
+    except Exception:
+        _boot_error = traceback.format_exc()
+        print("[BOOT] ERRO ao carregar app real:")
+        print(_boot_error)
+
+
+# Start background import ASAP.
+threading.Thread(target=_load_real_app, daemon=True).start()
+
+
+def app(environ, start_response):
+    """WSGI callable for Gunicorn: wsgi:app"""
+    if _real_wsgi is not None:
+        return _real_wsgi(environ, start_response)
+    return _bootstrap.wsgi_app(environ, start_response)
