@@ -150,7 +150,7 @@
                   <input type="hidden" name="mes" value="{{ mes_selected }}">
                   <button class="btn btn-sm btn-outline-primary">Recalcular {{ mes_selected }}/{{ ano_selected }}</button>
                 </form>
-                <form method="post" action="{{ url_for(\'admin_campanhas_ranking_marca\') }}" class="d-inline" onsubmit="return confirm(\'Excluir esta campanha de ranking por marca? Isso removerá também os resultados/snapshots.\');">
+                <form method="post" action="{{ url_for('admin_campanhas_ranking_marca') }}" class="d-inline" onsubmit="return confirm('Excluir esta campanha de ranking por marca? Isso removerá também os resultados/snapshots.');">
                   <input type="hidden" name="action" value="remover">
                   <input type="hidden" name="campanha_id" value="{{ c.id }}">
                   <button class="btn btn-sm btn-outline-danger">Excluir</button>
