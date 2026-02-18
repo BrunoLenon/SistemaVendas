@@ -305,7 +305,7 @@ def recalc_ranking_marca(
         )
         .filter(Venda.movimento >= ini)
         .filter(Venda.movimento <= fim)
-        .filter(func.upper(func.coalesce(Venda.marca, "")) == marca)
+        .filter(func.upper(func.trim(func.coalesce(Venda.marca, ""))) == marca)
     )
 
     if scope_mode == "POR_EMP":
