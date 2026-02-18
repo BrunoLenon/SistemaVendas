@@ -20,6 +20,7 @@ from datetime import date, datetime
 from typing import Any, Iterable
 
 from sqlalchemy import func, and_, or_, cast, String
+
 from db import (
     SessionLocal,
     Venda,
@@ -290,6 +291,8 @@ def recalc_ranking_marca(
     ano: int,
     mes: int,
     actor: str = "",
+    periodo_ini: str | date | datetime | None = None,
+    periodo_fim: str | date | datetime | None = None,
 ) -> dict[str, Any]:
     """Calcula e grava snapshot em campanhas_v2_resultados para a competência."""
     logger.info(
@@ -336,6 +339,16 @@ def recalc_ranking_marca(
 
     # Período base do mês
     ini_mes, fim_mes = _month_bounds(ano, mes)
+
+    # Se o admin informou um PERÍODO explícito para recalcular, usamos ele como base,
+    # mas ainda respeitamos a vigência da campanha (clamp) e o escopo POR_EMP.
+    p_ini = _parse_date(periodo_ini) if periodo_ini else None
+    p_fim = _parse_date(periodo_fim) if periodo_fim else None
+    if p_ini or p_fim:
+        base_ini = p_ini or ini_mes
+        base_fim = p_fim or fim_mes
+        ini_mes, fim_mes = base_ini, base_fim
+        logger.info(f"Período base (sobrescrito por período informado): {ini_mes} até {fim_mes}")
     logger.info(f"Período base: {ini_mes} até {fim_mes}")
 
     # Ajusta pela vigência (se definida)
@@ -378,6 +391,7 @@ def recalc_ranking_marca(
 
     # PRIMEIRO: verificar se existem vendas da marca no período
     logger.info("Verificando vendas da marca %s no período...", marca)
+    
     q_count = (
         db.query(func.count())
         .select_from(Venda)
@@ -386,12 +400,14 @@ def recalc_ranking_marca(
         .filter(func.upper(Venda.marca) == marca)
     )
 
-    # Se o escopo for POR_EMP, filtra por EMPs (emp no banco pode ser TEXT)
+    # Aplica filtro de escopo EMP também na contagem
     if scope_mode == "POR_EMP" and scope_emps:
-        scope_emps_txt = [str(int(e)) for e in scope_emps]
-        q_count = q_count.filter(cast(Venda.emp, String).in_(scope_emps_txt))
+        scope_emps_str = [str(int(x)) for x in scope_emps]
+        q_count = q_count.filter(cast(Venda.emp, String).in_(scope_emps_str))
 
-    count_vendas = (q_count.scalar() or 0)
+    count_vendas = q_count.scalar() or 0
+
+
     logger.info(f"Total de vendas da marca {marca} no período: {count_vendas}")
 
     if int(count_vendas) == 0:
@@ -437,8 +453,8 @@ def recalc_ranking_marca(
 
     # Aplica filtro de escopo EMP
     if scope_mode == "POR_EMP" and scope_emps:
-        scope_emps_txt = [str(int(e)) for e in scope_emps]
-        q = q.filter(cast(Venda.emp, String).in_(scope_emps_txt))
+        scope_emps_str = [str(int(x)) for x in scope_emps]
+        q = q.filter(cast(Venda.emp, String).in_(scope_emps_str))
         logger.info(f"Aplicado filtro de EMPs: {scope_emps}")
 
     q = q.group_by(Venda.vendedor, Venda.emp)
@@ -566,4 +582,3 @@ def recalc_ranking_marca(
 
     logger.info(f"Recálculo finalizado: {resultado}")
     return resultado
-
