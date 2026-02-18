@@ -21,6 +21,7 @@
     {% endfor %}
   {% endif %}
 
+  <!-- Formulário de NOVA CAMPANHA -->
   <div class="card mb-3">
     <div class="card-header d-flex flex-wrap gap-2 align-items-center justify-content-between">
       <strong>Nova campanha (Ranking por Marca)</strong>
@@ -93,6 +94,7 @@
     </div>
   </div>
 
+  <!-- Lista de CAMPANHAS -->
   <div class="card">
     <div class="card-header d-flex flex-wrap gap-2 align-items-center justify-content-between">
       <strong>Campanhas cadastradas</strong>
@@ -120,6 +122,7 @@
               <th>Nome</th>
               <th>Marca</th>
               <th>Escopo</th>
+              <th>EMPs</th>
               <th>Mínimo</th>
               <th>Prêmios</th>
               <th>Vigência</th>
@@ -133,43 +136,147 @@
               <td>{{ c.nome }}</td>
               <td><code>{{ c.marca_alvo }}</code></td>
               <td>{{ c.scope_mode }}</td>
+              <td>
+                {% if c.scope_mode == 'POR_EMP' %}
+                  {% if emps_map and emps_map[c.id] %}
+                    {{ emps_map[c.id] | join(', ') }}
+                  {% else %}
+                    <span class="text-danger">Nenhuma EMP!</span>
+                  {% endif %}
+                {% else %}
+                  Todas
+                {% endif %}
+              </td>
               <td>R$ {{ "%.2f"|format(c.base_minima_valor or 0) }}</td>
               <td>
-                1º R$ {{ "%.2f"|format(c.premio_top1 or 0) }} /
-                2º R$ {{ "%.2f"|format(c.premio_top2 or 0) }} /
+                1º R$ {{ "%.2f"|format(c.premio_top1 or 0) }}<br>
+                2º R$ {{ "%.2f"|format(c.premio_top2 or 0) }}<br>
                 3º R$ {{ "%.2f"|format(c.premio_top3 or 0) }}
               </td>
               <td>
-                {{ c.vigencia_inicio.strftime('%d/%m/%Y') if c.vigencia_inicio else '-' }} → 
-                {{ c.vigencia_fim.strftime('%d/%m/%Y') if c.vigencia_fim else '-' }}
+                {{ c.vigencia_inicio.strftime('%d/%m/%Y') if c.vigencia_inicio else '-' }}<br>
+                → {{ c.vigencia_fim.strftime('%d/%m/%Y') if c.vigencia_fim else '-' }}
               </td>
               <td class="text-end">
-                <!-- Formulário de RECÁLCULO -->
-                <form method="post" action="{{ url_for('admin_campanhas_ranking_marca') }}" class="d-inline">
-                  <input type="hidden" name="action" value="recalcular">
-                  <input type="hidden" name="id" value="{{ c.id }}">
-                  <input type="hidden" name="ano" value="{{ ano }}">
-                  <input type="hidden" name="mes" value="{{ mes }}">
-                  <button class="btn btn-sm btn-outline-primary" type="submit">
-                    Recalcular {{ "%02d"|format(mes) }}/{{ ano }}
+                <div class="btn-group-vertical btn-group-sm">
+                  <!-- Botão EDITAR (NOVO!) -->
+                  <button type="button" class="btn btn-outline-warning" data-bs-toggle="modal" data-bs-target="#editModal{{ c.id }}">
+                    Editar
                   </button>
-                </form>
 
-                <!-- Formulário de EXCLUSÃO -->
-                <form method="post" action="{{ url_for('admin_campanhas_ranking_marca') }}" class="d-inline" 
-                      onsubmit="return confirm('Excluir esta campanha de ranking por marca? Isso removerá também os resultados/snapshots.');">
-                  <input type="hidden" name="action" value="remover">
-                  <input type="hidden" name="id" value="{{ c.id }}">
-                  <button class="btn btn-sm btn-outline-danger" type="submit">Excluir</button>
-                </form>
+                  <!-- Formulário de RECÁLCULO -->
+                  <form method="post" action="{{ url_for('admin_campanhas_ranking_marca') }}" class="d-inline">
+                    <input type="hidden" name="action" value="recalcular">
+                    <input type="hidden" name="id" value="{{ c.id }}">
+                    <input type="hidden" name="ano" value="{{ ano }}">
+                    <input type="hidden" name="mes" value="{{ mes }}">
+                    <button class="btn btn-sm btn-outline-primary w-100" type="submit">
+                      Recalcular {{ "%02d"|format(mes) }}/{{ ano }}
+                    </button>
+                  </form>
 
-                <!-- Link para VER RANKING -->
-                <a class="btn btn-sm btn-outline-secondary" 
-                   href="{{ url_for('campanhas_ranking_marca', campanha_id=c.id, ano=ano, mes=mes) }}">
-                  Ver ranking
-                </a>
+                  <!-- Formulário de EXCLUSÃO -->
+                  <form method="post" action="{{ url_for('admin_campanhas_ranking_marca') }}" class="d-inline" 
+                        onsubmit="return confirm('Excluir esta campanha de ranking por marca? Isso removerá também os resultados/snapshots.');">
+                    <input type="hidden" name="action" value="remover">
+                    <input type="hidden" name="id" value="{{ c.id }}">
+                    <button class="btn btn-sm btn-outline-danger w-100" type="submit">Excluir</button>
+                  </form>
+
+                  <!-- Link para VER RANKING -->
+                  <a class="btn btn-sm btn-outline-secondary w-100" 
+                     href="{{ url_for('campanhas_ranking_marca', campanha_id=c.id, ano=ano, mes=mes) }}">
+                    Ver ranking
+                  </a>
+                </div>
               </td>
             </tr>
+
+            <!-- Modal de EDIÇÃO -->
+            <div class="modal fade" id="editModal{{ c.id }}" tabindex="-1">
+              <div class="modal-dialog modal-lg">
+                <div class="modal-content">
+                  <div class="modal-header">
+                    <h5 class="modal-title">Editar Campanha #{{ c.id }} - {{ c.nome }}</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                  </div>
+                  <form method="post" action="{{ url_for('admin_campanhas_ranking_marca') }}">
+                    <div class="modal-body">
+                      <input type="hidden" name="action" value="editar">
+                      <input type="hidden" name="id" value="{{ c.id }}">
+
+                      <div class="row g-3">
+                        <div class="col-12">
+                          <label class="form-label">Nome</label>
+                          <input class="form-control" name="nome" value="{{ c.nome }}" required>
+                        </div>
+
+                        <div class="col-12 col-md-6">
+                          <label class="form-label">Marca (alvo)</label>
+                          <input class="form-control" name="marca_alvo" value="{{ c.marca_alvo }}" required>
+                        </div>
+
+                        <div class="col-12 col-md-6">
+                          <label class="form-label">Escopo</label>
+                          <select class="form-select" name="scope_mode">
+                            <option value="GLOBAL" {% if c.scope_mode == 'GLOBAL' %}selected{% endif %}>GLOBAL (todas EMPs)</option>
+                            <option value="POR_EMP" {% if c.scope_mode == 'POR_EMP' %}selected{% endif %}>POR_EMP (selecionar EMPs)</option>
+                          </select>
+                        </div>
+
+                        <div class="col-12 col-md-3">
+                          <label class="form-label">Mínimo (R$)</label>
+                          <input class="form-control" type="text" name="base_minima_valor" value="{{ "%.2f"|format(c.base_minima_valor or 0) }}">
+                        </div>
+
+                        <div class="col-12 col-md-3">
+                          <label class="form-label">Prêmio 1º (R$)</label>
+                          <input class="form-control" type="text" name="premio_top1" value="{{ "%.2f"|format(c.premio_top1 or 0) }}" required>
+                        </div>
+
+                        <div class="col-12 col-md-3">
+                          <label class="form-label">Prêmio 2º (R$)</label>
+                          <input class="form-control" type="text" name="premio_top2" value="{{ "%.2f"|format(c.premio_top2 or 0) }}">
+                        </div>
+
+                        <div class="col-12 col-md-3">
+                          <label class="form-label">Prêmio 3º (R$)</label>
+                          <input class="form-control" type="text" name="premio_top3" value="{{ "%.2f"|format(c.premio_top3 or 0) }}">
+                        </div>
+
+                        <div class="col-12 col-md-6">
+                          <label class="form-label">Vigência início</label>
+                          <input class="form-control" type="date" name="vigencia_inicio" value="{{ c.vigencia_inicio }}">
+                        </div>
+
+                        <div class="col-12 col-md-6">
+                          <label class="form-label">Vigência fim</label>
+                          <input class="form-control" type="date" name="vigencia_fim" value="{{ c.vigencia_fim }}">
+                        </div>
+
+                        <div class="col-12">
+                          <label class="form-label">EMPs do escopo (apenas se POR_EMP)</label>
+                          {{ multiselect("emps", emps_options or [], emps_map[c.id] if emps_map and emps_map[c.id] else [], placeholder="Selecione uma ou mais EMPs") }}
+                        </div>
+
+                        <div class="col-12">
+                          <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="ativo" id="ativo{{ c.id }}" {% if c.ativo %}checked{% endif %}>
+                            <label class="form-check-label" for="ativo{{ c.id }}">
+                              Campanha Ativa
+                            </label>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="modal-footer">
+                      <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                      <button type="submit" class="btn btn-primary">Salvar alterações</button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            </div>
             {% endfor %}
           </tbody>
         </table>
