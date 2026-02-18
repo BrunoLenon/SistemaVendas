@@ -3,25 +3,26 @@
 
 {% block content %}
 <div class="container-fluid py-3">
+
   <div class="d-flex flex-wrap gap-2 align-items-center justify-content-between mb-3">
     <div>
       <h4 class="mb-0">Campanhas — Ranking por Marca</h4>
-      <small class="text-muted">Cadastro (Admin) + Snapshot (resultados congelados por mês/ano)</small>
+      <small class="text-muted">Cadastro (Admin) + recálculo e snapshot de resultados</small>
     </div>
     <div class="d-flex flex-wrap gap-2">
       <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('campanhas_qtd') }}">Campanhas</a>
-      <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('relatorio_campanhas') }}">Relatório de Campanhas</a>
+      <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('relatorio_campanhas') }}">Relatório</a>
       <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('dashboard') }}">Dashboard</a>
     </div>
   </div>
 
-  {% if flash_messages %}
-    {% for c, m in flash_messages %}
-      <div class="alert alert-{{ c }} py-2">{{ m }}</div>
-    {% endfor %}
+  {% if erro %}
+    <div class="alert alert-danger py-2">{{ erro }}</div>
+  {% endif %}
+  {% if ok %}
+    <div class="alert alert-success py-2">{{ ok }}</div>
   {% endif %}
 
-  <!-- Formulário de NOVA CAMPANHA -->
   <div class="card mb-3">
     <div class="card-header d-flex flex-wrap gap-2 align-items-center justify-content-between">
       <strong>Nova campanha (Ranking por Marca)</strong>
@@ -29,7 +30,7 @@
     </div>
     <div class="card-body">
       <form method="post" action="{{ url_for('admin_campanhas_ranking_marca') }}">
-        <input type="hidden" name="action" value="create">
+        <input type="hidden" name="acao" value="criar">
 
         <div class="row g-3">
           <div class="col-12 col-md-6">
@@ -81,9 +82,16 @@
           </div>
 
           <div class="col-12">
-            <label class="form-label">EMPs do escopo (apenas se POR_EMP)</label>
-            {{ multiselect("emps", emps_options or [], selected_scope_emps or [], placeholder="Selecione uma ou mais EMPs") }}
-            <div class="form-text">Admin sempre vê tudo. Supervisor/Vendedor só enxergam campanhas POR_EMP se estiverem nessas EMPs.</div>
+            {{ multiselect("emps", emps_opts or [], [], label="EMPs do escopo (apenas se POR_EMP)", placeholder="Selecione uma ou mais EMPs") }}
+            <div class="form-text">Se a campanha for GLOBAL, não precisa escolher EMPs.</div>
+          </div>
+
+          <div class="col-12 col-md-3">
+            <label class="form-label">Ativa?</label>
+            <select class="form-select" name="ativo">
+              <option value="1" selected>Sim</option>
+              <option value="0">Não</option>
+            </select>
           </div>
 
           <div class="col-12">
@@ -94,195 +102,202 @@
     </div>
   </div>
 
-  <!-- Lista de CAMPANHAS -->
   <div class="card">
     <div class="card-header d-flex flex-wrap gap-2 align-items-center justify-content-between">
       <strong>Campanhas cadastradas</strong>
+
       <form class="d-flex gap-2" method="get" action="{{ url_for('admin_campanhas_ranking_marca') }}">
-        <select class="form-select form-select-sm" name="ano" style="width: 110px;">
+        <select class="form-select form-select-sm" name="ano" style="width: 120px;">
           {% for y in anos %}
             <option value="{{ y }}" {% if y == ano %}selected{% endif %}>{{ y }}</option>
           {% endfor %}
         </select>
-        <select class="form-select form-select-sm" name="mes" style="width: 110px;">
-          {% for m in meses %}
+        <select class="form-select form-select-sm" name="mes" style="width: 120px;">
+          {% for m in range(1,13) %}
             <option value="{{ m }}" {% if m == mes %}selected{% endif %}>{{ "%02d"|format(m) }}</option>
           {% endfor %}
         </select>
-        <button class="btn btn-outline-secondary btn-sm">Competência</button>
+        <button class="btn btn-outline-secondary btn-sm">Competência (UI)</button>
       </form>
     </div>
+
     <div class="card-body">
       {% if campanhas %}
       <div class="table-responsive">
         <table class="table table-sm align-middle">
           <thead>
             <tr>
-              <th>ID</th>
-              <th>Nome</th>
+              <th style="width:60px;">ID</th>
+              <th>Campanha</th>
               <th>Marca</th>
-              <th>Escopo</th>
-              <th>EMPs</th>
-              <th>Mínimo</th>
-              <th>Prêmios</th>
               <th>Vigência</th>
-              <th class="text-end">Ações</th>
+              <th>Escopo</th>
+              <th style="width:110px;">Mínimo</th>
+              <th style="width:140px;">Prêmios</th>
+              <th style="width:340px;">Ações</th>
             </tr>
           </thead>
           <tbody>
             {% for c in campanhas %}
-            <tr>
-              <td>{{ c.id }}</td>
-              <td>{{ c.nome }}</td>
-              <td><code>{{ c.marca_alvo }}</code></td>
-              <td>{{ c.scope_mode }}</td>
-              <td>
-                {% if c.scope_mode == 'POR_EMP' %}
-                  {% if emps_map and emps_map[c.id] %}
-                    {{ emps_map[c.id] | join(', ') }}
-                  {% else %}
-                    <span class="text-danger">Nenhuma EMP!</span>
+              {% set scope = (c.scope_mode or "GLOBAL")|upper %}
+              {% set emps_sel = emps_map.get(c.id, []) %}
+              <tr>
+                <td><span class="badge bg-secondary">{{ c.id }}</span></td>
+                <td>
+                  <div class="fw-semibold">{{ c.nome }}</div>
+                  <div class="text-muted small">{% if c.ativo %}Ativa{% else %}Inativa{% endif %}</div>
+                </td>
+                <td><code>{{ c.marca_alvo }}</code></td>
+                <td class="small">
+                  {% if c.vigencia_inicio %}{{ c.vigencia_inicio }}{% else %}-{% endif %}
+                  →
+                  {% if c.vigencia_fim %}{{ c.vigencia_fim }}{% else %}-{% endif %}
+                </td>
+                <td class="small">
+                  <div><span class="badge {% if scope == 'GLOBAL' %}bg-success{% else %}bg-warning text-dark{% endif %}">{{ scope }}</span></div>
+                  {% if scope == "POR_EMP" %}
+                    <div class="text-muted small mt-1">EMPs: {{ emps_sel|join(", ") if emps_sel else "—" }}</div>
                   {% endif %}
-                {% else %}
-                  Todas
-                {% endif %}
-              </td>
-              <td>R$ {{ "%.2f"|format(c.base_minima_valor or 0) }}</td>
-              <td>
-                1º R$ {{ "%.2f"|format(c.premio_top1 or 0) }}<br>
-                2º R$ {{ "%.2f"|format(c.premio_top2 or 0) }}<br>
-                3º R$ {{ "%.2f"|format(c.premio_top3 or 0) }}
-              </td>
-              <td>
-                {{ c.vigencia_inicio.strftime('%d/%m/%Y') if c.vigencia_inicio else '-' }}<br>
-                → {{ c.vigencia_fim.strftime('%d/%m/%Y') if c.vigencia_fim else '-' }}
-              </td>
-              <td class="text-end">
-                <div class="btn-group-vertical btn-group-sm">
-                  <!-- Botão EDITAR (NOVO!) -->
-                  <button type="button" class="btn btn-outline-warning" data-bs-toggle="modal" data-bs-target="#editModal{{ c.id }}">
-                    Editar
-                  </button>
+                </td>
+                <td>R$ {{ "%.2f"|format(c.base_minima_valor or 0) }}</td>
+                <td class="small">
+                  1º: <b>R$ {{ "%.2f"|format(c.premio_top1 or 0) }}</b><br>
+                  2º: R$ {{ "%.2f"|format(c.premio_top2 or 0) }}<br>
+                  3º: R$ {{ "%.2f"|format(c.premio_top3 or 0) }}
+                </td>
+                <td>
+                  <div class="d-flex flex-wrap gap-2">
 
-                  <!-- Formulário de RECÁLCULO -->
-                  <form method="post" action="{{ url_for('admin_campanhas_ranking_marca') }}" class="d-inline">
-                    <input type="hidden" name="action" value="recalcular">
-                    <input type="hidden" name="id" value="{{ c.id }}">
-                    <input type="hidden" name="ano" value="{{ ano }}">
-                    <input type="hidden" name="mes" value="{{ mes }}">
-                    <button class="btn btn-sm btn-outline-primary w-100" type="submit">
-                      Recalcular {{ "%02d"|format(mes) }}/{{ ano }}
-                    </button>
-                  </form>
+                    <details class="w-100">
+                      <summary class="btn btn-outline-primary btn-sm">Recalcular</summary>
+                      <div class="border rounded-3 p-2 mt-2 bg-body-tertiary">
+                        <form method="post" action="{{ url_for('admin_campanhas_ranking_marca') }}" class="row g-2 align-items-end">
+                          <input type="hidden" name="acao" value="recalcular">
+                          <input type="hidden" name="id" value="{{ c.id }}">
 
-                  <!-- Formulário de EXCLUSÃO -->
-                  <form method="post" action="{{ url_for('admin_campanhas_ranking_marca') }}" class="d-inline" 
-                        onsubmit="return confirm('Excluir esta campanha de ranking por marca? Isso removerá também os resultados/snapshots.');">
-                    <input type="hidden" name="action" value="remover">
-                    <input type="hidden" name="id" value="{{ c.id }}">
-                    <button class="btn btn-sm btn-outline-danger w-100" type="submit">Excluir</button>
-                  </form>
-
-                  <!-- Link para VER RANKING -->
-                  <a class="btn btn-sm btn-outline-secondary w-100" 
-                     href="{{ url_for('campanhas_ranking_marca', campanha_id=c.id, ano=ano, mes=mes) }}">
-                    Ver ranking
-                  </a>
-                </div>
-              </td>
-            </tr>
-
-            <!-- Modal de EDIÇÃO -->
-            <div class="modal fade" id="editModal{{ c.id }}" tabindex="-1">
-              <div class="modal-dialog modal-lg">
-                <div class="modal-content">
-                  <div class="modal-header">
-                    <h5 class="modal-title">Editar Campanha #{{ c.id }} - {{ c.nome }}</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                  </div>
-                  <form method="post" action="{{ url_for('admin_campanhas_ranking_marca') }}">
-                    <div class="modal-body">
-                      <input type="hidden" name="action" value="editar">
-                      <input type="hidden" name="id" value="{{ c.id }}">
-
-                      <div class="row g-3">
-                        <div class="col-12">
-                          <label class="form-label">Nome</label>
-                          <input class="form-control" name="nome" value="{{ c.nome }}" required>
-                        </div>
-
-                        <div class="col-12 col-md-6">
-                          <label class="form-label">Marca (alvo)</label>
-                          <input class="form-control" name="marca_alvo" value="{{ c.marca_alvo }}" required>
-                        </div>
-
-                        <div class="col-12 col-md-6">
-                          <label class="form-label">Escopo</label>
-                          <select class="form-select" name="scope_mode">
-                            <option value="GLOBAL" {% if c.scope_mode == 'GLOBAL' %}selected{% endif %}>GLOBAL (todas EMPs)</option>
-                            <option value="POR_EMP" {% if c.scope_mode == 'POR_EMP' %}selected{% endif %}>POR_EMP (selecionar EMPs)</option>
-                          </select>
-                        </div>
-
-                        <div class="col-12 col-md-3">
-                          <label class="form-label">Mínimo (R$)</label>
-                          <input class="form-control" type="text" name="base_minima_valor" value="{{ "%.2f"|format(c.base_minima_valor or 0) }}">
-                        </div>
-
-                        <div class="col-12 col-md-3">
-                          <label class="form-label">Prêmio 1º (R$)</label>
-                          <input class="form-control" type="text" name="premio_top1" value="{{ "%.2f"|format(c.premio_top1 or 0) }}" required>
-                        </div>
-
-                        <div class="col-12 col-md-3">
-                          <label class="form-label">Prêmio 2º (R$)</label>
-                          <input class="form-control" type="text" name="premio_top2" value="{{ "%.2f"|format(c.premio_top2 or 0) }}">
-                        </div>
-
-                        <div class="col-12 col-md-3">
-                          <label class="form-label">Prêmio 3º (R$)</label>
-                          <input class="form-control" type="text" name="premio_top3" value="{{ "%.2f"|format(c.premio_top3 or 0) }}">
-                        </div>
-
-                        <div class="col-12 col-md-6">
-                          <label class="form-label">Vigência início</label>
-                          <input class="form-control" type="date" name="vigencia_inicio" value="{{ c.vigencia_inicio }}">
-                        </div>
-
-                        <div class="col-12 col-md-6">
-                          <label class="form-label">Vigência fim</label>
-                          <input class="form-control" type="date" name="vigencia_fim" value="{{ c.vigencia_fim }}">
-                        </div>
-
-                        <div class="col-12">
-                          <label class="form-label">EMPs do escopo (apenas se POR_EMP)</label>
-                          {{ multiselect("emps", emps_options or [], emps_map[c.id] if emps_map and emps_map[c.id] else [], placeholder="Selecione uma ou mais EMPs") }}
-                        </div>
-
-                        <div class="col-12">
-                          <div class="form-check">
-                            <input class="form-check-input" type="checkbox" name="ativo" id="ativo{{ c.id }}" {% if c.ativo %}checked{% endif %}>
-                            <label class="form-check-label" for="ativo{{ c.id }}">
-                              Campanha Ativa
-                            </label>
+                          <div class="col-12 col-md-4">
+                            <label class="form-label small">Período início</label>
+                            <input class="form-control form-control-sm" type="date" name="periodo_ini" value="{{ c.vigencia_inicio }}">
                           </div>
-                        </div>
+
+                          <div class="col-12 col-md-4">
+                            <label class="form-label small">Período fim</label>
+                            <input class="form-control form-control-sm" type="date" name="periodo_fim" value="{{ c.vigencia_fim }}">
+                          </div>
+
+                          <div class="col-6 col-md-2">
+                            <label class="form-label small">Ano (opcional)</label>
+                            <input class="form-control form-control-sm" name="ano" value="{{ ano }}">
+                          </div>
+
+                          <div class="col-6 col-md-2">
+                            <label class="form-label small">Mês (opcional)</label>
+                            <input class="form-control form-control-sm" name="mes" value="{{ mes }}">
+                          </div>
+
+                          <div class="col-12">
+                            <button class="btn btn-primary btn-sm">Rodar recálculo</button>
+                            <div class="form-text">
+                              Se informar início/fim, o cálculo usa esse intervalo (e ainda respeita a vigência da campanha).
+                              Ano/mês servem só para “competência” do snapshot (pode deixar em branco).
+                            </div>
+                          </div>
+                        </form>
                       </div>
-                    </div>
-                    <div class="modal-footer">
-                      <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-                      <button type="submit" class="btn btn-primary">Salvar alterações</button>
-                    </div>
-                  </form>
-                </div>
-              </div>
-            </div>
+                    </details>
+
+                    <details class="w-100">
+                      <summary class="btn btn-outline-secondary btn-sm">Editar</summary>
+                      <div class="border rounded-3 p-2 mt-2">
+                        <form method="post" action="{{ url_for('admin_campanhas_ranking_marca') }}">
+                          <input type="hidden" name="acao" value="editar">
+                          <input type="hidden" name="id" value="{{ c.id }}">
+
+                          <div class="row g-2">
+                            <div class="col-12 col-md-6">
+                              <label class="form-label small">Nome</label>
+                              <input class="form-control form-control-sm" name="nome" value="{{ c.nome }}" required>
+                            </div>
+
+                            <div class="col-12 col-md-3">
+                              <label class="form-label small">Marca (alvo)</label>
+                              <input class="form-control form-control-sm" name="marca_alvo" value="{{ c.marca_alvo }}" required>
+                            </div>
+
+                            <div class="col-12 col-md-3">
+                              <label class="form-label small">Escopo</label>
+                              <select class="form-select form-select-sm" name="scope_mode">
+                                <option value="GLOBAL" {% if scope == "GLOBAL" %}selected{% endif %}>GLOBAL</option>
+                                <option value="POR_EMP" {% if scope == "POR_EMP" %}selected{% endif %}>POR_EMP</option>
+                              </select>
+                            </div>
+
+                            <div class="col-12 col-md-3">
+                              <label class="form-label small">Mínimo (R$)</label>
+                              <input class="form-control form-control-sm" name="base_minima_valor" value="{{ c.base_minima_valor or '' }}">
+                            </div>
+
+                            <div class="col-12 col-md-3">
+                              <label class="form-label small">Prêmio 1º</label>
+                              <input class="form-control form-control-sm" name="premio_top1" value="{{ c.premio_top1 or '' }}">
+                            </div>
+
+                            <div class="col-12 col-md-3">
+                              <label class="form-label small">Prêmio 2º</label>
+                              <input class="form-control form-control-sm" name="premio_top2" value="{{ c.premio_top2 or '' }}">
+                            </div>
+
+                            <div class="col-12 col-md-3">
+                              <label class="form-label small">Prêmio 3º</label>
+                              <input class="form-control form-control-sm" name="premio_top3" value="{{ c.premio_top3 or '' }}">
+                            </div>
+
+                            <div class="col-12 col-md-3">
+                              <label class="form-label small">Vigência início</label>
+                              <input class="form-control form-control-sm" type="date" name="vigencia_inicio" value="{{ c.vigencia_inicio }}">
+                            </div>
+
+                            <div class="col-12 col-md-3">
+                              <label class="form-label small">Vigência fim</label>
+                              <input class="form-control form-control-sm" type="date" name="vigencia_fim" value="{{ c.vigencia_fim }}">
+                            </div>
+
+                            <div class="col-12">
+                              {{ multiselect("emps", emps_opts or [], emps_sel or [], label="EMPs do escopo (apenas se POR_EMP)", placeholder="Selecione EMPs") }}
+                            </div>
+
+                            <div class="col-12 col-md-3">
+                              <label class="form-label small">Ativa?</label>
+                              <select class="form-select form-select-sm" name="ativo">
+                                <option value="1" {% if c.ativo %}selected{% endif %}>Sim</option>
+                                <option value="0" {% if not c.ativo %}selected{% endif %}>Não</option>
+                              </select>
+                            </div>
+
+                            <div class="col-12">
+                              <button class="btn btn-success btn-sm">Salvar alterações</button>
+                            </div>
+                          </div>
+                        </form>
+                      </div>
+                    </details>
+
+                    <form method="post" action="{{ url_for('admin_campanhas_ranking_marca') }}"
+                          onsubmit="return confirm('Remover a campanha #{{ c.id }} ({{ c.nome }})?');">
+                      <input type="hidden" name="acao" value="remover">
+                      <input type="hidden" name="id" value="{{ c.id }}">
+                      <button class="btn btn-outline-danger btn-sm">Remover</button>
+                    </form>
+
+                  </div>
+                </td>
+              </tr>
             {% endfor %}
           </tbody>
         </table>
       </div>
       {% else %}
-        <div class="text-muted">Nenhuma campanha cadastrada ainda.</div>
+        <div class="text-muted">Nenhuma campanha cadastrada.</div>
       {% endif %}
     </div>
   </div>
