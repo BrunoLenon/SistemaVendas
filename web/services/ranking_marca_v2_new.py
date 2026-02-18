@@ -293,55 +293,59 @@ def recalc_ranking_marca(
     actor: str = "",
 ) -> dict[str, Any]:
     """Calcula e grava snapshot em campanhas_v2_resultados para a competência."""
-    logger.info(f"Iniciando recálculo: campanha={campanha_id}, ano={ano}, mes={mes}, actor={actor}")
-    
+    logger.info(
+        f"Iniciando recálculo: campanha={campanha_id}, ano={ano}, mes={mes}, actor={actor}"
+    )
+
     campanha_id = int(campanha_id)
     ano = int(ano)
     mes = int(mes)
 
-    # VALIDAÇÃO: ano e mês devem ser válidos
+    # Validações básicas
     if ano < 2000 or ano > 2100:
         logger.error(f"Ano inválido: {ano}")
         return {"ok": False, "error": f"Ano inválido: {ano}", "rows": 0}
-    
+
     if mes < 1 or mes > 12:
         logger.error(f"Mês inválido: {mes}")
         return {"ok": False, "error": f"Mês inválido: {mes}", "rows": 0}
 
-    camp = db.query(CampanhaV2MasterNew).filter(CampanhaV2MasterNew.id == campanha_id).first()
+    camp = (
+        db.query(CampanhaV2MasterNew)
+        .filter(CampanhaV2MasterNew.id == campanha_id)
+        .first()
+    )
     if not camp:
         logger.error(f"Campanha não encontrada: {campanha_id}")
         raise ValueError("Campanha não encontrada.")
-    
-    if (camp.tipo or "").upper() != TIPO_RANKING_MARCA:
-        logger.error(f"Tipo de campanha inválido: {camp.tipo}")
+
+    if (getattr(camp, "tipo", "") or "").upper() != TIPO_RANKING_MARCA:
+        logger.error(f"Tipo de campanha inválido: {getattr(camp, 'tipo', None)}")
         raise ValueError("Tipo de campanha inválido para ranking por marca.")
 
     marca = _upper(getattr(camp, "marca_alvo", "") or "")
     if not marca:
-        logger.error("Campanha sem marca definida")
+        logger.error("Campanha sem marca definida (marca_alvo)")
         raise ValueError("Campanha sem marca definida (marca_alvo).")
 
     minimo = float(getattr(camp, "base_minima_valor", 0.0) or 0.0)
     scope_mode = (getattr(camp, "scope_mode", "GLOBAL") or "GLOBAL").upper()
 
-    logger.info(f"Parâmetros da campanha: marca={marca}, minimo={minimo}, scope_mode={scope_mode}")
+    logger.info(
+        f"Parâmetros da campanha: marca={marca}, minimo={minimo}, scope_mode={scope_mode}"
+    )
 
+    # Período base do mês
     ini_mes, fim_mes = _month_bounds(ano, mes)
     logger.info(f"Período base: {ini_mes} até {fim_mes}")
 
     # Ajusta pela vigência (se definida)
     vig_ini = getattr(camp, "vigencia_inicio", None)
     vig_fim = getattr(camp, "vigencia_fim", None)
-    if vig_ini:
-        ini = max(ini_mes, vig_ini)
-    else:
-        ini = ini_mes
-    if vig_fim:
-        fim = min(fim_mes, vig_fim)
-    else:
-        fim = fim_mes
-    
+
+    ini = max(ini_mes, vig_ini) if vig_ini else ini_mes
+    fim = min(fim_mes, vig_fim) if vig_fim else fim_mes
+
     logger.info(f"Período ajustado pela vigência: {ini} até {fim}")
 
     # Escopo EMPs (se POR_EMP)
@@ -349,59 +353,73 @@ def recalc_ranking_marca(
     if scope_mode == "POR_EMP":
         scope_emps = get_scope_emps(db, campanha_id)
         logger.info(f"EMPs do escopo: {scope_emps}")
+
         if not scope_emps:
             logger.warning("Campanha POR_EMP sem EMPs definidas no escopo")
+
             # Limpa snapshot do mês
             db.query(CampanhaV2ResultadoNew).filter(
                 and_(
                     CampanhaV2ResultadoNew.campanha_id == campanha_id,
                     CampanhaV2ResultadoNew.ano == ano,
-                    CampanhaV2ResultadoNew.mes == mes
+                    CampanhaV2ResultadoNew.mes == mes,
                 )
             ).delete(synchronize_session=False)
             db.flush()
+
             sync_pagamentos_v2(db, ano, mes, actor=actor or "")
-            return {"ok": True, "rows": 0, "ini": str(ini), "fim": str(fim), "motivo": "Sem EMPs definidas no escopo"}
+            return {
+                "ok": True,
+                "rows": 0,
+                "ini": str(ini),
+                "fim": str(fim),
+                "motivo": "Sem EMPs definidas no escopo",
+                "scope_emps": [],
+            }
 
+    # PRIMEIRO: verificar se existem vendas da marca no período
+    logger.info("Verificando vendas da marca %s no período...", marca)
+    count_vendas = (
+        db.query(func.count())
+        .select_from(Venda)
+        .filter(Venda.movimento >= ini)
+        .filter(Venda.movimento <= fim)
+        .filter(func.upper(Venda.marca) == marca)
+        .scalar()
+    ) or 0
 
-# PRIMEIRO: Verificar se existem vendas da marca no período
-logger.info("Verificando vendas da marca %s no período...", marca)
+    logger.info(f"Total de vendas da marca {marca} no período: {count_vendas}")
 
-count_vendas = (
-    db.query(func.count(Venda.id))
-    .filter(Venda.movimento >= ini)
-    .filter(Venda.movimento <= fim)
-    .filter(func.upper(Venda.marca) == marca)
-    .scalar()
-)
-
-logger.info(f"Total de vendas da marca {marca} no período: {count_vendas}")
-
-if (count_vendas or 0) == 0:
-    logger.warning(f"NENHUMA venda encontrada para a marca {marca} no período!")
-    # Limpa snapshot do mês
-    db.query(CampanhaV2ResultadoNew).filter(
-        and_(
-            CampanhaV2ResultadoNew.campanha_id == campanha_id,
-            CampanhaV2ResultadoNew.ano == ano,
-            CampanhaV2ResultadoNew.mes == mes
+    if int(count_vendas) == 0:
+        logger.warning(
+            f"NENHUMA venda encontrada para a marca {marca} no período {ini}..{fim}!"
         )
-    ).delete(synchronize_session=False)
-    db.flush()
-    sync_pagamentos_v2(db, ano, mes, actor=actor or "")
-    return {
-        "ok": True,
-        "rows": 0,
-        "ini": str(ini),
-        "fim": str(fim),
-        "motivo": f"Nenhuma venda encontrada para a marca {marca} no período",
-        "total_vendas_marca": int(count_vendas or 0),
-        "scope_emps": scope_emps if scope_mode == "POR_EMP" else [],
-    }
+
+        # Limpa snapshot do mês
+        db.query(CampanhaV2ResultadoNew).filter(
+            and_(
+                CampanhaV2ResultadoNew.campanha_id == campanha_id,
+                CampanhaV2ResultadoNew.ano == ano,
+                CampanhaV2ResultadoNew.mes == mes,
+            )
+        ).delete(synchronize_session=False)
+        db.flush()
+
+        sync_pagamentos_v2(db, ano, mes, actor=actor or "")
+
+        return {
+            "ok": True,
+            "rows": 0,
+            "ini": str(ini),
+            "fim": str(fim),
+            "motivo": f"Nenhuma venda encontrada para a marca {marca} no período",
+            "total_vendas_marca": int(count_vendas),
+            "scope_emps": scope_emps if scope_mode == "POR_EMP" else [],
+        }
 
     # Query base: soma valor_total por vendedor e emp
-    logger.info("Executando query de vendas...")
-    
+    logger.info("Executando query de vendas por vendedor...")
+
     q = (
         db.query(
             Venda.vendedor.label("vendedor"),
@@ -410,7 +428,7 @@ if (count_vendas or 0) == 0:
         )
         .filter(Venda.movimento >= ini)
         .filter(Venda.movimento <= fim)
-        .filter(func.upper(Venda.marca) == marca)  # Normaliza para evitar mismatch de caixa
+        .filter(func.upper(Venda.marca) == marca)
     )
 
     # Aplica filtro de escopo EMP
@@ -420,12 +438,11 @@ if (count_vendas or 0) == 0:
 
     q = q.group_by(Venda.vendedor, Venda.emp)
 
-    # Executa a query
     results = q.all()
     logger.info(f"Query executada, retornou {len(results)} linhas")
 
     # Processa resultados
-    per_emp = {}
+    per_emp: dict[str, dict[int | None, float]] = {}
     for vend, emp, total in results:
         vend_u = _upper(vend)
         if not vend_u:
@@ -438,35 +455,41 @@ if (count_vendas or 0) == 0:
 
     logger.info(f"Processados {len(per_emp)} vendedores únicos")
 
-    # Cria lista de rankings
     ranked: list[RankingRow] = []
     for vend_u, emp_dict in per_emp.items():
         total = sum(float(x or 0.0) for x in emp_dict.values())
+
         if total < minimo:
-            logger.debug(f"Vendedor {vend_u} não atingiu mínimo: {total} < {minimo}")
+            logger.debug(
+                f"Vendedor {vend_u} NÃO atingiu mínimo: {total:.2f} < {minimo:.2f}"
+            )
             continue
-        
-        # Determina emp_hint: se só um emp, usa ele; senão None
+
         emps_nonnull = [e for e in emp_dict.keys() if e is not None]
         emp_hint = emps_nonnull[0] if len(emps_nonnull) == 1 else None
-        
-        ranked.append(RankingRow(
-            vendedor=vend_u, 
-            total=total, 
-            emp_hint=emp_hint, 
-            por_emp={int(k) if k is not None else 0: float(v) for k, v in emp_dict.items()}
-        ))
 
-    logger.info(f"Vendedores qualificados (atingiram mínimo): {len(ranked)}")
+        ranked.append(
+            RankingRow(
+                vendedor=vend_u,
+                total=float(total),
+                emp_hint=emp_hint,
+                por_emp={
+                    int(k) if k is not None else 0: float(v)
+                    for k, v in emp_dict.items()
+                },
+            )
+        )
 
-    # Ordena por total (maior para menor)
+    logger.info(
+        f"Vendedores qualificados (atingiram mínimo R$ {minimo:.2f}): {len(ranked)}"
+    )
+
     ranked.sort(key=lambda r: r.total, reverse=True)
 
     # Prêmios
     p1 = float(getattr(camp, "premio_top1", 0.0) or 0.0)
     p2 = float(getattr(camp, "premio_top2", 0.0) or 0.0)
     p3 = float(getattr(camp, "premio_top3", 0.0) or 0.0)
-    
     logger.info(f"Prêmios configurados: 1º={p1}, 2º={p2}, 3º={p3}")
 
     # Remove snapshot anterior dessa competência
@@ -477,11 +500,9 @@ if (count_vendas or 0) == 0:
             CampanhaV2ResultadoNew.mes == mes,
         )
     ).delete(synchronize_session=False)
-    
     logger.info(f"Removidos {deleted} snapshots anteriores")
     db.flush()
 
-    # Insere novos snapshots
     inseridos = 0
     for idx, r in enumerate(ranked, start=1):
         premio = 0.0
@@ -516,7 +537,9 @@ if (count_vendas or 0) == 0:
         )
         db.add(resultado)
         inseridos += 1
-        logger.info(f"Inserido resultado: posição {idx}, vendedor {r.vendedor}, prêmio R$ {premio:.2f}")
+        logger.info(
+            f"Inserido resultado: posição {idx}, vendedor {r.vendedor}, prêmio R$ {premio:.2f}"
+        )
 
     db.flush()
     logger.info(f"Inseridos {inseridos} novos snapshots")
@@ -527,14 +550,15 @@ if (count_vendas or 0) == 0:
     logger.info("Sincronização concluída")
 
     resultado = {
-        "ok": True, 
-        "rows": len(ranked), 
+        "ok": True,
+        "rows": len(ranked),
         "inseridos": inseridos,
-        "ini": str(ini), 
+        "ini": str(ini),
         "fim": str(fim),
         "scope_emps": scope_emps,
-        "total_vendas_marca": int(count_vendas or 0)
+        "total_vendas_marca": int(count_vendas),
     }
-    
+
     logger.info(f"Recálculo finalizado: {resultado}")
     return resultado
+
