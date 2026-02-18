@@ -4513,8 +4513,8 @@ def admin_importar():
         tmp_path = tmp.name
 
     try:
-		# Import lazy para manter o boot no Render rápido.
-		from importar_excel import importar_planilha
+        # Import lazy para manter o boot no Render rápido.
+        from importar_excel import importar_planilha
         resumo = importar_planilha(tmp_path, modo=modo, chave=chave)
         if not resumo.get("ok"):
             faltando = resumo.get("faltando")
