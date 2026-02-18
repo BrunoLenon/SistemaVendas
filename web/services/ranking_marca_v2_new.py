@@ -291,8 +291,6 @@ def recalc_ranking_marca(
     ano: int,
     mes: int,
     actor: str = "",
-    periodo_ini=None,
-    periodo_fim=None,
 ) -> dict[str, Any]:
     """Calcula e grava snapshot em campanhas_v2_resultados para a competência."""
     logger.info(
@@ -350,35 +348,6 @@ def recalc_ranking_marca(
 
     logger.info(f"Período ajustado pela vigência: {ini} até {fim}")
 
-    # Ajuste por período informado no recálculo (opcional).
-    # Útil quando a campanha tem janela menor que um mês e você quer recalcular exatamente um intervalo.
-    pi = _parse_date(periodo_ini) if isinstance(periodo_ini, str) else periodo_ini
-    pf = _parse_date(periodo_fim) if isinstance(periodo_fim, str) else periodo_fim
-    if pi:
-        ini = max(ini, pi)
-    if pf:
-        fim = min(fim, pf)
-    if pi or pf:
-        logger.info(f"Período ajustado pelo recálculo: {ini} até {fim}")
-    if ini and fim and ini > fim:
-        logger.warning(f"Período inválido para recálculo (ini > fim): {ini} > {fim}")
-        db.query(CampanhaV2ResultadoNew).filter(
-            and_(
-                CampanhaV2ResultadoNew.campanha_id == campanha_id,
-                CampanhaV2ResultadoNew.ano == ano,
-                CampanhaV2ResultadoNew.mes == mes,
-            )
-        ).delete(synchronize_session=False)
-        db.flush()
-        sync_pagamentos_v2(db, ano, mes, actor=actor or "")
-        return {
-            "ok": True,
-            "rows": 0,
-            "ini": str(ini),
-            "fim": str(fim),
-            "motivo": "Período inválido (início maior que fim)",
-        }
-
     # Escopo EMPs (se POR_EMP)
     scope_emps: list[int] = []
     if scope_mode == "POR_EMP":
@@ -410,16 +379,23 @@ def recalc_ranking_marca(
 
     # PRIMEIRO: verificar se existem vendas da marca no período
     logger.info("Verificando vendas da marca %s no período...", marca)
-    count_vendas = (
+    q_count = (
         db.query(func.count())
         .select_from(Venda)
         .filter(Venda.movimento >= ini)
         .filter(Venda.movimento <= fim)
         .filter(func.upper(Venda.marca) == marca)
-        .scalar()
-    ) or 0
+    )
 
-    logger.info(f"Total de vendas da marca {marca} no período: {count_vendas}")
+    # Se for POR_EMP, filtra pelas EMPs do escopo.
+    # Observação: em algumas bases a coluna vendas.emp é TEXT/VARCHAR, então comparamos como string.
+    if scope_mode == "POR_EMP" and scope_emps:
+        emp_vals = [str(e) for e in scope_emps]
+        q_count = q_count.filter(Venda.emp.in_(emp_vals))
+
+    count_vendas = (q_count.scalar() or 0)
+
+logger.info(f"Total de vendas da marca {marca} no período: {count_vendas}")
 
     if int(count_vendas) == 0:
         logger.warning(
@@ -464,7 +440,8 @@ def recalc_ranking_marca(
 
     # Aplica filtro de escopo EMP
     if scope_mode == "POR_EMP" and scope_emps:
-        q = q.filter(Venda.emp.in_(scope_emps))
+        emp_vals = [str(e) for e in scope_emps]
+        q = q.filter(Venda.emp.in_(emp_vals))
         logger.info(f"Aplicado filtro de EMPs: {scope_emps}")
 
     q = q.group_by(Venda.vendedor, Venda.emp)
@@ -592,3 +569,4 @@ def recalc_ranking_marca(
 
     logger.info(f"Recálculo finalizado: {resultado}")
     return resultado
+
