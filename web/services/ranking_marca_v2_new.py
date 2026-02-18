@@ -363,6 +363,42 @@ def recalc_ranking_marca(
             sync_pagamentos_v2(db, ano, mes, actor=actor or "")
             return {"ok": True, "rows": 0, "ini": str(ini), "fim": str(fim), "motivo": "Sem EMPs definidas no escopo"}
 
+
+# PRIMEIRO: Verificar se existem vendas da marca no período
+logger.info("Verificando vendas da marca %s no período...", marca)
+
+count_vendas = (
+    db.query(func.count(Venda.id))
+    .filter(Venda.movimento >= ini)
+    .filter(Venda.movimento <= fim)
+    .filter(func.upper(Venda.marca) == marca)
+    .scalar()
+)
+
+logger.info(f"Total de vendas da marca {marca} no período: {count_vendas}")
+
+if (count_vendas or 0) == 0:
+    logger.warning(f"NENHUMA venda encontrada para a marca {marca} no período!")
+    # Limpa snapshot do mês
+    db.query(CampanhaV2ResultadoNew).filter(
+        and_(
+            CampanhaV2ResultadoNew.campanha_id == campanha_id,
+            CampanhaV2ResultadoNew.ano == ano,
+            CampanhaV2ResultadoNew.mes == mes
+        )
+    ).delete(synchronize_session=False)
+    db.flush()
+    sync_pagamentos_v2(db, ano, mes, actor=actor or "")
+    return {
+        "ok": True,
+        "rows": 0,
+        "ini": str(ini),
+        "fim": str(fim),
+        "motivo": f"Nenhuma venda encontrada para a marca {marca} no período",
+        "total_vendas_marca": int(count_vendas or 0),
+        "scope_emps": scope_emps if scope_mode == "POR_EMP" else [],
+    }
+
     # Query base: soma valor_total por vendedor e emp
     logger.info("Executando query de vendas...")
     
@@ -374,7 +410,7 @@ def recalc_ranking_marca(
         )
         .filter(Venda.movimento >= ini)
         .filter(Venda.movimento <= fim)
-        .filter(Venda.marca == marca)  # Usa Venda.marca diretamente
+        .filter(func.upper(Venda.marca) == marca)  # Normaliza para evitar mismatch de caixa
     )
 
     # Aplica filtro de escopo EMP
@@ -480,6 +516,7 @@ def recalc_ranking_marca(
         )
         db.add(resultado)
         inseridos += 1
+        logger.info(f"Inserido resultado: posição {idx}, vendedor {r.vendedor}, prêmio R$ {premio:.2f}")
 
     db.flush()
     logger.info(f"Inseridos {inseridos} novos snapshots")
@@ -495,7 +532,8 @@ def recalc_ranking_marca(
         "inseridos": inseridos,
         "ini": str(ini), 
         "fim": str(fim),
-        "scope_emps": scope_emps
+        "scope_emps": scope_emps,
+        "total_vendas_marca": int(count_vendas or 0)
     }
     
     logger.info(f"Recálculo finalizado: {resultado}")
