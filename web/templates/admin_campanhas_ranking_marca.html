@@ -9,7 +9,7 @@
       <small class="text-muted">Cadastro (Admin) + Snapshot (resultados congelados por mês/ano)</small>
     </div>
     <div class="d-flex flex-wrap gap-2">
-      <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('campanhas_qtd') }}">Campanhas</a>
+      <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('campanhas') }}">Campanhas</a>
       <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('relatorio_campanhas') }}">Relatório de Campanhas</a>
       <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('dashboard') }}">Dashboard</a>
     </div>
@@ -28,7 +28,7 @@
     </div>
     <div class="card-body">
       <form method="post" action="{{ url_for('admin_campanhas_ranking_marca') }}">
-        <input type="hidden" name="action" value="create">
+        <input type="hidden" name="acao" value="criar">
 
         <div class="row g-3">
           <div class="col-12 col-md-6">
@@ -81,7 +81,7 @@
 
           <div class="col-12">
             <label class="form-label">EMPs do escopo (apenas se POR_EMP)</label>
-            {{ multiselect("scope_emps", emps_options or [], selected_scope_emps or [], placeholder="Selecione uma ou mais EMPs") }}
+            {{ multiselect("emps", emps_opts or [], [], placeholder="Selecione uma ou mais EMPs") }}
             <div class="form-text">Admin sempre vê tudo. Supervisor/Vendedor só enxergam campanhas POR_EMP se estiverem nessas EMPs.</div>
           </div>
 
