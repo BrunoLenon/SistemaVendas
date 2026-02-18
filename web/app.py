@@ -88,7 +88,9 @@ from db import (
     BrandingTheme,
     criar_tabelas,
 )
-from importar_excel import importar_planilha
+# IMPORTANTE (performance/Render boot):
+#   importar_excel pode puxar parsing/IO e libs pesadas.
+#   Para o boot do Render ficar rápido, fazemos import lazy dentro da rota.
 
 # Flask app (Render/Gunicorn expects `app` at module level: web/app.py -> app:app)
 app = Flask(__name__, template_folder="templates")
@@ -4511,6 +4513,8 @@ def admin_importar():
         tmp_path = tmp.name
 
     try:
+		# Import lazy para manter o boot no Render rápido.
+		from importar_excel import importar_planilha
         resumo = importar_planilha(tmp_path, modo=modo, chave=chave)
         if not resumo.get("ok"):
             faltando = resumo.get("faltando")
