@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import json
 import calendar
-import re
 from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any, Iterable
@@ -44,6 +43,7 @@ def _to_float(v: Any, default: float = 0.0) -> float:
     try:
         if v is None or v == "":
             return float(default)
+        # Remove pontos de milhar e substitui vírgula por ponto
         return float(str(v).replace(".", "").replace(",", "."))
     except Exception:
         return float(default)
@@ -88,16 +88,8 @@ def _json_dumps(obj: Any) -> str:
         return "{}"
 
 
-def _json_load(s: str | None, default: Any) -> Any:
-    if not s:
-        return default
-    try:
-        return json.loads(s)
-    except Exception:
-        return default
-
-
 def list_campaigns_for_admin(db) -> list[CampanhaV2MasterNew]:
+    """Lista todas as campanhas para o admin"""
     return (
         db.query(CampanhaV2MasterNew)
         .filter(CampanhaV2MasterNew.tipo == TIPO_RANKING_MARCA)
@@ -127,9 +119,8 @@ def list_campaigns_for_user(db, *, role: str, allowed_emps: list[str]) -> list[C
     )
 
     if not allowed_emps:
-        # admin_all_emps ou algo equivalente; para supervisor/vendedor não deveria acontecer,
-        # mas mantemos como "vê tudo".
-        return camps
+        # Se não tem EMPs permitidas, retorna apenas campanhas GLOBAL
+        return [c for c in camps if (c.scope_mode or "GLOBAL").upper() == "GLOBAL"]
 
     allowed_set = {int(e) for e in allowed_emps if str(e).isdigit()}
     visible: list[CampanhaV2MasterNew] = []
@@ -152,6 +143,7 @@ def list_campaigns_for_user(db, *, role: str, allowed_emps: list[str]) -> list[C
 
 
 def get_scope_emps(db, campanha_id: int) -> list[int]:
+    """Retorna lista de EMPs do escopo da campanha"""
     rows = (
         db.query(CampanhaV2ScopeEMPNew.emp)
         .filter(CampanhaV2ScopeEMPNew.campanha_id == int(campanha_id))
@@ -162,6 +154,7 @@ def get_scope_emps(db, campanha_id: int) -> list[int]:
 
 
 def set_scope_emps(db, campanha_id: int, emps: Iterable[int]) -> None:
+    """Define as EMPs do escopo da campanha"""
     campanha_id = int(campanha_id)
     # remove antigos
     db.query(CampanhaV2ScopeEMPNew).filter(CampanhaV2ScopeEMPNew.campanha_id == campanha_id).delete()
@@ -176,6 +169,7 @@ def set_scope_emps(db, campanha_id: int, emps: Iterable[int]) -> None:
             continue
         seen.add(ei)
         db.add(CampanhaV2ScopeEMPNew(campanha_id=campanha_id, emp=ei))
+    db.flush()
 
 
 def create_or_update_campaign(
@@ -194,6 +188,7 @@ def create_or_update_campaign(
     premio_top3: float,
     ativo: bool,
 ) -> CampanhaV2MasterNew:
+    """Cria ou atualiza uma campanha"""
     scope_mode = (scope_mode or "GLOBAL").upper()
     if scope_mode not in ("GLOBAL", "POR_EMP"):
         scope_mode = "GLOBAL"
@@ -226,19 +221,31 @@ def create_or_update_campaign(
     else:
         # limpa escopo se não for por emp
         db.query(CampanhaV2ScopeEMPNew).filter(CampanhaV2ScopeEMPNew.campanha_id == int(c.id)).delete()
+        db.flush()
 
     return c
 
 
 def delete_campaign(db, campanha_id: int) -> None:
+    """Remove campanha e todos os registros relacionados"""
     campanha_id = int(campanha_id)
+    
+    # 1. Remove escopo EMPs
     db.query(CampanhaV2ScopeEMPNew).filter(CampanhaV2ScopeEMPNew.campanha_id == campanha_id).delete()
+    
+    # 2. Remove resultados/snapshots
     db.query(CampanhaV2ResultadoNew).filter(CampanhaV2ResultadoNew.campanha_id == campanha_id).delete()
-    # remove pagamentos vinculados (origem_id = campanha_id)
+    
+    # 3. Remove pagamentos vinculados
     db.query(FinanceiroPagamento).filter(
-        and_(FinanceiroPagamento.origem_tipo == "V2", FinanceiroPagamento.origem_id == campanha_id)
+        and_(FinanceiroPagamento.origem_tipo == "V2", 
+             FinanceiroPagamento.origem_id == campanha_id)
     ).delete(synchronize_session=False)
+    
+    # 4. Remove a campanha
     db.query(CampanhaV2MasterNew).filter(CampanhaV2MasterNew.id == campanha_id).delete()
+    
+    db.flush()
 
 
 @dataclass
@@ -294,10 +301,20 @@ def recalc_ranking_marca(
     if scope_mode == "POR_EMP":
         scope_emps = get_scope_emps(db, campanha_id)
         if not scope_emps:
-            # segurança: sem EMPs não calcula nada
-            scope_emps = []
+            # Sem EMPs definidas, não calcula nada
+            # Limpa snapshot do mês
+            db.query(CampanhaV2ResultadoNew).filter(
+                and_(
+                    CampanhaV2ResultadoNew.campanha_id == campanha_id,
+                    CampanhaV2ResultadoNew.ano == ano,
+                    CampanhaV2ResultadoNew.mes == mes
+                )
+            ).delete(synchronize_session=False)
+            db.flush()
+            sync_pagamentos_v2(db, ano, mes, actor=actor or "")
+            return {"ok": True, "rows": 0, "ini": str(ini), "fim": str(fim), "motivo": "Sem EMPs definidas no escopo"}
 
-    # Query base: soma valor_total por vendedor e emp (para montar emp_hint)
+    # Query base: soma valor_total por vendedor e emp
     q = (
         db.query(
             Venda.vendedor.label("vendedor"),
@@ -306,28 +323,16 @@ def recalc_ranking_marca(
         )
         .filter(Venda.movimento >= ini)
         .filter(Venda.movimento <= fim)
-        .filter(or_(marca_col == marca, marca_col.like(f"%{marca}%")))
+        .filter(Venda.marca == marca)  # CORREÇÃO: usa Venda.marca diretamente
     )
 
-    if scope_mode == "POR_EMP":
-        if scope_emps:
-            q = q.filter(Venda.emp.in_(scope_emps))
-        else:
-            # sem escopo => nenhum resultado
-            rows = []
-            ranked: list[RankingRow] = []
-            # limpa snapshot do mês
-            db.query(CampanhaV2ResultadoNew).filter(
-                and_(CampanhaV2ResultadoNew.campanha_id == campanha_id,
-                     CampanhaV2ResultadoNew.ano == ano,
-                     CampanhaV2ResultadoNew.mes == mes)
-            ).delete(synchronize_session=False)
-            db.flush()
-            sync_pagamentos_v2(db, ano, mes, actor=actor or "")
-            return {"ok": True, "rows": 0, "ini": str(ini), "fim": str(fim)}
+    # Aplica filtro de escopo EMP
+    if scope_mode == "POR_EMP" and scope_emps:
+        q = q.filter(Venda.emp.in_(scope_emps))
 
     q = q.group_by(Venda.vendedor, Venda.emp)
 
+    # Executa a query e processa resultados
     per_emp = {}
     for vend, emp, total in q.all():
         vend_u = _upper(vend)
@@ -335,19 +340,27 @@ def recalc_ranking_marca(
             continue
         emp_i = int(emp) if emp is not None else None
         tot = float(total or 0.0)
-        per_emp.setdefault(vend_u, {})
+        if vend_u not in per_emp:
+            per_emp[vend_u] = {}
         per_emp[vend_u][emp_i] = per_emp[vend_u].get(emp_i, 0.0) + tot
 
+    # Cria lista de rankings
     ranked: list[RankingRow] = []
-    for vend_u, m in per_emp.items():
-        total = sum(float(x or 0.0) for x in m.values())
+    for vend_u, emp_dict in per_emp.items():
+        total = sum(float(x or 0.0) for x in emp_dict.values())
         if total < minimo:
             continue
-        # emp_hint: se só um emp, usa ele; senão None
-        emps_nonnull = [e for e in m.keys() if e is not None]
-        emp_hint = emps_nonnull[0] if len(set(emps_nonnull)) == 1 else None
-        ranked.append(RankingRow(vendedor=vend_u, total=total, emp_hint=emp_hint, por_emp={int(k) if k is not None else 0: float(v) for k, v in m.items()}))
+        # Determina emp_hint: se só um emp, usa ele; senão None
+        emps_nonnull = [e for e in emp_dict.keys() if e is not None]
+        emp_hint = emps_nonnull[0] if len(emps_nonnull) == 1 else None
+        ranked.append(RankingRow(
+            vendedor=vend_u, 
+            total=total, 
+            emp_hint=emp_hint, 
+            por_emp={int(k) if k is not None else 0: float(v) for k, v in emp_dict.items()}
+        ))
 
+    # Ordena por total (maior para menor)
     ranked.sort(key=lambda r: r.total, reverse=True)
 
     # Prêmios
@@ -365,7 +378,7 @@ def recalc_ranking_marca(
     ).delete(synchronize_session=False)
     db.flush()
 
-    # Insere snapshot
+    # Insere novos snapshots
     for idx, r in enumerate(ranked, start=1):
         premio = 0.0
         if idx == 1:
@@ -385,22 +398,29 @@ def recalc_ranking_marca(
             "por_emp": r.por_emp,
         }
 
-        db.add(
-            CampanhaV2ResultadoNew(
-                campanha_id=campanha_id,
-                ano=ano,
-                mes=mes,
-                emp=r.emp_hint if scope_mode == "POR_EMP" else None,
-                vendedor=r.vendedor,
-                valor_atual=float(r.total),
-                posicao=int(idx),
-                atingiu=True,
-                premio=float(premio or 0.0),
-                detalhes_json=_json_dumps(detalhes),
-            )
+        resultado = CampanhaV2ResultadoNew(
+            campanha_id=campanha_id,
+            ano=ano,
+            mes=mes,
+            emp=r.emp_hint if scope_mode == "POR_EMP" else None,
+            vendedor=r.vendedor,
+            valor_atual=float(r.total),
+            posicao=int(idx),
+            atingiu=True,
+            premio=float(premio or 0.0),
+            detalhes_json=_json_dumps(detalhes),
         )
+        db.add(resultado)
+
+    db.flush()
 
     # Sincroniza com financeiro
     sync_pagamentos_v2(db, ano, mes, actor=actor or "")
 
-    return {"ok": True, "rows": len(ranked), "ini": str(ini), "fim": str(fim)}
+    return {
+        "ok": True, 
+        "rows": len(ranked), 
+        "ini": str(ini), 
+        "fim": str(fim),
+        "scope_emps": scope_emps
+    }
