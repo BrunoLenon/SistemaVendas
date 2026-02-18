@@ -19,8 +19,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any, Iterable
 
-from sqlalchemy import func, and_, or_
-
+from sqlalchemy import func, and_, or_, cast, String
 from db import (
     SessionLocal,
     Venda,
@@ -387,15 +386,13 @@ def recalc_ranking_marca(
         .filter(func.upper(Venda.marca) == marca)
     )
 
-    # Se for POR_EMP, filtra pelas EMPs do escopo.
-    # Observação: em algumas bases a coluna vendas.emp é TEXT/VARCHAR, então comparamos como string.
+    # Se o escopo for POR_EMP, filtra por EMPs (emp no banco pode ser TEXT)
     if scope_mode == "POR_EMP" and scope_emps:
-        emp_vals = [str(e) for e in scope_emps]
-        q_count = q_count.filter(Venda.emp.in_(emp_vals))
+        scope_emps_txt = [str(int(e)) for e in scope_emps]
+        q_count = q_count.filter(cast(Venda.emp, String).in_(scope_emps_txt))
 
     count_vendas = (q_count.scalar() or 0)
-
-logger.info(f"Total de vendas da marca {marca} no período: {count_vendas}")
+    logger.info(f"Total de vendas da marca {marca} no período: {count_vendas}")
 
     if int(count_vendas) == 0:
         logger.warning(
@@ -440,8 +437,8 @@ logger.info(f"Total de vendas da marca {marca} no período: {count_vendas}")
 
     # Aplica filtro de escopo EMP
     if scope_mode == "POR_EMP" and scope_emps:
-        emp_vals = [str(e) for e in scope_emps]
-        q = q.filter(Venda.emp.in_(emp_vals))
+        scope_emps_txt = [str(int(e)) for e in scope_emps]
+        q = q.filter(cast(Venda.emp, String).in_(scope_emps_txt))
         logger.info(f"Aplicado filtro de EMPs: {scope_emps}")
 
     q = q.group_by(Venda.vendedor, Venda.emp)
