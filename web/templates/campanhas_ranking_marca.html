@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+
+{% block title %}Ranking por Marca{% endblock %}
+
+{% block extra_head %}
+<style>
+  .page-title{font-weight:800; letter-spacing:-.3px}
+  .subtitle{color:var(--bs-secondary-color)}
+  .mono{font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono","Courier New", monospace;}
+  .table td, .table th{vertical-align: middle;}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+
+  <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+    <div>
+      <h3 class="m-0 page-title">🏁 Ranking por Marca</h3>
+      <div class="subtitle mt-1">Resultados por competência (snapshot). Para atualizar, o ADMIN deve recalcular.</div>
+    </div>
+    {% if (role|lower) == 'admin' %}
+      <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin_campanhas_ranking_marca') }}">Admin Ranking por Marca</a>
+    {% endif %}
+  </div>
+
+  {% if erro %}<div class="alert alert-danger">{{ erro }}</div>{% endif %}
+  {% if info %}<div class="alert alert-info">{{ info }}</div>{% endif %}
+
+  <div class="card shadow-sm mb-3">
+    <div class="card-body">
+      <form method="get">
+        <div class="row g-2 align-items-end">
+          <div class="col-md-6">
+            <label class="form-label">Campanha</label>
+            <select class="form-select" name="campanha_id" required>
+              <option value="" disabled {% if not campanha_id %}selected{% endif %}>Selecione...</option>
+              {% for c in campanhas %}
+                <option value="{{ c.id }}" {% if c.id == campanha_id|int %}selected{% endif %}>#{{ c.id }} — {{ c.nome }} ({{ c.marca_alvo }})</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-2">
+            <label class="form-label">Mês</label>
+            <select class="form-select" name="mes">
+              {% for m in range(1,13) %}
+                <option value="{{ m }}" {% if m==mes|int %}selected{% endif %}>{{ "%02d"|format(m) }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-2">
+            <label class="form-label">Ano</label>
+            <select class="form-select" name="ano">
+              {% for a in anos %}
+                <option value="{{ a }}" {% if a==ano|int %}selected{% endif %}>{{ a }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-2 d-grid">
+            <button class="btn btn-primary" type="submit">Ver ranking</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  {% if campanha %}
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <div class="d-flex flex-wrap justify-content-between align-items-start gap-2">
+          <div>
+            <div class="fw-semibold">{{ campanha.nome }}</div>
+            <div class="text-muted small">
+              Marca: <span class="mono">{{ campanha.marca_alvo }}</span> •
+              Escopo: <b>{{ (campanha.scope_mode or 'GLOBAL')|upper }}</b>
+              {% if (campanha.scope_mode or '').upper() == 'POR_EMP' and scope_emps %}
+                • EMPs: <span class="mono">{{ scope_emps|join(', ') }}</span>
+              {% endif %}
+              • Mínimo: <span class="mono">R$ {{ "%.2f"|format(campanha.base_minima_valor or 0) }}</span>
+            </div>
+          </div>
+          <div class="text-muted small">
+            Competência: <b>{{ "%02d"|format(mes|int) }}/{{ ano }}</b>
+          </div>
+        </div>
+
+        <hr>
+
+        {% if not resultados %}
+          <div class="text-muted">Sem snapshot para esta competência. Peça ao ADMIN para recalcular a campanha.</div>
+        {% else %}
+          <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle">
+              <thead>
+                <tr>
+                  <th style="width:72px">Pos.</th>
+                  <th>Vendedor</th>
+                  <th class="text-end">Vendas (R$)</th>
+                  <th class="text-end">Prêmio (R$)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for r in resultados %}
+                  {% set is_me = (me and (r.vendedor|upper == me|upper)) %}
+                  <tr class="{% if is_me %}table-primary{% endif %}">
+                    <td><span class="badge text-bg-dark">{{ r.posicao }}</span></td>
+                    <td class="mono">{{ r.vendedor }}</td>
+                    <td class="text-end mono">{{ "%.2f"|format(r.valor_atual or 0) }}</td>
+                    <td class="text-end mono">
+                      {% if (r.premio or 0) > 0 %}
+                        <span class="badge text-bg-success">{{ "%.2f"|format(r.premio or 0) }}</span>
+                      {% else %}
+                        —
+                      {% endif %}
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+
+          <div class="text-muted small mt-2">
+            * Apenas vendedores que atingiram o mínimo entram no ranking. Resultados são congelados no snapshot.
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  {% endif %}
+
+</div>
+{% endblock %}

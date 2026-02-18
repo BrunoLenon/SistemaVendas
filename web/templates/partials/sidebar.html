@@ -28,6 +28,7 @@
   <a class="nav-link {% if path.startswith('/relatorios/cidades-clientes') %}active{% endif %}" href="/relatorios/cidades-clientes">🏙️ Cidades & Clientes</a>
   <a class="nav-link {% if path.startswith('/relatorios/campanhas') %}active{% endif %}" href="/relatorios/campanhas">🎯 Relatório Campanhas</a>
   <a class="nav-link {% if path.startswith('/campanhas') and not path.startswith('/relatorios') %}active{% endif %}" href="/campanhas">⭐ Campanhas (Qtd)</a>
+  <a class="nav-link {% if path.startswith('/campanhas/ranking-marca') %}active{% endif %}" href="/campanhas/ranking-marca">🏁 Ranking por Marca</a>
   <a class="nav-link {% if path.startswith('/metas') %}active{% endif %}" href="/metas">🏁 Metas</a>
   <a class="nav-link {% if path.startswith('/itens_parados') %}active{% endif %}" href="/itens_parados">🧾 Itens Parados</a>
   <a class="nav-link {% if path.startswith('/mensagens') %}active{% endif %}" href="/mensagens">📣 Mensagens</a>
@@ -51,6 +52,7 @@
     <a class="nav-link {% if path.startswith('/admin/importar') %}active{% endif %}" href="/admin/importar">📥 Importar vendas</a>
     <a class="nav-link {% if path.startswith('/admin/resumos_periodo') %}active{% endif %}" href="/admin/resumos_periodo">📆 Resumos por período</a>
     <a class="nav-link {% if path.startswith('/admin/campanhas') %}active{% endif %}" href="/admin/campanhas">🎯 Campanhas</a>
+    <a class="nav-link {% if path.startswith('/admin/campanhas/ranking-marca') %}active{% endif %}" href="/admin/campanhas/ranking-marca">🏁 Ranking por Marca</a>
     <a class="nav-link {% if path.startswith('/admin/combos') %}active{% endif %}" href="/admin/combos">🧩 Combos</a>
     <a class="nav-link {% if path.startswith('/admin/itens_parados') %}active{% endif %}" href="/admin/itens_parados">🧾 Itens Parados (Admin)</a>
     <a class="nav-link {% if path.startswith('/admin/configuracoes') %}active{% endif %}" href="/admin/configuracoes">⚙️ Configurações</a>

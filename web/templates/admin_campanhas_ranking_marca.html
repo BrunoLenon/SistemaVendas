@@ -1,14 +1,13 @@
 {% extends "base.html" %}
 {% from "partials/multiselect.html" import multiselect %}
 
-{% block title %}Campanhas — Ranking por Marca{% endblock %}
+{% block title %}Admin — Ranking por Marca{% endblock %}
 
 {% block extra_head %}
 <style>
   .page-title{font-weight:800; letter-spacing:-.3px}
   .subtitle{color:var(--bs-secondary-color)}
-  .mono{font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;}
-  textarea.form-control{min-height:120px}
+  .mono{font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono","Courier New", monospace;}
 </style>
 {% endblock %}
 
@@ -17,11 +16,12 @@
 
   <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
     <div>
-      <h3 class="m-0 page-title">🏁 Campanhas — Ranking por Marca (Top N)</h3>
-      <div class="subtitle mt-1">Premiação fixa por colocação (1º,2º,3º...). ADMIN apenas.</div>
+      <h3 class="m-0 page-title">🏁 Campanhas — Ranking por Marca</h3>
+      <div class="subtitle mt-1">Configuração + snapshot por competência. Premiação fixa (1º/2º/3º).</div>
     </div>
     <div class="d-flex gap-2">
       <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin_fechamento') }}">Fechamento</a>
+      <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('financeiro_campanhas_v2') }}">Financeiro</a>
       <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('relatorios_campanhas') }}">Relatório de Campanhas</a>
     </div>
   </div>
@@ -39,56 +39,65 @@
 
         <div class="row g-2">
           <div class="col-md-6">
-            <label class="form-label">Título</label>
-            <input class="form-control" name="titulo" placeholder="Ranking MAGNETRON Fevereiro" required>
+            <label class="form-label">Nome</label>
+            <input class="form-control" name="nome" placeholder="Ranking MAGNETRON — Fevereiro" required>
           </div>
           <div class="col-md-3">
             <label class="form-label">Marca</label>
-            <input class="form-control mono" name="marca" placeholder="MAGNETRON" required>
+            <input class="form-control mono" name="marca_alvo" placeholder="MAGNETRON" required>
           </div>
           <div class="col-md-3">
             <label class="form-label">Escopo</label>
-            <select class="form-select" name="escopo_tipo">
-              <option value="GLOBAL" selected>GLOBAL (geral)</option>
-              <option value="EMPS">EMPS (selecionar EMPs)</option>
+            <select class="form-select" name="scope_mode">
+              <option value="GLOBAL" selected>GLOBAL (todas as EMPs)</option>
+              <option value="POR_EMP">POR EMP (selecionar EMPs)</option>
             </select>
           </div>
 
           <div class="col-md-3">
-            <label class="form-label">Data início</label>
-            <input class="form-control" type="date" name="data_inicio" required>
+            <label class="form-label">Vigência início</label>
+            <input class="form-control" type="date" name="vigencia_inicio">
           </div>
           <div class="col-md-3">
-            <label class="form-label">Data fim</label>
-            <input class="form-control" type="date" name="data_fim" required>
+            <label class="form-label">Vigência fim</label>
+            <input class="form-control" type="date" name="vigencia_fim">
           </div>
 
           <div class="col-md-3">
-            <label class="form-label">Competência (ano)</label>
-            <input class="form-control" name="competencia_ano" placeholder="{{ ano }}">
+            <label class="form-label">Mínimo (R$)</label>
+            <input class="form-control mono" name="base_minima_valor" placeholder="10000">
           </div>
           <div class="col-md-3">
-            <label class="form-label">Competência (mês)</label>
-            <input class="form-control" name="competencia_mes" placeholder="{{ mes }}">
+            <label class="form-label">Ativa?</label>
+            <select class="form-select" name="ativo">
+              <option value="1" selected>Sim</option>
+              <option value="0">Não</option>
+            </select>
           </div>
 
-          <div class="col-md-6">
-            {{ multiselect("emp", emps_options or [], [], label="EMPs (se escopo=EMPS)", placeholder="Selecione EMP(s)") }}
+          <div class="col-12">
+            <label class="form-label">EMPs (se POR_EMP)</label>
+            {{ multiselect("emps", emps_opts, [], placeholder="Selecione EMPs...") }}
+            <div class="form-text">Somente usuários vinculados às EMPs selecionadas irão visualizar esta campanha (exceto ADMIN).</div>
           </div>
 
-          <div class="col-md-6">
-            <label class="form-label">Prêmios (um por linha)</label>
-            <textarea class="form-control mono" name="premios_texto" placeholder="1=300\n2=200\n3=100"></textarea>
-            <div class="form-text">Formatos aceitos: <span class="mono">1=300</span>, <span class="mono">1:300</span> ou <span class="mono">1 300</span>.</div>
+          <div class="col-md-4">
+            <label class="form-label">Prêmio 1º (R$)</label>
+            <input class="form-control mono" name="premio_top1" placeholder="300">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Prêmio 2º (R$)</label>
+            <input class="form-control mono" name="premio_top2" placeholder="200">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Prêmio 3º (R$)</label>
+            <input class="form-control mono" name="premio_top3" placeholder="100">
           </div>
 
-          <div class="col-12 d-flex align-items-center gap-3 mt-2">
-            <div class="form-check">
-              <input class="form-check-input" type="checkbox" name="ativo" id="ativoNew" checked>
-              <label class="form-check-label" for="ativoNew">Ativo</label>
-            </div>
-            <button class="btn btn-primary" type="submit">Salvar</button>
-          </div>
+        </div>
+
+        <div class="mt-3 d-flex justify-content-end">
+          <button class="btn btn-primary" type="submit">Salvar</button>
         </div>
       </form>
     </div>
@@ -96,136 +105,165 @@
 
   <div class="card shadow-sm">
     <div class="card-body">
-      <h5 class="m-0">Campanhas cadastradas</h5>
-      <div class="subtitle small mt-1">Editar (regrava vínculos/prêmios), remover, ou recalcular resultados para a competência.</div>
+      <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <div>
+          <h5 class="m-0">Campanhas cadastradas</h5>
+          <div class="subtitle small mt-1">Recalcule para gerar snapshot do mês e alimentar Financeiro.</div>
+        </div>
+
+        <form class="d-flex gap-2" method="get">
+          <select class="form-select form-select-sm" name="mes" style="max-width:120px">
+            {% for m in range(1,13) %}
+              <option value="{{ m }}" {% if m==mes|int %}selected{% endif %}>{{ "%02d"|format(m) }}</option>
+            {% endfor %}
+          </select>
+          <select class="form-select form-select-sm" name="ano" style="max-width:120px">
+            {% for a in anos %}
+              <option value="{{ a }}" {% if a==ano|int %}selected{% endif %}>{{ a }}</option>
+            {% endfor %}
+          </select>
+          <button class="btn btn-outline-secondary btn-sm" type="submit">Competência</button>
+        </form>
+      </div>
 
       {% if not campanhas %}
-        <div class="alert alert-warning mt-3 mb-0">Nenhuma campanha cadastrada.</div>
+        <div class="text-muted mt-3">Nenhuma campanha de ranking por marca cadastrada ainda.</div>
       {% else %}
         <div class="accordion mt-3" id="accRankMarca">
           {% for c in campanhas %}
             {% set cid = c.id %}
             {% set emps = (emps_map.get(cid) or []) %}
-            {% set premios = (premios_map.get(cid) or []) %}
             <div class="accordion-item">
               <h2 class="accordion-header" id="h{{ cid }}">
                 <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#c{{ cid }}" aria-expanded="false" aria-controls="c{{ cid }}">
-                  <b class="me-2">#{{ cid }}</b> {{ c.titulo }} — <span class="mono ms-2">{{ c.marca }}</span>
+                  <b class="me-2">#{{ cid }}</b> {{ c.nome }} — <span class="mono ms-2">{{ c.marca_alvo }}</span>
                   {% if not c.ativo %}<span class="badge text-bg-secondary ms-2">INATIVA</span>{% endif %}
-                  <span class="badge text-bg-info ms-2">{{ (c.escopo_tipo or 'GLOBAL')|upper }}</span>
+                  <span class="badge text-bg-info ms-2">{{ (c.scope_mode or 'GLOBAL')|upper }}</span>
                 </button>
               </h2>
               <div id="c{{ cid }}" class="accordion-collapse collapse" aria-labelledby="h{{ cid }}" data-bs-parent="#accRankMarca">
                 <div class="accordion-body">
+
                   <div class="row g-2">
                     <div class="col-md-6">
-                      <div class="small text-muted">Período</div>
-                      <div>{{ c.data_inicio }} → {{ c.data_fim }}</div>
-                      <div class="small text-muted mt-2">Competência fixa</div>
-                      <div>{{ c.competencia_mes or '-' }}/{{ c.competencia_ano or '-' }}</div>
+                      <div class="small text-muted">Vigência</div>
+                      <div>{{ c.vigencia_inicio or '—' }} → {{ c.vigencia_fim or '—' }}</div>
+
+                      <div class="small text-muted mt-2">Mínimo</div>
+                      <div class="mono">R$ {{ "%.2f"|format(c.base_minima_valor or 0) }}</div>
                     </div>
                     <div class="col-md-6">
                       <div class="small text-muted">EMPs (escopo)</div>
-                      {% if (c.escopo_tipo or '').upper() == 'EMPS' %}
+                      {% if (c.scope_mode or '').upper() == 'POR_EMP' %}
                         <div class="mono">{{ emps|join(', ') if emps else '—' }}</div>
                       {% else %}
                         <div>GLOBAL (todas)</div>
                       {% endif %}
                       <div class="small text-muted mt-2">Prêmios</div>
                       <div class="mono">
-                        {% for p in premios %}
-                          {{ p.posicao }}={{ "%.2f"|format(p.valor) }}{% if not loop.last %}, {% endif %}
-                        {% endfor %}
+                        1={{ "%.2f"|format(c.premio_top1 or 0) }},
+                        2={{ "%.2f"|format(c.premio_top2 or 0) }},
+                        3={{ "%.2f"|format(c.premio_top3 or 0) }}
                       </div>
                     </div>
                   </div>
 
                   <hr>
 
-                  <div class="row g-2">
-                    <div class="col-md-6">
+                  <div class="row g-3">
+                    <div class="col-lg-8">
                       <form method="post" class="border rounded p-3">
                         <input type="hidden" name="acao" value="editar">
                         <input type="hidden" name="id" value="{{ cid }}">
 
                         <div class="row g-2">
                           <div class="col-12">
-                            <label class="form-label">Título</label>
-                            <input class="form-control" name="titulo" value="{{ c.titulo }}" required>
+                            <label class="form-label">Nome</label>
+                            <input class="form-control" name="nome" value="{{ c.nome }}" required>
                           </div>
-                          <div class="col-6">
+                          <div class="col-md-4">
                             <label class="form-label">Marca</label>
-                            <input class="form-control mono" name="marca" value="{{ c.marca }}" required>
+                            <input class="form-control mono" name="marca_alvo" value="{{ c.marca_alvo }}" required>
                           </div>
-                          <div class="col-6">
+                          <div class="col-md-4">
                             <label class="form-label">Escopo</label>
-                            <select class="form-select" name="escopo_tipo">
-                              <option value="GLOBAL" {% if (c.escopo_tipo or '').upper() == 'GLOBAL' %}selected{% endif %}>GLOBAL</option>
-                              <option value="EMPS" {% if (c.escopo_tipo or '').upper() == 'EMPS' %}selected{% endif %}>EMPS</option>
+                            <select class="form-select" name="scope_mode">
+                              <option value="GLOBAL" {% if (c.scope_mode or '').upper() == 'GLOBAL' %}selected{% endif %}>GLOBAL</option>
+                              <option value="POR_EMP" {% if (c.scope_mode or '').upper() == 'POR_EMP' %}selected{% endif %}>POR_EMP</option>
+                            </select>
+                          </div>
+                          <div class="col-md-4">
+                            <label class="form-label">Ativa?</label>
+                            <select class="form-select" name="ativo">
+                              <option value="1" {% if c.ativo %}selected{% endif %}>Sim</option>
+                              <option value="0" {% if not c.ativo %}selected{% endif %}>Não</option>
                             </select>
                           </div>
 
-                          <div class="col-6">
-                            <label class="form-label">Data início</label>
-                            <input class="form-control" type="date" name="data_inicio" value="{{ c.data_inicio }}" required>
+                          <div class="col-md-6">
+                            <label class="form-label">Vigência início</label>
+                            <input class="form-control" type="date" name="vigencia_inicio" value="{{ c.vigencia_inicio }}">
                           </div>
-                          <div class="col-6">
-                            <label class="form-label">Data fim</label>
-                            <input class="form-control" type="date" name="data_fim" value="{{ c.data_fim }}" required>
+                          <div class="col-md-6">
+                            <label class="form-label">Vigência fim</label>
+                            <input class="form-control" type="date" name="vigencia_fim" value="{{ c.vigencia_fim }}">
                           </div>
 
-                          <div class="col-6">
-                            <label class="form-label">Competência (ano)</label>
-                            <input class="form-control" name="competencia_ano" value="{{ c.competencia_ano or '' }}">
+                          <div class="col-md-4">
+                            <label class="form-label">Mínimo (R$)</label>
+                            <input class="form-control mono" name="base_minima_valor" value="{{ c.base_minima_valor or '' }}">
                           </div>
-                          <div class="col-6">
-                            <label class="form-label">Competência (mês)</label>
-                            <input class="form-control" name="competencia_mes" value="{{ c.competencia_mes or '' }}">
+                          <div class="col-md-4">
+                            <label class="form-label">Prêmio 1º</label>
+                            <input class="form-control mono" name="premio_top1" value="{{ c.premio_top1 or '' }}">
+                          </div>
+                          <div class="col-md-4">
+                            <label class="form-label">Prêmio 2º</label>
+                            <input class="form-control mono" name="premio_top2" value="{{ c.premio_top2 or '' }}">
+                          </div>
+                          <div class="col-md-4">
+                            <label class="form-label">Prêmio 3º</label>
+                            <input class="form-control mono" name="premio_top3" value="{{ c.premio_top3 or '' }}">
                           </div>
 
                           <div class="col-12">
-                            {{ multiselect("emp", emps_options or [], emps, label="EMPs (se escopo=EMPS)", placeholder="Selecione EMP(s)") }}
+                            <label class="form-label">EMPs (se POR_EMP)</label>
+                            {{ multiselect("emps", emps_opts, emps, placeholder="Selecione EMPs...") }}
                           </div>
+                        </div>
 
-                          <div class="col-12">
-                            <label class="form-label">Prêmios (um por linha)</label>
-                            <textarea class="form-control mono" name="premios_texto">{% for p in premios %}{{ p.posicao }}={{ "%.2f"|format(p.valor) }}{% if not loop.last %}\n{% endif %}{% endfor %}</textarea>
-                          </div>
-
-                          <div class="col-12 d-flex align-items-center gap-3">
-                            <div class="form-check">
-                              <input class="form-check-input" type="checkbox" name="ativo" id="ativo{{ cid }}" {% if c.ativo %}checked{% endif %}>
-                              <label class="form-check-label" for="ativo{{ cid }}">Ativo</label>
-                            </div>
-                            <button class="btn btn-primary" type="submit">Salvar alterações</button>
-                          </div>
+                        <div class="mt-3 d-flex justify-content-end">
+                          <button class="btn btn-primary" type="submit">Salvar alterações</button>
                         </div>
                       </form>
                     </div>
 
-                    <div class="col-md-6">
+                    <div class="col-lg-4">
                       <div class="border rounded p-3">
-                        <h6 class="m-0">Ações</h6>
+                        <div class="fw-semibold">Ações</div>
+                        <div class="text-muted small mt-1">A competência usada aqui é: <b>{{ "%02d"|format(mes|int) }}/{{ ano }}</b></div>
 
-                        <form method="post" class="mt-2 d-flex flex-wrap gap-2">
+                        <form method="post" class="mt-3">
                           <input type="hidden" name="acao" value="recalcular">
                           <input type="hidden" name="id" value="{{ cid }}">
                           <input type="hidden" name="ano" value="{{ ano }}">
                           <input type="hidden" name="mes" value="{{ mes }}">
-                          <button class="btn btn-outline-primary" type="submit">Recalcular ({{ mes }}/{{ ano }})</button>
+                          <button class="btn btn-outline-primary w-100" type="submit">Recalcular e gerar snapshot</button>
                         </form>
 
-                        <form method="post" class="mt-2" onsubmit="return confirm('Remover a campanha #{{ cid }}? Isso também remove resultados.');">
+                        <form method="post" class="mt-2" onsubmit="return confirm('Remover a campanha #{{ cid }}? Isso também remove resultados e pagamentos vinculados.');">
                           <input type="hidden" name="acao" value="remover">
                           <input type="hidden" name="id" value="{{ cid }}">
-                          <button class="btn btn-outline-danger" type="submit">Remover</button>
+                          <button class="btn btn-outline-danger w-100" type="submit">Remover campanha</button>
                         </form>
 
                         <div class="text-muted small mt-3">
-                          Resultados aparecem em <b>/relatorios/campanhas</b> e entram no <b>/admin/fechamento</b> quando houver prêmio.
+                          Depois de recalcular, o ranking fica visível em <b>/campanhas/ranking-marca</b>
+                          e o prêmio entra em <b>Financeiro</b> para Fechamento/Pagamento.
                         </div>
                       </div>
                     </div>
+
                   </div>
 
                 </div>
