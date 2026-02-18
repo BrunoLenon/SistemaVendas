@@ -9,14 +9,52 @@ _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 if _BASE_DIR not in sys.path:
     sys.path.insert(0, _BASE_DIR)
 
-from services.scope import get_session_emps, refresh_session_emps, set_session_emps
-from services.campanhas_service import (
-    CampanhasDeps,
-    build_campanhas_page_context,
-    build_relatorio_campanhas_scope,
-)
-from services.relatorio_campanhas_service import build_relatorio_campanhas_context
-from services.campanhas_v2_engine import recalc_v2_competencia
+# --- imports lazy (Render boot) ---
+# Evita importar módulos de serviços no boot (podem puxar DB/arquivos e travar o Render).
+def _lazy(name: str):
+    import importlib
+    return importlib.import_module(name)
+
+def get_session_emps(*args, **kwargs):
+    fn = _lazy("services.scope").get_session_emps
+    globals()["get_session_emps"] = fn
+    return fn(*args, **kwargs)
+
+def refresh_session_emps(*args, **kwargs):
+    fn = _lazy("services.scope").refresh_session_emps
+    globals()["refresh_session_emps"] = fn
+    return fn(*args, **kwargs)
+
+def set_session_emps(*args, **kwargs):
+    fn = _lazy("services.scope").set_session_emps
+    globals()["set_session_emps"] = fn
+    return fn(*args, **kwargs)
+
+def CampanhasDeps(*args, **kwargs):
+    cls = _lazy("services.campanhas_service").CampanhasDeps
+    globals()["CampanhasDeps"] = cls
+    return cls(*args, **kwargs)
+
+def build_campanhas_page_context(*args, **kwargs):
+    fn = _lazy("services.campanhas_service").build_campanhas_page_context
+    globals()["build_campanhas_page_context"] = fn
+    return fn(*args, **kwargs)
+
+def build_relatorio_campanhas_scope(*args, **kwargs):
+    fn = _lazy("services.campanhas_service").build_relatorio_campanhas_scope
+    globals()["build_relatorio_campanhas_scope"] = fn
+    return fn(*args, **kwargs)
+
+def build_relatorio_campanhas_context(*args, **kwargs):
+    fn = _lazy("services.relatorio_campanhas_service").build_relatorio_campanhas_context
+    globals()["build_relatorio_campanhas_context"] = fn
+    return fn(*args, **kwargs)
+
+def recalc_v2_competencia(*args, **kwargs):
+    fn = _lazy("services.campanhas_v2_engine").recalc_v2_competencia
+    globals()["recalc_v2_competencia"] = fn
+    return fn(*args, **kwargs)
+
 import os
 import re
 import mimetypes

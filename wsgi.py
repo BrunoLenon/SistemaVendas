@@ -1,293 +1,163 @@
-"""WSGI entrypoint (Render-safe) for SistemaVendas.
+"""WSGI bootstrap for Render.
 
-Objetivo:
-- Abrir a porta rapidamente (Render health check / port scan) mesmo que o app Flask demore para importar.
-- Importar o Flask app em background e trocar automaticamente para o app real quando estiver pronto.
-- Expor endpoints de diagnóstico simples (boot_status / boot_log / threads).
+This module serves a lightweight boot UI while importing the real Flask app (web/app.py).
+It avoids Render port-scan timeouts and surfaces import errors clearly.
 
-Rotas de diagnóstico (funcionam com 1 ou 2 underscores para compatibilidade):
-- /healthz
-- /_boot_status  | /__boot_status
-- /_boot_log     | /__boot_log
-- /_threads      | /__threads
+Start command (Render):
+  gunicorn --bind 0.0.0.0:$PORT --workers 1 --threads 2 --timeout 95 --access-logfile - --error-logfile - --log-level info --capture-output wsgi:app
 """
-
 from __future__ import annotations
 
-import importlib
-import io
 import os
 import sys
-import threading
 import time
 import traceback
-from typing import Callable, Optional
+import threading
+import importlib
+from typing import Optional, Any, Dict
 
-# -----------------------------
-# Boot state / logging
-# -----------------------------
+from flask import Flask, Response, request
+from werkzeug.wrappers import Response as WResponse
 
-_boot_lock = threading.Lock()
-_boot_started_at = time.time()
-_boot_started = False
-_boot_ready = False
-_boot_error = False
-_boot_phase = "init"  # init | starting | importing | ready | error
-_boot_exc: Optional[str] = None
-_boot_log: list[str] = []
-
+BOOT: Dict[str, Any] = {
+    "ready": False,
+    "error": None,
+    "phase": "starting",
+    "started_at": time.time(),
+    "log": [],
+}
 
 def _log(msg: str) -> None:
-    ts = time.strftime("%Y-%m-%d %H:%M:%S")
-    line = f"[{ts}] {msg}"
-    with _boot_lock:
-        _boot_log.append(line)
-        # evita log infinito em memória
-        if len(_boot_log) > 400:
-            del _boot_log[:200]
-    # também vai pro stdout do Render
-    print(line, flush=True)
-
-
-def _set_phase(phase: str) -> None:
-    global _boot_phase
-    with _boot_lock:
-        _boot_phase = phase
-
-
-# -----------------------------
-# Import / swap
-# -----------------------------
-
-_real_wsgi: Optional[Callable] = None
-
-
-def _import_real_app() -> Callable:
-    """Importa o Flask app real.
-
-    Regras:
-    - Em repo com pasta 'web/', importamos 'app' depois de inserir web/ no sys.path.
-    - Retorna o .wsgi_app do Flask.
-    """
-    base_dir = os.path.dirname(__file__)
-    web_dir = os.path.join(base_dir, "web")
-
-    if os.path.isdir(web_dir) and web_dir not in sys.path:
-        sys.path.insert(0, web_dir)
-        _log(f"BOOT sys.path += {web_dir}")
-
-    # tenta importar 'app' (web/app.py)
-    mod = importlib.import_module("app")
-
-    flask_app = getattr(mod, "app", None)
-    if flask_app is None:
-        raise RuntimeError("Módulo 'app' foi importado, mas não encontrou variável global 'app' (Flask).")
-
-    # Garante que existe wsgi_app
-    wsgi_app = getattr(flask_app, "wsgi_app", None)
-    if wsgi_app is None:
-        raise RuntimeError("Flask app não possui 'wsgi_app'.")
-
-    return wsgi_app
-
+    ts = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime())
+    BOOT["log"].append(f"[{ts}] {msg}")
+    # keep last 300 lines
+    if len(BOOT["log"]) > 300:
+        BOOT["log"] = BOOT["log"][-300:]
 
 def _boot_worker() -> None:
-    global _boot_ready, _boot_error, _boot_exc, _real_wsgi
-
-    _set_phase("starting")
-    _log("BOOT thread started")
-
     try:
-        _set_phase("importing")
+        BOOT["phase"] = "importing"
+        _log("BOOT thread started")
+        # Ensure 'web' is on sys.path so import app works in Render root
+        web_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")
+        if web_dir not in sys.path:
+            sys.path.insert(0, web_dir)
+        _log(f"BOOT sys.path[0] = {sys.path[0]}")
         _log("BOOT importing Flask app (app.py)")
-
-        # watchdog simples: se ficar preso, teremos /_threads
-        wsgi_app = _import_real_app()
-
-        _real_wsgi = wsgi_app
-        _boot_ready = True
-        _set_phase("ready")
-        _log("BOOT ready (delegating to real app)")
-
-    except Exception:
-        _boot_error = True
-        _set_phase("error")
-        _boot_exc = traceback.format_exc()
+        mod = importlib.import_module("app")  # web/app.py as module 'app'
+        real_app = getattr(mod, "app", None)
+        if real_app is None:
+            raise RuntimeError("app.py foi importado mas não encontrei variável global 'app' (Flask instance).")
+        BOOT["real_app"] = real_app
+        BOOT["ready"] = True
+        BOOT["phase"] = "ready"
+        _log("BOOT ready: real Flask app carregado")
+    except Exception as e:
+        BOOT["ready"] = False
+        BOOT["phase"] = "error"
+        BOOT["error"] = f"{type(e).__name__}: {e}"
         _log("BOOT ERROR during import")
-        _log(_boot_exc)
+        _log(traceback.format_exc())
 
+_boot_thread = threading.Thread(target=_boot_worker, daemon=True)
+_boot_thread.start()
 
-def _start_boot_once() -> None:
-    global _boot_started
-    with _boot_lock:
-        if _boot_started:
-            return
-        _boot_started = True
+boot_app = Flask("boot_ui")
 
-    t = threading.Thread(target=_boot_worker, name="sv-boot", daemon=True)
-    t.start()
+@boot_app.get("/healthz")
+def healthz():
+    # Render healthcheck should pass fast even during boot.
+    return ("ok", 200)
 
+@boot_app.get("/_boot_status")
+@boot_app.get("/__boot_status")
+def boot_status():
+    uptime = int(time.time() - BOOT["started_at"])
+    return Response(f"ready={1 if BOOT['ready'] else 0}\nerror={BOOT['error'] or 0}\nphase={BOOT['phase']}\nuptime_s={uptime}\n", mimetype="text/plain")
 
-# inicia boot imediatamente ao importar wsgi.py
-_start_boot_once()
+@boot_app.get("/_boot_log")
+@boot_app.get("/__boot_log")
+def boot_log():
+    return Response("\n".join(BOOT["log"]) + "\n", mimetype="text/plain")
 
-
-# -----------------------------
-# Tiny WSGI helpers
-# -----------------------------
-
-
-def _plain(status: str, body: str, content_type: str = "text/plain; charset=utf-8"):
-    def _app(environ, start_response):
-        data = body.encode("utf-8", errors="replace")
-        headers = [("Content-Type", content_type), ("Content-Length", str(len(data)))]
-        start_response(status, headers)
-        return [data]
-
-    return _app
-
-
-def _html(status: str, html: str):
-    return _plain(status, html, content_type="text/html; charset=utf-8")
-
-
-def _get_path(environ) -> str:
-    return (environ.get("PATH_INFO") or "/")
-
-
-def _boot_status_text() -> str:
-    with _boot_lock:
-        uptime = int(time.time() - _boot_started_at)
-        lines = [
-            f"ready={1 if _boot_ready else 0}",
-            f"error={1 if _boot_error else 0}",
-            f"phase={_boot_phase}",
-            f"uptime_s={uptime}",
-        ]
-    return "\n".join(lines) + "\n"
-
-
-def _boot_log_text() -> str:
-    with _boot_lock:
-        tail = _boot_log[-200:]
-        exc = _boot_exc
-    out = []
-    out.append("\n".join(tail))
-    if exc:
-        out.append("\n--- TRACEBACK ---\n")
-        out.append(exc)
-    return "\n".join(out).rstrip() + "\n"
-
-
-def _threads_text() -> str:
+@boot_app.get("/_threads")
+@boot_app.get("/__threads")
+def threads_dump():
+    import faulthandler, io
     buf = io.StringIO()
-    frames = sys._current_frames()
-    for th in threading.enumerate():
-        buf.write(f"\n=== Thread: {th.name} (ident={th.ident}) ===\n")
-        fr = frames.get(th.ident)
-        if fr is None:
-            buf.write("<no frame>\n")
-            continue
-        buf.write("".join(traceback.format_stack(fr)))
-    return buf.getvalue()
+    faulthandler.dump_traceback(file=buf, all_threads=True)
+    return Response(buf.getvalue(), mimetype="text/plain")
 
+@boot_app.get("/")
+def index():
+    # If ready, delegate to real app immediately.
+    if BOOT.get("ready") and BOOT.get("real_app"):
+        real_app = BOOT["real_app"]
+        return WResponse.from_app(real_app.wsgi_app, request.environ)
 
-def _warmup_page() -> str:
-    # página HTML com auto-refresh/redirect
-    return f"""<!doctype html>
-<html lang=\"pt-br\">
+    # Simple HTML (NO regex in JS).
+    html = f"""<!doctype html>
+<html lang="pt-br">
 <head>
-  <meta charset=\"utf-8\" />
-  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />
-  <title>SistemaVendas iniciando…</title>
-  <style>
-    body {{ font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; background:#0b0b0b; color:#eaeaea; margin:0; padding:24px; }}
-    a {{ color:#8bd5ff; }}
-    .box {{ max-width: 920px; }}
-    .muted {{ color:#b0b0b0; }}
-    pre {{ background:#151515; padding:16px; border-radius:10px; overflow:auto; }}
-  </style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SistemaVendas iniciando…</title>
+<style>
+body{{font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,"Liberation Mono","Courier New", monospace;background:#0b0b0f;color:#eaeaf2;margin:0;padding:24px}}
+a{{color:#9bd1ff}}
+.box{{background:#131321;border:1px solid #2a2a44;border-radius:10px;padding:14px;margin:14px 0;}}
+pre{{white-space:pre-wrap;word-break:break-word;margin:0;}}
+.small{{opacity:.8;font-size:12px}}
+</style>
 </head>
 <body>
-  <div class=\"box\">
-    <h2>SistemaVendas está iniciando…</h2>
-    <p class=\"muted\">Assim que o boot finalizar, esta página redireciona automaticamente.</p>
+<h2>SistemaVendas está iniciando…</h2>
+<div class="small">Assim que o boot finalizar, esta página redireciona automaticamente.</div>
+<div class="box">
+<div>Status: <a href="/_boot_status">/_boot_status</a> | <a href="/__boot_status">/__boot_status</a></div>
+<div>Log: <a href="/_boot_log">/_boot_log</a> | <a href="/__boot_log">/__boot_log</a></div>
+<div>Threads: <a href="/_threads">/_threads</a></div>
+</div>
 
-    <p>
-      Status: <a href=\"/_boot_status\">/_boot_status</a> | <a href=\"/__boot_status\">/__boot_status</a><br>
-      Log: <a href=\"/_boot_log\">/_boot_log</a> | <a href=\"/__boot_log\">/__boot_log</a><br>
-      Threads: <a href=\"/_threads\">/_threads</a>
-    </p>
-
-    <pre id=\"status\">carregando status…</pre>
-    <pre id=\"log\" class=\"muted\">carregando logs…</pre>
-  </div>
+<div class="box"><pre id="status">carregando status…</pre></div>
+<div class="box"><pre id="log">carregando logs…</pre></div>
 
 <script>
-async function tick() {{
+async function pull(){{
   try {{
-    const st = await fetch('/_boot_status', {{cache:'no-store'}}).then(r=>r.text());
-    document.getElementById('status').textContent = st.trim();
-
-    if (/ready=1/.test(st)) {{
-      window.location.href = '/';
-      return;
-    }}
-
-    const lg = await fetch('/_boot_log', {{cache:'no-store'}}).then(r=>r.text());
-    // mostra só o final para não pesar
-    const lines = lg.split(/\n/);
-    const tail = lines.slice(-40).join('\n');
-    document.getElementById('log').textContent = tail;
-  }} catch (e) {{
-    document.getElementById('log').textContent = 'Falha ao ler boot status/log: ' + e;
+    const s = await fetch('/_boot_status', {{cache:'no-store'}});
+    document.getElementById('status').textContent = await s.text();
+  }} catch(e) {{
+    document.getElementById('status').textContent = 'erro ao carregar status: ' + e;
   }}
-  setTimeout(tick, 1200);
+  try {{
+    const l = await fetch('/_boot_log', {{cache:'no-store'}});
+    document.getElementById('log').textContent = await l.text();
+  }} catch(e) {{
+    document.getElementById('log').textContent = 'erro ao carregar log: ' + e;
+  }}
+  // if ready -> reload home to enter the real app
+  if(document.getElementById('status').textContent.includes('ready=1')) {{
+    location.reload();
+  }}
 }}
-
-tick();
+pull();
+setInterval(pull, 2000);
 </script>
 </body>
 </html>"""
+    return Response(html, mimetype="text/html")
 
+@boot_app.route("/<path:path>", methods=["GET","POST","PUT","PATCH","DELETE","OPTIONS"])
+def passthrough(path: str):
+    # When ready, proxy all other requests to real app.
+    if BOOT.get("ready") and BOOT.get("real_app"):
+        real_app = BOOT["real_app"]
+        return WResponse.from_app(real_app.wsgi_app, request.environ)
+    return ("SistemaVendas está iniciando… (aguarde)\n", 503)
 
-# -----------------------------
-# Public WSGI callable
-# -----------------------------
-
-
+# Exposed WSGI callable
 def app(environ, start_response):
-    path = _get_path(environ)
-
-    # aliases compatíveis (1 ou 2 underscores)
-    if path in ("/healthz", "/_healthz"):
-        body = f"ok\nboot_ready={1 if _boot_ready else 0}\nboot_phase={_boot_phase}\n"
-        return _plain("200 OK", body)(environ, start_response)
-
-    if path in ("/_boot_status", "/__boot_status"):
-        return _plain("200 OK", _boot_status_text())(environ, start_response)
-
-    if path in ("/_boot_log", "/__boot_log"):
-        return _plain("200 OK", _boot_log_text())(environ, start_response)
-
-    if path in ("/_threads", "/__threads"):
-        return _plain("200 OK", _threads_text())(environ, start_response)
-
-    # Se o app real já está pronto, delega.
-    if _real_wsgi is not None and _boot_ready and not _boot_error:
-        return _real_wsgi(environ, start_response)
-
-    # Caso tenha dado erro no boot, mostra log/trace no body (para evitar tela em branco)
-    if _boot_error:
-        return _plain(
-            "500 Internal Server Error",
-            "BOOT ERROR\n\n" + _boot_status_text() + "\n" + _boot_log_text(),
-        )(environ, start_response)
-
-    # Ainda inicializando
-    if path == "/":
-        return _html("200 OK", _warmup_page())(environ, start_response)
-
-    # Para qualquer outra rota enquanto ainda não pronto, responde warmup simples
-    # (ajuda o browser a não ficar só em branco)
-    return _html("503 Service Unavailable", _warmup_page())(environ, start_response)
+    if BOOT.get("ready") and BOOT.get("real_app"):
+        return BOOT["real_app"].wsgi_app(environ, start_response)  # type: ignore
+    return boot_app.wsgi_app(environ, start_response)
