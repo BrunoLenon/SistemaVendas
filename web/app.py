@@ -9,40 +9,26 @@ _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 if _BASE_DIR not in sys.path:
     sys.path.insert(0, _BASE_DIR)
 
-import importlib
+# --- Lazy services import (Render boot performance) ---
+# Evita travar o boot no Render por imports pesados em services/* (pandas/pyarrow etc).
+_SERVICES_LOADED = False
+def _lazy_load_services():
+    global _SERVICES_LOADED
+    global get_session_emps, refresh_session_emps, set_session_emps
+    global CampanhasDeps, build_campanhas_page_context, build_relatorio_campanhas_scope, build_relatorio_campanhas_context
+    global recalc_v2_competencia
+    if _SERVICES_LOADED:
+        return
+    from services.scope import get_session_emps, refresh_session_emps, set_session_emps
+    from services.campanhas_service import (
+        CampanhasDeps,
+        build_campanhas_page_context,
+        build_relatorio_campanhas_scope,
+    )
+    from services.relatorio_campanhas_service import build_relatorio_campanhas_context
+    from services.campanhas_v2_engine import recalc_v2_competencia
+    _SERVICES_LOADED = True
 
-# --- Services lazy (Render boot): evita travar importando módulos grandes no boot ---
-def _lazy_fn(mod_name: str, attr: str):
-    mod = importlib.import_module(mod_name)
-    fn = getattr(mod, attr)
-    globals()[attr] = fn  # cache
-    return fn
-
-def get_session_emps(*args, **kwargs):
-    return _lazy_fn('services.scope', 'get_session_emps')(*args, **kwargs)
-
-def refresh_session_emps(*args, **kwargs):
-    return _lazy_fn('services.scope', 'refresh_session_emps')(*args, **kwargs)
-
-def set_session_emps(*args, **kwargs):
-    return _lazy_fn('services.scope', 'set_session_emps')(*args, **kwargs)
-
-def CampanhasDeps(*args, **kwargs):
-    # factory proxy para a classe CampanhasDeps
-    C = _lazy_fn('services.campanhas_service', 'CampanhasDeps')
-    return C(*args, **kwargs)
-
-def build_campanhas_page_context(*args, **kwargs):
-    return _lazy_fn('services.campanhas_service', 'build_campanhas_page_context')(*args, **kwargs)
-
-def build_relatorio_campanhas_scope(*args, **kwargs):
-    return _lazy_fn('services.campanhas_service', 'build_relatorio_campanhas_scope')(*args, **kwargs)
-
-def build_relatorio_campanhas_context(*args, **kwargs):
-    return _lazy_fn('services.relatorio_campanhas_service', 'build_relatorio_campanhas_context')(*args, **kwargs)
-
-def recalc_v2_competencia(*args, **kwargs):
-    return _lazy_fn('services.campanhas_v2_engine', 'recalc_v2_competencia')(*args, **kwargs)
 import os
 import re
 import mimetypes
@@ -132,6 +118,18 @@ IS_PROD = bool(os.getenv("RENDER")) or (os.getenv("FLASK_ENV") == "production")
 
 # Cache TTL (horas) - se o cache estiver mais velho que isso, recalcula ao vivo
 CACHE_TTL_HOURS = float(os.getenv("CACHE_TTL_HOURS", "12") or 12)
+
+# Carrega services/* somente quando realmente precisar (evita travar /healthz e o boot inicial).
+@app.before_request
+def _before_request_lazy_services():
+    try:
+        p = request.path or ""
+    except Exception:
+        return
+    if p.startswith("/healthz") or p.startswith("/_boot") or p.startswith("/static") or p.startswith("/favicon"):
+        return
+    _lazy_load_services()
+
 
 
 # Respeitar X-Forwarded-* (https/ip real) atrás do Render
