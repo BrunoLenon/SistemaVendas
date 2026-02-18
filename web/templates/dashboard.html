@@ -166,7 +166,7 @@
     {% if role and role|lower == "admin" %}
       <li><a class="dropdown-item" href="/admin/configuracoes">⚙️ Configurações</a></li>
     {% endif %}
-    <li><a class="dropdown-item text-danger" href="{{ url_for('auth.logout') }}">🚪 Sair</a></li>
+    <li><a class="dropdown-item text-danger" href="/logout">🚪 Sair</a></li>
   </ul>
 </div>
   </div>

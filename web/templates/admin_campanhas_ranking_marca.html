@@ -9,7 +9,6 @@
       <small class="text-muted">Cadastro (Admin) + Snapshot (resultados congelados por mês/ano)</small>
     </div>
     <div class="d-flex flex-wrap gap-2">
-      {# No seu app, o endpoint "campanhas" não existe; o mais próximo é "campanhas_qtd" #}
       <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('campanhas_qtd') }}">Campanhas</a>
       <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('relatorio_campanhas') }}">Relatório de Campanhas</a>
       <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('dashboard') }}">Dashboard</a>
