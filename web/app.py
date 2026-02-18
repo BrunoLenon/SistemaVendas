@@ -7090,39 +7090,25 @@ def admin_campanhas_ranking_marca():
 
             elif acao == "recalcular":
                 cid = int(request.form.get("id") or 0)
-
-                raw_ano = (request.form.get("ano") or "").strip()
-                raw_mes = (request.form.get("mes") or "").strip()
-                ano_p = _to_int(raw_ano, ano)
-                mes_p = _to_int(raw_mes, mes)
-
-                # Recalcular por período (opcional).
-                # Se o admin informar um intervalo, usamos ele no cálculo e
-                # (se ano/mes não vierem) usamos a competência do início do período.
-                periodo_ini = _parse_date(request.form.get("periodo_ini"))
-                periodo_fim = _parse_date(request.form.get("periodo_fim"))
-
-                if (not raw_ano and not raw_mes):
-                    base_ref = periodo_ini or periodo_fim
-                    if base_ref:
-                        try:
-                            ano_p = int(getattr(base_ref, "year"))
-                            mes_p = int(getattr(base_ref, "month"))
-                        except Exception:
-                            pass
-
+                ano_p = _to_int(request.form.get("ano"), ano)
+                mes_p = _to_int(request.form.get("mes"), mes)
                 actor = (session.get("username") or session.get("nome") or session.get("user") or "admin")
 
                 try:
-                    res = recalc_ranking_marca(
-                        db,
-                        campanha_id=cid,
-                        ano=ano_p,
-                        mes=mes_p,
-                        actor=str(actor),
-                        periodo_ini=periodo_ini,
-                        periodo_fim=periodo_fim,
-                    )
+                    # Compatibilidade: algumas versões do service não aceitam periodo_ini/periodo_fim
+                    import inspect as _inspect
+                    _kwargs = dict(campanha_id=cid, ano=ano_p, mes=mes_p, actor=str(actor))
+                    periodo_ini = (request.form.get("periodo_ini") or "").strip()
+                    periodo_fim = (request.form.get("periodo_fim") or "").strip()
+                    try:
+                        _sig = _inspect.signature(recalc_ranking_marca)
+                        if "periodo_ini" in _sig.parameters and periodo_ini:
+                            _kwargs["periodo_ini"] = periodo_ini
+                        if "periodo_fim" in _sig.parameters and periodo_fim:
+                            _kwargs["periodo_fim"] = periodo_fim
+                    except Exception:
+                        pass
+                    res = recalc_ranking_marca(db, **_kwargs)
                     db.commit()
 
                     if res.get("rows", 0) > 0:
@@ -7138,7 +7124,6 @@ def admin_campanhas_ranking_marca():
                         app.logger.exception("Erro no recálculo ranking-marca")
                     except Exception:
                         pass
-
 
             else:
                 erro = "Ação inválida."
