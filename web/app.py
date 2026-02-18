@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 import threading
 import sys
@@ -26,7 +28,17 @@ from io import BytesIO
 
 from decimal import Decimal, ROUND_HALF_UP
 
-import pandas as pd
+# --- pandas lazy (Render boot) ---
+# Importar pandas no topo pode travar o boot no Render (pandas/pyarrow pesados).
+# Este proxy importa pandas apenas no primeiro acesso a pd.*
+class _LazyPandas:
+    def __getattr__(self, name):
+        import pandas as _pd  # type: ignore
+        globals()["pd"] = _pd
+        return getattr(_pd, name)
+
+
+pd = _LazyPandas()
 import requests
 from sqlalchemy import and_, or_, func, case, cast, String, text, extract
 from flask import (
