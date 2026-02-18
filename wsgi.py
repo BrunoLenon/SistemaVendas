@@ -4,17 +4,17 @@ import threading
 import traceback
 import importlib
 
-# ----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # Render-safe WSGI bootstrap
-# - Responde imediatamente em /healthz e / (para o port-scan do Render não falhar)
-# - Carrega o app real (web/app.py -> variável 'app') em background
-# - Evita travar o boot por imports pesados (pandas/pyarrow/etc)
-# ----------------------------------------------------------------------------
+# - Responde imediatamente em /healthz e / para o port-scan/healthcheck do Render.
+# - Carrega o app real (web/app.py -> variavel 'app') em background.
+# - Evita travar o boot por imports pesados no startup.
+# -----------------------------------------------------------------------------
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 WEB_DIR = os.path.join(BASE_DIR, "web")
 
-# Garante que `import app` resolva para SistemaVendas/web/app.py
+# Garante que `import app` encontre SistemaVendas/web/app.py
 if WEB_DIR not in sys.path:
     sys.path.insert(0, WEB_DIR)
 
@@ -50,7 +50,6 @@ def _start_loader():
 
 def _respond(start_response, status: str, body: bytes, headers=None):
     headers = headers or []
-    # Garante Content-Type default
     if not any(h[0].lower() == "content-type" for h in headers):
         headers.append(("Content-Type", "text/plain; charset=utf-8"))
     headers.append(("Content-Length", str(len(body))))
@@ -58,8 +57,7 @@ def _respond(start_response, status: str, body: bytes, headers=None):
     return [body]
 
 
-def _warmup_page() -> bytes:
-    # Página simples para não ficar só "OK" no navegador
+def _warmup_html() -> bytes:
     return (
         "<!doctype html>\n"
         "<html lang='pt-br'>\n"
@@ -68,20 +66,20 @@ def _warmup_page() -> bytes:
         "  <meta name='viewport' content='width=device-width, initial-scale=1'/>\n"
         "  <meta http-equiv='refresh' content='2;url=/login'/>\n"
         "  <title>SistemaVendas - Iniciando</title>\n"
-        "  <style>body{font-family:system-ui,Segoe UI,Arial;margin:40px;} .box{max-width:720px} code{background:#f3f3f3;padding:2px 6px;border-radius:6px}</style>\n"
+        "  <style>body{font-family:system-ui,Segoe UI,Arial;margin:40px} .box{max-width:760px} code{background:#f2f2f2;padding:2px 6px;border-radius:6px}</style>\n"
         "</head>\n"
         "<body>\n"
         "  <div class='box'>\n"
         "    <h2>SistemaVendas está iniciando…</h2>\n"
-        "    <p>O servidor já está no ar e está carregando o aplicativo. Em instantes você será redirecionado para <code>/login</code>.</p>\n"
-        "    <p>Se não redirecionar automaticamente, tente recarregar a página.</p>\n"
+        "    <p>O servidor já está no ar. Estou carregando o aplicativo. Em instantes você será redirecionado para <code>/login</code>.</p>\n"
+        "    <p>Se não redirecionar automaticamente, aperte F5.</p>\n"
         "  </div>\n"
         "</body>\n"
         "</html>\n"
     ).encode("utf-8")
 
 
-# WSGI entrypoint
+# WSGI callable
 def app(environ, start_response):
     path = environ.get("PATH_INFO") or "/"
 
@@ -89,26 +87,21 @@ def app(environ, start_response):
     if path == "/healthz":
         return _respond(start_response, "200 OK", b"OK")
 
-    # Inicia carregamento do app real em background (sem bloquear respostas)
+    # Inicia loader em background sem bloquear
     _start_loader()
 
-    # Se o app real já carregou, delega
+    # Se o app real carregou, delega
     if _real_app is not None:
         return _real_app(environ, start_response)
 
-    # Se deu erro no boot do app real, expõe 500 com traceback
+    # Se o app real deu erro, exponha o traceback (facilita corrigir)
     if _real_app_error:
         body = ("ERRO AO INICIAR APLICACAO\n\n" + _real_app_error).encode("utf-8")
-        return _respond(
-            start_response,
-            "500 Internal Server Error",
-            body,
-            headers=[("Content-Type", "text/plain; charset=utf-8")],
-        )
+        return _respond(start_response, "500 Internal Server Error", body)
 
-    # Enquanto carrega, responda rápido para o port-scan do Render
+    # Enquanto carrega, responda rapido para o port-scan do Render
     if path == "/" or path == "":
-        body = _warmup_page()
+        body = _warmup_html()
         return _respond(
             start_response,
             "200 OK",
