@@ -9,7 +9,7 @@
       <small class="text-muted">Cadastro (Admin) + Snapshot (resultados congelados por mês/ano)</small>
     </div>
     <div class="d-flex flex-wrap gap-2">
-      <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('campanhas_qtd') }}">Campanhas</a>
+      <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('campanhas') }}">Campanhas</a>
       <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('relatorio_campanhas') }}">Relatório de Campanhas</a>
       <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('dashboard') }}">Dashboard</a>
     </div>
@@ -28,7 +28,7 @@
     </div>
     <div class="card-body">
       <form method="post" action="{{ url_for('admin_campanhas_ranking_marca') }}">
-        <input type="hidden" name="acao" value="criar">
+        <input type="hidden" name="action" value="create">
 
         <div class="row g-3">
           <div class="col-12 col-md-6">
@@ -51,22 +51,22 @@
 
           <div class="col-12 col-md-3">
             <label class="form-label">Mínimo (R$)</label>
-            <input class="form-control" type="number" step="0.01" name="base_minima_valor" value="10000">
+            <input class="form-control" type="number" step="0.01" name="base_minima_valor">
           </div>
 
           <div class="col-12 col-md-3">
             <label class="form-label">Prêmio 1º (R$)</label>
-            <input class="form-control" type="number" step="0.01" name="premio_top1" value="300">
+            <input class="form-control" type="number" step="0.01" name="premio_top1">
           </div>
 
           <div class="col-12 col-md-3">
             <label class="form-label">Prêmio 2º (R$)</label>
-            <input class="form-control" type="number" step="0.01" name="premio_top2" value="200">
+            <input class="form-control" type="number" step="0.01" name="premio_top2">
           </div>
 
           <div class="col-12 col-md-3">
             <label class="form-label">Prêmio 3º (R$)</label>
-            <input class="form-control" type="number" step="0.01" name="premio_top3" value="100">
+            <input class="form-control" type="number" step="0.01" name="premio_top3">
           </div>
 
           <div class="col-12 col-md-3">
@@ -81,7 +81,7 @@
 
           <div class="col-12">
             <label class="form-label">EMPs do escopo (apenas se POR_EMP)</label>
-            {{ multiselect("emps", emps_opts or [], [], placeholder="Selecione uma ou mais EMPs") }}
+            {{ multiselect("scope_emps", emps_options or [], selected_scope_emps or [], placeholder="Selecione uma ou mais EMPs") }}
             <div class="form-text">Admin sempre vê tudo. Supervisor/Vendedor só enxergam campanhas POR_EMP se estiverem nessas EMPs.</div>
           </div>
 

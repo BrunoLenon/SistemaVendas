@@ -39,13 +39,13 @@ def _upper(s: str | None) -> str:
     return (s or "").strip().upper()
 
 
-def _to_float(v: Any, default: float = 0.0) -> float:
+def _to_float(v: Any, default: float | None = 0.0) -> float | None:
     try:
         if v is None or v == "":
-            return float(default)
+            return None if default is None else float(default)
         return float(str(v).replace(".", "").replace(",", "."))
     except Exception:
-        return float(default)
+        return None if default is None else float(default)
 
 
 def _to_int(v: Any, default: int = 0) -> int:
@@ -188,9 +188,9 @@ def create_or_update_campaign(
     scope_mode: str,
     emps: list[int] | None,
     base_minima_valor: float,
-    premio_top1: float,
-    premio_top2: float,
-    premio_top3: float,
+    premio_top1: float | None,
+    premio_top2: float | None,
+    premio_top3: float | None,
     ativo: bool,
 ) -> CampanhaV2MasterNew:
     scope_mode = (scope_mode or "GLOBAL").upper()
@@ -211,9 +211,9 @@ def create_or_update_campaign(
     c.scope_mode = scope_mode
     c.base_minima_valor = float(base_minima_valor or 0.0)
     c.premio_tipo = "FIXO"
-    c.premio_top1 = float(premio_top1 or 0.0)
-    c.premio_top2 = float(premio_top2 or 0.0)
-    c.premio_top3 = float(premio_top3 or 0.0)
+    c.premio_top1 = float(premio_top1) if premio_top1 is not None else None
+    c.premio_top2 = float(premio_top2) if premio_top2 is not None else None
+    c.premio_top3 = float(premio_top3) if premio_top3 is not None else None
     c.ativo = bool(ativo)
 
     if not campanha_id:
@@ -305,7 +305,7 @@ def recalc_ranking_marca(
         )
         .filter(Venda.movimento >= ini)
         .filter(Venda.movimento <= fim)
-        .filter(func.upper(func.trim(func.coalesce(Venda.marca, ""))) == marca)
+        .filter(func.upper(func.coalesce(Venda.marca, "")) == marca)
     )
 
     if scope_mode == "POR_EMP":

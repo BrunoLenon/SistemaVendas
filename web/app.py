@@ -184,7 +184,7 @@ def _idle_timeout():
             if now - last_dt > timedelta(hours=1):
                 session.clear()
                 flash("Sua sessão expirou por inatividade. Faça login novamente.", "warning")
-                return redirect("/login")
+                return redirect(url_for("auth.login"))
         except Exception:
             # Se estiver inválido, reseta
             pass
@@ -811,7 +811,7 @@ def financeiro_required(view_func):
 
 def _login_required():
     if not _usuario_logado():
-        return redirect("/login")
+        return redirect(url_for("auth.login"))
     return None
 
 def _admin_required():
@@ -1863,7 +1863,7 @@ def home():
     # Browser/users: redirect to the right place
     if session.get("vendedor") and session.get("role"):
         return redirect(url_for("dashboard"))
-    return redirect("/login")
+    return redirect(url_for("auth.login"))
 
 @app.get("/favicon.ico")
 def favicon():
@@ -6924,109 +6924,6 @@ def admin_campanhas_v2_recalcular():
     finally:
         db.close()
     return redirect(url_for("admin_campanhas_v2", ano=ano, mes=mes))
-# ==========================
-# Campanhas V2 - Ações (UI)
-# ==========================
-@app.post("/admin/campanhas_v2/<int:cid>/recalcular")
-@admin_required
-def admin_campanhas_v2_recalcular_uma(cid: int):
-    from datetime import date
-    ano = int(request.form.get("ano") or request.args.get("ano") or date.today().year)
-    mes = int(request.form.get("mes") or request.args.get("mes") or date.today().month)
-    db = SessionLocal()
-    try:
-        actor = session.get("username") or "admin"
-        # Recalculo por competência (mes/ano). Se quiser por campanha única no futuro,
-        # podemos evoluir o engine V2 para aceitar filtro por campanha_id.
-        recalc_v2_competencia(db, ano=ano, mes=mes, actor=str(actor))
-        flash(f"Recalculo V2 concluído para {mes}/{ano}.", "success")
-    except Exception as e:
-        db.rollback()
-        flash(f"Erro ao recalcular V2: {e}", "danger")
-    finally:
-        db.close()
-    return redirect(url_for("admin_campanhas_v2", ano=ano, mes=mes))
-
-@app.post("/admin/campanhas_v2/<int:cid>/toggle")
-@admin_required
-def admin_campanhas_v2_toggle(cid: int):
-    from datetime import date
-    ano = int(request.args.get("ano") or date.today().year)
-    mes = int(request.args.get("mes") or date.today().month)
-    db = SessionLocal()
-    try:
-        c = db.query(CampanhaV2Master).filter(CampanhaV2Master.id == cid).first()
-        if not c:
-            flash("Campanha V2 não encontrada.", "warning")
-            return redirect(url_for("admin_campanhas_v2", ano=ano, mes=mes))
-        c.ativo = not bool(c.ativo)
-        db.commit()
-        flash("Status atualizado.", "success")
-    except Exception as e:
-        db.rollback()
-        flash(f"Erro ao atualizar status: {e}", "danger")
-    finally:
-        db.close()
-    return redirect(url_for("admin_campanhas_v2", ano=ano, mes=mes))
-
-@app.post("/admin/campanhas_v2/<int:cid>/duplicar")
-@admin_required
-def admin_campanhas_v2_duplicar(cid: int):
-    from datetime import date
-    ano = int(request.args.get("ano") or date.today().year)
-    mes = int(request.args.get("mes") or date.today().month)
-    db = SessionLocal()
-    try:
-        c = db.query(CampanhaV2Master).filter(CampanhaV2Master.id == cid).first()
-        if not c:
-            flash("Campanha V2 não encontrada.", "warning")
-            return redirect(url_for("admin_campanhas_v2", ano=ano, mes=mes))
-
-        nova = CampanhaV2Master(
-            titulo=(c.titulo or "").strip() + " (cópia)",
-            tipo=c.tipo,
-            ativo=c.ativo,
-            regras_json=c.regras_json,
-        )
-        db.add(nova)
-        db.flush()
-
-        scopes = db.query(CampanhaV2ScopeEMP).filter(CampanhaV2ScopeEMP.campanha_id == c.id).all()
-        for s in scopes:
-            db.add(CampanhaV2ScopeEMP(campanha_id=nova.id, emp=s.emp))
-
-        db.commit()
-        flash("Campanha duplicada.", "success")
-    except Exception as e:
-        db.rollback()
-        flash(f"Erro ao duplicar: {e}", "danger")
-    finally:
-        db.close()
-    return redirect(url_for("admin_campanhas_v2", ano=ano, mes=mes))
-
-@app.post("/admin/campanhas_v2/<int:cid>/delete")
-@admin_required
-def admin_campanhas_v2_delete(cid: int):
-    from datetime import date
-    ano = int(request.args.get("ano") or date.today().year)
-    mes = int(request.args.get("mes") or date.today().month)
-    db = SessionLocal()
-    try:
-        # remove scopes primeiro (evita FK)
-        db.query(CampanhaV2ScopeEMP).filter(CampanhaV2ScopeEMP.campanha_id == cid).delete(synchronize_session=False)
-        # remove master
-        deleted = db.query(CampanhaV2Master).filter(CampanhaV2Master.id == cid).delete(synchronize_session=False)
-        db.commit()
-        if deleted:
-            flash("Campanha removida.", "success")
-        else:
-            flash("Campanha não encontrada.", "warning")
-    except Exception as e:
-        db.rollback()
-        flash(f"Erro ao remover: {e}", "danger")
-    finally:
-        db.close()
-    return redirect(url_for("admin_campanhas_v2", ano=ano, mes=mes))
 
 
 @app.route("/financeiro/campanhas_v2", methods=["GET"])
@@ -7161,9 +7058,9 @@ def admin_campanhas_ranking_marca():
 
                 minimo = _to_float(request.form.get("base_minima_valor"), 0.0)
 
-                p1 = _to_float(request.form.get("premio_top1"), 300.0)
-                p2 = _to_float(request.form.get("premio_top2"), 200.0)
-                p3 = _to_float(request.form.get("premio_top3"), 100.0)
+                p1 = _to_float(request.form.get("premio_top1"), None)
+                p2 = _to_float(request.form.get("premio_top2"), None)
+                p3 = _to_float(request.form.get("premio_top3"), None)
 
                 ativo = (request.form.get("ativo") or "1") == "1"
 
@@ -7352,3 +7249,4 @@ def campanhas_ranking_marca():
             db.close()
         except Exception:
             pass
+
