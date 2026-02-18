@@ -81,7 +81,7 @@
 
           <div class="col-12">
             <label class="form-label">EMPs do escopo (apenas se POR_EMP)</label>
-            {{ multiselect("scope_emps", emps_options or [], selected_scope_emps or [], placeholder="Selecione uma ou mais EMPs") }}
+            {{ multiselect("emps", emps_options or [], selected_scope_emps or [], placeholder="Selecione uma ou mais EMPs") }}
             <div class="form-text">Admin sempre vê tudo. Supervisor/Vendedor só enxergam campanhas POR_EMP se estiverem nessas EMPs.</div>
           </div>
 
@@ -99,12 +99,12 @@
       <form class="d-flex gap-2" method="get" action="{{ url_for('admin_campanhas_ranking_marca') }}">
         <select class="form-select form-select-sm" name="ano" style="width: 110px;">
           {% for y in anos %}
-            <option value="{{ y }}" {% if y == ano_selected %}selected{% endif %}>{{ y }}</option>
+            <option value="{{ y }}" {% if y == ano %}selected{% endif %}>{{ y }}</option>
           {% endfor %}
         </select>
         <select class="form-select form-select-sm" name="mes" style="width: 110px;">
           {% for m in meses %}
-            <option value="{{ m }}" {% if m == mes_selected %}selected{% endif %}>{{ "%02d"|format(m) }}</option>
+            <option value="{{ m }}" {% if m == mes %}selected{% endif %}>{{ "%02d"|format(m) }}</option>
           {% endfor %}
         </select>
         <button class="btn btn-outline-secondary btn-sm">Competência</button>
@@ -140,22 +140,34 @@
                 3º R$ {{ "%.2f"|format(c.premio_top3 or 0) }}
               </td>
               <td>
-                {{ c.vigencia_inicio or "-" }} → {{ c.vigencia_fim or "-" }}
+                {{ c.vigencia_inicio.strftime('%d/%m/%Y') if c.vigencia_inicio else '-' }} → 
+                {{ c.vigencia_fim.strftime('%d/%m/%Y') if c.vigencia_fim else '-' }}
               </td>
               <td class="text-end">
+                <!-- Formulário de RECÁLCULO -->
                 <form method="post" action="{{ url_for('admin_campanhas_ranking_marca') }}" class="d-inline">
                   <input type="hidden" name="action" value="recalcular">
-                  <input type="hidden" name="campanha_id" value="{{ c.id }}">
-                  <input type="hidden" name="ano" value="{{ ano_selected }}">
-                  <input type="hidden" name="mes" value="{{ mes_selected }}">
-                  <button class="btn btn-sm btn-outline-primary">Recalcular {{ mes_selected }}/{{ ano_selected }}</button>
+                  <input type="hidden" name="id" value="{{ c.id }}">
+                  <input type="hidden" name="ano" value="{{ ano }}">
+                  <input type="hidden" name="mes" value="{{ mes }}">
+                  <button class="btn btn-sm btn-outline-primary" type="submit">
+                    Recalcular {{ "%02d"|format(mes) }}/{{ ano }}
+                  </button>
                 </form>
-                <form method="post" action="{{ url_for('admin_campanhas_ranking_marca') }}" class="d-inline" onsubmit="return confirm('Excluir esta campanha de ranking por marca? Isso removerá também os resultados/snapshots.');">
+
+                <!-- Formulário de EXCLUSÃO -->
+                <form method="post" action="{{ url_for('admin_campanhas_ranking_marca') }}" class="d-inline" 
+                      onsubmit="return confirm('Excluir esta campanha de ranking por marca? Isso removerá também os resultados/snapshots.');">
                   <input type="hidden" name="action" value="remover">
-                  <input type="hidden" name="campanha_id" value="{{ c.id }}">
-                  <button class="btn btn-sm btn-outline-danger">Excluir</button>
+                  <input type="hidden" name="id" value="{{ c.id }}">
+                  <button class="btn btn-sm btn-outline-danger" type="submit">Excluir</button>
                 </form>
-                <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('campanhas_ranking_marca', campanha_id=c.id, ano=ano_selected, mes=mes_selected) }}">Ver ranking</a>
+
+                <!-- Link para VER RANKING -->
+                <a class="btn btn-sm btn-outline-secondary" 
+                   href="{{ url_for('campanhas_ranking_marca', campanha_id=c.id, ano=ano, mes=mes) }}">
+                  Ver ranking
+                </a>
               </td>
             </tr>
             {% endfor %}
