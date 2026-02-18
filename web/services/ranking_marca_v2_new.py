@@ -14,11 +14,12 @@ from __future__ import annotations
 
 import json
 import calendar
+import re
 from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any, Iterable
 
-from sqlalchemy import func, and_
+from sqlalchemy import func, and_, or_
 
 from db import (
     SessionLocal,
@@ -211,9 +212,9 @@ def create_or_update_campaign(
     c.scope_mode = scope_mode
     c.base_minima_valor = float(base_minima_valor or 0.0)
     c.premio_tipo = "FIXO"
-    c.premio_top1 = float(premio_top1) if premio_top1 is not None else 0.0
-    c.premio_top2 = float(premio_top2) if premio_top2 is not None else None
-    c.premio_top3 = float(premio_top3) if premio_top3 is not None else None
+    c.premio_top1 = float(premio_top1 or 0.0)
+    c.premio_top2 = float(premio_top2 or 0.0)
+    c.premio_top3 = float(premio_top3 or 0.0)
     c.ativo = bool(ativo)
 
     if not campanha_id:
@@ -305,7 +306,7 @@ def recalc_ranking_marca(
         )
         .filter(Venda.movimento >= ini)
         .filter(Venda.movimento <= fim)
-        .filter(func.upper(func.trim(func.coalesce(Venda.marca, ""))) == marca)
+        .filter(or_(marca_col == marca, marca_col.like(f"%{marca}%")))
     )
 
     if scope_mode == "POR_EMP":

@@ -28,7 +28,7 @@
     </div>
     <div class="card-body">
       <form method="post" action="{{ url_for('admin_campanhas_ranking_marca') }}">
-        <input type="hidden" name="acao" value="criar">
+        <input type="hidden" name="action" value="create">
 
         <div class="row g-3">
           <div class="col-12 col-md-6">
@@ -51,22 +51,22 @@
 
           <div class="col-12 col-md-3">
             <label class="form-label">Mínimo (R$)</label>
-            <input class="form-control" type="number" step="0.01" name="base_minima_valor" placeholder="Ex: 10000" required>
+            <input class="form-control" type="text" name="base_minima_valor" inputmode="decimal" placeholder="Ex: 10000">
           </div>
 
           <div class="col-12 col-md-3">
             <label class="form-label">Prêmio 1º (R$)</label>
-            <input class="form-control" type="number" step="0.01" name="premio_top1" placeholder="Ex: 300" required>
+            <input class="form-control" type="text" name="premio_top1" inputmode="decimal" placeholder="Ex: 300" required>
           </div>
 
           <div class="col-12 col-md-3">
             <label class="form-label">Prêmio 2º (R$)</label>
-            <input class="form-control" type="number" step="0.01" name="premio_top2" placeholder="Ex: 200">
+            <input class="form-control" type="text" name="premio_top2" inputmode="decimal" placeholder="Ex: 200">
           </div>
 
           <div class="col-12 col-md-3">
             <label class="form-label">Prêmio 3º (R$)</label>
-            <input class="form-control" type="number" step="0.01" name="premio_top3" placeholder="Ex: 100">
+            <input class="form-control" type="text" name="premio_top3" inputmode="decimal" placeholder="Ex: 100">
           </div>
 
           <div class="col-12 col-md-3">
@@ -81,7 +81,7 @@
 
           <div class="col-12">
             <label class="form-label">EMPs do escopo (apenas se POR_EMP)</label>
-            {{ multiselect("emps", emps_opts or [], [], placeholder="Selecione uma ou mais EMPs") }}
+            {{ multiselect("scope_emps", emps_options or [], selected_scope_emps or [], placeholder="Selecione uma ou mais EMPs") }}
             <div class="form-text">Admin sempre vê tudo. Supervisor/Vendedor só enxergam campanhas POR_EMP se estiverem nessas EMPs.</div>
           </div>
 
@@ -135,7 +135,9 @@
               <td>{{ c.scope_mode }}</td>
               <td>R$ {{ "%.2f"|format(c.base_minima_valor or 0) }}</td>
               <td>
-          {% if c.premio_top1 is not none %}1º R$ {{ "%.2f"|format(c.premio_top1 or 0) }}{% else %}-{% endif %}{% if c.premio_top2 is not none %} / 2º R$ {{ "%.2f"|format(c.premio_top2 or 0) }}{% endif %}{% if c.premio_top3 is not none %} / 3º R$ {{ "%.2f"|format(c.premio_top3 or 0) }}{% endif %}
+                1º R$ {{ "%.2f"|format(c.premio_top1 or 0) }} /
+                2º R$ {{ "%.2f"|format(c.premio_top2 or 0) }} /
+                3º R$ {{ "%.2f"|format(c.premio_top3 or 0) }}
               </td>
               <td>
                 {{ c.vigencia_inicio or "-" }} → {{ c.vigencia_fim or "-" }}
@@ -148,11 +150,11 @@
                   <input type="hidden" name="mes" value="{{ mes_selected }}">
                   <button class="btn btn-sm btn-outline-primary">Recalcular {{ mes_selected }}/{{ ano_selected }}</button>
                 </form>
-          <form method="post" action="{{ url_for('admin_campanhas_ranking_marca') }}" class="d-inline" onsubmit="return confirm('Excluir esta campanha? Isso remove também os snapshots/resultados.');">
-            <input type="hidden" name="acao" value="remover"/>
-            <input type="hidden" name="campanha_id" value="{{ c.id }}"/>
-            <button type="submit" class="btn btn-sm btn-outline-danger">Excluir</button>
-          </form>
+                <form method="post" action="{{ url_for(\'admin_campanhas_ranking_marca\') }}" class="d-inline" onsubmit="return confirm(\'Excluir esta campanha de ranking por marca? Isso removerá também os resultados/snapshots.\');">
+                  <input type="hidden" name="action" value="remover">
+                  <input type="hidden" name="campanha_id" value="{{ c.id }}">
+                  <button class="btn btn-sm btn-outline-danger">Excluir</button>
+                </form>
                 <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('campanhas_ranking_marca', campanha_id=c.id, ano=ano_selected, mes=mes_selected) }}">Ver ranking</a>
               </td>
             </tr>
