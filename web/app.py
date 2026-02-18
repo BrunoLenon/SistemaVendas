@@ -1,7 +1,4 @@
-from __future__ import annotations
-
 import os
-import threading
 import sys
 
 # --- Path shim: permite rodar tanto como 'app:app' (--chdir web) quanto 'web.app:app' ---
@@ -9,26 +6,14 @@ _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 if _BASE_DIR not in sys.path:
     sys.path.insert(0, _BASE_DIR)
 
-# --- Lazy services import (Render boot performance) ---
-# Evita travar o boot no Render por imports pesados em services/* (pandas/pyarrow etc).
-_SERVICES_LOADED = False
-def _lazy_load_services():
-    global _SERVICES_LOADED
-    global get_session_emps, refresh_session_emps, set_session_emps
-    global CampanhasDeps, build_campanhas_page_context, build_relatorio_campanhas_scope, build_relatorio_campanhas_context
-    global recalc_v2_competencia
-    if _SERVICES_LOADED:
-        return
-    from services.scope import get_session_emps, refresh_session_emps, set_session_emps
-    from services.campanhas_service import (
-        CampanhasDeps,
-        build_campanhas_page_context,
-        build_relatorio_campanhas_scope,
-    )
-    from services.relatorio_campanhas_service import build_relatorio_campanhas_context
-    from services.campanhas_v2_engine import recalc_v2_competencia
-    _SERVICES_LOADED = True
-
+from services.scope import get_session_emps, refresh_session_emps, set_session_emps
+from services.campanhas_service import (
+    CampanhasDeps,
+    build_campanhas_page_context,
+    build_relatorio_campanhas_scope,
+)
+from services.relatorio_campanhas_service import build_relatorio_campanhas_context
+from services.campanhas_v2_engine import recalc_v2_competencia
 import os
 import re
 import mimetypes
@@ -40,17 +25,7 @@ from io import BytesIO
 
 from decimal import Decimal, ROUND_HALF_UP
 
-# --- pandas lazy (Render boot) ---
-# Importar pandas no topo pode travar o boot no Render (pandas/pyarrow pesados).
-# Este proxy importa pandas apenas no primeiro acesso a pd.*
-class _LazyPandas:
-    def __getattr__(self, name):
-        import pandas as _pd  # type: ignore
-        globals()["pd"] = _pd
-        return getattr(_pd, name)
-
-
-pd = _LazyPandas()
+import pandas as pd
 import requests
 from sqlalchemy import and_, or_, func, case, cast, String, text, extract
 from flask import (
@@ -69,8 +44,6 @@ from werkzeug.security import check_password_hash, generate_password_hash
 from dados_db import carregar_df, limpar_cache_df
 from db import (
     CampanhaV2Master, CampanhaV2ScopeEMP, CampanhaV2Resultado,
-    CampanhaRankingMarca, CampanhaRankingMarcaEMP, CampanhaRankingMarcaPremio, CampanhaRankingMarcaResultado,
-
 
     SessionLocal,
     Usuario,
@@ -100,9 +73,7 @@ from db import (
     BrandingTheme,
     criar_tabelas,
 )
-# IMPORTANTE (performance/Render boot):
-#   importar_excel pode puxar parsing/IO e libs pesadas.
-#   Para o boot do Render ficar rápido, fazemos import lazy dentro da rota.
+from importar_excel import importar_planilha
 
 # Flask app (Render/Gunicorn expects `app` at module level: web/app.py -> app:app)
 app = Flask(__name__, template_folder="templates")
@@ -118,18 +89,6 @@ IS_PROD = bool(os.getenv("RENDER")) or (os.getenv("FLASK_ENV") == "production")
 
 # Cache TTL (horas) - se o cache estiver mais velho que isso, recalcula ao vivo
 CACHE_TTL_HOURS = float(os.getenv("CACHE_TTL_HOURS", "12") or 12)
-
-# Carrega services/* somente quando realmente precisar (evita travar /healthz e o boot inicial).
-@app.before_request
-def _before_request_lazy_services():
-    try:
-        p = request.path or ""
-    except Exception:
-        return
-    if p.startswith("/healthz") or p.startswith("/_boot") or p.startswith("/static") or p.startswith("/favicon"):
-        return
-    _lazy_load_services()
-
 
 
 # Respeitar X-Forwarded-* (https/ip real) atrás do Render
@@ -243,20 +202,11 @@ def _idle_timeout():
 #
 # Em produção, mantenha AUTO_MIGRATE=0 e rode migrações de forma controlada.
 if os.getenv("AUTO_MIGRATE", "0") == "1":
-    # NÃO bloqueie o boot do Gunicorn/Render com migração de schema.
-    # Rodamos em background para o /healthz responder imediatamente.
-    def _auto_migrate_bg():
-        try:
-            criar_tabelas()
-            app.logger.info("AUTO_MIGRATE=1 -> criar_tabelas() executado com sucesso (bg)")
-        except Exception:
-            app.logger.exception("Falha ao criar/verificar tabelas (AUTO_MIGRATE=1, bg)")
-
     try:
-        threading.Thread(target=_auto_migrate_bg, daemon=True).start()
-        app.logger.info("AUTO_MIGRATE=1 -> criar_tabelas() agendado em background (não bloqueia boot)")
+        criar_tabelas()
+        app.logger.info("AUTO_MIGRATE=1 -> criar_tabelas() executado com sucesso")
     except Exception:
-        app.logger.exception("Falha ao iniciar thread de AUTO_MIGRATE=1")
+        app.logger.exception("Falha ao criar/verificar tabelas (AUTO_MIGRATE=1)")
 # Blueprints (organização do app)
 try:
     from blueprints.auth import bp as auth_bp
@@ -677,7 +627,7 @@ def _allowed_emps() -> list[str]:
 
     emps_int = get_session_emps()
     if emps_int:
-        return [str(e) for e in emps_int]
+        return _filter_emps_cadastradas([str(e) for e in emps_int], apenas_ativas=True)
 
     uid = session.get("user_id")
     if not uid:
@@ -687,7 +637,7 @@ def _allowed_emps() -> list[str]:
         with SessionLocal() as db:
             refresh_session_emps(db, usuario_id=int(uid), fallback_emp=_emp())
             emps_int = get_session_emps()
-            return [str(e) for e in emps_int]
+            return _filter_emps_cadastradas([str(e) for e in emps_int], apenas_ativas=True)
     except Exception:
         return []
 def _is_date_in_range(today: date, inicio: date | None, fim: date | None) -> bool:
@@ -933,7 +883,7 @@ def _get_emps_vendedor(username: str) -> list[str]:
     if (_usuario_logado() or "").strip().upper() == username:
         emps = _allowed_emps()
         if emps:
-            return sorted({str(e).strip() for e in emps if e is not None and str(e).strip()})
+            return _filter_emps_cadastradas(sorted({str(e).strip() for e in emps if e is not None and str(e).strip()}), apenas_ativas=True)
 
     # Fallback: inferir pelas vendas (compatibilidade)
     with SessionLocal() as db:
@@ -943,7 +893,7 @@ def _get_emps_vendedor(username: str) -> list[str]:
             .all()
         )
     emps = sorted({str(r[0]).strip() for r in rows if r and r[0] is not None and str(r[0]).strip() != ""})
-    return emps
+    return _filter_emps_cadastradas(emps, apenas_ativas=True)
 
 def _fetch_cache_row(vendedor: str, ano: int, mes: int, emp_scope: str | None) -> dict | None:
     """Busca dados do cache para o vendedor/período.
@@ -1368,6 +1318,70 @@ def _get_emp_options(codigos: list[str]) -> list[dict]:
             label = c
         out.append({"value": c, "label": label})
     return out
+
+
+def _filter_emps_cadastradas(codigos: list[str], apenas_ativas: bool = True) -> list[str]:
+    """Remove EMPs que não estão cadastradas na tabela `emps` (ou inativas, se `apenas_ativas`).
+    Mantém ordem e faz strip.
+    """
+    codigos = [str(c).strip() for c in (codigos or []) if str(c).strip()]
+    if not codigos:
+        return []
+    # mantém ordem
+    uniq = []
+    seen = set()
+    for c in codigos:
+        if c not in seen:
+            seen.add(c)
+            uniq.append(c)
+
+    try:
+        with SessionLocal() as db:
+            q = db.query(Emp.codigo)
+            q = q.filter(Emp.codigo.in_(uniq))
+            if apenas_ativas:
+                q = q.filter(Emp.ativo.is_(True))
+            rows = q.all()
+            ok = {str(r[0]).strip() for r in rows if r and r[0] is not None and str(r[0]).strip()}
+    except Exception:
+        ok = set()
+
+    if not ok:
+        # Sem cadastro disponível/consultável → não filtra (compatibilidade)
+        return uniq
+
+    return [c for c in uniq if c in ok]
+
+
+def _get_vendedores_cadastrados_por_emp(emp: str) -> set[str]:
+    """Retorna conjunto de vendedores cadastrados e vinculados à EMP (via usuario_emps).
+    Se não houver vínculo, retorna conjunto global de vendedores cadastrados.
+    """
+    emp = (emp or "").strip()
+    if not emp:
+        return set()
+
+    try:
+        with SessionLocal() as db:
+            # 1) Vendedores vinculados à EMP
+            rows = (
+                db.query(Usuario.username)
+                .join(UsuarioEmp, UsuarioEmp.usuario_id == Usuario.id)
+                .filter(func.lower(Usuario.role) == "vendedor")
+                .filter(UsuarioEmp.ativo.is_(True))
+                .filter(UsuarioEmp.emp == emp)
+                .all()
+            )
+            vinc = {(r[0] or "").strip().upper() for r in rows if r and (r[0] or "").strip()}
+            if vinc:
+                return vinc
+
+            # 2) fallback: vendedores cadastrados (global)
+            rows2 = db.query(Usuario.username).filter(func.lower(Usuario.role) == "vendedor").all()
+            glob = {(r[0] or "").strip().upper() for r in rows2 if r and (r[0] or "").strip()}
+            return glob
+    except Exception:
+        return set()
 
 
 # Compat: services recebem `args` explicitamente (evita dependência direta do `request` no service).
@@ -3087,7 +3101,7 @@ def _get_emps_com_vendas_no_periodo(ano: int, mes: int) -> list[str]:
             .all()
         )
     emps = sorted({str(r[0]).strip() for r in rows if r and r[0] is not None and str(r[0]).strip() != ""})
-    return emps
+    return _filter_emps_cadastradas(emps, apenas_ativas=True)
 
 def _get_vendedores_emp_no_periodo(emp: str, ano: int, mes: int) -> list[str]:
     inicio_mes, fim_mes = _periodo_bounds(int(ano), int(mes))
@@ -3099,6 +3113,10 @@ def _get_vendedores_emp_no_periodo(emp: str, ano: int, mes: int) -> list[str]:
             .all()
         )
     vendedores = sorted({(r[0] or '').strip().upper() for r in rows if r and (r[0] or '').strip()})
+    # Remove vendedores não cadastrados (usuários inexistentes)
+    cad = _get_vendedores_cadastrados_por_emp(emp)
+    if cad:
+        vendedores = [v for v in vendedores if v in cad]
     return vendedores
 
 def _calc_vendas_por_vendedor_para_campanha(db, emp: str, campanha: CampanhaQtd, periodo_ini: date, periodo_fim: date) -> dict[str, tuple[float, float]]:
@@ -4537,8 +4555,6 @@ def admin_importar():
         tmp_path = tmp.name
 
     try:
-		# Import lazy para manter o boot no Render rápido.
-		from importar_excel import importar_planilha
         resumo = importar_planilha(tmp_path, modo=modo, chave=chave)
         if not resumo.get("ok"):
             faltando = resumo.get("faltando")
@@ -5663,434 +5679,6 @@ def admin_campanhas_qtd():
             erro=erro,
             ok=ok,
         )
-
-
-# =========================================================
-# Admin — Campanhas (Ranking por Marca)
-# =========================================================
-
-def _ensure_rank_marca_schema(db):
-    """Garante as tabelas do Ranking por Marca sem travar boot.
-    Executa somente quando a rota do ranking é acessada.
-    """
-    try:
-        db.execute(text("""
-        CREATE TABLE IF NOT EXISTS campanhas_ranking_marca (
-            id SERIAL PRIMARY KEY,
-            titulo VARCHAR(200) NOT NULL,
-            marca VARCHAR(120) NOT NULL,
-            min_total DOUBLE PRECISION NULL,
-            data_inicio DATE NOT NULL,
-            data_fim DATE NOT NULL,
-            competencia_ano INTEGER NULL,
-            competencia_mes INTEGER NULL,
-            escopo_tipo VARCHAR(20) NOT NULL DEFAULT 'GLOBAL',
-            ativo BOOLEAN NOT NULL DEFAULT TRUE,
-            created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW(),
-            updated_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW()
-        );
-        """))
-        # compatibilidade (caso a tabela exista sem a coluna)
-        db.execute(text("ALTER TABLE campanhas_ranking_marca ADD COLUMN IF NOT EXISTS min_total DOUBLE PRECISION;"))
-
-        db.execute(text("""
-        CREATE TABLE IF NOT EXISTS campanhas_ranking_marca_emps (
-            id SERIAL PRIMARY KEY,
-            campanha_id INTEGER NOT NULL,
-            emp VARCHAR(30) NOT NULL
-        );
-        """))
-        db.execute(text("""
-        CREATE TABLE IF NOT EXISTS campanhas_ranking_marca_premios (
-            id SERIAL PRIMARY KEY,
-            campanha_id INTEGER NOT NULL,
-            posicao INTEGER NOT NULL,
-            valor_premio DOUBLE PRECISION NOT NULL DEFAULT 0
-        );
-        """))
-        db.execute(text("""
-        CREATE TABLE IF NOT EXISTS campanhas_ranking_marca_resultados (
-            id SERIAL PRIMARY KEY,
-            campanha_id INTEGER NOT NULL,
-            competencia_ano INTEGER NOT NULL,
-            competencia_mes INTEGER NOT NULL,
-            emp VARCHAR(30) NULL,
-            vendedor VARCHAR(80) NOT NULL,
-            valor_vendido DOUBLE PRECISION NOT NULL DEFAULT 0,
-            posicao INTEGER NULL,
-            valor_premio DOUBLE PRECISION NOT NULL DEFAULT 0,
-            status_pagamento VARCHAR(20) NOT NULL DEFAULT 'PENDENTE',
-            pago_em TIMESTAMP NULL,
-            atualizado_em TIMESTAMP NOT NULL DEFAULT NOW()
-        );
-        """))
-        # índices e unicidades (checkfirst via IF NOT EXISTS)
-        db.execute(text("CREATE INDEX IF NOT EXISTS ix_rank_marca_marca ON campanhas_ranking_marca (marca);"))
-
-        db.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_rank_marca_emp ON campanhas_ranking_marca_emps (campanha_id, emp);"))
-
-        db.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_rank_marca_premio ON campanhas_ranking_marca_premios (campanha_id, posicao);"))
-
-        db.execute(text("""
-        CREATE UNIQUE INDEX IF NOT EXISTS uq_rank_marca_resultado
-        ON campanhas_ranking_marca_resultados (campanha_id, competencia_ano, competencia_mes, emp, vendedor);
-        """))
-        db.execute(text("CREATE INDEX IF NOT EXISTS ix_rank_marca_res_emp_comp ON campanhas_ranking_marca_resultados (emp, competencia_ano, competencia_mes);"))
-
-        db.commit()
-    except Exception:
-        db.rollback()
-        raise
-
-
-def _to_float_br(v, default=None):
-    if v is None:
-        return default
-    s = str(v).strip()
-    if not s:
-        return default
-    # suporta 1.234,56 e 1234,56 e 1234.56
-    s = s.replace(" ", "")
-    if "," in s and "." in s:
-        s = s.replace(".", "").replace(",", ".")
-    elif "," in s and "." not in s:
-        s = s.replace(",", ".")
-    try:
-        return float(s)
-    except Exception:
-        return default
-
-
-def _parse_premios_texto(premios_texto):
-    premios = []
-    txt = (premios_texto or "").strip()
-    if not txt:
-        return premios
-    import re as _re
-    parts = _re.split(r"[\n,;]+", txt)
-    for p in parts:
-        p = (p or "").strip()
-        if not p:
-            continue
-        if "=" in p:
-            a, b = p.split("=", 1)
-        elif ":" in p:
-            a, b = p.split(":", 1)
-        else:
-            # formato inválido
-            continue
-        pos = int(a.strip())
-        val = _to_float_br(b.strip(), default=0.0) or 0.0
-        premios.append((pos, val))
-    # remove duplicados pela posição, mantendo o último
-    dedup = {}
-    for pos, val in premios:
-        dedup[int(pos)] = float(val)
-    return sorted([(k, v) for k, v in dedup.items()], key=lambda x: x[0])
-
-
-def _recalcular_rank_marca(db, campanha: CampanhaRankingMarca, ano: int, mes: int):
-    """Gera resultados por EMP (ranking interno por EMP) e grava em campanhas_ranking_marca_resultados."""
-
-    # prêmios configurados (posicao->valor)
-    premios = (
-        db.query(CampanhaRankingMarcaPremio)
-        .filter(CampanhaRankingMarcaPremio.campanha_id == campanha.id)
-        .order_by(CampanhaRankingMarcaPremio.posicao.asc())
-        .all()
-    )
-    premio_map = {int(p.posicao): float(p.valor or 0.0) for p in premios}
-    max_pos = max(premio_map.keys()) if premio_map else 3
-
-    # EMPS selecionadas (se aplicável)
-    emps_sel = []
-    if (campanha.escopo_tipo or "").upper() == "EMPS":
-        emps_sel = [
-            r.emp for r in db.query(CampanhaRankingMarcaEMP).filter(CampanhaRankingMarcaEMP.campanha_id == campanha.id).all()
-        ]
-
-    # protege resultados já pagos
-    paid_keys = set(
-        (r.emp or "", r.vendedor or "")
-        for r in db.query(CampanhaRankingMarcaResultado)
-            .filter(
-                CampanhaRankingMarcaResultado.campanha_id == campanha.id,
-                CampanhaRankingMarcaResultado.competencia_ano == ano,
-                CampanhaRankingMarcaResultado.competencia_mes == mes,
-                CampanhaRankingMarcaResultado.status_pagamento == "PAGO",
-            )
-            .all()
-    )
-
-    # apaga apenas o que não foi pago
-    db.query(CampanhaRankingMarcaResultado).filter(
-        CampanhaRankingMarcaResultado.campanha_id == campanha.id,
-        CampanhaRankingMarcaResultado.competencia_ano == ano,
-        CampanhaRankingMarcaResultado.competencia_mes == mes,
-        CampanhaRankingMarcaResultado.status_pagamento != "PAGO",
-    ).delete(synchronize_session=False)
-
-    marca_up = (campanha.marca or "").strip().upper()
-    if not marca_up:
-        db.flush()
-        return
-
-    q = (
-        db.query(
-            func.coalesce(Venda.emp, "").label("emp"),
-            Venda.vendedor.label("vendedor"),
-            func.sum(Venda.valor_total).label("valor"),
-        )
-        .filter(func.upper(func.coalesce(Venda.marca, "")) == marca_up)
-        .filter(extract("year", Venda.movimento) == int(ano))
-        .filter(extract("month", Venda.movimento) == int(mes))
-    )
-
-    # período (se configurado)
-    if campanha.data_inicio and campanha.data_fim:
-        q = q.filter(Venda.movimento.between(campanha.data_inicio, campanha.data_fim))
-
-    if emps_sel:
-        q = q.filter(Venda.emp.in_(emps_sel))
-
-    q = q.group_by(func.coalesce(Venda.emp, ""), Venda.vendedor)
-
-    rows = q.all()
-
-    # organiza por EMP
-    por_emp = {}
-    for emp, vendedor, valor in rows:
-        emp_key = (emp or "").strip()
-        vendedor_key = (vendedor or "").strip()
-        v = float(valor or 0.0)
-        if not vendedor_key:
-            continue
-        # aplica mínimo (se houver)
-        if campanha.min_total is not None:
-            try:
-                if v < float(campanha.min_total):
-                    continue
-            except Exception:
-                pass
-        por_emp.setdefault(emp_key, []).append((vendedor_key, v))
-
-    novos = []
-    for emp_key, lista in por_emp.items():
-        # ordena por maior valor
-        lista.sort(key=lambda x: x[1], reverse=True)
-
-        # define posições (top N)
-        for idx, (vendedor_key, v) in enumerate(lista[:max_pos], start=1):
-            key = (emp_key, vendedor_key)
-            if key in paid_keys:
-                continue
-            premio = float(premio_map.get(idx, 0.0) or 0.0)
-
-            novos.append(
-                CampanhaRankingMarcaResultado(
-                    campanha_id=campanha.id,
-                    competencia_ano=int(ano),
-                    competencia_mes=int(mes),
-                    emp=emp_key or None,
-                    vendedor=vendedor_key,
-                    valor_vendido=v,
-                    posicao=idx,
-                    valor_premio=premio,
-                    status_pagamento="PENDENTE",
-                    atualizado_em=datetime.utcnow(),
-                )
-            )
-
-    for obj in novos:
-        db.add(obj)
-
-    # marca updated_at
-    db.query(CampanhaRankingMarca).filter(CampanhaRankingMarca.id == campanha.id).update(
-        {CampanhaRankingMarca.updated_at: datetime.utcnow()},
-        synchronize_session=False,
-    )
-
-    db.commit()
-
-
-@app.route("/admin/campanhas/ranking_marca", methods=["GET", "POST"])
-@admin_required
-def admin_campanhas_ranking_marca():
-    """Cadastro e recálculo de Campanhas de Ranking por Marca."""
-    erro = None
-    ok = None
-
-    # competência (para o botão recalcular/listagem)
-    hoje = date.today()
-    try:
-        ano = int(request.args.get("ano") or hoje.year)
-        mes = int(request.args.get("mes") or hoje.month)
-    except Exception:
-        ano, mes = hoje.year, hoje.month
-
-    with SessionLocal() as db:
-        # garante schema (não no boot!)
-        try:
-            _ensure_rank_marca_schema(db)
-        except Exception as e:
-            erro = f"Falha ao preparar tabelas do Ranking por Marca: {e}"
-
-        # opções de EMP (para multiselect)
-        emps_all = [str(e.codigo) for e in db.query(Emp).order_by(Emp.codigo.asc()).all()]
-        if not emps_all:
-            # fallback: emp distintos na base de vendas
-            emps_all = [str(r[0]) for r in db.query(func.coalesce(Venda.emp, "")).distinct().all() if r and r[0]]
-        emps_options = _get_emp_options(emps_all)
-
-        if request.method == "POST" and not erro:
-            acao = (request.form.get("acao") or "").strip().lower()
-            try:
-                if acao in ("criar", "editar"):
-                    cid = request.form.get("campanha_id")
-                    titulo = (request.form.get("titulo") or "").strip()
-                    marca = (request.form.get("marca") or "").strip().upper()
-                    escopo_tipo = (request.form.get("escopo_tipo") or "GLOBAL").strip().upper()
-                    min_total = _to_float_br(request.form.get("min_total"), default=None)
-                    data_inicio = request.form.get("data_inicio")
-                    data_fim = request.form.get("data_fim")
-                    competencia_ano = request.form.get("competencia_ano") or None
-                    competencia_mes = request.form.get("competencia_mes") or None
-                    ativo = True if request.form.get("ativo") else False
-
-                    if not titulo or not marca or not data_inicio or not data_fim:
-                        raise ValueError("Preencha Título, Marca e Vigência (início e fim).")
-
-                    di = date.fromisoformat(data_inicio)
-                    df = date.fromisoformat(data_fim)
-
-                    ca = int(competencia_ano) if competencia_ano else None
-                    cm = int(competencia_mes) if competencia_mes else None
-
-                    premios_texto = request.form.get("premios_texto") or ""
-                    premios = _parse_premios_texto(premios_texto)
-
-                    # se não veio, aplica padrão top 3
-                    if not premios:
-                        premios = [(1, 300.0), (2, 200.0), (3, 100.0)]
-
-                    emps_sel = request.form.getlist("emp") if escopo_tipo == "EMPS" else []
-
-                    if acao == "criar":
-                        obj = CampanhaRankingMarca(
-                            titulo=titulo,
-                            marca=marca,
-                            min_total=min_total,
-                            data_inicio=di,
-                            data_fim=df,
-                            competencia_ano=ca,
-                            competencia_mes=cm,
-                            escopo_tipo=escopo_tipo,
-                            ativo=ativo,
-                            created_at=datetime.utcnow(),
-                            updated_at=datetime.utcnow(),
-                        )
-                        db.add(obj)
-                        db.flush()  # pega id
-                        cid_int = int(obj.id)
-
-                    else:
-                        if not cid:
-                            raise ValueError("Campanha inválida para edição.")
-                        cid_int = int(cid)
-                        db.query(CampanhaRankingMarca).filter(CampanhaRankingMarca.id == cid_int).update(
-                            dict(
-                                titulo=titulo,
-                                marca=marca,
-                                min_total=min_total,
-                                data_inicio=di,
-                                data_fim=df,
-                                competencia_ano=ca,
-                                competencia_mes=cm,
-                                escopo_tipo=escopo_tipo,
-                                ativo=ativo,
-                                updated_at=datetime.utcnow(),
-                            ),
-                            synchronize_session=False,
-                        )
-
-                    # atualiza emps/premios
-                    db.query(CampanhaRankingMarcaEMP).filter(CampanhaRankingMarcaEMP.campanha_id == cid_int).delete(synchronize_session=False)
-                    if emps_sel:
-                        for e in emps_sel:
-                            e = (e or "").strip()
-                            if not e:
-                                continue
-                            db.add(CampanhaRankingMarcaEMP(campanha_id=cid_int, emp=e))
-
-                    db.query(CampanhaRankingMarcaPremio).filter(CampanhaRankingMarcaPremio.campanha_id == cid_int).delete(synchronize_session=False)
-                    for pos, val in premios:
-                        db.add(CampanhaRankingMarcaPremio(campanha_id=cid_int, posicao=int(pos), valor=float(val)))
-
-                    db.commit()
-                    ok = "Campanha de Ranking por Marca salva com sucesso."
-
-                elif acao == "remover":
-                    cid = request.form.get("campanha_id")
-                    if not cid:
-                        raise ValueError("Campanha inválida para remoção.")
-                    cid_int = int(cid)
-                    # remove filhos
-                    db.query(CampanhaRankingMarcaEMP).filter(CampanhaRankingMarcaEMP.campanha_id == cid_int).delete(synchronize_session=False)
-                    db.query(CampanhaRankingMarcaPremio).filter(CampanhaRankingMarcaPremio.campanha_id == cid_int).delete(synchronize_session=False)
-                    db.query(CampanhaRankingMarcaResultado).filter(CampanhaRankingMarcaResultado.campanha_id == cid_int).delete(synchronize_session=False)
-                    db.query(CampanhaRankingMarca).filter(CampanhaRankingMarca.id == cid_int).delete(synchronize_session=False)
-                    db.commit()
-                    ok = "Campanha removida."
-
-                elif acao == "recalcular":
-                    cid = request.form.get("campanha_id")
-                    if not cid:
-                        raise ValueError("Campanha inválida para recálculo.")
-                    cid_int = int(cid)
-
-                    # competência: se campanha tiver travado, usa; senão usa da tela
-                    camp = db.query(CampanhaRankingMarca).filter(CampanhaRankingMarca.id == cid_int).first()
-                    if not camp:
-                        raise ValueError("Campanha não encontrada.")
-
-                    ano_run = int(camp.competencia_ano or request.form.get("competencia_ano") or ano)
-                    mes_run = int(camp.competencia_mes or request.form.get("competencia_mes") or mes)
-
-                    _recalcular_rank_marca(db, camp, ano_run, mes_run)
-                    ok = f"Resultados recalculados para {mes_run:02d}/{ano_run}."
-
-                else:
-                    erro = "Ação inválida."
-
-            except Exception as e:
-                db.rollback()
-                erro = str(e)
-
-        # lista campanhas
-        campanhas = db.query(CampanhaRankingMarca).order_by(CampanhaRankingMarca.id.desc()).all()
-
-        # maps: emps / prêmios
-        emps_map = {}
-        for r in db.query(CampanhaRankingMarcaEMP).all():
-            emps_map.setdefault(int(r.campanha_id), []).append(r.emp)
-
-        premios_map = {}
-        for p in db.query(CampanhaRankingMarcaPremio).order_by(CampanhaRankingMarcaPremio.campanha_id.asc(), CampanhaRankingMarcaPremio.posicao.asc()).all():
-            premios_map.setdefault(int(p.campanha_id), []).append(p)
-
-        return render_template(
-            "admin_campanhas_ranking_marca.html",
-            usuario=_usuario_logado(),
-            campanhas=campanhas,
-            emps_options=emps_options,
-            emps_map=emps_map,
-            premios_map=premios_map,
-            ano=ano,
-            mes=mes,
-            erro=erro,
-            ok=ok,
-        )
-
 
 @app.route("/admin/apagar_vendas", methods=["POST"])
 def admin_apagar_vendas():
@@ -7314,7 +6902,7 @@ def admin_campanhas_v2():
             return redirect(url_for("admin_campanhas_v2", ano=ano, mes=mes))
 
         campanhas = db.query(CampanhaV2Master).order_by(CampanhaV2Master.id.desc()).all()
-        return render_template("admin_campanhas_v2.html", campanhas=campanhas, ano=ano, mes=mes, today=date.today())
+        return render_template("admin_campanhas_v2.html", campanhas=campanhas, ano=ano, mes=mes)
     finally:
         db.close()
 

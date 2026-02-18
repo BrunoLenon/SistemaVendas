@@ -18,42 +18,6 @@
     <div class="alert alert-warning">⚠️ Diagnóstico executado com alertas. Veja os detalhes abaixo.</div>
   {% endif %}
 
-  <div class="row g-3 mb-2">
-    <div class="col-12 col-lg-6">
-      <div class="card shadow-sm">
-        <div class="card-body">
-          <h5 class="card-title mb-1">Saneamento rápido — EMP</h5>
-          <div class="text-muted small mb-3">Cadastra EMP faltante com nome padrão (ex.: <code>EMP 101</code>).</div>
-          <form method="post" class="d-flex gap-2 flex-wrap">
-            <input type="hidden" name="acao" value="cadastrar_emp" />
-            <input name="emp_code" class="form-control" style="max-width: 220px" placeholder="Código EMP" />
-            <button class="btn btn-primary" type="submit">Cadastrar EMP</button>
-          </form>
-          <form method="post" class="mt-2">
-            <input type="hidden" name="acao" value="cadastrar_emp_lote" />
-            <button class="btn btn-outline-primary" type="submit">Cadastrar TODAS as EMPs faltantes</button>
-          </form>
-        </div>
-      </div>
-    </div>
-    <div class="col-12 col-lg-6">
-      <div class="card shadow-sm">
-        <div class="card-body">
-          <h5 class="card-title mb-1">Saneamento rápido — Vendedor</h5>
-          <div class="text-muted small mb-3">Cria usuário vendedor (placeholder) com senha temporária exibida no aviso.</div>
-          <form method="post" class="d-flex gap-2 flex-wrap">
-            <input type="hidden" name="acao" value="criar_vendedor" />
-            <input name="vendedor_nome" class="form-control" style="max-width: 320px" placeholder="Nome do vendedor (como vem na venda)" />
-            <button class="btn btn-primary" type="submit">Criar vendedor</button>
-          </form>
-          <div class="text-muted small mt-2">
-            Dica: depois, ajuste a senha e (se desejar) vincule EMPs em <a href="{{ url_for('admin_usuarios') }}">Admin → Usuários</a>.
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-
   <div class="row g-3">
     {% for c in info.checks %}
       <div class="col-12">

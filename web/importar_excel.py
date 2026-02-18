@@ -1,18 +1,3 @@
-from __future__ import annotations
-
-# --- pandas lazy (Render boot) ---
-# Importar pandas no topo pode travar o boot no Render (pandas/pyarrow pesados).
-# Este proxy importa pandas apenas no primeiro acesso a pd.*
-class _LazyPandas:
-    def __getattr__(self, name):
-        import pandas as _pd  # type: ignore
-        globals()["pd"] = _pd
-        return getattr(_pd, name)
-
-
-pd = _LazyPandas()
-
-
 """Importação de vendas (Render-friendly) com deduplicação configurável.
 
 IMPORTANTE:
@@ -36,11 +21,13 @@ chaves disponíveis:
   - mestre_movimento_vendedor_nota_tipo     (sem EMP, se você não usa EMP na chave)
 """
 
+from __future__ import annotations
 
 import datetime as dt
 import os
 from typing import Any, Dict, List, Optional
 
+import pandas as pd
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from db import SessionLocal, Venda
