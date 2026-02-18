@@ -7088,7 +7088,7 @@ def admin_campanhas_ranking_marca():
                 db.commit()
                 ok = f"Campanha #{cid} removida."
 
-                        elif acao == "recalcular":
+            elif acao == "recalcular":
                 cid = int(request.form.get("id") or 0)
                 ano_p = _to_int(request.form.get("ano"), ano)
                 mes_p = _to_int(request.form.get("mes"), mes)
@@ -7098,16 +7098,19 @@ def admin_campanhas_ranking_marca():
                     res = recalc_ranking_marca(db, campanha_id=cid, ano=ano_p, mes=mes_p, actor=str(actor))
                     db.commit()
 
-                    if (res.get("rows", 0) or 0) > 0:
+                    if res.get("rows", 0) > 0:
                         ok = f"✅ Snapshot recalculado: {res.get('rows', 0)} vendedores qualificados ({mes_p:02d}/{ano_p})."
                     else:
-                        motivo = res.get("motivo", "Nenhum vendedor atingiu o mínimo")
+                        motivo = res.get("motivo") or "Nenhum vendedor atingiu o mínimo"
                         ok = f"⚠️ Recálculo concluído: {motivo} ({mes_p:02d}/{ano_p})."
 
                 except Exception as e:
                     db.rollback()
                     erro = f"Erro no recálculo: {str(e)}"
-                    app.logger.exception("Erro no recálculo")
+                    try:
+                        app.logger.exception("Erro no recálculo ranking-marca")
+                    except Exception:
+                        pass
 
             else:
                 erro = "Ação inválida."
