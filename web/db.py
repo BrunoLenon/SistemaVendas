@@ -824,6 +824,97 @@ class CampanhaV2Resultado(Base):
     )
 
 
+# =========================
+# Campanhas — Ranking por Marca (Top N)
+# =========================
+
+class CampanhaRankingMarca(Base):
+    __tablename__ = "campanhas_ranking_marca"
+
+    id = Column(Integer, primary_key=True)
+    titulo = Column(String(200), nullable=False)
+    marca = Column(String(120), nullable=False, index=True)
+
+    # mínimo em R$ para concorrer (opcional)
+    min_total = Column(Float, nullable=True)
+
+    data_inicio = Column(Date, nullable=False)
+    data_fim = Column(Date, nullable=False)
+
+    competencia_ano = Column(Integer, nullable=True, index=True)
+    competencia_mes = Column(Integer, nullable=True, index=True)
+
+    # GLOBAL ou EMPS
+    escopo_tipo = Column(String(20), nullable=False, default="GLOBAL", index=True)
+
+    ativo = Column(Boolean, nullable=False, default=True, index=True)
+
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        Index("ix_rank_marca_marca_periodo", "marca", "data_inicio", "data_fim"),
+    )
+
+
+class CampanhaRankingMarcaEMP(Base):
+    __tablename__ = "campanhas_ranking_marca_emps"
+
+    id = Column(Integer, primary_key=True)
+    campanha_id = Column(Integer, nullable=False, index=True)
+    emp = Column(String(30), nullable=False, index=True)
+
+    __table_args__ = (
+        UniqueConstraint("campanha_id", "emp", name="uq_rank_marca_emp"),
+    )
+
+
+class CampanhaRankingMarcaPremio(Base):
+    __tablename__ = "campanhas_ranking_marca_premios"
+
+    id = Column(Integer, primary_key=True)
+    campanha_id = Column(Integer, nullable=False, index=True)
+    posicao = Column(Integer, nullable=False)
+    # coluna real: valor_premio
+    valor = Column("valor_premio", Float, nullable=False, default=0.0)
+
+    __table_args__ = (
+        UniqueConstraint("campanha_id", "posicao", name="uq_rank_marca_premio"),
+        Index("ix_rank_marca_premio_campanha", "campanha_id"),
+    )
+
+
+class CampanhaRankingMarcaResultado(Base):
+    __tablename__ = "campanhas_ranking_marca_resultados"
+
+    id = Column(Integer, primary_key=True)
+    campanha_id = Column(Integer, nullable=False, index=True)
+
+    competencia_ano = Column(Integer, nullable=False, index=True)
+    competencia_mes = Column(Integer, nullable=False, index=True)
+
+    emp = Column(String(30), nullable=True, index=True)
+    vendedor = Column(String(80), nullable=False, index=True)
+
+    valor_vendido = Column(Float, nullable=False, default=0.0)
+    posicao = Column(Integer, nullable=True)
+    valor_premio = Column(Float, nullable=False, default=0.0)
+
+    status_pagamento = Column(String(20), nullable=False, default="PENDENTE", index=True)
+    pago_em = Column(DateTime, nullable=True)
+    atualizado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "campanha_id", "competencia_ano", "competencia_mes", "emp", "vendedor",
+            name="uq_rank_marca_resultado"
+        ),
+        Index("ix_rank_marca_res_emp_comp", "emp", "competencia_ano", "competencia_mes"),
+        Index("ix_rank_marca_res_vend_comp", "vendedor", "competencia_ano", "competencia_mes"),
+    )
+
+
+
 class CampanhaV2Audit(Base):
     __tablename__ = "campanhas_audit_v2"
 

@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import os
 import threading
 import sys
@@ -28,22 +26,7 @@ from io import BytesIO
 
 from decimal import Decimal, ROUND_HALF_UP
 
-# ------------------------------------------------------------
-# Lazy import de pandas (evita travar boot no Render/Gunicorn)
-# ------------------------------------------------------------
-class _LazyPandas:
-    _mod = None
-
-    def _load(self):
-        if self._mod is None:
-            import pandas as _pd  # import pesado (somente quando necessário)
-            self._mod = _pd
-        return self._mod
-
-    def __getattr__(self, name):
-        return getattr(self._load(), name)
-
-pd = _LazyPandas()
+import pandas as pd
 import requests
 from sqlalchemy import and_, or_, func, case, cast, String, text, extract
 from flask import (
@@ -62,6 +45,8 @@ from werkzeug.security import check_password_hash, generate_password_hash
 from dados_db import carregar_df, limpar_cache_df
 from db import (
     CampanhaV2Master, CampanhaV2ScopeEMP, CampanhaV2Resultado,
+    CampanhaRankingMarca, CampanhaRankingMarcaEMP, CampanhaRankingMarcaPremio, CampanhaRankingMarcaResultado,
+
 
     SessionLocal,
     Usuario,
@@ -91,6 +76,8 @@ from db import (
     BrandingTheme,
     criar_tabelas,
 )
+from importar_excel import importar_planilha
+
 # Flask app (Render/Gunicorn expects `app` at module level: web/app.py -> app:app)
 app = Flask(__name__, template_folder="templates")
 app.secret_key = os.getenv("SECRET_KEY", "dev")
@@ -747,8 +734,7 @@ def _find_pending_blocking_message(db) -> Mensagem | None:
 
 
 
-def _normalize_cols(df: object) -> object:
-    import pandas as pd
+def _normalize_cols(df: pd.DataFrame) -> pd.DataFrame:
     """Normaliza nomes/tipos de colunas vindas do banco.
 
     Regras do app:
@@ -1019,8 +1005,7 @@ def _fetch_cache_value(vendedor: str, ano: int, mes: int, emp_scope: str | None)
 # NOTE: existe uma versão tipada desta função mais abaixo.
 # Mantemos apenas uma definição para evitar confusão/override.
 
-def _calcular_dados(df: object, vendedor: str, mes: int, ano: int):
-    import pandas as pd
+def _calcular_dados(df: pd.DataFrame, vendedor: str, mes: int, ano: int):
     """Calcula os números do dashboard a partir do DF carregado do banco."""
     if df is None or df.empty:
         return None
@@ -1056,7 +1041,7 @@ def _calcular_dados(df: object, vendedor: str, mes: int, ano: int):
         (df_v["MOVIMENTO"].dt.year == ano_ant) & (df_v["MOVIMENTO"].dt.month == mes_ant)
     ].copy()
 
-    def _mix(df_in: object) -> int:
+    def _mix(df_in: pd.DataFrame) -> int:
         """Mix de produtos (por MESTRE), abatendo DS/CA e sem ficar negativo.
 
         Regra:
@@ -1072,19 +1057,19 @@ def _calcular_dados(df: object, vendedor: str, mes: int, ano: int):
         saldo = tmp.groupby("MESTRE")["_s"].sum()
         return int((saldo > 0).sum())
 
-    def _valor_liquido(df_in: object) -> float:
+    def _valor_liquido(df_in: pd.DataFrame) -> float:
         if df_in.empty:
             return 0.0
         neg = df_in["MOV_TIPO_MOVTO"].isin(["DS", "CA"])
         return float(df_in["VALOR_TOTAL"].where(~neg, -df_in["VALOR_TOTAL"]).sum())
 
-    def _valor_bruto(df_in: object) -> float:
+    def _valor_bruto(df_in: pd.DataFrame) -> float:
         if df_in.empty:
             return 0.0
         vendas = df_in[~df_in["MOV_TIPO_MOVTO"].isin(["DS", "CA"])]
         return float(vendas["VALOR_TOTAL"].sum())
 
-    def _valor_devolvido(df_in: object) -> float:
+    def _valor_devolvido(df_in: pd.DataFrame) -> float:
         if df_in.empty:
             return 0.0
         dev = df_in[df_in["MOV_TIPO_MOVTO"].isin(["DS", "CA"])]
@@ -1108,7 +1093,7 @@ def _calcular_dados(df: object, vendedor: str, mes: int, ano: int):
 
     # Ranking por marca (líquido)
     if df_mes.empty:
-        ranking = object(dtype=float)
+        ranking = pd.Series(dtype=float)
     else:
         neg = df_mes["MOV_TIPO_MOVTO"].isin(["DS", "CA"])
         df_mes = df_mes.copy()
@@ -1755,7 +1740,7 @@ def _dados_ao_vivo(vendedor: str, mes: int, ano: int, emp_scope: str | list[str]
             'ranking_top15_list': ranking_list[:15],
             'total_liquido_periodo': total,
         }
-def _resolver_vendedor_e_lista(df: object | None) -> tuple[str | None, list[str], str | None, str | None]:
+def _resolver_vendedor_e_lista(df: pd.DataFrame | None) -> tuple[str | None, list[str], str | None, str | None]:
     """Resolve qual vendedor o usuário pode ver.
 
     Retorna: (vendedor_alvo, lista_vendedores, emp_usuario, aviso)
@@ -1824,8 +1809,7 @@ def home():
         return ("OK", 200)
 
     # Browser/users: redirect to the right place
-    # (A sessão usa `usuario` como chave principal do username.)
-    if session.get("usuario") and session.get("role"):
+    if session.get("vendedor") and session.get("role"):
         return redirect(url_for("dashboard"))
     return redirect(url_for("auth.login"))
 
@@ -4515,7 +4499,6 @@ def admin_importar():
         tmp_path = tmp.name
 
     try:
-        from importar_excel import importar_planilha
         resumo = importar_planilha(tmp_path, modo=modo, chave=chave)
         if not resumo.get("ok"):
             faltando = resumo.get("faltando")
@@ -4860,7 +4843,6 @@ def admin_resumos_periodo():
                         filename = (file.filename or '').lower()
                         try:
                             if filename.endswith('.csv'):
-                                import pandas as pd
                                 df = pd.read_csv(file, dtype=str)
                             else:
                                 df = pd.read_excel(file, dtype=str)
@@ -5641,6 +5623,434 @@ def admin_campanhas_qtd():
             erro=erro,
             ok=ok,
         )
+
+
+# =========================================================
+# Admin — Campanhas (Ranking por Marca)
+# =========================================================
+
+def _ensure_rank_marca_schema(db):
+    """Garante as tabelas do Ranking por Marca sem travar boot.
+    Executa somente quando a rota do ranking é acessada.
+    """
+    try:
+        db.execute(text("""
+        CREATE TABLE IF NOT EXISTS campanhas_ranking_marca (
+            id SERIAL PRIMARY KEY,
+            titulo VARCHAR(200) NOT NULL,
+            marca VARCHAR(120) NOT NULL,
+            min_total DOUBLE PRECISION NULL,
+            data_inicio DATE NOT NULL,
+            data_fim DATE NOT NULL,
+            competencia_ano INTEGER NULL,
+            competencia_mes INTEGER NULL,
+            escopo_tipo VARCHAR(20) NOT NULL DEFAULT 'GLOBAL',
+            ativo BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW()
+        );
+        """))
+        # compatibilidade (caso a tabela exista sem a coluna)
+        db.execute(text("ALTER TABLE campanhas_ranking_marca ADD COLUMN IF NOT EXISTS min_total DOUBLE PRECISION;"))
+
+        db.execute(text("""
+        CREATE TABLE IF NOT EXISTS campanhas_ranking_marca_emps (
+            id SERIAL PRIMARY KEY,
+            campanha_id INTEGER NOT NULL,
+            emp VARCHAR(30) NOT NULL
+        );
+        """))
+        db.execute(text("""
+        CREATE TABLE IF NOT EXISTS campanhas_ranking_marca_premios (
+            id SERIAL PRIMARY KEY,
+            campanha_id INTEGER NOT NULL,
+            posicao INTEGER NOT NULL,
+            valor_premio DOUBLE PRECISION NOT NULL DEFAULT 0
+        );
+        """))
+        db.execute(text("""
+        CREATE TABLE IF NOT EXISTS campanhas_ranking_marca_resultados (
+            id SERIAL PRIMARY KEY,
+            campanha_id INTEGER NOT NULL,
+            competencia_ano INTEGER NOT NULL,
+            competencia_mes INTEGER NOT NULL,
+            emp VARCHAR(30) NULL,
+            vendedor VARCHAR(80) NOT NULL,
+            valor_vendido DOUBLE PRECISION NOT NULL DEFAULT 0,
+            posicao INTEGER NULL,
+            valor_premio DOUBLE PRECISION NOT NULL DEFAULT 0,
+            status_pagamento VARCHAR(20) NOT NULL DEFAULT 'PENDENTE',
+            pago_em TIMESTAMP NULL,
+            atualizado_em TIMESTAMP NOT NULL DEFAULT NOW()
+        );
+        """))
+        # índices e unicidades (checkfirst via IF NOT EXISTS)
+        db.execute(text("CREATE INDEX IF NOT EXISTS ix_rank_marca_marca ON campanhas_ranking_marca (marca);"))
+
+        db.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_rank_marca_emp ON campanhas_ranking_marca_emps (campanha_id, emp);"))
+
+        db.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_rank_marca_premio ON campanhas_ranking_marca_premios (campanha_id, posicao);"))
+
+        db.execute(text("""
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_rank_marca_resultado
+        ON campanhas_ranking_marca_resultados (campanha_id, competencia_ano, competencia_mes, emp, vendedor);
+        """))
+        db.execute(text("CREATE INDEX IF NOT EXISTS ix_rank_marca_res_emp_comp ON campanhas_ranking_marca_resultados (emp, competencia_ano, competencia_mes);"))
+
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+
+def _to_float_br(v, default=None):
+    if v is None:
+        return default
+    s = str(v).strip()
+    if not s:
+        return default
+    # suporta 1.234,56 e 1234,56 e 1234.56
+    s = s.replace(" ", "")
+    if "," in s and "." in s:
+        s = s.replace(".", "").replace(",", ".")
+    elif "," in s and "." not in s:
+        s = s.replace(",", ".")
+    try:
+        return float(s)
+    except Exception:
+        return default
+
+
+def _parse_premios_texto(premios_texto):
+    premios = []
+    txt = (premios_texto or "").strip()
+    if not txt:
+        return premios
+    import re as _re
+    parts = _re.split(r"[\n,;]+", txt)
+    for p in parts:
+        p = (p or "").strip()
+        if not p:
+            continue
+        if "=" in p:
+            a, b = p.split("=", 1)
+        elif ":" in p:
+            a, b = p.split(":", 1)
+        else:
+            # formato inválido
+            continue
+        pos = int(a.strip())
+        val = _to_float_br(b.strip(), default=0.0) or 0.0
+        premios.append((pos, val))
+    # remove duplicados pela posição, mantendo o último
+    dedup = {}
+    for pos, val in premios:
+        dedup[int(pos)] = float(val)
+    return sorted([(k, v) for k, v in dedup.items()], key=lambda x: x[0])
+
+
+def _recalcular_rank_marca(db, campanha: CampanhaRankingMarca, ano: int, mes: int):
+    """Gera resultados por EMP (ranking interno por EMP) e grava em campanhas_ranking_marca_resultados."""
+
+    # prêmios configurados (posicao->valor)
+    premios = (
+        db.query(CampanhaRankingMarcaPremio)
+        .filter(CampanhaRankingMarcaPremio.campanha_id == campanha.id)
+        .order_by(CampanhaRankingMarcaPremio.posicao.asc())
+        .all()
+    )
+    premio_map = {int(p.posicao): float(p.valor or 0.0) for p in premios}
+    max_pos = max(premio_map.keys()) if premio_map else 3
+
+    # EMPS selecionadas (se aplicável)
+    emps_sel = []
+    if (campanha.escopo_tipo or "").upper() == "EMPS":
+        emps_sel = [
+            r.emp for r in db.query(CampanhaRankingMarcaEMP).filter(CampanhaRankingMarcaEMP.campanha_id == campanha.id).all()
+        ]
+
+    # protege resultados já pagos
+    paid_keys = set(
+        (r.emp or "", r.vendedor or "")
+        for r in db.query(CampanhaRankingMarcaResultado)
+            .filter(
+                CampanhaRankingMarcaResultado.campanha_id == campanha.id,
+                CampanhaRankingMarcaResultado.competencia_ano == ano,
+                CampanhaRankingMarcaResultado.competencia_mes == mes,
+                CampanhaRankingMarcaResultado.status_pagamento == "PAGO",
+            )
+            .all()
+    )
+
+    # apaga apenas o que não foi pago
+    db.query(CampanhaRankingMarcaResultado).filter(
+        CampanhaRankingMarcaResultado.campanha_id == campanha.id,
+        CampanhaRankingMarcaResultado.competencia_ano == ano,
+        CampanhaRankingMarcaResultado.competencia_mes == mes,
+        CampanhaRankingMarcaResultado.status_pagamento != "PAGO",
+    ).delete(synchronize_session=False)
+
+    marca_up = (campanha.marca or "").strip().upper()
+    if not marca_up:
+        db.flush()
+        return
+
+    q = (
+        db.query(
+            func.coalesce(Venda.emp, "").label("emp"),
+            Venda.vendedor.label("vendedor"),
+            func.sum(Venda.valor_total).label("valor"),
+        )
+        .filter(func.upper(func.coalesce(Venda.marca, "")) == marca_up)
+        .filter(extract("year", Venda.movimento) == int(ano))
+        .filter(extract("month", Venda.movimento) == int(mes))
+    )
+
+    # período (se configurado)
+    if campanha.data_inicio and campanha.data_fim:
+        q = q.filter(Venda.movimento.between(campanha.data_inicio, campanha.data_fim))
+
+    if emps_sel:
+        q = q.filter(Venda.emp.in_(emps_sel))
+
+    q = q.group_by(func.coalesce(Venda.emp, ""), Venda.vendedor)
+
+    rows = q.all()
+
+    # organiza por EMP
+    por_emp = {}
+    for emp, vendedor, valor in rows:
+        emp_key = (emp or "").strip()
+        vendedor_key = (vendedor or "").strip()
+        v = float(valor or 0.0)
+        if not vendedor_key:
+            continue
+        # aplica mínimo (se houver)
+        if campanha.min_total is not None:
+            try:
+                if v < float(campanha.min_total):
+                    continue
+            except Exception:
+                pass
+        por_emp.setdefault(emp_key, []).append((vendedor_key, v))
+
+    novos = []
+    for emp_key, lista in por_emp.items():
+        # ordena por maior valor
+        lista.sort(key=lambda x: x[1], reverse=True)
+
+        # define posições (top N)
+        for idx, (vendedor_key, v) in enumerate(lista[:max_pos], start=1):
+            key = (emp_key, vendedor_key)
+            if key in paid_keys:
+                continue
+            premio = float(premio_map.get(idx, 0.0) or 0.0)
+
+            novos.append(
+                CampanhaRankingMarcaResultado(
+                    campanha_id=campanha.id,
+                    competencia_ano=int(ano),
+                    competencia_mes=int(mes),
+                    emp=emp_key or None,
+                    vendedor=vendedor_key,
+                    valor_vendido=v,
+                    posicao=idx,
+                    valor_premio=premio,
+                    status_pagamento="PENDENTE",
+                    atualizado_em=datetime.utcnow(),
+                )
+            )
+
+    for obj in novos:
+        db.add(obj)
+
+    # marca updated_at
+    db.query(CampanhaRankingMarca).filter(CampanhaRankingMarca.id == campanha.id).update(
+        {CampanhaRankingMarca.updated_at: datetime.utcnow()},
+        synchronize_session=False,
+    )
+
+    db.commit()
+
+
+@app.route("/admin/campanhas/ranking_marca", methods=["GET", "POST"])
+@admin_required
+def admin_campanhas_ranking_marca():
+    """Cadastro e recálculo de Campanhas de Ranking por Marca."""
+    erro = None
+    ok = None
+
+    # competência (para o botão recalcular/listagem)
+    hoje = date.today()
+    try:
+        ano = int(request.args.get("ano") or hoje.year)
+        mes = int(request.args.get("mes") or hoje.month)
+    except Exception:
+        ano, mes = hoje.year, hoje.month
+
+    with SessionLocal() as db:
+        # garante schema (não no boot!)
+        try:
+            _ensure_rank_marca_schema(db)
+        except Exception as e:
+            erro = f"Falha ao preparar tabelas do Ranking por Marca: {e}"
+
+        # opções de EMP (para multiselect)
+        emps_all = [str(e.codigo) for e in db.query(Emp).order_by(Emp.codigo.asc()).all()]
+        if not emps_all:
+            # fallback: emp distintos na base de vendas
+            emps_all = [str(r[0]) for r in db.query(func.coalesce(Venda.emp, "")).distinct().all() if r and r[0]]
+        emps_options = _get_emp_options(emps_all)
+
+        if request.method == "POST" and not erro:
+            acao = (request.form.get("acao") or "").strip().lower()
+            try:
+                if acao in ("criar", "editar"):
+                    cid = request.form.get("campanha_id")
+                    titulo = (request.form.get("titulo") or "").strip()
+                    marca = (request.form.get("marca") or "").strip().upper()
+                    escopo_tipo = (request.form.get("escopo_tipo") or "GLOBAL").strip().upper()
+                    min_total = _to_float_br(request.form.get("min_total"), default=None)
+                    data_inicio = request.form.get("data_inicio")
+                    data_fim = request.form.get("data_fim")
+                    competencia_ano = request.form.get("competencia_ano") or None
+                    competencia_mes = request.form.get("competencia_mes") or None
+                    ativo = True if request.form.get("ativo") else False
+
+                    if not titulo or not marca or not data_inicio or not data_fim:
+                        raise ValueError("Preencha Título, Marca e Vigência (início e fim).")
+
+                    di = date.fromisoformat(data_inicio)
+                    df = date.fromisoformat(data_fim)
+
+                    ca = int(competencia_ano) if competencia_ano else None
+                    cm = int(competencia_mes) if competencia_mes else None
+
+                    premios_texto = request.form.get("premios_texto") or ""
+                    premios = _parse_premios_texto(premios_texto)
+
+                    # se não veio, aplica padrão top 3
+                    if not premios:
+                        premios = [(1, 300.0), (2, 200.0), (3, 100.0)]
+
+                    emps_sel = request.form.getlist("emp") if escopo_tipo == "EMPS" else []
+
+                    if acao == "criar":
+                        obj = CampanhaRankingMarca(
+                            titulo=titulo,
+                            marca=marca,
+                            min_total=min_total,
+                            data_inicio=di,
+                            data_fim=df,
+                            competencia_ano=ca,
+                            competencia_mes=cm,
+                            escopo_tipo=escopo_tipo,
+                            ativo=ativo,
+                            created_at=datetime.utcnow(),
+                            updated_at=datetime.utcnow(),
+                        )
+                        db.add(obj)
+                        db.flush()  # pega id
+                        cid_int = int(obj.id)
+
+                    else:
+                        if not cid:
+                            raise ValueError("Campanha inválida para edição.")
+                        cid_int = int(cid)
+                        db.query(CampanhaRankingMarca).filter(CampanhaRankingMarca.id == cid_int).update(
+                            dict(
+                                titulo=titulo,
+                                marca=marca,
+                                min_total=min_total,
+                                data_inicio=di,
+                                data_fim=df,
+                                competencia_ano=ca,
+                                competencia_mes=cm,
+                                escopo_tipo=escopo_tipo,
+                                ativo=ativo,
+                                updated_at=datetime.utcnow(),
+                            ),
+                            synchronize_session=False,
+                        )
+
+                    # atualiza emps/premios
+                    db.query(CampanhaRankingMarcaEMP).filter(CampanhaRankingMarcaEMP.campanha_id == cid_int).delete(synchronize_session=False)
+                    if emps_sel:
+                        for e in emps_sel:
+                            e = (e or "").strip()
+                            if not e:
+                                continue
+                            db.add(CampanhaRankingMarcaEMP(campanha_id=cid_int, emp=e))
+
+                    db.query(CampanhaRankingMarcaPremio).filter(CampanhaRankingMarcaPremio.campanha_id == cid_int).delete(synchronize_session=False)
+                    for pos, val in premios:
+                        db.add(CampanhaRankingMarcaPremio(campanha_id=cid_int, posicao=int(pos), valor=float(val)))
+
+                    db.commit()
+                    ok = "Campanha de Ranking por Marca salva com sucesso."
+
+                elif acao == "remover":
+                    cid = request.form.get("campanha_id")
+                    if not cid:
+                        raise ValueError("Campanha inválida para remoção.")
+                    cid_int = int(cid)
+                    # remove filhos
+                    db.query(CampanhaRankingMarcaEMP).filter(CampanhaRankingMarcaEMP.campanha_id == cid_int).delete(synchronize_session=False)
+                    db.query(CampanhaRankingMarcaPremio).filter(CampanhaRankingMarcaPremio.campanha_id == cid_int).delete(synchronize_session=False)
+                    db.query(CampanhaRankingMarcaResultado).filter(CampanhaRankingMarcaResultado.campanha_id == cid_int).delete(synchronize_session=False)
+                    db.query(CampanhaRankingMarca).filter(CampanhaRankingMarca.id == cid_int).delete(synchronize_session=False)
+                    db.commit()
+                    ok = "Campanha removida."
+
+                elif acao == "recalcular":
+                    cid = request.form.get("campanha_id")
+                    if not cid:
+                        raise ValueError("Campanha inválida para recálculo.")
+                    cid_int = int(cid)
+
+                    # competência: se campanha tiver travado, usa; senão usa da tela
+                    camp = db.query(CampanhaRankingMarca).filter(CampanhaRankingMarca.id == cid_int).first()
+                    if not camp:
+                        raise ValueError("Campanha não encontrada.")
+
+                    ano_run = int(camp.competencia_ano or request.form.get("competencia_ano") or ano)
+                    mes_run = int(camp.competencia_mes or request.form.get("competencia_mes") or mes)
+
+                    _recalcular_rank_marca(db, camp, ano_run, mes_run)
+                    ok = f"Resultados recalculados para {mes_run:02d}/{ano_run}."
+
+                else:
+                    erro = "Ação inválida."
+
+            except Exception as e:
+                db.rollback()
+                erro = str(e)
+
+        # lista campanhas
+        campanhas = db.query(CampanhaRankingMarca).order_by(CampanhaRankingMarca.id.desc()).all()
+
+        # maps: emps / prêmios
+        emps_map = {}
+        for r in db.query(CampanhaRankingMarcaEMP).all():
+            emps_map.setdefault(int(r.campanha_id), []).append(r.emp)
+
+        premios_map = {}
+        for p in db.query(CampanhaRankingMarcaPremio).order_by(CampanhaRankingMarcaPremio.campanha_id.asc(), CampanhaRankingMarcaPremio.posicao.asc()).all():
+            premios_map.setdefault(int(p.campanha_id), []).append(p)
+
+        return render_template(
+            "admin_campanhas_ranking_marca.html",
+            usuario=_usuario_logado(),
+            campanhas=campanhas,
+            emps_options=emps_options,
+            emps_map=emps_map,
+            premios_map=premios_map,
+            ano=ano,
+            mes=mes,
+            erro=erro,
+            ok=ok,
+        )
+
 
 @app.route("/admin/apagar_vendas", methods=["POST"])
 def admin_apagar_vendas():

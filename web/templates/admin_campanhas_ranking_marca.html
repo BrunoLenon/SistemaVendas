@@ -26,6 +26,19 @@
     </div>
   </div>
 
+
+  <ul class="nav nav-tabs mb-3">
+    <li class="nav-item">
+      <a class="nav-link" href="{{ url_for('admin_campanhas_qtd') }}">Qtd / Recompensa</a>
+    </li>
+    <li class="nav-item">
+      <a class="nav-link active" href="{{ url_for('admin_campanhas_ranking_marca') }}">Ranking por Marca</a>
+    </li>
+    <li class="nav-item">
+      <a class="nav-link" href="{{ url_for('admin_campanhas_v2') }}">Campanhas V2</a>
+    </li>
+  </ul>
+
   {% if erro %}<div class="alert alert-danger">{{ erro }}</div>{% endif %}
   {% if ok %}<div class="alert alert-success">{{ ok }}</div>{% endif %}
 
