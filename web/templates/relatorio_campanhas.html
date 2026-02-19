@@ -30,11 +30,11 @@
 
     <div class="d-flex flex-wrap gap-2">
       <a class="btn btn-outline-secondary btn-sm"
-         href="{{ url_for('relatorio_campanhas', **request.args.to_dict(), recalc=1) }}">
+         href="{{ recalc_url }}">
         Recalcular agora
       </a>
       <a class="btn btn-outline-primary btn-sm"
-         href="{{ url_for('relatorio_campanhas_export_csv', **request.args.to_dict()) }}">
+         href="{{ export_url }}">
         Exportar CSV
       </a>
     </div>
@@ -128,7 +128,7 @@
           {% for opt in [200,500,1000] %}
             {% set q = request.args.to_dict() %}
             {% set _ = q.update({'per_page': opt, 'page': 1}) %}
-            <option value="{{ url_for('relatorio_campanhas', **q) }}" {% if per_page==opt %}selected{% endif %}>{{ opt }}</option>
+            <option value="{{ per_page_urls[opt] }}" {% if per_page==opt %}selected{% endif %}>{{ opt }}</option>
           {% endfor %}
         </select>
       </div>
@@ -190,8 +190,8 @@
         {% set qnext = request.args.to_dict() %}
         {% set _ = qprev.update({'page': (page-1) if page>1 else 1, 'per_page': per_page}) %}
         {% set _ = qnext.update({'page': (page+1) if page<total_pages else total_pages, 'per_page': per_page}) %}
-        <a class="btn btn-outline-secondary btn-sm {% if page<=1 %}disabled{% endif %}" href="{{ url_for('relatorio_campanhas', **qprev) }}">Anterior</a>
-        <a class="btn btn-outline-secondary btn-sm {% if page>=total_pages %}disabled{% endif %}" href="{{ url_for('relatorio_campanhas', **qnext) }}">Próxima</a>
+        <a class="btn btn-outline-secondary btn-sm {% if page<=1 %}disabled{% endif %}" href="{{ prev_url }}">Anterior</a>
+        <a class="btn btn-outline-secondary btn-sm {% if page>=total_pages %}disabled{% endif %}" href="{{ next_url }}">Próxima</a>
       </div>
     </div>
   </div>

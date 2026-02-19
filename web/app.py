@@ -3522,6 +3522,30 @@ def relatorio_campanhas():
     ctx["per_page"] = per_page
     ctx["total_rows"] = total_rows
     ctx["total_pages"] = (total_rows + per_page - 1) // per_page if per_page else 1
+    # URLs auxiliares (Jinja não suporta **kwargs dinâmico com dict em algumas versões)
+    from urllib.parse import urlencode
+
+    base_args = request.args.to_dict(flat=True) if request.args else {}
+
+    def _make_url(endpoint: str, **updates):
+        d = dict(base_args)
+        for k, v in updates.items():
+            if v is None:
+                d.pop(k, None)
+            else:
+                d[k] = str(v)
+        qs = urlencode(d, doseq=True)
+        return url_for(endpoint) + (("?" + qs) if qs else "")
+
+    ctx["recalc_url"] = _make_url("relatorio_campanhas", recalc=1, page=1)
+    ctx["export_url"] = _make_url("relatorio_campanhas_export_csv", page=None, per_page=None)
+
+    per_page_opts = [200, 500, 1000]
+    ctx["per_page_opts"] = per_page_opts
+    ctx["per_page_urls"] = {opt: _make_url("relatorio_campanhas", per_page=opt, page=1) for opt in per_page_opts}
+
+    ctx["prev_url"] = _make_url("relatorio_campanhas", page=max(1, page - 1))
+    ctx["next_url"] = _make_url("relatorio_campanhas", page=min(ctx["total_pages"], page + 1))
 
     return render_template("relatorio_campanhas.html", **ctx)
 
@@ -7369,4 +7393,3 @@ def campanhas_ranking_marca():
             db.close()
         except Exception:
             pass
-
