@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any, Iterable
 
-from sqlalchemy import func, and_, or_, cast
+from sqlalchemy import func, and_, or_, cast, case
 from sqlalchemy.dialects.postgresql import JSONB
 
 from db import (
@@ -430,7 +430,12 @@ def recalc_ranking_marca(
         db.query(
             Venda.vendedor.label("vendedor"),
             Venda.emp.label("emp"),
-            func.sum(Venda.valor_total).label("total"),
+            func.sum(
+                case(
+                    (func.upper(func.trim(Venda.mov_tipo_movto)) == "CA", -func.abs(Venda.valor_total)),
+                    else_=Venda.valor_total,
+                )
+            ).label("total"),
         )
         .filter(Venda.movimento >= ini)
         .filter(Venda.movimento <= fim)
