@@ -305,6 +305,55 @@ class ItemParado(Base):
     )
 
 
+
+
+class ItemParadoResultado(Base):
+    """
+    Snapshot mensal por vendedor/item parado (para relatórios e Financeiro).
+
+    Motivo:
+    - Itens Parados eram calculados "ao vivo" no relatório, o que pode ficar pesado em meses com muito volume.
+    - Este snapshot permite:
+        * relatório unificado mais rápido
+        * status_pagamento / pago_em
+        * export e auditoria consistente
+    """
+    __tablename__ = "itens_parados_resultados"
+
+    id = Column(Integer, primary_key=True)
+    item_parado_id = Column(Integer, nullable=False, index=True)
+
+    competencia_ano = Column(Integer, nullable=False, index=True)
+    competencia_mes = Column(Integer, nullable=False, index=True)
+
+    emp = Column(String(30), nullable=False, index=True)
+    vendedor = Column(String(80), nullable=False, index=True)
+
+    titulo = Column(String(255), nullable=False, default="")
+
+    base_valor_vendido = Column(Float, nullable=False, default=0.0)
+    recompensa_pct = Column(Float, nullable=False, default=0.0)
+    valor_recompensa = Column(Float, nullable=False, default=0.0)
+
+    status_pagamento = Column(String(20), nullable=False, default="PENDENTE")
+    pago_em = Column(DateTime, nullable=True)
+
+    atualizado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "item_parado_id",
+            "emp",
+            "vendedor",
+            "competencia_ano",
+            "competencia_mes",
+            name="uq_itens_parados_resultado",
+        ),
+        Index("ix_itens_parados_res_emp_comp", "emp", "competencia_ano", "competencia_mes"),
+        Index("ix_itens_parados_res_vend", "vendedor"),
+    )
+
+
 class CampanhaQtd(Base):
     """Campanhas de recompensa por quantidade (por EMP e opcionalmente por vendedor).
 

@@ -12,7 +12,7 @@ from services.campanhas_service import (
     build_campanhas_page_context,
     build_relatorio_campanhas_scope,
 )
-from services.relatorio_campanhas_service import build_relatorio_campanhas_context
+from services.relatorio_campanhas_service import build_relatorio_campanhas_context, build_relatorio_campanhas_unificado_context
 from services.campanhas_v2_engine import recalc_v2_competencia
 import os
 import re
@@ -3490,7 +3490,7 @@ def relatorio_campanhas():
     vendedores_por_emp = scope["vendedores_por_emp"]
 
 
-    ctx = build_relatorio_campanhas_context(
+    ctx = build_relatorio_campanhas_unificado_context(
         _campanhas_deps,
         role=role,
         vendedor_logado=vendedor_logado,
@@ -3500,9 +3500,101 @@ def relatorio_campanhas():
         emps_sel=emps_sel,
         vendedores_sel=vendedores_sel,
         vendedores_por_emp=vendedores_por_emp,
+        recalc=str(request.args.get("recalc") or "").strip() in ("1", "true", "True", "sim", "SIM"),
         flash=flash,
     )
+
+    # Paginação simples (client-side seria ok, mas server-side evita payloads enormes)
+    try:
+        page = int(request.args.get("page") or 1)
+        per_page = int(request.args.get("per_page") or 200)
+        page = max(page, 1)
+        per_page = max(50, min(per_page, 1000))
+    except Exception:
+        page, per_page = 1, 200
+
+    rows = ctx.get("rows") or []
+    total_rows = len(rows)
+    start = (page - 1) * per_page
+    end = start + per_page
+    ctx["rows_page"] = rows[start:end]
+    ctx["page"] = page
+    ctx["per_page"] = per_page
+    ctx["total_rows"] = total_rows
+    ctx["total_pages"] = (total_rows + per_page - 1) // per_page if per_page else 1
+
     return render_template("relatorio_campanhas.html", **ctx)
+
+
+@app.get("/relatorios/campanhas/export.csv")
+def relatorio_campanhas_export_csv():
+    """Exporta o relatório unificado (mes/ano/filtros) em CSV."""
+    red = _login_required()
+    if red:
+        return red
+
+    role = (_role() or "").strip().lower()
+    emp_usuario = _emp()
+    vendedor_logado = (_usuario_logado() or "").strip().upper()
+
+    scope = build_relatorio_campanhas_scope(
+        _campanhas_deps,
+        role=role,
+        emp_usuario=emp_usuario,
+        vendedor_logado=vendedor_logado,
+        args=request.args,
+        flash=flash,
+    )
+    ano = int(scope["ano"])
+    mes = int(scope["mes"])
+    emps_sel = scope["emps_sel"]
+    vendedores_sel = scope["vendedores_sel"]
+    emps_scope = scope["emps_scope"]
+    vendedores_por_emp = scope["vendedores_por_emp"]
+
+    ctx = build_relatorio_campanhas_unificado_context(
+        _campanhas_deps,
+        role=role,
+        vendedor_logado=vendedor_logado,
+        ano=ano,
+        mes=mes,
+        emps_scope=emps_scope,
+        emps_sel=emps_sel,
+        vendedores_sel=vendedores_sel,
+        vendedores_por_emp=vendedores_por_emp,
+        recalc=False,
+        flash=flash,
+    )
+
+    import csv
+    from io import StringIO
+    sio = StringIO()
+    w = csv.writer(sio, delimiter=";")
+    w.writerow(["tipo","competencia","emp","vendedor","titulo","atingiu_gate","qtd_base","qtd_premiada","valor_recompensa","status_pagamento","pago_em"])
+    for r in (ctx.get("rows") or []):
+        comp = f"{getattr(r,'competencia_mes',mes):02d}/{getattr(r,'competencia_ano',ano)}"
+        w.writerow([
+            getattr(r,"tipo",""),
+            comp,
+            getattr(r,"emp",""),
+            getattr(r,"vendedor",""),
+            getattr(r,"titulo",""),
+            "SIM" if getattr(r,"atingiu_gate",None) else "NÃO" if getattr(r,"atingiu_gate",None) is not None else "",
+            getattr(r,"qtd_base", "") if getattr(r,"qtd_base",None) is not None else "",
+            getattr(r,"qtd_premiada","") if getattr(r,"qtd_premiada",None) is not None else "",
+            getattr(r,"valor_recompensa",0.0),
+            getattr(r,"status_pagamento","PENDENTE"),
+            getattr(r,"pago_em","") or "",
+        ])
+
+    out = sio.getvalue().encode("utf-8")
+    filename = f"relatorio_campanhas_{ano}_{mes:02d}.csv"
+    return send_file(
+        BytesIO(out),
+        mimetype="text/csv",
+        as_attachment=True,
+        download_name=filename,
+    )
 
 
 @app.get("/relatorios/cidades-clientes")

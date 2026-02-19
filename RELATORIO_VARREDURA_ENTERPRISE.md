@@ -61,3 +61,36 @@ Este relatório **não altera nada** no seu repositório; ele apenas documenta i
 - Centralizar nomes de endpoints (ou criar aliases) para evitar que templates quebrem quando você renomeia funções.
 - Para filtros de texto (marca, vendedor), normalize sempre (`TRIM`, `UPPER`) e considere fallback `LIKE` quando não houver match exato.
 - Logar no recalcular (info) a janela usada e quantos vendedores retornaram; isso acelera diagnóstico no Render.
+
+
+## Evolução (v56 -> v57) — Relatório Unificado / Segurança / Performance
+
+### Implementado no código
+- **Relatório unificado** em `/relatorios/campanhas` (QTD + COMBO + ITENS PARADOS) com:
+  - tabela consolidada, filtros (mês/ano, EMP, vendedor), KPIs e gráficos (Chart.js);
+  - paginação server-side simples (`page`/`per_page`);
+  - **recalculo on-demand** via `?recalc=1` (evita recálculo automático a cada acesso);
+  - exportação **CSV** em `/relatorios/campanhas/export.csv`.
+- **Novo snapshot** (proposto e modelado): `itens_parados_resultados` (`ItemParadoResultado`) para acelerar relatórios e permitir `status_pagamento`/`pago_em` nos itens parados.
+
+### Recomendações (próximos passos)
+- Autenticação:
+  - Migrar 100% para **Flask-Login** (sessão server-side) e/ou JWT apenas para APIs.
+  - Ativar cookies com `Secure` + `SameSite=Lax` já está feito; considerar `SameSite=Strict` em rotas sem integrações.
+- Rate limiting:
+  - Trocar rate-limit em memória por Redis (ex.: Flask-Limiter) para múltiplos workers.
+- Auditoria:
+  - Persistir logs críticos em tabela (audit trail) com quem/quando/o quê (ex.: alterações de status de pagamento, exclusões).
+- Banco/SQL:
+  - Índices sugeridos (se ainda não existirem):
+    - `campanhas_qtd_resultados (emp, competencia_ano, competencia_mes)`
+    - `campanhas_combo_resultados (emp, competencia_ano, competencia_mes)`
+    - `itens_parados_resultados (emp, competencia_ano, competencia_mes)`
+    - `vendas (emp, movimento, vendedor)` (muito usado em relatórios)
+- Performance:
+  - Cache de relatório (Redis / Flask-Caching) por competência+escopo.
+  - Job assíncrono para snapshots (Celery/APS/cron) + botão “recalcular” apenas dispara job.
+- Segurança Web:
+  - CSP mais restritiva (whitelist do bootstrap cdn + chart.js), e hardening de headers.
+  - Sanitização de campos exibidos em HTML (Jinja já escapa por padrão; evitar `|safe`).
+

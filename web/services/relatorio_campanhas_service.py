@@ -531,3 +531,96 @@ def build_relatorio_campanhas_context(
         "vendedores_options": vendedores_options,
         "vendedor": vendedor_logado,
     }
+
+
+
+from services.relatorio_unificado_service import build_unified_rows, aggregate_for_charts
+
+def build_relatorio_campanhas_unificado_context(
+    deps: CampanhasDeps,
+    *,
+    role: str,
+    vendedor_logado: str,
+    ano: int,
+    mes: int,
+    emps_scope: list[str],
+    emps_sel: list[str],
+    vendedores_sel: list[str],
+    vendedores_por_emp: dict[str, list[str]],
+    recalc: bool,
+    flash: Callable[[str, str], None],
+) -> dict[str, Any]:
+    """
+    Novo contexto (v2) para relatorio_campanhas.html — visão consolidada.
+
+    - NÃO recalcula por padrão (performance).
+    - Se `recalc=True`, dispara recálculo dos snapshots QTD/COMBO e (opcionalmente) persiste snapshot de Itens Parados.
+    """
+
+    role_l = (role or "").strip().lower()
+    emps_scope = _sanitize_emps(emps_scope)
+    emps_sel = _sanitize_emps(emps_sel)
+
+    # Para vendedor/supervisor: se não selecionou explicitamente EMP, assume escopo permitido
+    if role_l != "admin" and not emps_sel and emps_scope:
+        emps_sel = [str(e) for e in emps_scope]
+
+    # Se ainda vazio (ex: admin sem filtro), usa emps_scope (que para admin tende a ser todas)
+    if not emps_sel:
+        emps_sel = [str(e) for e in emps_scope]
+
+    # Recalcular (on-demand)
+    if recalc:
+        try:
+            try:
+                deps.recalcular_resultados_campanhas_para_scope(ano=ano, mes=mes, emps=emps_sel, vendedores_por_emp=vendedores_por_emp)
+            except TypeError:
+                deps.recalcular_resultados_campanhas_para_scope(ano=ano, mes=mes, emps_scope=emps_sel, vendedores_por_emp=vendedores_por_emp)
+
+            try:
+                deps.recalcular_resultados_combos_para_scope(ano=ano, mes=mes, emps=emps_sel, vendedores_por_emp=vendedores_por_emp)
+            except TypeError:
+                deps.recalcular_resultados_combos_para_scope(ano=ano, mes=mes, emps_scope=emps_sel, vendedores_por_emp=vendedores_por_emp)
+        except Exception as e:
+            try:
+                deps.SessionLocal().rollback()
+            except Exception:
+                pass
+            flash("Não foi possível recalcular agora. Tente novamente em instantes.", "warning")
+            print(f"[RELATORIO_UNIFICADO] erro recalc: {e}")
+
+    # Monta linhas unificadas
+    try:
+        rows = build_unified_rows(
+            ano=ano,
+            mes=mes,
+            emps=emps_sel,
+            vendedores_por_emp=vendedores_por_emp,
+            incluir_zerados=False,
+            usar_snapshot_itens_parados=True,
+        )
+    except Exception as e:
+        print(f"[RELATORIO_UNIFICADO] erro ao montar rows: {e}")
+        rows = []
+
+    charts = aggregate_for_charts(rows)
+
+    # Stats básicos
+    total_linhas = len(rows)
+    total_recompensa = charts.get("total_recompensa", 0.0)
+
+    return {
+        "ano": ano,
+        "mes": mes,
+        "role": role_l,
+        "vendedor_logado": vendedor_logado,
+        "emps_scope": emps_scope,
+        "emps_sel": emps_sel,
+        "vendedores_sel": vendedores_sel,
+        "vendedores_por_emp": vendedores_por_emp,
+        "rows": rows,
+        "charts": charts,
+        "total_linhas": total_linhas,
+        "total_recompensa": total_recompensa,
+        "recalc": recalc,
+    }
