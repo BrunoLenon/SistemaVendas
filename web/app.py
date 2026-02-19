@@ -3548,6 +3548,13 @@ def relatorio_campanhas():
         return red
 
     role = (_role() or "").strip().lower()
+
+    # Flags de permissão para a UI (templates)
+    ctx_is_admin = (role == "admin")
+    ctx_is_supervisor = (role == "supervisor")
+    ctx_is_vendedor = (role == "vendedor")
+    ctx_is_financeiro = (role == "financeiro")
+
     emp_usuario = _emp()
 
     vendedor_logado = (_usuario_logado() or "").strip().upper()
