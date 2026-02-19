@@ -28,6 +28,49 @@ from decimal import Decimal, ROUND_HALF_UP
 import pandas as pd
 import requests
 from sqlalchemy import and_, or_, func, case, cast, String, text, extract
+# ---------------------------------------------------------------------------
+# Helpers de compatibilidade para "rows" que podem vir como dict, SQLAlchemy Row,
+# dataclass (ex.: UnifiedRow), ou objetos simples.
+# ---------------------------------------------------------------------------
+def _obj_get(obj, key, default=None):
+    """Acesso seguro estilo dict: tenta dict, RowMapping, atributos e chaves."""
+    if obj is None:
+        return default
+    try:
+        # dict
+        if isinstance(obj, dict):
+            return obj.get(key, default)
+        # SQLAlchemy Row: possui _mapping
+        mapping = getattr(obj, "_mapping", None)
+        if mapping is not None:
+            return mapping.get(key, default)
+        # dataclass/objeto: atributo
+        if hasattr(obj, key):
+            return getattr(obj, key)
+        # tenta variações de caixa
+        k = str(key)
+        for kk in (k.lower(), k.upper()):
+            if hasattr(obj, kk):
+                return getattr(obj, kk)
+        # fallback: __getitem__
+        try:
+            return obj[key]  # type: ignore[index]
+        except Exception:
+            return default
+    except Exception:
+        return default
+
+def _obj_get_any(obj, keys, default=None):
+    for k in keys:
+        v = _obj_get(obj, k, None)
+        if v is None:
+            continue
+        if isinstance(v, str) and not v.strip():
+            continue
+        return v
+    return default
+
+
 from flask import (
     Flask,
     flash,

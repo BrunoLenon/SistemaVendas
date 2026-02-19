@@ -54,6 +54,26 @@ class UnifiedRow:
     # ids para drilldown
     origem_id: int | None
 
+    # Compatibilidade: permite tratar UnifiedRow como dict em alguns pontos do app/templates
+    # (ex.: r.get('emp'), r['emp']).
+    def get(self, key: str, default: Any = None) -> Any:
+        if key is None:
+            return default
+        k = str(key)
+        # tenta direto, depois variações de caixa
+        for kk in (k, k.lower(), k.upper()):
+            if hasattr(self, kk):
+                return getattr(self, kk)
+        return default
+
+    def __getitem__(self, key: str) -> Any:
+        sentinel = object()
+        v = self.get(key, sentinel)
+        if v is sentinel:
+            raise KeyError(key)
+        return v
+
+
 
 def _safe_float(v: Any) -> float:
     try:
