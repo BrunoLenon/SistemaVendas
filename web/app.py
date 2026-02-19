@@ -3513,43 +3513,24 @@ def relatorio_campanhas():
     except Exception:
         page, per_page = 1, 200
 
-    
-    # Opções de vendedores para o filtro (somente dentro do escopo/EMPs selecionadas)
-    try:
-        _emps_for_vends = emps_sel or emps_scope or []
-        _vset = set()
-        for _e in _emps_for_vends:
-            for _v in (vendedores_por_emp.get(str(_e), []) or []):
-                if str(_v).strip():
-                    _vset.add(str(_v).strip().upper())
-        if role in ("vendedor",) and vendedor_logado:
-            _vset = {vendedor_logado.strip().upper()}
-        vendedores_scope = sorted(_vset)
-    except Exception:
-        vendedores_scope = []
-
-    ctx["vendedores_scope"] = vendedores_scope
-
-rows = ctx.get("rows") or []
-    
-    # Se o usuário escolheu vendedores, filtra as linhas (o builder unificado filtra por EMP, mas não por vendedor)
-    if vendedores_sel:
-        _wanted = {str(v).strip().upper() for v in (vendedores_sel or []) if str(v).strip()}
-        def _row_vendedor(rr):
-            try:
-                if hasattr(rr, "get"):
-                    return str(rr.get("vendedor") or rr.get("VENDEDOR") or "").strip().upper()
-            except Exception:
-                pass
-            try:
-                return str(getattr(rr, "vendedor") or "").strip().upper()
-            except Exception:
-                return ""
-        rows = [rr for rr in rows if _row_vendedor(rr) in _wanted]
-total_rows = len(rows)
+    rows = ctx.get("rows") or []
+    total_rows = len(rows)
     start = (page - 1) * per_page
     end = start + per_page
     ctx["rows_page"] = rows[start:end]
+    # ordena a página para facilitar agrupamento EMP → Vendedor → Campanhas
+    try:
+        ctx["rows_page"] = sorted(
+            ctx["rows_page"],
+            key=lambda r: (
+                str(getattr(r, "emp", "") or ""),
+                str(getattr(r, "vendedor", "") or ""),
+                str(getattr(r, "tipo", "") or ""),
+                str(getattr(r, "titulo", "") or ""),
+            ),
+        )
+    except Exception:
+        pass
     ctx["page"] = page
     ctx["per_page"] = per_page
     ctx["total_rows"] = total_rows
@@ -3573,21 +3554,23 @@ total_rows = len(rows)
         return s
 
     def _calc_resumo_financeiro(_rows):
+        """Gera resumo financeiro a partir do dataset unificado.
+        Suporta linhas como dict OU objetos (ex.: UnifiedRow).
         """
-        _rows pode ser lista de dicts OU objetos (ex.: dataclass UnifiedRow).
-        """
-        def _rget(obj, key, default=None):
-            if obj is None:
-                return default
+
+        def _get(r, key, default=None):
             # dict-like
             try:
-                if hasattr(obj, "get"):
-                    return obj.get(key, default)
+                if hasattr(r, "get"):
+                    v = r.get(key, default)
+                    if v is not None:
+                        return v
             except Exception:
                 pass
             # attribute-like
             try:
-                return getattr(obj, key)
+                v = getattr(r, key)
+                return v if v is not None else default
             except Exception:
                 return default
 
@@ -3597,11 +3580,12 @@ total_rows = len(rows)
             "status": {"PENDENTE": 0.0, "A_PAGAR": 0.0, "PAGO": 0.0, "OUTROS": 0.0},
             "por_emp": {},
         }
+
         for r in (_rows or []):
-            emp = str(_rget(r, "emp") or _rget(r, "EMP") or "").strip() or "—"
-            vendedor = str(_rget(r, "vendedor") or _rget(r, "VENDEDOR") or "").strip() or "—"
-            valor = _to_float(_rget(r, "valor_recompensa") or _rget(r, "valor") or _rget(r, "VALOR_RECOMPENSA"))
-            st = _norm_status(_rget(r, "status_pagamento") or _rget(r, "status") or _rget(r, "STATUS_PAGAMENTO"))
+            emp = str(_get(r, "emp", _get(r, "EMP", "")) or "").strip() or "—"
+            vendedor = str(_get(r, "vendedor", _get(r, "VENDEDOR", "")) or "").strip() or "—"
+            valor = _to_float(_get(r, "valor_recompensa", _get(r, "valor", _get(r, "VALOR_RECOMPENSA", 0.0))))
+            st = _norm_status(_get(r, "status_pagamento", _get(r, "status", _get(r, "STATUS_PAGAMENTO", "PENDENTE"))))
 
             st_key = st if st in ("PENDENTE", "A_PAGAR", "PAGO") else "OUTROS"
 
@@ -3609,30 +3593,36 @@ total_rows = len(rows)
             resumo["total_valor"] += valor
             resumo["status"][st_key] = resumo["status"].get(st_key, 0.0) + valor
 
-            empd = resumo["por_emp"].setdefault(emp, {
-                "total": 0.0,
-                "status": {"PENDENTE": 0.0, "A_PAGAR": 0.0, "PAGO": 0.0, "OUTROS": 0.0},
-                "vendedores": {}
-            })
+            empd = resumo["por_emp"].setdefault(
+                emp,
+                {
+                    "total": 0.0,
+                    "status": {"PENDENTE": 0.0, "A_PAGAR": 0.0, "PAGO": 0.0, "OUTROS": 0.0},
+                    "vendedores": {},
+                },
+            )
             empd["total"] += valor
             empd["status"][st_key] = empd["status"].get(st_key, 0.0) + valor
 
-            vd = empd["vendedores"].setdefault(vendedor, {
-                "total": 0.0,
-                "status": {"PENDENTE": 0.0, "A_PAGAR": 0.0, "PAGO": 0.0, "OUTROS": 0.0},
-                "linhas": 0
-            })
+            vd = empd["vendedores"].setdefault(
+                vendedor,
+                {
+                    "total": 0.0,
+                    "status": {"PENDENTE": 0.0, "A_PAGAR": 0.0, "PAGO": 0.0, "OUTROS": 0.0},
+                    "linhas": 0,
+                },
+            )
             vd["linhas"] += 1
             vd["total"] += valor
             vd["status"][st_key] = vd["status"].get(st_key, 0.0) + valor
 
+        # ordenar EMPs por total desc (para UI ficar útil)
         resumo["por_emp_ordenado"] = sorted(
-            resumo["por_emp"].items(),
-            key=lambda kv: kv[1].get("total", 0.0),
-            reverse=True
+            resumo["por_emp"].items(), key=lambda kv: kv[1].get("total", 0.0), reverse=True
         )
         return resumo
 
+    # Resumo usa dataset completo (não só a página)
     ctx["resumo"] = _calc_resumo_financeiro(rows)
 
     # URLs auxiliares (Jinja não suporta **kwargs dinâmico com dict em algumas versões)
