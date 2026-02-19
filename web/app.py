@@ -13,6 +13,7 @@ from services.campanhas_service import (
     build_relatorio_campanhas_scope,
 )
 from services.relatorio_campanhas_service import build_relatorio_campanhas_context, build_relatorio_campanhas_unificado_context
+from services.relatorio_unificado_service import gerar_snapshot_mensal
 from services.campanhas_v2_engine import recalc_v2_competencia
 import os
 import re
@@ -3541,33 +3542,21 @@ def relatorio_campanhas():
         return s
 
     def _calc_resumo_financeiro(_rows):
-        def _row_get(obj, key, default=None):
-            try:
-                if isinstance(obj, dict):
-                    return obj.get(key, default)
-                return getattr(obj, key, default)
-            except Exception:
-                return default
-
         resumo = {
             "linhas": 0,
             "total_valor": 0.0,
             "status": {"PENDENTE": 0.0, "A_PAGAR": 0.0, "PAGO": 0.0, "OUTROS": 0.0},
             "por_emp": {},
         }
-
         for r in (_rows or []):
-            emp = str(_row_get(r, "emp") or _row_get(r, "EMP") or "").strip() or "—"
-            vendedor = str(_row_get(r, "vendedor") or _row_get(r, "VENDEDOR") or "").strip() or "—"
-
-            valor = _to_float(
-                _row_get(r, "valor_recompensa") or _row_get(r, "valor") or _row_get(r, "VALOR_RECOMPENSA")
-            )
-            st = _norm_status(
-                _row_get(r, "status_pagamento") or _row_get(r, "status") or _row_get(r, "STATUS_PAGAMENTO")
-            )
-
-            st_key = st if st in ("PENDENTE", "A_PAGAR", "PAGO") else "OUTROS"
+            emp = str(r.get("emp") or r.get("EMP") or "").strip() or "—"
+            vendedor = str(r.get("vendedor") or r.get("VENDEDOR") or "").strip() or "—"
+            valor = _to_float(r.get("valor_recompensa") or r.get("valor") or r.get("VALOR_RECOMPENSA"))
+            st = _norm_status(r.get("status_pagamento") or r.get("status") or r.get("STATUS_PAGAMENTO"))
+            if st not in ("PENDENTE", "A_PAGAR", "PAGO"):
+                st_key = "OUTROS"
+            else:
+                st_key = st
 
             resumo["linhas"] += 1
             resumo["total_valor"] += valor
@@ -3610,10 +3599,6 @@ def relatorio_campanhas():
         for k, v in updates.items():
             if v is None:
                 d.pop(k, None)
-                continue
-            # preserva listas (multi-emp / multi-vendedor) nas URLs
-            if isinstance(v, (list, tuple)):
-                d[k] = [str(x) for x in v]
             else:
                 d[k] = str(v)
         qs = urlencode(d, doseq=True)
@@ -5549,6 +5534,8 @@ def admin_fechamento():
         "pago": "fechar_pago",
         "reabrir": "reabrir",
         "abrir": "reabrir",
+        "gerar_snapshot": "gerar_snapshot",
+        "snapshot": "gerar_snapshot",
     }.get(acao_raw, acao_raw)
 
     with SessionLocal() as db:
@@ -5563,12 +5550,26 @@ def admin_fechamento():
             except Exception:
                 emps_all = []
 
-        if request.method == "POST" and acao in {"fechar_a_pagar", "fechar_pago", "reabrir"}:
+        if request.method == "POST" and acao in {"fechar_a_pagar", "fechar_pago", "reabrir", "gerar_snapshot"}:
             app.logger.info("FECHAMENTO POST: form=%s values=%s", dict(request.form), {k: request.values.getlist(k) for k in request.values.keys()})
             if not emps_sel:
                 msgs.append("⚠️ Selecione ao menos 1 EMP para fechar/reabrir.")
             else:
-                alvo_status = None
+                if acao == "gerar_snapshot":
+                    try:
+                        vendedores_por_emp = {emp: _get_vendedores_emp_no_periodo(emp, ano, mes) for emp in emps_sel}
+                        res = gerar_snapshot_mensal(ano=ano, mes=mes, emps=emps_sel, vendedores_por_emp=vendedores_por_emp)
+                        msgs.append(f"✅ Snapshot mensal gerado: {res.get('total', 0)} linhas (competência {mes:02d}/{ano}).")
+                    except Exception as e:
+                        try:
+                            db.rollback()
+                        except Exception:
+                            pass
+                        msgs.append("⚠️ Não foi possível gerar o snapshot agora. Veja logs para detalhes.")
+                        app.logger.exception("Erro ao gerar snapshot mensal: %s", e)
+                    # continua para renderizar status
+                else:
+                    alvo_status = None
                 updated_count = 0
                 if acao == "fechar_a_pagar":
                     alvo_status = "a_pagar"

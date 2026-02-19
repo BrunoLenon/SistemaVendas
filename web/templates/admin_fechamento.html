@@ -75,6 +75,10 @@
   Gerar Fechamento (Congelar)
 </button>
 
+<button class="btn btn-outline-dark" type="submit" onclick="document.getElementById('acao_fechamento').value='gerar_snapshot'" {% if not emps_sel %}disabled{% endif %}>
+  Gerar Snapshot (Relatório)
+</button>
+
 <button class="btn btn-primary" type="submit" onclick="document.getElementById('acao_fechamento').value='fechar_a_pagar'" {% if not emps_sel %}disabled{% endif %}>
   Fechar (A pagar)
 </button>

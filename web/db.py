@@ -3,8 +3,12 @@ from datetime import datetime
 from urllib.parse import quote_plus
 
 from sqlalchemy import create_engine, Column, Integer, String, Float, Date, DateTime, Text, Boolean, Index, UniqueConstraint, text, func
+try:
+    from sqlalchemy.dialects.postgresql import JSONB
+except Exception:  # pragma: no cover
+    JSONB = None  # type: ignore
+
 from sqlalchemy.orm import declarative_base, sessionmaker, synonym
-from sqlalchemy.dialects.postgresql import JSONB
 
 # =====================
 # Config via ENV (Render)
@@ -1058,6 +1062,48 @@ class FinanceiroPagamento(Base):
     )
 
 
+
+class RelatorioSnapshotMensal(Base):
+    """Snapshot oficial mensal do relatório unificado (QTD/COMBO/PARADO).
+
+    Ideia: após gerar/fechar o mês, os relatórios passam a ler daqui para garantir
+    consistência contábil e performance (sem recálculo em request-time).
+    """
+    __tablename__ = "relatorio_snapshot_mensal"
+
+    id = Column(Integer, primary_key=True)
+
+    competencia_ano = Column(Integer, nullable=False, index=True)
+    competencia_mes = Column(Integer, nullable=False, index=True)
+
+    emp = Column(String(32), nullable=False, index=True)
+    vendedor = Column(String(120), nullable=False, index=True)
+
+    tipo = Column(String(20), nullable=False)  # QTD | COMBO | PARADO
+    titulo = Column(Text, nullable=False)
+
+    atingiu_gate = Column(Boolean, nullable=True)
+    qtd_base = Column(Float, nullable=True)
+    qtd_premiada = Column(Float, nullable=True)
+
+    valor_recompensa = Column(Float, nullable=False, default=0.0)
+    status_pagamento = Column(String(20), nullable=False, default="PENDENTE")
+    pago_em = Column(DateTime, nullable=True)
+
+    origem_id = Column(Integer, nullable=True)
+
+    criado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        Index("ix_snap_comp_emp_vend", "competencia_ano", "competencia_mes", "emp", "vendedor"),
+        Index("ix_snap_comp_tipo", "competencia_ano", "competencia_mes", "tipo"),
+        UniqueConstraint(
+            "competencia_ano", "competencia_mes", "emp", "vendedor", "tipo", "titulo", "origem_id",
+            name="uq_snap_row"
+        ),
+    )
+
+
 class FinanceiroAudit(Base):
     __tablename__ = "financeiro_audit"
 
@@ -1071,7 +1117,7 @@ class FinanceiroAudit(Base):
     usuario = Column(Text, nullable=True)
     criado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
 
-    meta = Column(JSONB, nullable=True)
+    meta = Column(JSONB if JSONB is not None else Text, nullable=True)
 
     __table_args__ = (
         Index("ix_fin_audit_pagamento", "pagamento_id"),
@@ -1117,35 +1163,6 @@ def criar_tabelas():
             # Usuários: role/emp
             conn.execute(text("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS role varchar(20);"))
             conn.execute(text("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS emp varchar(30);"))
-
-            # Financeiro Audit: meta deve ser JSONB (compatibilidade com versões antigas que criaram como TEXT)
-            # Faz cast seguro: texto vazio vira NULL.
-            conn.execute(text("""
-            DO $$
-            BEGIN
-                IF EXISTS (
-                    SELECT 1 FROM information_schema.columns
-                    WHERE table_schema = 'public'
-                      AND table_name = 'financeiro_audit'
-                      AND column_name = 'meta'
-                ) THEN
-                    IF (SELECT data_type FROM information_schema.columns
-                        WHERE table_schema = 'public'
-                          AND table_name = 'financeiro_audit'
-                          AND column_name = 'meta') <> 'jsonb' THEN
-                        ALTER TABLE financeiro_audit
-                            ALTER COLUMN meta TYPE jsonb
-                            USING CASE
-                                WHEN meta IS NULL OR btrim(meta) = '' THEN NULL
-                                ELSE meta::jsonb
-                            END;
-                    END IF;
-                END IF;
-            EXCEPTION WHEN others THEN
-                -- não derruba o startup por conta disso
-                NULL;
-            END $$;
-            """))
             # Tabela de vínculo multi-EMP por usuário (vendedor/supervisor)
             conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS usuario_emps (
