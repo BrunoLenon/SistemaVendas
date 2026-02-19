@@ -3513,8 +3513,40 @@ def relatorio_campanhas():
     except Exception:
         page, per_page = 1, 200
 
-    rows = ctx.get("rows") or []
-    total_rows = len(rows)
+    
+    # Opções de vendedores para o filtro (somente dentro do escopo/EMPs selecionadas)
+    try:
+        _emps_for_vends = emps_sel or emps_scope or []
+        _vset = set()
+        for _e in _emps_for_vends:
+            for _v in (vendedores_por_emp.get(str(_e), []) or []):
+                if str(_v).strip():
+                    _vset.add(str(_v).strip().upper())
+        if role in ("vendedor",) and vendedor_logado:
+            _vset = {vendedor_logado.strip().upper()}
+        vendedores_scope = sorted(_vset)
+    except Exception:
+        vendedores_scope = []
+
+    ctx["vendedores_scope"] = vendedores_scope
+
+rows = ctx.get("rows") or []
+    
+    # Se o usuário escolheu vendedores, filtra as linhas (o builder unificado filtra por EMP, mas não por vendedor)
+    if vendedores_sel:
+        _wanted = {str(v).strip().upper() for v in (vendedores_sel or []) if str(v).strip()}
+        def _row_vendedor(rr):
+            try:
+                if hasattr(rr, "get"):
+                    return str(rr.get("vendedor") or rr.get("VENDEDOR") or "").strip().upper()
+            except Exception:
+                pass
+            try:
+                return str(getattr(rr, "vendedor") or "").strip().upper()
+            except Exception:
+                return ""
+        rows = [rr for rr in rows if _row_vendedor(rr) in _wanted]
+total_rows = len(rows)
     start = (page - 1) * per_page
     end = start + per_page
     ctx["rows_page"] = rows[start:end]
@@ -3541,6 +3573,24 @@ def relatorio_campanhas():
         return s
 
     def _calc_resumo_financeiro(_rows):
+        """
+        _rows pode ser lista de dicts OU objetos (ex.: dataclass UnifiedRow).
+        """
+        def _rget(obj, key, default=None):
+            if obj is None:
+                return default
+            # dict-like
+            try:
+                if hasattr(obj, "get"):
+                    return obj.get(key, default)
+            except Exception:
+                pass
+            # attribute-like
+            try:
+                return getattr(obj, key)
+            except Exception:
+                return default
+
         resumo = {
             "linhas": 0,
             "total_valor": 0.0,
@@ -3548,14 +3598,12 @@ def relatorio_campanhas():
             "por_emp": {},
         }
         for r in (_rows or []):
-            emp = str(r.get("emp") or r.get("EMP") or "").strip() or "—"
-            vendedor = str(r.get("vendedor") or r.get("VENDEDOR") or "").strip() or "—"
-            valor = _to_float(r.get("valor_recompensa") or r.get("valor") or r.get("VALOR_RECOMPENSA"))
-            st = _norm_status(r.get("status_pagamento") or r.get("status") or r.get("STATUS_PAGAMENTO"))
-            if st not in ("PENDENTE", "A_PAGAR", "PAGO"):
-                st_key = "OUTROS"
-            else:
-                st_key = st
+            emp = str(_rget(r, "emp") or _rget(r, "EMP") or "").strip() or "—"
+            vendedor = str(_rget(r, "vendedor") or _rget(r, "VENDEDOR") or "").strip() or "—"
+            valor = _to_float(_rget(r, "valor_recompensa") or _rget(r, "valor") or _rget(r, "VALOR_RECOMPENSA"))
+            st = _norm_status(_rget(r, "status_pagamento") or _rget(r, "status") or _rget(r, "STATUS_PAGAMENTO"))
+
+            st_key = st if st in ("PENDENTE", "A_PAGAR", "PAGO") else "OUTROS"
 
             resumo["linhas"] += 1
             resumo["total_valor"] += valor
@@ -3578,7 +3626,6 @@ def relatorio_campanhas():
             vd["total"] += valor
             vd["status"][st_key] = vd["status"].get(st_key, 0.0) + valor
 
-        # ordenar EMPs por total desc (para UI ficar útil)
         resumo["por_emp_ordenado"] = sorted(
             resumo["por_emp"].items(),
             key=lambda kv: kv[1].get("total", 0.0),

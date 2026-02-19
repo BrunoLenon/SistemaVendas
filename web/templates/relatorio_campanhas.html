@@ -172,12 +172,12 @@
   </div>
   {% endif %}
 
-  <!-- Detalhamento EMP -> Vendedor -> Campanha -->
+  <!-- Detalhamento EMP -> Vendedor -> Campanhas -->
   <div class="card">
-    <div class="card-header d-flex align-items-center justify-content-between">
-      <strong>Detalhamento</strong>
+    <div class="card-header d-flex flex-wrap align-items-center justify-content-between gap-2">
+      <strong>Detalhamento (agrupado)</strong>
       <div class="text-muted small">
-        Página {{ page }} / {{ total_pages }}
+        Página {{ page }} / {{ total_pages }} • {{ total_rows }} linhas
         <span class="ms-2">
           <a class="btn btn-sm btn-outline-secondary {% if page<=1 %}disabled{% endif %}" href="{{ prev_url }}">Anterior</a>
           <a class="btn btn-sm btn-outline-secondary {% if page>=total_pages %}disabled{% endif %}" href="{{ next_url }}">Próxima</a>
@@ -187,62 +187,131 @@
 
     <div class="card-body p-0">
       {% if rows_page and rows_page|length > 0 %}
-      <div class="table-responsive">
-        <table class="table table-hover align-middle mb-0">
-          <thead>
-            <tr>
-              <th>Tipo</th>
-              <th>EMP</th>
-              <th>Vendedor</th>
-              <th>Campanha</th>
-              <th class="text-center">Gate</th>
-              <th class="text-end">Qtd/Base</th>
-              <th class="text-end">Qtd Premiada</th>
-              <th class="text-end">Valor (R$)</th>
-              <th>Status</th>
-              <th>Pago em</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for r in rows_page %}
-              <tr>
-                <td><span class="badge bg-secondary">{{ r.tipo or r.get("tipo") }}</span></td>
-                <td><strong>{{ r.emp }}</strong></td>
-                <td>{{ r.vendedor }}</td>
-                <td class="small">{{ r.titulo or r.campanha or "-" }}</td>
-                <td class="text-center">
-                  {% if r.atingiu_gate is not none %}
-                    {% if r.atingiu_gate %}<span class="badge bg-success">SIM</span>{% else %}<span class="badge bg-danger">NÃO</span>{% endif %}
-                  {% else %}-{% endif %}
-                </td>
-                <td class="text-end">{{ r.qtd_base or 0 }}</td>
-                <td class="text-end">{{ r.qtd_premiada or 0 }}</td>
-                <td class="text-end"><strong>{{ "%.2f"|format(r.valor_recompensa or 0) }}</strong></td>
-                <td>{{ r.status_pagamento or "PENDENTE" }}</td>
-                <td class="small">{{ r.pago_em or "" }}</td>
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
+
+        {# Ordena para garantir agrupamento estável #}
+        {% set rows_sorted = rows_page|sort(attribute='emp') %}
+
+        <div class="accordion" id="accEmp">
+          {% set ns = namespace(last_emp=None, last_vend=None, emp_idx=0, vend_idx=0) %}
+
+          {% for r in rows_page|sort(attribute='emp') %}
+            {% if ns.last_emp != r.emp %}
+              {# fecha vendedor e emp anteriores #}
+              {% if ns.last_emp is not none %}
+                    </tbody></table>
+                  </div>
+                </div>
+              </div>  {# end accordion-item vendedor #}
+            </div>      {# end accordion vendedores EMP #}
+          </div>        {# end accordion-item EMP #}
+              {% endif %}
+
+              {% set ns.emp_idx = ns.emp_idx + 1 %}
+              {% set ns.vend_idx = 0 %}
+              {% set ns.last_emp = r.emp %}
+              {% set ns.last_vend = None %}
+
+              <div class="accordion-item">
+                <h2 class="accordion-header" id="emp-h-{{ ns.emp_idx }}">
+                  <button class="accordion-button {% if ns.emp_idx>1 %}collapsed{% endif %}" type="button" data-bs-toggle="collapse" data-bs-target="#emp-c-{{ ns.emp_idx }}">
+                    <span class="me-2">EMP</span>
+                    <span class="badge bg-dark">{{ r.emp }}</span>
+                  </button>
+                </h2>
+                <div id="emp-c-{{ ns.emp_idx }}" class="accordion-collapse collapse {% if ns.emp_idx==1 %}show{% endif %}" data-bs-parent="#accEmp">
+                  <div class="accordion-body pt-2">
+
+                    <div class="accordion" id="accVend-{{ ns.emp_idx }}">
+            {% endif %}
+
+            {% if ns.last_vend != r.vendedor %}
+              {% if ns.last_vend is not none %}
+                        </tbody></table>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              {% endif %}
+
+              {% set ns.vend_idx = ns.vend_idx + 1 %}
+              {% set ns.last_vend = r.vendedor %}
+
+              <div class="accordion-item">
+                <h2 class="accordion-header" id="vend-h-{{ ns.emp_idx }}-{{ ns.vend_idx }}">
+                  <button class="accordion-button collapsed py-2" type="button" data-bs-toggle="collapse" data-bs-target="#vend-c-{{ ns.emp_idx }}-{{ ns.vend_idx }}">
+                    <span class="me-2">Vendedor</span>
+                    <span class="badge bg-secondary">{{ r.vendedor }}</span>
+                  </button>
+                </h2>
+                <div id="vend-c-{{ ns.emp_idx }}-{{ ns.vend_idx }}" class="accordion-collapse collapse" data-bs-parent="#accVend-{{ ns.emp_idx }}">
+                  <div class="accordion-body p-0">
+
+                    <div class="table-responsive">
+                      <table class="table table-sm table-hover align-middle mb-0">
+                        <thead class="table-light">
+                          <tr>
+                            <th>Tipo</th>
+                            <th>Campanha</th>
+                            <th class="text-center">Gate</th>
+                            <th class="text-end">Qtd/Base</th>
+                            <th class="text-end">Qtd Premiada</th>
+                            <th class="text-end">Valor (R$)</th>
+                            <th>Status</th>
+                            <th>Pago em</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+            {% endif %}
+
+                          <tr>
+                            <td><span class="badge bg-info text-dark">{{ r.tipo }}</span></td>
+                            <td>
+                              <div class="fw-semibold">{{ r.titulo or r.campanha }}</div>
+                              {% if r.campanha and r.titulo and r.campanha != r.titulo %}
+                                <div class="text-muted small">{{ r.campanha }}</div>
+                              {% endif %}
+                            </td>
+                            <td class="text-center">
+                              {% if r.atingiu_gate %}
+                                <span class="badge bg-success">SIM</span>
+                              {% else %}
+                                <span class="badge bg-danger">NÃO</span>
+                              {% endif %}
+                            </td>
+                            <td class="text-end">{{ r.qtd_base }}</td>
+                            <td class="text-end">{{ r.qtd_premiada }}</td>
+                            <td class="text-end fw-semibold">{{ "%.2f"|format(r.valor_recompensa or 0) }}</td>
+                            <td>
+                              {% set st = (r.status_pagamento or "PENDENTE")|upper %}
+                              {% if st in ["PAGO"] %}
+                                <span class="badge bg-success">PAGO</span>
+                              {% elif st in ["A_PAGAR","A PAGAR"] %}
+                                <span class="badge bg-warning text-dark">A PAGAR</span>
+                              {% else %}
+                                <span class="badge bg-secondary">PENDENTE</span>
+                              {% endif %}
+                            </td>
+                            <td class="text-muted small">{{ r.pago_em or "" }}</td>
+                          </tr>
+
+          {% endfor %}
+
+          {# fecha o último vendedor e EMP #}
+                        </tbody></table>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div> {# end accordion-item vendedor #}
+            </div>   {# end accordion vendedores do EMP #}
+          </div>     {# end accordion-item EMP #}
+
+        </div> {# end accordion principal #}
+
       {% else %}
-        <div class="p-4 text-center text-muted">Nenhum dado para os filtros selecionados.</div>
+        <div class="p-4 text-center text-muted">Nenhum resultado para os filtros selecionados.</div>
       {% endif %}
     </div>
   </div>
-
-</div>
-
-<script>
-function toggleAll(cls, checked){
-  document.querySelectorAll('.'+cls+' input[type="checkbox"]').forEach(cb => cb.checked = checked);
-}
-function filterChecks(input, cls){
-  const q = (input.value || '').toLowerCase().trim();
-  document.querySelectorAll('.'+cls).forEach(el => {
-    const t = (el.innerText || '').toLowerCase();
-    el.style.display = (!q || t.includes(q)) ? '' : 'none';
-  });
-}
-</script>
 {% endblock %}
