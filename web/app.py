@@ -3504,6 +3504,33 @@ def relatorio_campanhas():
         flash=flash,
     )
 
+    # -------- UI: opções de filtro em formato checkbox (sem CTRL) --------
+    # Lista de EMPs disponíveis no escopo (admin: pode ser "todas"; supervisor/vendedor: só permitidas)
+    _emps_for_ui = emps_scope or _allowed_emps() or _get_all_emp_codigos(apenas_ativas=True)
+    ctx["emp_options"] = _get_emp_options([str(e) for e in _emps_for_ui])
+
+    # EMPs selecionadas (mantém na tela)
+    ctx["emps_sel"] = [str(e) for e in (emps_sel or [])]
+
+    # Vendedores disponíveis (por escopo)
+    _vend_set = set()
+    try:
+        for _empk, _vlist in (vendedores_por_emp or {}).items():
+            for _v in (_vlist or []):
+                if _v:
+                    _vend_set.add(str(_v).strip().upper())
+    except Exception:
+        pass
+    if not _vend_set:
+        # fallback: tenta buscar da base de vendas dentro do escopo
+        try:
+            _vend_set = set(_get_vendedores_db(role, emp_usuario))
+        except Exception:
+            _vend_set = set()
+
+    ctx["vendedor_options"] = sorted(_vend_set)
+    ctx["vendedores_sel"] = [str(v).strip().upper() for v in (vendedores_sel or [])]
+
     # Paginação simples (client-side seria ok, mas server-side evita payloads enormes)
     try:
         page = int(request.args.get("page") or 1)
@@ -3525,17 +3552,25 @@ def relatorio_campanhas():
     # URLs auxiliares (Jinja não suporta **kwargs dinâmico com dict em algumas versões)
     from urllib.parse import urlencode
 
-    base_args = request.args.to_dict(flat=True) if request.args else {}
+        # --- Preserve multi-select query params (emp=101&emp=102) ---
+    # request.args.to_dict(flat=True) derruba parâmetros repetidos.
+    # Usamos listas para manter múltiplas seleções de EMP/Vendedor ao paginar/exportar.
+    base_args = {k: list(vs) for k, vs in (request.args.lists() if request.args else [])}
 
     def _make_url(endpoint: str, **updates):
-        d = dict(base_args)
+        d = {k: list(vs) for k, vs in base_args.items()}
         for k, v in updates.items():
             if v is None:
                 d.pop(k, None)
+                continue
+            # aceita lista/tuple/set para parâmetros repetidos
+            if isinstance(v, (list, tuple, set)):
+                d[k] = [str(x) for x in v if str(x).strip() != ""]
             else:
-                d[k] = str(v)
+                d[k] = [str(v)]
         qs = urlencode(d, doseq=True)
         return url_for(endpoint) + (("?" + qs) if qs else "")
+
 
     ctx["recalc_url"] = _make_url("relatorio_campanhas", recalc=1, page=1)
     ctx["export_url"] = _make_url("relatorio_campanhas_export_csv", page=None, per_page=None)
