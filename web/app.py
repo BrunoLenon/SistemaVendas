@@ -3504,33 +3504,6 @@ def relatorio_campanhas():
         flash=flash,
     )
 
-    # -------- UI: opções de filtro em formato checkbox (sem CTRL) --------
-    # Lista de EMPs disponíveis no escopo (admin: pode ser "todas"; supervisor/vendedor: só permitidas)
-    _emps_for_ui = emps_scope or _allowed_emps() or _get_all_emp_codigos(apenas_ativas=True)
-    ctx["emp_options"] = _get_emp_options([str(e) for e in _emps_for_ui])
-
-    # EMPs selecionadas (mantém na tela)
-    ctx["emps_sel"] = [str(e) for e in (emps_sel or [])]
-
-    # Vendedores disponíveis (por escopo)
-    _vend_set = set()
-    try:
-        for _empk, _vlist in (vendedores_por_emp or {}).items():
-            for _v in (_vlist or []):
-                if _v:
-                    _vend_set.add(str(_v).strip().upper())
-    except Exception:
-        pass
-    if not _vend_set:
-        # fallback: tenta buscar da base de vendas dentro do escopo
-        try:
-            _vend_set = set(_get_vendedores_db(role, emp_usuario))
-        except Exception:
-            _vend_set = set()
-
-    ctx["vendedor_options"] = sorted(_vend_set)
-    ctx["vendedores_sel"] = [str(v).strip().upper() for v in (vendedores_sel or [])]
-
     # Paginação simples (client-side seria ok, mas server-side evita payloads enormes)
     try:
         page = int(request.args.get("page") or 1)
@@ -3549,28 +3522,86 @@ def relatorio_campanhas():
     ctx["per_page"] = per_page
     ctx["total_rows"] = total_rows
     ctx["total_pages"] = (total_rows + per_page - 1) // per_page if per_page else 1
+
+    # Resumo financeiro (topo do relatório) — total geral + por status + por EMP/Vendedor
+    def _to_float(x):
+        try:
+            return float(x or 0)
+        except Exception:
+            return 0.0
+
+    def _norm_status(s: str) -> str:
+        s = (s or "PENDENTE").strip().upper()
+        if s in ("A PAGAR", "A_PAGAR", "APAGAR"):
+            return "A_PAGAR"
+        if s in ("PAGO",):
+            return "PAGO"
+        if s in ("PENDENTE",):
+            return "PENDENTE"
+        return s
+
+    def _calc_resumo_financeiro(_rows):
+        resumo = {
+            "linhas": 0,
+            "total_valor": 0.0,
+            "status": {"PENDENTE": 0.0, "A_PAGAR": 0.0, "PAGO": 0.0, "OUTROS": 0.0},
+            "por_emp": {},
+        }
+        for r in (_rows or []):
+            emp = str(r.get("emp") or r.get("EMP") or "").strip() or "—"
+            vendedor = str(r.get("vendedor") or r.get("VENDEDOR") or "").strip() or "—"
+            valor = _to_float(r.get("valor_recompensa") or r.get("valor") or r.get("VALOR_RECOMPENSA"))
+            st = _norm_status(r.get("status_pagamento") or r.get("status") or r.get("STATUS_PAGAMENTO"))
+            if st not in ("PENDENTE", "A_PAGAR", "PAGO"):
+                st_key = "OUTROS"
+            else:
+                st_key = st
+
+            resumo["linhas"] += 1
+            resumo["total_valor"] += valor
+            resumo["status"][st_key] = resumo["status"].get(st_key, 0.0) + valor
+
+            empd = resumo["por_emp"].setdefault(emp, {
+                "total": 0.0,
+                "status": {"PENDENTE": 0.0, "A_PAGAR": 0.0, "PAGO": 0.0, "OUTROS": 0.0},
+                "vendedores": {}
+            })
+            empd["total"] += valor
+            empd["status"][st_key] = empd["status"].get(st_key, 0.0) + valor
+
+            vd = empd["vendedores"].setdefault(vendedor, {
+                "total": 0.0,
+                "status": {"PENDENTE": 0.0, "A_PAGAR": 0.0, "PAGO": 0.0, "OUTROS": 0.0},
+                "linhas": 0
+            })
+            vd["linhas"] += 1
+            vd["total"] += valor
+            vd["status"][st_key] = vd["status"].get(st_key, 0.0) + valor
+
+        # ordenar EMPs por total desc (para UI ficar útil)
+        resumo["por_emp_ordenado"] = sorted(
+            resumo["por_emp"].items(),
+            key=lambda kv: kv[1].get("total", 0.0),
+            reverse=True
+        )
+        return resumo
+
+    ctx["resumo"] = _calc_resumo_financeiro(rows)
+
     # URLs auxiliares (Jinja não suporta **kwargs dinâmico com dict em algumas versões)
     from urllib.parse import urlencode
 
-        # --- Preserve multi-select query params (emp=101&emp=102) ---
-    # request.args.to_dict(flat=True) derruba parâmetros repetidos.
-    # Usamos listas para manter múltiplas seleções de EMP/Vendedor ao paginar/exportar.
-    base_args = {k: list(vs) for k, vs in (request.args.lists() if request.args else [])}
+    base_args = request.args.to_dict(flat=False) if request.args else {}
 
     def _make_url(endpoint: str, **updates):
-        d = {k: list(vs) for k, vs in base_args.items()}
+        d = dict(base_args)
         for k, v in updates.items():
             if v is None:
                 d.pop(k, None)
-                continue
-            # aceita lista/tuple/set para parâmetros repetidos
-            if isinstance(v, (list, tuple, set)):
-                d[k] = [str(x) for x in v if str(x).strip() != ""]
             else:
-                d[k] = [str(v)]
+                d[k] = str(v)
         qs = urlencode(d, doseq=True)
         return url_for(endpoint) + (("?" + qs) if qs else "")
-
 
     ctx["recalc_url"] = _make_url("relatorio_campanhas", recalc=1, page=1)
     ctx["export_url"] = _make_url("relatorio_campanhas_export_csv", page=None, per_page=None)
