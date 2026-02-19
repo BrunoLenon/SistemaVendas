@@ -3547,11 +3547,29 @@ def relatorio_campanhas():
             "status": {"PENDENTE": 0.0, "A_PAGAR": 0.0, "PAGO": 0.0, "OUTROS": 0.0},
             "por_emp": {},
         }
+        def _pick(obj, *keys):
+            """Lê valor de dict/objeto (ex.: UnifiedRow) de forma compatível."""
+            for k in keys:
+                try:
+                    if isinstance(obj, dict):
+                        v = obj.get(k)
+                    else:
+                        v = getattr(obj, k, None)
+                    if v is None:
+                        continue
+                    # trata strings vazias como None
+                    if isinstance(v, str) and not v.strip():
+                        continue
+                    return v
+                except Exception:
+                    continue
+            return None
+
         for r in (_rows or []):
-            emp = str(r.get("emp") or r.get("EMP") or "").strip() or "—"
-            vendedor = str(r.get("vendedor") or r.get("VENDEDOR") or "").strip() or "—"
-            valor = _to_float(r.get("valor_recompensa") or r.get("valor") or r.get("VALOR_RECOMPENSA"))
-            st = _norm_status(r.get("status_pagamento") or r.get("status") or r.get("STATUS_PAGAMENTO"))
+            emp = str(_pick(r, "emp", "EMP") or "").strip() or "—"
+            vendedor = str(_pick(r, "vendedor", "VENDEDOR") or "").strip() or "—"
+            valor = _to_float(_pick(r, "valor_recompensa", "valor", "VALOR_RECOMPENSA") or 0)
+            st = _norm_status(_pick(r, "status_pagamento", "status", "STATUS_PAGAMENTO") or "PENDENTE")
             if st not in ("PENDENTE", "A_PAGAR", "PAGO"):
                 st_key = "OUTROS"
             else:
