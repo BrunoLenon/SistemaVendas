@@ -3541,6 +3541,41 @@ def relatorio_campanhas():
         return s
 
     def _calc_resumo_financeiro(_rows):
+        # rows podem ser dict (legado) ou objetos (ex.: UnifiedRow)
+        def _rg(obj, *keys, default=None):
+            if obj is None:
+                return default
+            if isinstance(obj, dict):
+                for k in keys:
+                    for kk in (k, str(k).lower(), str(k).upper()):
+                        if kk in obj:
+                            v = obj.get(kk)
+                            if v is not None and v != "":
+                                return v
+                return default
+
+            for k in keys:
+                for kk in (k, str(k).lower(), str(k).upper()):
+                    if hasattr(obj, kk):
+                        v = getattr(obj, kk)
+                        if v is not None and v != "":
+                            return v
+
+            d = getattr(obj, "__dict__", None)
+            if isinstance(d, dict):
+                for k in keys:
+                    for kk in (k, str(k).lower(), str(k).upper()):
+                        if kk in d:
+                            v = d.get(kk)
+                            if v is not None and v != "":
+                                return v
+
+            if hasattr(obj, "to_dict"):
+                try:
+                    return _rg(obj.to_dict(), *keys, default=default)
+                except Exception:
+                    return default
+            return default
         resumo = {
             "linhas": 0,
             "total_valor": 0.0,
@@ -3548,10 +3583,10 @@ def relatorio_campanhas():
             "por_emp": {},
         }
         for r in (_rows or []):
-            emp = str(r.get("emp") or r.get("EMP") or "").strip() or "—"
-            vendedor = str(r.get("vendedor") or r.get("VENDEDOR") or "").strip() or "—"
-            valor = _to_float(r.get("valor_recompensa") or r.get("valor") or r.get("VALOR_RECOMPENSA"))
-            st = _norm_status(r.get("status_pagamento") or r.get("status") or r.get("STATUS_PAGAMENTO"))
+            emp = str(_rg(r, "emp", "EMP") or "").strip() or "—"
+            vendedor = str(_rg(r, "vendedor", "VENDEDOR") or "").strip() or "—"
+            valor = _to_float(_rg(r, "valor_recompensa", "valor", "VALOR_RECOMPENSA"))
+            st = _norm_status(_rg(r, "status_pagamento", "status", "STATUS_PAGAMENTO"))
             if st not in ("PENDENTE", "A_PAGAR", "PAGO"):
                 st_key = "OUTROS"
             else:
