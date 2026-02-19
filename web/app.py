@@ -3518,19 +3518,6 @@ def relatorio_campanhas():
     start = (page - 1) * per_page
     end = start + per_page
     ctx["rows_page"] = rows[start:end]
-    # ordena a página para facilitar agrupamento EMP → Vendedor → Campanhas
-    try:
-        ctx["rows_page"] = sorted(
-            ctx["rows_page"],
-            key=lambda r: (
-                str(getattr(r, "emp", "") or ""),
-                str(getattr(r, "vendedor", "") or ""),
-                str(getattr(r, "tipo", "") or ""),
-                str(getattr(r, "titulo", "") or ""),
-            ),
-        )
-    except Exception:
-        pass
     ctx["page"] = page
     ctx["per_page"] = per_page
     ctx["total_rows"] = total_rows
@@ -3554,75 +3541,56 @@ def relatorio_campanhas():
         return s
 
     def _calc_resumo_financeiro(_rows):
-        """Gera resumo financeiro a partir do dataset unificado.
-        Suporta linhas como dict OU objetos (ex.: UnifiedRow).
-        """
-
-        def _get(r, key, default=None):
-            # dict-like
-            try:
-                if hasattr(r, "get"):
-                    v = r.get(key, default)
-                    if v is not None:
-                        return v
-            except Exception:
-                pass
-            # attribute-like
-            try:
-                v = getattr(r, key)
-                return v if v is not None else default
-            except Exception:
-                return default
-
         resumo = {
             "linhas": 0,
             "total_valor": 0.0,
             "status": {"PENDENTE": 0.0, "A_PAGAR": 0.0, "PAGO": 0.0, "OUTROS": 0.0},
             "por_emp": {},
         }
+        def _rv(obj, key, default=None):
+            if isinstance(obj, dict):
+                return obj.get(key, default)
+            return getattr(obj, key, default)
 
         for r in (_rows or []):
-            emp = str(_get(r, "emp", _get(r, "EMP", "")) or "").strip() or "—"
-            vendedor = str(_get(r, "vendedor", _get(r, "VENDEDOR", "")) or "").strip() or "—"
-            valor = _to_float(_get(r, "valor_recompensa", _get(r, "valor", _get(r, "VALOR_RECOMPENSA", 0.0))))
-            st = _norm_status(_get(r, "status_pagamento", _get(r, "status", _get(r, "STATUS_PAGAMENTO", "PENDENTE"))))
-
-            st_key = st if st in ("PENDENTE", "A_PAGAR", "PAGO") else "OUTROS"
+            emp = str(_rv(r, "emp") or _rv(r, "EMP") or "").strip() or "—"
+            vendedor = str(_rv(r, "vendedor") or _rv(r, "VENDEDOR") or "").strip() or "—"
+            valor = _to_float(_rv(r, "valor_recompensa") or _rv(r, "valor") or _rv(r, "VALOR_RECOMPENSA"))
+            st = _norm_status(_rv(r, "status_pagamento") or _rv(r, "status") or _rv(r, "STATUS_PAGAMENTO"))
+            if st not in ("PENDENTE", "A_PAGAR", "PAGO"):
+                st_key = "OUTROS"
+            else:
+                st_key = st
 
             resumo["linhas"] += 1
             resumo["total_valor"] += valor
             resumo["status"][st_key] = resumo["status"].get(st_key, 0.0) + valor
 
-            empd = resumo["por_emp"].setdefault(
-                emp,
-                {
-                    "total": 0.0,
-                    "status": {"PENDENTE": 0.0, "A_PAGAR": 0.0, "PAGO": 0.0, "OUTROS": 0.0},
-                    "vendedores": {},
-                },
-            )
+            empd = resumo["por_emp"].setdefault(emp, {
+                "total": 0.0,
+                "status": {"PENDENTE": 0.0, "A_PAGAR": 0.0, "PAGO": 0.0, "OUTROS": 0.0},
+                "vendedores": {}
+            })
             empd["total"] += valor
             empd["status"][st_key] = empd["status"].get(st_key, 0.0) + valor
 
-            vd = empd["vendedores"].setdefault(
-                vendedor,
-                {
-                    "total": 0.0,
-                    "status": {"PENDENTE": 0.0, "A_PAGAR": 0.0, "PAGO": 0.0, "OUTROS": 0.0},
-                    "linhas": 0,
-                },
-            )
+            vd = empd["vendedores"].setdefault(vendedor, {
+                "total": 0.0,
+                "status": {"PENDENTE": 0.0, "A_PAGAR": 0.0, "PAGO": 0.0, "OUTROS": 0.0},
+                "linhas": 0
+            })
             vd["linhas"] += 1
             vd["total"] += valor
             vd["status"][st_key] = vd["status"].get(st_key, 0.0) + valor
 
         # ordenar EMPs por total desc (para UI ficar útil)
         resumo["por_emp_ordenado"] = sorted(
-            resumo["por_emp"].items(), key=lambda kv: kv[1].get("total", 0.0), reverse=True
+            resumo["por_emp"].items(),
+            key=lambda kv: kv[1].get("total", 0.0),
+            reverse=True
         )
         return resumo
 
-    # Resumo usa dataset completo (não só a página)
     ctx["resumo"] = _calc_resumo_financeiro(rows)
 
     # URLs auxiliares (Jinja não suporta **kwargs dinâmico com dict em algumas versões)

@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Any, Iterable
 
-from sqlalchemy import or_, func
+from sqlalchemy import or_, func, cast, String
 
 from db import (
     SessionLocal,
@@ -92,9 +92,17 @@ def build_unified_rows(
     rows: list[UnifiedRow] = []
 
     with SessionLocal() as db:
+        def _qall(q):
+            try:
+                return q.all()
+            except Exception as e:
+                try:
+                    db.rollback()
+                except Exception:
+                    pass
+                print(f"[RELATORIO_UNIFICADO] erro SQL: {e}")
+                raise
         for emp in emps:
-            emp_str = str(emp).strip()
-            emp_param = int(emp_str) if emp_str.isdigit() else emp_str
             vendedores = [v.strip().upper() for v in (vendedores_por_emp.get(emp) or []) if (v or "").strip()]
             if not vendedores:
                 continue
@@ -105,23 +113,14 @@ def build_unified_rows(
                 .filter(
                     CampanhaQtdResultado.competencia_ano == int(ano),
                     CampanhaQtdResultado.competencia_mes == int(mes),
-                    CampanhaQtdResultado.emp == emp_param,
+                    cast(CampanhaQtdResultado.emp, String) == str(emp),
                     CampanhaQtdResultado.vendedor.in_(vendedores),
                 )
             )
             if not incluir_zerados:
                 q_qtd = q_qtd.filter(CampanhaQtdResultado.valor_recompensa > 0)
 
-            try:
-                qtd_all = q_qtd.all()
-            except Exception:
-                try:
-                    db.rollback()
-                except Exception:
-                    pass
-                raise
-
-            for r in qtd_all:
+            for r in _qall(q_qtd):
                 recompensa_unit = _safe_float(getattr(r, "recompensa_unit", 0.0))
                 valor_recompensa = _safe_float(getattr(r, "valor_recompensa", 0.0))
                 qtd_prem = None
@@ -152,23 +151,14 @@ def build_unified_rows(
                 .filter(
                     CampanhaComboResultado.competencia_ano == int(ano),
                     CampanhaComboResultado.competencia_mes == int(mes),
-                    CampanhaComboResultado.emp == emp_param,
+                    cast(CampanhaComboResultado.emp, String) == str(emp),
                     CampanhaComboResultado.vendedor.in_(vendedores),
                 )
             )
             if not incluir_zerados:
                 q_combo = q_combo.filter(CampanhaComboResultado.valor_recompensa > 0)
 
-            try:
-                combo_all = q_combo.all()
-            except Exception:
-                try:
-                    db.rollback()
-                except Exception:
-                    pass
-                raise
-
-            for r in combo_all:
+            for r in _qall(q_combo):
                 rows.append(
                     UnifiedRow(
                         tipo="COMBO",
@@ -196,7 +186,7 @@ def build_unified_rows(
                         .filter(
                             ItemParadoResultado.competencia_ano == int(ano),
                             ItemParadoResultado.competencia_mes == int(mes),
-                            ItemParadoResultado.emp == emp_param,
+                            cast(ItemParadoResultado.emp, String) == str(emp),
                             ItemParadoResultado.vendedor.in_(vendedores),
                         )
                     )
@@ -204,10 +194,6 @@ def build_unified_rows(
                         q_par = q_par.filter(ItemParadoResultado.valor_recompensa > 0)
                     par_all = q_par.all()
                 except Exception:
-                    try:
-                        db.rollback()
-                    except Exception:
-                        pass
                     par_all = []
                 for r in par_all:
                     rows.append(
@@ -232,7 +218,7 @@ def build_unified_rows(
             else:
                 parados_defs = (
                     db.query(ItemParado)
-                    .filter(ItemParado.ativo.is_(True), ItemParado.emp == str(emp))
+                    .filter(ItemParado.ativo.is_(True), cast(ItemParado.emp, String) == str(emp))
                     .order_by(ItemParado.descricao.asc())
                     .all()
                 )
