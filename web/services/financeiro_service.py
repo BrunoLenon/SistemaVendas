@@ -77,7 +77,7 @@ def sync_pagamentos_v2(db, ano: int, mes: int, actor: str = "") -> dict:
                 de_status=None,
                 para_status=existing.status,
                 usuario=actor,
-                meta=json.dumps({"ano": int(ano), "mes": int(mes), "origem": "V2", "campanha_id": origem_id, "premio": premio}, ensure_ascii=False),
+                meta={"ano": int(ano), "mes": int(mes), "origem": "V2", "campanha_id": origem_id, "premio": premio},
             ))
         else:
             p = FinanceiroPagamento(
@@ -104,7 +104,7 @@ def sync_pagamentos_v2(db, ano: int, mes: int, actor: str = "") -> dict:
                 de_status=None,
                 para_status="PENDENTE",
                 usuario=actor,
-                meta=json.dumps({"ano": int(ano), "mes": int(mes), "origem": "V2", "campanha_id": origem_id, "premio": premio}, ensure_ascii=False),
+                meta={"ano": int(ano), "mes": int(mes), "origem": "V2", "campanha_id": origem_id, "premio": premio},
             ))
 
     return {"created": created, "updated": updated, "skipped": skipped, "total": len(rows)}
@@ -136,7 +136,7 @@ def atualizar_status_pagamentos(db, pagamento_ids: list[int], novo_status: str, 
             de_status=de,
             para_status=novo_status,
             usuario=actor,
-            meta=json.dumps({"ids": pagamento_ids[:50], "novo_status": novo_status}, ensure_ascii=False),
+            meta={"ids": pagamento_ids[:50], "novo_status": novo_status},
         ))
         count += 1
     return count

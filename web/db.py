@@ -4,6 +4,7 @@ from urllib.parse import quote_plus
 
 from sqlalchemy import create_engine, Column, Integer, String, Float, Date, DateTime, Text, Boolean, Index, UniqueConstraint, text, func
 from sqlalchemy.orm import declarative_base, sessionmaker, synonym
+from sqlalchemy.dialects.postgresql import JSONB
 
 # =====================
 # Config via ENV (Render)
@@ -1070,7 +1071,7 @@ class FinanceiroAudit(Base):
     usuario = Column(Text, nullable=True)
     criado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
 
-    meta = Column(Text, nullable=True)
+    meta = Column(JSONB, nullable=True)
 
     __table_args__ = (
         Index("ix_fin_audit_pagamento", "pagamento_id"),
@@ -1116,6 +1117,35 @@ def criar_tabelas():
             # Usuários: role/emp
             conn.execute(text("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS role varchar(20);"))
             conn.execute(text("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS emp varchar(30);"))
+
+            # Financeiro Audit: meta deve ser JSONB (compatibilidade com versões antigas que criaram como TEXT)
+            # Faz cast seguro: texto vazio vira NULL.
+            conn.execute(text("""
+            DO $$
+            BEGIN
+                IF EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_schema = 'public'
+                      AND table_name = 'financeiro_audit'
+                      AND column_name = 'meta'
+                ) THEN
+                    IF (SELECT data_type FROM information_schema.columns
+                        WHERE table_schema = 'public'
+                          AND table_name = 'financeiro_audit'
+                          AND column_name = 'meta') <> 'jsonb' THEN
+                        ALTER TABLE financeiro_audit
+                            ALTER COLUMN meta TYPE jsonb
+                            USING CASE
+                                WHEN meta IS NULL OR btrim(meta) = '' THEN NULL
+                                ELSE meta::jsonb
+                            END;
+                    END IF;
+                END IF;
+            EXCEPTION WHEN others THEN
+                -- não derruba o startup por conta disso
+                NULL;
+            END $$;
+            """))
             # Tabela de vínculo multi-EMP por usuário (vendedor/supervisor)
             conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS usuario_emps (
