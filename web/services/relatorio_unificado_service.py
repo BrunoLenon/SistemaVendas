@@ -17,12 +17,16 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Any, Iterable
 
-from sqlalchemy import or_, func
+from sqlalchemy import cast, func, or_
+from sqlalchemy.sql import String  # ou apenas from sqlalchemy import String
 
 from db import (
-from sqlalchemy import cast
-from sqlalchemy import String
-
+    SessionLocal,
+    Venda,
+    CampanhaQtdResultado,
+    CampanhaComboResultado,
+    ItemParado,
+)
 
 # ------------------------------
 # Helpers de robustez (Render/Supabase)
@@ -52,12 +56,7 @@ def _emp_filter(col, emps):
     if not emps_str:
         return None
     return cast(col, String).in_(emps_str)
-    SessionLocal,
-    Venda,
-    CampanhaQtdResultado,
-    CampanhaComboResultado,
-    ItemParado,
-)
+
 
 # Snapshot mensal oficial (pode não existir em bancos antigos)
 try:
@@ -102,12 +101,10 @@ def _safe_float(v: Any) -> float:
 
 
 def _periodo_bounds(ano: int, mes: int) -> tuple[date, date]:
-    # evita import circular com app.py (que tem helper semelhante)
     from calendar import monthrange
     di = date(int(ano), int(mes), 1)
     df = date(int(ano), int(mes), monthrange(int(ano), int(mes))[1])
     return di, df
-
 
 
 def build_unified_rows(
@@ -204,7 +201,7 @@ def gerar_snapshot_mensal(
 
     with SessionLocal() as db:
         try:
-            # remove snapshot antigo do mesmo escopo (mais simples e consistente que upsert granular)
+            # remove snapshot antigo do mesmo escopo
             db.query(RelatorioSnapshotMensal).filter(
                 RelatorioSnapshotMensal.competencia_ano == int(ano),
                 RelatorioSnapshotMensal.competencia_mes == int(mes),
@@ -238,6 +235,7 @@ def gerar_snapshot_mensal(
 
     return {"created": created, "updated": updated, "total": created + updated}
 
+
 def _build_unified_rows_live(
     *,
     ano: int,
@@ -249,11 +247,6 @@ def _build_unified_rows_live(
 ) -> list[UnifiedRow]:
     """
     Retorna linhas unificadas (QTD + COMBO + ITENS PARADOS) para a competência informada.
-
-    - `emps`: lista de EMPs a incluir (já sanitizada no caller).
-    - `vendedores_por_emp`: dict emp -> lista de vendedores permitidos/selecionados.
-    - `incluir_zerados`: se False, filtra valor_recompensa <= 0.
-    - `usar_snapshot_itens_parados`: tenta ler tabela de snapshot (se existir).
     """
     periodo_ini, periodo_fim = _periodo_bounds(ano, mes)
 
@@ -336,7 +329,6 @@ def _build_unified_rows_live(
                 )
 
             # -------- ITENS PARADOS --------
-            # Preferência: snapshot novo
             if usar_snapshot_itens_parados and ItemParadoResultado is not None:
                 try:
                     q_par = (
@@ -390,8 +382,8 @@ def _build_unified_rows_live(
 
                     base_rows = (
                         db.query(Venda.vendedor, func.sum(Venda.valor_total))
-                        .filter(cast(
-                            Venda.emp, String) == str(str(emp)),
+                        .filter(
+                            cast(Venda.emp, String) == str(emp),
                             Venda.movimento >= periodo_ini,
                             Venda.movimento <= periodo_fim,
                             ~Venda.mov_tipo_movto.in_(["DS", "CA"]),
