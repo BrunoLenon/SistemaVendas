@@ -18,15 +18,53 @@ from datetime import date
 from typing import Any, Iterable
 
 from sqlalchemy import or_, func
-from sqlalchemy import String
 
 from db import (
+from sqlalchemy import cast
+from sqlalchemy import String
+
+
+# ------------------------------
+# Helpers de robustez (Render/Supabase)
+# - evita InFailedSqlTransaction (rollback automático)
+# - evita mismatch de tipos em EMP (varchar vs int)
+# ------------------------------
+
+def _safe_run(fn, label=""):
+    """Executa função que acessa DB; faz rollback se der erro para não contaminar a sessão."""
+    try:
+        return fn()
+    except Exception as e:
+        try:
+            db.session.rollback()
+        except Exception:
+            pass
+        print(f"[RELATORIO_UNIFICADO] erro em {label}: {e}")
+        raise
+
+
+def _emp_filter(col, emps):
+    """Filtro de EMP tolerante (coluna pode ser int ou varchar)."""
+    if not emps:
+        return None
+    # Sempre compara como string
+    emps_str = [str(e) for e in emps if str(e).strip()]
+    if not emps_str:
+        return None
+    return cast(col, String).in_(emps_str)
     SessionLocal,
     Venda,
     CampanhaQtdResultado,
     CampanhaComboResultado,
     ItemParado,
 )
+
+# Snapshot mensal oficial (pode não existir em bancos antigos)
+try:
+    from db import RelatorioSnapshotMensal  # type: ignore
+except Exception:  # pragma: no cover
+    RelatorioSnapshotMensal = None  # type: ignore
+
 
 # Snapshot novo (pode não existir no banco antigo). Import defensivo.
 try:
@@ -63,25 +101,6 @@ def _safe_float(v: Any) -> float:
         return 0.0
 
 
-
-def _emp_eq(col, emp: str):
-    """Compara EMP de forma segura (coluna pode ser int ou varchar)."""
-    return func.cast(col, String) == str(emp)
-
-
-def _safe_all(db, q, label: str):
-    try:
-        return q.all()
-    except Exception as e:
-        try:
-            db.rollback()
-        except Exception:
-            pass
-        print(f"[RELATORIO_UNIFICADO] falha em {label}: {e}")
-        return []
-
-
-
 def _periodo_bounds(ano: int, mes: int) -> tuple[date, date]:
     # evita import circular com app.py (que tem helper semelhante)
     from calendar import monthrange
@@ -90,7 +109,136 @@ def _periodo_bounds(ano: int, mes: int) -> tuple[date, date]:
     return di, df
 
 
+
 def build_unified_rows(
+    *,
+    ano: int,
+    mes: int,
+    emps: list[str],
+    vendedores_por_emp: dict[str, list[str]],
+    incluir_zerados: bool = False,
+    usar_snapshot_itens_parados: bool = True,
+    preferir_snapshot_mensal: bool = True,
+) -> list[UnifiedRow]:
+    """Wrapper que prioriza snapshot mensal (se existir) e faz fallback para cálculo ao vivo."""
+    # tenta snapshot mensal
+    if preferir_snapshot_mensal and RelatorioSnapshotMensal is not None:
+        try:
+            with SessionLocal() as db:
+                q = db.query(RelatorioSnapshotMensal).filter(
+                    RelatorioSnapshotMensal.competencia_ano == int(ano),
+                    RelatorioSnapshotMensal.competencia_mes == int(mes),
+                    RelatorioSnapshotMensal.emp.in_([str(e) for e in (emps or [])]),
+                )
+                # filtra vendedores se houver seleção
+                vend_union = sorted({(v or '').strip().upper() for vs in (vendedores_por_emp or {}).values() for v in (vs or []) if (v or '').strip()})
+                if vend_union:
+                    q = q.filter(RelatorioSnapshotMensal.vendedor.in_(vend_union))
+                snap_rows = q.all()
+
+                if snap_rows:
+                    out: list[UnifiedRow] = []
+                    for r in snap_rows:
+                        out.append(UnifiedRow(
+                            tipo=str(r.tipo),
+                            competencia_ano=int(r.competencia_ano),
+                            competencia_mes=int(r.competencia_mes),
+                            emp=str(r.emp),
+                            vendedor=str(r.vendedor),
+                            titulo=str(r.titulo),
+                            atingiu_gate=(bool(r.atingiu_gate) if r.atingiu_gate is not None else None),
+                            qtd_base=(float(r.qtd_base) if r.qtd_base is not None else None),
+                            qtd_premiada=(float(r.qtd_premiada) if r.qtd_premiada is not None else None),
+                            valor_recompensa=_safe_float(r.valor_recompensa),
+                            status_pagamento=str(r.status_pagamento or "PENDENTE"),
+                            pago_em=getattr(r, "pago_em", None),
+                            origem_id=getattr(r, "origem_id", None),
+                        ))
+                    # aplica filtro incluir_zerados
+                    if not incluir_zerados:
+                        out = [x for x in out if _safe_float(x.valor_recompensa) > 0.0]
+                    return out
+        except Exception as e:
+            # não derruba request — faz fallback para ao vivo
+            try:
+                with SessionLocal() as db:
+                    db.rollback()
+            except Exception:
+                pass
+            print(f"[SNAPSHOT_MENSAL] fallback para ao vivo (erro ao ler snapshot): {e}")
+
+    return _build_unified_rows_live(
+        ano=ano,
+        mes=mes,
+        emps=emps,
+        vendedores_por_emp=vendedores_por_emp,
+        incluir_zerados=incluir_zerados,
+        usar_snapshot_itens_parados=usar_snapshot_itens_parados,
+    )
+
+
+def gerar_snapshot_mensal(
+    *,
+    ano: int,
+    mes: int,
+    emps: list[str],
+    vendedores_por_emp: dict[str, list[str]],
+    incluir_zerados: bool = True,
+) -> dict[str, int]:
+    """Gera (UPSERT) snapshot mensal oficial para a competência informada."""
+    if RelatorioSnapshotMensal is None:
+        raise RuntimeError("Tabela relatorio_snapshot_mensal não disponível no schema.")
+
+    # gera ao vivo (não usa snapshot mensal pra evitar recursão)
+    rows = _build_unified_rows_live(
+        ano=ano,
+        mes=mes,
+        emps=emps,
+        vendedores_por_emp=vendedores_por_emp,
+        incluir_zerados=incluir_zerados,
+        usar_snapshot_itens_parados=True,
+    )
+
+    created = 0
+    updated = 0
+
+    with SessionLocal() as db:
+        try:
+            # remove snapshot antigo do mesmo escopo (mais simples e consistente que upsert granular)
+            db.query(RelatorioSnapshotMensal).filter(
+                RelatorioSnapshotMensal.competencia_ano == int(ano),
+                RelatorioSnapshotMensal.competencia_mes == int(mes),
+                RelatorioSnapshotMensal.emp.in_([str(e) for e in (emps or [])]),
+            ).delete(synchronize_session=False)
+
+            objs = []
+            for r in rows:
+                objs.append(RelatorioSnapshotMensal(
+                    competencia_ano=int(r.competencia_ano),
+                    competencia_mes=int(r.competencia_mes),
+                    emp=str(r.emp),
+                    vendedor=str(r.vendedor),
+                    tipo=str(r.tipo),
+                    titulo=str(r.titulo),
+                    atingiu_gate=r.atingiu_gate,
+                    qtd_base=r.qtd_base,
+                    qtd_premiada=r.qtd_premiada,
+                    valor_recompensa=_safe_float(r.valor_recompensa),
+                    status_pagamento=str(r.status_pagamento or "PENDENTE"),
+                    pago_em=r.pago_em,
+                    origem_id=r.origem_id,
+                ))
+            if objs:
+                db.bulk_save_objects(objs)
+                created = len(objs)
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
+
+    return {"created": created, "updated": updated, "total": created + updated}
+
+def _build_unified_rows_live(
     *,
     ano: int,
     mes: int,
@@ -123,14 +271,14 @@ def build_unified_rows(
                 .filter(
                     CampanhaQtdResultado.competencia_ano == int(ano),
                     CampanhaQtdResultado.competencia_mes == int(mes),
-                    _emp_eq(CampanhaQtdResultado.emp, emp),
+                    CampanhaQtdResultado.emp == str(emp),
                     CampanhaQtdResultado.vendedor.in_(vendedores),
                 )
             )
             if not incluir_zerados:
                 q_qtd = q_qtd.filter(CampanhaQtdResultado.valor_recompensa > 0)
 
-            for r in _safe_all(db, q_qtd, f'QTD emp={emp}'):
+            for r in q_qtd.all():
                 recompensa_unit = _safe_float(getattr(r, "recompensa_unit", 0.0))
                 valor_recompensa = _safe_float(getattr(r, "valor_recompensa", 0.0))
                 qtd_prem = None
@@ -161,14 +309,14 @@ def build_unified_rows(
                 .filter(
                     CampanhaComboResultado.competencia_ano == int(ano),
                     CampanhaComboResultado.competencia_mes == int(mes),
-                    _emp_eq(CampanhaComboResultado.emp, emp),
+                    CampanhaComboResultado.emp == str(emp),
                     CampanhaComboResultado.vendedor.in_(vendedores),
                 )
             )
             if not incluir_zerados:
                 q_combo = q_combo.filter(CampanhaComboResultado.valor_recompensa > 0)
 
-            for r in _safe_all(db, q_combo, f'COMBO emp={emp}'):
+            for r in q_combo.all():
                 rows.append(
                     UnifiedRow(
                         tipo="COMBO",
@@ -196,7 +344,7 @@ def build_unified_rows(
                         .filter(
                             ItemParadoResultado.competencia_ano == int(ano),
                             ItemParadoResultado.competencia_mes == int(mes),
-                            _emp_eq(ItemParadoResultado.emp, emp),
+                            ItemParadoResultado.emp == str(emp),
                             ItemParadoResultado.vendedor.in_(vendedores),
                         )
                     )
@@ -242,8 +390,8 @@ def build_unified_rows(
 
                     base_rows = (
                         db.query(Venda.vendedor, func.sum(Venda.valor_total))
-                        .filter(
-                            Venda.emp == str(emp),
+                        .filter(cast(
+                            Venda.emp, String) == str(str(emp)),
                             Venda.movimento >= periodo_ini,
                             Venda.movimento <= periodo_fim,
                             ~Venda.mov_tipo_movto.in_(["DS", "CA"]),
