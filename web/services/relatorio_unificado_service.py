@@ -15,9 +15,10 @@ Observações:
 
 from dataclasses import dataclass
 from datetime import date
-from typing import Any
+from typing import Any, Iterable
 
-from sqlalchemy import cast, func, or_, String
+from sqlalchemy import or_, func
+
 from db import (
     SessionLocal,
     Venda,
@@ -25,43 +26,6 @@ from db import (
     CampanhaComboResultado,
     ItemParado,
 )
-
-# ------------------------------
-# Helpers de robustez (Render/Supabase)
-# - evita InFailedSqlTransaction (rollback automático)
-# - evita mismatch de tipos em EMP (varchar vs int)
-# ------------------------------
-
-def _safe_run(fn, label=""):
-    """Executa função que acessa DB; faz rollback se der erro para não contaminar a sessão."""
-    try:
-        return fn()
-    except Exception as e:
-        try:
-            db.session.rollback()
-        except Exception:
-            pass
-        print(f"[RELATORIO_UNIFICADO] erro em {label}: {e}")
-        raise
-
-
-def _emp_filter(col, emps):
-    """Filtro de EMP tolerante (coluna pode ser int ou varchar)."""
-    if not emps:
-        return None
-    # Sempre compara como string
-    emps_str = [str(e) for e in emps if str(e).strip()]
-    if not emps_str:
-        return None
-    return cast(col, String).in_(emps_str)
-
-
-# Snapshot mensal oficial (pode não existir em bancos antigos)
-try:
-    from db import RelatorioSnapshotMensal  # type: ignore
-except Exception:  # pragma: no cover
-    RelatorioSnapshotMensal = None  # type: ignore
-
 
 # Snapshot novo (pode não existir no banco antigo). Import defensivo.
 try:
@@ -99,6 +63,7 @@ def _safe_float(v: Any) -> float:
 
 
 def _periodo_bounds(ano: int, mes: int) -> tuple[date, date]:
+    # evita import circular com app.py (que tem helper semelhante)
     from calendar import monthrange
     di = date(int(ano), int(mes), 1)
     df = date(int(ano), int(mes), monthrange(int(ano), int(mes))[1])
@@ -113,149 +78,35 @@ def build_unified_rows(
     vendedores_por_emp: dict[str, list[str]],
     incluir_zerados: bool = False,
     usar_snapshot_itens_parados: bool = True,
-    preferir_snapshot_mensal: bool = True,
 ) -> list[UnifiedRow]:
-    """Wrapper que prioriza snapshot mensal (se existir) e faz fallback para cálculo ao vivo."""
-    if preferir_snapshot_mensal and RelatorioSnapshotMensal is not None:
-        try:
-            with SessionLocal() as db:
-                q = db.query(RelatorioSnapshotMensal).filter(
-                    RelatorioSnapshotMensal.competencia_ano == int(ano),
-                    RelatorioSnapshotMensal.competencia_mes == int(mes),
-                    RelatorioSnapshotMensal.emp.in_([str(e) for e in (emps or [])]),
-                )
-                vend_union = sorted(
-                    {(v or '').strip().upper() 
-                     for vs in (vendedores_por_emp or {}).values() 
-                     for v in (vs or []) if (v or '').strip()}
-                )
-                if vend_union:
-                    q = q.filter(RelatorioSnapshotMensal.vendedor.in_(vend_union))
-                snap_rows = q.all()
+    """
+    Retorna linhas unificadas (QTD + COMBO + ITENS PARADOS) para a competência informada.
 
-                if snap_rows:
-                    out: list[UnifiedRow] = []
-                    for r in snap_rows:
-                        out.append(UnifiedRow(
-                            tipo=str(r.tipo),
-                            competencia_ano=int(r.competencia_ano),
-                            competencia_mes=int(r.competencia_mes),
-                            emp=str(r.emp),
-                            vendedor=str(r.vendedor),
-                            titulo=str(r.titulo),
-                            atingiu_gate=(bool(r.atingiu_gate) if r.atingiu_gate is not None else None),
-                            qtd_base=(float(r.qtd_base) if r.qtd_base is not None else None),
-                            qtd_premiada=(float(r.qtd_premiada) if r.qtd_premiada is not None else None),
-                            valor_recompensa=_safe_float(r.valor_recompensa),
-                            status_pagamento=str(r.status_pagamento or "PENDENTE"),
-                            pago_em=getattr(r, "pago_em", None),
-                            origem_id=getattr(r, "origem_id", None),
-                        ))
-                    if not incluir_zerados:
-                        out = [x for x in out if _safe_float(x.valor_recompensa) > 0.0]
-                    return out
-        except Exception as e:
-            try:
-                with SessionLocal() as db:
-                    db.rollback()
-            except Exception:
-                pass
-            print(f"[SNAPSHOT_MENSAL] fallback para ao vivo (erro ao ler snapshot): {e}")
-
-    return _build_unified_rows_live(
-        ano=ano,
-        mes=mes,
-        emps=emps,
-        vendedores_por_emp=vendedores_por_emp,
-        incluir_zerados=incluir_zerados,
-        usar_snapshot_itens_parados=usar_snapshot_itens_parados,
-    )
-
-
-def gerar_snapshot_mensal(
-    *,
-    ano: int,
-    mes: int,
-    emps: list[str],
-    vendedores_por_emp: dict[str, list[str]],
-    incluir_zerados: bool = True,
-) -> dict[str, int]:
-    """Gera (UPSERT) snapshot mensal oficial para a competência informada."""
-    if RelatorioSnapshotMensal is None:
-        raise RuntimeError("Tabela relatorio_snapshot_mensal não disponível no schema.")
-
-    rows = _build_unified_rows_live(
-        ano=ano,
-        mes=mes,
-        emps=emps,
-        vendedores_por_emp=vendedores_por_emp,
-        incluir_zerados=incluir_zerados,
-        usar_snapshot_itens_parados=True,
-    )
-
-    created = 0
-    updated = 0
-
-    with SessionLocal() as db:
-        try:
-            db.query(RelatorioSnapshotMensal).filter(
-                RelatorioSnapshotMensal.competencia_ano == int(ano),
-                RelatorioSnapshotMensal.competencia_mes == int(mes),
-                RelatorioSnapshotMensal.emp.in_([str(e) for e in (emps or [])]),
-            ).delete(synchronize_session=False)
-
-            objs = []
-            for r in rows:
-                objs.append(RelatorioSnapshotMensal(
-                    competencia_ano=int(r.competencia_ano),
-                    competencia_mes=int(r.competencia_mes),
-                    emp=str(r.emp),
-                    vendedor=str(r.vendedor),
-                    tipo=str(r.tipo),
-                    titulo=str(r.titulo),
-                    atingiu_gate=r.atingiu_gate,
-                    qtd_base=r.qtd_base,
-                    qtd_premiada=r.qtd_premiada,
-                    valor_recompensa=_safe_float(r.valor_recompensa),
-                    status_pagamento=str(r.status_pagamento or "PENDENTE"),
-                    pago_em=r.pago_em,
-                    origem_id=r.origem_id,
-                ))
-            if objs:
-                db.bulk_save_objects(objs)
-                created = len(objs)
-            db.commit()
-        except Exception:
-            db.rollback()
-            raise
-
-    return {"created": created, "updated": updated, "total": created + updated}
-
-
-def _build_unified_rows_live(
-    *,
-    ano: int,
-    mes: int,
-    emps: list[str],
-    vendedores_por_emp: dict[str, list[str]],
-    incluir_zerados: bool = False,
-    usar_snapshot_itens_parados: bool = True,
-) -> list[UnifiedRow]:
+    - `emps`: lista de EMPs a incluir (já sanitizada no caller).
+    - `vendedores_por_emp`: dict emp -> lista de vendedores permitidos/selecionados.
+    - `incluir_zerados`: se False, filtra valor_recompensa <= 0.
+    - `usar_snapshot_itens_parados`: tenta ler tabela de snapshot (se existir).
+    """
     periodo_ini, periodo_fim = _periodo_bounds(ano, mes)
+
     rows: list[UnifiedRow] = []
 
     with SessionLocal() as db:
         for emp in emps:
-            vendedores = [v.strip().upper() for v in (vendedores_por_emp.get(emp) or []) if (v or "").strip()]
-            if not vendedores:
-                continue
+            try:
+                vendedores = [v.strip().upper() for v in (vendedores_por_emp.get(emp) or []) if (v or "").strip()]
+                if not vendedores:
+                    continue
 
-            # QTD
-            q_qtd = db.query(CampanhaQtdResultado).filter(
-                CampanhaQtdResultado.competencia_ano == int(ano),
-                CampanhaQtdResultado.competencia_mes == int(mes),
-                CampanhaQtdResultado.emp == str(emp),
-                CampanhaQtdResultado.vendedor.in_(vendedores),
+            # -------- QTD (snapshot) --------
+            q_qtd = (
+                db.query(CampanhaQtdResultado)
+                .filter(
+                    CampanhaQtdResultado.competencia_ano == int(ano),
+                    CampanhaQtdResultado.competencia_mes == int(mes),
+                    CampanhaQtdResultado.emp == str(emp),
+                    CampanhaQtdResultado.vendedor.in_(vendedores),
+                )
             )
             if not incluir_zerados:
                 q_qtd = q_qtd.filter(CampanhaQtdResultado.valor_recompensa > 0)
@@ -267,57 +118,68 @@ def _build_unified_rows_live(
                 if recompensa_unit > 0 and valor_recompensa > 0:
                     qtd_prem = valor_recompensa / recompensa_unit
 
-                rows.append(UnifiedRow(
-                    tipo="QTD",
-                    competencia_ano=int(getattr(r, "competencia_ano", ano)),
-                    competencia_mes=int(getattr(r, "competencia_mes", mes)),
-                    emp=str(getattr(r, "emp", emp)),
-                    vendedor=str(getattr(r, "vendedor", "")).strip().upper(),
-                    titulo=str(getattr(r, "titulo", "") or "").strip() or f"Campanha #{getattr(r,'campanha_id', '')}",
-                    atingiu_gate=bool(int(getattr(r, "atingiu_minimo", 0) or 0)),
-                    qtd_base=_safe_float(getattr(r, "qtd_vendida", None)),
-                    qtd_premiada=qtd_prem,
-                    valor_recompensa=valor_recompensa,
-                    status_pagamento=str(getattr(r, "status_pagamento", "PENDENTE") or "PENDENTE"),
-                    pago_em=getattr(r, "pago_em", None),
-                    origem_id=int(getattr(r, "campanha_id", 0) or 0),
-                ))
+                rows.append(
+                    UnifiedRow(
+                        tipo="QTD",
+                        competencia_ano=int(getattr(r, "competencia_ano", ano)),
+                        competencia_mes=int(getattr(r, "competencia_mes", mes)),
+                        emp=str(getattr(r, "emp", emp)),
+                        vendedor=str(getattr(r, "vendedor", "")).strip().upper(),
+                        titulo=str(getattr(r, "titulo", "") or "").strip() or f"Campanha #{getattr(r,'campanha_id', '')}",
+                        atingiu_gate=bool(int(getattr(r, "atingiu_minimo", 0) or 0)),
+                        qtd_base=_safe_float(getattr(r, "qtd_vendida", None)),
+                        qtd_premiada=qtd_prem,
+                        valor_recompensa=valor_recompensa,
+                        status_pagamento=str(getattr(r, "status_pagamento", "PENDENTE") or "PENDENTE"),
+                        pago_em=getattr(r, "pago_em", None),
+                        origem_id=int(getattr(r, "campanha_id", 0) or 0),
+                    )
+                )
 
-            # COMBO
-            q_combo = db.query(CampanhaComboResultado).filter(
-                CampanhaComboResultado.competencia_ano == int(ano),
-                CampanhaComboResultado.competencia_mes == int(mes),
-                CampanhaComboResultado.emp == str(emp),
-                CampanhaComboResultado.vendedor.in_(vendedores),
+            # -------- COMBO (snapshot) --------
+            q_combo = (
+                db.query(CampanhaComboResultado)
+                .filter(
+                    CampanhaComboResultado.competencia_ano == int(ano),
+                    CampanhaComboResultado.competencia_mes == int(mes),
+                    CampanhaComboResultado.emp == str(emp),
+                    CampanhaComboResultado.vendedor.in_(vendedores),
+                )
             )
             if not incluir_zerados:
                 q_combo = q_combo.filter(CampanhaComboResultado.valor_recompensa > 0)
 
             for r in q_combo.all():
-                rows.append(UnifiedRow(
-                    tipo="COMBO",
-                    competencia_ano=int(getattr(r, "competencia_ano", ano)),
-                    competencia_mes=int(getattr(r, "competencia_mes", mes)),
-                    emp=str(getattr(r, "emp", emp)),
-                    vendedor=str(getattr(r, "vendedor", "")).strip().upper(),
-                    titulo=str(getattr(r, "titulo", "") or "").strip() or f"Combo #{getattr(r,'combo_id','')}",
-                    atingiu_gate=bool(int(getattr(r, "atingiu_gate", 0) or 0)),
-                    qtd_base=None,
-                    qtd_premiada=None,
-                    valor_recompensa=_safe_float(getattr(r, "valor_recompensa", 0.0)),
-                    status_pagamento=str(getattr(r, "status_pagamento", "PENDENTE") or "PENDENTE"),
-                    pago_em=getattr(r, "pago_em", None),
-                    origem_id=int(getattr(r, "combo_id", 0) or 0),
-                ))
+                rows.append(
+                    UnifiedRow(
+                        tipo="COMBO",
+                        competencia_ano=int(getattr(r, "competencia_ano", ano)),
+                        competencia_mes=int(getattr(r, "competencia_mes", mes)),
+                        emp=str(getattr(r, "emp", emp)),
+                        vendedor=str(getattr(r, "vendedor", "")).strip().upper(),
+                        titulo=str(getattr(r, "titulo", "") or "").strip() or f"Combo #{getattr(r,'combo_id','')}",
+                        atingiu_gate=bool(int(getattr(r, "atingiu_gate", 0) or 0)),
+                        qtd_base=None,
+                        qtd_premiada=None,
+                        valor_recompensa=_safe_float(getattr(r, "valor_recompensa", 0.0)),
+                        status_pagamento=str(getattr(r, "status_pagamento", "PENDENTE") or "PENDENTE"),
+                        pago_em=getattr(r, "pago_em", None),
+                        origem_id=int(getattr(r, "combo_id", 0) or 0),
+                    )
+                )
 
-            # ITENS PARADOS
+            # -------- ITENS PARADOS --------
+            # Preferência: snapshot novo
             if usar_snapshot_itens_parados and ItemParadoResultado is not None:
                 try:
-                    q_par = db.query(ItemParadoResultado).filter(
-                        ItemParadoResultado.competencia_ano == int(ano),
-                        ItemParadoResultado.competencia_mes == int(mes),
-                        ItemParadoResultado.emp == str(emp),
-                        ItemParadoResultado.vendedor.in_(vendedores),
+                    q_par = (
+                        db.query(ItemParadoResultado)
+                        .filter(
+                            ItemParadoResultado.competencia_ano == int(ano),
+                            ItemParadoResultado.competencia_mes == int(mes),
+                            ItemParadoResultado.emp == str(emp),
+                            ItemParadoResultado.vendedor.in_(vendedores),
+                        )
                     )
                     if not incluir_zerados:
                         q_par = q_par.filter(ItemParadoResultado.valor_recompensa > 0)
@@ -325,27 +187,32 @@ def _build_unified_rows_live(
                 except Exception:
                     par_all = []
                 for r in par_all:
-                    rows.append(UnifiedRow(
-                        tipo="PARADO",
-                        competencia_ano=int(getattr(r, "competencia_ano", ano)),
-                        competencia_mes=int(getattr(r, "competencia_mes", mes)),
-                        emp=str(getattr(r, "emp", emp)),
-                        vendedor=str(getattr(r, "vendedor", "")).strip().upper(),
-                        titulo=str(getattr(r, "titulo", "") or "").strip() or "Item Parado",
-                        atingiu_gate=_safe_float(getattr(r, "base_valor_vendido", 0.0)) > 0,
-                        qtd_base=_safe_float(getattr(r, "base_valor_vendido", 0.0)),
-                        qtd_premiada=None,
-                        valor_recompensa=_safe_float(getattr(r, "valor_recompensa", 0.0)),
-                        status_pagamento=str(getattr(r, "status_pagamento", "PENDENTE") or "PENDENTE"),
-                        pago_em=getattr(r, "pago_em", None),
-                        origem_id=int(getattr(r, "item_parado_id", 0) or 0),
-                    ))
-            else:
-                parados_defs = db.query(ItemParado).filter(
-                    ItemParado.ativo.is_(True),
-                    ItemParado.emp == str(emp)
-                ).order_by(ItemParado.descricao.asc()).all()
+                    rows.append(
+                        UnifiedRow(
+                            tipo="PARADO",
+                            competencia_ano=int(getattr(r, "competencia_ano", ano)),
+                            competencia_mes=int(getattr(r, "competencia_mes", mes)),
+                            emp=str(getattr(r, "emp", emp)),
+                            vendedor=str(getattr(r, "vendedor", "")).strip().upper(),
+                            titulo=str(getattr(r, "titulo", "") or "").strip() or "Item Parado",
+                            atingiu_gate=True if _safe_float(getattr(r, "base_valor_vendido", 0.0)) > 0 else False,
+                            qtd_base=_safe_float(getattr(r, "base_valor_vendido", 0.0)),
+                            qtd_premiada=None,
+                            valor_recompensa=_safe_float(getattr(r, "valor_recompensa", 0.0)),
+                            status_pagamento=str(getattr(r, "status_pagamento", "PENDENTE") or "PENDENTE"),
+                            pago_em=getattr(r, "pago_em", None),
+                            origem_id=int(getattr(r, "item_parado_id", 0) or 0),
+                        )
+                    )
 
+            # Fallback: ao vivo (sem status_pagamento persistente)
+            else:
+                parados_defs = (
+                    db.query(ItemParado)
+                    .filter(ItemParado.ativo.is_(True), ItemParado.emp == str(emp))
+                    .order_by(ItemParado.descricao.asc())
+                    .all()
+                )
                 for ip in parados_defs:
                     codigo = (getattr(ip, "codigo", "") or "").strip()
                     if not codigo:
@@ -354,41 +221,53 @@ def _build_unified_rows_live(
                     if pct <= 0:
                         continue
 
-                    base_rows = db.query(
-                        Venda.vendedor,
-                        func.sum(Venda.valor_total)
-                    ).filter(
-                        cast(Venda.emp, String) == str(emp),
-                        Venda.movimento >= periodo_ini,
-                        Venda.movimento <= periodo_fim,
-                        ~Venda.mov_tipo_movto.in_(["DS", "CA"]),
-                        Venda.mestre == codigo,
-                        Venda.vendedor.in_(vendedores),
-                    ).group_by(Venda.vendedor).all()
+                    base_rows = (
+                        db.query(Venda.vendedor, func.sum(Venda.valor_total))
+                        .filter(
+                            Venda.emp == str(emp),
+                            Venda.movimento >= periodo_ini,
+                            Venda.movimento <= periodo_fim,
+                            ~Venda.mov_tipo_movto.in_(["DS", "CA"]),
+                            Venda.mestre == codigo,
+                            Venda.vendedor.in_(vendedores),
+                        )
+                        .group_by(Venda.vendedor)
+                        .all()
+                    )
 
                     for vend, base_val in base_rows:
                         vend_u = (vend or "").strip().upper()
                         base_val_f = _safe_float(base_val)
                         valor = base_val_f * (pct / 100.0)
-                        if not incluir_zerados and valor <= 0:
+                        if (not incluir_zerados) and valor <= 0:
                             continue
-                        rows.append(UnifiedRow(
-                            tipo="PARADO",
-                            competencia_ano=int(ano),
-                            competencia_mes=int(mes),
-                            emp=str(emp),
-                            vendedor=vend_u,
-                            titulo=str(getattr(ip, "descricao", "") or "").strip() or f"Item {codigo}",
-                            atingiu_gate=base_val_f > 0,
-                            qtd_base=base_val_f,
-                            qtd_premiada=None,
-                            valor_recompensa=valor,
-                            status_pagamento="PENDENTE",
-                            pago_em=None,
-                            origem_id=int(getattr(ip, "id", 0) or 0),
-                        ))
+                        rows.append(
+                            UnifiedRow(
+                                tipo="PARADO",
+                                competencia_ano=int(ano),
+                                competencia_mes=int(mes),
+                                emp=str(emp),
+                                vendedor=vend_u,
+                                titulo=str(getattr(ip, "descricao", "") or "").strip() or f"Item {codigo}",
+                                atingiu_gate=True if base_val_f > 0 else False,
+                                qtd_base=base_val_f,
+                                qtd_premiada=None,
+                                valor_recompensa=valor,
+                                status_pagamento="PENDENTE",
+                                pago_em=None,
+                                origem_id=int(getattr(ip, "id", 0) or 0),
+                            )
+                        )
 
+    # Ordena: EMP, Vendedor, Tipo, Título
     rows.sort(key=lambda r: (r.emp, r.vendedor, r.tipo, r.titulo))
+            except Exception as e:
+                try:
+                    db.rollback()
+                except Exception:
+                    pass
+                print(f"[RELATORIO_UNIFICADO] erro no emp={emp}: {e}")
+                continue
     return rows
 
 

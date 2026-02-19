@@ -600,6 +600,10 @@ def build_relatorio_campanhas_unificado_context(
             usar_snapshot_itens_parados=True,
         )
     except Exception as e:
+        try:
+            deps.SessionLocal().rollback()
+        except Exception:
+            pass
         print(f"[RELATORIO_UNIFICADO] erro ao montar rows: {e}")
         rows = []
 
