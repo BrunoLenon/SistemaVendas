@@ -30,6 +30,14 @@
           <input type="number" name="ano" min="2020" max="2100" class="form-control" value="{{ ano }}">
         </div>
 
+        <div class="col-12 col-md-2">
+          <label class="form-label">Modo</label>
+          <select name="view" class="form-select">
+            <option value="" {% if ctx.view_mode != "vendedores" %}selected{% endif %}>Detalhado</option>
+            <option value="vendedores" {% if ctx.view_mode == "vendedores" %}selected{% endif %}>Por vendedor (recompensas)</option>
+          </select>
+        </div>
+
         <div class="col-12 col-md-4">
           <label class="form-label">EMP (selecione uma ou mais)</label>
           <div class="border rounded p-2" style="max-height: 170px; overflow:auto;">
@@ -172,6 +180,47 @@
   </div>
   {% endif %}
 
+{% if ctx.view_mode == "vendedores" %}
+
+  <div class="card card-soft mt-3">
+    <div class="card-header d-flex align-items-center justify-content-between">
+      <div>
+        <div class="h6 mb-0">Recompensas por vendedor</div>
+        <small class="text-muted">Agrupado por empresa → vendedor → campanhas com recompensa</small>
+      </div>
+    </div>
+    <div class="card-body">
+      {% if not ctx.grouped_recompensas %}
+        <div class="text-muted">Nenhuma recompensa encontrada para os filtros selecionados.</div>
+      {% else %}
+        {% for g in ctx.grouped_recompensas %}
+          <div class="mb-4">
+            <div class="fw-semibold mb-2">Empresa: {{ g.emp }}</div>
+            <div class="ms-2">
+              {% for v in g.vendedores %}
+                <div class="mb-3">
+                  <div class="fw-semibold">{{ v.vendedor }}</div>
+                  <ul class="mb-0">
+                    {% for it in v.itens %}
+                      <li>
+                        <span class="me-2">{{ it.titulo }}</span>
+                        <span class="badge text-bg-secondary me-2">{{ it.tipo }}</span>
+                        {% if it.marca %}<span class="text-muted me-2">Marca: {{ it.marca }}</span>{% endif %}
+                        {% if it.produto_prefixo %}<span class="text-muted me-2">Produto: {{ it.produto_prefixo }}</span>{% endif %}
+                        <span class="fw-semibold">R$ {{ "%.2f"|format(it.valor_recompensa) }}</span>
+                      </li>
+                    {% endfor %}
+                  </ul>
+                </div>
+              {% endfor %}
+            </div>
+          </div>
+        {% endfor %}
+      {% endif %}
+    </div>
+  </div>
+
+{% else %}
   <!-- Detalhamento EMP -> Vendedor -> Campanha -->
   <div class="card">
     <div class="card-header d-flex align-items-center justify-content-between">
@@ -232,6 +281,8 @@
   </div>
 
 </div>
+
+{% endif %}
 
 <script>
 function toggleAll(cls, checked){

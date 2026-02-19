@@ -3109,7 +3109,7 @@ def _get_vendedores_emp_no_periodo(emp: str, ano: int, mes: int) -> list[str]:
     with SessionLocal() as db:
         rows = (
             db.query(func.distinct(Venda.vendedor))
-            .filter(Venda.emp == emp, Venda.movimento >= inicio_mes, Venda.movimento <= fim_mes)
+            .filter(func.cast(Venda.emp, String) == str(emp), Venda.movimento >= inicio_mes, Venda.movimento <= fim_mes)
             .all()
         )
     vendedores = sorted({(r[0] or '').strip().upper() for r in rows if r and (r[0] or '').strip()})
@@ -3622,6 +3622,42 @@ def relatorio_campanhas():
         return resumo
 
     ctx["resumo"] = _calc_resumo_financeiro(rows)
+
+    # view mode: detailed (default) or grouped by vendedor (recompensas)
+    view_mode = (request.args.get("view") or "").strip().lower()
+    ctx["view_mode"] = view_mode or "detalhado"
+    if view_mode in ("vendedor", "vendedores", "por_vendedor", "por-vendedor"):
+        grouped = {}
+        for r in rows:
+            try:
+                valor_rec = float(getattr(r, "valor_recompensa", 0) or 0)
+            except Exception:
+                valor_rec = 0.0
+            if valor_rec <= 0:
+                continue
+            emp = str(getattr(r, "emp", "") or "—").strip() or "—"
+            vend = str(getattr(r, "vendedor", "") or "—").strip() or "—"
+            titulo = str(getattr(r, "titulo", "") or "").strip()
+            tipo = str(getattr(r, "tipo", "") or "").strip()
+            item = {
+                "campanha_id": getattr(r, "campanha_id", None),
+                "titulo": titulo,
+                "tipo": tipo,
+                "valor_recompensa": valor_rec,
+                "marca": str(getattr(r, "marca", "") or "").strip(),
+                "produto_prefixo": str(getattr(r, "produto_prefixo", "") or "").strip(),
+            }
+            grouped.setdefault(emp, {}).setdefault(vend, []).append(item)
+        grouped_sorted = []
+        for emp, vend_map in sorted(grouped.items(), key=lambda kv: kv[0]):
+            vend_list = []
+            for vend, items in sorted(vend_map.items(), key=lambda kv: kv[0]):
+                items_sorted = sorted(items, key=lambda x: (x.get("titulo") or "", x.get("tipo") or ""))
+                vend_list.append({"vendedor": vend, "itens": items_sorted})
+            grouped_sorted.append({"emp": emp, "vendedores": vend_list})
+        ctx["grouped_recompensas"] = grouped_sorted
+    else:
+        ctx["grouped_recompensas"] = []
 
     # URLs auxiliares (Jinja não suporta **kwargs dinâmico com dict em algumas versões)
     from urllib.parse import urlencode
