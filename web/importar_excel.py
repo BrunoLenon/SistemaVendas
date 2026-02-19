@@ -193,6 +193,88 @@ def _build_stmt(records: List[dict], modo: str, conflict_cols: List[str]):
     return stmt.on_conflict_do_nothing(index_elements=conflict_cols)
 
 
+
+def scan_metadata_xlsx(filepath: str, max_rows: int = 20000) -> Dict[str, Any]:
+    """Varre rapidamente um XLSX para descobrir EMP(s) e competência(s) presentes.
+
+    Usado para o modo 'Reprocessar competência' (deleta recorte antes de importar).
+    Retorna:
+      - emps: lista de EMPs encontradas (strings)
+      - competencias: lista de tuplas (ano, mes)
+      - min_movimento, max_movimento (YYYY-MM-DD) quando possível
+      - total_linhas_lidas
+    """
+    from openpyxl import load_workbook
+
+    wb = load_workbook(filepath, read_only=True, data_only=True)
+    ws = wb.active
+    rows = ws.iter_rows(values_only=True)
+
+    header = next(rows, None)
+    if not header:
+        return {"ok": False, "msg": "Planilha vazia."}
+
+    cols = [str(c).strip().lower() if c is not None else "" for c in header]
+    idx = {name: i for i, name in enumerate(cols)}
+
+    def _idx(*names):
+        for n in names:
+            if n in idx:
+                return idx[n]
+        return None
+
+    i_emp = _idx("emp")
+    i_mov = _idx("movimento", "movimento_data")
+    if i_emp is None or i_mov is None:
+        return {"ok": False, "msg": "Colunas necessárias não encontradas para varrer metadata (emp/movimento)."}
+
+    emps = set()
+    competencias = set()
+    min_mov = None
+    max_mov = None
+    total = 0
+
+    import pandas as pd
+
+    for r in rows:
+        if r is None:
+            continue
+        total += 1
+        if total > int(max_rows):
+            break
+
+        emp = r[i_emp] if i_emp is not None else None
+        if emp is not None and str(emp).strip() != "":
+            emps.add(str(emp).strip())
+
+        mov = r[i_mov] if i_mov is not None else None
+        if mov is None or str(mov).strip() == "":
+            continue
+        try:
+            dt = pd.to_datetime(mov).date()
+        except Exception:
+            continue
+        competencias.add((int(dt.year), int(dt.month)))
+        if min_mov is None or dt < min_mov:
+            min_mov = dt
+        if max_mov is None or dt > max_mov:
+            max_mov = dt
+
+    try:
+        wb.close()
+    except Exception:
+        pass
+
+    return {
+        "ok": True,
+        "emps": sorted(emps),
+        "competencias": sorted(list(competencias)),
+        "min_movimento": str(min_mov) if min_mov else None,
+        "max_movimento": str(max_mov) if max_mov else None,
+        "total_linhas_lidas": total,
+    }
+
+
 def importar_planilha(
     filepath: str,
     modo: str = "ignorar_duplicados",
@@ -247,6 +329,10 @@ def importar_planilha(
             atualizadas = 0
             batch: List[dict] = []
             affected_periods = set()
+            total_bruto = 0.0
+            total_ca = 0.0
+            total_liquido = 0.0
+            linhas_ca = 0
 
             for r in rows:
                 total_linhas += 1
@@ -294,6 +380,17 @@ def importar_planilha(
                         "cliente_id_norm": _client_id_norm(get("CNPJ_CPF"), get("RAZAO")),
                     }
 
+                    # Totais para resumo/auditoria
+                    try:
+                        _vt = float(rec.get('valor_total') or 0.0)
+                    except Exception:
+                        _vt = 0.0
+                    if (rec.get('mov_tipo_movto') or '').strip().upper() == 'CA':
+                        total_ca += abs(_vt)
+                        linhas_ca += 1
+                    else:
+                        total_bruto += _vt
+                    total_liquido = total_bruto - total_ca
                     batch.append(rec)
                     validas += 1
 
@@ -347,7 +444,13 @@ def importar_planilha(
                 "chave": chave,
                 "batch_size": int(batch_size),
                 "conflict_cols": conflict_cols,
-                "cache": cache_info,
+                "total_bruto": float(total_bruto),
+        "total_ca": float(total_ca),
+        "total_liquido": float(total_liquido),
+        "linhas_ca": int(linhas_ca),
+        "emps_afetadas": sorted(list({p[0] for p in affected_periods})),
+        "competencias_afetadas": sorted(list({(p[1], p[2]) for p in affected_periods})),
+        "cache": cache_info,
             }
 
         finally:
@@ -371,6 +474,10 @@ def importar_planilha(
     inseridas = 0
     atualizadas = 0
     affected_periods = set()
+            total_bruto = 0.0
+            total_ca = 0.0
+            total_liquido = 0.0
+            linhas_ca = 0
 
     db = SessionLocal()
     try:
@@ -498,5 +605,11 @@ def importar_planilha(
         "batch_size": int(batch_size),
         "csv_chunksize": int(csv_chunksize),
         "conflict_cols": conflict_cols,
+        "total_bruto": float(total_bruto),
+        "total_ca": float(total_ca),
+        "total_liquido": float(total_liquido),
+        "linhas_ca": int(linhas_ca),
+        "emps_afetadas": sorted(list({p[0] for p in affected_periods})),
+        "competencias_afetadas": sorted(list({(p[1], p[2]) for p in affected_periods})),
         "cache": cache_info,
     }

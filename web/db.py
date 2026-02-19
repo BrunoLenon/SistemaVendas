@@ -1104,6 +1104,40 @@ class RelatorioSnapshotMensal(Base):
     )
 
 
+
+class ImportacaoLog(Base):
+    """Log/auditoria de importações de vendas.
+
+    Guarda um resumo da importação (contadores, totais e metadados) para rastreabilidade.
+    """
+    __tablename__ = "importacoes_log"
+
+    id = Column(Integer, primary_key=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+    usuario = Column(String(120), nullable=True, index=True)
+    filename = Column(String(255), nullable=True)
+
+    # Contexto do arquivo/processo
+    emps = Column(String(255), nullable=True)  # CSV de EMPs afetadas
+    competencias = Column(String(255), nullable=True)  # CSV de (ano-mes) afetados, ex: 2026-02;2026-03
+
+    total_linhas = Column(Integer, nullable=False, default=0)
+    validas = Column(Integer, nullable=False, default=0)
+    inseridas = Column(Integer, nullable=False, default=0)
+    atualizadas = Column(Integer, nullable=False, default=0)
+    ignoradas = Column(Integer, nullable=False, default=0)
+    erros_linha = Column(Integer, nullable=False, default=0)
+
+    total_bruto = Column(Float, nullable=False, default=0.0)
+    total_ca = Column(Float, nullable=False, default=0.0)
+    total_liquido = Column(Float, nullable=False, default=0.0)
+    linhas_ca = Column(Integer, nullable=False, default=0)
+
+    # JSONB se disponível (Postgres). Fallback em Text.
+    resumo = Column(JSONB if JSONB is not None else Text, nullable=True)
+
+
 class FinanceiroAudit(Base):
     __tablename__ = "financeiro_audit"
 

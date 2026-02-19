@@ -56,6 +56,7 @@ from db import (
     MensagemLidaDiaria,
     Venda,
     DashboardCache,
+    ImportacaoLog,
     ItemParado,
     CampanhaQtd,
     CampanhaQtdResultado,
@@ -74,7 +75,7 @@ from db import (
     BrandingTheme,
     criar_tabelas,
 )
-from importar_excel import importar_planilha
+from importar_excel import importar_planilha, scan_metadata_xlsx
 
 # Flask app (Render/Gunicorn expects `app` at module level: web/app.py -> app:app)
 app = Flask(__name__, template_folder="templates")
@@ -4700,6 +4701,7 @@ def admin_cache_refresh():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
+
 @app.route("/admin/importar", methods=["GET", "POST"])
 def admin_importar():
     red = _login_required()
@@ -4709,8 +4711,21 @@ def admin_importar():
     if red:
         return red
 
+    # GET: mostra página + últimos logs e (se existir) resumo da última importação
     if request.method == "GET":
-        return render_template("admin_importar.html")
+        last_resumo = session.pop("last_import_resumo", None)
+        logs = []
+        try:
+            with SessionLocal() as db:
+                logs = (
+                    db.query(ImportacaoLog)
+                    .order_by(ImportacaoLog.id.desc())
+                    .limit(12)
+                    .all()
+                )
+        except Exception:
+            logs = []
+        return render_template("admin_importar.html", last_resumo=last_resumo, logs=logs)
 
     arquivo = request.files.get("arquivo")
     if not arquivo or not arquivo.filename:
@@ -4722,13 +4737,8 @@ def admin_importar():
         return redirect(url_for("admin_importar"))
 
     modo = request.form.get("modo", "ignorar_duplicados")
-    # IMPORTANTISSIMO:
-    # A chave de deduplicidade precisa bater com o indice/constraint UNIQUE do banco.
-    # Seu banco foi padronizado com:
-    #   (mestre, marca, vendedor, movimento, mov_tipo_movto, nota, emp)
-    # Se a chave nao incluir MOVIMENTO e MOV_TIPO_MOVTO (DS/CA/OA), o Postgres
-    # pode retornar erro de ON CONFLICT e/ou DS/CA pode ser ignorado.
     chave = request.form.get("chave", "mestre_movimento_vendedor_nota_tipo_emp")
+    reprocessar = request.form.get("reprocessar_competencia") == "1"
 
     # Salva temporariamente
     import tempfile
@@ -4737,8 +4747,75 @@ def admin_importar():
         arquivo.save(tmp.name)
         tmp_path = tmp.name
 
+    t0 = datetime.utcnow()
+
     try:
+        # Se o usuário pediu reprocessamento, deletamos apenas o recorte (EMP + competência) detectado no arquivo
+        meta = None
+        if reprocessar:
+            meta = scan_metadata_xlsx(tmp_path)
+            if not meta or not meta.get("ok"):
+                flash(meta.get("msg") if isinstance(meta, dict) else "Falha ao ler metadata do arquivo.", "danger")
+                return redirect(url_for("admin_importar"))
+
+            competencias = meta.get("competencias") or []
+            emps = meta.get("emps") or []
+            if not emps:
+                flash("Não foi possível detectar EMP(s) no arquivo. Reprocessamento cancelado.", "danger")
+                return redirect(url_for("admin_importar"))
+            if len(competencias) != 1:
+                flash(
+                    "Reprocessamento exige arquivo com apenas 1 competência (ano/mês). "
+                    f"Detectado: {competencias}. Importe normalmente ou separe por mês.",
+                    "warning",
+                )
+                return redirect(url_for("admin_importar"))
+
+            ano, mes = competencias[0]
+            # Deleta vendas e snapshots do recorte para evitar dados misturados
+            with SessionLocal() as db:
+                try:
+                    # vendas
+                    db.query(Venda).filter(
+                        Venda.emp.in_(emps),
+                        Venda.ano == int(ano),
+                        Venda.mes == int(mes),
+                    ).delete(synchronize_session=False)
+
+                    # resultados / snapshots (qtd, combo, itens parados, unificado)
+                    db.query(CampanhaQtdResultado).filter(
+                        CampanhaQtdResultado.emp.in_(emps),
+                        CampanhaQtdResultado.competencia_ano == int(ano),
+                        CampanhaQtdResultado.competencia_mes == int(mes),
+                    ).delete(synchronize_session=False)
+
+                    db.query(CampanhaComboResultado).filter(
+                        CampanhaComboResultado.emp.in_(emps),
+                        CampanhaComboResultado.competencia_ano == int(ano),
+                        CampanhaComboResultado.competencia_mes == int(mes),
+                    ).delete(synchronize_session=False)
+
+                    db.query(ItemParadoResultado).filter(
+                        ItemParadoResultado.emp.in_(emps),
+                        ItemParadoResultado.competencia_ano == int(ano),
+                        ItemParadoResultado.competencia_mes == int(mes),
+                    ).delete(synchronize_session=False)
+
+                    db.query(RelatorioSnapshotMensal).filter(
+                        RelatorioSnapshotMensal.emp.in_(emps),
+                        RelatorioSnapshotMensal.competencia_ano == int(ano),
+                        RelatorioSnapshotMensal.competencia_mes == int(mes),
+                    ).delete(synchronize_session=False)
+
+                    db.commit()
+                except Exception:
+                    db.rollback()
+                    app.logger.exception("Falha ao reprocessar (delete recorte)")
+                    flash("Falha ao reprocessar competência. Veja logs no Render.", "danger")
+                    return redirect(url_for("admin_importar"))
+
         resumo = importar_planilha(tmp_path, modo=modo, chave=chave)
+
         if not resumo.get("ok"):
             faltando = resumo.get("faltando")
             if faltando:
@@ -4747,20 +4824,55 @@ def admin_importar():
                 flash(resumo.get("msg", "Falha ao importar."), "danger")
             return redirect(url_for("admin_importar"))
 
-        flash(
-            (
-                f"Importação concluída. Válidas: {resumo['validas']} | "
-                f"Inseridas: {resumo['inseridas']} | "
-                f"Ignoradas: {resumo['ignoradas']} | "
-                f"Erros: {resumo['erros_linha']}"
-            ),
-            "success",
-        )
+        dt = (datetime.utcnow() - t0).total_seconds()
+
+        # Salva resumo em sessão para mostrar no topo após redirect
+        resumo_ui = dict(resumo)
+        resumo_ui["duracao_s"] = float(dt)
+        resumo_ui["filename"] = arquivo.filename
+        resumo_ui["reprocessado"] = bool(reprocessar)
+        session["last_import_resumo"] = resumo_ui
+
+        # Persiste um log de importação (auditoria)
+        try:
+            usuario_nome = (session.get("user") or {}).get("username") if isinstance(session.get("user"), dict) else session.get("username")
+        except Exception:
+            usuario_nome = None
+
+        try:
+            with SessionLocal() as db:
+                emps = resumo.get("emps_afetadas") or []
+                competencias = resumo.get("competencias_afetadas") or []
+                log = ImportacaoLog(
+                    usuario=usuario_nome,
+                    filename=arquivo.filename,
+                    emps=",".join([str(e) for e in emps]) if emps else None,
+                    competencias=";".join([f"{a:04d}-{m:02d}" for a, m in competencias]) if competencias else None,
+                    total_linhas=int(resumo.get("total_linhas") or 0),
+                    validas=int(resumo.get("validas") or 0),
+                    inseridas=int(resumo.get("inseridas") or 0),
+                    atualizadas=int(resumo.get("atualizadas") or 0),
+                    ignoradas=int(resumo.get("ignoradas") or 0),
+                    erros_linha=int(resumo.get("erros_linha") or 0),
+                    total_bruto=float(resumo.get("total_bruto") or 0.0),
+                    total_ca=float(resumo.get("total_ca") or 0.0),
+                    total_liquido=float(resumo.get("total_liquido") or 0.0),
+                    linhas_ca=int(resumo.get("linhas_ca") or 0),
+                    resumo=resumo_ui,
+                )
+                db.add(log)
+                db.commit()
+        except Exception:
+            app.logger.exception("Falha ao gravar ImportacaoLog (não bloqueante)")
+
+        flash("Importação concluída. Veja o resumo no topo.", "success")
+
         # Limpa cache do DataFrame para refletir novos dados imediatamente
         try:
             limpar_cache_df()
         except Exception:
             pass
+
         return redirect(url_for("admin_importar"))
 
     except Exception:
@@ -4774,8 +4886,8 @@ def admin_importar():
             pass
 
 
-
 @app.route("/admin/itens_parados", methods=["GET", "POST"])
+, methods=["GET", "POST"])
 def admin_itens_parados():
     """Cadastro de itens parados (liquidação) por EMP.
 

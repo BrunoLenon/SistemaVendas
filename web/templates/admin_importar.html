@@ -59,6 +59,59 @@
         <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('dashboard') }}">Voltar</a>
       </div>
     </div>
+
+{% if last_resumo %}
+  <div class="alert alert-success soft-shadow border-0 mb-3">
+    <div class="d-flex align-items-start justify-content-between flex-wrap gap-2">
+      <div>
+        <div class="fw-bold">✅ Importação concluída</div>
+        <div class="small muted">
+          Arquivo: <span class="mono">{{ last_resumo.filename }}</span>
+          {% if last_resumo.reprocessado %}<span class="pill ms-2">Reprocessado</span>{% endif %}
+        </div>
+        <div class="small muted">
+          EMPs: <span class="mono">{{ (last_resumo.emps_afetadas or [])|join(', ') }}</span> —
+          Competências: <span class="mono">
+            {% for c in (last_resumo.competencias_afetadas or []) %}{{ "%04d-%02d"|format(c[0], c[1]) }}{% if not loop.last %}; {% endif %}{% endfor %}
+          </span>
+          — Duração: <span class="mono">{{ '%.2f'|format(last_resumo.duracao_s or 0) }}s</span>
+        </div>
+      </div>
+      <div class="d-flex flex-wrap gap-2">
+        <span class="pill">Linhas: <span class="mono">{{ last_resumo.total_linhas }}</span></span>
+        <span class="pill">Válidas: <span class="mono">{{ last_resumo.validas }}</span></span>
+        <span class="pill">Inseridas: <span class="mono">{{ last_resumo.inseridas }}</span></span>
+        <span class="pill">Ignoradas: <span class="mono">{{ last_resumo.ignoradas }}</span></span>
+        <span class="pill">Erros: <span class="mono">{{ last_resumo.erros_linha }}</span></span>
+      </div>
+    </div>
+
+    <hr class="my-3">
+
+    <div class="row g-2">
+      <div class="col-12 col-md-4">
+        <div class="p-3 rounded-3 bg-white border h-100">
+          <div class="muted small">Total bruto</div>
+          <div class="metric">R$ {{ '%.2f'|format(last_resumo.total_bruto or 0) }}</div>
+        </div>
+      </div>
+      <div class="col-12 col-md-4">
+        <div class="p-3 rounded-3 bg-white border h-100">
+          <div class="muted small">Cancelamentos (CA)</div>
+          <div class="metric">- R$ {{ '%.2f'|format(last_resumo.total_ca or 0) }}</div>
+          <div class="muted small mt-1">Linhas CA: <span class="mono">{{ last_resumo.linhas_ca or 0 }}</span></div>
+        </div>
+      </div>
+      <div class="col-12 col-md-4">
+        <div class="p-3 rounded-3 bg-white border h-100">
+          <div class="muted small">Total líquido</div>
+          <div class="metric">R$ {{ '%.2f'|format(last_resumo.total_liquido or 0) }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+{% endif %}
+
 <div class="row g-3">
       <!-- COLUNA ESQUERDA -->
       <div class="col-lg-7">
@@ -112,6 +165,19 @@
                   <div class="form-text">Se sua NOTA pode repetir em lojas diferentes, use a opção com EMP.</div>
                 </div>
               </div>
+
+              
+              <div class="form-check mt-3">
+                <input class="form-check-input" type="checkbox" value="1" id="reprocessar_competencia" name="reprocessar_competencia">
+                <label class="form-check-label" for="reprocessar_competencia">
+                  Reprocessar competência do arquivo (apaga o recorte EMP + mês/ano detectado e reimporta)
+                </label>
+                <div class="form-text text-warning">
+                  Use quando o ERP corrigiu vendas do mês ou quando você precisa garantir consistência (ranking/relatórios).
+                  O arquivo deve conter apenas <b>1</b> competência (ano/mês).
+                </div>
+              </div>
+
 
               <div class="d-flex flex-wrap gap-2 mt-4">
                 <button class="btn btn-primary btn-lg" type="submit" id="btnImportar">Importar agora</button>
@@ -167,6 +233,49 @@
 
       <!-- COLUNA DIREITA -->
       <div class="col-lg-5">
+
+        <!-- LOGS -->
+        <div class="card border-0 soft-shadow mb-3">
+          <div class="card-body p-4">
+            <div class="fw-semibold mb-2">🧾 Últimas importações</div>
+            <div class="muted small mb-3">Histórico para auditoria e rastreabilidade.</div>
+
+            {% if logs and logs|length > 0 %}
+              <div class="table-responsive">
+                <table class="table table-sm align-middle">
+                  <thead>
+                    <tr>
+                      <th>Data</th>
+                      <th>Arquivo</th>
+                      <th>EMPs</th>
+                      <th>Competência</th>
+                      <th class="text-end">Inseridas</th>
+                      <th class="text-end">Ign.</th>
+                      <th class="text-end">Líquido</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for l in logs %}
+                    <tr>
+                      <td class="mono small">{{ (l.created_at or '') }}</td>
+                      <td class="small">{{ l.filename or '-' }}</td>
+                      <td class="small mono">{{ l.emps or '-' }}</td>
+                      <td class="small mono">{{ l.competencias or '-' }}</td>
+                      <td class="text-end mono small">{{ l.inseridas }}</td>
+                      <td class="text-end mono small">{{ l.ignoradas }}</td>
+                      <td class="text-end mono small">R$ {{ '%.2f'|format(l.total_liquido or 0) }}</td>
+                    </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            {% else %}
+              <div class="muted small">Nenhum log de importação ainda.</div>
+            {% endif %}
+          </div>
+        </div>
+
+
         <!-- AJUDA -->
         <div class="card border-0 soft-shadow mb-3">
           <div class="card-body p-4">
