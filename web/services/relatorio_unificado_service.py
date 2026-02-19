@@ -93,6 +93,8 @@ def build_unified_rows(
 
     with SessionLocal() as db:
         for emp in emps:
+            emp_str = str(emp).strip()
+            emp_param = int(emp_str) if emp_str.isdigit() else emp_str
             vendedores = [v.strip().upper() for v in (vendedores_por_emp.get(emp) or []) if (v or "").strip()]
             if not vendedores:
                 continue
@@ -103,14 +105,23 @@ def build_unified_rows(
                 .filter(
                     CampanhaQtdResultado.competencia_ano == int(ano),
                     CampanhaQtdResultado.competencia_mes == int(mes),
-                    CampanhaQtdResultado.emp == str(emp),
+                    CampanhaQtdResultado.emp == emp_param,
                     CampanhaQtdResultado.vendedor.in_(vendedores),
                 )
             )
             if not incluir_zerados:
                 q_qtd = q_qtd.filter(CampanhaQtdResultado.valor_recompensa > 0)
 
-            for r in q_qtd.all():
+            try:
+                qtd_all = q_qtd.all()
+            except Exception:
+                try:
+                    db.rollback()
+                except Exception:
+                    pass
+                raise
+
+            for r in qtd_all:
                 recompensa_unit = _safe_float(getattr(r, "recompensa_unit", 0.0))
                 valor_recompensa = _safe_float(getattr(r, "valor_recompensa", 0.0))
                 qtd_prem = None
@@ -141,14 +152,23 @@ def build_unified_rows(
                 .filter(
                     CampanhaComboResultado.competencia_ano == int(ano),
                     CampanhaComboResultado.competencia_mes == int(mes),
-                    CampanhaComboResultado.emp == str(emp),
+                    CampanhaComboResultado.emp == emp_param,
                     CampanhaComboResultado.vendedor.in_(vendedores),
                 )
             )
             if not incluir_zerados:
                 q_combo = q_combo.filter(CampanhaComboResultado.valor_recompensa > 0)
 
-            for r in q_combo.all():
+            try:
+                combo_all = q_combo.all()
+            except Exception:
+                try:
+                    db.rollback()
+                except Exception:
+                    pass
+                raise
+
+            for r in combo_all:
                 rows.append(
                     UnifiedRow(
                         tipo="COMBO",
@@ -176,7 +196,7 @@ def build_unified_rows(
                         .filter(
                             ItemParadoResultado.competencia_ano == int(ano),
                             ItemParadoResultado.competencia_mes == int(mes),
-                            ItemParadoResultado.emp == str(emp),
+                            ItemParadoResultado.emp == emp_param,
                             ItemParadoResultado.vendedor.in_(vendedores),
                         )
                     )
@@ -184,6 +204,10 @@ def build_unified_rows(
                         q_par = q_par.filter(ItemParadoResultado.valor_recompensa > 0)
                     par_all = q_par.all()
                 except Exception:
+                    try:
+                        db.rollback()
+                    except Exception:
+                        pass
                     par_all = []
                 for r in par_all:
                     rows.append(
