@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Any, Iterable
 
-from sqlalchemy import or_, func
+from sqlalchemy import or_, func, cast, String
 
 from db import (
     SessionLocal,
@@ -93,6 +93,11 @@ def build_unified_rows(
 
     with SessionLocal() as db:
         for emp in emps:
+            # Evita sessão ficar "abortada" se uma query anterior falhou (InFailedSqlTransaction)
+            try:
+                db.rollback()
+            except Exception:
+                pass
             vendedores = [v.strip().upper() for v in (vendedores_por_emp.get(emp) or []) if (v or "").strip()]
             if not vendedores:
                 continue
@@ -103,7 +108,7 @@ def build_unified_rows(
                 .filter(
                     CampanhaQtdResultado.competencia_ano == int(ano),
                     CampanhaQtdResultado.competencia_mes == int(mes),
-                    CampanhaQtdResultado.emp == str(emp),
+                    cast(CampanhaQtdResultado.emp, String) == str(emp),
                     CampanhaQtdResultado.vendedor.in_(vendedores),
                 )
             )
@@ -141,7 +146,7 @@ def build_unified_rows(
                 .filter(
                     CampanhaComboResultado.competencia_ano == int(ano),
                     CampanhaComboResultado.competencia_mes == int(mes),
-                    CampanhaComboResultado.emp == str(emp),
+                    cast(CampanhaComboResultado.emp, String) == str(emp),
                     CampanhaComboResultado.vendedor.in_(vendedores),
                 )
             )
@@ -279,31 +284,4 @@ def aggregate_for_charts(rows: list[UnifiedRow]) -> dict[str, Any]:
         "total_recompensa": total,
         "by_tipo": [{"label": k, "value": float(v)} for k, v in sorted(by_tipo.items())],
         "by_emp": [{"label": k, "value": float(v)} for k, v in sorted(by_emp.items())],
-    }
-
-
-# -----------------------------------------------------------------------------
-# Snapshot mensal (usado pelo fechamento / performance)
-# -----------------------------------------------------------------------------
-
-def gerar_snapshot_mensal(ano: int, mes: int, emp_list: list[str] | None = None, vendedores: list[str] | None = None) -> dict:
-    """Gera e retorna um snapshot mensal do relatório unificado.
-
-    Implementação segura: constrói as linhas unificadas e devolve um resumo.
-    (Sem persistir em tabela nova, para manter compatibilidade.)
-    """
-    rows = build_unified_rows(
-        competencia_ano=int(ano),
-        competencia_mes=int(mes),
-        emp_list=emp_list or [],
-        vendedores=vendedores or [],
-        incluir_sem_recompensa=True,
-    )
-    return {
-        'ano': int(ano),
-        'mes': int(mes),
-        'emp_list': emp_list or [],
-        'vendedores': vendedores or [],
-        'total_rows': len(rows),
-        'charts': aggregate_for_charts(rows) if rows else {},
     }

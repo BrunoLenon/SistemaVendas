@@ -3109,7 +3109,7 @@ def _get_vendedores_emp_no_periodo(emp: str, ano: int, mes: int) -> list[str]:
     with SessionLocal() as db:
         rows = (
             db.query(func.distinct(Venda.vendedor))
-            .filter(func.cast(Venda.emp, String) == str(emp), Venda.movimento >= inicio_mes, Venda.movimento <= fim_mes)
+            .filter(Venda.emp == emp, Venda.movimento >= inicio_mes, Venda.movimento <= fim_mes)
             .all()
         )
     vendedores = sorted({(r[0] or '').strip().upper() for r in rows if r and (r[0] or '').strip()})
@@ -3541,41 +3541,6 @@ def relatorio_campanhas():
         return s
 
     def _calc_resumo_financeiro(_rows):
-        # rows podem ser dict (legado) ou objetos (ex.: UnifiedRow)
-        def _rg(obj, *keys, default=None):
-            if obj is None:
-                return default
-            if isinstance(obj, dict):
-                for k in keys:
-                    for kk in (k, str(k).lower(), str(k).upper()):
-                        if kk in obj:
-                            v = obj.get(kk)
-                            if v is not None and v != "":
-                                return v
-                return default
-
-            for k in keys:
-                for kk in (k, str(k).lower(), str(k).upper()):
-                    if hasattr(obj, kk):
-                        v = getattr(obj, kk)
-                        if v is not None and v != "":
-                            return v
-
-            d = getattr(obj, "__dict__", None)
-            if isinstance(d, dict):
-                for k in keys:
-                    for kk in (k, str(k).lower(), str(k).upper()):
-                        if kk in d:
-                            v = d.get(kk)
-                            if v is not None and v != "":
-                                return v
-
-            if hasattr(obj, "to_dict"):
-                try:
-                    return _rg(obj.to_dict(), *keys, default=default)
-                except Exception:
-                    return default
-            return default
         resumo = {
             "linhas": 0,
             "total_valor": 0.0,
@@ -3583,10 +3548,10 @@ def relatorio_campanhas():
             "por_emp": {},
         }
         for r in (_rows or []):
-            emp = str(_rg(r, "emp", "EMP") or "").strip() or "—"
-            vendedor = str(_rg(r, "vendedor", "VENDEDOR") or "").strip() or "—"
-            valor = _to_float(_rg(r, "valor_recompensa", "valor", "VALOR_RECOMPENSA"))
-            st = _norm_status(_rg(r, "status_pagamento", "status", "STATUS_PAGAMENTO"))
+            emp = str(r.get("emp") or r.get("EMP") or "").strip() or "—"
+            vendedor = str(r.get("vendedor") or r.get("VENDEDOR") or "").strip() or "—"
+            valor = _to_float(r.get("valor_recompensa") or r.get("valor") or r.get("VALOR_RECOMPENSA"))
+            st = _norm_status(r.get("status_pagamento") or r.get("status") or r.get("STATUS_PAGAMENTO"))
             if st not in ("PENDENTE", "A_PAGAR", "PAGO"):
                 st_key = "OUTROS"
             else:
@@ -3623,42 +3588,6 @@ def relatorio_campanhas():
 
     ctx["resumo"] = _calc_resumo_financeiro(rows)
 
-    # view mode: detailed (default) or grouped by vendedor (recompensas)
-    view_mode = (request.args.get("view") or "").strip().lower()
-    ctx["view_mode"] = view_mode or "detalhado"
-    if view_mode in ("vendedor", "vendedores", "por_vendedor", "por-vendedor"):
-        grouped = {}
-        for r in rows:
-            try:
-                valor_rec = float(getattr(r, "valor_recompensa", 0) or 0)
-            except Exception:
-                valor_rec = 0.0
-            if valor_rec <= 0:
-                continue
-            emp = str(getattr(r, "emp", "") or "—").strip() or "—"
-            vend = str(getattr(r, "vendedor", "") or "—").strip() or "—"
-            titulo = str(getattr(r, "titulo", "") or "").strip()
-            tipo = str(getattr(r, "tipo", "") or "").strip()
-            item = {
-                "campanha_id": getattr(r, "campanha_id", None),
-                "titulo": titulo,
-                "tipo": tipo,
-                "valor_recompensa": valor_rec,
-                "marca": str(getattr(r, "marca", "") or "").strip(),
-                "produto_prefixo": str(getattr(r, "produto_prefixo", "") or "").strip(),
-            }
-            grouped.setdefault(emp, {}).setdefault(vend, []).append(item)
-        grouped_sorted = []
-        for emp, vend_map in sorted(grouped.items(), key=lambda kv: kv[0]):
-            vend_list = []
-            for vend, items in sorted(vend_map.items(), key=lambda kv: kv[0]):
-                items_sorted = sorted(items, key=lambda x: (x.get("titulo") or "", x.get("tipo") or ""))
-                vend_list.append({"vendedor": vend, "itens": items_sorted})
-            grouped_sorted.append({"emp": emp, "vendedores": vend_list})
-        ctx["grouped_recompensas"] = grouped_sorted
-    else:
-        ctx["grouped_recompensas"] = []
-
     # URLs auxiliares (Jinja não suporta **kwargs dinâmico com dict em algumas versões)
     from urllib.parse import urlencode
 
@@ -3684,7 +3613,7 @@ def relatorio_campanhas():
     ctx["prev_url"] = _make_url("relatorio_campanhas", page=max(1, page - 1))
     ctx["next_url"] = _make_url("relatorio_campanhas", page=min(ctx["total_pages"], page + 1))
 
-    return render_template("relatorio_campanhas.html", **ctx)
+    return render_template("relatorio_campanhas.html", ctx=ctx, **ctx)
 
 
 @app.get("/relatorios/campanhas/export.csv")
@@ -4844,20 +4773,6 @@ def admin_importar():
             pass
 
 
-
-
-# --- Garantia de rota (alias) para /admin/importar ---
-# Em alguns deploys o link do menu aponta para /admin/importar e pode ocorrer 404
-# se a rota não estiver registrada (merge/rollback). Este bloco garante a rota
-# sem quebrar caso ela já exista.
-try:
-    _has_importar = any(r.rule in ("/admin/importar", "/admin/importar/") for r in app.url_map.iter_rules())
-    if not _has_importar:
-        app.add_url_rule("/admin/importar", endpoint="admin_importar_alias", view_func=admin_importar, methods=["GET", "POST"])
-        app.add_url_rule("/admin/importar/", endpoint="admin_importar_alias_slash", view_func=admin_importar, methods=["GET", "POST"])
-except Exception:
-    # Nunca derrubar o app por causa do alias
-    pass
 
 @app.route("/admin/itens_parados", methods=["GET", "POST"])
 def admin_itens_parados():
