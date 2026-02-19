@@ -17,7 +17,8 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Any, Iterable
 
-from sqlalchemy import or_, func, cast, String
+from sqlalchemy import or_, func
+from sqlalchemy import String
 
 from db import (
     SessionLocal,
@@ -61,9 +62,23 @@ def _safe_float(v: Any) -> float:
     except Exception:
         return 0.0
 
-def _emp_equals(col, emp_value: Any):
-    """Compare EMP safely regardless of column type (int/varchar)."""
-    return cast(col, String) == str(emp_value)
+
+
+def _emp_eq(col, emp: str):
+    """Compara EMP de forma segura (coluna pode ser int ou varchar)."""
+    return func.cast(col, String) == str(emp)
+
+
+def _safe_all(db, q, label: str):
+    try:
+        return q.all()
+    except Exception as e:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        print(f"[RELATORIO_UNIFICADO] falha em {label}: {e}")
+        return []
 
 
 
@@ -108,20 +123,14 @@ def build_unified_rows(
                 .filter(
                     CampanhaQtdResultado.competencia_ano == int(ano),
                     CampanhaQtdResultado.competencia_mes == int(mes),
-                    cast(CampanhaQtdResultado.emp, String) == str(emp),
+                    _emp_eq(CampanhaQtdResultado.emp, emp),
                     CampanhaQtdResultado.vendedor.in_(vendedores),
                 )
             )
             if not incluir_zerados:
                 q_qtd = q_qtd.filter(CampanhaQtdResultado.valor_recompensa > 0)
 
-            try:
-                qtd_all = q_qtd.all()
-            except Exception as e:
-                db.rollback()
-                print(f"[RELATORIO_UNIFICADO] QTD query failed emp={{emp}}: {{e}}")
-                qtd_all = []
-            for r in qtd_all:
+            for r in _safe_all(db, q_qtd, f'QTD emp={emp}'):
                 recompensa_unit = _safe_float(getattr(r, "recompensa_unit", 0.0))
                 valor_recompensa = _safe_float(getattr(r, "valor_recompensa", 0.0))
                 qtd_prem = None
@@ -152,20 +161,14 @@ def build_unified_rows(
                 .filter(
                     CampanhaComboResultado.competencia_ano == int(ano),
                     CampanhaComboResultado.competencia_mes == int(mes),
-                    cast(CampanhaComboResultado.emp, String) == str(emp),
+                    _emp_eq(CampanhaComboResultado.emp, emp),
                     CampanhaComboResultado.vendedor.in_(vendedores),
                 )
             )
             if not incluir_zerados:
                 q_combo = q_combo.filter(CampanhaComboResultado.valor_recompensa > 0)
 
-            try:
-                combo_all = q_combo.all()
-            except Exception as e:
-                db.rollback()
-                print(f"[RELATORIO_UNIFICADO] COMBO query failed emp={{emp}}: {{e}}")
-                combo_all = []
-            for r in combo_all:
+            for r in _safe_all(db, q_combo, f'COMBO emp={emp}'):
                 rows.append(
                     UnifiedRow(
                         tipo="COMBO",
@@ -193,7 +196,7 @@ def build_unified_rows(
                         .filter(
                             ItemParadoResultado.competencia_ano == int(ano),
                             ItemParadoResultado.competencia_mes == int(mes),
-                            cast(ItemParadoResultado.emp, String) == str(emp),
+                            _emp_eq(ItemParadoResultado.emp, emp),
                             ItemParadoResultado.vendedor.in_(vendedores),
                         )
                     )
@@ -201,7 +204,6 @@ def build_unified_rows(
                         q_par = q_par.filter(ItemParadoResultado.valor_recompensa > 0)
                     par_all = q_par.all()
                 except Exception:
-                    db.rollback()
                     par_all = []
                 for r in par_all:
                     rows.append(
@@ -224,16 +226,11 @@ def build_unified_rows(
 
             # Fallback: ao vivo (sem status_pagamento persistente)
             else:
-                try:
-                    parados_defs = (
-                        db.query(ItemParado)
-                        .filter(ItemParado.ativo.is_(True), cast(ItemParado.emp, String) == str(emp))
-                        .order_by(ItemParado.descricao.asc())
-                        .all()
-                except Exception as e:
-                    db.rollback()
-                    print(f"[RELATORIO_UNIFICADO] PARADO defs query failed emp={{emp}}: {{e}}")
-                    parados_defs = []
+                parados_defs = (
+                    db.query(ItemParado)
+                    .filter(ItemParado.ativo.is_(True), ItemParado.emp == str(emp))
+                    .order_by(ItemParado.descricao.asc())
+                    .all()
                 )
                 for ip in parados_defs:
                     codigo = (getattr(ip, "codigo", "") or "").strip()
