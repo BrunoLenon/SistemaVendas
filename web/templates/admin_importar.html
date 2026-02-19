@@ -59,59 +59,6 @@
         <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('dashboard') }}">Voltar</a>
       </div>
     </div>
-
-{% if last_resumo %}
-  <div class="alert alert-success soft-shadow border-0 mb-3">
-    <div class="d-flex align-items-start justify-content-between flex-wrap gap-2">
-      <div>
-        <div class="fw-bold">✅ Importação concluída</div>
-        <div class="small muted">
-          Arquivo: <span class="mono">{{ last_resumo.filename }}</span>
-          {% if last_resumo.reprocessado %}<span class="pill ms-2">Reprocessado</span>{% endif %}
-        </div>
-        <div class="small muted">
-          EMPs: <span class="mono">{{ (last_resumo.emps_afetadas or [])|join(', ') }}</span> —
-          Competências: <span class="mono">
-            {% for c in (last_resumo.competencias_afetadas or []) %}{{ "%04d-%02d"|format(c[0], c[1]) }}{% if not loop.last %}; {% endif %}{% endfor %}
-          </span>
-          — Duração: <span class="mono">{{ '%.2f'|format(last_resumo.duracao_s or 0) }}s</span>
-        </div>
-      </div>
-      <div class="d-flex flex-wrap gap-2">
-        <span class="pill">Linhas: <span class="mono">{{ last_resumo.total_linhas }}</span></span>
-        <span class="pill">Válidas: <span class="mono">{{ last_resumo.validas }}</span></span>
-        <span class="pill">Inseridas: <span class="mono">{{ last_resumo.inseridas }}</span></span>
-        <span class="pill">Ignoradas: <span class="mono">{{ last_resumo.ignoradas }}</span></span>
-        <span class="pill">Erros: <span class="mono">{{ last_resumo.erros_linha }}</span></span>
-      </div>
-    </div>
-
-    <hr class="my-3">
-
-    <div class="row g-2">
-      <div class="col-12 col-md-4">
-        <div class="p-3 rounded-3 bg-white border h-100">
-          <div class="muted small">Total bruto</div>
-          <div class="metric">R$ {{ '%.2f'|format(last_resumo.total_bruto or 0) }}</div>
-        </div>
-      </div>
-      <div class="col-12 col-md-4">
-        <div class="p-3 rounded-3 bg-white border h-100">
-          <div class="muted small">Cancelamentos (CA)</div>
-          <div class="metric">- R$ {{ '%.2f'|format(last_resumo.total_ca or 0) }}</div>
-          <div class="muted small mt-1">Linhas CA: <span class="mono">{{ last_resumo.linhas_ca or 0 }}</span></div>
-        </div>
-      </div>
-      <div class="col-12 col-md-4">
-        <div class="p-3 rounded-3 bg-white border h-100">
-          <div class="muted small">Total líquido</div>
-          <div class="metric">R$ {{ '%.2f'|format(last_resumo.total_liquido or 0) }}</div>
-        </div>
-      </div>
-    </div>
-  </div>
-{% endif %}
-
 <div class="row g-3">
       <!-- COLUNA ESQUERDA -->
       <div class="col-lg-7">
@@ -127,6 +74,48 @@
               </div>
               <span class="pill">Seguro reprocessar</span>
             </div>
+
+
+{% if last_resumo %}
+<div class="card border-0 soft-shadow mb-3">
+  <div class="card-body">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+      <div>
+        <div class="fw-semibold">✅ Última importação</div>
+        <div class="muted small">
+          {{ last_resumo.arquivo }} · {{ "%.2f"|format(last_resumo.duracao_s or 0) }}s
+          {% if last_resumo.reprocessar %} · <span class="badge bg-warning text-dark">reprocessado</span>{% endif %}
+        </div>
+      </div>
+      <div class="text-end">
+        <div class="fw-semibold">Líquido: R$ {{ "{:,.2f}".format(last_resumo.total_liquido or 0).replace(",", "X").replace(".", ",").replace("X", ".") }}</div>
+        <div class="muted small">Bruto: R$ {{ "{:,.2f}".format(last_resumo.total_bruto or 0).replace(",", "X").replace(".", ",").replace("X", ".") }} · CA: R$ {{ "{:,.2f}".format(last_resumo.total_ca or 0).replace(",", "X").replace(".", ",").replace("X", ".") }} ({{ last_resumo.ca_linhas or 0 }} linhas)</div>
+      </div>
+    </div>
+
+    <hr class="my-3"/>
+
+    <div class="row g-2">
+      <div class="col-6 col-md-3"><div class="small muted">Lidas</div><div class="fw-semibold">{{ last_resumo.total_linhas }}</div></div>
+      <div class="col-6 col-md-3"><div class="small muted">Válidas</div><div class="fw-semibold">{{ last_resumo.validas }}</div></div>
+      <div class="col-6 col-md-3"><div class="small muted">Inseridas</div><div class="fw-semibold">{{ last_resumo.inseridas }}</div></div>
+      <div class="col-6 col-md-3"><div class="small muted">Ignoradas</div><div class="fw-semibold">{{ last_resumo.ignoradas }}</div></div>
+    </div>
+
+    {% if last_resumo.affected_periods and last_resumo.affected_periods|length > 0 %}
+      <div class="mt-3 muted small">
+        <span class="fw-semibold">Períodos afetados:</span>
+        {% for p in last_resumo.affected_periods[:10] %}
+          <span class="badge bg-light text-dark border">{{ p[0] }} · {{ "%02d"|format(p[2]) }}/{{ p[1] }}</span>
+        {% endfor %}
+        {% if last_resumo.affected_periods|length > 10 %}
+          <span class="muted">(+{{ last_resumo.affected_periods|length - 10 }})</span>
+        {% endif %}
+      </div>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
 
             <form action="/admin/importar" method="POST" enctype="multipart/form-data" id="formImport">
               <div class="dropzone" id="dropzone">
@@ -164,20 +153,16 @@
                   </select>
                   <div class="form-text">Se sua NOTA pode repetir em lojas diferentes, use a opção com EMP.</div>
                 </div>
-              </div>
-
               
-              <div class="form-check mt-3">
-                <input class="form-check-input" type="checkbox" value="1" id="reprocessar_competencia" name="reprocessar_competencia">
-                <label class="form-check-label" for="reprocessar_competencia">
-                  Reprocessar competência do arquivo (apaga o recorte EMP + mês/ano detectado e reimporta)
-                </label>
-                <div class="form-text text-warning">
-                  Use quando o ERP corrigiu vendas do mês ou quando você precisa garantir consistência (ranking/relatórios).
-                  O arquivo deve conter apenas <b>1</b> competência (ano/mês).
-                </div>
-              </div>
+<div class="form-check mt-3">
+  <input class="form-check-input" type="checkbox" value="1" id="reprocessar" name="reprocessar">
+  <label class="form-check-label" for="reprocessar">
+    Reprocessar competência do arquivo (limpa o recorte do mês antes de importar)
+  </label>
+  <div class="muted small">Use quando precisar corrigir um mês/EMP sem apagar o banco inteiro.</div>
+</div>
 
+</div>
 
               <div class="d-flex flex-wrap gap-2 mt-4">
                 <button class="btn btn-primary btn-lg" type="submit" id="btnImportar">Importar agora</button>
@@ -233,49 +218,6 @@
 
       <!-- COLUNA DIREITA -->
       <div class="col-lg-5">
-
-        <!-- LOGS -->
-        <div class="card border-0 soft-shadow mb-3">
-          <div class="card-body p-4">
-            <div class="fw-semibold mb-2">🧾 Últimas importações</div>
-            <div class="muted small mb-3">Histórico para auditoria e rastreabilidade.</div>
-
-            {% if logs and logs|length > 0 %}
-              <div class="table-responsive">
-                <table class="table table-sm align-middle">
-                  <thead>
-                    <tr>
-                      <th>Data</th>
-                      <th>Arquivo</th>
-                      <th>EMPs</th>
-                      <th>Competência</th>
-                      <th class="text-end">Inseridas</th>
-                      <th class="text-end">Ign.</th>
-                      <th class="text-end">Líquido</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {% for l in logs %}
-                    <tr>
-                      <td class="mono small">{{ (l.created_at or '') }}</td>
-                      <td class="small">{{ l.filename or '-' }}</td>
-                      <td class="small mono">{{ l.emps or '-' }}</td>
-                      <td class="small mono">{{ l.competencias or '-' }}</td>
-                      <td class="text-end mono small">{{ l.inseridas }}</td>
-                      <td class="text-end mono small">{{ l.ignoradas }}</td>
-                      <td class="text-end mono small">R$ {{ '%.2f'|format(l.total_liquido or 0) }}</td>
-                    </tr>
-                    {% endfor %}
-                  </tbody>
-                </table>
-              </div>
-            {% else %}
-              <div class="muted small">Nenhum log de importação ainda.</div>
-            {% endif %}
-          </div>
-        </div>
-
-
         <!-- AJUDA -->
         <div class="card border-0 soft-shadow mb-3">
           <div class="card-body p-4">
@@ -408,4 +350,42 @@
 
     setInfo();
   </script>
+
+
+<div class="card border-0 soft-shadow mt-4">
+  <div class="card-body">
+    <div class="fw-semibold mb-2">🧾 Últimas importações</div>
+    <div class="table-responsive">
+      <table class="table table-sm align-middle mb-0">
+        <thead>
+          <tr>
+            <th>Data</th>
+            <th>Arquivo</th>
+            <th>Linhas</th>
+            <th>Inseridas</th>
+            <th>Ignoradas</th>
+            <th>Líquido</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for it in import_logs or [] %}
+            <tr>
+              <td class="small">{{ it.criado_em.strftime("%d/%m/%Y %H:%M") if it.criado_em else "" }}</td>
+              <td class="small">{{ it.arquivo_nome or "-" }}</td>
+              <td class="small">{{ it.total_linhas or 0 }}</td>
+              <td class="small">{{ it.inseridas or 0 }}</td>
+              <td class="small">{{ it.ignoradas or 0 }}</td>
+              <td class="small">
+                R$ {{ "{:,.2f}".format(it.total_liquido or 0).replace(",", "X").replace(".", ",").replace("X", ".") }}
+              </td>
+            </tr>
+          {% else %}
+            <tr><td colspan="6" class="muted small">Nenhuma importação registrada ainda.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
 {% endblock %}

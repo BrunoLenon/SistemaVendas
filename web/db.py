@@ -3,11 +3,6 @@ from datetime import datetime
 from urllib.parse import quote_plus
 
 from sqlalchemy import create_engine, Column, Integer, String, Float, Date, DateTime, Text, Boolean, Index, UniqueConstraint, text, func
-try:
-    from sqlalchemy.dialects.postgresql import JSONB
-except Exception:  # pragma: no cover
-    JSONB = None  # type: ignore
-
 from sqlalchemy.orm import declarative_base, sessionmaker, synonym
 
 # =====================
@@ -1063,80 +1058,36 @@ class FinanceiroPagamento(Base):
 
 
 
-class RelatorioSnapshotMensal(Base):
-    """Snapshot oficial mensal do relatório unificado (QTD/COMBO/PARADO).
-
-    Ideia: após gerar/fechar o mês, os relatórios passam a ler daqui para garantir
-    consistência contábil e performance (sem recálculo em request-time).
-    """
-    __tablename__ = "relatorio_snapshot_mensal"
-
-    id = Column(Integer, primary_key=True)
-
-    competencia_ano = Column(Integer, nullable=False, index=True)
-    competencia_mes = Column(Integer, nullable=False, index=True)
-
-    emp = Column(String(32), nullable=False, index=True)
-    vendedor = Column(String(120), nullable=False, index=True)
-
-    tipo = Column(String(20), nullable=False)  # QTD | COMBO | PARADO
-    titulo = Column(Text, nullable=False)
-
-    atingiu_gate = Column(Boolean, nullable=True)
-    qtd_base = Column(Float, nullable=True)
-    qtd_premiada = Column(Float, nullable=True)
-
-    valor_recompensa = Column(Float, nullable=False, default=0.0)
-    status_pagamento = Column(String(20), nullable=False, default="PENDENTE")
-    pago_em = Column(DateTime, nullable=True)
-
-    origem_id = Column(Integer, nullable=True)
-
-    criado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
-
-    __table_args__ = (
-        Index("ix_snap_comp_emp_vend", "competencia_ano", "competencia_mes", "emp", "vendedor"),
-        Index("ix_snap_comp_tipo", "competencia_ano", "competencia_mes", "tipo"),
-        UniqueConstraint(
-            "competencia_ano", "competencia_mes", "emp", "vendedor", "tipo", "titulo", "origem_id",
-            name="uq_snap_row"
-        ),
-    )
-
-
 
 class ImportacaoLog(Base):
-    """Log/auditoria de importações de vendas.
-
-    Guarda um resumo da importação (contadores, totais e metadados) para rastreabilidade.
-    """
     __tablename__ = "importacoes_log"
 
     id = Column(Integer, primary_key=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
 
-    usuario = Column(String(120), nullable=True, index=True)
-    filename = Column(String(255), nullable=True)
+    usuario = Column(String(80), nullable=True)
+    arquivo_nome = Column(String(255), nullable=True)
 
-    # Contexto do arquivo/processo
-    emps = Column(String(255), nullable=True)  # CSV de EMPs afetadas
-    competencias = Column(String(255), nullable=True)  # CSV de (ano-mes) afetados, ex: 2026-02;2026-03
+    criado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
 
-    total_linhas = Column(Integer, nullable=False, default=0)
-    validas = Column(Integer, nullable=False, default=0)
-    inseridas = Column(Integer, nullable=False, default=0)
-    atualizadas = Column(Integer, nullable=False, default=0)
-    ignoradas = Column(Integer, nullable=False, default=0)
-    erros_linha = Column(Integer, nullable=False, default=0)
+    emps_json = Column(Text, nullable=True)
+    periodos_json = Column(Text, nullable=True)
+    resumo_json = Column(Text, nullable=True)
 
-    total_bruto = Column(Float, nullable=False, default=0.0)
-    total_ca = Column(Float, nullable=False, default=0.0)
-    total_liquido = Column(Float, nullable=False, default=0.0)
-    linhas_ca = Column(Integer, nullable=False, default=0)
+    total_linhas = Column(Integer, nullable=True)
+    validas = Column(Integer, nullable=True)
+    inseridas = Column(Integer, nullable=True)
+    ignoradas = Column(Integer, nullable=True)
+    erros_linha = Column(Integer, nullable=True)
 
-    # JSONB se disponível (Postgres). Fallback em Text.
-    resumo = Column(JSONB if JSONB is not None else Text, nullable=True)
+    total_bruto = Column(Float, nullable=True)
+    total_ca = Column(Float, nullable=True)
+    total_liquido = Column(Float, nullable=True)
+    ca_linhas = Column(Integer, nullable=True)
+    duracao_s = Column(Float, nullable=True)
 
+    __table_args__ = (
+        Index("ix_importacoes_log_criado_em", "criado_em"),
+    )
 
 class FinanceiroAudit(Base):
     __tablename__ = "financeiro_audit"
@@ -1151,7 +1102,7 @@ class FinanceiroAudit(Base):
     usuario = Column(Text, nullable=True)
     criado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
 
-    meta = Column(JSONB if JSONB is not None else Text, nullable=True)
+    meta = Column(Text, nullable=True)
 
     __table_args__ = (
         Index("ix_fin_audit_pagamento", "pagamento_id"),

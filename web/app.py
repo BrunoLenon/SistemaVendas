@@ -13,7 +13,6 @@ from services.campanhas_service import (
     build_relatorio_campanhas_scope,
 )
 from services.relatorio_campanhas_service import build_relatorio_campanhas_context, build_relatorio_campanhas_unificado_context
-from services.relatorio_unificado_service import gerar_snapshot_mensal
 from services.campanhas_v2_engine import recalc_v2_competencia
 import os
 import re
@@ -22,6 +21,7 @@ import logging
 import json
 from datetime import date, datetime, timedelta
 import calendar
+import time
 from io import BytesIO
 
 from decimal import Decimal, ROUND_HALF_UP
@@ -56,8 +56,8 @@ from db import (
     MensagemLidaDiaria,
     Venda,
     DashboardCache,
-    ImportacaoLog,
     ItemParado,
+    ItemParadoResultado,
     CampanhaQtd,
     CampanhaQtdResultado,
     CampanhaCombo,
@@ -73,6 +73,7 @@ from db import (
     FechamentoMensal,
     AppSetting,
     BrandingTheme,
+    ImportacaoLog,
     criar_tabelas,
 )
 from importar_excel import importar_planilha, scan_metadata_xlsx
@@ -4702,7 +4703,6 @@ def admin_cache_refresh():
 
 
 
-@app.route("/admin/importar", methods=["GET", "POST"])
 def admin_importar():
     red = _login_required()
     if red:
@@ -4711,21 +4711,21 @@ def admin_importar():
     if red:
         return red
 
-    # GET: mostra página + últimos logs e (se existir) resumo da última importação
+    # Mostra logs e último resumo
     if request.method == "GET":
-        last_resumo = session.pop("last_import_resumo", None)
+        last_resumo = session.get("import_last_resumo")
         logs = []
         try:
-            with SessionLocal() as db:
-                logs = (
-                    db.query(ImportacaoLog)
-                    .order_by(ImportacaoLog.id.desc())
-                    .limit(12)
-                    .all()
-                )
+            db = SessionLocal()
+            logs = db.query(ImportacaoLog).order_by(ImportacaoLog.criado_em.desc()).limit(15).all()
         except Exception:
             logs = []
-        return render_template("admin_importar.html", last_resumo=last_resumo, logs=logs)
+        finally:
+            try:
+                db.close()
+            except Exception:
+                pass
+        return render_template("admin_importar.html", last_resumo=last_resumo, import_logs=logs)
 
     arquivo = request.files.get("arquivo")
     if not arquivo or not arquivo.filename:
@@ -4737,8 +4737,11 @@ def admin_importar():
         return redirect(url_for("admin_importar"))
 
     modo = request.form.get("modo", "ignorar_duplicados")
+    # IMPORTANTISSIMO:
+    # A chave de deduplicidade precisa bater com o indice/constraint UNIQUE do banco.
     chave = request.form.get("chave", "mestre_movimento_vendedor_nota_tipo_emp")
-    reprocessar = request.form.get("reprocessar_competencia") == "1"
+
+    reprocessar = (request.form.get("reprocessar") in ("1", "true", "on", "yes"))
 
     # Salva temporariamente
     import tempfile
@@ -4747,74 +4750,87 @@ def admin_importar():
         arquivo.save(tmp.name)
         tmp_path = tmp.name
 
-    t0 = datetime.utcnow()
+    started = time.time()
 
     try:
-        # Se o usuário pediu reprocessamento, deletamos apenas o recorte (EMP + competência) detectado no arquivo
-        meta = None
+        # Reprocessamento: apaga apenas a competência/EMP do arquivo (sem precisar "zerar tudo")
         if reprocessar:
             meta = scan_metadata_xlsx(tmp_path)
-            if not meta or not meta.get("ok"):
-                flash(meta.get("msg") if isinstance(meta, dict) else "Falha ao ler metadata do arquivo.", "danger")
+            if not meta.get("ok"):
+                flash(meta.get("msg", "Falha ao identificar EMP/competência do arquivo."), "danger")
                 return redirect(url_for("admin_importar"))
 
-            competencias = meta.get("competencias") or []
+            periodos = meta.get("periodos") or []
             emps = meta.get("emps") or []
-            if not emps:
-                flash("Não foi possível detectar EMP(s) no arquivo. Reprocessamento cancelado.", "danger")
-                return redirect(url_for("admin_importar"))
+            competencias = sorted({(a, m) for _, a, m in periodos})
+
             if len(competencias) != 1:
-                flash(
-                    "Reprocessamento exige arquivo com apenas 1 competência (ano/mês). "
-                    f"Detectado: {competencias}. Importe normalmente ou separe por mês.",
-                    "warning",
-                )
+                flash("Reprocessar exige arquivo com apenas 1 competência (ano/mês).", "warning")
                 return redirect(url_for("admin_importar"))
 
-            ano, mes = competencias[0]
-            # Deleta vendas e snapshots do recorte para evitar dados misturados
-            with SessionLocal() as db:
-                try:
-                    # vendas
+            ano_alvo, mes_alvo = competencias[0]
+            d1 = date(int(ano_alvo), int(mes_alvo), 1)
+            ultimo = calendar.monthrange(int(ano_alvo), int(mes_alvo))[1]
+            d2 = date(int(ano_alvo), int(mes_alvo), int(ultimo))
+
+            db = SessionLocal()
+            try:
+                # Vendas (por intervalo de datas do mês)
+                if emps:
                     db.query(Venda).filter(
-                        Venda.emp.in_(emps),
-                        Venda.ano == int(ano),
-                        Venda.mes == int(mes),
+                        Venda.emp.in_([str(e) for e in emps]),
+                        Venda.movimento >= d1,
+                        Venda.movimento <= d2,
                     ).delete(synchronize_session=False)
 
-                    # resultados / snapshots (qtd, combo, itens parados, unificado)
+                    # Cache do dashboard (PK composta: emp, vendedor, ano, mes)
+                    db.query(DashboardCache).filter(
+                        DashboardCache.emp.in_([str(e) for e in emps]),
+                        DashboardCache.ano == int(ano_alvo),
+                        DashboardCache.mes == int(mes_alvo),
+                    ).delete(synchronize_session=False)
+
+                    # Resultados/snapshots do mês (para evitar mistura de dados antigos com novos)
                     db.query(CampanhaQtdResultado).filter(
-                        CampanhaQtdResultado.emp.in_(emps),
-                        CampanhaQtdResultado.competencia_ano == int(ano),
-                        CampanhaQtdResultado.competencia_mes == int(mes),
+                        CampanhaQtdResultado.emp.in_([str(e) for e in emps]),
+                        CampanhaQtdResultado.competencia_ano == int(ano_alvo),
+                        CampanhaQtdResultado.competencia_mes == int(mes_alvo),
                     ).delete(synchronize_session=False)
 
                     db.query(CampanhaComboResultado).filter(
-                        CampanhaComboResultado.emp.in_(emps),
-                        CampanhaComboResultado.competencia_ano == int(ano),
-                        CampanhaComboResultado.competencia_mes == int(mes),
+                        CampanhaComboResultado.emp.in_([str(e) for e in emps]),
+                        CampanhaComboResultado.competencia_ano == int(ano_alvo),
+                        CampanhaComboResultado.competencia_mes == int(mes_alvo),
                     ).delete(synchronize_session=False)
 
                     db.query(ItemParadoResultado).filter(
-                        ItemParadoResultado.emp.in_(emps),
-                        ItemParadoResultado.competencia_ano == int(ano),
-                        ItemParadoResultado.competencia_mes == int(mes),
+                        ItemParado.emp.in_([str(e) for e in emps]),
+                        ItemParado.competencia_ano == int(ano_alvo),
+                        ItemParado.competencia_mes == int(mes_alvo),
                     ).delete(synchronize_session=False)
 
-                    db.query(RelatorioSnapshotMensal).filter(
-                        RelatorioSnapshotMensal.emp.in_(emps),
-                        RelatorioSnapshotMensal.competencia_ano == int(ano),
-                        RelatorioSnapshotMensal.competencia_mes == int(mes),
+                    db.query(VendasResumoPeriodo).filter(
+                        VendasResumoPeriodo.emp.in_([str(e) for e in emps]),
+                        VendasResumoPeriodo.ano == int(ano_alvo),
+                        VendasResumoPeriodo.mes == int(mes_alvo),
                     ).delete(synchronize_session=False)
 
-                    db.commit()
+                db.commit()
+                flash(f"Reprocessando competência {int(mes_alvo):02d}/{int(ano_alvo)} (limpeza do recorte concluída).", "info")
+            except Exception:
+                db.rollback()
+                app.logger.exception("Erro ao reprocessar (limpeza de recorte)")
+                flash("Falha ao reprocessar: erro ao limpar dados do recorte. Veja logs.", "danger")
+                return redirect(url_for("admin_importar"))
+            finally:
+                try:
+                    db.close()
                 except Exception:
-                    db.rollback()
-                    app.logger.exception("Falha ao reprocessar (delete recorte)")
-                    flash("Falha ao reprocessar competência. Veja logs no Render.", "danger")
-                    return redirect(url_for("admin_importar"))
+                    pass
 
         resumo = importar_planilha(tmp_path, modo=modo, chave=chave)
+
+        duracao = round(time.time() - started, 3)
 
         if not resumo.get("ok"):
             faltando = resumo.get("faltando")
@@ -4824,50 +4840,71 @@ def admin_importar():
                 flash(resumo.get("msg", "Falha ao importar."), "danger")
             return redirect(url_for("admin_importar"))
 
-        dt = (datetime.utcnow() - t0).total_seconds()
+        # Salva um resumo para renderizar no topo (UX)
+        last = {
+            "arquivo": arquivo.filename,
+            "reprocessar": bool(reprocessar),
+            "duracao_s": duracao,
+            "total_linhas": resumo.get("total_linhas"),
+            "validas": resumo.get("validas"),
+            "inseridas": resumo.get("inseridas"),
+            "ignoradas": resumo.get("ignoradas"),
+            "erros_linha": resumo.get("erros_linha"),
+            "total_bruto": resumo.get("total_bruto"),
+            "total_ca": resumo.get("total_ca"),
+            "total_liquido": resumo.get("total_liquido"),
+            "ca_linhas": resumo.get("ca_linhas"),
+            "affected_periods": resumo.get("affected_periods") or [],
+        }
+        session["import_last_resumo"] = last
 
-        # Salva resumo em sessão para mostrar no topo após redirect
-        resumo_ui = dict(resumo)
-        resumo_ui["duracao_s"] = float(dt)
-        resumo_ui["filename"] = arquivo.filename
-        resumo_ui["reprocessado"] = bool(reprocessar)
-        session["last_import_resumo"] = resumo_ui
+        flash(
+            (
+                f"Importação concluída. Válidas: {resumo['validas']} | "
+                f"Inseridas: {resumo['inseridas']} | "
+                f"Ignoradas: {resumo['ignoradas']} | "
+                f"Erros: {resumo['erros_linha']}"
+            ),
+            "success",
+        )
 
-        # Persiste um log de importação (auditoria)
+        # Log no banco (auditoria operacional)
         try:
-            usuario_nome = (session.get("user") or {}).get("username") if isinstance(session.get("user"), dict) else session.get("username")
+            db = SessionLocal()
+            periods = resumo.get("affected_periods") or []
+            emps = sorted({str(p[0]) for p in periods}) if periods else []
+            competencias = sorted({(int(p[1]), int(p[2])) for p in periods}) if periods else []
+            log = ImportacaoLog(
+                usuario=(session.get("usuario") or session.get("username") or ""),
+                arquivo_nome=arquivo.filename,
+                emps_json=json.dumps(emps, ensure_ascii=False),
+                periodos_json=json.dumps(periods, ensure_ascii=False),
+                resumo_json=json.dumps(last, ensure_ascii=False),
+                total_linhas=int(resumo.get("total_linhas") or 0),
+                validas=int(resumo.get("validas") or 0),
+                inseridas=int(resumo.get("inseridas") or 0),
+                ignoradas=int(resumo.get("ignoradas") or 0),
+                erros_linha=int(resumo.get("erros_linha") or 0),
+                total_bruto=float(resumo.get("total_bruto") or 0.0),
+                total_ca=float(resumo.get("total_ca") or 0.0),
+                total_liquido=float(resumo.get("total_liquido") or 0.0),
+                ca_linhas=int(resumo.get("ca_linhas") or 0),
+                duracao_s=float(duracao),
+            )
+            db.add(log)
+            db.commit()
         except Exception:
-            usuario_nome = None
+            try:
+                db.rollback()
+            except Exception:
+                pass
+        finally:
+            try:
+                db.close()
+            except Exception:
+                pass
 
-        try:
-            with SessionLocal() as db:
-                emps = resumo.get("emps_afetadas") or []
-                competencias = resumo.get("competencias_afetadas") or []
-                log = ImportacaoLog(
-                    usuario=usuario_nome,
-                    filename=arquivo.filename,
-                    emps=",".join([str(e) for e in emps]) if emps else None,
-                    competencias=";".join([f"{a:04d}-{m:02d}" for a, m in competencias]) if competencias else None,
-                    total_linhas=int(resumo.get("total_linhas") or 0),
-                    validas=int(resumo.get("validas") or 0),
-                    inseridas=int(resumo.get("inseridas") or 0),
-                    atualizadas=int(resumo.get("atualizadas") or 0),
-                    ignoradas=int(resumo.get("ignoradas") or 0),
-                    erros_linha=int(resumo.get("erros_linha") or 0),
-                    total_bruto=float(resumo.get("total_bruto") or 0.0),
-                    total_ca=float(resumo.get("total_ca") or 0.0),
-                    total_liquido=float(resumo.get("total_liquido") or 0.0),
-                    linhas_ca=int(resumo.get("linhas_ca") or 0),
-                    resumo=resumo_ui,
-                )
-                db.add(log)
-                db.commit()
-        except Exception:
-            app.logger.exception("Falha ao gravar ImportacaoLog (não bloqueante)")
-
-        flash("Importação concluída. Veja o resumo no topo.", "success")
-
-        # Limpa cache do DataFrame para refletir novos dados imediatamente
+        # Limpa cache de DataFrame (se existir) para refletir novos dados imediatamente
         try:
             limpar_cache_df()
         except Exception:
@@ -4887,7 +4924,6 @@ def admin_importar():
 
 
 @app.route("/admin/itens_parados", methods=["GET", "POST"])
-, methods=["GET", "POST"])
 def admin_itens_parados():
     """Cadastro de itens parados (liquidação) por EMP.
 
@@ -4935,7 +4971,7 @@ def admin_itens_parados():
 
                 elif acao == 'toggle':
                     item_id = int(request.form.get('item_id') or 0)
-                    it = db.query(ItemParado).filter(ItemParado.id == item_id).first()
+                    it = db.query(ItemParadoResultado).filter(ItemParadoResultado.id == item_id).first()
                     if not it:
                         raise ValueError('Item não encontrado.')
                     it.ativo = 0 if int(it.ativo or 0) == 1 else 1
@@ -4945,7 +4981,7 @@ def admin_itens_parados():
 
                 elif acao == 'remover':
                     item_id = int(request.form.get('item_id') or 0)
-                    it = db.query(ItemParado).filter(ItemParado.id == item_id).first()
+                    it = db.query(ItemParadoResultado).filter(ItemParadoResultado.id == item_id).first()
                     if not it:
                         raise ValueError('Item não encontrado.')
                     db.delete(it)
@@ -5646,8 +5682,6 @@ def admin_fechamento():
         "pago": "fechar_pago",
         "reabrir": "reabrir",
         "abrir": "reabrir",
-        "gerar_snapshot": "gerar_snapshot",
-        "snapshot": "gerar_snapshot",
     }.get(acao_raw, acao_raw)
 
     with SessionLocal() as db:
@@ -5662,26 +5696,12 @@ def admin_fechamento():
             except Exception:
                 emps_all = []
 
-        if request.method == "POST" and acao in {"fechar_a_pagar", "fechar_pago", "reabrir", "gerar_snapshot"}:
+        if request.method == "POST" and acao in {"fechar_a_pagar", "fechar_pago", "reabrir"}:
             app.logger.info("FECHAMENTO POST: form=%s values=%s", dict(request.form), {k: request.values.getlist(k) for k in request.values.keys()})
             if not emps_sel:
                 msgs.append("⚠️ Selecione ao menos 1 EMP para fechar/reabrir.")
             else:
-                if acao == "gerar_snapshot":
-                    try:
-                        vendedores_por_emp = {emp: _get_vendedores_emp_no_periodo(emp, ano, mes) for emp in emps_sel}
-                        res = gerar_snapshot_mensal(ano=ano, mes=mes, emps=emps_sel, vendedores_por_emp=vendedores_por_emp)
-                        msgs.append(f"✅ Snapshot mensal gerado: {res.get('total', 0)} linhas (competência {mes:02d}/{ano}).")
-                    except Exception as e:
-                        try:
-                            db.rollback()
-                        except Exception:
-                            pass
-                        msgs.append("⚠️ Não foi possível gerar o snapshot agora. Veja logs para detalhes.")
-                        app.logger.exception("Erro ao gerar snapshot mensal: %s", e)
-                    # continua para renderizar status
-                else:
-                    alvo_status = None
+                alvo_status = None
                 updated_count = 0
                 if acao == "fechar_a_pagar":
                     alvo_status = "a_pagar"
