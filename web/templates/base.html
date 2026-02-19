@@ -27,7 +27,7 @@
 
 <body>
   {% set r = (role|default('')|lower) %}
-  {% set is_logged = (r in ['admin','supervisor','vendedor']) %}
+  {% set is_logged = (r in ['admin','supervisor','vendedor','financeiro']) %}
 
   {% if is_logged %}
     <!-- Offcanvas menu (mobile) -->

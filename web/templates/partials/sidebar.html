@@ -3,6 +3,7 @@
 {% set is_admin = (r == 'admin') %}
 {% set is_supervisor = (r == 'supervisor') %}
 {% set is_vendedor = (r == 'vendedor') %}
+{% set is_financeiro = (r == 'financeiro') %}
 
 <div class="sidebar-brand px-3 py-3">
   {% if branding and branding.logo_url %}
@@ -40,7 +41,15 @@
 
   {% if is_supervisor %}
     <div class="mt-2 mb-1 px-2 text-uppercase text-muted small">Gestão</div>
-    <a class="nav-link {% if path.startswith('/admin/mensagens') %}active{% endif %}" href="/admin/mensagens">📣 Mensagens</a>
+    <a class="nav-link {% if path.startswith('/admin/mensagens') %}active{% endif %}
+  {% if is_financeiro %}
+    <div class="mt-2 mb-1 px-2 text-uppercase text-muted small">Financeiro</div>
+    <a class="nav-link {% if path.startswith('/financeiro/campanhas_v2') %}active{% endif %}" href="/financeiro/campanhas_v2">💰 Campanhas (Financeiro)</a>
+    <a class="nav-link {% if path.startswith('/financeiro/fechamento_v2') %}active{% endif %}" href="/financeiro/fechamento_v2">✅ Fechamento (V2)</a>
+    <a class="nav-link {% if path.startswith('/admin/fechamento') %}active{% endif %}" href="/admin/fechamento">✅ Fechamento</a>
+  {% endif %}
+
+" href="/admin/mensagens">📣 Mensagens</a>
     <a class="nav-link {% if path.startswith('/admin/metas') %}active{% endif %}" href="/admin/metas">🏁 Metas</a>
   {% endif %}
 
@@ -62,17 +71,4 @@
   <div class="my-2 border-top border-light-subtle"></div>
   <a class="nav-link text-danger" href="/logout">🚪 Sair</a>
 </nav>
-
-{% if role == "FINANCEIRO" %}
-  <div class="sidebar-section-title">FINANCEIRO</div>
-  <a href="/financeiro/campanhas_v2" class="sidebar-link">
-    <span class="sidebar-icon">💰</span>
-    Campanhas (Financeiro)
-  </a>
-  <a href="/financeiro/fechamento_v2" class="sidebar-link">
-    <span class="sidebar-icon">✅</span>
-    Fechamento (V2)
-  </a>
-{% endif %}
-
 

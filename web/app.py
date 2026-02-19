@@ -207,6 +207,32 @@ def brl(value):
     except Exception:
         return "0,00"
     return f"{num:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+@app.template_filter("brl")
+def brl(value):
+    """Formata números no padrão brasileiro (ex: 21.555.384,00).
+
+    Retorna "0,00" para None/valores inválidos.
+    """
+    if value is None:
+        return "0,00"
+    try:
+        num = float(value)
+    except Exception:
+        return "0,00"
+    return f"{num:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+# --------------------------
+# Filtro Jinja: moeda brasileira (com R$)
+# --------------------------
+@app.template_filter("brl_rs")
+def brl_rs(value):
+    """Formata valores monetários no padrão brasileiro com prefixo 'R$' (ex: R$12.345,67)."""
+    s = brl(value)
+    # brl() já devolve '0,00' em erro
+    if s.startswith("-"):
+        return "R$-" + s[1:]
+    return "R$" + s
+
 
 # Logs no stdout (Render captura automaticamente)
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
@@ -3010,6 +3036,14 @@ def campanhas_qtd():
     emp_usuario = _emp()
     vendedor_logado = (_usuario_logado() or "").strip().upper()
 
+    # Flags de permissão para a UI (templates)
+    ctx_role = role
+    ctx_is_admin = (ctx_role == "admin")
+    ctx_is_supervisor = (ctx_role == "supervisor")
+    ctx_is_vendedor = (ctx_role == "vendedor")
+    ctx_is_financeiro = (ctx_role == "financeiro")
+
+
     ctx = build_campanhas_page_context(
         _campanhas_deps,
         role=role,
@@ -3546,6 +3580,14 @@ def relatorio_campanhas():
         recalc=str(request.args.get("recalc") or "").strip() in ("1", "true", "True", "sim", "SIM"),
         flash=flash,
     )
+    # Permissões para template
+    ctx["role"] = role
+    ctx["is_admin"] = ctx_is_admin
+    ctx["is_supervisor"] = ctx_is_supervisor
+    ctx["is_vendedor"] = ctx_is_vendedor
+    ctx["is_financeiro"] = ctx_is_financeiro
+
+
 
     # Paginação simples (client-side seria ok, mas server-side evita payloads enormes)
     try:
