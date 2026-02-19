@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Any, Iterable
 
-from sqlalchemy import or_, func, cast, String
+from sqlalchemy import or_, func, String
 
 from db import (
     SessionLocal,
@@ -92,17 +92,8 @@ def build_unified_rows(
     rows: list[UnifiedRow] = []
 
     with SessionLocal() as db:
-        def _qall(q):
-            try:
-                return q.all()
-            except Exception as e:
-                try:
-                    db.rollback()
-                except Exception:
-                    pass
-                print(f"[RELATORIO_UNIFICADO] erro SQL: {e}")
-                raise
         for emp in emps:
+            emp_str = str(emp).strip()
             vendedores = [v.strip().upper() for v in (vendedores_por_emp.get(emp) or []) if (v or "").strip()]
             if not vendedores:
                 continue
@@ -113,14 +104,24 @@ def build_unified_rows(
                 .filter(
                     CampanhaQtdResultado.competencia_ano == int(ano),
                     CampanhaQtdResultado.competencia_mes == int(mes),
-                    cast(CampanhaQtdResultado.emp, String) == str(emp),
+                    func.cast(CampanhaQtdResultado.emp, String) == emp_str,
                     CampanhaQtdResultado.vendedor.in_(vendedores),
                 )
             )
             if not incluir_zerados:
                 q_qtd = q_qtd.filter(CampanhaQtdResultado.valor_recompensa > 0)
 
-            for r in _qall(q_qtd):
+            try:
+                qtd_all = q_qtd.all()
+            except Exception as e:
+                try:
+                    db.rollback()
+                except Exception:
+                    pass
+                print(f"[RELATORIO_UNIFICADO] erro QTD emp={emp_str}: {e}")
+                qtd_all = []
+
+            for r in qtd_all:
                 recompensa_unit = _safe_float(getattr(r, "recompensa_unit", 0.0))
                 valor_recompensa = _safe_float(getattr(r, "valor_recompensa", 0.0))
                 qtd_prem = None
@@ -151,14 +152,24 @@ def build_unified_rows(
                 .filter(
                     CampanhaComboResultado.competencia_ano == int(ano),
                     CampanhaComboResultado.competencia_mes == int(mes),
-                    cast(CampanhaComboResultado.emp, String) == str(emp),
+                    func.cast(CampanhaComboResultado.emp, String) == emp_str,
                     CampanhaComboResultado.vendedor.in_(vendedores),
                 )
             )
             if not incluir_zerados:
                 q_combo = q_combo.filter(CampanhaComboResultado.valor_recompensa > 0)
 
-            for r in _qall(q_combo):
+            try:
+                combo_all = q_combo.all()
+            except Exception as e:
+                try:
+                    db.rollback()
+                except Exception:
+                    pass
+                print(f"[RELATORIO_UNIFICADO] erro COMBO emp={emp_str}: {e}")
+                combo_all = []
+
+            for r in combo_all:
                 rows.append(
                     UnifiedRow(
                         tipo="COMBO",
@@ -186,14 +197,19 @@ def build_unified_rows(
                         .filter(
                             ItemParadoResultado.competencia_ano == int(ano),
                             ItemParadoResultado.competencia_mes == int(mes),
-                            cast(ItemParadoResultado.emp, String) == str(emp),
+                            func.cast(ItemParadoResultado.emp, String) == emp_str,
                             ItemParadoResultado.vendedor.in_(vendedores),
                         )
                     )
                     if not incluir_zerados:
                         q_par = q_par.filter(ItemParadoResultado.valor_recompensa > 0)
                     par_all = q_par.all()
-                except Exception:
+                except Exception as e:
+                    try:
+                        db.rollback()
+                    except Exception:
+                        pass
+                    print(f"[RELATORIO_UNIFICADO] erro PARADO snapshot emp={emp_str}: {e}")
                     par_all = []
                 for r in par_all:
                     rows.append(
@@ -218,7 +234,7 @@ def build_unified_rows(
             else:
                 parados_defs = (
                     db.query(ItemParado)
-                    .filter(ItemParado.ativo.is_(True), cast(ItemParado.emp, String) == str(emp))
+                    .filter(ItemParado.ativo.is_(True), ItemParado.emp == emp_str)
                     .order_by(ItemParado.descricao.asc())
                     .all()
                 )
@@ -230,10 +246,11 @@ def build_unified_rows(
                     if pct <= 0:
                         continue
 
-                    base_rows = (
-                        db.query(Venda.vendedor, func.sum(Venda.valor_total))
+                    try:
+                        base_rows = (
+                            db.query(Venda.vendedor, func.sum(Venda.valor_total))
                         .filter(
-                            Venda.emp == str(emp),
+                            Venda.emp == emp_str,
                             Venda.movimento >= periodo_ini,
                             Venda.movimento <= periodo_fim,
                             ~Venda.mov_tipo_movto.in_(["DS", "CA"]),
@@ -242,7 +259,14 @@ def build_unified_rows(
                         )
                         .group_by(Venda.vendedor)
                         .all()
-                    )
+                        )
+                    except Exception as e:
+                        try:
+                            db.rollback()
+                        except Exception:
+                            pass
+                        print(f"[RELATORIO_UNIFICADO] erro PARADO ao vivo emp={emp_str}: {e}")
+                        base_rows = []
 
                     for vend, base_val in base_rows:
                         vend_u = (vend or "").strip().upper()
