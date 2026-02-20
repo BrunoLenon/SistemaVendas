@@ -1,5 +1,8 @@
 {% extends 'base.html' %}
 {% block content %}
+{% set _today = today|default(None, true) %}
+{% set _default_ini = (_today.replace(day=1)|string) if _today else '' %}
+{% set _default_fim = (_today.replace(month=12, day=31)|string) if _today else '' %}
 <div class="container-fluid py-3">
   <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
     <div>
@@ -68,11 +71,11 @@
             <div class="row g-2 mt-1">
               <div class="col-md-6">
                 <label class="form-label">Vigência início</label>
-                <input type="date" class="form-control" name="vigencia_ini" value="{{ (edit_obj.vigencia_ini|string) if edit_obj else (today.replace(day=1)|string) }}" />
+                <input type="date" class="form-control" name="vigencia_ini" value="{{ (edit_obj.vigencia_ini|string) if edit_obj else _default_ini }}" />
               </div>
               <div class="col-md-6">
                 <label class="form-label">Vigência fim</label>
-                <input type="date" class="form-control" name="vigencia_fim" value="{{ (edit_obj.vigencia_fim|string) if edit_obj else ((today and today.replace(month=12, day=31)) or '') }}" />
+                <input type="date" class="form-control" name="vigencia_fim" value="{{ (edit_obj.vigencia_fim|string) if edit_obj else _default_fim }}" />
               </div>
             </div>
 
