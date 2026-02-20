@@ -63,22 +63,19 @@ def create_app() -> Flask:
                 pass
 
 
-    # GARANTIA CRÍTICA: /admin/campanhas_v2 precisa existir (admin_campanhas_v2.html depende).
-    # Após a migração para app-factory/blueprints, essa rota pode não ficar registrada no app legado.
+    # GARANTIA: cadastro de campanhas V2 (admin) precisa existir (rota /admin/campanhas_v2).
+    # Este blueprint é independente do monolito e mantém o cadastro/ações V2 estáveis.
     try:
-        if 'admin_campanhas_v2' not in app.view_functions:
-            from authz import admin_required  # noqa
-            from web.blueprints.admin import admin_campanhas_v2 as _admin_campanhas_v2  # noqa
-            app.add_url_rule(
-                '/admin/campanhas_v2',
-                endpoint='admin_campanhas_v2',
-                view_func=admin_required(_admin_campanhas_v2),
-                methods=['GET', 'POST'],
-            )
+        from web.blueprints.campanhas_v2_admin import bp as campanhas_v2_admin_bp  # noqa
+        _safe_register_blueprint(app, campanhas_v2_admin_bp, "campanhas_v2_admin")
     except Exception:
         try:
-            app.logger.exception("Falha ao garantir rota '/admin/campanhas_v2' no create_app()")
+            from blueprints.campanhas_v2_admin import bp as campanhas_v2_admin_bp  # type: ignore
+            _safe_register_blueprint(app, campanhas_v2_admin_bp, "campanhas_v2_admin")
         except Exception:
-            pass
+            try:
+                app.logger.exception("Falha ao registrar blueprint 'campanhas_v2_admin' no create_app()")
+            except Exception:
+                pass
 
     return app
