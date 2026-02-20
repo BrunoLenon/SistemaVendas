@@ -6,12 +6,6 @@ from typing import Any, Callable
 from services.campanhas_v2_service import list_resultados_v2
 
 
-
-
-def _parse_bool(val: Any) -> bool:
-    s = str(val or "").strip().lower()
-    return s in ("1", "true", "t", "yes", "y", "sim", "s", "on")
-
 @dataclass(frozen=True)
 class CampanhasDeps:
     """Dependências injetadas a partir do app.py.
@@ -47,6 +41,13 @@ class CampanhasDeps:
     recalcular_resultados_combos_para_scope: Callable[[int, int, list[str], dict[str, list[str]]], None]
 
 
+def _parse_bool(val: Any) -> bool:
+    if val is None:
+        return False
+    s = str(val).strip().lower()
+    return s in ("1", "true", "t", "yes", "y", "on")
+
+
 def build_campanhas_page_context(
     deps: CampanhasDeps,
     *,
@@ -57,7 +58,10 @@ def build_campanhas_page_context(
 ) -> dict[str, Any]:
     """Monta o context do template de /campanhas.
 
-    Mantém o mesmo comportamento atual, mas concentra a lógica aqui.
+    Importante (SaaS/performance):
+    - Por padrão, NÃO recalcula no request.
+    - A página lê snapshots (campanhas_qtd_resultados) já gravados.
+    - Para forçar apuração e atualizar snapshots: use ?recalc=1 (admin/supervisor).
     """
 
     role_l = (role or "").strip().lower()
@@ -67,11 +71,8 @@ def build_campanhas_page_context(
     mes = int(args.get("mes") or hoje.month)
     ano = int(args.get("ano") or hoje.year)
 
-
     # Performance/SaaS: não recalcula no request por padrão.
-    # Use ?recalc=1 quando quiser forçar apuração e atualizar snapshots.
     recalc = _parse_bool(args.get("recalc"))
-
     if recalc and role_l not in ("admin", "supervisor"):
         recalc = False
 
@@ -103,7 +104,7 @@ def build_campanhas_page_context(
     emps_sel = [str(e).strip() for e in (emp_list or []) if str(e).strip()]
 
     if role_l == "admin":
-        # base_scope: lista completa de EMPs disponíveis dentro do escopo (ex.: por vendedor), antes do filtro de EMP
+        # base_scope: lista completa de EMPs disponíveis dentro do escopo (antes do filtro)
         if vendedor_sel == "__ALL__":
             base_scope = deps.get_all_emp_codigos(True)
         else:
@@ -130,17 +131,15 @@ def build_campanhas_page_context(
     except Exception:
         vendedores_dropdown = []
 
+    # ==========================
+    # Resultados (V1 - QTD) por EMP/vendedor
+    # ==========================
+    blocos: list[dict[str, Any]] = []
 
-# Calcula resultados e agrupa por EMP
-#
-# Importante (SaaS/performance):
-# - Por padrão, NÃO recalcula no request.
-# - A página lê snapshots (campanhas_qtd_resultados) já gravados.
-# - Para forçar apuração e atualizar snapshots: use ?recalc=1
-blocos: list[dict[str, Any]] = []
-from db import CampanhaQtdResultado  # import local evita circular/import time
+    # importa local (evita circular/import time)
+    from db import CampanhaQtdResultado  # noqa: WPS433
 
-with deps.SessionLocal() as db:
+    # Define vendedores alvo
     if (vendedor_sel or "").upper() == "__ALL__":
         vendedores_alvo = ["__ALL__"]
     elif (vendedor_sel or "").upper() == "__MULTI__":
@@ -148,74 +147,98 @@ with deps.SessionLocal() as db:
     else:
         vendedores_alvo = [vendedor_sel]
 
-    for emp in emps_scope or ([emp_param] if emp_param else []):
-        emp = str(emp)
+    # Se não forçar recalc, lê snapshots
+    if not recalc:
+        with deps.SessionLocal() as db:
+            q = (
+                db.query(CampanhaQtdResultado)
+                .filter(CampanhaQtdResultado.competencia_ano == ano)
+                .filter(CampanhaQtdResultado.competencia_mes == mes)
+            )
 
-        for vend in vendedores_alvo:
-            vend = (vend or "").strip().upper()
-            if not vend:
-                continue
+            if emps_scope:
+                q = q.filter(CampanhaQtdResultado.emp.in_([str(e) for e in emps_scope]))
+            elif emp_param:
+                q = q.filter(CampanhaQtdResultado.emp == str(emp_param))
 
-            if recalc:
-                # Modo "apuração": recalcula e faz upsert no snapshot
+            # Vendedor: __ALL__ significa “loja toda / todos vendedores” → não filtra
+            if vendedores_alvo and "__ALL__" not in [v.upper() for v in vendedores_alvo]:
+                q = q.filter(CampanhaQtdResultado.vendedor.in_([str(v).strip().upper() for v in vendedores_alvo if v]))
+
+            rows = q.all()
+
+            # Agrupa em dict[(emp,vendedor)] -> lista resultados
+            grouped: dict[tuple[str, str], list[Any]] = {}
+            for r in rows:
+                key = (str(getattr(r, "emp", "")), str(getattr(r, "vendedor", "")).strip().upper())
+                grouped.setdefault(key, []).append(r)
+
+            for (emp, vend), res_list in grouped.items():
+                total_recomp = 0.0
+                for r in res_list:
+                    total_recomp += float(getattr(r, "valor_recompensa", 0.0) or 0.0)
+                res_list.sort(key=lambda r: float(getattr(r, "valor_recompensa", 0.0) or 0.0), reverse=True)
+                blocos.append({
+                    "emp": emp,
+                    "vendedor": vend,
+                    "resultados": res_list,
+                    "total": total_recomp,
+                })
+
+            # Ordena blocos por EMP e total desc (opcional)
+            blocos.sort(key=lambda b: (str(b.get("emp")), -float(b.get("total") or 0.0)))
+    else:
+        # Recalcula e grava snapshots (admin/supervisor)
+        with deps.SessionLocal() as db:
+            for emp in emps_scope or ([emp_param] if emp_param else []):
+                emp = str(emp)
                 campanhas = deps.campanhas_mes_overlap(ano, mes, emp)
 
-                # prioridade por chave (campo_match + prefixo + marca)
-                by_key: dict[tuple[str, str, str], Any] = {}
-                for c in campanhas:
-                    campo_match = (getattr(c, "campo_match", None) or "codigo").strip().lower()
-                    if campo_match == "descricao":
-                        pref = (getattr(c, "descricao_prefixo", "") or "").strip() or (getattr(c, "produto_prefixo", "") or "").strip()
-                        key = ("descricao", pref.lower().strip(), (getattr(c, "marca", "") or "").strip().upper())
-                    else:
-                        key = ("codigo", (getattr(c, "produto_prefixo", "") or "").strip().upper(), (getattr(c, "marca", "") or "").strip().upper())
+                for vend in vendedores_alvo:
+                    vend = (vend or "").strip().upper()
+                    if not vend:
+                        continue
 
-                    if getattr(c, "vendedor", None) and str(getattr(c, "vendedor") or "").strip().upper() == vend:
-                        by_key[key] = c
-                    else:
-                        by_key.setdefault(key, c)
+                    # prioridade por chave (campo_match + prefixo + marca)
+                    by_key: dict[tuple[str, str, str], Any] = {}
+                    for c in campanhas:
+                        campo_match = (getattr(c, "campo_match", None) or "codigo").strip().lower()
+                        if campo_match == "descricao":
+                            pref = (getattr(c, "descricao_prefixo", "") or "").strip() or (getattr(c, "produto_prefixo", "") or "").strip()
+                            key = ("descricao", pref.lower().strip(), (getattr(c, "marca", "") or "").strip().upper())
+                        else:
+                            key = ("codigo", (getattr(c, "produto_prefixo", "") or "").strip().upper(), (getattr(c, "marca", "") or "").strip().upper())
 
-                campanhas_final = list(by_key.values())
+                        if getattr(c, "vendedor", None) and str(getattr(c, "vendedor") or "").strip().upper() == vend:
+                            by_key[key] = c
+                        else:
+                            by_key.setdefault(key, c)
 
-                total_recomp = 0.0
-                resultados_calc: list[Any] = []
-                for c in campanhas_final:
-                    periodo_ini = max(getattr(c, "data_inicio"), inicio_mes)
-                    periodo_fim = min(getattr(c, "data_fim"), fim_mes)
-                    if (vend or "").upper() == "__ALL__":
-                        res = deps.calc_resultado_all_vendedores(db, c, emp, ano, mes, periodo_ini, periodo_fim)
-                    else:
-                        res = deps.upsert_resultado(db, c, vend, emp, ano, mes, periodo_ini, periodo_fim)
-                    resultados_calc.append(res)
-                    total_recomp += float(getattr(res, "valor_recompensa", 0.0) or 0.0)
+                    campanhas_final = list(by_key.values())
 
-                resultados_calc.sort(key=lambda r: float(getattr(r, "valor_recompensa", 0.0) or 0.0), reverse=True)
-            else:
-                # Modo "snapshot": lê resultados já gravados (rápido e estável)
-                resultados_calc = (
-                    db.query(CampanhaQtdResultado)
-                    .filter(
-                        CampanhaQtdResultado.competencia_ano == int(ano),
-                        CampanhaQtdResultado.competencia_mes == int(mes),
-                        CampanhaQtdResultado.emp == emp,
-                        CampanhaQtdResultado.vendedor == vend,
-                        CampanhaQtdResultado.valor_recompensa > 0,
-                    )
-                    .order_by(CampanhaQtdResultado.valor_recompensa.desc())
-                    .all()
-                )
-                total_recomp = float(sum(float(getattr(r, "valor_recompensa", 0.0) or 0.0) for r in (resultados_calc or [])))
+                    total_recomp = 0.0
+                    resultados_calc: list[Any] = []
+                    for c in campanhas_final:
+                        periodo_ini = max(getattr(c, "data_inicio"), inicio_mes)
+                        periodo_fim = min(getattr(c, "data_fim"), fim_mes)
+                        if (vend or "").upper() == "__ALL__":
+                            res = deps.calc_resultado_all_vendedores(db, c, emp, ano, mes, periodo_ini, periodo_fim)
+                        else:
+                            res = deps.upsert_resultado(db, c, vend, emp, ano, mes, periodo_ini, periodo_fim)
+                        resultados_calc.append(res)
+                        total_recomp += float(getattr(res, "valor_recompensa", 0.0) or 0.0)
 
-            blocos.append({
-                "emp": emp,
-                "vendedor": vend,
-                "resultados": resultados_calc,
-                "total": total_recomp,
-            })
+                    resultados_calc.sort(key=lambda r: float(getattr(r, "valor_recompensa", 0.0) or 0.0), reverse=True)
+                    blocos.append({
+                        "emp": emp,
+                        "vendedor": vend,
+                        "resultados": resultados_calc,
+                        "total": total_recomp,
+                    })
 
-    if recalc:
-        db.commit()
+            db.commit()
 
+    # Dropdowns
     emps_options = deps.get_emp_options(base_scope if 'base_scope' in locals() else emps_scope)
     vendedores_options: list[dict[str, str]] = []
     for v in (vendedores_dropdown or []):
@@ -228,6 +251,7 @@ with deps.SessionLocal() as db:
         if (vendedor_sel or "").upper() == "__ALL__"
         else (f"{len(vendedores_sel)} selecionados" if (vendedor_sel or "").upper() == "__MULTI__" else vendedor_sel)
     )
+
     # Campanhas V2 (Enterprise) — resultados pré-calculados (snapshot)
     try:
         v2_vendedores_scope: list[str] = []
@@ -235,16 +259,17 @@ with deps.SessionLocal() as db:
             v2_vendedores_scope = [vendedor_logado]
         elif vendedores_sel:
             v2_vendedores_scope = vendedores_sel
-        campanhas_v2_resultados = list_resultados_v2(
-            db,
-            ano=ano,
-            mes=mes,
-            emps_scope=[int(e) for e in emps_scope],
-            vendedores_scope=v2_vendedores_scope,
-        )
+
+        with deps.SessionLocal() as db2:
+            campanhas_v2_resultados = list_resultados_v2(
+                db2,
+                ano=ano,
+                mes=mes,
+                emps_scope=[int(e) for e in (emps_scope or []) if str(e).isdigit()],
+                vendedores_scope=v2_vendedores_scope,
+            )
     except Exception:
         campanhas_v2_resultados = []
-
 
     return {
         "role": role,
@@ -260,8 +285,8 @@ with deps.SessionLocal() as db:
         "emps_scope": emps_scope,
         "emps_options": emps_options,
         "emps_sel": emps_sel,
-        "emp_param": emp_param,        "campanhas_v2_resultados": campanhas_v2_resultados,
-
+        "emp_param": emp_param,
+        "campanhas_v2_resultados": campanhas_v2_resultados,
     }
 
 
