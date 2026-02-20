@@ -1011,6 +1011,7 @@ class CampanhaV2ResultadoNew(Base):
 CampanhaV2MasterNewSchema = CampanhaV2MasterNew
 CampanhaV2ResultadoNewSchema = CampanhaV2ResultadoNew
 CampanhaV2ScopeEMPNewSchema = CampanhaV2ScopeEMPNew
+CampanhaV2ScopeEmpNewSchema = CampanhaV2ScopeEMPNewSchema  # compat: import antigo (Emp)
 
 # Nome esperado pelo app.py / patches anteriores
 CampanhaV2ScopeEMP = CampanhaV2ScopeEMPNew
