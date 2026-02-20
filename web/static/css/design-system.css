@@ -297,3 +297,37 @@ html, body { height: 100%; }
 
 /* Small button */
 .sv-btn-xs{padding:6px 10px;font-size:12px;border-radius:10px}
+
+
+/* --- Relatórios: agrupamento por vendedor --- */
+.sv-details { width: 100%; }
+.sv-details__summary {
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,140,0,0.18);
+  background: rgba(255,140,0,0.06);
+}
+.sv-details__summary::-webkit-details-marker { display:none; }
+.sv-details[open] .sv-details__summary { background: rgba(255,140,0,0.09); border-color: rgba(255,140,0,0.28); }
+.sv-details__body { padding: 10px 0 0 0; }
+
+.sv-subtable {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+.sv-subtable th, .sv-subtable td {
+  padding: 8px 10px;
+  border-top: 1px solid rgba(255,255,255,0.06);
+}
+.sv-subtable thead th {
+  color: rgba(255,255,255,0.75);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+.sv-subtable tbody tr:hover td { background: rgba(255,255,255,0.03); }
+

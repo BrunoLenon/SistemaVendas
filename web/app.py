@@ -3698,6 +3698,58 @@ def relatorio_campanhas():
 
     ctx["resumo"] = _calc_resumo_financeiro(rows)
 
+    # Agrupamento para UI: exibir campanhas dentro do vendedor (mais legível)
+    def _group_rows_por_vendedor(_rows):
+        grouped = {}
+        for r in (_rows or []):
+            # suporta UnifiedRow (objeto) e dict
+            emp = (getattr(r, "emp", None) if not isinstance(r, dict) else (r.get("emp") or r.get("EMP"))) or "—"
+            vendedor = (getattr(r, "vendedor", None) if not isinstance(r, dict) else (r.get("vendedor") or r.get("VENDEDOR"))) or "—"
+            titulo = (
+                (getattr(r, "titulo", None) if not isinstance(r, dict) else (r.get("titulo") or r.get("TITULO")))
+                or (getattr(r, "campanha", None) if not isinstance(r, dict) else (r.get("campanha") or r.get("CAMPANHA")))
+                or "—"
+            )
+            valor = (
+                (getattr(r, "valor_recompensa", None) if not isinstance(r, dict) else (r.get("valor_recompensa") or r.get("VALOR_RECOMPENSA")))
+                or (getattr(r, "valor", None) if not isinstance(r, dict) else r.get("valor"))
+                or 0
+            )
+            status = (
+                (getattr(r, "status_pagamento", None) if not isinstance(r, dict) else (r.get("status_pagamento") or r.get("STATUS_PAGAMENTO")))
+                or "PENDENTE"
+            )
+            try:
+                v = float(valor or 0)
+            except Exception:
+                v = 0.0
+            emp_s = str(emp).strip() or "—"
+            vend_s = str(vendedor).strip().upper() or "—"
+            key = (emp_s, vend_s)
+            if key not in grouped:
+                grouped[key] = {
+                    "emp": emp_s,
+                    "vendedor": vend_s,
+                    "total": 0.0,
+                    "status_totais": {"PENDENTE": 0.0, "A_PAGAR": 0.0, "PAGO": 0.0},
+                    "campanhas": [],
+                }
+            g = grouped[key]
+            g["total"] += v
+            st_key = str(status).strip().upper()
+            if st_key not in g["status_totais"]:
+                g["status_totais"][st_key] = 0.0
+            g["status_totais"][st_key] += v
+            g["campanhas"].append({"titulo": str(titulo).strip() or "—", "valor": v, "status": st_key})
+        # ordenar: vendedores por total, campanhas por valor
+        out = list(grouped.values())
+        for g in out:
+            g["campanhas"].sort(key=lambda x: x.get("valor", 0.0), reverse=True)
+        out.sort(key=lambda x: x.get("total", 0.0), reverse=True)
+        return out
+
+    ctx["rows_grouped"] = _group_rows_por_vendedor(rows)
+
     # URLs auxiliares (Jinja não suporta **kwargs dinâmico com dict em algumas versões)
     from urllib.parse import urlencode
 
