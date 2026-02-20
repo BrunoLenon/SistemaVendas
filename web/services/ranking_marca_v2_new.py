@@ -335,7 +335,8 @@ def recalc_ranking_marca(
         raise ValueError("Campanha sem marca definida (marca_alvo).")
 
     minimo = float(getattr(camp, "base_minima_valor", 0.0) or 0.0)
-    scope_mode = (getattr(camp, "scope_mode", "GLOBAL") or "GLOBAL").upper()
+    scope_mode_raw = (getattr(camp, "scope_mode", "GLOBAL") or "GLOBAL").upper()
+    scope_mode = scope_mode_raw
 
     logger.info(
         f"Parâmetros da campanha: marca={marca}, minimo={minimo}, scope_mode={scope_mode}"
@@ -361,27 +362,16 @@ def recalc_ranking_marca(
         logger.info(f"EMPs do escopo: {scope_emps}")
 
         if not scope_emps:
-            logger.warning("Campanha POR_EMP sem EMPs definidas no escopo")
-
-            # Limpa snapshot do mês
-            db.query(CampanhaV2ResultadoNew).filter(
-                and_(
-                    CampanhaV2ResultadoNew.campanha_id == campanha_id,
-                    CampanhaV2ResultadoNew.ano == ano,
-                    CampanhaV2ResultadoNew.mes == mes,
-                )
-            ).delete(synchronize_session=False)
-            db.flush()
-
-            sync_pagamentos_v2(db, ano, mes, actor=actor or "")
-            return {
-                "ok": True,
-                "rows": 0,
-                "ini": str(ini),
-                "fim": str(fim),
-                "motivo": "Sem EMPs definidas no escopo",
-                "scope_emps": [],
-            }
+            # Robusteza: se a campanha está como POR_EMP mas não tem EMP vinculada,
+            # NÃO zerar o ranking ("IN ()"), pois isso deixa a página vazia.
+            # Faz fallback para GLOBAL (sem filtro de EMP). Isso costuma acontecer
+            # em cadastro incompleto ou migração de versões.
+            logger.warning(
+                "Campanha %s está em scope_mode=POR_EMP mas sem EMPs no escopo; "
+                "aplicando fallback para GLOBAL (sem filtro de EMP).",
+                campanha_id,
+            )
+            scope_mode = "GLOBAL"
 
     # PRIMEIRO: verificar se existem vendas da marca no período
     logger.info("Verificando vendas da marca %s no período...", marca)
@@ -530,6 +520,7 @@ def recalc_ranking_marca(
             "minimo": minimo,
             "periodo": {"ini": str(ini), "fim": str(fim)},
             "scope_mode": scope_mode,
+            "scope_mode_raw": scope_mode_raw,
             "scope_emps": scope_emps if scope_mode == "POR_EMP" else None,
             "por_emp": r.por_emp,
         }
