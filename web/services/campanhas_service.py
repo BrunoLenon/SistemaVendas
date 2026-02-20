@@ -153,6 +153,7 @@ def build_campanhas_page_context(
                 campanhas_final = list(by_key.values())
 
                 total_recomp = 0.0
+                total_vendido = 0.0
                 resultados_calc: list[Any] = []
                 for c in campanhas_final:
                     periodo_ini = max(getattr(c, "data_inicio"), inicio_mes)
@@ -170,7 +171,9 @@ def build_campanhas_page_context(
                     "emp": emp,
                     "vendedor": vend,
                     "resultados": resultados_calc,
-                    "total": total_recomp,
+                    "total_premio": total_recomp,
+                    "total_vendido": total_vendido,
+                    "campanhas_count": len(resultados_calc),
                 })
 
         db.commit()
@@ -205,7 +208,13 @@ def build_campanhas_page_context(
         campanhas_v2_resultados = []
 
 
-    return {
+    
+        # Totais da página (somatório dos blocos exibidos)
+        page_total_premio = sum(float(b.get("total_premio") or 0.0) for b in blocos)
+        page_total_vendido = sum(float(b.get("total_vendido") or 0.0) for b in blocos)
+        page_vendedores = len({(b.get("emp"), b.get("vendedor")) for b in blocos})
+        page_campanhas = sum(int(b.get("campanhas_count") or 0) for b in blocos)
+return {
         "role": role,
         "ano": ano,
         "mes": mes,
@@ -216,6 +225,10 @@ def build_campanhas_page_context(
         "vendedores_options": vendedores_options,
         "vendedores_sel": vendedores_sel,
         "blocos": blocos,
+        "total_premio": page_total_premio,
+        "total_vendido": page_total_vendido,
+        "qtd_vendedores": page_vendedores,
+        "qtd_campanhas": page_campanhas,
         "emps_scope": emps_scope,
         "emps_options": emps_options,
         "emps_sel": emps_sel,
