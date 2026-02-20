@@ -1,5 +1,7 @@
 {% extends 'base.html' %}
 {% block content %}
+{% set edit_obj = edit_obj if edit_obj is defined else None %}
+{% set today = today if today is defined else none %}
 <div class="container-fluid py-3">
   <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
     <div>
@@ -148,11 +150,11 @@
                   <td class="text-end">
                     <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin_campanhas_v2', edit=c.id) }}">Editar</a>
 
-                    <form method="get" action="{{ url_for('admin_campanhas_v2_recalcular') }}" class="d-inline">
-  <input type="hidden" name="ano" value="{{ ano }}" />
-  <input type="hidden" name="mes" value="{{ mes }}" />
-  <button class="btn btn-sm btn-outline-warning" type="submit">Recalcular período</button>
-</form>
+                    <form method="post" action="{{ url_for('admin_campanhas_v2_recalcular_uma', cid=c.id) }}" class="d-inline">
+                      <input type="hidden" name="ano" value="{{ today.year }}" />
+                      <input type="hidden" name="mes" value="{{ '%02d'|format(today.month) }}" />
+                      <button class="btn btn-sm btn-outline-success" type="submit" title="Recalcular só esta campanha">Recalcular</button>
+                    </form>
 
                     <form method="post" action="{{ url_for('admin_campanhas_v2_toggle', cid=c.id) }}" class="d-inline">
                       <button class="btn btn-sm btn-outline-secondary" type="submit" title="Ativar/Desativar">
