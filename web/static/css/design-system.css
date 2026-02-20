@@ -30,7 +30,11 @@
 }
 
 html, body{
-  background: var(--sv-bg) !important;
+  background:
+    radial-gradient(900px 520px at 18% 8%, rgba(255,140,0,.10), transparent 55%),
+    radial-gradient(700px 420px at 85% 12%, rgba(255,106,0,.08), transparent 60%),
+    radial-gradient(900px 520px at 70% 88%, rgba(255,165,0,.06), transparent 60%),
+    var(--sv-bg) !important;
   color: var(--sv-text);
 }
 
@@ -229,18 +233,21 @@ html, body { height: 100%; }
 /* Filter box */
 .sv-filterbox{padding:12px}
 .sv-filterbox__head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:10px}
-.sv-checklist{display:grid;gap:8px;max-height:210px;overflow:auto;padding-right:4px}
+.sv-checklist{display:grid;gap:8px;max-height:240px;overflow:auto;padding-right:4px}
 .sv-check{display:flex;gap:10px;align-items:center;font-size:13px;cursor:pointer}
 .sv-check input{accent-color:#ff8c00}
 
 /* KPI */
-.sv-kpi-grid{display:grid;gap:12px;grid-template-columns:repeat(4,minmax(0,1fr))}
+.sv-kpi-grid{display:grid;gap:16px;grid-template-columns:repeat(4,minmax(0,1fr))}
 @media (max-width: 1100px){ .sv-kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr))} }
 @media (max-width: 560px){ .sv-kpi-grid{grid-template-columns:1fr} }
-.sv-kpi{padding:14px}
+.sv-kpi{padding:18px}
 .sv-kpi__label{font-size:12px;opacity:.8}
-.sv-kpi__value{margin-top:8px;font-size:20px;font-weight:800;letter-spacing:.2px}
+.sv-kpi__value{margin-top:10px;font-size:26px;font-weight:850;letter-spacing:.2px;line-height:1.05}
 .sv-kpi__meta{margin-top:6px;font-size:12px;opacity:.75}
+
+/* KPI responsive tweak */
+@media (max-width: 900px){ .sv-kpi__value{font-size:22px} }
 
 /* Table */
 .sv-tablewrap{overflow:auto;border-radius:14px;border:1px solid rgba(255,140,0,.16)}
@@ -261,7 +268,9 @@ html, body { height: 100%; }
   font-size:13px;
   color:rgba(255,255,255,.9);
 }
-.sv-table tbody tr:hover td{background:rgba(255,140,0,.06)}
+.sv-table tbody tr:nth-child(even) td{background:rgba(255,255,255,.015)}
+.sv-table tbody tr:hover td{background:rgba(255,140,0,.085)}
+.sv-table td.sv-right{font-variant-numeric: tabular-nums}
 
 /* Pills / badges */
 .sv-pill{
