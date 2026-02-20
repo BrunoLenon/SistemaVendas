@@ -1,296 +1,194 @@
 {% extends "base.html" %}
-
-{% block title %}Campanhas - {{ vendedor_display or vendedor }}{% endblock %}
-
-{% block extra_head %}
-<style>
-  .page-title{font-weight:700; letter-spacing:-.3px}
-  .subtitle{color:var(--bs-secondary-color)}
-  .mono{font-variant-numeric: tabular-nums;}
-  .kpi{min-height:84px}
-  .table thead th{white-space:nowrap}
-  .camp-card{border:1px solid rgba(0,0,0,.07); border-radius:1rem}
-  .camp-card .badge{font-weight:600}
-  @media (max-width: 768px){
-    .table-responsive{display:none;}
-    .mobile-cards{display:block;}
-  }
-  @media (min-width: 769px){
-    .mobile-cards{display:none;}
-  }
-</style>
-{% endblock %}
+{% block title %}Campanhas (Qtd){% endblock %}
 
 {% block content %}
-<div class="container py-4">
-
-  <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
-    <div>
-      <h3 class="m-0 page-title">Campanhas — <span class="text-primary">{{ vendedor }}</span></h3>
-      <div class="subtitle mt-1">Resumo por EMP e período. Exporte em PDF quando precisar compartilhar.</div>
-    </div>
-    <div class="d-flex gap-2">
-      <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('dashboard') }}">Voltar</a>
-      <a class="btn btn-outline-secondary btn-sm" href="/logout">Sair</a>
-    </div>
-  </div>
-<div class="card shadow-sm mb-3">
-    <div class="card-body">
-      <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
-        <div class="fw-semibold">Filtros</div>
-        <a class="btn btn-outline-dark btn-sm" href="/campanhas/pdf?ano={{ ano }}&mes={{ mes }}&vendedor={{ vendedor }}{% if emp_param %}&emp={{ emp_param }}{% endif %}">Exportar PDF</a>
+<div class="sv-page">
+  <div class="sv-panel sv-panel--hero">
+    <div class="sv-hero">
+      <div>
+        <div class="sv-breadcrumb">Campanhas</div>
+        <div class="sv-title">Campanhas do mês (Qtd)</div>
+        <div class="sv-muted">Filtre por EMP e vendedor. A lista agrupa por vendedor e permite ver as campanhas dentro de cada um.</div>
       </div>
 
-      {% from "partials/multiselect.html" import multiselect %}
-
-<form method="get" action="/campanhas" class="filter-bar mt-1">
-  <div class="row g-2 align-items-end">
-    {% if role and role|lower in ['admin','supervisor'] %}
-      <div class="col-md-4">
-        {{ multiselect("vendedor", vendedores_options or [], vendedores_sel or [], label="Vendedor(es)", placeholder="Todos", all_token="__ALL__", all_label="Todos vendedores") }}
-        <div class="form-text">Selecione 1 ou mais vendedores. Em supervisor, marque <b>LOJA TODA</b> para comparar todos.</div>
+      <div class="sv-actions">
+        <a class="sv-btn sv-btn--ghost" href="{{ url_for('campanhas_qtd') }}">Atualizar</a>
       </div>
-    {% endif %}
-
-    <div class="col-md-4">
-      {{ multiselect("emp", emps_options or [], emps_sel or [], label="EMP(s)", placeholder="Todas") }}
-      <div class="form-text">Comparação entre lojas (dentro do seu acesso).</div>
-    </div>
-
-    <div class="col-6 col-md-2">
-      <label class="form-label">Mês</label>
-      <input class="form-control" type="number" name="mes" min="1" max="12" value="{{ mes }}" required>
-    </div>
-    <div class="col-6 col-md-2">
-      <label class="form-label">Ano</label>
-      <input class="form-control" type="number" name="ano" min="2000" max="2100" value="{{ ano }}" required>
-    </div>
-
-    <div class="col-12 col-md-2 d-grid">
-      <button class="btn btn-primary" type="submit">Atualizar</button>
-    </div>
-  </div>
-</form>
-
     </div>
   </div>
 
-  {% if blocos and (blocos|length) > 0 %}
+  <form method="get" class="sv-panel">
+    <div class="sv-grid sv-grid--3">
+      <div class="sv-field">
+        <label>Mês</label>
+        <input class="sv-input" type="number" name="mes" min="1" max="12" value="{{ mes|default('') }}" />
+      </div>
+      <div class="sv-field">
+        <label>Ano</label>
+        <input class="sv-input" type="number" name="ano" min="2000" max="2100" value="{{ ano|default('') }}" />
+      </div>
+      <div class="sv-field">
+        <label>Visão</label>
+        <select class="sv-select" name="visao">
+          <option value="detalhado" {% if visao=='detalhado' %}selected{% endif %}>Detalhado</option>
+          <option value="resumo" {% if visao=='resumo' %}selected{% endif %}>Resumo</option>
+        </select>
+      </div>
+    </div>
 
-    <div class="row g-3">
-      {% for b in blocos %}
-        {% set mid = "empModal" ~ loop.index %}
-        {% set total_camps = (b.resultados|length) %}
-        {% set pagos = namespace(n=0) %}
-        {% for r in b.resultados %}
-          {% if r.status_pagamento == 'PAGO' %}{% set pagos.n = pagos.n + 1 %}{% endif %}
-        {% endfor %}
-
-        <div class="col-12 col-md-6 col-lg-4">
-          <button type="button" class="card shadow-sm w-100 text-start border-0" style="border-radius:1rem"
-                  data-bs-toggle="modal" data-bs-target="#{{ mid }}">
-            <div class="card-body">
-              <div class="d-flex justify-content-between align-items-start gap-2">
-                <div>
-                  <div class="subtitle small">Loja</div>
-                  <div class="h5 m-0 fw-bold">EMP {{ b.emp }}</div>
-                  {% if role and role|lower == "supervisor" and vendedor == "__ALL__" %}
-                    <div class="subtitle small mt-1">Vendedor: <strong>{{ b.vendedor }}</strong></div>
-                  {% endif %}
-                </div>
-                <span class="badge text-bg-light border mono">Total {{ b.total|brl }}</span>
-              </div>
-
-              <div class="d-flex flex-wrap gap-2 mt-3">
-                <span class="badge rounded-pill text-bg-light border mono">{{ total_camps }} campanha(s)</span>
-                <span class="badge rounded-pill text-bg-success mono">PAGO {{ pagos.n }}</span>
-                <span class="badge rounded-pill text-bg-warning mono">PEND {{ total_camps - pagos.n }}</span>
-              </div>
-
-              <div class="mt-3">
-                <div class="subtitle small mb-1">Preview</div>
-                <div class="d-grid gap-1">
-                  {% for r in b.resultados[:3] %}
-                    <div class="d-flex justify-content-between gap-2 small">
-                      <div class="text-truncate" style="max-width:230px">{{ r.titulo or ('Campanha #' ~ r.campanha_id) }}</div>
-                      <div class="mono">{% if r.valor_recompensa and r.valor_recompensa > 0 %}{{ r.valor_recompensa|brl }}{% else %}-{% endif %}</div>
-                    </div>
-                  {% endfor %}
-                  {% if total_camps > 3 %}
-                    <div class="subtitle small">+ {{ total_camps - 3 }} campanha(s)…</div>
-                  {% endif %}
-                </div>
-              </div>
-
-              <div class="d-flex justify-content-end mt-3">
-                <span class="btn btn-sm btn-outline-primary">Ver detalhes</span>
-              </div>
-            </div>
-          </button>
-        </div>
-
-        <!-- Modal EMP -->
-        <div class="modal fade" id="{{ mid }}" tabindex="-1" aria-hidden="true">
-          <div class="modal-dialog modal-xl modal-dialog-scrollable">
-            <div class="modal-content" style="border-radius:1rem">
-              <div class="modal-header">
-                <div>
-                  <div class="subtitle small">Campanhas — EMP {{ b.emp }}</div>
-                  <div class="fw-bold mono">Competência: {{ "%02d"|format(mes) }}/{{ ano }}</div>
-                </div>
-                <div class="d-flex gap-2">
-                  <a class="btn btn-outline-dark btn-sm" href="/campanhas/pdf?ano={{ ano }}&mes={{ mes }}&vendedor={{ vendedor }}&emp={{ b.emp }}">Exportar PDF (EMP)</a>
-                  <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Fechar</button>
-                </div>
-              </div>
-              <div class="modal-body">
-
-                <div class="d-flex flex-wrap gap-2 mb-3">
-                  <span class="badge text-bg-light border mono">Total: {{ b.total|brl }}</span>
-                  <span class="badge text-bg-light border mono">{{ total_camps }} campanha(s)</span>
-                  <span class="badge text-bg-success mono">PAGO {{ pagos.n }}</span>
-                  <span class="badge text-bg-warning mono">PEND {{ total_camps - pagos.n }}</span>
-                </div>
-
-                <div class="table-responsive">
-                  <table class="table table-sm align-middle mb-0">
-                    <thead class="table-light">
-                      <tr>
-                        <th>Campanha</th>
-                        <th>Base</th>
-                        <th>Marca</th>
-                        <th class="text-end">R$/Un</th>
-                        <th class="text-end">Mín</th>
-                        <th class="text-end">Qtd</th>
-                        <th class="text-end">Valor</th>
-                        <th>Status</th>
-                        <th>Período</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {% for r in b.resultados %}
-                        <tr>
-                          <td class="text-truncate" style="max-width:220px">{{ r.titulo or ('Campanha #' ~ r.campanha_id) }}</td>
-                          <td><div class="mono small">{{ r.produto_prefixo }}</div></td>
-                          <td>{{ r.marca }}</td>
-                          <td class="text-end mono">{{ r.recompensa_unit|brl }}</td>
-                          <td class="text-end mono">{% if r.qtd_minima is not none %}{{ r.qtd_minima|int }}{% else %}-{% endif %}</td>
-                          <td class="text-end mono">{{ r.qtd_vendida|int }}</td>
-                          <td class="text-end mono">{% if r.valor_recompensa and r.valor_recompensa > 0 %}<strong>{{ r.valor_recompensa|brl }}</strong>{% else %}-{% endif %}</td>
-                          <td>{% if r.status_pagamento == 'PAGO' %}<span class="badge text-bg-success">PAGO</span>{% else %}<span class="badge text-bg-warning">PENDENTE</span>{% endif %}</td>
-                          <td class="text-muted small">{{ r.data_inicio.strftime('%d/%m/%Y') }} a {{ r.data_fim.strftime('%d/%m/%Y') }}</td>
-                        </tr>
-                      {% endfor %}
-                    </tbody>
-                  </table>
-                </div>
-
-                <div class="mobile-cards mt-3">
-                  <div class="d-grid gap-2">
-                    {% for r in b.resultados %}
-                      <div class="p-3 camp-card">
-                        <div class="d-flex justify-content-between align-items-start gap-2">
-                          <div class="fw-semibold">{{ r.titulo or ('Campanha #' ~ r.campanha_id) }}</div>
-                          {% if r.status_pagamento == 'PAGO' %}
-                            <span class="badge text-bg-success">PAGO</span>
-                          {% else %}
-                            <span class="badge text-bg-warning">PENDENTE</span>
-                          {% endif %}
-                        </div>
-                        <div class="subtitle small mt-1 mono">{{ r.produto_prefixo }} • {{ r.marca }}</div>
-
-                        <div class="row g-2 mt-2">
-                          <div class="col-6">
-                            <div class="subtitle small">R$/Un</div>
-                            <div class="mono">{{ r.recompensa_unit|brl }}</div>
-                          </div>
-                          <div class="col-6 text-end">
-                            <div class="subtitle small">Mín</div>
-                            <div class="mono">{% if r.qtd_minima is not none %}{{ r.qtd_minima|int }}{% else %}-{% endif %}</div>
-                          </div>
-                          <div class="col-6">
-                            <div class="subtitle small">Qtd</div>
-                            <div class="mono">{{ r.qtd_vendida|int }}</div>
-                          </div>
-                          <div class="col-6 text-end">
-                            <div class="subtitle small">Valor</div>
-                            <div class="mono">{% if r.valor_recompensa and r.valor_recompensa > 0 %}<strong>{{ r.valor_recompensa|brl }}</strong>{% else %}-{% endif %}</div>
-                          </div>
-                        </div>
-
-                        <div class="subtitle small mt-2">Período: {{ r.data_inicio.strftime('%d/%m/%Y') }} a {{ r.data_fim.strftime('%d/%m/%Y') }}</div>
-                      </div>
-                    {% endfor %}
-                  </div>
-                </div>
-
-              </div>
-            </div>
+    <div class="sv-grid sv-grid--2 sv-mt-3">
+      <div class="sv-card">
+        <div class="sv-card__header">
+          <div>
+            <div class="sv-card__title">EMP</div>
+            <div class="sv-muted">Selecione uma ou mais</div>
           </div>
+          <button type="button" class="sv-btn sv-btn--sm sv-btn--ghost" data-sv-checkall="emp">Marcar todas</button>
         </div>
-      {% endfor %}
+        <div class="sv-card__body sv-scrollbox">
+          {% for emp in emp_options %}
+            <label class="sv-check">
+              <input type="checkbox" name="emp" value="{{ emp }}" {% if emp in emp_selected %}checked{% endif %} data-sv-check="emp">
+              <span>{{ emp }}</span>
+            </label>
+          {% endfor %}
+        </div>
+      </div>
+
+      <div class="sv-card">
+        <div class="sv-card__header">
+          <div>
+            <div class="sv-card__title">Vendedor</div>
+            <div class="sv-muted">Opcional</div>
+          </div>
+          <button type="button" class="sv-btn sv-btn--sm sv-btn--ghost" data-sv-checkall="vendedor">Marcar todas</button>
+        </div>
+        <div class="sv-card__body sv-scrollbox">
+          {% for vend in vendedor_options %}
+            <label class="sv-check">
+              <input type="checkbox" name="vendedor" value="{{ vend }}" {% if vend in vendedor_selected %}checked{% endif %} data-sv-check="vendedor">
+              <span>{{ vend }}</span>
+            </label>
+          {% endfor %}
+        </div>
+      </div>
     </div>
 
-  {% else %}
-    <div class="alert alert-warning shadow-sm">
-      Nenhuma campanha encontrada para o período selecionado.
+    <div class="sv-row sv-row--end sv-mt-3">
+      <div class="sv-field sv-field--inline">
+        <label>Por página</label>
+        <select class="sv-select" name="per_page">
+          {% for n in [25,50,100,200,500] %}
+            <option value="{{n}}" {% if per_page==n %}selected{% endif %}>{{n}}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button class="sv-btn sv-btn--primary" type="submit">Aplicar filtros</button>
+      <a class="sv-btn sv-btn--ghost" href="{{ url_for('campanhas_qtd') }}">Limpar</a>
     </div>
-  {% endif %}
+  </form>
 
-</div>
-<!-- ========================= -->
-<!-- Campanhas V2 (Enterprise) -->
-<!-- ========================= -->
-{% if campanhas_v2_resultados %}
-<div class="card mt-3">
-  <div class="card-header d-flex align-items-center justify-content-between">
-    <div>
-      <strong>Campanhas V2 (Enterprise)</strong>
-      <div class="text-muted" style="font-size: 12px;">Resultados pré-calculados (snapshot) para {{ mes }}/{{ ano }}</div>
+  {# ===== KPIs ===== #}
+  {% set total_valor = 0.0 %}
+  {% set total_vendedores = 0 %}
+  {% set total_campanhas = 0 %}
+  {% for b in blocos %}
+    {% set total_valor = total_valor + (b.total_valor or 0.0) %}
+    {% set total_vendedores = total_vendedores + 1 %}
+    {% set total_campanhas = total_campanhas + (b.resultados|length) %}
+  {% endfor %}
+
+  <div class="sv-grid sv-grid--4 sv-mt-3">
+    <div class="sv-kpi">
+      <div class="sv-kpi__label">Total (R$)</div>
+      <div class="sv-kpi__value">{{ total_valor|brl_rs }}</div>
+      <div class="sv-kpi__hint">{{ total_campanhas }} campanhas • {{ total_vendedores }} vendedores</div>
     </div>
-    {% if role == 'admin' %}
-      <a class="btn btn-sm btn-outline-primary" href="/admin/campanhas_v2?ano={{ ano }}&mes={{ mes }}">Gerenciar V2</a>
-    {% endif %}
+    <div class="sv-kpi">
+      <div class="sv-kpi__label">Vendedores</div>
+      <div class="sv-kpi__value">{{ total_vendedores }}</div>
+      <div class="sv-kpi__hint">Agrupado por vendedor</div>
+    </div>
+    <div class="sv-kpi">
+      <div class="sv-kpi__label">Campanhas</div>
+      <div class="sv-kpi__value">{{ total_campanhas }}</div>
+      <div class="sv-kpi__hint">Somatório das campanhas exibidas</div>
+    </div>
+    <div class="sv-kpi">
+      <div class="sv-kpi__label">Período</div>
+      <div class="sv-kpi__value">{{ "%02d"|format(mes|int) }}/{{ ano }}</div>
+      <div class="sv-kpi__hint">Filtros aplicados</div>
+    </div>
   </div>
-  <div class="card-body p-0">
-    <div class="table-responsive">
-      <table class="table table-sm table-striped mb-0">
+
+  <div class="sv-panel sv-mt-3">
+    <div class="sv-panel__header">
+      <div>
+        <div class="sv-panel__title">Tabela detalhada</div>
+        <div class="sv-muted">Abra <b>Ver campanhas</b> para listar as campanhas do vendedor.</div>
+      </div>
+      <div class="sv-muted">Linhas: {{ blocos|length }}</div>
+    </div>
+
+    <div class="sv-tablewrap">
+      <table class="sv-table">
         <thead>
           <tr>
-            <th>Campanha</th>
-            <th>Tipo</th>
-            <th>EMP</th>
+            <th style="width: 90px;">EMP</th>
             <th>Vendedor</th>
-            <th class="text-end">Base</th>
-            <th class="text-end">Recompensa</th>
-            <th>Status</th>
+            <th style="width: 340px;">Campanhas</th>
+            <th class="sv-right" style="width: 140px;">Total (R$)</th>
           </tr>
         </thead>
         <tbody>
-          {% for r in campanhas_v2_resultados %}
-          <tr>
-            <td>#{{ r.campanha_id }} — {{ r.titulo }}</td>
-            <td>{{ r.tipo }}</td>
-            <td>{{ r.emp }}</td>
-            <td>{{ r.vendedor }}</td>
-            <td class="text-end">{{ '%.2f'|format(r.base_num) }}</td>
-            <td class="text-end">{{ '%.2f'|format(r.valor_recompensa) }}</td>
-            <td>
-              {% if r.status_pagamento == 'PAGO' %}
-                <span class="badge bg-success">PAGO</span>
-              {% elif r.status_pagamento == 'A_PAGAR' %}
-                <span class="badge bg-warning text-dark">A PAGAR</span>
-              {% else %}
-                <span class="badge bg-secondary">PENDENTE</span>
-              {% endif %}
-            </td>
-          </tr>
+          {% for b in blocos %}
+            <tr>
+              <td class="sv-mono">{{ b.emp }}</td>
+              <td>
+                <div class="sv-strong">{{ b.vendedor }}</div>
+                <div class="sv-muted">Campanhas: {{ b.resultados|length }}</div>
+              </td>
+              <td>
+                <details class="sv-acc sv-acc--inline">
+                  <summary class="sv-acc__sum">
+                    <span class="sv-acc__label">Ver campanhas ({{ b.resultados|length }})</span>
+                    <span class="sv-acc__chev" aria-hidden="true"></span>
+                  </summary>
+                  <div class="sv-acc__body">
+                    <table class="sv-subtable">
+                      <thead>
+                        <tr>
+                          <th>Campanha</th>
+                          <th class="sv-right" style="width: 120px;">Qtd mín.</th>
+                          <th class="sv-right" style="width: 140px;">Prêmio</th>
+                          <th class="sv-right" style="width: 120px;">Vendeu</th>
+                          <th class="sv-right" style="width: 140px;">Valor (R$)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {% for r in b.resultados %}
+                          <tr>
+                            <td class="sv-strong">{{ r.titulo }}</td>
+                            <td class="sv-right">{{ r.qtd_minima }}</td>
+                            <td class="sv-right">{{ r.premio|brl_rs }}</td>
+                            <td class="sv-right">{{ r.qtd_vendida }}</td>
+                            <td class="sv-right">{{ r.valor_total|brl_rs }}</td>
+                          </tr>
+                        {% endfor %}
+                      </tbody>
+                    </table>
+                  </div>
+                </details>
+              </td>
+              <td class="sv-right sv-strong">{{ b.total_valor|brl_rs }}</td>
+            </tr>
           {% endfor %}
+          {% if blocos|length == 0 %}
+            <tr><td colspan="4" class="sv-muted">Nenhum resultado para os filtros selecionados.</td></tr>
+          {% endif %}
         </tbody>
       </table>
     </div>
   </div>
 </div>
-{% endif %}
-
 {% endblock %}
