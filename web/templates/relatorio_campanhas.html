@@ -1,247 +1,280 @@
 {% extends "base.html" %}
+{% block title %}Relatórios • Campanhas{% endblock %}
 {% block content %}
 
-<style>
-  .rc-wrap{max-width:1200px;margin:0 auto;padding:10px 12px}
-  .rc-top{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;justify-content:space-between}
-  .rc-card{border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:10px 12px;background:rgba(0,0,0,.18)}
-  .rc-grid{display:grid;grid-template-columns:repeat(4,minmax(180px,1fr));gap:10px}
-  .rc-grid-2{display:grid;grid-template-columns:repeat(2,minmax(240px,1fr));gap:10px}
-  .rc-muted{opacity:.8;font-size:.92em}
-  .rc-actions a, .rc-actions button{margin-right:8px}
-  table.rc-table{width:100%;border-collapse:collapse}
-  table.rc-table th, table.rc-table td{border-bottom:1px solid rgba(255,255,255,.10);padding:8px 8px;vertical-align:top}
-  table.rc-table th{font-weight:600;text-align:left;white-space:nowrap}
-  .rc-badges span{display:inline-block;padding:2px 8px;border-radius:999px;border:1px solid rgba(255,255,255,.18);margin-right:6px;font-size:.85em}
-  .rc-kpi{font-size:1.15em;font-weight:700}
-  .rc-kpi small{display:block;font-weight:400;opacity:.85;font-size:.85em}
-  .rc-empbox{max-height:180px;overflow:auto;padding:6px;border:1px solid rgba(255,255,255,.10);border-radius:10px}
-  .rc-vbox{max-height:180px;overflow:auto;padding:6px;border:1px solid rgba(255,255,255,.10);border-radius:10px}
-  .rc-pill{display:inline-block;padding:2px 10px;border-radius:999px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.10)}
-  @media (max-width: 980px){ .rc-grid{grid-template-columns:repeat(2,minmax(180px,1fr))} }
-  @media (max-width: 560px){ .rc-grid{grid-template-columns:1fr} .rc-grid-2{grid-template-columns:1fr} }
-</style>
+{% set view_mode = request.args.get('view', 'detalhado') %}
+{% set resumo = ctx.get('resumo', {}) %}
+{% set status = resumo.get('status', {}) %}
 
-<div class="rc-wrap">
-  <div class="rc-top">
-    <div>
-      <h3 style="margin:0 0 4px 0">Relatório de Campanhas</h3>
-      <div class="rc-muted">Unificado (Qtd • Combo • Itens Parados) — competência {{ mes }}/{{ ano }}</div>
-      <div class="rc-actions" style="margin-top:6px">
-        {% if recalc_url %}<a class="rc-pill" href="{{ recalc_url }}">Recalcular agora</a>{% endif %}
-        {% if export_url %}<a class="rc-pill" href="{{ export_url }}">Exportar CSV</a>{% endif %}
-        {% if is_admin or is_financeiro %}
-          <a class="rc-pill" href="{{ url_for('admin_fechamento') }}">Ir para Fechamento</a>
-        {% endif %}
-      </div>
+<div class="sv-page">
+
+  <!-- Header -->
+  <div class="sv-pagehead sv-glass">
+    <div class="sv-pagehead__left">
+      <div class="sv-breadcrumb">Relatórios <span class="sv-muted">/</span> Campanhas</div>
+      <h1 class="sv-h1">Campanhas do mês</h1>
+      <div class="sv-sub">Filtre por EMP e vendedor. Use <strong>Recalcular</strong> quando importar vendas.</div>
     </div>
-    <div class="rc-badges">
-      {% if is_admin %}<span>ADMIN</span>{% endif %}
-      {% if is_supervisor %}<span>SUPERVISOR</span>{% endif %}
-      {% if is_vendedor %}<span>VENDEDOR</span>{% endif %}
-      {% if is_financeiro %}<span>FINANCEIRO</span>{% endif %}
+    <div class="sv-pagehead__right">
+      <a class="sv-btn sv-btn-ghost" href="{{ ctx.get('recalc_url') or url_for('relatorio_campanhas', recalc=1, page=1) }}">
+        Recalcular
+      </a>
+      <a class="sv-btn sv-btn-primary" href="{{ ctx.get('export_url') or url_for('relatorio_campanhas_export_csv') }}">
+        Exportar CSV
+      </a>
     </div>
   </div>
 
-  <div class="rc-card" style="margin-top:12px">
+  <!-- Filters -->
+  <div class="sv-card sv-glass sv-section">
     <form method="get" action="{{ url_for('relatorio_campanhas') }}">
-      <div class="rc-grid-2">
-        <div>
-          <label>Mês</label><br>
-          <select name="mes">
+      <div class="sv-grid sv-grid-3">
+        <div class="sv-field">
+          <label class="sv-label">Mês</label>
+          <select class="sv-select" name="mes">
             {% for m in range(1,13) %}
               <option value="{{ m }}" {% if (m|string) == (mes|string) %}selected{% endif %}>{{ "%02d"|format(m) }}</option>
             {% endfor %}
           </select>
-          &nbsp;&nbsp;
-          <label>Ano</label><br>
-          <input name="ano" value="{{ ano }}" style="max-width:120px">
-          &nbsp;&nbsp;
-          <label>Modo</label><br>
-          <select name="view">
-            <option value="detalhado" {% if ctx.view_mode != "vendedores" %}selected{% endif %}>Detalhado</option>
-            <option value="vendedores" {% if ctx.view_mode == "vendedores" %}selected{% endif %}>Por vendedor (recompensas)</option>
+        </div>
+
+        <div class="sv-field">
+          <label class="sv-label">Ano</label>
+          <input class="sv-input" name="ano" value="{{ ano }}" inputmode="numeric">
+        </div>
+
+        <div class="sv-field">
+          <label class="sv-label">Visão</label>
+          <select class="sv-select" name="view">
+            <option value="detalhado" {% if view_mode != "vendedores" %}selected{% endif %}>Detalhado</option>
+            <option value="vendedores" {% if view_mode == "vendedores" %}selected{% endif %}>Por vendedor (recompensas)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="sv-grid sv-grid-2 sv-mt">
+        <div class="sv-card sv-filterbox">
+          <div class="sv-filterbox__head">
+            <div>
+              <div class="sv-label-inline">EMP</div>
+              <div class="sv-muted sv-small">Selecione uma ou mais</div>
+            </div>
+            <button type="button" class="sv-btn sv-btn-ghost sv-btn-xs" data-sv-checkall="emp">Marcar todas</button>
+          </div>
+          <div class="sv-checklist">
+            {% for e in emps_scope %}
+              {% set checked = (e in emps_sel) %}
+              <label class="sv-check">
+                <input type="checkbox" name="emp" value="{{ e }}" {% if checked %}checked{% endif %}>
+                <span>{{ e }}</span>
+              </label>
+            {% endfor %}
+          </div>
+        </div>
+
+        <div class="sv-card sv-filterbox">
+          <div class="sv-filterbox__head">
+            <div>
+              <div class="sv-label-inline">Vendedor</div>
+              <div class="sv-muted sv-small">Opcional</div>
+            </div>
+            <button type="button" class="sv-btn sv-btn-ghost sv-btn-xs" data-sv-checkall="vendedor">Marcar todas</button>
+          </div>
+          <div class="sv-checklist">
+            {% for v in vendedores_scope %}
+              {% set checked = (v in vendedores_sel) %}
+              <label class="sv-check">
+                <input type="checkbox" name="vendedor" value="{{ v }}" {% if checked %}checked{% endif %}>
+                <span>{{ v }}</span>
+              </label>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+
+      <div class="sv-actions sv-mt">
+        <div class="sv-muted sv-small">
+          Linhas: {{ total_rows }} • Por página:
+          <select class="sv-select sv-select-xs" name="per_page">
+            {% for opt in per_page_opts %}
+              <option value="{{ opt }}" {% if (opt|string) == (per_page|string) %}selected{% endif %}>{{ opt }}</option>
+            {% endfor %}
           </select>
         </div>
 
-        <div style="text-align:right">
-          <button type="submit">Aplicar filtros</button>
-          <a class="rc-pill" href="{{ url_for('relatorio_campanhas') }}">Limpar</a>
+        <div class="sv-actions__right">
+          <button class="sv-btn sv-btn-primary" type="submit">Aplicar filtros</button>
+          <a class="sv-btn sv-btn-ghost" href="{{ url_for('relatorio_campanhas') }}">Limpar</a>
         </div>
-      </div>
-
-      <div class="rc-grid-2" style="margin-top:10px">
-        <div>
-          <div><strong>EMP</strong> <span class="rc-muted">(selecione uma ou mais)</span></div>
-          <div class="rc-empbox">
-            {% for e in emps_scope %}
-              {% set checked = (e in emps_sel) %}
-              <label style="display:block">
-                <input type="checkbox" name="emp" value="{{ e }}" {% if checked %}checked{% endif %}>
-                {{ e }}
-              </label>
-            {% endfor %}
-          </div>
-        </div>
-
-        <div>
-          <div><strong>Vendedor</strong> <span class="rc-muted">(opcional)</span></div>
-          <div class="rc-vbox">
-            {% for v in vendedores_scope %}
-              {% set checked = (v in vendedores_sel) %}
-              <label style="display:block">
-                <input type="checkbox" name="vendedor" value="{{ v }}" {% if checked %}checked{% endif %}>
-                {{ v }}
-              </label>
-            {% endfor %}
-          </div>
-        </div>
-      </div>
-
-      <div style="margin-top:10px" class="rc-muted">
-        Linhas: {{ total_rows }} — Por página:
-        <select name="per_page">
-          {% for opt in per_page_opts %}
-            <option value="{{ opt }}" {% if (opt|string) == (per_page|string) %}selected{% endif %}>{{ opt }}</option>
-          {% endfor %}
-        </select>
       </div>
     </form>
   </div>
 
-  {% if resumo %}
-  <div class="rc-grid" style="margin-top:12px">
-    <div class="rc-card"><div class="rc-kpi">{{ resumo.total_valor|brl_rs }}<small>Total Geral</small></div><div class="rc-muted">Linhas: {{ resumo.linhas }}</div></div>
-    <div class="rc-card"><div class="rc-kpi">{{ resumo.status.PENDENTE|brl_rs }}<small>Pendente</small></div></div>
-    <div class="rc-card"><div class="rc-kpi">{{ resumo.status.A_PAGAR|brl_rs }}<small>A pagar</small></div></div>
-    <div class="rc-card"><div class="rc-kpi">{{ resumo.status.PAGO|brl_rs }}<small>Pago</small></div></div>
-  </div>
-
-  <div class="rc-card" style="margin-top:12px">
-    <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-end;flex-wrap:wrap">
-      <div>
-        <strong>Resumo por EMP e Vendedor</strong>
-        <div class="rc-muted">Ordenado por maior recompensa</div>
-      </div>
+  <!-- KPI -->
+  <div class="sv-kpi-grid sv-section">
+    <div class="sv-card sv-glass sv-kpi">
+      <div class="sv-kpi__label">Total (R$)</div>
+      <div class="sv-kpi__value">{{ resumo.get('total_valor', 0.0) | brl_rs }}</div>
+      <div class="sv-kpi__meta">{{ resumo.get('linhas', 0) }} linhas</div>
     </div>
-
-    <table class="rc-table" style="margin-top:8px">
-      <thead>
-        <tr>
-          <th>EMP</th>
-          <th>Total</th>
-          <th>Pendente</th>
-          <th>A pagar</th>
-          <th>Pago</th>
-          <th>Top vendedores</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for emp, ed in resumo.por_emp_ordenado %}
-        <tr>
-          <td><strong>{{ emp }}</strong></td>
-          <td>{{ ed.total|brl_rs }}</td>
-          <td>{{ ed.status.PENDENTE|brl_rs }}</td>
-          <td>{{ ed.status.A_PAGAR|brl_rs }}</td>
-          <td>{{ ed.status.PAGO|brl_rs }}</td>
-          <td>
-            {% set vend_items = ed.vendedores.items()|list %}
-            {% set vend_sorted = vend_items|sort(attribute=1.total, reverse=True) %}
-            {% for vname, vd in vend_sorted[:5] %}
-              <div class="rc-muted">{{ vname }}: <strong>{{ vd.total|brl_rs }}</strong></div>
-            {% endfor %}
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+    <div class="sv-card sv-glass sv-kpi">
+      <div class="sv-kpi__label">Pendente</div>
+      <div class="sv-kpi__value">{{ status.get('PENDENTE', 0.0) | brl_rs }}</div>
+      <div class="sv-kpi__meta">Aguardando fechamento</div>
+    </div>
+    <div class="sv-card sv-glass sv-kpi">
+      <div class="sv-kpi__label">A Pagar</div>
+      <div class="sv-kpi__value">{{ status.get('A_PAGAR', 0.0) | brl_rs }}</div>
+      <div class="sv-kpi__meta">Pronto para pagar</div>
+    </div>
+    <div class="sv-card sv-glass sv-kpi">
+      <div class="sv-kpi__label">Pago</div>
+      <div class="sv-kpi__value">{{ status.get('PAGO', 0.0) | brl_rs }}</div>
+      <div class="sv-kpi__meta">Já liquidado</div>
+    </div>
   </div>
-  {% endif %}
 
-  {% if ctx.view_mode == "vendedores" %}
-    <div class="rc-card" style="margin-top:12px">
-      <h4 style="margin:0 0 4px 0">Recompensas por vendedor</h4>
-      <div class="rc-muted">Agrupado por empresa → vendedor → campanhas com recompensa</div>
+  {% if view_mode == "vendedores" %}
+    <!-- Vendedor ranking -->
+    <div class="sv-card sv-glass sv-section">
+      <div class="sv-sectionhead">
+        <h2 class="sv-h2">Ranking por vendedor (recompensas)</h2>
+        <div class="sv-muted sv-small">Somatório da recompensa do período filtrado</div>
+      </div>
 
-      {% if not ctx.grouped_recompensas %}
-        <p>Nenhuma recompensa encontrada para os filtros selecionados.</p>
-      {% else %}
-        {% for g in ctx.grouped_recompensas %}
-          <div class="rc-card" style="margin-top:10px">
-            <div><strong>Empresa:</strong> {{ g.emp }}</div>
-            <div style="margin-top:8px">
-              {% for v in g.vendedores %}
-                <div class="rc-card" style="margin-top:8px">
-                  <div><strong>{{ v.vendedor }}</strong></div>
-                  <ul style="margin:6px 0 0 18px">
-                    {% for it in v.itens %}
-                      <li>
-                        <strong>{{ it.titulo }}</strong> ({{ it.tipo }})
-                        {% if it.marca %} — Marca: {{ it.marca }}{% endif %}
-                        {% if it.produto_prefixo %} — Produto: {{ it.produto_prefixo }}{% endif %}
-                        — <strong>{{ it.valor_recompensa|brl_rs }}</strong>
-                      </li>
-                    {% endfor %}
-                  </ul>
+      {% set por_emp = resumo.get('por_emp', {}) %}
+      {% if resumo.get('por_emp_ordenado') %}
+        <div class="sv-accordion">
+          {% for emp, empd in resumo.get('por_emp_ordenado', []) %}
+            <details class="sv-accitem" {% if loop.index == 1 %}open{% endif %}>
+              <summary class="sv-accsum">
+                <div class="sv-accsum__left">
+                  <span class="sv-badge">{{ emp }}</span>
+                  <span class="sv-muted">•</span>
+                  <span class="sv-strong">{{ empd.get('total', 0.0) | brl_rs }}</span>
                 </div>
-              {% endfor %}
-            </div>
-          </div>
-        {% endfor %}
-      {% endif %}
-    </div>
-  {% else %}
-    <div class="rc-card" style="margin-top:12px">
-      <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap">
-        <div><strong>Detalhamento</strong> <span class="rc-muted">Página {{ page }} / {{ total_pages }}</span></div>
-        <div>
-          {% if prev_url %}<a class="rc-pill" href="{{ prev_url }}">Anterior</a>{% endif %}
-          {% if next_url %}<a class="rc-pill" href="{{ next_url }}">Próxima</a>{% endif %}
-        </div>
-      </div>
+                <div class="sv-accsum__right">
+                  <span class="sv-pill sv-pill-warn">Pendente {{ empd.get('status', {}).get('PENDENTE', 0.0) | brl_rs }}</span>
+                  <span class="sv-pill sv-pill-info">A Pagar {{ empd.get('status', {}).get('A_PAGAR', 0.0) | brl_rs }}</span>
+                  <span class="sv-pill sv-pill-ok">Pago {{ empd.get('status', {}).get('PAGO', 0.0) | brl_rs }}</span>
+                </div>
+              </summary>
 
-      {% if rows_page and rows_page|length > 0 %}
-        <table class="rc-table" style="margin-top:10px">
-          <thead>
-            <tr>
-              <th>Tipo</th>
-              <th>EMP</th>
-              <th>Vendedor</th>
-              <th>Campanha</th>
-              <th>Gate</th>
-              <th>Qtd/Base</th>
-              <th>Qtd Premiada</th>
-              <th>Valor</th>
-              <th>Status</th>
-              <th>Pago em</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for r in rows_page %}
-              <tr>
-                <td>{{ r.tipo or r.get("tipo") }}</td>
-                <td>{{ r.emp }}</td>
-                <td><strong>{{ r.vendedor }}</strong></td>
-                <td>{{ r.titulo or r.campanha or "-" }}</td>
-                <td>
-                  {% if r.atingiu_gate is not none %}
-                    {% if r.atingiu_gate %}SIM{% else %}NÃO{% endif %}
-                  {% else %}-{% endif %}
-                </td>
-                <td>{{ r.qtd_base or 0 }}</td>
-                <td>{{ r.qtd_premiada or 0 }}</td>
-                <td><strong>{{ (r.valor_recompensa or 0)|brl_rs }}</strong></td>
-                <td>{{ r.status_pagamento or "PENDENTE" }}</td>
-                <td>{{ r.pago_em or "" }}</td>
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
+              {% set vend_map = empd.get('vendedores', {}) %}
+              {% set vend_items = vend_map.items()|list %}
+              {% set vend_sorted = vend_items|sort(attribute=1.total, reverse=True) %}
+              <div class="sv-tablewrap">
+                <table class="sv-table">
+                  <thead>
+                    <tr>
+                      <th>Vendedor</th>
+                      <th class="sv-right">Linhas</th>
+                      <th class="sv-right">Total (R$)</th>
+                      <th class="sv-right">Pendente</th>
+                      <th class="sv-right">A Pagar</th>
+                      <th class="sv-right">Pago</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for vend, vd in vend_sorted %}
+                      <tr>
+                        <td>{{ vend }}</td>
+                        <td class="sv-right">{{ vd.get('linhas', 0) }}</td>
+                        <td class="sv-right sv-strong">{{ vd.get('total', 0.0) | brl_rs }}</td>
+                        <td class="sv-right">{{ vd.get('status', {}).get('PENDENTE', 0.0) | brl_rs }}</td>
+                        <td class="sv-right">{{ vd.get('status', {}).get('A_PAGAR', 0.0) | brl_rs }}</td>
+                        <td class="sv-right">{{ vd.get('status', {}).get('PAGO', 0.0) | brl_rs }}</td>
+                      </tr>
+                    {% endfor %}
+                    {% if vend_sorted|length == 0 %}
+                      <tr><td colspan="6" class="sv-muted">Sem dados para os filtros escolhidos.</td></tr>
+                    {% endif %}
+                  </tbody>
+                </table>
+              </div>
+            </details>
+          {% endfor %}
+        </div>
       {% else %}
-        <p>Nenhum dado para os filtros selecionados.</p>
+        <div class="sv-muted">Sem dados para os filtros escolhidos.</div>
       {% endif %}
     </div>
   {% endif %}
+
+  <!-- Detalhado -->
+  <div class="sv-card sv-glass sv-section">
+    <div class="sv-sectionhead">
+      <h2 class="sv-h2">Tabela detalhada</h2>
+      <div class="sv-muted sv-small">
+        Página {{ page }} de {{ total_pages }}
+      </div>
+    </div>
+
+    <div class="sv-tablewrap">
+      <table class="sv-table">
+        <thead>
+          <tr>
+            <th>EMP</th>
+            <th>Vendedor</th>
+            <th>Campanha</th>
+            <th class="sv-right">Recompensa</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in rows %}
+            {% set emp = r.emp|default(r.EMP|default('')) %}
+            {% set vend = r.vendedor|default(r.VENDEDOR|default('')) %}
+            {% set camp = r.campanha|default(r.CAMPANHA|default('')) %}
+            {% set valor = r.valor_recompensa|default(r.VALOR_RECOMPENSA|default(r.valor|default(0))) %}
+            {% set st = r.status_pagamento|default(r.STATUS_PAGAMENTO|default('PENDENTE')) %}
+            <tr>
+              <td>{{ emp }}</td>
+              <td>{{ vend }}</td>
+              <td>{{ camp }}</td>
+              <td class="sv-right sv-strong">{{ valor | brl_rs }}</td>
+              <td>
+                {% if (st|string)|upper == 'PAGO' %}
+                  <span class="sv-pill sv-pill-ok">PAGO</span>
+                {% elif (st|string)|upper == 'A_PAGAR' %}
+                  <span class="sv-pill sv-pill-info">A PAGAR</span>
+                {% else %}
+                  <span class="sv-pill sv-pill-warn">PENDENTE</span>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+          {% if rows|length == 0 %}
+            <tr><td colspan="5" class="sv-muted">Nenhuma linha encontrada para os filtros escolhidos.</td></tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="sv-pager">
+      <a class="sv-btn sv-btn-ghost" href="{{ ctx.prev_url }}">◀ Anterior</a>
+      <div class="sv-muted sv-small">Página {{ page }} de {{ total_pages }}</div>
+      <a class="sv-btn sv-btn-ghost" href="{{ ctx.next_url }}">Próxima ▶</a>
+    </div>
+  </div>
 
 </div>
+
+<script>
+  // "Marcar todas" para checklists
+  (function(){
+    function checkAll(name){
+      var inputs = document.querySelectorAll('input[type="checkbox"][name="'+name+'"]');
+      var anyUnchecked = false;
+      inputs.forEach(function(i){ if(!i.checked) anyUnchecked = true; });
+      inputs.forEach(function(i){ i.checked = anyUnchecked; });
+    }
+    document.querySelectorAll('[data-sv-checkall]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        checkAll(btn.getAttribute('data-sv-checkall'));
+      });
+    });
+  })();
+</script>
+
 {% endblock %}
