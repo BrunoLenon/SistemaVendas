@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 {% block content %}
 {% set edit_obj = edit_obj if edit_obj is defined else None %}
-{% set today = today if today is defined else none %}
+
 <div class="container-fluid py-3">
   <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
     <div>
@@ -53,7 +53,7 @@
               </div>
               <div class="col-md-6">
                 <label class="form-label">Escopo</label>
-                {% set e = (edit_obj.escopo if edit_obj else 'EMP') %}
+                {% set e = (('EMP' if edit_obj.scope_mode=='POR_EMP' else 'GLOBAL') if edit_obj else 'EMP') %}
                 <select class="form-select" name="escopo">
                   <option value="EMP" {{ 'selected' if e=='EMP' else '' }}>EMP</option>
                   <option value="GLOBAL" {{ 'selected' if e=='GLOBAL' else '' }}>GLOBAL</option>
@@ -63,7 +63,7 @@
 
             <div class="mt-2">
               <label class="form-label">EMPs (somente se Escopo=EMP)</label>
-              <input class="form-control" name="emps" placeholder="101, 1001" value="{{ edit_obj.emps_json if edit_obj and edit_obj.emps_json else '' }}" />
+              <input class="form-control" name="emps" placeholder="101, 1001" value="{{ edit_emps if edit_emps is defined else '' }}" />
               <div class="form-text">Pode deixar vazio para “todas as EMPs” (dentro do escopo do usuário que visualizar).</div>
             </div>
 
@@ -79,7 +79,7 @@
             </div>
 
             <div class="form-check form-switch mt-2">
-              <input class="form-check-input" type="checkbox" role="switch" name="ativo" {% if edit_obj is none or edit_obj.ativo %}checked{% endif %}>
+              <input class="form-check-input" type="checkbox" role="switch" name="ativo" {% if edit_obj is none or edit_obj.ativa %}checked{% endif %}>
               <label class="form-check-label">Ativa</label>
             </div>
 
@@ -144,7 +144,7 @@
                     {{ c.titulo }}
                   </td>
                   <td><code>{{ c.tipo }}</code></td>
-                  <td>{{ c.escopo }}</td>
+                  <td>{{ 'EMP' if c.scope_mode=='POR_EMP' else 'GLOBAL' }}</td>
                   <td>{{ c.vigencia_ini }} → {{ c.vigencia_fim }}</td>
                   <td>{% if c.ativo %}<span class="badge bg-success">SIM</span>{% else %}<span class="badge bg-secondary">NÃO</span>{% endif %}</td>
                   <td class="text-end">

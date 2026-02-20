@@ -7256,28 +7256,63 @@ def err_500(e):
 @app.route("/admin/campanhas_v2", methods=["GET", "POST"])
 @admin_required
 def admin_campanhas_v2():
-    from datetime import date
+    from datetime import date, datetime
+
+    # Campanhas V2 (Engine Enterprise) usam o *novo schema*
+    # (campanhas_v2_master / campanhas_scope_emp_v2), pois é o mesmo consumido
+    # pelo Ranking por Marca V2 e demais módulos V2.
+    from db import CampanhaV2MasterNewSchema, CampanhaV2ScopeEmpNewSchema
+
     ano = int(request.args.get("ano") or date.today().year)
     mes = int(request.args.get("mes") or date.today().month)
+
+    def _parse_date(s: str):
+        if not s:
+            return None
+        try:
+            return datetime.strptime(s, "%Y-%m-%d").date()
+        except Exception:
+            return None
+
     db = SessionLocal()
     try:
         if request.method == "POST":
             titulo = (request.form.get("titulo") or "").strip()
             tipo = (request.form.get("tipo") or "RANKING_VALOR").strip().upper()
-            ativo = (request.form.get("ativo") or "1") == "1"
+
+            # UI manda: GLOBAL ou EMP
+            escopo_ui = (request.form.get("escopo") or "GLOBAL").strip().upper()
+            scope_mode = "POR_EMP" if escopo_ui in ("EMP", "POR_EMP") else "GLOBAL"
+
+            # switch checkbox: vem "on" quando ligado
+            ativa = bool(request.form.get("ativo"))
+
+            vigencia_ini = _parse_date((request.form.get("vigencia_ini") or "").strip())
+            vigencia_fim = _parse_date((request.form.get("vigencia_fim") or "").strip())
+
             regras_json = (request.form.get("regras_json") or "").strip() or "{}"
-            c = CampanhaV2Master(titulo=titulo, tipo=tipo, ativo=ativo, regras_json=regras_json)
+
+            c = CampanhaV2MasterNewSchema(
+                titulo=titulo,
+                tipo=tipo,
+                scope_mode=scope_mode,
+                vigencia_ini=vigencia_ini,
+                vigencia_fim=vigencia_fim,
+                ativa=ativa,
+                regras_json=regras_json,
+            )
             db.add(c)
             db.flush()
 
+            # Escopo por EMP: salva linhas na tabela de escopo (pode ser vazio -> tratado como GLOBAL/escopo do usuário)
             emps_raw = (request.form.get("emps") or "").strip()
-            if emps_raw:
+            if scope_mode == "POR_EMP" and emps_raw:
                 for p in emps_raw.split(","):
                     p = p.strip()
                     if not p:
                         continue
                     try:
-                        db.add(CampanhaV2ScopeEMP(campanha_id=c.id, emp=int(p)))
+                        db.add(CampanhaV2ScopeEmpNewSchema(campanha_id=c.id, emp=int(p)))
                     except Exception:
                         continue
 
@@ -7285,8 +7320,74 @@ def admin_campanhas_v2():
             flash("Campanha V2 criada.", "success")
             return redirect(url_for("admin_campanhas_v2", ano=ano, mes=mes))
 
-        campanhas = db.query(CampanhaV2Master).order_by(CampanhaV2Master.id.desc()).all()
-        return render_template("admin_campanhas_v2.html", campanhas=campanhas, ano=ano, mes=mes, edit_obj=None, today=date.today())
+        campanhas = db.query(CampanhaV2MasterNewSchema).order_by(CampanhaV2MasterNewSchema.id.desc()).all()
+
+        # Garantias para o template não quebrar (mesmo se variáveis não vierem)
+        return render_template(
+            "admin_campanhas_v2.html",
+            campanhas=campanhas,
+            ano=ano,
+            mes=mes,
+            edit_obj=None,
+            today=date.today(),
+        )
+    finally:
+        db.close()
+
+
+@app.post("/admin/campanhas_v2/toggle")
+@login_required
+@admin_required
+def admin_campanhas_v2_toggle():
+    from db import CampanhaV2MasterNewSchema
+    ano = int(request.args.get("ano") or 0) or None
+    mes = int(request.args.get("mes") or 0) or None
+    cid = int(request.args.get("id") or 0)
+    db = SessionLocal()
+    try:
+        c = db.query(CampanhaV2MasterNewSchema).filter(CampanhaV2MasterNewSchema.id == cid).first()
+        if not c:
+            flash("Campanha não encontrada.", "warning")
+            return redirect(url_for("admin_campanhas_v2", ano=ano, mes=mes) if ano and mes else url_for("admin_campanhas_v2"))
+        c.ativa = not bool(c.ativa)
+        db.commit()
+        flash("Status da campanha atualizado.", "success")
+        return redirect(url_for("admin_campanhas_v2", ano=ano, mes=mes) if ano and mes else url_for("admin_campanhas_v2"))
+    finally:
+        db.close()
+
+
+@app.post("/admin/campanhas_v2/delete")
+@login_required
+@admin_required
+def admin_campanhas_v2_delete():
+    from db import (
+        CampanhaV2MasterNewSchema,
+        CampanhaV2ScopeEmpNewSchema,
+        CampanhaV2ResultadoNew,
+        CampanhaV2SnapshotRankingMarca,
+    )
+
+    ano = int(request.args.get("ano") or 0) or None
+    mes = int(request.args.get("mes") or 0) or None
+    cid = int(request.args.get("id") or 0)
+
+    db = SessionLocal()
+    try:
+        c = db.query(CampanhaV2MasterNewSchema).filter(CampanhaV2MasterNewSchema.id == cid).first()
+        if not c:
+            flash("Campanha não encontrada.", "warning")
+            return redirect(url_for("admin_campanhas_v2", ano=ano, mes=mes) if ano and mes else url_for("admin_campanhas_v2"))
+
+        # limpa dependências do Ranking por Marca V2
+        db.query(CampanhaV2ResultadoNew).filter(CampanhaV2ResultadoNew.campanha_id == cid).delete(synchronize_session=False)
+        db.query(CampanhaV2SnapshotRankingMarca).filter(CampanhaV2SnapshotRankingMarca.campanha_id == cid).delete(synchronize_session=False)
+        db.query(CampanhaV2ScopeEmpNewSchema).filter(CampanhaV2ScopeEmpNewSchema.campanha_id == cid).delete(synchronize_session=False)
+
+        db.delete(c)
+        db.commit()
+        flash("Campanha removida.", "success")
+        return redirect(url_for("admin_campanhas_v2", ano=ano, mes=mes) if ano and mes else url_for("admin_campanhas_v2"))
     finally:
         db.close()
 
