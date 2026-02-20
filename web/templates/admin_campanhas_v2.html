@@ -150,7 +150,7 @@
                   <td class="text-end">
                     <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin_campanhas_v2', edit=c.id) }}">Editar</a>
 
-                    <form method="post" action="{{ url_for('admin_campanhas_v2_recalcular_uma', cid=c.id) }}" class="d-inline">
+                    <form method="post" action="{{ url_for('admin_campanhas_v2_recalcular_uma', cid=c.id, ano=ano, mes=mes) }}" class="d-inline">
                       <input type="hidden" name="ano" value="{{ today.year }}" />
                       <input type="hidden" name="mes" value="{{ '%02d'|format(today.month) }}" />
                       <button class="btn btn-sm btn-outline-success" type="submit" title="Recalcular só esta campanha">Recalcular</button>
@@ -162,7 +162,7 @@
                       </button>
                     </form>
 
-                    <form method="post" action="{{ url_for('admin_campanhas_v2_duplicar', cid=c.id) }}" class="d-inline">
+                    <form method="post" action="{{ url_for('admin_campanhas_v2_duplicar', cid=c.id, ano=ano, mes=mes) }}" class="d-inline">
                       <button class="btn btn-sm btn-outline-warning" type="submit" title="Criar cópia (inativa)">Duplicar</button>
                     </form>
 
