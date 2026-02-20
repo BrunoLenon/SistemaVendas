@@ -1,7 +1,5 @@
 {% extends 'base.html' %}
 {% block content %}
-{% set edit_obj = edit_obj if edit_obj is defined else None %}
-
 <div class="container-fluid py-3">
   <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
     <div>
@@ -53,7 +51,7 @@
               </div>
               <div class="col-md-6">
                 <label class="form-label">Escopo</label>
-                {% set e = (('EMP' if edit_obj.scope_mode=='POR_EMP' else 'GLOBAL') if edit_obj else 'EMP') %}
+                {% set e = (edit_obj.escopo if edit_obj else 'EMP') %}
                 <select class="form-select" name="escopo">
                   <option value="EMP" {{ 'selected' if e=='EMP' else '' }}>EMP</option>
                   <option value="GLOBAL" {{ 'selected' if e=='GLOBAL' else '' }}>GLOBAL</option>
@@ -63,7 +61,7 @@
 
             <div class="mt-2">
               <label class="form-label">EMPs (somente se Escopo=EMP)</label>
-              <input class="form-control" name="emps" placeholder="101, 1001" value="{{ edit_emps if edit_emps is defined else '' }}" />
+              <input class="form-control" name="emps" placeholder="101, 1001" value="{{ edit_obj.emps_json if edit_obj and edit_obj.emps_json else '' }}" />
               <div class="form-text">Pode deixar vazio para “todas as EMPs” (dentro do escopo do usuário que visualizar).</div>
             </div>
 
@@ -79,7 +77,7 @@
             </div>
 
             <div class="form-check form-switch mt-2">
-              <input class="form-check-input" type="checkbox" role="switch" name="ativo" {% if edit_obj is none or edit_obj.ativa %}checked{% endif %}>
+              <input class="form-check-input" type="checkbox" role="switch" name="ativo" {% if edit_obj is none or edit_obj.ativo %}checked{% endif %}>
               <label class="form-check-label">Ativa</label>
             </div>
 
@@ -144,17 +142,17 @@
                     {{ c.titulo }}
                   </td>
                   <td><code>{{ c.tipo }}</code></td>
-                  <td>{{ 'EMP' if c.scope_mode=='POR_EMP' else 'GLOBAL' }}</td>
+                  <td>{{ c.escopo }}</td>
                   <td>{{ c.vigencia_ini }} → {{ c.vigencia_fim }}</td>
                   <td>{% if c.ativo %}<span class="badge bg-success">SIM</span>{% else %}<span class="badge bg-secondary">NÃO</span>{% endif %}</td>
                   <td class="text-end">
                     <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin_campanhas_v2', edit=c.id) }}">Editar</a>
 
-                    <form method="post" action="{{ url_for('admin_campanhas_v2_recalcular_uma', cid=c.id) }}" class="d-inline">
-                      <input type="hidden" name="ano" value="{{ today.year }}" />
-                      <input type="hidden" name="mes" value="{{ '%02d'|format(today.month) }}" />
-                      <button class="btn btn-sm btn-outline-success" type="submit" title="Recalcular só esta campanha">Recalcular</button>
-                    </form>
+                    <form method="get" action="{{ url_for('admin_campanhas_v2_recalcular') }}" class="d-inline">
+  <input type="hidden" name="ano" value="{{ ano }}" />
+  <input type="hidden" name="mes" value="{{ mes }}" />
+  <button class="btn btn-sm btn-outline-warning" type="submit">Recalcular período</button>
+</form>
 
                     <form method="post" action="{{ url_for('admin_campanhas_v2_toggle', cid=c.id) }}" class="d-inline">
                       <button class="btn btn-sm btn-outline-secondary" type="submit" title="Ativar/Desativar">
