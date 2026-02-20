@@ -6,6 +6,12 @@ from typing import Any, Callable
 from services.campanhas_v2_service import list_resultados_v2
 
 
+
+
+def _parse_bool(val: Any) -> bool:
+    s = str(val or "").strip().lower()
+    return s in ("1", "true", "t", "yes", "y", "sim", "s", "on")
+
 @dataclass(frozen=True)
 class CampanhasDeps:
     """Dependências injetadas a partir do app.py.
@@ -60,6 +66,14 @@ def build_campanhas_page_context(
     hoje = date.today()
     mes = int(args.get("mes") or hoje.month)
     ano = int(args.get("ano") or hoje.year)
+
+
+    # Performance/SaaS: não recalcula no request por padrão.
+    # Use ?recalc=1 quando quiser forçar apuração e atualizar snapshots.
+    recalc = _parse_bool(args.get("recalc"))
+
+    if recalc and role_l not in ("admin", "supervisor"):
+        recalc = False
 
     vendedores_req = [v.strip().upper() for v in deps.parse_multi_args(args, "vendedor")]
 
@@ -116,24 +130,35 @@ def build_campanhas_page_context(
     except Exception:
         vendedores_dropdown = []
 
-    # Calcula resultados e agrupa por EMP
-    blocos: list[dict[str, Any]] = []
-    with deps.SessionLocal() as db:
-        if (vendedor_sel or "").upper() == "__ALL__":
-            vendedores_alvo = ["__ALL__"]
-        elif (vendedor_sel or "").upper() == "__MULTI__":
-            vendedores_alvo = [v for v in (vendedores_sel or []) if (v or "").strip().upper() != "__ALL__"]
-        else:
-            vendedores_alvo = [vendedor_sel]
 
-        for emp in emps_scope or ([emp_param] if emp_param else []):
-            emp = str(emp)
-            campanhas = deps.campanhas_mes_overlap(ano, mes, emp)
+# Calcula resultados e agrupa por EMP
+#
+# Importante (SaaS/performance):
+# - Por padrão, NÃO recalcula no request.
+# - A página lê snapshots (campanhas_qtd_resultados) já gravados.
+# - Para forçar apuração e atualizar snapshots: use ?recalc=1
+blocos: list[dict[str, Any]] = []
+from db import CampanhaQtdResultado  # import local evita circular/import time
 
-            for vend in vendedores_alvo:
-                vend = (vend or "").strip().upper()
-                if not vend:
-                    continue
+with deps.SessionLocal() as db:
+    if (vendedor_sel or "").upper() == "__ALL__":
+        vendedores_alvo = ["__ALL__"]
+    elif (vendedor_sel or "").upper() == "__MULTI__":
+        vendedores_alvo = [v for v in (vendedores_sel or []) if (v or "").strip().upper() != "__ALL__"]
+    else:
+        vendedores_alvo = [vendedor_sel]
+
+    for emp in emps_scope or ([emp_param] if emp_param else []):
+        emp = str(emp)
+
+        for vend in vendedores_alvo:
+            vend = (vend or "").strip().upper()
+            if not vend:
+                continue
+
+            if recalc:
+                # Modo "apuração": recalcula e faz upsert no snapshot
+                campanhas = deps.campanhas_mes_overlap(ano, mes, emp)
 
                 # prioridade por chave (campo_match + prefixo + marca)
                 by_key: dict[tuple[str, str, str], Any] = {}
@@ -165,14 +190,30 @@ def build_campanhas_page_context(
                     total_recomp += float(getattr(res, "valor_recompensa", 0.0) or 0.0)
 
                 resultados_calc.sort(key=lambda r: float(getattr(r, "valor_recompensa", 0.0) or 0.0), reverse=True)
+            else:
+                # Modo "snapshot": lê resultados já gravados (rápido e estável)
+                resultados_calc = (
+                    db.query(CampanhaQtdResultado)
+                    .filter(
+                        CampanhaQtdResultado.competencia_ano == int(ano),
+                        CampanhaQtdResultado.competencia_mes == int(mes),
+                        CampanhaQtdResultado.emp == emp,
+                        CampanhaQtdResultado.vendedor == vend,
+                        CampanhaQtdResultado.valor_recompensa > 0,
+                    )
+                    .order_by(CampanhaQtdResultado.valor_recompensa.desc())
+                    .all()
+                )
+                total_recomp = float(sum(float(getattr(r, "valor_recompensa", 0.0) or 0.0) for r in (resultados_calc or [])))
 
-                blocos.append({
-                    "emp": emp,
-                    "vendedor": vend,
-                    "resultados": resultados_calc,
-                    "total": total_recomp,
-                })
+            blocos.append({
+                "emp": emp,
+                "vendedor": vend,
+                "resultados": resultados_calc,
+                "total": total_recomp,
+            })
 
+    if recalc:
         db.commit()
 
     emps_options = deps.get_emp_options(base_scope if 'base_scope' in locals() else emps_scope)
