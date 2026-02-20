@@ -62,9 +62,8 @@ def create_app() -> Flask:
             except Exception:
                 pass
 
-
-    # GARANTIA: cadastro de campanhas V2 (admin) precisa existir (rota /admin/campanhas_v2).
-    # Este blueprint é independente do monolito e mantém o cadastro/ações V2 estáveis.
+    # Admin Campanhas V2: evita 404 em /admin/campanhas_v2 caso o legado não registre.
+    # (o legado mudou bastante durante os patches; aqui deixamos o boot resiliente)
     try:
         from web.blueprints.campanhas_v2_admin import bp as campanhas_v2_admin_bp  # noqa
         _safe_register_blueprint(app, campanhas_v2_admin_bp, "campanhas_v2_admin")

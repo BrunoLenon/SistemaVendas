@@ -96,7 +96,9 @@ def admin_campanhas_v2():
             titulo = (request.form.get("titulo") or "").strip()
             tipo = (request.form.get("tipo") or "RANKING_VALOR").strip().upper()
             escopo = (request.form.get("escopo") or "EMP").strip().upper()
-            ativo = (request.form.get("ativo") or "1") == "1"
+            # Checkbox HTML geralmente envia "on" quando marcado; em alguns casos pode vir "1".
+            ativo_raw = (request.form.get("ativo") or "").strip().lower()
+            ativo = ativo_raw in {"1", "on", "true", "yes", "y"}
 
             # Se não informar vigência, usamos o ano inteiro (padrão seguro)
             default_ini = date(int(ano), 1, 1)
@@ -105,7 +107,9 @@ def admin_campanhas_v2():
             vig_fim = _parse_date(request.form.get("vigencia_fim"), default_fim)
 
             emps = _parse_int_list(request.form.get("emps") or "")
-            regras = _safe_json(request.form.get("regras_json") or "{}")
+            # Compatibilidade: alguns templates antigos usam name="regras".
+            regras_txt = request.form.get("regras_json") or request.form.get("regras") or "{}"
+            regras = _safe_json(regras_txt)
 
             if not titulo:
                 flash("Informe o título da campanha.", "warning")
