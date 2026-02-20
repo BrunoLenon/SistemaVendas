@@ -868,6 +868,35 @@ def admin_required(view_func):
         return view_func(*args, **kwargs)
     return _wrapped
 
+
+# -----------------------------------------------------------------------------
+# Compat: algumas versões do sistema usavam @roles_required("admin") etc.
+# Se algum patch/template referenciar isso, evitamos crash no import.
+# -----------------------------------------------------------------------------
+def roles_required(*allowed_roles: str):
+    """Decorator que exige que o usuário esteja logado e tenha um dos perfis.
+
+    Ex.: @roles_required("admin", "financeiro")
+
+    Observação: mantemos por compatibilidade. Internamente reutiliza _role().
+    """
+
+    allowed_norm = {_normalize_role(r) for r in allowed_roles if r}
+
+    def _decorator(view_func):
+        @wraps(view_func)
+        @login_required
+        def _wrapped(*args, **kwargs):
+            role = _role()
+            if role in allowed_norm:
+                return view_func(*args, **kwargs)
+            flash("Acesso negado.", "warning")
+            return redirect(url_for("dashboard"))
+
+        return _wrapped
+
+    return _decorator
+
 def financeiro_required(view_func):
     """Decorator: exige FINANCEIRO (ou ADMIN)."""
     @wraps(view_func)
@@ -7254,125 +7283,43 @@ def err_500(e):
 # ==========================
 
 @app.route("/admin/campanhas_v2", methods=["GET", "POST"])
-@login_required
-@roles_required("admin")
+@admin_required
 def admin_campanhas_v2():
-    """Admin V2: cadastro universal de campanhas (Ranking/Metas/Mix/Acumulativa).
-
-    Observação: a tabela campanhas_master_v2 possui colunas NOT NULL (vigencia_ini/vigencia_fim),
-    então esta rota faz validação e aplica defaults seguros para evitar 500.
-    """
-    from datetime import date, datetime
-    import calendar
-    import json as _json
-    import re
-
-    from db import Session, CampanhaV2Master
-
-    def _parse_date_any(value: str | None) -> date | None:
-        if not value:
-            return None
-        value = value.strip()
-        # HTML <input type="date"> vem como YYYY-MM-DD
-        try:
-            if re.match(r"^\d{4}-\d{2}-\d{2}$", value):
-                return datetime.strptime(value, "%Y-%m-%d").date()
-        except Exception:
-            pass
-        # DD/MM/YYYY (caso o browser envie assim por algum motivo)
-        try:
-            if re.match(r"^\d{2}/\d{2}/\d{4}$", value):
-                return datetime.strptime(value, "%d/%m/%Y").date()
-        except Exception:
-            pass
-        return None
-
-    # Filtro visual (opcional) para defaults de vigência
+    from datetime import date
+    ano = int(request.args.get("ano") or date.today().year)
+    mes = int(request.args.get("mes") or date.today().month)
+    db = SessionLocal()
     try:
-        ano = int(request.args.get("ano") or date.today().year)
-    except Exception:
-        ano = date.today().year
-    try:
-        mes = int(request.args.get("mes") or date.today().month)
-    except Exception:
-        mes = date.today().month
-    mes = max(1, min(12, mes))
+        if request.method == "POST":
+            titulo = (request.form.get("titulo") or "").strip()
+            tipo = (request.form.get("tipo") or "RANKING_VALOR").strip().upper()
+            ativo = (request.form.get("ativo") or "1") == "1"
+            regras_json = (request.form.get("regras_json") or "").strip() or "{}"
+            c = CampanhaV2Master(titulo=titulo, tipo=tipo, ativo=ativo, regras_json=regras_json)
+            db.add(c)
+            db.flush()
 
-    first_day = date(ano, mes, 1)
-    last_day = date(ano, mes, calendar.monthrange(ano, mes)[1])
+            emps_raw = (request.form.get("emps") or "").strip()
+            if emps_raw:
+                for p in emps_raw.split(","):
+                    p = p.strip()
+                    if not p:
+                        continue
+                    try:
+                        db.add(CampanhaV2ScopeEMP(campanha_id=c.id, emp=int(p)))
+                    except Exception:
+                        continue
 
-    sess = Session()
-
-    if request.method == "POST":
-        # Campos principais
-        titulo = (request.form.get("titulo") or "").strip()
-        tipo = (request.form.get("tipo") or "RANKING_VALOR").strip()
-        escopo = (request.form.get("escopo") or "EMP").strip()
-
-        # Datas (NOT NULL)
-        vig_ini = _parse_date_any(request.form.get("vigencia_ini")) or first_day
-        vig_fim = _parse_date_any(request.form.get("vigencia_fim")) or last_day
-
-        # EMPs (pode ser vazio => todas no escopo do usuário que visualizar; para admin, equivale a "todas")
-        emps_raw = (request.form.get("emps") or "").strip()
-        emps_list = []
-        if escopo.upper() == "EMP" and emps_raw:
-            # aceita: "101,1001" / "101 1001" / "101;1001"
-            parts = re.split(r"[\s,;]+", emps_raw)
-            for p in parts:
-                if not p:
-                    continue
-                try:
-                    emps_list.append(int(p))
-                except Exception:
-                    pass
-
-        ativo = (request.form.get("ativo") in ("on", "true", "1", "yes")) or True
-
-        regras_raw = (request.form.get("regras_json") or "{}").strip() or "{}"
-        try:
-            regras_obj = _json.loads(regras_raw)
-            if not isinstance(regras_obj, dict):
-                regras_obj = {}
-        except Exception:
-            regras_obj = {}
-
-        # Validação mínima
-        if not titulo:
-            flash("Informe um Título para a campanha.", "warning")
-            return redirect(url_for("admin_campanhas_v2", ano=ano, mes=mes))
-        if vig_ini > vig_fim:
-            flash("Vigência inválida: início não pode ser maior que o fim.", "warning")
+            db.commit()
+            flash("Campanha V2 criada.", "success")
             return redirect(url_for("admin_campanhas_v2", ano=ano, mes=mes))
 
-        c = CampanhaV2Master(
-            titulo=titulo,
-            tipo=tipo,
-            escopo=escopo,
-            emps_json=emps_list if emps_list else None,
-            vigencia_ini=vig_ini,
-            vigencia_fim=vig_fim,
-            ativo=ativo,
-            regras_json=_json.dumps(regras_obj, ensure_ascii=False),
-        )
-        sess.add(c)
-        sess.commit()
-        flash("Campanha V2 criada com sucesso.", "success")
-        return redirect(url_for("admin_campanhas_v2", ano=ano, mes=mes))
+        campanhas = db.query(CampanhaV2Master).order_by(CampanhaV2Master.id.desc()).all()
+        return render_template("admin_campanhas_v2.html", campanhas=campanhas, ano=ano, mes=mes, edit_obj=None, today=date.today())
+    finally:
+        db.close()
 
-    campanhas = (
-        sess.query(CampanhaV2Master)
-        .order_by(CampanhaV2Master.id.desc())
-        .all()
-    )
 
-    return render_template(
-        "admin_campanhas_v2.html",
-        campanhas=campanhas,
-        ano=ano,
-        mes=mes,
-        today=date.today(),  # usado no template para defaults
-    )
 @app.route("/admin/campanhas_v2/recalcular", methods=["GET"])
 @admin_required
 def admin_campanhas_v2_recalcular():
@@ -7391,60 +7338,6 @@ def admin_campanhas_v2_recalcular():
         db.close()
     return redirect(url_for("admin_campanhas_v2", ano=ano, mes=mes))
 
-
-@app.route("/admin/campanhas_v2/recalcular/<int:cid>", methods=["POST"])
-@admin_required
-def admin_campanhas_v2_recalcular_uma(cid):
-    """Recalcula uma única campanha (competência ano/mes informada via querystring)."""
-    from datetime import date
-    ano = int(request.args.get("ano") or date.today().year)
-    mes = int(request.args.get("mes") or date.today().month)
-    db = SessionLocal()
-    try:
-        actor = session.get("username") or "admin"
-        recalc_v2_campanha(db, campanha_id=cid, ano=ano, mes=mes, actor=str(actor))
-        flash(f"Recalculo da campanha #{cid} concluído ({mes}/{ano}).", "success")
-    except Exception as e:
-        db.rollback()
-        flash(f"Erro ao recalcular campanha #{cid}: {e}", "danger")
-    finally:
-        db.close()
-    return redirect(url_for("admin_campanhas_v2", ano=ano, mes=mes))
-
-
-@app.route("/admin/campanhas_v2/duplicar/<int:cid>", methods=["POST"])
-@admin_required
-def admin_campanhas_v2_duplicar(cid):
-    """Duplica uma campanha master (cópia) para facilitar criação."""
-    from datetime import date
-    ano = int(request.args.get("ano") or date.today().year)
-    mes = int(request.args.get("mes") or date.today().month)
-    db = SessionLocal()
-    try:
-        orig = db.query(CampanhaV2Master).filter(CampanhaV2Master.id == cid).first()
-        if not orig:
-            flash("Campanha não encontrada para duplicar.", "warning")
-            return redirect(url_for("admin_campanhas_v2", ano=ano, mes=mes))
-
-        copia = CampanhaV2Master(
-            titulo=(orig.titulo or "") + " (Cópia)",
-            tipo=orig.tipo,
-            escopo=orig.escopo,
-            emps_json=orig.emps_json,
-            vigencia_ini=orig.vigencia_ini,
-            vigencia_fim=orig.vigencia_fim,
-            ativo=orig.ativo,
-            regras_json=orig.regras_json or "{}",
-        )
-        db.add(copia)
-        db.commit()
-        flash("Campanha duplicada com sucesso.", "success")
-    except Exception as e:
-        db.rollback()
-        flash(f"Erro ao duplicar: {e}", "danger")
-    finally:
-        db.close()
-    return redirect(url_for("admin_campanhas_v2", ano=ano, mes=mes))
 
 @app.route("/financeiro/campanhas_v2", methods=["GET"])
 @financeiro_required
