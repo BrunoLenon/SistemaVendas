@@ -211,7 +211,7 @@
     </div>
 
     <div class="sv-tablewrap">
-      <table class="sv-table">
+      <table class="sv-table sv-table--grouped">
         <thead>
           <tr>
             <th>EMP</th>
@@ -222,25 +222,26 @@
           </tr>
         </thead>
         <tbody>
-          {% if rows_grouped %}
-          {% for g in rows_grouped %}
-            <tr class="sv-group-row">
-              <td>{{ g.emp }}</td>
+          {% set groups = rows_grouped_page|default(ctx.get('rows_grouped_page', [])) %}
+          {% for g in groups %}
+            <tr>
+              <td class="sv-mono">{{ g.emp }}</td>
               <td>
                 <div class="sv-strong">{{ g.vendedor }}</div>
-                <div class="sv-small sv-muted">Total: {{ g.total | brl_rs }}</div>
+                <div class="sv-muted">Campanhas: {{ g.campanhas_count }} • Total: {{ g.total|brl_rs }}</div>
               </td>
               <td>
-                <details class="sv-details">
-                  <summary class="sv-details__summary">
-                    <span class="sv-muted">Ver campanhas ({{ g.campanhas|length }})</span>
+                <details class="sv-acc sv-acc--inline">
+                  <summary class="sv-acc__sum">
+                    <span class="sv-acc__label">Ver campanhas ({{ g.campanhas_count }})</span>
+                    <span class="sv-acc__chev" aria-hidden="true"></span>
                   </summary>
-                  <div class="sv-details__body">
+                  <div class="sv-acc__body">
                     <table class="sv-subtable">
                       <thead>
                         <tr>
                           <th>Campanha</th>
-                          <th class="sv-right">Recompensa</th>
+                          <th class="sv-right">Valor</th>
                           <th>Status</th>
                         </tr>
                       </thead>
@@ -248,15 +249,9 @@
                         {% for c in g.campanhas %}
                           <tr>
                             <td>{{ c.titulo }}</td>
-                            <td class="sv-right sv-strong">{{ c.valor | brl_rs }}</td>
+                            <td class="sv-right">{{ c.valor|brl_rs }}</td>
                             <td>
-                              {% if (c.status|string)|upper == 'PAGO' %}
-                                <span class="sv-pill sv-pill-ok">PAGO</span>
-                              {% elif (c.status|string)|upper == 'A_PAGAR' %}
-                                <span class="sv-pill sv-pill-info">A PAGAR</span>
-                              {% else %}
-                                <span class="sv-pill sv-pill-warn">PENDENTE</span>
-                              {% endif %}
+                              <span class="sv-pill {{ 'sv-pill-warn' if c.status=='PENDENTE' else ('sv-pill-info' if c.status=='A_PAGAR' else ('sv-pill-ok' if c.status=='PAGO' else '')) }}">{{ c.status }}</span>
                             </td>
                           </tr>
                         {% endfor %}
@@ -265,48 +260,14 @@
                   </div>
                 </details>
               </td>
-              <td class="sv-right sv-strong">{{ g.total | brl_rs }}</td>
+              <td class="sv-right">{{ g.total|brl_rs }}</td>
               <td>
-                {# status agregado do vendedor: mostra o maior bucket #}
-                {% set pend = g.status_totais.get('PENDENTE', 0) %}
-                {% set ap = g.status_totais.get('A_PAGAR', 0) %}
-                {% set pg = g.status_totais.get('PAGO', 0) %}
-                {% if pg >= ap and pg >= pend and pg > 0 %}
-                  <span class="sv-pill sv-pill-ok">PAGO</span>
-                {% elif ap >= pend and ap > 0 %}
-                  <span class="sv-pill sv-pill-info">A PAGAR</span>
-                {% else %}
-                  <span class="sv-pill sv-pill-warn">PENDENTE</span>
-                {% endif %}
+                <span class="sv-pill {{ 'sv-pill-warn' if g.status=='PENDENTE' else ('sv-pill-info' if g.status=='A_PAGAR' else ('sv-pill-ok' if g.status=='PAGO' else '')) }}">{{ g.status }}</span>
               </td>
             </tr>
           {% endfor %}
-        {% else %}
-          {% for r in rows %}
-            {% set emp = r.emp|default(r.EMP|default('')) %}
-            {% set vend = r.vendedor|default(r.VENDEDOR|default('')) %}
-            {% set camp = r.titulo|default(r.TITULO|default(r.campanha|default(r.CAMPANHA|default('')))) %}
-            {% set valor = r.valor_recompensa|default(r.VALOR_RECOMPENSA|default(r.valor|default(0))) %}
-            {% set st = r.status_pagamento|default(r.STATUS_PAGAMENTO|default('PENDENTE')) %}
-            <tr>
-              <td>{{ emp }}</td>
-              <td>{{ vend }}</td>
-              <td>{{ camp }}</td>
-              <td class="sv-right sv-strong">{{ valor | brl_rs }}</td>
-              <td>
-                {% if (st|string)|upper == 'PAGO' %}
-                  <span class="sv-pill sv-pill-ok">PAGO</span>
-                {% elif (st|string)|upper == 'A_PAGAR' %}
-                  <span class="sv-pill sv-pill-info">A PAGAR</span>
-                {% else %}
-                  <span class="sv-pill sv-pill-warn">PENDENTE</span>
-                {% endif %}
-              </td>
-            </tr>
-          {% endfor %}
-        {% endif %}
-          {% if rows|length == 0 %}
-            <tr><td colspan="5" class="sv-muted">Nenhuma linha encontrada para os filtros escolhidos.</td></tr>
+          {% if groups|length == 0 %}
+            <tr><td colspan="5" class="sv-muted">Sem dados para os filtros escolhidos.</td></tr>
           {% endif %}
         </tbody>
       </table>

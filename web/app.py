@@ -3606,10 +3606,102 @@ def relatorio_campanhas():
         page, per_page = 1, 200
 
     rows = ctx.get("rows") or []
-    total_rows = len(rows)
+
+    def _pick(obj, *keys):
+        for k in keys:
+            try:
+                if isinstance(obj, dict):
+                    v = obj.get(k)
+                else:
+                    v = getattr(obj, k, None)
+                if v is None:
+                    continue
+                if isinstance(v, str) and not v.strip():
+                    continue
+                return v
+            except Exception:
+                continue
+        return None
+
+    def _to_float(x):
+        try:
+            return float(x or 0)
+        except Exception:
+            return 0.0
+
+    def _norm_status(s: str) -> str:
+        s = (s or "PENDENTE").strip().upper()
+        if s in ("A PAGAR", "A_PAGAR", "APAGAR"):
+            return "A_PAGAR"
+        if s in ("PAGO",):
+            return "PAGO"
+        if s in ("PENDENTE",):
+            return "PENDENTE"
+        return s
+
+    # Agrupa por EMP+Vendedor (1 linha por vendedor) e lista campanhas dentro
+    groups_map = {}  # (emp, vendedor) -> dict
+    for r in (rows or []):
+        emp_r = str(_pick(r, "emp", "EMP") or "").strip() or "—"
+        vend_r = str(_pick(r, "vendedor", "VENDEDOR") or "").strip() or "—"
+
+        titulo = str(_pick(r, "titulo", "campanha", "CAMPANHA") or "").strip() or "—"
+        valor = _to_float(_pick(r, "valor_recompensa", "valor", "VALOR_RECOMPENSA") or 0)
+        st = _norm_status(_pick(r, "status_pagamento", "status", "STATUS_PAGAMENTO") or "PENDENTE")
+
+        key = (emp_r, vend_r)
+        g = groups_map.get(key)
+        if not g:
+            g = {
+                "emp": emp_r,
+                "vendedor": vend_r,
+                "total": 0.0,
+                "status_counts": {"PENDENTE": 0, "A_PAGAR": 0, "PAGO": 0, "OUTROS": 0},
+                "campanhas": [],
+            }
+            groups_map[key] = g
+
+        g["total"] += valor
+        if st in g["status_counts"]:
+            g["status_counts"][st] += 1
+        else:
+            g["status_counts"]["OUTROS"] += 1
+
+        g["campanhas"].append({
+            "titulo": titulo,
+            "valor": valor,
+            "status": st,
+        })
+
+    # Status agregado por vendedor:
+    # - Se tiver qualquer PENDENTE => PENDENTE
+    # - Senão se tiver A_PAGAR => A_PAGAR
+    # - Senão se só PAGO => PAGO
+    def _agg_status(counts):
+        if counts.get("PENDENTE"):
+            return "PENDENTE"
+        if counts.get("A_PAGAR"):
+            return "A_PAGAR"
+        if counts.get("PAGO"):
+            return "PAGO"
+        return "OUTROS"
+
+    rows_grouped = list(groups_map.values())
+    for g in rows_grouped:
+        # ordena campanhas por status (pendente primeiro) e depois por valor desc
+        g["campanhas"].sort(key=lambda c: ({"PENDENTE": 0, "A_PAGAR": 1, "PAGO": 2}.get(c["status"], 9), -c["valor"]))
+        g["status"] = _agg_status(g["status_counts"])
+        g["campanhas_count"] = len(g["campanhas"])
+
+    # Ordena vendedores por total desc
+    rows_grouped.sort(key=lambda g: (-g["total"], g["emp"], g["vendedor"]))
+
+    total_rows = len(rows_grouped)
     start = (page - 1) * per_page
     end = start + per_page
-    ctx["rows_page"] = rows[start:end]
+    ctx["rows_grouped"] = rows_grouped
+    ctx["rows_grouped_page"] = rows_grouped[start:end]
+    ctx["rows_page"] = ctx["rows_grouped_page"]  # compatibilidade
     ctx["page"] = page
     ctx["per_page"] = per_page
     ctx["total_rows"] = total_rows
@@ -3697,58 +3789,6 @@ def relatorio_campanhas():
         return resumo
 
     ctx["resumo"] = _calc_resumo_financeiro(rows)
-
-    # Agrupamento para UI: exibir campanhas dentro do vendedor (mais legível)
-    def _group_rows_por_vendedor(_rows):
-        grouped = {}
-        for r in (_rows or []):
-            # suporta UnifiedRow (objeto) e dict
-            emp = (getattr(r, "emp", None) if not isinstance(r, dict) else (r.get("emp") or r.get("EMP"))) or "—"
-            vendedor = (getattr(r, "vendedor", None) if not isinstance(r, dict) else (r.get("vendedor") or r.get("VENDEDOR"))) or "—"
-            titulo = (
-                (getattr(r, "titulo", None) if not isinstance(r, dict) else (r.get("titulo") or r.get("TITULO")))
-                or (getattr(r, "campanha", None) if not isinstance(r, dict) else (r.get("campanha") or r.get("CAMPANHA")))
-                or "—"
-            )
-            valor = (
-                (getattr(r, "valor_recompensa", None) if not isinstance(r, dict) else (r.get("valor_recompensa") or r.get("VALOR_RECOMPENSA")))
-                or (getattr(r, "valor", None) if not isinstance(r, dict) else r.get("valor"))
-                or 0
-            )
-            status = (
-                (getattr(r, "status_pagamento", None) if not isinstance(r, dict) else (r.get("status_pagamento") or r.get("STATUS_PAGAMENTO")))
-                or "PENDENTE"
-            )
-            try:
-                v = float(valor or 0)
-            except Exception:
-                v = 0.0
-            emp_s = str(emp).strip() or "—"
-            vend_s = str(vendedor).strip().upper() or "—"
-            key = (emp_s, vend_s)
-            if key not in grouped:
-                grouped[key] = {
-                    "emp": emp_s,
-                    "vendedor": vend_s,
-                    "total": 0.0,
-                    "status_totais": {"PENDENTE": 0.0, "A_PAGAR": 0.0, "PAGO": 0.0},
-                    "campanhas": [],
-                }
-            g = grouped[key]
-            g["total"] += v
-            st_key = str(status).strip().upper()
-            if st_key not in g["status_totais"]:
-                g["status_totais"][st_key] = 0.0
-            g["status_totais"][st_key] += v
-            g["campanhas"].append({"titulo": str(titulo).strip() or "—", "valor": v, "status": st_key})
-        # ordenar: vendedores por total, campanhas por valor
-        out = list(grouped.values())
-        for g in out:
-            g["campanhas"].sort(key=lambda x: x.get("valor", 0.0), reverse=True)
-        out.sort(key=lambda x: x.get("total", 0.0), reverse=True)
-        return out
-
-    ctx["rows_grouped"] = _group_rows_por_vendedor(rows)
 
     # URLs auxiliares (Jinja não suporta **kwargs dinâmico com dict em algumas versões)
     from urllib.parse import urlencode
