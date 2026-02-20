@@ -5,70 +5,94 @@
 {% set is_vendedor = (r == 'vendedor') %}
 {% set is_financeiro = (r == 'financeiro') %}
 
-<div class="sidebar-brand px-3 py-3">
-  {% if branding and branding.logo_url %}
-    <img
-      src="{{ branding.logo_url }}{% if branding.version %}?v={{ branding.version }}{% endif %}"
-      alt="Logo"
-      class="sidebar-logo"
-    >
-  {% else %}
-    <div class="sidebar-logo-fallback">SV</div>
-  {% endif %}
+<div class="sv-sidebar">
+  <div class="sv-sidebar-brand">
+    <div class="sv-sidebar-logo">
+      {% if branding and branding.logo_url %}
+        <img src="{{ branding.logo_url }}{% if branding.version %}?v={{ branding.version }}{% endif %}" alt="Logo">
+      {% else %}
+        <div class="sv-logo-fallback">SV</div>
+      {% endif %}
+    </div>
+    <div class="sv-sidebar-titles">
+      <div class="sv-sidebar-title">{{ branding.system_name if branding and branding.system_name else "Veipeças" }}</div>
+      {% if emp %}
+        <div class="sv-sidebar-subtitle">EMP {{ emp }}</div>
+      {% endif %}
+    </div>
+  </div>
 
-  <div class="sidebar-title">
-    {{ branding.system_name if branding and branding.system_name else "SistemaVendas" }}
-    {% if emp %}
-      <div class="sidebar-subtitle">EMP {{ emp }}</div>
+  <nav class="sv-nav">
+    <a class="sv-nav-item {% if path.startswith('/dashboard') or path=='/' %}active{% endif %}" href="/dashboard">
+      <span class="sv-ico">📊</span><span class="sv-text">Dashboard</span>
+    </a>
+
+    <div class="sv-nav-section">Relatórios</div>
+    <a class="sv-nav-item {% if path.startswith('/relatorios/campanhas') %}active{% endif %}" href="/relatorios/campanhas">
+      <span class="sv-ico">🎯</span><span class="sv-text">Campanhas</span>
+    </a>
+    <a class="sv-nav-item {% if path.startswith('/relatorios/cidades-clientes') %}active{% endif %}" href="/relatorios/cidades-clientes">
+      <span class="sv-ico">🏙️</span><span class="sv-text">Cidades & Clientes</span>
+    </a>
+
+    <div class="sv-nav-section">Operação</div>
+    <a class="sv-nav-item {% if path.startswith('/campanhas') and not path.startswith('/relatorios') %}active{% endif %}" href="/campanhas">
+      <span class="sv-ico">⭐</span><span class="sv-text">Campanhas (Qtd)</span>
+    </a>
+    <a class="sv-nav-item {% if path.startswith('/campanhas/ranking-marca') %}active{% endif %}" href="/campanhas/ranking-marca">
+      <span class="sv-ico">🏁</span><span class="sv-text">Ranking por Marca</span>
+    </a>
+    <a class="sv-nav-item {% if path.startswith('/metas') %}active{% endif %}" href="/metas">
+      <span class="sv-ico">🎯</span><span class="sv-text">Metas</span>
+    </a>
+    <a class="sv-nav-item {% if path.startswith('/itens_parados') %}active{% endif %}" href="/itens_parados">
+      <span class="sv-ico">🧾</span><span class="sv-text">Itens Parados</span>
+    </a>
+    <a class="sv-nav-item {% if path.startswith('/mensagens') %}active{% endif %}" href="/mensagens">
+      <span class="sv-ico">📣</span><span class="sv-text">Mensagens</span>
+    </a>
+
+    <div class="sv-nav-divider"></div>
+    <a class="sv-nav-item {% if path.startswith('/senha') %}active{% endif %}" href="/senha">
+      <span class="sv-ico">🔑</span><span class="sv-text">Trocar senha</span>
+    </a>
+
+    {% if is_financeiro or is_admin %}
+      <div class="sv-nav-section">Financeiro</div>
+      <a class="sv-nav-item {% if path.startswith('/financeiro/campanhas_v2') %}active{% endif %}" href="/financeiro/campanhas_v2">
+        <span class="sv-ico">💰</span><span class="sv-text">Campanhas (Fin.)</span>
+      </a>
+      <a class="sv-nav-item {% if path.startswith('/financeiro/fechamento_v2') %}active{% endif %}" href="/financeiro/fechamento_v2">
+        <span class="sv-ico">✅</span><span class="sv-text">Fechamento (V2)</span>
+      </a>
+      <a class="sv-nav-item {% if path.startswith('/admin/fechamento') %}active{% endif %}" href="/admin/fechamento">
+        <span class="sv-ico">🗓️</span><span class="sv-text">Fechamento (Mês)</span>
+      </a>
     {% endif %}
+
+    {% if is_admin %}
+      <div class="sv-nav-section">Admin</div>
+      <a class="sv-nav-item {% if path.startswith('/admin/usuarios') %}active{% endif %}" href="/admin/usuarios">
+        <span class="sv-ico">👤</span><span class="sv-text">Usuários</span>
+      </a>
+      <a class="sv-nav-item {% if path.startswith('/admin/emps') %}active{% endif %}" href="/admin/emps">
+        <span class="sv-ico">🏬</span><span class="sv-text">EMPs</span>
+      </a>
+      <a class="sv-nav-item {% if path.startswith('/admin/campanhas') %}active{% endif %}" href="/admin/campanhas_v2">
+        <span class="sv-ico">🧩</span><span class="sv-text">Campanhas (Admin)</span>
+      </a>
+      <a class="sv-nav-item {% if path.startswith('/admin/combos') %}active{% endif %}" href="/admin/combos">
+        <span class="sv-ico">🧱</span><span class="sv-text">Combos</span>
+      </a>
+      <a class="sv-nav-item {% if path.startswith('/admin/configuracoes') %}active{% endif %}" href="/admin/configuracoes">
+        <span class="sv-ico">⚙️</span><span class="sv-text">Configurações</span>
+      </a>
+    {% endif %}
+  </nav>
+
+  <div class="sv-sidebar-footer">
+    <button class="sv-btn sv-btn-ghost" type="button" id="sidebarToggleSidebar">
+      <span class="sv-ico">☰</span><span class="sv-text">Recolher</span>
+    </button>
   </div>
 </div>
-
-<nav class="nav flex-column p-2">
-  <a class="nav-link {% if path.startswith('/dashboard') or path=='/' %}active{% endif %}" href="/dashboard">📊 Dashboard</a>
-  <a class="nav-link {% if path.startswith('/relatorios/cidades-clientes') %}active{% endif %}" href="/relatorios/cidades-clientes">🏙️ Cidades & Clientes</a>
-  <a class="nav-link {% if path.startswith('/relatorios/campanhas') %}active{% endif %}" href="/relatorios/campanhas">🎯 Relatório Campanhas</a>
-  <a class="nav-link {% if path.startswith('/campanhas') and not path.startswith('/relatorios') %}active{% endif %}" href="/campanhas">⭐ Campanhas (Qtd)</a>
-  <a class="nav-link {% if path.startswith('/campanhas/ranking-marca') %}active{% endif %}" href="/campanhas/ranking-marca">🏁 Ranking por Marca</a>
-  <a class="nav-link {% if path.startswith('/metas') %}active{% endif %}" href="/metas">🏁 Metas</a>
-  <a class="nav-link {% if path.startswith('/itens_parados') %}active{% endif %}" href="/itens_parados">🧾 Itens Parados</a>
-  <a class="nav-link {% if path.startswith('/mensagens') %}active{% endif %}" href="/mensagens">📣 Mensagens</a>
-
-  <div class="my-2 border-top border-light-subtle"></div>
-
-  <a class="nav-link {% if path.startswith('/senha') %}active{% endif %}" href="/senha">🔑 Trocar senha</a>
-
-
-  {% if is_supervisor %}
-    <div class="mt-2 mb-1 px-2 text-uppercase text-muted small">Gestão</div>
-    <a class="nav-link {% if path.startswith('/admin/mensagens') %}active{% endif %}
-  {% if is_financeiro %}
-    <div class="mt-2 mb-1 px-2 text-uppercase text-muted small">Financeiro</div>
-    <a class="nav-link {% if path.startswith('/financeiro/campanhas_v2') %}active{% endif %}" href="/financeiro/campanhas_v2">💰 Campanhas (Financeiro)</a>
-    <a class="nav-link {% if path.startswith('/financeiro/fechamento_v2') %}active{% endif %}" href="/financeiro/fechamento_v2">✅ Fechamento (V2)</a>
-    <a class="nav-link {% if path.startswith('/admin/fechamento') %}active{% endif %}" href="/admin/fechamento">✅ Fechamento</a>
-  {% endif %}
-
-" href="/admin/mensagens">📣 Mensagens</a>
-    <a class="nav-link {% if path.startswith('/admin/metas') %}active{% endif %}" href="/admin/metas">🏁 Metas</a>
-  {% endif %}
-
-  {% if is_admin %}
-    <div class="mt-2 mb-1 px-2 text-uppercase text-muted small">Admin</div>
-    <a class="nav-link {% if path.startswith('/admin/usuarios') %}active{% endif %}" href="/admin/usuarios">👤 Usuários</a>
-    <a class="nav-link {% if path.startswith('/admin/mensagens') %}active{% endif %}" href="/admin/mensagens">📣 Mensagens</a>
-    <a class="nav-link {% if path.startswith('/admin/metas') %}active{% endif %}" href="/admin/metas">🏁 Metas</a>
-    <a class="nav-link {% if path.startswith('/admin/importar') %}active{% endif %}" href="/admin/importar">📥 Importar vendas</a>
-    <a class="nav-link {% if path.startswith('/admin/resumos_periodo') %}active{% endif %}" href="/admin/resumos_periodo">📆 Resumos por período</a>
-    <a class="nav-link {% if path.startswith('/admin/campanhas') %}active{% endif %}" href="/admin/campanhas">🎯 Campanhas</a>
-    <a class="nav-link {% if path.startswith('/admin/campanhas/ranking-marca') %}active{% endif %}" href="/admin/campanhas/ranking-marca">🏁 Ranking por Marca</a>
-    <a class="nav-link {% if path.startswith('/admin/combos') %}active{% endif %}" href="/admin/combos">🧩 Combos</a>
-    <a class="nav-link {% if path.startswith('/admin/itens_parados') %}active{% endif %}" href="/admin/itens_parados">🧾 Itens Parados (Admin)</a>
-    <a class="nav-link {% if path.startswith('/admin/configuracoes') %}active{% endif %}" href="/admin/configuracoes">⚙️ Configurações</a>
-    <a class="nav-link {% if path.startswith('/admin/fechamento') %}active{% endif %}" href="/admin/fechamento">✅ Fechamento</a>
-  {% endif %}
-
-  <div class="my-2 border-top border-light-subtle"></div>
-  <a class="nav-link text-danger" href="/logout">🚪 Sair</a>
-</nav>
-

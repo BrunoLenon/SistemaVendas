@@ -1,0 +1,124 @@
+
+/* Veipeças Design System (dark fixed + orange glass) */
+:root{
+  --sv-bg: #0F0F0F;
+  --sv-surface: #141414;
+  --sv-surface-2: #151515;
+  --sv-glass: rgba(255, 140, 0, 0.08);
+  --sv-glass-border: rgba(255, 140, 0, 0.25);
+  --sv-text: #F5F5F5;
+  --sv-muted: #B0B0B0;
+  --sv-accent: #FF8C00;
+  --sv-accent-2: #FF6A00;
+  --sv-accent-3: #FFA500;
+  --sv-danger: #ff4d4f;
+
+  /* Override existing theme variables from app.css */
+  --bg-main: var(--sv-bg);
+  --bg-card: var(--sv-surface);
+  --bg-soft: var(--sv-surface-2);
+  --border: rgba(255,255,255,.10);
+  --text-main: var(--sv-text);
+  --text-muted: var(--sv-muted);
+  --topbar-bg: #111111;
+  --topbar-border: rgba(255,255,255,.08);
+  --sidebar-bg: #141414;
+  --sidebar-text: rgba(255,255,255,.86);
+  --sidebar-muted: rgba(255,255,255,.60);
+  --sidebar-hover: rgba(255,140,0,.10);
+  --primary: var(--sv-accent);
+}
+
+html, body{
+  background: var(--sv-bg) !important;
+  color: var(--sv-text);
+}
+
+a{ color: inherit; }
+a:hover{ color: var(--sv-text); }
+
+/* Topbar */
+.app-topbar{
+  background: linear-gradient(90deg, var(--sv-accent-2), var(--sv-accent), var(--sv-accent-3));
+  border-bottom: 1px solid rgba(0,0,0,.25);
+}
+.app-topbar .navbar-brand{ color: #fff !important; font-weight: 700; }
+.app-topbar .btn-outline-light{
+  border-color: rgba(255,255,255,.35);
+  color: #fff;
+}
+.app-topbar .btn-outline-light:hover{
+  background: rgba(0,0,0,.18);
+}
+
+/* Cards / glass */
+.sv-card,
+.card{
+  background: var(--sv-surface);
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 14px;
+}
+.sv-glass{
+  background: var(--sv-glass);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--sv-glass-border);
+  border-radius: 14px;
+  box-shadow: 0 10px 28px rgba(255,106,0,0.14);
+}
+
+/* Buttons */
+.sv-btn{
+  display: inline-flex;
+  align-items: center;
+  gap: .5rem;
+  border-radius: 12px;
+  padding: .5rem .75rem;
+  border: 1px solid var(--sv-glass-border);
+  background: rgba(0,0,0,.15);
+  color: var(--sv-text);
+  cursor: pointer;
+}
+.sv-btn:hover{ background: rgba(255,140,0,.10); }
+.sv-btn-primary{
+  background: var(--sv-accent-3);
+  border-color: var(--sv-accent);
+  color: #141414;
+  font-weight: 700;
+}
+.sv-btn-primary:hover{ filter: brightness(1.05); }
+.sv-btn-ghost{
+  background: transparent;
+  border-color: rgba(255,255,255,.12);
+}
+
+/* Tables */
+.table{
+  color: var(--sv-text);
+}
+.table thead th{
+  background: rgba(255,140,0,.10);
+  color: var(--sv-text);
+  border-bottom: 1px solid rgba(255,255,255,.10);
+}
+.table tbody tr:hover{
+  background: rgba(255,140,0,.06);
+}
+
+/* Forms */
+.form-control, .form-select{
+  background: #121212;
+  color: var(--sv-text);
+  border: 1px solid rgba(255,255,255,.10);
+  border-radius: 12px;
+}
+.form-control:focus, .form-select:focus{
+  border-color: var(--sv-accent);
+  box-shadow: 0 0 0 .2rem rgba(255,140,0,.15);
+  background: #121212;
+  color: var(--sv-text);
+}
+
+/* Alerts / flashes */
+.alert{
+  border-radius: 14px;
+}
