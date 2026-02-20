@@ -369,6 +369,17 @@ def inject_branding():
         b = {"logo_url": None, "favicon_url": None, "theme_name": "default", "version": ""}
     return {"branding": b}
 
+
+
+@app.context_processor
+def inject_globals_today():
+    """Variáveis globais para templates (evita UndefinedError)."""
+    try:
+        from datetime import date as _date, datetime as _dt
+        return {"today": _date.today(), "now": _dt.now()}
+    except Exception:
+        return {"today": None, "now": None}
+
 # -------------------- Configurações / Branding (ADMIN) --------------------
 
 @app.before_request
