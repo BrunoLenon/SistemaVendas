@@ -369,17 +369,6 @@ def inject_branding():
         b = {"logo_url": None, "favicon_url": None, "theme_name": "default", "version": ""}
     return {"branding": b}
 
-
-
-@app.context_processor
-def inject_globals_today():
-    """Variáveis globais para templates (evita UndefinedError)."""
-    try:
-        from datetime import date as _date, datetime as _dt
-        return {"today": _date.today(), "now": _dt.now()}
-    except Exception:
-        return {"today": None, "now": None}
-
 # -------------------- Configurações / Branding (ADMIN) --------------------
 
 @app.before_request
@@ -7297,7 +7286,7 @@ def admin_campanhas_v2():
             return redirect(url_for("admin_campanhas_v2", ano=ano, mes=mes))
 
         campanhas = db.query(CampanhaV2Master).order_by(CampanhaV2Master.id.desc()).all()
-        return render_template("admin_campanhas_v2.html", campanhas=campanhas, ano=ano, mes=mes)
+        return render_template("admin_campanhas_v2.html", campanhas=campanhas, ano=ano, mes=mes, edit_obj=None, today=date.today())
     finally:
         db.close()
 
