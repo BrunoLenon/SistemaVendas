@@ -27,31 +27,31 @@
 {% endblock %}
 
 {% block content %}
-<div class="container py-4">
+<div class="sv-page">
 <!-- INSIGHTS PARCIAIS -->
 {% if insights %}
 <div class="row g-3 mb-3">
 
   <div class="col-12 col-md-3">
-    <div class="card shadow-sm border-0 h-100">
-      <div class="card-body">
+    <div class="sv-card h-100">
+      <div class="sv-card-body">
         <div class="small text-muted">🏆 Cidade destaque</div>
         <div class="fw-bold fs-5">{{ insights.cidade_destaque.cidade_norm|default('—') }}</div>
         <div class="text-success fw-semibold">
-          R$ {{ insights.cidade_destaque.total_vendido|default(0)|round(2) }}
+          R$ {{ insights.cidade_destaque.total_vendido|default(0)|brl_rs }}
         </div>
       </div>
     </div>
   </div>
 
   <div class="col-12 col-md-3">
-    <div class="card shadow-sm border-0 h-100">
-      <div class="card-body">
+    <div class="sv-card h-100">
+      <div class="sv-card-body">
         <div class="small text-muted">📉 Cidade em queda</div>
         {% if insights.cidade_queda %}
           <div class="fw-bold fs-5">{{ insights.cidade_queda.cidade_norm }}</div>
           <div class="text-danger fw-semibold">
-            R$ {{ insights.cidade_queda.variacao|round(2) }}
+            R$ {{ insights.cidade_queda.variacao|brl_rs }}
           </div>
         {% else %}
           <div class="fw-bold fs-5">—</div>
@@ -62,8 +62,8 @@
   </div>
 
   <div class="col-12 col-md-3">
-    <div class="card shadow-sm border-0 h-100">
-      <div class="card-body">
+    <div class="sv-card h-100">
+      <div class="sv-card-body">
         <div class="small text-muted">🆕 Clientes novos</div>
         <div class="fw-bold fs-4">{{ insights.clientes_novos|default(0) }}</div>
       </div>
@@ -71,8 +71,8 @@
   </div>
 
   <div class="col-12 col-md-3">
-    <div class="card shadow-sm border-0 h-100">
-      <div class="card-body">
+    <div class="sv-card h-100">
+      <div class="sv-card-body">
         <div class="small text-muted">🔁 Clientes recorrentes</div>
         <div class="fw-bold fs-4">{{ insights.clientes_recorrentes|default(0) }}</div>
       </div>
@@ -83,16 +83,16 @@
 {% if insights and insights.clientes_destaque %}
 <div class="row g-3 mb-3">
   <div class="col-12 col-md-6">
-    <div class="card shadow-sm border-0 h-100">
-      <div class="card-body">
+    <div class="sv-card h-100">
+      <div class="sv-card-body">
         <div class="small text-muted">⭐ Cliente destaque (↑ vs mês anterior)</div>
         {% set c = (insights.clientes_destaque.crescimento[0] if insights.clientes_destaque.crescimento and insights.clientes_destaque.crescimento|length>0 else None) %}
         {% if c %}
           <div class="fw-bold fs-5">{{ c.cliente }}</div>
           <div class="text-success fw-semibold">
-            + R$ {{ c.delta|round(2) }}{% if c.pct is not none %} ({{ c.pct|round(1) }}%) {% endif %}
+            + R$ {{ c.delta|brl_rs }}{% if c.pct is not none %} ({{ c.pct|round(1) }}%) {% endif %}
           </div>
-          <div class="text-muted small">Atual: R$ {{ c.atual|round(2) }} • Anterior: R$ {{ c.anterior|round(2) }}</div>
+          <div class="text-muted small">Atual: R$ {{ c.atual|brl_rs }} • Anterior: R$ {{ c.anterior|brl_rs }}</div>
         {% else %}
           <div class="fw-bold fs-5">—</div>
           <div class="text-muted">Sem base comparativa</div>
@@ -102,16 +102,16 @@
   </div>
 
   <div class="col-12 col-md-6">
-    <div class="card shadow-sm border-0 h-100">
-      <div class="card-body">
+    <div class="sv-card h-100">
+      <div class="sv-card-body">
         <div class="small text-muted">⚠️ Cliente em queda (↓ vs mês anterior)</div>
         {% set q = (insights.clientes_destaque.queda[0] if insights.clientes_destaque.queda and insights.clientes_destaque.queda|length>0 else None) %}
         {% if q %}
           <div class="fw-bold fs-5">{{ q.cliente }}</div>
           <div class="text-danger fw-semibold">
-            R$ {{ q.delta|round(2) }}{% if q.pct is not none %} ({{ q.pct|round(1) }}%) {% endif %}
+            R$ {{ q.delta|brl_rs }}{% if q.pct is not none %} ({{ q.pct|round(1) }}%) {% endif %}
           </div>
-          <div class="text-muted small">Atual: R$ {{ q.atual|round(2) }} • Anterior: R$ {{ q.anterior|round(2) }}</div>
+          <div class="text-muted small">Atual: R$ {{ q.atual|brl_rs }} • Anterior: R$ {{ q.anterior|brl_rs }}</div>
         {% else %}
           <div class="fw-bold fs-5">—</div>
           <div class="text-muted">Sem base comparativa</div>
@@ -126,10 +126,10 @@
 {% endif %}
 
 
-    <div class="app-page-header d-flex flex-wrap align-items-start justify-content-between gap-3 mb-3">
+    <div class="sv-card mb-3 d-flex flex-wrap align-items-start justify-content-between gap-3">
   <div>
     <div class="d-flex align-items-center flex-wrap gap-2">
-      <h1 class="h3 m-0">Dashboard</h1>
+      <div class="sv-h1">Dashboard</div>
       {% if role %}<span class="badge text-bg-dark">{{ role|upper }}</span>{% endif %}
       {% if role and role|lower == "supervisor" and emp %}<span class="badge text-bg-secondary">EMP {{ emp }}</span>{% endif %}
     </div>
@@ -181,7 +181,7 @@
   <div class="row g-3 mb-3">
     <div class="col-md-3">
       <div class="card shadow-sm kpi">
-        <div class="card-body">
+        <div class="sv-card-body">
           <div class="text-muted small">Total líquido (mês)</div>
           <div class="fs-4 fw-bold">R$ {{ dados_admin.valor_atual|brl }}</div>
         </div>
@@ -189,7 +189,7 @@
     </div>
     <div class="col-md-3">
       <div class="card shadow-sm kpi">
-        <div class="card-body">
+        <div class="sv-card-body">
           <div class="text-muted small">Bruto (sem devolução)</div>
           <div class="fs-4 fw-bold">R$ {{ dados_admin.valor_bruto|brl }}</div>
         </div>
@@ -197,7 +197,7 @@
     </div>
     <div class="col-md-3">
       <div class="card shadow-sm kpi">
-        <div class="card-body">
+        <div class="sv-card-body">
           <div class="text-muted small">Devolvido</div>
           <div class="fs-4 fw-bold">R$ {{ dados_admin.valor_devolvido|brl }}</div>
         </div>
@@ -205,7 +205,7 @@
     </div>
     <div class="col-md-3">
       <div class="card shadow-sm kpi">
-        <div class="card-body">
+        <div class="sv-card-body">
           <div class="text-muted small">% devolução</div>
           <div class="fs-4 fw-bold">{% if dados_admin.pct_devolucao is not none %}{{ "%.2f"|format(dados_admin.pct_devolucao) }}%{% else %}—{% endif %}</div>
         </div>
@@ -216,13 +216,13 @@
   <div class="row g-3">
     <div class="col-lg-7">
       <div class="card shadow-sm">
-        <div class="card-body">
+        <div class="sv-card-body">
           <div class="d-flex justify-content-between align-items-center mb-2">
             <h5 class="m-0">Ranking por EMP</h5>
             <span class="text-muted small">Clique para abrir Campanhas no período</span>
           </div>
-          <div class="table-responsive">
-            <table class="table table-sm align-middle">
+          <div class="sv-tablewrap">
+            <table class="sv-table align-middle">
               <thead class="table-light">
                 <tr>
                   <th>EMP</th>
@@ -256,13 +256,13 @@
 
     <div class="col-lg-5">
       <div class="card shadow-sm">
-        <div class="card-body">
+        <div class="sv-card-body">
           <div class="d-flex justify-content-between align-items-center mb-2">
             <h5 class="m-0">Top vendedores (líquido)</h5>
             <span class="text-muted small">Clique para abrir Dashboard do vendedor</span>
           </div>
-          <div class="table-responsive">
-            <table class="table table-sm align-middle">
+          <div class="sv-tablewrap">
+            <table class="sv-table align-middle">
               <thead class="table-light">
                 <tr>
                   <th>Vendedor</th>
@@ -294,8 +294,8 @@
 {% elif dados %}
   <div class="row g-3 mb-4">
     <div class="col-12 col-sm-6 col-lg-3">
-      <div class="card shadow-sm border-0 h-100">
-        <div class="card-body">
+      <div class="sv-card h-100">
+        <div class="sv-card-body">
           <div class="text-muted small">💰 Valor líquido</div>
           <div class="fs-4 fw-bold">R$ {{ dados.valor_atual|brl }}</div>
           <div class="text-muted small mt-1">Mês anterior: R$ {{ dados.valor_mes_anterior|brl }}</div>
@@ -303,8 +303,8 @@
       </div>
     </div>
     <div class="col-12 col-sm-6 col-lg-3">
-      <div class="card shadow-sm border-0 h-100">
-        <div class="card-body">
+      <div class="sv-card h-100">
+        <div class="sv-card-body">
           <div class="text-muted small">📈 Crescimento</div>
           <div class="fs-4 fw-bold">
             {% if dados.crescimento is not none %}
@@ -318,8 +318,8 @@
       </div>
     </div>
     <div class="col-12 col-sm-6 col-lg-3">
-      <div class="card shadow-sm border-0 h-100">
-        <div class="card-body">
+      <div class="sv-card h-100">
+        <div class="sv-card-body">
           <div class="text-muted small">🧺 Mix (itens)</div>
           <div class="fs-4 fw-bold">{{ dados.mix_atual|default(0) }}</div>
           <div class="text-muted small mt-1">Ano passado: {{ dados.mix_ano_passado|default(0) }}</div>
@@ -327,8 +327,8 @@
       </div>
     </div>
     <div class="col-12 col-sm-6 col-lg-3">
-      <div class="card shadow-sm border-0 h-100">
-        <div class="card-body">
+      <div class="sv-card h-100">
+        <div class="sv-card-body">
           <div class="text-muted small">↩️ Devolução</div>
           <div class="fs-4 fw-bold">{{ (dados.pct_devolucao or 0)|round(2) }}%</div>
           <div class="text-muted small mt-1">Devolvido: R$ {{ dados.valor_devolvido|brl }}</div>
@@ -351,13 +351,13 @@
     {% endif %}
 
     <div class="card mb-3 shadow-sm">
-      <div class="card-body">
+      <div class="sv-card-body">
         <form id="filtersForm" method="get" action="{{ url_for('dashboard') }}" class="row g-2 align-items-end">
 
           {% if role and role|lower in ["admin", "supervisor"] %}
             <div class="col-md-4">
               <label class="form-label">Vendedor</label>
-              <select class="form-select" name="vendedor">
+              <select class="sv-select" name="vendedor">
                 {% if role and role|lower in ["admin", "supervisor"] %}
                 <option value="" {% if not vendedor_selecionado %}selected{% endif %}>Todos vendedores</option>
                 {% endif %}
@@ -371,14 +371,14 @@
 
           <div class="col-auto">
             <label class="form-label">Mês</label>
-            <input class="form-control" type="number" name="mes" min="1" max="12" value="{{ mes }}" required>
+            <input class="sv-input" type="number" name="mes" min="1" max="12" value="{{ mes }}" required>
           </div>
           <div class="col-auto">
             <label class="form-label">Ano</label>
-            <input class="form-control" type="number" name="ano" min="2000" max="2100" value="{{ ano }}" required>
+            <input class="sv-input" type="number" name="ano" min="2000" max="2100" value="{{ ano }}" required>
           </div>
           <div class="col-auto">
-            <button id="filtersSubmit" class="btn btn-primary" type="submit">
+            <button id="filtersSubmit" class="sv-btn sv-btn-primary" type="submit">
               <span class="btn-label">Atualizar</span>
               <span class="spinner-border spinner-border-sm ms-2 d-none" role="status" aria-hidden="true"></span>
             </button>
@@ -394,7 +394,7 @@
       <div class="row g-3 mb-3">
         <div class="col-md-6">
           <div class="card shadow-sm">
-            <div class="card-body">
+            <div class="sv-card-body">
               <div class="text-muted">💰 Valor líquido (com DS/CA)</div>
               <div class="display-6">R$ {{ dados.valor_atual|brl }}</div>
               <div class="text-muted mt-1">Ano passado: R$ {{ dados.valor_ano_passado|brl }}</div>
@@ -404,7 +404,7 @@
 
         <div class="col-md-6">
           <div class="card shadow-sm">
-            <div class="card-body">
+            <div class="sv-card-body">
               <div class="text-muted">📦 Mix de produtos</div>
               <div class="display-6">{{ dados.mix_atual }}</div>
               <div class="text-muted mt-1">Ano passado: {{ dados.mix_ano_passado }}</div>
@@ -416,7 +416,7 @@
       <div class="row g-3 mb-3">
         <div class="col-md-4">
           <div class="card shadow-sm">
-            <div class="card-body">
+            <div class="sv-card-body">
               <div class="text-muted">🧾 Valor bruto (sem DS/CA)</div>
               <div class="h3 m-0">R$ {{ dados.valor_bruto|brl }}</div>
               <div class="text-muted">Somente vendas</div>
@@ -426,7 +426,7 @@
 
         <div class="col-md-4">
           <div class="card shadow-sm">
-            <div class="card-body">
+            <div class="sv-card-body">
               <div class="text-muted">↩️ Devoluções/Cancelamentos (DS/CA)</div>
               <div class="h3 m-0">R$ {{ dados.valor_devolvido|brl }}</div>
               <div class="text-muted">Total abatido</div>
@@ -436,7 +436,7 @@
 
         <div class="col-md-4">
           <div class="card shadow-sm">
-            <div class="card-body">
+            <div class="sv-card-body">
               <div class="text-muted">📉 % devolução (sobre bruto)</div>
               {% if dados.pct_devolucao is not none %}
                 <div class="h3 m-0">{{ "%.2f"|format(dados.pct_devolucao) }}%</div>
@@ -451,7 +451,7 @@
       </div>
 
       <div class="card mb-3 shadow-sm">
-        <div class="card-body d-flex justify-content-between align-items-center">
+        <div class="sv-card-body d-flex justify-content-between align-items-center">
           <div>
             <div class="text-muted">📈 Crescimento vs mês anterior (líquido)</div>
             <div class="text-muted">Comparação do líquido do mês selecionado com o mês anterior</div>
@@ -471,16 +471,16 @@
       </div>
 
       <div class="card shadow-sm">
-        <div class="card-body">
+        <div class="sv-card-body">
           <div class="d-flex justify-content-between align-items-center">
             <h5 class="m-0">📊 Top 15 marcas — Valor + % do total (líquido)</h5>
-            <a href="/percentuais?mes={{ mes }}&ano={{ ano }}{% if vendedor_selecionado %}&vendedor={{ vendedor_selecionado }}{% endif %}" class="btn btn-sm btn-outline-primary">Ver ranking completo</a>
+            <a href="/percentuais?mes={{ mes }}&ano={{ ano }}{% if vendedor_selecionado %}&vendedor={{ vendedor_selecionado }}{% endif %}" class="sv-btn sv-btn-xs sv-btn-ghost">Ver ranking completo</a>
           </div>
           <hr class="my-2">
 
           {% if dados.ranking_top15_list is not none and (dados.ranking_top15_list|length) > 0 %}
-            <div class="table-responsive">
-              <table class="table table-sm table-striped align-middle mb-0">
+            <div class="sv-tablewrap">
+              <table class="sv-table align-middle mb-0">
                 <thead>
                   <tr>
                     <th style="width:60px;">#</th>
@@ -508,8 +508,8 @@
       </div>
 
       <div class="mt-3 d-flex flex-wrap gap-2">
-        <a href="/percentuais?mes={{ mes }}&ano={{ ano }}{% if vendedor_selecionado %}&vendedor={{ vendedor_selecionado }}{% endif %}" class="btn btn-outline-primary">Ver ranking completo</a>
-        <a href="/devolucoes?mes={{ mes }}&ano={{ ano }}{% if vendedor_selecionado %}&vendedor={{ vendedor_selecionado }}{% endif %}" class="btn btn-outline-secondary">Ver devoluções (DS/CA)</a>
+        <a href="/percentuais?mes={{ mes }}&ano={{ ano }}{% if vendedor_selecionado %}&vendedor={{ vendedor_selecionado }}{% endif %}" class="sv-btn sv-btn-ghost">Ver ranking completo</a>
+        <a href="/devolucoes?mes={{ mes }}&ano={{ ano }}{% if vendedor_selecionado %}&vendedor={{ vendedor_selecionado }}{% endif %}" class="sv-btn sv-btn-ghost">Ver devoluções (DS/CA)</a>
       </div>
 
     {% else %}
