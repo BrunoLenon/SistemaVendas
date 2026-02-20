@@ -3,192 +3,248 @@
 
 {% block content %}
 <div class="sv-page">
-  <div class="sv-panel sv-panel--hero">
-    <div class="sv-hero">
+
+  <!-- Header -->
+  <div class="sv-card sv-card--header">
+    <div class="sv-row sv-row--between sv-row--wrap sv-gap-12">
       <div>
         <div class="sv-breadcrumb">Campanhas</div>
-        <div class="sv-title">Campanhas do mês (Qtd)</div>
-        <div class="sv-muted">Filtre por EMP e vendedor. A lista agrupa por vendedor e permite ver as campanhas dentro de cada um.</div>
+        <h1 class="sv-title">Campanhas do mês (Qtd)</h1>
+        <p class="sv-subtitle">Filtre por EMP e vendedor. A lista agrupa por vendedor e permite ver as campanhas dentro de cada um.</p>
       </div>
 
-      <div class="sv-actions">
-        <a class="sv-btn sv-btn--ghost" href="{{ url_for('campanhas_qtd') }}">Atualizar</a>
+      <div class="sv-row sv-gap-8">
+        <form method="get" action="{{ url_for('campanhas_qtd') }}" class="sv-row sv-gap-8">
+          <!-- mantém período atual -->
+          <input type="hidden" name="mes" value="{{ mes }}">
+          <input type="hidden" name="ano" value="{{ ano }}">
+          {% for e in emp_sel %}<input type="hidden" name="emp" value="{{ e }}">{% endfor %}
+          {% for v in vendedor_sel %}<input type="hidden" name="vendedor" value="{{ v }}">{% endfor %}
+          <input type="hidden" name="visao" value="{{ visao }}">
+          <input type="hidden" name="por_pagina" value="{{ por_pagina }}">
+          <button class="sv-btn sv-btn--ghost" type="submit" name="refresh" value="1">Atualizar</button>
+        </form>
       </div>
     </div>
   </div>
 
-  <form method="get" class="sv-panel">
-    <div class="sv-grid sv-grid--3">
+  <!-- Filters -->
+  <form method="get" class="sv-card sv-card--section">
+    <div class="sv-grid sv-grid-3">
       <div class="sv-field">
-        <label>Mês</label>
-        <input class="sv-input" type="number" name="mes" min="1" max="12" value="{{ mes|default('') }}" />
+        <label class="sv-label" for="mes">Mês</label>
+        <input class="sv-input" id="mes" name="mes" value="{{ mes }}" inputmode="numeric" />
       </div>
+
       <div class="sv-field">
-        <label>Ano</label>
-        <input class="sv-input" type="number" name="ano" min="2000" max="2100" value="{{ ano|default('') }}" />
+        <label class="sv-label" for="ano">Ano</label>
+        <input class="sv-input" id="ano" name="ano" value="{{ ano }}" inputmode="numeric" />
       </div>
+
       <div class="sv-field">
-        <label>Visão</label>
-        <select class="sv-select" name="visao">
-          <option value="detalhado" {% if visao=='detalhado' %}selected{% endif %}>Detalhado</option>
-          <option value="resumo" {% if visao=='resumo' %}selected{% endif %}>Resumo</option>
+        <label class="sv-label" for="visao">Visão</label>
+        <select class="sv-select" id="visao" name="visao">
+          <option value="detalhado" {% if visao == 'detalhado' %}selected{% endif %}>Detalhado</option>
+          <option value="resumo" {% if visao == 'resumo' %}selected{% endif %}>Resumo</option>
         </select>
       </div>
     </div>
 
-    <div class="sv-grid sv-grid--2 sv-mt-3">
-      <div class="sv-card">
-        <div class="sv-card__header">
+    <div class="sv-grid sv-grid-2 sv-mt-14">
+      <div class="sv-field">
+        <div class="sv-row sv-row--between sv-gap-8 sv-mb-8">
           <div>
-            <div class="sv-card__title">EMP</div>
-            <div class="sv-muted">Selecione uma ou mais</div>
+            <div class="sv-label">EMP</div>
+            <div class="sv-hint">Selecione uma ou mais</div>
           </div>
-          <button type="button" class="sv-btn sv-btn--sm sv-btn--ghost" data-sv-checkall="emp">Marcar todas</button>
+          <button class="sv-btn sv-btn--ghost sv-btn--sm" type="button" data-action="check-all" data-target="emp">Marcar todas</button>
         </div>
-        <div class="sv-card__body sv-scrollbox">
+
+        <div class="sv-checklist sv-checklist--tall" data-checklist="emp">
           {% for emp in emp_options %}
             <label class="sv-check">
-              <input type="checkbox" name="emp" value="{{ emp }}" {% if emp in emp_selected %}checked{% endif %} data-sv-check="emp">
+              <input type="checkbox" name="emp" value="{{ emp }}" {% if emp in emp_sel %}checked{% endif %}>
               <span>{{ emp }}</span>
             </label>
           {% endfor %}
         </div>
       </div>
 
-      <div class="sv-card">
-        <div class="sv-card__header">
+      <div class="sv-field">
+        <div class="sv-row sv-row--between sv-gap-8 sv-mb-8">
           <div>
-            <div class="sv-card__title">Vendedor</div>
-            <div class="sv-muted">Opcional</div>
+            <div class="sv-label">Vendedor</div>
+            <div class="sv-hint">Opcional</div>
           </div>
-          <button type="button" class="sv-btn sv-btn--sm sv-btn--ghost" data-sv-checkall="vendedor">Marcar todas</button>
+          <button class="sv-btn sv-btn--ghost sv-btn--sm" type="button" data-action="check-all" data-target="vendedor">Marcar todas</button>
         </div>
-        <div class="sv-card__body sv-scrollbox">
-          {% for vend in vendedor_options %}
+
+        <div class="sv-checklist sv-checklist--tall" data-checklist="vendedor">
+          {% for v in vendedores_options %}
             <label class="sv-check">
-              <input type="checkbox" name="vendedor" value="{{ vend }}" {% if vend in vendedor_selected %}checked{% endif %} data-sv-check="vendedor">
-              <span>{{ vend }}</span>
+              <input type="checkbox" name="vendedor" value="{{ v }}" {% if v in vendedor_sel %}checked{% endif %}>
+              <span>{{ v }}</span>
             </label>
           {% endfor %}
         </div>
       </div>
     </div>
 
-    <div class="sv-row sv-row--end sv-mt-3">
-      <div class="sv-field sv-field--inline">
-        <label>Por página</label>
-        <select class="sv-select" name="per_page">
-          {% for n in [25,50,100,200,500] %}
-            <option value="{{n}}" {% if per_page==n %}selected{% endif %}>{{n}}</option>
-          {% endfor %}
-        </select>
+    <div class="sv-row sv-row--between sv-row--wrap sv-gap-12 sv-mt-14">
+      <div class="sv-field" style="max-width: 240px;">
+        <label class="sv-label" for="por_pagina">Por página</label>
+        <input class="sv-input" id="por_pagina" name="por_pagina" value="{{ por_pagina }}" inputmode="numeric" />
       </div>
-      <button class="sv-btn sv-btn--primary" type="submit">Aplicar filtros</button>
-      <a class="sv-btn sv-btn--ghost" href="{{ url_for('campanhas_qtd') }}">Limpar</a>
+
+      <div class="sv-row sv-gap-8">
+        <button class="sv-btn sv-btn--primary" type="submit">Aplicar filtros</button>
+        <a class="sv-btn sv-btn--ghost" href="{{ url_for('campanhas_qtd') }}">Limpar</a>
+      </div>
     </div>
   </form>
 
-  {# ===== KPIs ===== #}
-  {% set total_valor = 0.0 %}
-  {% set total_vendedores = 0 %}
-  {% set total_campanhas = 0 %}
-  {% for b in blocos %}
-    {% set total_valor = total_valor + (b.total_valor or 0.0) %}
-    {% set total_vendedores = total_vendedores + 1 %}
-    {% set total_campanhas = total_campanhas + (b.resultados|length) %}
-  {% endfor %}
-
-  <div class="sv-grid sv-grid--4 sv-mt-3">
+  <!-- KPIs -->
+  <div class="sv-grid sv-grid-4 sv-mt-14">
     <div class="sv-kpi">
       <div class="sv-kpi__label">Total (R$)</div>
-      <div class="sv-kpi__value">{{ total_valor|brl_rs }}</div>
-      <div class="sv-kpi__hint">{{ total_campanhas }} campanhas • {{ total_vendedores }} vendedores</div>
+      <div class="sv-kpi__value">{{ total_premio|brl }}</div>
+      <div class="sv-kpi__hint">{{ total_campanhas }} campanhas</div>
     </div>
+
     <div class="sv-kpi">
       <div class="sv-kpi__label">Vendedores</div>
-      <div class="sv-kpi__value">{{ total_vendedores }}</div>
+      <div class="sv-kpi__value">{{ blocos|length }}</div>
       <div class="sv-kpi__hint">Agrupado por vendedor</div>
     </div>
-    <div class="sv-kpi">
-      <div class="sv-kpi__label">Campanhas</div>
-      <div class="sv-kpi__value">{{ total_campanhas }}</div>
-      <div class="sv-kpi__hint">Somatório das campanhas exibidas</div>
-    </div>
+
     <div class="sv-kpi">
       <div class="sv-kpi__label">Período</div>
       <div class="sv-kpi__value">{{ "%02d"|format(mes|int) }}/{{ ano }}</div>
       <div class="sv-kpi__hint">Filtros aplicados</div>
     </div>
+
+    <div class="sv-kpi">
+      <div class="sv-kpi__label">Somatório</div>
+      <div class="sv-kpi__value">{{ total_premio|brl }}</div>
+      <div class="sv-kpi__hint">das campanhas exibidas</div>
+    </div>
   </div>
 
-  <div class="sv-panel sv-mt-3">
-    <div class="sv-panel__header">
+  <!-- Table -->
+  <div class="sv-card sv-card--section sv-mt-14">
+    <div class="sv-row sv-row--between sv-row--wrap sv-gap-12 sv-mb-10">
       <div>
-        <div class="sv-panel__title">Tabela detalhada</div>
-        <div class="sv-muted">Abra <b>Ver campanhas</b> para listar as campanhas do vendedor.</div>
+        <div class="sv-section-title">Tabela detalhada</div>
+        <div class="sv-hint">Abra <b>Ver campanhas</b> para listar as campanhas do vendedor.</div>
       </div>
-      <div class="sv-muted">Linhas: {{ blocos|length }}</div>
+      <div class="sv-hint">Linhas: {{ blocos|length }}</div>
     </div>
 
-    <div class="sv-tablewrap">
+    <div class="sv-table-wrap">
       <table class="sv-table">
         <thead>
           <tr>
-            <th style="width: 90px;">EMP</th>
+            <th style="width:90px;">EMP</th>
             <th>Vendedor</th>
-            <th style="width: 340px;">Campanhas</th>
-            <th class="sv-right" style="width: 140px;">Total (R$)</th>
+            <th style="width:420px;">Campanhas</th>
+            <th style="width:150px; text-align:right;">Total (R$)</th>
           </tr>
         </thead>
         <tbody>
-          {% for b in blocos %}
-            <tr>
-              <td class="sv-mono">{{ b.emp }}</td>
-              <td>
-                <div class="sv-strong">{{ b.vendedor }}</div>
-                <div class="sv-muted">Campanhas: {{ b.resultados|length }}</div>
-              </td>
-              <td>
-                <details class="sv-acc sv-acc--inline">
-                  <summary class="sv-acc__sum">
-                    <span class="sv-acc__label">Ver campanhas ({{ b.resultados|length }})</span>
-                    <span class="sv-acc__chev" aria-hidden="true"></span>
-                  </summary>
-                  <div class="sv-acc__body">
-                    <table class="sv-subtable">
+          {% for bloco in blocos %}
+          <tr>
+            <td>{{ bloco.emp }}</td>
+            <td>
+              <div class="sv-strong">{{ bloco.vendedor }}</div>
+              <div class="sv-muted">Campanhas: {{ bloco.resultados|length }}</div>
+            </td>
+            <td>
+              <details class="sv-details">
+                <summary class="sv-btn sv-btn--ghost sv-btn--sm sv-details__summary">
+                  Ver campanhas ({{ bloco.resultados|length }})
+                </summary>
+
+                <div class="sv-details__panel">
+                  <div class="sv-mini-table-wrap">
+                    <table class="sv-mini-table">
                       <thead>
                         <tr>
                           <th>Campanha</th>
-                          <th class="sv-right" style="width: 120px;">Qtd mín.</th>
-                          <th class="sv-right" style="width: 140px;">Prêmio</th>
-                          <th class="sv-right" style="width: 120px;">Vendeu</th>
-                          <th class="sv-right" style="width: 140px;">Valor (R$)</th>
+                          <th style="width:90px; text-align:right;">Qtd mín.</th>
+                          <th style="width:110px; text-align:right;">Prêmio</th>
+                          <th style="width:90px; text-align:right;">Vendeu</th>
+                          <th style="width:130px; text-align:right;">Valor (R$)</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {% for r in b.resultados %}
-                          <tr>
-                            <td class="sv-strong">{{ r.titulo }}</td>
-                            <td class="sv-right">{{ r.qtd_minima }}</td>
-                            <td class="sv-right">{{ r.premio|brl_rs }}</td>
-                            <td class="sv-right">{{ r.qtd_vendida }}</td>
-                            <td class="sv-right">{{ r.valor_total|brl_rs }}</td>
-                          </tr>
+                        {% for r in bloco.resultados %}
+                        <tr class="{% if r.atingiu_minimo %}is-ok{% endif %}">
+                          <td class="sv-strong">{{ r.titulo }}</td>
+                          <td style="text-align:right;">{{ r.qtd_minima }}</td>
+                          <td style="text-align:right;">{{ r.recompensa_unit|brl }}</td>
+                          <td style="text-align:right;">{{ r.qtd_vendida }}</td>
+                          <td style="text-align:right;">{{ r.valor_vendido|brl }}</td>
+                        </tr>
                         {% endfor %}
                       </tbody>
                     </table>
                   </div>
-                </details>
-              </td>
-              <td class="sv-right sv-strong">{{ b.total_valor|brl_rs }}</td>
-            </tr>
+                  <div class="sv-row sv-row--between sv-gap-10 sv-mt-10">
+                    <div class="sv-hint">Linhas: {{ bloco.resultados|length }}</div>
+                    <div class="sv-strong">Total do vendedor: {{ bloco.total_premio|brl }}</div>
+                  </div>
+                </div>
+              </details>
+            </td>
+            <td style="text-align:right;" class="sv-strong">{{ bloco.total_premio|brl }}</td>
+          </tr>
           {% endfor %}
           {% if blocos|length == 0 %}
-            <tr><td colspan="4" class="sv-muted">Nenhum resultado para os filtros selecionados.</td></tr>
+          <tr>
+            <td colspan="4" class="sv-muted">Nenhum resultado com os filtros atuais.</td>
+          </tr>
           {% endif %}
         </tbody>
       </table>
     </div>
   </div>
+
 </div>
+
+<script>
+(function() {
+  // Marcar todas / desmarcar todas para checklists
+  function toggleAll(targetName) {
+    const box = document.querySelector('[data-checklist="'+targetName+'"]');
+    if (!box) return;
+    const inputs = box.querySelectorAll('input[type="checkbox"]');
+    const allChecked = Array.from(inputs).every(i => i.checked);
+    inputs.forEach(i => i.checked = !allChecked);
+  }
+
+  document.querySelectorAll('[data-action="check-all"]').forEach(btn => {
+    btn.addEventListener('click', () => toggleAll(btn.getAttribute('data-target')));
+  });
+})();
+</script>
+
+<style>
+/* Ajustes visuais específicos desta página */
+.sv-details__panel { margin-top: 10px; }
+.sv-mini-table-wrap { overflow:auto; border: 1px solid rgba(255,168,0,.18); border-radius: 14px; }
+.sv-mini-table { width:100%; border-collapse: collapse; min-width: 560px; }
+.sv-mini-table th, .sv-mini-table td { padding: 10px 12px; border-bottom: 1px solid rgba(255,168,0,.10); font-size: 13px; }
+.sv-mini-table thead th { position: sticky; top: 0; background: rgba(10,10,10,.75); backdrop-filter: blur(10px); }
+.sv-mini-table tbody tr.is-ok td { color: rgba(255,255,255,.92); }
+.sv-mini-table tbody tr.is-ok td:first-child::before { content: "✓ "; color: rgba(255,168,0,.95); }
+@media (max-width: 920px) {
+  .sv-grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .sv-table th:nth-child(3), .sv-table td:nth-child(3) { width:auto !important; }
+}
+@media (max-width: 560px) {
+  .sv-grid-3 { grid-template-columns: 1fr; }
+  .sv-grid-2 { grid-template-columns: 1fr; }
+  .sv-grid-4 { grid-template-columns: 1fr; }
+}
+</style>
 {% endblock %}
