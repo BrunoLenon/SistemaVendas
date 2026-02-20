@@ -7253,7 +7253,7 @@ def err_500(e):
 # Campanhas V2 (Enterprise)
 # ==========================
 
-# @app.route("/admin/campanhas_v2", methods=["GET", "POST"])
+@app.route("/admin/campanhas_v2", methods=["GET", "POST"])
 @admin_required
 def admin_campanhas_v2():
     from datetime import date
@@ -7286,7 +7286,16 @@ def admin_campanhas_v2():
             return redirect(url_for("admin_campanhas_v2", ano=ano, mes=mes))
 
         campanhas = db.query(CampanhaV2Master).order_by(CampanhaV2Master.id.desc()).all()
-        return render_template("admin_campanhas_v2.html", campanhas=campanhas, ano=ano, mes=mes)
+        today = date.today()
+        edit_obj = None
+        _edit_id = request.args.get("edit_id") or request.args.get("edit")
+        if _edit_id and str(_edit_id).isdigit():
+            try:
+                edit_obj = db.session.get(CampanhaV2, int(_edit_id))
+            except Exception:
+                edit_obj = None
+    
+        return render_template("admin_campanhas_v2.html", campanhas=campanhas, ano=ano, mes=mes, today=today, edit_obj=edit_obj)
     finally:
         db.close()
 
