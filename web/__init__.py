@@ -1,57 +1,65 @@
 from __future__ import annotations
 
+"""Application factory (bootstrap) para o SistemaVendas/Veipeças.
+
+Objetivo: manter o boot estável no Render/Gunicorn e garantir que rotas críticas
+(como /login) existam mesmo quando o app legado (web/app.py) falhar em registrar
+blueprints por causa de path/import.
+
+Este módulo NÃO altera regras de negócio; só garante inicialização previsível.
+"""
+
 import os
 import sys
-from pathlib import Path
-
 from flask import Flask
 
 
-def _ensure_sys_path() -> None:
-    """Keep compatibility with legacy imports like `from db import ...` or `from services...`"""
-    root_dir = Path(__file__).resolve().parent.parent  # project root (..../src)
-    web_dir = Path(__file__).resolve().parent          # .../web
-    # Insert at front so it wins over site-packages similarly to the old bootstrap.
-    for p in (str(root_dir), str(web_dir)):
-        if p not in sys.path:
-            sys.path.insert(0, p)
+def _ensure_web_on_path() -> None:
+    # /.../src/web
+    web_dir = os.path.dirname(__file__)
+    # /.../src
+    base_dir = os.path.dirname(web_dir)
+
+    # Compat: seus imports históricos usam `from db import ...` e `from services...`
+    # então precisamos colocar WEB_DIR no sys.path.
+    if web_dir not in sys.path:
+        sys.path.insert(0, web_dir)
+    if base_dir not in sys.path:
+        sys.path.insert(0, base_dir)
+
+
+def _safe_register_blueprint(app: Flask, bp, name: str) -> None:
+    # Evita duplicar registro em múltiplos boots/imports.
+    if name in app.blueprints:
+        return
+    app.register_blueprint(bp)
 
 
 def create_app() -> Flask:
-    """App factory (SaaS-style) that reuses the legacy app and guarantees blueprint registration.
+    _ensure_web_on_path()
 
-    This is intentionally minimal/safe: it does NOT change routes/logic; it only ensures the app
-    boots reliably and that the `auth` blueprint exists so url_for('auth.login') works.
-    """
-    _ensure_sys_path()
-
-    # Import legacy Flask app (all existing routes/handlers live there)
-    import web.app as legacy_app_module  # noqa: WPS433
+    # Importa o app legado (monolito) que já contém todas as rotas existentes.
+    # Ele pode falhar em registrar o auth blueprint dependendo de sys.path,
+    # então garantimos isso aqui também.
+    import web.app as legacy_app_module  # noqa
 
     app: Flask = legacy_app_module.app
 
-    # Ensure blueprints are registered (idempotent).
-    # Some patches may have replaced __init__.py and accidentally stopped registering auth.
+    # GARANTIA CRÍTICA: auth.login precisa existir (home redireciona para ele).
     try:
-        from web.blueprints.auth import bp as auth_bp  # noqa: WPS433
-        if "auth" not in app.blueprints:
-            app.register_blueprint(auth_bp)
-    except Exception as exc:  # pragma: no cover
-        # If auth blueprint import fails, we still want the process to start for debugging.
-        app.logger.exception("Falha ao registrar blueprint auth: %s", exc)
-
-    # Keep compatibility with existing wrapper blueprints (admin/mensagens), if present.
-    for name, modpath in (
-        ("admin", "web.blueprints.admin"),
-        ("mensagens", "web.blueprints.mensagens"),
-    ):
+        from web.blueprints.auth import bp as auth_bp  # noqa
+        _safe_register_blueprint(app, auth_bp, "auth")
+    except Exception:
+        # último fallback: tenta import antigo (quando WEB_DIR está no path)
         try:
-            module = __import__(modpath, fromlist=["bp"])
-            bp = getattr(module, "bp", None)
-            if bp is not None and name not in app.blueprints:
-                app.register_blueprint(bp)
+            from blueprints.auth import bp as auth_bp  # type: ignore
+            _safe_register_blueprint(app, auth_bp, "auth")
         except Exception:
-            # Optional: these may not exist in older bases. Don't block boot.
-            pass
+            # aqui a gente NÃO estoura o boot (pra não derrubar o deploy),
+            # mas registra um log bem explícito.
+            try:
+                app.logger.exception("Falha ao registrar blueprint 'auth' no create_app()")
+            except Exception:
+                pass
 
     return app
