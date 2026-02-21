@@ -233,6 +233,56 @@ def brl_rs(value):
         return "R$-" + s[1:]
     return "R$" + s
 
+# --------------------------
+# Filtros Jinja: datas (ISO <-> BR)
+# --------------------------
+@app.template_filter("date_iso")
+def date_iso(value):
+    """Converte date/datetime/str para YYYY-MM-DD (compatível com <input type=\"date\">)."""
+    if value is None:
+        return ""
+    try:
+        if isinstance(value, datetime):
+            return value.date().strftime("%Y-%m-%d")
+        if isinstance(value, date):
+            return value.strftime("%Y-%m-%d")
+        if isinstance(value, str):
+            s = value.strip()
+            # aceita "YYYY-MM-DD", "YYYY-MM-DDTHH:MM:SS", "YYYY-MM-DD HH:MM:SS"
+            if len(s) >= 10 and s[4] == "-" and s[7] == "-":
+                return s[:10]
+            # aceita "DD/MM/YYYY"
+            if len(s) >= 10 and s[2] == "/" and s[5] == "/":
+                dd, mm, yyyy = s[:2], s[3:5], s[6:10]
+                return f"{yyyy}-{mm}-{dd}"
+        return ""
+    except Exception:
+        return ""
+
+@app.template_filter("date_br")
+def date_br(value):
+    """Converte date/datetime/str para DD/MM/AAAA (exibição)."""
+    if value is None:
+        return ""
+    try:
+        if isinstance(value, datetime):
+            d = value.date()
+            return d.strftime("%d/%m/%Y")
+        if isinstance(value, date):
+            return value.strftime("%d/%m/%Y")
+        if isinstance(value, str):
+            s = value.strip()
+            # ISO
+            if len(s) >= 10 and s[4] == "-" and s[7] == "-":
+                yyyy, mm, dd = s[:4], s[5:7], s[8:10]
+                return f"{dd}/{mm}/{yyyy}"
+            # já BR
+            if len(s) >= 10 and s[2] == "/" and s[5] == "/":
+                return s[:10]
+        return ""
+    except Exception:
+        return ""
+
 
 # Logs no stdout (Render captura automaticamente)
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
@@ -371,6 +421,15 @@ def inject_branding():
 
 # -------------------- Configurações / Branding (ADMIN) --------------------
 
+
+@app.context_processor
+def inject_globals():
+    """Variáveis globais disponíveis em todos os templates Jinja (evita UndefinedError)."""
+    try:
+        return {"today": date.today(), "now": datetime.now()}
+    except Exception:
+        # fallback ultra-defensivo
+        return {"today": date.today()}
 @app.before_request
 def _mensagens_bloqueantes_guard():
     # Ignora assets e healthz

@@ -68,11 +68,11 @@
             <div class="row g-2 mt-1">
               <div class="col-md-6">
                 <label class="form-label">Vigência início</label>
-                <input type="date" class="form-control" name="vigencia_ini" value="{{ (edit_obj.vigencia_ini|string) if edit_obj else (today.replace(day=1)|string) }}" />
+                <input type="date" class="form-control" name="vigencia_ini" value="{{ (edit_obj.vigencia_ini|date_iso) if edit_obj else (today.replace(day=1)|date_iso) }}" />
               </div>
               <div class="col-md-6">
                 <label class="form-label">Vigência fim</label>
-                <input type="date" class="form-control" name="vigencia_fim" value="{{ (edit_obj.vigencia_fim|string) if edit_obj else (today.replace(month=12, day=31)|string) }}" />
+                <input type="date" class="form-control" name="vigencia_fim" value="{{ (edit_obj.vigencia_fim|date_iso) if edit_obj else (today.replace(month=12, day=31)|date_iso) }}" />
               </div>
             </div>
 
