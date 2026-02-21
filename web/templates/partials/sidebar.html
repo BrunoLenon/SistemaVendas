@@ -39,7 +39,7 @@
     <a class="sv-nav-item {% if path.startswith('/campanhas') and not path.startswith('/relatorios') %}active{% endif %}" href="/campanhas">
       <span class="sv-ico">⭐</span><span class="sv-text">Campanhas (Qtd)</span>
     </a>
-    <a class="sv-nav-item {% if path.startswith('/campanhas/ranking-marca') or path.startswith('/admin/campanhas/ranking-marca') %}active{% endif %}" href="/campanhas/ranking-marca">
+    <a class="sv-nav-item {% if path.startswith('/campanhas/ranking-marca') %}active{% endif %}" href="/campanhas/ranking-marca">
       <span class="sv-ico">🏁</span><span class="sv-text">Ranking por Marca</span>
     </a>
     <a class="sv-nav-item {% if path.startswith('/metas') %}active{% endif %}" href="/metas">
@@ -81,9 +81,10 @@
       <a class="sv-nav-item {% if path.startswith('/admin/campanhas') and not path.startswith('/admin/campanhas/ranking-marca') %}active{% endif %}" href="/admin/campanhas">
         <span class="sv-ico">🧩</span><span class="sv-text">Campanhas (Admin)</span>
       </a>
-      <a class="sv-nav-item {% if path.startswith('/admin/campanhas_v2') %}active{% endif %}" href="/admin/campanhas_v2">
-        <span class="sv-ico">🧪</span><span class="sv-text">Campanhas V2</span>
-      </a>
+            <a class="sv-nav-item {% if path.startswith('/admin/campanhas/ranking-marca') %}active{% endif %}" href="/admin/campanhas/ranking-marca">
+              <span class="sv-ico">🏆</span><span class="sv-text">Ranking por Marca (Admin)</span>
+            </a>
+
       <a class="sv-nav-item {% if path.startswith('/admin/combos') %}active{% endif %}" href="/admin/combos">
         <span class="sv-ico">🧱</span><span class="sv-text">Combos</span>
       </a>
