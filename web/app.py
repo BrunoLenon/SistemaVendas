@@ -7259,6 +7259,7 @@ def admin_campanhas_v2():
     from datetime import date
     ano = int(request.args.get("ano") or date.today().year)
     mes = int(request.args.get("mes") or date.today().month)
+    today = date.today()
     db = SessionLocal()
     try:
         if request.method == "POST":
@@ -7286,15 +7287,13 @@ def admin_campanhas_v2():
             return redirect(url_for("admin_campanhas_v2", ano=ano, mes=mes))
 
         campanhas = db.query(CampanhaV2Master).order_by(CampanhaV2Master.id.desc()).all()
-        today = date.today()
-        return render_template("admin_campanhas_v2.html", campanhas=campanhas, ano=ano, mes=mes, today=today)
+    return render_template("admin_campanhas_v2.html", campanhas=campanhas, ano=ano, mes=mes, today=today, edit_obj=None)
     finally:
         db.close()
 
 
 @app.route("/admin/campanhas_v2/recalcular", methods=["GET"])
-@admin_required
-def admin_campanhas_v2_recalcular():
+@admin_requireddef admin_campanhas_v2_recalcular():
     from datetime import date
     ano = int(request.args.get("ano") or date.today().year)
     mes = int(request.args.get("mes") or date.today().month)
