@@ -96,9 +96,7 @@ def admin_campanhas_v2():
             titulo = (request.form.get("titulo") or "").strip()
             tipo = (request.form.get("tipo") or "RANKING_VALOR").strip().upper()
             escopo = (request.form.get("escopo") or "EMP").strip().upper()
-            # Checkbox HTML geralmente envia "on" quando marcado; em alguns casos pode vir "1".
-            ativo_raw = (request.form.get("ativo") or "").strip().lower()
-            ativo = ativo_raw in {"1", "on", "true", "yes", "y"}
+            ativo = (request.form.get("ativo") or "1") == "1"
 
             # Se não informar vigência, usamos o ano inteiro (padrão seguro)
             default_ini = date(int(ano), 1, 1)
@@ -107,9 +105,7 @@ def admin_campanhas_v2():
             vig_fim = _parse_date(request.form.get("vigencia_fim"), default_fim)
 
             emps = _parse_int_list(request.form.get("emps") or "")
-            # Compatibilidade: alguns templates antigos usam name="regras".
-            regras_txt = request.form.get("regras_json") or request.form.get("regras") or "{}"
-            regras = _safe_json(regras_txt)
+            regras = _safe_json(request.form.get("regras_json") or "{}")
 
             if not titulo:
                 flash("Informe o título da campanha.", "warning")
@@ -131,7 +127,8 @@ def admin_campanhas_v2():
                 return redirect(url_for("admin_campanhas_v2"))
 
         # GET / listagem + edição
-        campanhas = list_campanhas_v2(db)
+        # Admin precisa ver TODAS (ativas e inativas) para conseguir gerenciar.
+        campanhas = list_campanhas_v2(db, include_inactive=True)
         edit_obj = None
         if edit_id and str(edit_id).isdigit():
             edit_obj = db.query(CampanhaV2Master).filter(CampanhaV2Master.id == int(edit_id)).first()
