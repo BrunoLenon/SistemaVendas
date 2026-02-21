@@ -385,7 +385,9 @@ def admin_campanhas_v2_seed_defaults():
 
     return redirect(url_for("admin_campanhas_v2", ano=ano, mes=mes))
 
-@bp.route("/admin/campanhas/ranking-marca"@bp.route("/admin/campanhas/ranking-marca", methods=["GET", "POST"], endpoint='admin_campanhas_ranking_marca')
+@bp.route("/admin/campanhas/ranking-marca", methods=["GET", "POST"], endpoint="admin_campanhas_ranking_marca")
+@bp.route("/admin/ranking-marca", methods=["GET", "POST"], endpoint="admin_ranking_marca")
 def admin_campanhas_ranking_marca():
     return handlers.admin_campanhas_ranking_marca()
+
 
