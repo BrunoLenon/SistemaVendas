@@ -7253,7 +7253,7 @@ def err_500(e):
 # Campanhas V2 (Enterprise)
 # ==========================
 
-@app.route("/admin/campanhas_v2", methods=["GET", "POST"])
+# @app.route("/admin/campanhas_v2", methods=["GET", "POST"])
 @admin_required
 def admin_campanhas_v2():
     from datetime import date
@@ -7285,42 +7285,23 @@ def admin_campanhas_v2():
             flash("Campanha V2 criada.", "success")
             return redirect(url_for("admin_campanhas_v2", ano=ano, mes=mes))
 
-        campanhas = db.query(CampanhaV2Master).order_by(CampanhaV2Master.id.desc()).all()
-        today = date.today()
-        edit_obj = None
-        _edit_id = request.args.get("edit_id") or request.args.get("edit")
-        if _edit_id and str(_edit_id).isdigit():
-            try:
-                edit_obj = db.session.get(CampanhaV2, int(_edit_id))
-            except Exception:
-                edit_obj = None
-    
-        return render_template("admin_campanhas_v2.html", campanhas=campanhas, ano=ano, mes=mes, today=today, edit_obj=edit_obj)
+        # V2 (nova tabela)
+        campanhas_v2 = db.query(CampanhaV2Master).order_by(CampanhaV2Master.id.desc()).all()
+
+        # V1 (legado): suas campanhas antigas estão aqui
+        campanhas_qtd = db.query(CampanhaQtd).order_by(CampanhaQtd.id.desc()).all()
+        campanhas_combo = db.query(CampanhaCombo).order_by(CampanhaCombo.id.desc()).all()
+
+        return render_template(
+            "admin_campanhas_v2.html",
+            campanhas=campanhas_v2,
+            campanhas_qtd=campanhas_qtd,
+            campanhas_combo=campanhas_combo,
+            ano=ano,
+            mes=mes,
+        )
     finally:
         db.close()
-
-
-# @app.route("/admin/campanhas_v2/recalcular", methods=["GET"])
-@admin_required
-def admin_campanhas_v2_recalcular():
-    from datetime import date
-    ano = int(request.args.get("ano") or date.today().year)
-    mes = int(request.args.get("mes") or date.today().month)
-    db = SessionLocal()
-    try:
-        actor = session.get("username") or "admin"
-        recalc_v2_competencia(db, ano=ano, mes=mes, actor=str(actor))
-        flash(f"Recalculo V2 concluído para {mes}/{ano}.", "success")
-    except Exception as e:
-        db.rollback()
-        flash(f"Erro ao recalcular: {e}", "danger")
-    finally:
-        db.close()
-    return redirect(url_for("admin_campanhas_v2", ano=ano, mes=mes))
-
-
-@app.route("/financeiro/campanhas_v2", methods=["GET"])
-@financeiro_required
 def financeiro_campanhas_v2():
     # por enquanto, redireciona para o fechamento (mesma visão)
     return redirect(url_for("financeiro_fechamento_v2"))
