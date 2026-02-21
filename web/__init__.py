@@ -48,32 +48,21 @@ def create_app() -> Flask:
     # GARANTIA CRÍTICA: auth.login precisa existir (home redireciona para ele).
     try:
         from web.blueprints.auth import bp as auth_bp  # noqa
+        from web.blueprints.admin import bp as admin_bp  # noqa
         _safe_register_blueprint(app, auth_bp, "auth")
+        _safe_register_blueprint(app, admin_bp, "admin")
     except Exception:
         # último fallback: tenta import antigo (quando WEB_DIR está no path)
         try:
             from blueprints.auth import bp as auth_bp  # type: ignore
+            from blueprints.admin import bp as admin_bp  # type: ignore
             _safe_register_blueprint(app, auth_bp, "auth")
+            _safe_register_blueprint(app, admin_bp, "admin")
         except Exception:
             # aqui a gente NÃO estoura o boot (pra não derrubar o deploy),
             # mas registra um log bem explícito.
             try:
                 app.logger.exception("Falha ao registrar blueprint 'auth' no create_app()")
-            except Exception:
-                pass
-
-    # Admin Campanhas V2: evita 404 em /admin/campanhas_v2 caso o legado não registre.
-    # (o legado mudou bastante durante os patches; aqui deixamos o boot resiliente)
-    try:
-        from web.blueprints.campanhas_v2_admin import bp as campanhas_v2_admin_bp  # noqa
-        _safe_register_blueprint(app, campanhas_v2_admin_bp, "campanhas_v2_admin")
-    except Exception:
-        try:
-            from blueprints.campanhas_v2_admin import bp as campanhas_v2_admin_bp  # type: ignore
-            _safe_register_blueprint(app, campanhas_v2_admin_bp, "campanhas_v2_admin")
-        except Exception:
-            try:
-                app.logger.exception("Falha ao registrar blueprint 'campanhas_v2_admin' no create_app()")
             except Exception:
                 pass
 
