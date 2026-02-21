@@ -111,48 +111,6 @@ def require_role(allowed: Iterable[str], *, redirect_endpoint: str = "dashboard"
     return None
 
 
-def roles_required(*roles: str):
-    """Decorator genérico para exigir um ou mais perfis.
-
-    Uso:
-        @roles_required("admin")
-        @roles_required("admin", "financeiro")
-    """
-    # aceita lista/tupla única
-    if len(roles) == 1 and isinstance(roles[0], (list, tuple, set)):
-        roles_list = list(roles[0])
-    else:
-        roles_list = list(roles)
-
-    def decorator(fn: Callable):
-        @wraps(fn)
-        def wrapper(*args, **kwargs):
-            red = require_login_redirect()
-            if red:
-                return red
-            red = require_role(roles_list)
-            if red:
-                flash("Você não tem permissão para acessar esta página.", "warning")
-                audit("role_forbidden", roles=",".join(roles_list))
-                return red
-            return fn(*args, **kwargs)
-        return wrapper
-    return decorator
-
-
-def supervisor_required(fn: Callable):
-    return roles_required("supervisor")(fn)
-
-
-def vendedor_required(fn: Callable):
-    return roles_required("vendedor")(fn)
-
-
-def financeiro_required(fn: Callable):
-    return roles_required("financeiro")(fn)
-
-
-
 def login_required(fn: Callable):
     @wraps(fn)
     def wrapper(*args, **kwargs):

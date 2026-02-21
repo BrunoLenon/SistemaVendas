@@ -406,7 +406,7 @@ def _mensagens_bloqueantes_guard():
     return None
 
 
-# @app.route('/admin/configuracoes', methods=['GET', 'POST'])
+@app.route('/admin/configuracoes', methods=['GET', 'POST'])
 def admin_configuracoes():
     red = _admin_required()
     if red:
@@ -4466,7 +4466,7 @@ def senha():
 
     return render_template("senha.html", vendedor=vendedor, erro=None, ok="Senha atualizada com sucesso!")
 
-# @app.route("/admin/usuarios", methods=["GET", "POST"])
+@app.route("/admin/usuarios", methods=["GET", "POST"])
 def admin_usuarios():
     red = _login_required()
     if red:
@@ -4786,7 +4786,7 @@ def admin_usuarios():
     )
 
 
-# @app.route("/admin/emps", methods=["GET", "POST"])
+@app.route("/admin/emps", methods=["GET", "POST"])
 def admin_emps():
     """Cadastro de EMPs (ADMIN).
 
@@ -4871,7 +4871,7 @@ def admin_emps():
     )
 
 
-# @app.get("/admin/cache/refresh")
+@app.get("/admin/cache/refresh")
 def admin_cache_refresh():
     """Recalcula o cache do dashboard para um EMP/mês/ano (ADMIN).
 
@@ -4901,7 +4901,7 @@ def admin_cache_refresh():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
-# @app.route("/admin/importar", methods=["GET", "POST"])
+@app.route("/admin/importar", methods=["GET", "POST"])
 def admin_importar():
     red = _login_required()
     if red:
@@ -4976,7 +4976,7 @@ def admin_importar():
 
 
 
-# @app.route("/admin/itens_parados", methods=["GET", "POST"])
+@app.route("/admin/itens_parados", methods=["GET", "POST"])
 def admin_itens_parados():
     """Cadastro de itens parados (liquidação) por EMP.
 
@@ -5059,7 +5059,7 @@ def admin_itens_parados():
         ok=ok,
     )
 
-# @app.route('/admin/resumos_periodo', methods=['GET', 'POST'])
+@app.route('/admin/resumos_periodo', methods=['GET', 'POST'])
 def admin_resumos_periodo():
     red = _admin_required()
     if red:
@@ -5488,7 +5488,7 @@ def admin_resumos_periodo():
 
 # Compatibilidade: algumas telas/atalhos antigos apontavam para /admin/fechamento.
 # O fechamento mensal hoje é feito dentro da tela de resumos por período.
-# @app.route("/admin/combos", methods=["GET", "POST"])
+@app.route("/admin/combos", methods=["GET", "POST"])
 def admin_combos():
     """Cadastro de Campanhas Combo (SIMPLES).
     Regra (venda casada):
@@ -5690,7 +5690,7 @@ def admin_combos():
 
 
 
-# @app.route("/admin/fechamento", methods=["GET", "POST"])
+@app.route("/admin/fechamento", methods=["GET", "POST"])
 def admin_fechamento():
     """Página dedicada de fechamento mensal (ADMIN).
 
@@ -5849,7 +5849,7 @@ def admin_fechamento():
     )
 
 
-# @app.route("/admin/campanhas", methods=["GET", "POST"])
+@app.route("/admin/campanhas", methods=["GET", "POST"])
 def admin_campanhas_qtd():
     """Cadastro de campanhas de recompensa por quantidade.
 
@@ -6064,7 +6064,7 @@ def admin_campanhas_qtd():
             ok=ok,
         )
 
-# @app.route("/admin/apagar_vendas", methods=["POST"])
+@app.route("/admin/apagar_vendas", methods=["POST"])
 def admin_apagar_vendas():
     """Apaga vendas por dia ou por mes.
 
@@ -6146,7 +6146,7 @@ def admin_apagar_vendas():
 # Mensagens (Central + Bloqueio diário)
 # =====================
 
-# @app.route("/mensagens", methods=["GET"])
+@app.route("/mensagens", methods=["GET"])
 def mensagens_central():
     red = _login_required()
     if red:
@@ -6218,7 +6218,7 @@ def mensagens_central():
         return render_template("mensagens.html", mensagens=out, usuario=usuario, role=role)
 
 
-# @app.route("/mensagens/bloqueio/<int:mensagem_id>", methods=["GET"])
+@app.route("/mensagens/bloqueio/<int:mensagem_id>", methods=["GET"])
 def mensagens_bloqueio(mensagem_id: int):
     red = _login_required()
     if red:
@@ -6268,7 +6268,7 @@ def mensagens_bloqueio(mensagem_id: int):
         return render_template("mensagem_bloqueio.html", msg=msg, usuario=usuario, role=role)
 
 
-# @app.route("/mensagens/lida/<int:mensagem_id>", methods=["POST"])
+@app.route("/mensagens/lida/<int:mensagem_id>", methods=["POST"])
 def mensagens_marcar_lida(mensagem_id: int):
     red = _login_required()
     if red:
@@ -6302,7 +6302,7 @@ def mensagens_marcar_lida(mensagem_id: int):
     return redirect(url_for("dashboard"))
 
 
-# @app.route("/admin/mensagens", methods=["GET", "POST"])
+@app.route("/admin/mensagens", methods=["GET", "POST"])
 def admin_mensagens():
     red = _login_required()
     if red:
@@ -6446,7 +6446,7 @@ def admin_mensagens():
         )
 
 
-# @app.route("/admin/mensagens/<int:mensagem_id>/toggle", methods=["POST"])
+@app.route("/admin/mensagens/<int:mensagem_id>/toggle", methods=["POST"])
 def admin_mensagens_toggle(mensagem_id: int):
     red = _login_required()
     if red:
@@ -6919,7 +6919,7 @@ def metas():
         )
 
 
-# @app.get("/admin/metas")
+@app.get("/admin/metas")
 def admin_metas():
     red = _login_required()
     if red:
@@ -6972,7 +6972,7 @@ def admin_metas():
         )
 
 
-# @app.post("/admin/metas/criar")
+@app.post("/admin/metas/criar")
 def admin_metas_criar():
     red = _login_required()
     if red:
@@ -7071,7 +7071,7 @@ def admin_metas_criar():
     return redirect(url_for("admin_metas", ano=ano, mes=mes))
 
 
-# @app.post("/admin/metas/toggle/<int:meta_id>")
+@app.post("/admin/metas/toggle/<int:meta_id>")
 def admin_metas_toggle(meta_id: int):
     red = _login_required()
     if red:
@@ -7106,7 +7106,7 @@ def admin_metas_toggle(meta_id: int):
     return redirect(url_for("admin_metas", ano=ano, mes=mes))
 
 
-# @app.get("/admin/metas/bases/<int:meta_id>")
+@app.get("/admin/metas/bases/<int:meta_id>")
 def admin_meta_bases(meta_id: int):
     red = _login_required()
     if red:
@@ -7169,7 +7169,7 @@ def admin_meta_bases(meta_id: int):
         )
 
 
-# @app.post("/admin/metas/bases/<int:meta_id>/salvar")
+@app.post("/admin/metas/bases/<int:meta_id>/salvar")
 def admin_meta_bases_salvar(meta_id: int):
     red = _login_required()
     if red:
@@ -7253,7 +7253,7 @@ def err_500(e):
 # Campanhas V2 (Enterprise)
 # ==========================
 
-# @app.route("/admin/campanhas_v2", methods=["GET", "POST"])
+@app.route("/admin/campanhas_v2", methods=["GET", "POST"])
 @admin_required
 def admin_campanhas_v2():
     from datetime import date
@@ -7285,23 +7285,41 @@ def admin_campanhas_v2():
             flash("Campanha V2 criada.", "success")
             return redirect(url_for("admin_campanhas_v2", ano=ano, mes=mes))
 
-        # V2 (nova tabela)
-        campanhas_v2 = db.query(CampanhaV2Master).order_by(CampanhaV2Master.id.desc()).all()
-
-        # V1 (legado): suas campanhas antigas estão aqui
-        campanhas_qtd = db.query(CampanhaQtd).order_by(CampanhaQtd.id.desc()).all()
-        campanhas_combo = db.query(CampanhaCombo).order_by(CampanhaCombo.id.desc()).all()
-
+        campanhas = db.query(CampanhaV2Master).order_by(CampanhaV2Master.id.desc()).all()
+        # A template usa `today` para preencher o seletor (m�s/ano) e defaults.
+        # Sem isso, o Jinja quebra com "'today' is undefined".
         return render_template(
             "admin_campanhas_v2.html",
-            campanhas=campanhas_v2,
-            campanhas_qtd=campanhas_qtd,
-            campanhas_combo=campanhas_combo,
+            campanhas=campanhas,
             ano=ano,
             mes=mes,
+            today=date.today(),
         )
     finally:
         db.close()
+
+
+@app.route("/admin/campanhas_v2/recalcular", methods=["GET"])
+@admin_required
+def admin_campanhas_v2_recalcular():
+    from datetime import date
+    ano = int(request.args.get("ano") or date.today().year)
+    mes = int(request.args.get("mes") or date.today().month)
+    db = SessionLocal()
+    try:
+        actor = session.get("username") or "admin"
+        recalc_v2_competencia(db, ano=ano, mes=mes, actor=str(actor))
+        flash(f"Recalculo V2 concluído para {mes}/{ano}.", "success")
+    except Exception as e:
+        db.rollback()
+        flash(f"Erro ao recalcular: {e}", "danger")
+    finally:
+        db.close()
+    return redirect(url_for("admin_campanhas_v2", ano=ano, mes=mes))
+
+
+@app.route("/financeiro/campanhas_v2", methods=["GET"])
+@financeiro_required
 def financeiro_campanhas_v2():
     # por enquanto, redireciona para o fechamento (mesma visão)
     return redirect(url_for("financeiro_fechamento_v2"))
@@ -7370,7 +7388,7 @@ def financeiro_fechamento_v2_status():
 # Campanhas — Ranking por Marca (V2 NEW)
 # =========================================
 
-# @app.route("/admin/campanhas/ranking-marca", methods=["GET", "POST"])
+@app.route("/admin/campanhas/ranking-marca", methods=["GET", "POST"])
 @admin_required
 def admin_campanhas_ranking_marca():
     from services.ranking_marca_v2_new import (

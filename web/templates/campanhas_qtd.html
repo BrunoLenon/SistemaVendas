@@ -81,16 +81,9 @@
 
         <div class="sv-checklist sv-checklist--tall" data-checklist="vendedor">
           {% for v in vendedores_options %}
-            {% if v is mapping %}
-              {% set v_value = v.get('value') %}
-              {% set v_label = v.get('label', v_value) %}
-            {% else %}
-              {% set v_value = v %}
-              {% set v_label = v %}
-            {% endif %}
             <label class="sv-check">
-              <input type="checkbox" name="vendedor" value="{{ v_value }}" {% if v_value in vendedor_sel %}checked{% endif %}>
-              <span>{{ v_label }}</span>
+              <input type="checkbox" name="vendedor" value="{{ v }}" {% if v in vendedor_sel %}checked{% endif %}>
+              <span>{{ v }}</span>
             </label>
           {% endfor %}
         </div>
@@ -178,23 +171,19 @@
                         <tr>
                           <th>Campanha</th>
                           <th style="width:90px; text-align:right;">Qtd mín.</th>
-                          <th style="width:130px; text-align:right;">Meta (R$)</th>
-                          <th style="width:110px; text-align:right;">Prêmio (R$)</th>
+                          <th style="width:110px; text-align:right;">Prêmio</th>
                           <th style="width:90px; text-align:right;">Vendeu</th>
-                          <th style="width:140px; text-align:right;">Vendido (R$)</th>
-                          <th style="width:150px; text-align:right;">Recompensa (R$)</th>
+                          <th style="width:130px; text-align:right;">Valor (R$)</th>
                         </tr>
                       </thead>
                       <tbody>
                         {% for r in bloco.resultados %}
                         <tr class="{% if r.atingiu_minimo %}is-ok{% endif %}">
                           <td class="sv-strong">{{ r.titulo }}</td>
-                          <td style="text-align:right;">{{ r.qtd_minima if r.qtd_minima is not none else '-' }}</td>
-                          <td style="text-align:right;">{{ r.minimo_valor|brl if r.minimo_valor else '-' }}</td>
+                          <td style="text-align:right;">{{ r.qtd_minima }}</td>
                           <td style="text-align:right;">{{ r.recompensa_unit|brl }}</td>
                           <td style="text-align:right;">{{ r.qtd_vendida }}</td>
                           <td style="text-align:right;">{{ r.valor_vendido|brl }}</td>
-                          <td style="text-align:right;">{{ r.valor_recompensa|brl }}</td>
                         </tr>
                         {% endfor %}
                       </tbody>
@@ -202,18 +191,17 @@
                   </div>
                   <div class="sv-row sv-row--between sv-gap-10 sv-mt-10">
                     <div class="sv-hint">Linhas: {{ bloco.resultados|length }}</div>
-                    <div class="sv-strong">Total vendido: {{ bloco.total_vendido|brl }} &nbsp;•&nbsp; Recompensa: {{ bloco.total_premio|brl }}</div>
+                    <div class="sv-strong">Total do vendedor: {{ bloco.total_premio|brl }}</div>
                   </div>
                 </div>
               </details>
             </td>
-            <td style="text-align:right;">{{ bloco.total_vendido|brl }}</td>
             <td style="text-align:right;" class="sv-strong">{{ bloco.total_premio|brl }}</td>
           </tr>
           {% endfor %}
           {% if blocos|length == 0 %}
           <tr>
-            <td colspan="5" class="sv-muted">Nenhum resultado com os filtros atuais.</td>
+            <td colspan="4" class="sv-muted">Nenhum resultado com os filtros atuais.</td>
           </tr>
           {% endif %}
         </tbody>

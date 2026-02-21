@@ -99,8 +99,8 @@ def recalcular_campanhas_v2(
     for c in camps:
         try:
             # valida vigência (se não tiver, considera ativa)
-            di = getattr(c, "vigencia_ini", None) or getattr(c, "data_inicio", None)
-            df = getattr(c, "vigencia_fim", None) or getattr(c, "data_fim", None)
+            di = getattr(c, "data_inicio", None)
+            df = getattr(c, "data_fim", None)
             if di and df:
                 if df < periodo_ini or di > periodo_fim:
                     continue
@@ -121,30 +121,15 @@ def recalcular_campanhas_v2(
 
             if tipo == "RANKING_VALOR":
                 rows = _calc_ranking_valor(db, c, ano, mes, emps_calc)
-
-            # Compat: UI/cadastro usa META_PERCENTUAL com regras.ref_tipo
-            elif tipo == "META_PERCENTUAL":
-                ref_tipo = str(_safe_json_load(getattr(c, "regras_json", None), {}).get("ref_tipo") or "").strip().upper()
-                if ref_tipo in ("ANO_PASSADO", "YOY", "YTD_YOY"):
-                    rows = _calc_meta_pct_yoy(db, c, ano, mes, emps_calc)
-                else:
-                    # default: mês anterior
-                    rows = _calc_meta_pct_mom(db, c, ano, mes, emps_calc)
-
             elif tipo == "META_PCT_MOM":
                 rows = _calc_meta_pct_mom(db, c, ano, mes, emps_calc)
             elif tipo == "META_PCT_YOY":
                 rows = _calc_meta_pct_yoy(db, c, ano, mes, emps_calc)
-
-            # Compat: UI/cadastro usa META_ABSOLUTA
-            elif tipo == "META_ABSOLUTA" or tipo == "META_ABS":
+            elif tipo == "META_ABS":
                 rows = _calc_meta_abs(db, c, ano, mes, emps_calc)
-
-            # Compat: UI/cadastro usa MIX
-            elif tipo == "MIX" or tipo == "MIX_MESTRE":
+            elif tipo == "MIX_MESTRE":
                 rows = _calc_mix_mestre(db, c, ano, mes, emps_calc)
-
-            elif tipo == "ACUM_3M" or tipo == "ACUMULATIVA" or tipo == "ACUMULATIVA":
+            elif tipo == "ACUM_3M" or tipo == "ACUMULATIVA":
                 rows = _calc_acumulativa(db, c, ano, mes, emps_calc)
             elif tipo == "MARGEM":
                 # Stand-by

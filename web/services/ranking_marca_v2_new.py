@@ -37,18 +37,6 @@ from services.financeiro_service import sync_pagamentos_v2
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-
-from datetime import date, datetime, timedelta
-
-def _month_range(ano: int, mes: int):
-    """Retorna (inicio, fim_exclusivo) para filtrar por movimento usando range (evita EXTRACT que quebra índice)."""
-    ini = date(ano, mes, 1)
-    if mes == 12:
-        fim = date(ano + 1, 1, 1)
-    else:
-        fim = date(ano, mes + 1, 1)
-    return ini, fim
-
 TIPO_RANKING_MARCA = "RANKING_MARCA"
 
 
