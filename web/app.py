@@ -323,40 +323,6 @@ def _normalize_role(r: str | None) -> str:
     return normalize_role(r)
 
 
-
-def roles_required(*allowed_roles: str):
-    """Decorator genérico para restringir acesso por papel/perfil.
-
-    Usa o mesmo padrão do sistema: papel vem de `session['role']`/`session['perfil']`.
-    """
-    allowed = {_normalize_role(r) for r in allowed_roles if r is not None}
-
-    def decorator(view_func):
-        @wraps(view_func)
-        def _wrapped(*args, **kwargs):
-            # Se não estiver logado, manda para o login
-            if not session.get("user_id") and not session.get("usuario_id"):
-                try:
-                    return redirect(url_for("login"))
-                except Exception:
-                    return redirect("/login")
-
-            role = _role()
-            if allowed and role not in allowed:
-                flash("Acesso negado.", "danger")
-                # volta para dashboard quando existir, senão raiz
-                try:
-                    return redirect(url_for("dashboard"))
-                except Exception:
-                    return redirect("/")
-
-            return view_func(*args, **kwargs)
-
-        return _wrapped
-
-    return decorator
-
-
 def _get_setting(db, key: str, default: str | None = None) -> str | None:
     s = db.query(AppSetting).filter(AppSetting.key == key).first()
     return s.value if s and s.value is not None else default
