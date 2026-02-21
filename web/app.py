@@ -7345,7 +7345,7 @@ def admin_campanhas_v2():
             return redirect(url_for("admin_campanhas_v2", ano=ano, mes=mes))
 
         campanhas = db.query(CampanhaV2Master).order_by(CampanhaV2Master.id.desc()).all()
-        return render_template("admin_campanhas_v2.html", campanhas=campanhas, ano=ano, mes=mes)
+        return render_template("admin_campanhas_v2.html", campanhas=campanhas, ano=ano, mes=mes, edit_obj=None)
     finally:
         db.close()
 
