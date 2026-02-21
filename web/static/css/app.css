@@ -341,3 +341,19 @@ body{
 .ms-option:hover{ background: rgba(148,163,184,.15); }
 
 .page-title{font-weight:800; letter-spacing:-.3px}
+
+/* Dashboard banner (substitui alert-info, mantendo o padrão dark/orange) */
+.sv-banner{
+  display:flex;
+  align-items:center;
+  gap:.6rem;
+  padding:.85rem 1rem;
+  border-radius: 14px;
+  border: 1px solid rgba(245,158,11,.35);
+  background: rgba(2,6,23,.55);
+  box-shadow: 0 10px 30px rgba(0,0,0,.18);
+}
+
+/* Linha clicável em tabelas */
+.sv-row-click{ cursor: pointer; }
+.sv-row-click:hover{ background: rgba(245,158,11,.08); }

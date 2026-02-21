@@ -223,7 +223,7 @@
           </div>
           <div class="sv-tablewrap">
             <table class="sv-table align-middle">
-              <thead class="table-light">
+              <thead>
                 <tr>
                   <th>EMP</th>
                   <th class="text-end">Líquido</th>
@@ -233,12 +233,8 @@
               </thead>
               <tbody>
                 {% for row in (dados_admin.ranking_emp_list or []) %}
-                  <tr>
-                    <td>
-                      <a href="/campanhas?emp={{ row.emp }}&mes={{ mes }}&ano={{ ano }}" class="text-decoration-none">
-                        {{ row.emp or "—" }}
-                      </a>
-                    </td>
+                  <tr class="sv-row-click" onclick="window.location='/campanhas?emp={{ row.emp }}&mes={{ mes }}&ano={{ ano }}'">
+                    <td class="fw-semibold">{{ row.emp or "—" }}</td>
                     <td class="text-end fw-semibold">R$ {{ row.valor_atual|brl }}</td>
                     <td class="text-end text-muted">R$ {{ row.valor_bruto|brl }}</td>
                     <td class="text-end text-muted">R$ {{ row.valor_devolvido|brl }}</td>
@@ -271,12 +267,8 @@
               </thead>
               <tbody>
                 {% for row in (dados_admin.ranking_vendedores_list or []) %}
-                  <tr>
-                    <td>
-                      <a href="/dashboard?vendedor={{ row.vendedor }}&mes={{ mes }}&ano={{ ano }}" class="text-decoration-none">
-                        {{ row.vendedor }}
-                      </a>
-                    </td>
+                  <tr class="sv-row-click" onclick="window.location='/dashboard?vendedor={{ row.vendedor }}&mes={{ mes }}&ano={{ ano }}'">
+                    <td class="fw-semibold">{{ row.vendedor }}</td>
                     <td class="text-end fw-semibold">R$ {{ row.valor|brl }}</td>
                   </tr>
                 {% endfor %}
