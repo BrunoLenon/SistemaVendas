@@ -96,7 +96,7 @@ def admin_campanhas_v2():
             titulo = (request.form.get("titulo") or "").strip()
             tipo = (request.form.get("tipo") or "RANKING_VALOR").strip().upper()
             escopo = (request.form.get("escopo") or "EMP").strip().upper()
-            ativo = (request.form.get("ativo") or "1") == "1"
+            ativo = (request.form.get("ativo") or "").strip().lower() in ("1","on","true","yes","y")
 
             # Se não informar vigência, usamos o ano inteiro (padrão seguro)
             default_ini = date(int(ano), 1, 1)

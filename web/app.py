@@ -334,6 +334,15 @@ except Exception:
     app.logger.exception("Falha ao registrar blueprint de auth")
 
 
+# Campanhas V2 (admin / enterprise)
+try:
+    from blueprints.campanhas_v2_admin import bp as campanhas_v2_admin_bp
+    app.register_blueprint(campanhas_v2_admin_bp)
+except Exception:
+    app.logger.exception("Falha ao registrar blueprint de campanhas_v2_admin")
+
+
+
 # -------------------- Modo Manutenção (bloqueia não-admin) --------------------
 @app.before_request
 def _maintenance_guard():
@@ -7311,62 +7320,7 @@ def err_500(e):
 
 # Campanhas V2 (Enterprise)
 # ==========================
-
-@app.route("/admin/campanhas_v2", methods=["GET", "POST"])
-@admin_required
-def admin_campanhas_v2():
-    from datetime import date
-    ano = int(request.args.get("ano") or date.today().year)
-    mes = int(request.args.get("mes") or date.today().month)
-    db = SessionLocal()
-    try:
-        if request.method == "POST":
-            titulo = (request.form.get("titulo") or "").strip()
-            tipo = (request.form.get("tipo") or "RANKING_VALOR").strip().upper()
-            ativo = (request.form.get("ativo") or "1") == "1"
-            regras_json = (request.form.get("regras_json") or "").strip() or "{}"
-            c = CampanhaV2Master(titulo=titulo, tipo=tipo, ativo=ativo, regras_json=regras_json)
-            db.add(c)
-            db.flush()
-
-            emps_raw = (request.form.get("emps") or "").strip()
-            if emps_raw:
-                for p in emps_raw.split(","):
-                    p = p.strip()
-                    if not p:
-                        continue
-                    try:
-                        db.add(CampanhaV2ScopeEMP(campanha_id=c.id, emp=int(p)))
-                    except Exception:
-                        continue
-
-            db.commit()
-            flash("Campanha V2 criada.", "success")
-            return redirect(url_for("admin_campanhas_v2", ano=ano, mes=mes))
-
-        campanhas = db.query(CampanhaV2Master).order_by(CampanhaV2Master.id.desc()).all()
-        return render_template("admin_campanhas_v2.html", campanhas=campanhas, ano=ano, mes=mes, edit_obj=None)
-    finally:
-        db.close()
-
-
-@app.route("/admin/campanhas_v2/recalcular", methods=["GET"])
-@admin_required
-def admin_campanhas_v2_recalcular():
-    from datetime import date
-    ano = int(request.args.get("ano") or date.today().year)
-    mes = int(request.args.get("mes") or date.today().month)
-    db = SessionLocal()
-    try:
-        actor = session.get("username") or "admin"
-        recalc_v2_competencia(db, ano=ano, mes=mes, actor=str(actor))
-        flash(f"Recalculo V2 concluído para {mes}/{ano}.", "success")
-    except Exception as e:
-        db.rollback()
-        flash(f"Erro ao recalcular: {e}", "danger")
-    finally:
-        db.close()
-    return redirect(url_for("admin_campanhas_v2", ano=ano, mes=mes))
+# (rotas admin migradas para o blueprint blueprints/campanhas_v2_admin.py)
 
 
 @app.route("/financeiro/campanhas_v2", methods=["GET"])
