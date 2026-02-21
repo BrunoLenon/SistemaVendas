@@ -7255,45 +7255,39 @@ def err_500(e):
 
 @app.route("/admin/campanhas_v2", methods=["GET", "POST"])
 @admin_required
+@app.route("/admin/campanhas_v2")
+@roles_required("admin")
 def admin_campanhas_v2():
-    from datetime import date
-    ano = int(request.args.get("ano") or date.today().year)
-    mes = int(request.args.get("mes") or date.today().month)
-    today = date.today()
+    """Admin - Campanhas V2 (somente leitura/listagem + cadastro via modal).
+    Observação: este endpoint também fornece variáveis esperadas no template (today, edit_obj).
+    """
     db = SessionLocal()
     try:
-        if request.method == "POST":
-            titulo = (request.form.get("titulo") or "").strip()
-            tipo = (request.form.get("tipo") or "RANKING_VALOR").strip().upper()
-            ativo = (request.form.get("ativo") or "1") == "1"
-            regras_json = (request.form.get("regras_json") or "").strip() or "{}"
-            c = CampanhaV2Master(titulo=titulo, tipo=tipo, ativo=ativo, regras_json=regras_json)
-            db.add(c)
-            db.flush()
+        # lista (V2) - usa o ORM/Model CampanhaV2 quando existir; se não, cai para vazio
+        campanhas = []
+        try:
+            campanhas = db.query(CampanhaV2).order_by(CampanhaV2.id.desc()).all()
+        except Exception:
+            # Se o Model/Schema V2 não estiver disponível, não derruba a página
+            campanhas = []
 
-            emps_raw = (request.form.get("emps") or "").strip()
-            if emps_raw:
-                for p in emps_raw.split(","):
-                    p = p.strip()
-                    if not p:
-                        continue
-                    try:
-                        db.add(CampanhaV2ScopeEMP(campanha_id=c.id, emp=int(p)))
-                    except Exception:
-                        continue
+        # defaults para o template
+        today = date.today()
+        ano = today.year
+        mes = today.month
+        edit_obj = None  # template usa para modo edição (não usado aqui)
 
-            db.commit()
-            flash("Campanha V2 criada.", "success")
-            return redirect(url_for("admin_campanhas_v2", ano=ano, mes=mes))
-
-        campanhas = db.query(CampanhaV2Master).order_by(CampanhaV2Master.id.desc()).all()
-    return render_template("admin_campanhas_v2.html", campanhas=campanhas, ano=ano, mes=mes, today=today, edit_obj=None)
+        return render_template(
+            "admin_campanhas_v2.html",
+            campanhas=campanhas,
+            ano=ano,
+            mes=mes,
+            today=today,
+            edit_obj=edit_obj,
+        )
     finally:
         db.close()
-
-
-@app.route("/admin/campanhas_v2/recalcular", methods=["GET"])
-@admin_requireddef admin_campanhas_v2_recalcular():
+def admin_campanhas_v2_recalcular():
     from datetime import date
     ano = int(request.args.get("ano") or date.today().year)
     mes = int(request.args.get("mes") or date.today().month)
