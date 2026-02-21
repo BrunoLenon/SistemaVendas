@@ -5894,7 +5894,6 @@ def admin_campanhas_qtd():
                 if emp_post and _competencia_fechada(db, emp_post, ano, mes):
                     erro = f"Competência {mes:02d}/{ano} da EMP {emp_post} está FECHADA. Reabra em /admin/fechamento para editar campanhas."
                     # impede execução do POST
-                    return redirect('/admin/fechamento' + f'?emp={emp_post}&mes={mes}&ano={ano}')
             except Exception:
                 pass
 
@@ -6020,26 +6019,6 @@ def admin_campanhas_qtd():
                         r.pago_em = datetime.utcnow()
                     r.atualizado_em = datetime.utcnow()
                     db.commit()
-                    ok = "Status de pagamento atualizado."
-
-                else:
-                    raise ValueError("Ação inválida.")
-
-            except Exception as e:
-                db.rollback()
-                erro = str(e)
-                app.logger.exception("Erro ao gerenciar campanhas")
-
-        campanhas = db.query(CampanhaQtd).order_by(CampanhaQtd.emp.asc(), CampanhaQtd.data_inicio.desc()).all()
-        resultados = (
-            db.query(CampanhaQtdResultado)
-            .filter(
-                CampanhaQtdResultado.competencia_ano == int(ano),
-                CampanhaQtdResultado.competencia_mes == int(mes),
-            )
-            .order_by(CampanhaQtdResultado.valor_recompensa.desc())
-            .all()
-        )
 
     
     # UX: agrupa por competência (mês/ano) na lista
@@ -6057,9 +6036,6 @@ def admin_campanhas_qtd():
             "admin_campanhas_qtd.html",
             usuario=_usuario_logado(),
             campanhas=campanhas,
-            resultados=resultados,
-            ano=ano,
-            mes=mes,
             erro=erro,
             ok=ok,
         )
@@ -7286,15 +7262,7 @@ def admin_campanhas_v2():
             return redirect(url_for("admin_campanhas_v2", ano=ano, mes=mes))
 
         campanhas = db.query(CampanhaV2Master).order_by(CampanhaV2Master.id.desc()).all()
-        # A template usa `today` para preencher o seletor (m�s/ano) e defaults.
-        # Sem isso, o Jinja quebra com "'today' is undefined".
-        return render_template(
-            "admin_campanhas_v2.html",
-            campanhas=campanhas,
-            ano=ano,
-            mes=mes,
-            today=date.today(),
-        )
+        return render_template("admin_campanhas_v2.html", campanhas=campanhas, ano=ano, mes=mes)
     finally:
         db.close()
 
