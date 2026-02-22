@@ -8,6 +8,7 @@
     </div>
     <div class="d-flex gap-2">
       <form method="post" class="m-0">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="action" value="seed_defaults" />
         <button class="btn btn-outline-primary" type="submit">Criar modelos padrão</button>
       </form>
@@ -28,6 +29,7 @@
         </div>
         <div class="card-body">
           <form method="post">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="action" value="save" />
             <input type="hidden" name="id" value="{{ edit_obj.id if edit_obj else '' }}" />
 
@@ -100,6 +102,7 @@
           <hr/>
 
           <form method="post" class="row g-2 align-items-end">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="action" value="recalc" />
             <div class="col-6">
               <label class="form-label">Ano</label>
@@ -149,22 +152,26 @@
                     <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin_campanhas_v2', edit=c.id) }}">Editar</a>
 
                     <form method="post" action="{{ url_for('admin_campanhas_v2_recalcular_uma', cid=c.id) }}" class="d-inline">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                       <input type="hidden" name="ano" value="{{ today.year }}" />
                       <input type="hidden" name="mes" value="{{ '%02d'|format(today.month) }}" />
                       <button class="btn btn-sm btn-outline-success" type="submit" title="Recalcular só esta campanha">Recalcular</button>
                     </form>
 
                     <form method="post" action="{{ url_for('admin_campanhas_v2_toggle', cid=c.id) }}" class="d-inline">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                       <button class="btn btn-sm btn-outline-secondary" type="submit" title="Ativar/Desativar">
                         {% if c.ativo %}Desativar{% else %}Ativar{% endif %}
                       </button>
                     </form>
 
                     <form method="post" action="{{ url_for('admin_campanhas_v2_duplicar', cid=c.id) }}" class="d-inline">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                       <button class="btn btn-sm btn-outline-warning" type="submit" title="Criar cópia (inativa)">Duplicar</button>
                     </form>
 
                     <form method="post" action="{{ url_for('admin_campanhas_v2_delete', cid=c.id) }}" class="d-inline" onsubmit="return confirm('Remover campanha V2?');">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                       <button class="btn btn-sm btn-outline-danger" type="submit">Excluir</button>
                     </form>
                   </td>

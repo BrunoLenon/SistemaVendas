@@ -116,6 +116,7 @@
           </div>
         </div>
         <form method="post" enctype="multipart/form-data" class="mt-2">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <input type="hidden" name="acao" value="importar_xlsx">
           <div class="row g-2 align-items-end">
             <div class="col-12 col-md-6">
@@ -187,6 +188,7 @@
                           <td>{{ r.vendedor }}</td>
                           <td class="text-end">
                             <form method="post" class="d-flex justify-content-end gap-2">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                               <input type="hidden" name="acao" value="salvar">
                               <input type="hidden" name="emp_edit" value="{{ r.emp or '' }}">
                               <input type="hidden" name="vendedor_edit" value="{{ r.vendedor }}">
@@ -210,6 +212,7 @@
                               <button class="btn btn-sm btn-primary" type="submit">Salvar</button>
                             </form>
                             <form method="post" class="d-inline">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                               <input type="hidden" name="acao" value="excluir">
                               <input type="hidden" name="emp_edit" value="{{ r.emp or '' }}">
                               <input type="hidden" name="vendedor_edit" value="{{ r.vendedor }}">
@@ -245,6 +248,7 @@
                         </div>
 
                         <form method="post" class="mt-2">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                           <input type="hidden" name="acao" value="salvar">
                           <input type="hidden" name="emp_edit" value="{{ r.emp or '' }}">
                           <input type="hidden" name="vendedor_edit" value="{{ r.vendedor }}">
@@ -275,6 +279,7 @@
                             <button class="btn btn-sm btn-primary" type="submit">Salvar</button>
                         </form>
                         <form method="post">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                           <input type="hidden" name="acao" value="excluir">
                           <input type="hidden" name="emp_edit" value="{{ r.emp or '' }}">
                           <input type="hidden" name="vendedor_edit" value="{{ r.vendedor }}">
@@ -306,6 +311,7 @@
                 </div>
 
                 <form method="post">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                   <input type="hidden" name="acao" value="salvar_lote">
                   <input type="hidden" name="emp_edit" value="{{ emp or '' }}">
                   <div class="row g-2 mb-2">
@@ -370,6 +376,7 @@
       </datalist>
 
       <form method="post" class="card border-0 shadow-sm p-3 mb-3">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="ano" value="{{ ano }}" />
         <input type="hidden" name="mes" value="{{ mes }}" />
         <input type="hidden" name="ano_edit" value="{{ ano_passado }}" />

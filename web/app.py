@@ -120,16 +120,26 @@ from importar_excel import importar_planilha
 
 # Flask app (Render/Gunicorn expects `app` at module level: web/app.py -> app:app)
 app = Flask(__name__, template_folder="templates")
-app.secret_key = os.getenv("SECRET_KEY", "dev")
+
+# ==============================
+# Config/Security: SECRET_KEY
+# ==============================
+# Em produção, NUNCA use fallback fraco. Se não houver SECRET_KEY, falhe cedo.
+_SECRET_KEY = (os.getenv("SECRET_KEY") or "").strip()
+IS_PROD = bool(os.getenv("RENDER")) or (os.getenv("FLASK_ENV") == "production") or (os.getenv("ENV") == "production")
+
+if not _SECRET_KEY:
+    if IS_PROD:
+        raise RuntimeError("SECRET_KEY não configurada no ambiente de produção. Configure a variável SECRET_KEY no Render/Supabase.")
+    _SECRET_KEY = "dev"
+
+app.secret_key = _SECRET_KEY
 # Sessão expira após 1h sem atividade
 app.permanent_session_lifetime = timedelta(hours=1)
 
 # ==============================
 # Segurança & Performance (base)
 # ==============================
-# Detecta produção (Render/FLASK_ENV)
-IS_PROD = bool(os.getenv("RENDER")) or (os.getenv("FLASK_ENV") == "production")
-
 # Cache TTL (horas) - se o cache estiver mais velho que isso, recalcula ao vivo
 CACHE_TTL_HOURS = float(os.getenv("CACHE_TTL_HOURS", "12") or 12)
 
@@ -149,6 +159,39 @@ app.config.update(
 )
 
 from security_utils import audit, rate_limit, normalize_role
+
+# ==============================
+# CSRF (proteção POST)
+# ==============================
+# Implementação leve (sem Flask-WTF) para evitar CSRF em formulários.
+# - Templates devem incluir: <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+# - Para requests via JS, envie header: X-CSRFToken
+import secrets
+
+def csrf_token() -> str:
+    token = session.get("csrf_token")
+    if not token:
+        token = secrets.token_urlsafe(32)
+        session["csrf_token"] = token
+    return token
+
+def _is_csrf_exempt() -> bool:
+    if request.method in ("GET", "HEAD", "OPTIONS"):
+        return True
+    if request.endpoint == "static" or request.path.startswith("/static") or request.path.startswith("/healthz"):
+        return True
+    return False
+
+@app.before_request
+def _csrf_protect():
+    if _is_csrf_exempt():
+        return None
+    if request.method in ("POST", "PUT", "PATCH", "DELETE"):
+        sent = request.form.get("csrf_token") or request.headers.get("X-CSRFToken") or request.headers.get("X-CSRF-Token")
+        if not sent or sent != session.get("csrf_token"):
+            audit("csrf_blocked", path=request.path, method=request.method)
+            return ("Requisição bloqueada (CSRF). Recarregue a página e tente novamente.", 400)
+    return None
 
 @app.before_request
 def _security_rate_limits():
@@ -435,10 +478,10 @@ def inject_branding():
 def inject_globals():
     """Variáveis globais disponíveis em todos os templates Jinja (evita UndefinedError)."""
     try:
-        return {"today": date.today(), "now": datetime.now()}
+        return {"today": date.today(), "now": datetime.now(), "csrf_token": csrf_token}
     except Exception:
         # fallback ultra-defensivo
-        return {"today": date.today()}
+        return {"today": date.today(), "csrf_token": csrf_token}
 @app.before_request
 def _mensagens_bloqueantes_guard():
     # Ignora assets e healthz

@@ -56,6 +56,7 @@
     </div>
     <div class="card-body">
       <form method="post" action="{{ url_for('admin_campanhas_ranking_marca') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="acao" value="criar">
 
         <div class="row g-3">
@@ -198,6 +199,7 @@
                       <summary class="btn btn-outline-primary btn-sm">Recalcular</summary>
                       <div class="border rounded-3 p-2 mt-2 bg-body-tertiary">
                         <form method="post" action="{{ url_for('admin_campanhas_ranking_marca') }}" class="row g-2 align-items-end">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                           <input type="hidden" name="acao" value="recalcular">
                           <input type="hidden" name="id" value="{{ c.id }}">
 
@@ -236,6 +238,7 @@
                       <summary class="btn btn-outline-secondary btn-sm">Editar</summary>
                       <div class="border rounded-3 p-2 mt-2">
                         <form method="post" action="{{ url_for('admin_campanhas_ranking_marca') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                           <input type="hidden" name="acao" value="editar">
                           <input type="hidden" name="id" value="{{ c.id }}">
 
@@ -310,6 +313,7 @@
 
                     <form method="post" action="{{ url_for('admin_campanhas_ranking_marca') }}"
                           onsubmit="return confirm('Remover a campanha #{{ c.id }} ({{ c.nome }})?');">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                       <input type="hidden" name="acao" value="remover">
                       <input type="hidden" name="id" value="{{ c.id }}">
                       <button class="btn btn-outline-danger btn-sm">Remover</button>
