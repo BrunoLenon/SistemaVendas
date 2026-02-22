@@ -18,7 +18,6 @@
           <h5 class="mb-3">➕ Nova mensagem</h5>
 
           <form method="post">
-  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <div class="mb-2">
               <label class="form-label">Título</label>
               <input class="form-control" name="titulo" maxlength="180" required>
@@ -123,7 +122,6 @@
 
                     <div class="d-flex gap-2">
                       <form method="post" action="{{ url_for('admin_mensagens_toggle', mensagem_id=m.id) }}">
-  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <button class="btn btn-sm btn-outline-primary">
                           {% if m.ativo %}Desativar{% else %}Ativar{% endif %}
                         </button>
