@@ -22,6 +22,7 @@
   <div class="card-body">
     <h6 class="mb-3">Adicionar vínculo</h6>
     <form method="post" class="row g-2 align-items-end">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="acao" value="add">
       <div class="col-12 col-md-5">
         <label class="form-label">Usuário</label>
@@ -80,6 +81,7 @@
                 <td>{{ l.emp }}</td>
                 <td class="text-end">
                   <form method="post" style="display:inline;">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <input type="hidden" name="acao" value="remove">
                     <input type="hidden" name="link_id" value="{{ l.id }}">
                     <button class="btn btn-sm btn-outline-danger" type="submit" onclick="return confirm('Remover vínculo?');">Remover</button>

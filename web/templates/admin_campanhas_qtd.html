@@ -81,6 +81,7 @@
             </div>
 
             <form method="post" class="row g-2" id="frmCampanha">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <input type="hidden" name="acao" value="criar">
 
               <div class="col-6">
@@ -283,6 +284,7 @@
       </div>
       <div class="modal-footer">
         <form method="post" id="delForm" class="m-0">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <input type="hidden" name="acao" value="remover">
           <input type="hidden" name="campanha_id" id="delId" value="">
           <button class="btn btn-outline-secondary" type="button" data-bs-dismiss="modal">Cancelar</button>

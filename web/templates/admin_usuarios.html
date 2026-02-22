@@ -65,6 +65,7 @@
             <h5 class="card-title mb-3">➕ Criar / Atualizar usuário</h5>
 
             <form method="post">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <input type="hidden" name="acao" value="criar">
 
               <div class="mb-2">
@@ -126,6 +127,7 @@
             <h5 class="card-title mb-3">🔁 Resetar senha</h5>
 
             <form method="post">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <input type="hidden" name="acao" value="reset">
 
               <div class="mb-2">
@@ -156,6 +158,7 @@
             </div>
 
             <form method="post" class="row g-2">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <input type="hidden" name="acao" value="set_emps">
 
               <div class="col-12">
@@ -201,6 +204,7 @@
             <h5 class="card-title mb-3">🗑️ Remover usuário</h5>
 
             <form method="post" onsubmit="return confirm('Tem certeza que deseja remover este usuário?');">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <input type="hidden" name="acao" value="remover">
 
               <div class="mb-3">
