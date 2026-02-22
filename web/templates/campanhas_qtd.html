@@ -80,10 +80,24 @@
         </div>
 
         <div class="sv-checklist sv-checklist--tall" data-checklist="vendedor">
+          {#
+            vendedores_options pode vir como:
+              - lista de strings ("JOAO")
+              - lista de dicts/objetos (ex: {value: "JOAO", label: "JOAO"})
+            Para evitar desconfiguração (renderizar "{value:..., label:...}"),
+            extraímos value/label quando existir.
+          #}
           {% for v in vendedores_options %}
+            {% if v is mapping %}
+              {% set v_value = v.get('value', '') %}
+              {% set v_label = v.get('label', v_value) %}
+            {% else %}
+              {% set v_value = v %}
+              {% set v_label = v %}
+            {% endif %}
             <label class="sv-check">
-              <input type="checkbox" name="vendedor" value="{{ v }}" {% if v in vendedor_sel %}checked{% endif %}>
-              <span>{{ v }}</span>
+              <input type="checkbox" name="vendedor" value="{{ v_value }}" {% if v_value in vendedor_sel %}checked{% endif %}>
+              <span>{{ v_label }}</span>
             </label>
           {% endfor %}
         </div>
