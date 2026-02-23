@@ -49,107 +49,95 @@ def build_campanhas_page_context(
     vendedor_logado: str,
     args: Any,
 ) -> dict[str, Any]:
-    """Monta o context do template de /campanhas (QTD).
+    """Monta o context do template de /campanhas.
 
-    Layout/UX esperado:
-      - Hierarquia: EMP (nome) → vendedores → campanhas
-      - Total (R$) = soma de valor_recompensa (não é valor vendido)
-      - Mantém filtros de EMP e vendedor (checkbox, sem Ctrl)
+    Mantém o mesmo comportamento atual, mas concentra a lógica aqui.
     """
 
     role_l = (role or "").strip().lower()
 
-    # Período
+    # período
     hoje = date.today()
     mes = int(args.get("mes") or hoje.month)
     ano = int(args.get("ano") or hoje.year)
+
+    vendedores_req = [v.strip().upper() for v in deps.parse_multi_args(args, "vendedor")]
+
+    # Seleção de vendedor conforme perfil
+    if role_l == "supervisor":
+        if not vendedores_req or "__ALL__" in vendedores_req:
+            vendedor_sel = "__ALL__"
+            vendedores_sel: list[str] = []
+        else:
+            vendedor_sel = "__MULTI__" if len(vendedores_req) > 1 else vendedores_req[0]
+            vendedores_sel = vendedores_req
+    else:
+        if role_l == "admin":
+            if not vendedores_req or "__ALL__" in vendedores_req:
+                vendedor_sel = "__ALL__"
+                vendedores_sel = []
+            else:
+                vendedor_sel = "__MULTI__" if len(vendedores_req) > 1 else vendedores_req[0]
+                vendedores_sel = vendedores_req
+        else:
+            vendedor_sel = vendedor_logado
+            vendedores_sel = [vendedor_logado] if vendedor_logado else []
+
+    # EMP scope
+    emp_list = deps.parse_multi_args(args, "emp")
+    emp_param = (emp_list[0] if (len(emp_list) == 1) else "")
+    emps_sel = [str(e).strip() for e in (emp_list or []) if str(e).strip()]
+
+    if role_l == "admin":
+        # base_scope: lista completa de EMPs disponíveis dentro do escopo (ex.: por vendedor), antes do filtro de EMP
+        if vendedor_sel == "__ALL__":
+            base_scope = deps.get_all_emp_codigos(True)
+        else:
+            base_v = vendedor_sel if vendedor_sel != "__MULTI__" else (vendedores_sel[0] if vendedores_sel else vendedor_logado)
+            base_scope = deps.get_emps_vendedor(base_v)
+
+        if emps_sel:
+            wanted = {str(x).strip() for x in emps_sel}
+            emps_scope = [e for e in base_scope if str(e) in wanted]
+        else:
+            emps_scope = base_scope
+    else:
+        base_scope = deps.resolver_emp_scope_para_usuario(vendedor_logado, role_l, emp_usuario)
+        if emps_sel:
+            wanted = {str(x).strip() for x in emps_sel}
+            emps_scope = [e for e in base_scope if str(e) in wanted]
+        else:
+            emps_scope = base_scope
+
     inicio_mes, fim_mes = deps.periodo_bounds(ano, mes)
 
-    # Filtros (multi)
-    emps_sel = [str(e).strip() for e in deps.parse_multi_args(args, "emp") if str(e).strip()]
-    vendedores_sel = [str(v).strip().upper() for v in deps.parse_multi_args(args, "vendedor") if str(v).strip()]
-
-    visao = (args.get("visao") or "detalhado").strip().lower()
-    por_pagina = int(args.get("por_pagina") or 25)
-
-    # Dropdown/Checklist de vendedores (sem carregar tudo em memória)
     try:
         vendedores_dropdown = deps.get_vendedores_db(role_l, emp_usuario)
     except Exception:
         vendedores_dropdown = []
 
-    # ===== Base de EMPs para opções (dropdown) e escopo efetivo =====
-    if role_l == "admin":
-        emps_base = [str(e).strip() for e in (deps.get_emps_com_vendas_no_periodo(ano, mes) or []) if str(e).strip()]
-        emps_base = list(dict.fromkeys(sorted(emps_base)))
-        emps_scope = [e for e in emps_base if (not emps_sel) or (e in set(emps_sel))]
-        emps_options_base = emps_base
-    else:
-        emps_base = [str(e).strip() for e in (deps.resolver_emp_scope_para_usuario(vendedor_logado, role_l, emp_usuario) or []) if str(e).strip()]
-        emps_base = list(dict.fromkeys(sorted(emps_base)))
-        if emps_sel:
-            wanted = {str(x).strip() for x in emps_sel}
-            emps_scope = [e for e in emps_base if e in wanted]
-        else:
-            emps_scope = emps_base[:]
-        emps_options_base = emps_base
-
-    emps_options = deps.get_emp_options(emps_options_base)
-
-    # Mapa value -> label (para exibir nome da EMP)
-    emp_label_map: dict[str, str] = {}
-    for o in (emps_options or []):
-        try:
-            emp_label_map[str(o.get("value"))] = str(o.get("label") or o.get("value") or "")
-        except Exception:
-            pass
-
-    # ===== Vendedores por EMP (para hierarquia EMP → Vendedor) =====
-    vendedores_por_emp: dict[str, list[str]] = {}
-    for emp in (emps_scope or []):
-        emp_s = str(emp).strip()
-        if not emp_s:
-            continue
-
-        if role_l in ("admin", "supervisor", "financeiro"):
-            vendedores_emp = deps.get_vendedores_emp_no_periodo(emp_s, ano, mes)
-            vendedores_emp = [str(v).strip().upper() for v in (vendedores_emp or []) if str(v).strip()]
-            if vendedores_sel and "__ALL__" not in set(vendedores_sel):
-                allowed = set(vendedores_emp)
-                vendedores_emp = [v for v in vendedores_sel if v in allowed]
-        else:
-            vendedores_emp = [str(vendedor_logado or "").strip().upper()] if vendedor_logado else []
-            if vendedores_sel and vendedores_emp:
-                if vendedores_emp[0] not in set(vendedores_sel):
-                    vendedores_emp = []
-
-        vendedores_por_emp[emp_s] = vendedores_emp
-
-    # ===== Calcula snapshots e monta estrutura EMP -> Vendedores -> Campanhas =====
-    emps_data: list[dict[str, Any]] = []
-    total_recompensa = 0.0
-    total_campanhas = 0
-
+    # Calcula resultados e agrupa por EMP
+    blocos: list[dict[str, Any]] = []
     with deps.SessionLocal() as db:
-        for emp in (emps_scope or []):
-            emp = str(emp).strip()
-            if not emp:
-                continue
+        if (vendedor_sel or "").upper() == "__ALL__":
+            vendedores_alvo = ["__ALL__"]
+        elif (vendedor_sel or "").upper() == "__MULTI__":
+            vendedores_alvo = [v for v in (vendedores_sel or []) if (v or "").strip().upper() != "__ALL__"]
+        else:
+            vendedores_alvo = [vendedor_sel]
 
-            vendedores_emp = vendedores_por_emp.get(emp) or []
-            campanhas = deps.campanhas_mes_overlap(ano, mes, emp) if vendedores_emp else []
+        for emp in emps_scope or ([emp_param] if emp_param else []):
+            emp = str(emp)
+            campanhas = deps.campanhas_mes_overlap(ano, mes, emp)
 
-            vendedores_rows: list[dict[str, Any]] = []
-            emp_total = 0.0
-
-            for vend in (vendedores_emp or []):
+            for vend in vendedores_alvo:
                 vend = (vend or "").strip().upper()
                 if not vend:
                     continue
 
-                # Prioridade por chave (campo_match + prefixo + marca)
+                # prioridade por chave (campo_match + prefixo + marca)
                 by_key: dict[tuple[str, str, str], Any] = {}
-                for c in (campanhas or []):
+                for c in campanhas:
                     campo_match = (getattr(c, "campo_match", None) or "codigo").strip().lower()
                     if campo_match == "descricao":
                         pref = (getattr(c, "descricao_prefixo", "") or "").strip() or (getattr(c, "produto_prefixo", "") or "").strip()
@@ -164,65 +152,76 @@ def build_campanhas_page_context(
 
                 campanhas_final = list(by_key.values())
 
+                total_recomp = 0.0
                 resultados_calc: list[Any] = []
-                vend_total = 0.0
-
                 for c in campanhas_final:
                     periodo_ini = max(getattr(c, "data_inicio"), inicio_mes)
                     periodo_fim = min(getattr(c, "data_fim"), fim_mes)
-                    res = deps.upsert_resultado(db, c, vend, emp, ano, mes, periodo_ini, periodo_fim)
+                    if (vend or "").upper() == "__ALL__":
+                        res = deps.calc_resultado_all_vendedores(db, c, emp, ano, mes, periodo_ini, periodo_fim)
+                    else:
+                        res = deps.upsert_resultado(db, c, vend, emp, ano, mes, periodo_ini, periodo_fim)
                     resultados_calc.append(res)
-                    vend_total += float(getattr(res, "valor_recompensa", 0.0) or 0.0)
+                    total_recomp += float(getattr(res, "valor_recompensa", 0.0) or 0.0)
 
                 resultados_calc.sort(key=lambda r: float(getattr(r, "valor_recompensa", 0.0) or 0.0), reverse=True)
 
-                total_campanhas += len(resultados_calc)
-                total_recompensa += vend_total
-                emp_total += vend_total
-
-                vendedores_rows.append({
+                blocos.append({
+                    "emp": emp,
                     "vendedor": vend,
-                    "total_recompensa": vend_total,
                     "resultados": resultados_calc,
+                    "total": total_recomp,
                 })
-
-            vendedores_rows.sort(key=lambda x: float(x.get("total_recompensa", 0.0) or 0.0), reverse=True)
-
-            emps_data.append({
-                "emp": emp,
-                "emp_label": emp_label_map.get(emp, emp),
-                "emp_total": emp_total,
-                "vendedores": vendedores_rows,
-            })
 
         db.commit()
 
-    emps_data.sort(key=lambda e: float(e.get("emp_total", 0.0) or 0.0), reverse=True)
-
-    # Checklist de vendedores (value/label)
+    emps_options = deps.get_emp_options(base_scope if 'base_scope' in locals() else emps_scope)
     vendedores_options: list[dict[str, str]] = []
     for v in (vendedores_dropdown or []):
         vv = (v or "").strip().upper()
         if vv:
             vendedores_options.append({"value": vv, "label": vv})
 
+    vendedor_display = (
+        ("LOJA TODA" if role_l == "supervisor" else "TODOS VENDEDORES")
+        if (vendedor_sel or "").upper() == "__ALL__"
+        else (f"{len(vendedores_sel)} selecionados" if (vendedor_sel or "").upper() == "__MULTI__" else vendedor_sel)
+    )
+    # Campanhas V2 (Enterprise) — resultados pré-calculados (snapshot)
+    try:
+        v2_vendedores_scope: list[str] = []
+        if role_l == "vendedor":
+            v2_vendedores_scope = [vendedor_logado]
+        elif vendedores_sel:
+            v2_vendedores_scope = vendedores_sel
+        campanhas_v2_resultados = list_resultados_v2(
+            db,
+            ano=ano,
+            mes=mes,
+            emps_scope=[int(e) for e in emps_scope],
+            vendedores_scope=v2_vendedores_scope,
+        )
+    except Exception:
+        campanhas_v2_resultados = []
+
+
     return {
         "role": role,
         "ano": ano,
         "mes": mes,
-        "visao": visao,
-        "por_pagina": por_pagina,
-
-        "emps_scope": emps_scope,
-        "emps_sel": emps_sel,
-        "emps_options": emps_options,
-
-        "vendedores_sel": vendedores_sel,
+        "vendedor": vendedor_sel,
+        "vendedor_display": vendedor_display,
+        "vendedor_logado": vendedor_logado,
+        "vendedores": vendedores_dropdown,
         "vendedores_options": vendedores_options,
+        "vendedores_sel": vendedores_sel,
+        "blocos": blocos,
+        "ui_data": ui_data,
+        "emps_scope": emps_scope,
+        "emps_options": emps_options,
+        "emps_sel": emps_sel,
+        "emp_param": emp_param,        "campanhas_v2_resultados": campanhas_v2_resultados,
 
-        "emps_data": emps_data,
-        "total_recompensa": float(total_recompensa or 0.0),
-        "total_campanhas": int(total_campanhas or 0),
     }
 
 
@@ -298,7 +297,64 @@ def build_relatorio_campanhas_scope(
             vendedores = [vendedor_logado]
         vendedores_por_emp[emp] = vendedores
 
-    return {
+    
+    # -------- UI DATA (layout modelo) --------
+    # Converte 'blocos' (que pode conter objetos) em estrutura serializável para o JS do template.
+    # Formato:
+    # [
+    #   {emp, emp_nome, total, vendedores: [{vendedor, total, campanhas:[{campanha,qtd_min,premio_unit,vendeu,valor}]}]}
+    # ]
+    emp_label_map = {str(o.get("value")): str(o.get("label")) for o in (emps_options or []) if isinstance(o, dict)}
+    emp_groups = {}
+    for b in blocos:
+        emp = str(b.get("emp") or "")
+        vend = str(b.get("vendedor") or "")
+        total_v = float(b.get("total") or 0.0)
+        label = emp_label_map.get(emp, emp)
+        # tenta extrair nome amigável (depois do " - ")
+        emp_nome = label.split(" - ", 1)[1] if " - " in label else label
+        g = emp_groups.setdefault(emp, {"emp": emp, "emp_nome": emp_nome, "total": 0.0, "vendedores": []})
+        g["total"] += total_v
+
+        camp_list = []
+        for r in (b.get("resultados") or []):
+            # r pode ser dataclass/objeto
+            campanha = getattr(r, "campanha_nome", None) or getattr(r, "nome", None) or getattr(r, "campanha", None) or ""
+            qtd_min = getattr(r, "qtd_minima", None)
+            premio_unit = getattr(r, "recompensa_unit", None)
+            vendeu = getattr(r, "qtd_vendida", None)
+            valor = getattr(r, "valor_recompensa", None)
+            try:
+                premio_unit = float(premio_unit or 0.0)
+            except Exception:
+                premio_unit = 0.0
+            try:
+                vendeu = float(vendeu or 0.0)
+            except Exception:
+                vendeu = 0.0
+            try:
+                valor = float(valor or 0.0)
+            except Exception:
+                valor = 0.0
+            camp_list.append({
+                "campanha": str(campanha),
+                "qtd_min": int(qtd_min) if (qtd_min is not None and str(qtd_min).isdigit()) else (qtd_min if qtd_min is not None else None),
+                "premio_unit": premio_unit,
+                "vendeu": vendeu,
+                "valor": valor,
+            })
+
+        g["vendedores"].append({
+            "vendedor": vend,
+            "total": total_v,
+            "campanhas": camp_list,
+        })
+
+    ui_data = list(emp_groups.values())
+    # ordena vendedores por total desc
+    for e in ui_data:
+        e["vendedores"].sort(key=lambda x: float(x.get("total") or 0.0), reverse=True)
+return {
         "ano": ano,
         "mes": mes,
         "emps_sel": emps_sel,

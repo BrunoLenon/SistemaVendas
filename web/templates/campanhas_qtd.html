@@ -1,456 +1,283 @@
 {% extends "base.html" %}
-{% block title %}Campanhas do mês (Qtd){% endblock %}
-
 {% block content %}
-<div class="mq">
-  <div class="wrap">
-    <div class="topbar">
-      <div>
-        <div class="kicker">Campanhas</div>
-        <h1>Campanhas do mês (Qtd)</h1>
-        <div class="sub">
-          Fluxo esperado: <strong>Empresa</strong> → clique para abrir <strong>Vendedores</strong> → clique para ver <strong>Campanhas + Valores</strong>.
-          O <strong>Total (R$)</strong> é o acumulado de <strong>recompensas</strong> (não é valor vendido).
-        </div>
+<!-- Campanhas (Qtd) - layout baseado 1:1 no modelo aprovado -->
+<div class="page">
+  <div class="container">
+    <div class="hero">
+      <div class="sub">Campanhas</div>
+      <h1>Campanhas do mês (Qtd)</h1>
+      <div class="desc">
+        Fluxo esperado: <b>Empresa</b> → clique para abrir <b>Vendedores</b> → clique para ver <b>Campanhas + Valores</b>.
+        O <b>Total (R$)</b> é o acumulado de <b>recompensas</b> (não é valor vendido).
       </div>
-      <div class="badge">MODELO / PRODUÇÃO</div>
+      <div class="pill">MODELO / PRODUÇÃO</div>
     </div>
 
-    <div class="card">
-      <form method="get" class="grid">
+    <form class="filters" method="get" action="{{ url_for('campanhas_qtd') }}">
+      <div class="grid">
         <div class="field">
           <label>Mês</label>
-          <input name="mes" value="{{ mes }}" inputmode="numeric" />
+          <input type="number" min="1" max="12" name="mes" value="{{ mes }}" />
         </div>
-
         <div class="field">
           <label>Ano</label>
-          <input name="ano" value="{{ ano }}" inputmode="numeric" />
+          <input type="number" min="2000" max="2100" name="ano" value="{{ ano }}" />
         </div>
-
         <div class="field">
           <label>Visão</label>
           <select name="visao">
-            <option value="detalhado" {% if visao == "detalhado" %}selected{% endif %}>Detalhado (Empresa → Vendedor → Campanhas)</option>
-            <option value="resumido" {% if visao == "resumido" %}selected{% endif %}>Resumido (Empresa → Total)</option>
+            {% set vis = (request.args.get('visao') or 'detalhado') %}
+            <option value="detalhado" {{ 'selected' if vis=='detalhado' else '' }}>Detalhado (Empresa → Vendedor → Campanhas)</option>
+            <option value="simples" {{ 'selected' if vis=='simples' else '' }}>Simples (linhas)</option>
           </select>
         </div>
 
         <div class="field">
           <label>EMP (seleção múltipla)</label>
-          <select id="empSel" name="emp" multiple size="6">
-            {% for opt in emp_options %}
-              <option value="{{ opt.value }}" {% if opt.value in emp_sel %}selected{% endif %}>{{ opt.label }}</option>
+          <select name="emp" multiple size="6">
+            {% for opt in emps_options %}
+              <option value="{{ opt.value }}" {{ 'selected' if opt.value in emps_sel else '' }}>{{ opt.label }}</option>
             {% endfor %}
           </select>
-          <small>(No sistema real: seleção múltipla sem Ctrl.)</small>
+          <div class="help">(No sistema real: seleção múltipla sem Ctrl.)</div>
         </div>
 
         <div class="field">
           <label>Vendedor (opcional)</label>
-          <select id="vendSel" name="vendedor" multiple size="6">
+          <select name="vendedor" multiple size="6">
             {% for opt in vendedores_options %}
-              <option value="{{ opt.value }}" {% if opt.value in vendedor_sel %}selected{% endif %}>{{ opt.label }}</option>
+              <option value="{{ opt.value }}" {{ 'selected' if opt.value in vendedores_sel else '' }}>{{ opt.label }}</option>
             {% endfor %}
           </select>
-          <small>(Quando vazio: mostra todos)</small>
+          <div class="help">(Quando vazio: mostra todos)</div>
         </div>
 
         <div class="field">
           <label>Por página</label>
-          <input name="por_pagina" value="{{ por_pagina }}" inputmode="numeric" />
-          <div class="btnbar">
-            <button class="btn" type="submit">Aplicar filtros</button>
-            <a class="btn ghost" href="{{ url_for('campanhas_qtd') }}">Limpar</a>
+          <input type="number" min="1" max="200" name="por_pagina" value="{{ request.args.get('por_pagina','25') }}" />
+          <div class="actions">
+            <button type="submit" class="btn primary">Aplicar filtros</button>
+            <a class="btn" href="{{ url_for('campanhas_qtd') }}">Limpar</a>
           </div>
-        </div>
-      </form>
-
-      <div class="kpis">
-        <div class="kpi">
-          <div class="kpi-title">Período</div>
-          <div class="kpi-value">{{ "%02d"|format(mes) }}/{{ ano }}</div>
-        </div>
-        <div class="kpi">
-          <div class="kpi-title">Empresas exibidas</div>
-          <div class="kpi-value">{{ blocos|length }}</div>
-        </div>
-        <div class="kpi">
-          <div class="kpi-title">Total de recompensa</div>
-          <div class="kpi-value" id="kpiTotal">{{ total_premio|brl }}</div>
-        </div>
-        <div class="kpi-note">
-          Clique na empresa para ver vendedores. Clique no vendedor para ver as campanhas.
         </div>
       </div>
 
-      <div class="acc" id="accRoot">
-        {% for e in blocos %}
-        {# e: {emp, emp_label, total, vendedores:[{vendedor, total, campanhas:[...] }]} #}
-        <div class="acc-item">
-          <div class="acc-head" data-emp="{{ loop.index0 }}">
-            <div class="acc-left">
-              <span class="chip">{{ e.emp }}</span>
-              <div class="empname">
-                <strong>{{ e.emp_label or e.emp }}</strong>
-                <div class="meta">{{ e.vendedores|length }} vendedor(es) · Total de recompensa: <strong>{{ e.total|brl }}</strong></div>
-              </div>
-            </div>
-            <div class="acc-right">
-              <span class="money">{{ e.total|brl }}</span>
-              <span class="chev">▾</span>
-            </div>
+      <div class="summary">
+        <div class="kpis">
+          <div class="kpi">
+            <div class="k">Período</div>
+            <div class="v">{{ "%02d"|format(mes|int) }}/{{ ano }}</div>
           </div>
-
-          <div class="acc-body" id="empBody{{ loop.index0 }}" style="display:none">
-            {% for v in e.vendedores %}
-            <div class="vendor">
-              <div class="vendor-head" data-emp="{{ loop.parent.index0 }}" data-v="{{ loop.index0 }}">
-                <div class="vendor-left">
-                  <strong>{{ v.vendedor }}</strong>
-                  <div class="meta">{{ v.campanhas|length }} campanha(s) · Total do vendedor: <strong>{{ v.total|brl }}</strong></div>
-                </div>
-                <div class="vendor-right">
-                  <span class="money">{{ v.total|brl }}</span>
-                  <span class="chev">▾</span>
-                </div>
-              </div>
-
-              <div class="vendor-body" id="vendBody{{ loop.parent.index0 }}_{{ loop.index0 }}" style="display:none">
-                <table class="tbl">
-                  <thead>
-                    <tr>
-                      <th>Campanha</th>
-                      <th class="tcenter">Qtd mín.</th>
-                      <th class="tcenter">Prêmio (R$)</th>
-                      <th class="tcenter">Vendeu</th>
-                      <th class="tright">Valor (R$)</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {% for c in v.campanhas %}
-                    <tr>
-                      <td class="camp"><span class="ok">✓</span> {{ c.nome }}</td>
-                      <td class="tcenter">{{ c.qtd_min if c.qtd_min is not none else "-" }}</td>
-                      <td class="tcenter">{{ c.premio_unit|brl }}</td>
-                      <td class="tcenter">{{ c.qtd_vendida }}</td>
-                      <td class="tright">{{ c.valor|brl }}</td>
-                    </tr>
-                    {% endfor %}
-                  </tbody>
-                </table>
-
-                <div class="foot">
-                  <div class="meta">Obs.: “Vendeu” = quantidade vendida (qtd). “Valor (R$)” = recompensa acumulada.</div>
-                  <div><strong>Total do vendedor: {{ v.total|brl }}</strong></div>
-                </div>
-              </div>
-            </div>
-            {% endfor %}
+          <div class="kpi">
+            <div class="k">Empresas exibidas</div>
+            <div class="v" id="kpiEmpCount">0</div>
+          </div>
+          <div class="kpi">
+            <div class="k">Total de recompensa</div>
+            <div class="v" id="kpiTotal">R$ 0,00</div>
           </div>
         </div>
-        {% endfor %}
+        <div class="hint">Clique na empresa para ver vendedores. Clique no vendedor para ver as campanhas.</div>
       </div>
+    </form>
 
-    </div>
+    <div class="acc" id="accRoot"></div>
   </div>
 </div>
 
-<style>
-
-    .mq{
-      --bg:#070707;
-      --panel:rgba(255,255,255,.04);
-      --panel2:rgba(255,255,255,.06);
-      --stroke:rgba(255,170,60,.35);
-      --stroke2:rgba(255,170,60,.18);
-      --text:#f2f2f2;
-      --muted:#b9b9b9;
-      --orange:#ff8f1f;
-      --orange2:#ffb35a;
-      --shadow: 0 18px 55px rgba(0,0,0,.55);
-      --radius:18px;
-    }
-    *{box-sizing:border-box}
-     .mq{
-      margin:0;
-      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
-      background:
-        radial-gradient(1200px 700px at 35% 20%, rgba(255,140,0,.16), transparent 58%),
-        radial-gradient(900px 500px at 70% 65%, rgba(255,100,0,.10), transparent 60%),
-        linear-gradient(180deg, #050505 0%, #0a0a0a 65%, #050505 100%);
-      color:var(--text);
-      min-height:100vh;
-    }
-    .wrap{
-      max-width:1100px;
-      margin:32px auto;
-      padding:0 18px 42px;
-    }
-    .title{
-      display:flex;
-      gap:14px;
-      align-items:flex-end;
-      justify-content:space-between;
-      margin-bottom:14px;
-    }
-    h1{
-      margin:0;
-      font-size:34px;
-      letter-spacing:.2px;
-    }
-    .subtitle{
-      margin:6px 0 0;
-      color:var(--muted);
-      font-size:14px;
-      line-height:1.35;
-    }
-    .badge{
-      padding:10px 12px;
-      border:1px solid var(--stroke2);
-      background:linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03));
-      border-radius:999px;
-      color:var(--orange2);
-      font-weight:600;
-      font-size:13px;
-      box-shadow:0 8px 30px rgba(0,0,0,.35);
-      white-space:nowrap;
-    }
-    .card{
-      border:1px solid var(--stroke2);
-      background:linear-gradient(180deg, rgba(255,255,255,.055), rgba(255,255,255,.028));
-      border-radius:var(--radius);
-      box-shadow:var(--shadow);
-      overflow:hidden;
-    }
-    .filters{
-      padding:16px;
-    }
-    .grid{
-      display:grid;
-      grid-template-columns: 1.2fr 1.2fr 1.6fr;
-      gap:12px;
-    }
-    .field{
-      padding:12px 12px 10px;
-      border:1px solid rgba(255,255,255,.09);
-      background:rgba(0,0,0,.25);
-      border-radius:14px;
-    }
-    .label{
-      font-size:12px;
-      color:var(--muted);
-      margin-bottom:8px;
-    }
-    select, input{
-      width:100%;
-      padding:10px 10px;
-      border-radius:12px;
-      border:1px solid rgba(255,255,255,.10);
-      background:rgba(0,0,0,.35);
-      color:var(--text);
-      outline:none;
-    }
-    .btnbar{
-      display:flex;
-      gap:10px;
-      justify-content:flex-end;
-      margin-top:12px;
-      flex-wrap:wrap;
-    }
-    button{
-      cursor:pointer;
-      border-radius:14px;
-      padding:10px 14px;
-      border:1px solid var(--stroke2);
-      background:linear-gradient(180deg, rgba(255,155,40,.18), rgba(255,155,40,.06));
-      color:var(--text);
-      font-weight:700;
-    }
-    button.secondary{
-      background:rgba(255,255,255,.04);
-      border:1px solid rgba(255,255,255,.10);
-      color:var(--muted);
-      font-weight:600;
-    }
-    .summary{
-      padding:14px 16px;
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      border-top:1px solid rgba(255,255,255,.08);
-      gap:12px;
-      flex-wrap:wrap;
-    }
-    .kpis{
-      display:flex;
-      gap:10px;
-      flex-wrap:wrap;
-    }
-    .kpi{
-      min-width:160px;
-      padding:10px 12px;
-      border-radius:14px;
-      background:rgba(0,0,0,.25);
-      border:1px solid rgba(255,255,255,.10);
-    }
-    .kpi .k{font-size:12px; color:var(--muted)}
-    .kpi .v{font-size:18px; font-weight:800; margin-top:4px; color:var(--orange2)}
-    .hint{
-      font-size:12px;
-      color:var(--muted);
-    }
-    .acc{ margin-top:14px; }
-    .acc-item{ border-top:1px solid rgba(255,255,255,.08); }
-    .acc-head{
-      display:flex;
-      justify-content:space-between;
-      align-items:center;
-      gap:14px;
-      padding:14px 16px;
-      cursor:pointer;
-      background:rgba(0,0,0,.18);
-    }
-    .acc-head:hover{ background:rgba(0,0,0,.26); }
-    .acc-left{ display:flex; align-items:center; gap:12px; min-width:0; }
-    .chip{
-      padding:6px 10px;
-      border-radius:999px;
-      border:1px solid var(--stroke2);
-      background:rgba(255,155,40,.10);
-      color:var(--orange2);
-      font-weight:800;
-      font-size:12px;
-      flex:0 0 auto;
-    }
-    .empname{ display:flex; flex-direction:column; gap:2px; min-width:0; }
-    .empname strong{ font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .empname span{ font-size:12px; color:var(--muted); }
-    .acc-right{ display:flex; align-items:center; gap:10px; flex:0 0 auto; }
-    .money{
-      font-weight:900;
-      color:var(--orange2);
-      font-size:14px;
-      padding:8px 10px;
-      border-radius:12px;
-      border:1px solid var(--stroke2);
-      background:rgba(0,0,0,.22);
-      white-space:nowrap;
-    }
-    .chev{
-      width:34px; height:34px;
-      border-radius:12px;
-      border:1px solid rgba(255,255,255,.12);
-      display:grid; place-items:center;
-      background:rgba(255,255,255,.04);
-      color:var(--muted);
-      font-weight:900;
-    }
-    .acc- .mq{ display:none; padding:0 16px 14px; background:rgba(0,0,0,.12); }
-    .vendors{ display:grid; grid-template-columns: 1fr; gap:10px; margin-top:10px; }
-    .vendor{
-      border:1px solid rgba(255,255,255,.10);
-      background:rgba(0,0,0,.22);
-      border-radius:16px;
-      overflow:hidden;
-    }
-    .vendor-head{
-      display:flex;
-      justify-content:space-between;
-      align-items:center;
-      gap:10px;
-      padding:12px 12px;
-      cursor:pointer;
-    }
-    .vendor-head:hover{ background:rgba(255,255,255,.03); }
-    .vendor-name{ display:flex; flex-direction:column; gap:2px; min-width:0; }
-    .vendor-name strong{ font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .vendor-name span{ color:var(--muted); font-size:12px; }
-    .vendor- .mq{ display:none; padding:0 12px 12px; }
-    table{
-      width:100%;
-      border-collapse:collapse;
-      overflow:hidden;
-      border-radius:14px;
-      border:1px solid rgba(255,255,255,.10);
-    }
-    thead th{
-      text-align:left;
-      font-size:12px;
-      color:var(--muted);
-      padding:10px 10px;
-      background:rgba(255,255,255,.03);
-      border-bottom:1px solid rgba(255,255,255,.10);
-      white-space:nowrap;
-    }
-    tbody td{
-      padding:10px 10px;
-      border-bottom:1px solid rgba(255,255,255,.06);
-      font-size:13px;
-      white-space:nowrap;
-    }
-    tbody tr:hover{ background:rgba(255,255,255,.02); }
-    .td-right{text-align:right}
-    .tfoot{
-      display:flex;
-      justify-content:space-between;
-      align-items:center;
-      gap:10px;
-      margin-top:10px;
-      flex-wrap:wrap;
-      color:var(--muted);
-      font-size:12px;
-    }
-    .tfoot strong{ color:var(--orange2); font-size:13px; }
-    @media (max-width: 900px){
-      .grid{ grid-template-columns: 1fr; }
-      .kpi{ min-width: 140px; }
-    }
-  
-</style>
-
 <script>
-(function(){
-  // Multi-select sem Ctrl (toggle no clique)
-  function enableToggleSelect(sel){
-    if(!sel) return;
-    sel.addEventListener("mousedown", function(e){
-      const opt = e.target.closest("option");
-      if(!opt) return;
-      e.preventDefault();
-      opt.selected = !opt.selected;
-      // dispara change para UX
-      sel.dispatchEvent(new Event("change", {bubbles:true}));
+  // Dados vindos do backend (já prontos para render 1:1 como o modelo)
+  const data = {{ ui_data|tojson }};
+  const fmtBRL = (v) => {
+    const n = Number(v || 0);
+    return n.toLocaleString('pt-BR', {style:'currency', currency:'BRL'});
+  };
+
+  function buildRowCampanha(c){
+    return `
+      <tr>
+        <td class="name">${c.campanha}</td>
+        <td class="num">${c.qtd_min ?? ''}</td>
+        <td class="num">${fmtBRL(c.premio_unit)}</td>
+        <td class="num">${(c.vendeu ?? 0).toLocaleString('pt-BR')}</td>
+        <td class="num strong">${fmtBRL(c.valor)}</td>
+      </tr>
+    `;
+  }
+
+  function buildVendedor(v){
+    const totalV = (v.total || 0);
+    const linhas = (v.campanhas || []).map(buildRowCampanha).join('');
+    return `
+      <div class="acc-item vendor">
+        <button class="acc-head" type="button" aria-expanded="false">
+          <div class="left">
+            <div class="title">${v.vendedor}</div>
+            <div class="sub">${(v.campanhas||[]).length} campanha(s) • Total do vendedor: <b>${fmtBRL(totalV)}</b></div>
+          </div>
+          <div class="right">
+            <span class="total">${fmtBRL(totalV)}</span>
+            <span class="chev">▾</span>
+          </div>
+        </button>
+
+        <div class="acc-body">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Campanha</th>
+                  <th class="num">Qtd mín.</th>
+                  <th class="num">Prêmio (R$)</th>
+                  <th class="num">Vendeu</th>
+                  <th class="num">Valor (R$)</th>
+                </tr>
+              </thead>
+              <tbody>${linhas}</tbody>
+            </table>
+          </div>
+
+          <div class="note">Obs.: “Vendeu” = quantidade vendida (qtd). “Valor (R$)” = recompensa acumulada.</div>
+          <div class="vendor-total">Total do vendedor: <b>${fmtBRL(totalV)}</b></div>
+        </div>
+      </div>
+    `;
+  }
+
+  function buildEmpresa(e){
+    const totalE = (e.total || 0);
+    const vendHTML = (e.vendedores || []).map(buildVendedor).join('');
+    return `
+      <div class="acc-item emp">
+        <button class="acc-head" type="button" aria-expanded="false">
+          <div class="left">
+            <div class="badge">${e.emp}</div>
+            <div class="title">${e.emp_nome}</div>
+            <div class="sub">${(e.vendedores||[]).length} vendedor(es) • Total de recompensa: <b>${fmtBRL(totalE)}</b></div>
+          </div>
+          <div class="right">
+            <span class="total">${fmtBRL(totalE)}</span>
+            <span class="chev">▾</span>
+          </div>
+        </button>
+        <div class="acc-body">${vendHTML}</div>
+      </div>
+    `;
+  }
+
+  function wireAcc(root){
+    root.querySelectorAll('.acc-head').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        const item = btn.parentElement;
+        const open = item.classList.toggle('open');
+        btn.setAttribute('aria-expanded', open ? 'true':'false');
+      });
     });
   }
-  enableToggleSelect(document.getElementById("empSel"));
-  enableToggleSelect(document.getElementById("vendSel"));
 
-  // Accordions (mesmo comportamento do modelo)
-  const root = document.getElementById("accRoot");
-  if(!root) return;
-  root.addEventListener("click", (ev) => {
-    const empHead = ev.target.closest(".acc-head");
-    if (empHead){
-      const idx = empHead.getAttribute("data-emp");
-      const body = document.getElementById("empBody"+idx);
-      const open = body && body.style.display === "block";
-      if(body) body.style.display = open ? "none" : "block";
-      const chev = empHead.querySelector(".chev");
-      if(chev) chev.textContent = open ? "▾" : "▴";
+  function render(){
+    const root = document.getElementById('accRoot');
+    if(!data || !data.length){
+      root.innerHTML = `<div class="empty">Sem dados para os filtros selecionados.</div>`;
+      document.getElementById('kpiEmpCount').textContent = '0';
+      document.getElementById('kpiTotal').textContent = fmtBRL(0);
       return;
     }
-    const vendHead = ev.target.closest(".vendor-head");
-    if (vendHead){
-      const e = vendHead.getAttribute("data-emp");
-      const v = vendHead.getAttribute("data-v");
-      const body = document.getElementById(`vendBody${e}_${v}`);
-      const open = body && body.style.display === "block";
-      if(body) body.style.display = open ? "none" : "block";
-      const chev = vendHead.querySelector(".chev");
-      if(chev) chev.textContent = open ? "▾" : "▴";
-    }
-  });
-})();
+
+    // ordena empresas por total desc (igual ao modelo)
+    data.sort((a,b)=> (b.total||0)-(a.total||0));
+    root.innerHTML = data.map(buildEmpresa).join('');
+
+    const empCount = data.length;
+    const total = data.reduce((s,e)=> s + (e.total||0), 0);
+    document.getElementById('kpiEmpCount').textContent = String(empCount);
+    document.getElementById('kpiTotal').textContent = fmtBRL(total);
+
+    wireAcc(root);
+  }
+
+  render();
 </script>
+
+<style>
+/* CSS 1:1 baseado no modelo aprovado (ajustado para conviver com o base.html) */
+.page{ padding: 22px 0 60px; }
+.container{ max-width: 980px; margin: 0 auto; padding: 0 12px; }
+.hero{ position: relative; padding: 8px 0 16px; }
+.hero .sub{ opacity:.75; font-size: 12px; letter-spacing:.08em; text-transform: uppercase; }
+.hero h1{ font-size: 34px; margin: 6px 0 8px; }
+.hero .desc{ opacity:.9; line-height:1.45; }
+.hero .pill{ position:absolute; right:0; top:10px; font-size:12px; padding: 6px 10px; border:1px solid rgba(255,140,0,.35); border-radius: 999px; color: rgba(255,160,40,.95); background: rgba(0,0,0,.35); }
+
+.filters{ margin-top: 14px; background: rgba(0,0,0,.25); border:1px solid rgba(255,140,0,.12); border-radius: 14px; padding: 14px; backdrop-filter: blur(6px); }
+.grid{ display:grid; grid-template-columns: 1fr 1fr 1.25fr; gap: 12px; align-items: start; }
+.field label{ display:block; font-size: 12px; opacity: .8; margin-bottom: 6px; }
+.field input, .field select{
+  width:100%;
+  background: rgba(0,0,0,.35);
+  border:1px solid rgba(255,140,0,.16);
+  color: rgba(255,255,255,.92);
+  padding: 10px 10px;
+  border-radius: 12px;
+  outline: none;
+}
+.field select[multiple]{ padding: 8px; border-radius: 12px; }
+.field select option{ background: #0a0a0a; color: #eee; }
+.help{ font-size: 11px; opacity: .7; margin-top: 6px; }
+.actions{ display:flex; gap: 10px; justify-content:flex-end; margin-top: 10px; }
+.btn{ display:inline-flex; align-items:center; justify-content:center; height: 36px; padding: 0 14px; border-radius: 12px;
+  border:1px solid rgba(255,140,0,.16); background: rgba(0,0,0,.25); color: rgba(255,255,255,.9); text-decoration:none;
+}
+.btn.primary{ background: rgba(255,140,0,.12); border-color: rgba(255,140,0,.35); }
+.btn.primary:hover{ background: rgba(255,140,0,.18); }
+.btn:hover{ background: rgba(255,255,255,.05); }
+
+.summary{ margin-top: 12px; display:flex; justify-content:space-between; gap: 14px; align-items: center; }
+.kpis{ display:flex; gap: 10px; flex-wrap: wrap; }
+.kpi{ min-width: 160px; background: rgba(0,0,0,.25); border:1px solid rgba(255,140,0,.12); border-radius: 12px; padding: 10px 12px; }
+.kpi .k{ font-size: 11px; opacity:.75; }
+.kpi .v{ margin-top: 4px; font-size: 18px; font-weight: 700; color: rgba(255,170,60,.95); }
+.hint{ font-size: 12px; opacity: .8; }
+
+.acc{ margin-top: 14px; display:flex; flex-direction: column; gap: 10px; }
+.acc-item{ background: rgba(0,0,0,.22); border:1px solid rgba(255,140,0,.12); border-radius: 14px; overflow:hidden; }
+.acc-head{ width:100%; border:0; background: transparent; color: inherit; text-align:left; padding: 12px 14px; display:flex; align-items:center; justify-content:space-between; gap: 12px; cursor:pointer; }
+.acc-head .left{ display:flex; align-items:center; gap: 10px; }
+.badge{ width: 34px; height: 26px; display:flex; align-items:center; justify-content:center; border-radius: 999px; font-weight:700; font-size: 12px;
+  background: rgba(255,140,0,.12); border:1px solid rgba(255,140,0,.35); color: rgba(255,170,60,.95);
+}
+.acc-head .title{ font-weight: 800; }
+.acc-head .sub{ font-size: 12px; opacity: .8; margin-top: 2px; }
+.acc-head .right{ display:flex; align-items:center; gap: 10px; }
+.total{ padding: 6px 10px; border-radius: 999px; background: rgba(0,0,0,.28); border:1px solid rgba(255,140,0,.25);
+  color: rgba(255,170,60,.95); font-weight: 800; font-size: 12px;
+}
+.chev{ width: 28px; height: 28px; border-radius: 10px; display:flex; align-items:center; justify-content:center;
+  border:1px solid rgba(255,140,0,.14); background: rgba(0,0,0,.25); opacity:.9;
+}
+
+.acc-body{ display:none; padding: 0 14px 14px; }
+.acc-item.open > .acc-body{ display:block; }
+.acc-item.open > .acc-head .chev{ transform: rotate(180deg); }
+
+.vendor{ margin: 10px 10px 0; border-radius: 12px; border-color: rgba(255,140,0,.10); background: rgba(0,0,0,.18); }
+.vendor .acc-head{ padding: 10px 12px; }
+.vendor .total{ font-size: 12px; }
+.table-wrap{ margin-top: 10px; overflow-x:auto; border:1px solid rgba(255,140,0,.10); border-radius: 12px; }
+table{ width:100%; border-collapse: collapse; }
+thead th{ font-size: 12px; opacity:.85; text-align:left; padding: 10px 12px; background: rgba(0,0,0,.28); }
+tbody td{ padding: 10px 12px; border-top:1px solid rgba(255,140,0,.08); font-size: 13px; }
+td.num, th.num{ text-align:right; white-space: nowrap; }
+td.strong{ color: rgba(255,170,60,.95); font-weight: 800; }
+td.name{ font-weight: 700; }
+.note{ margin-top: 10px; font-size: 11px; opacity: .75; }
+.vendor-total{ margin-top: 6px; text-align:right; font-size: 12px; }
+.empty{ padding: 18px; opacity: .8; background: rgba(0,0,0,.18); border:1px dashed rgba(255,140,0,.25); border-radius: 12px; }
+
+@media (max-width: 860px){
+  .grid{ grid-template-columns: 1fr; }
+  .hero .pill{ position: static; display:inline-block; margin-top: 10px; }
+  .summary{ flex-direction: column; align-items: flex-start; }
+}
+</style>
 {% endblock %}
