@@ -11,6 +11,17 @@
   .table td, .table th{vertical-align:middle}
   .hint{color:var(--bs-secondary-color); font-size:.85rem}
 </style>
+
+<style>
+  /* Admin pages: use more width + compact spacing */
+  .sv-page.sv-page--wide{max-width: 1480px;}
+  .sv-page{padding-top:10px;padding-bottom:10px;}
+  .sv-pagehead{padding:12px;}
+  .sv-card-pad{padding:12px;}
+  .sv-table td,.sv-table th{padding:.5rem .55rem;}
+  .sv-table thead th{font-size:12px; letter-spacing:.02em;}
+  .sv-muted{opacity:.78}
+</style>
 {% endblock %}
 
 {% block content %}
@@ -27,16 +38,16 @@
     <a class="btn btn-outline-secondary btn-sm" href="/dashboard">Voltar</a>
   </div>
 
-  <div class="card card-soft shadow-sm mb-3">
-    <div class="card-body">
+  <div class="sv-card sv-glass card card-soft shadow-sm mb-3">
+    <div class="sv-card sv-glass card-body">
       <form class="row g-2 align-items-end" method="get">
         <div class="col-6 col-md-2">
           <label class="form-label">Mês</label>
-          <input class="form-control" name="mes" type="number" min="1" max="12" value="{{ mes }}">
+          <input class="form-control sv-input" name="mes" type="number" min="1" max="12" value="{{ mes }}">
         </div>
         <div class="col-6 col-md-2">
           <label class="form-label">Ano</label>
-          <input class="form-control" name="ano" type="number" min="2000" max="2100" value="{{ ano }}">
+          <input class="form-control sv-input" name="ano" type="number" min="2000" max="2100" value="{{ ano }}">
         </div>
         <div class="col-12 col-md-3">
           <button class="btn btn-primary">Carregar</button>
@@ -52,30 +63,30 @@
     <div class="alert alert-success">{{ ok }}</div>
   {% endif %}
 
-  <div class="card card-soft shadow-sm mb-4">
-    <div class="card-header bg-transparent">
+  <div class="sv-card sv-glass card card-soft shadow-sm mb-4">
+    <div class="sv-card sv-glass card-header bg-transparent">
       <b>Novo Combo</b>
     </div>
-    <div class="card-body">
+    <div class="sv-card sv-glass card-body">
       <form method="post" id="formCombo">
-        <input type="hidden" name="acao" value="criar">
+        <input class="sv-input" type="hidden" name="acao" value="criar">
         <div class="row g-3">
           <div class="col-12 col-md-6">
             <label class="form-label">Título (nome da campanha)</label>
-            <input class="form-control" name="titulo" placeholder="Ex: Combo freio + óleo + vela" required>
+            <input class="form-control sv-input" name="titulo" placeholder="Ex: Combo freio + óleo + vela" required>
           </div>
           <div class="col-12 col-md-2">
             <label class="form-label">EMP (opcional)</label>
-            <input class="form-control" name="emp" placeholder="101">
+            <input class="form-control sv-input" name="emp" placeholder="101">
             <div class="hint mt-1">Vazio = global.</div>
           </div>
           <div class="col-6 col-md-2">
             <label class="form-label">Data início</label>
-            <input class="form-control" type="date" name="data_inicio" value="{{ default_data_inicio }}" required>
+            <input class="form-control sv-input" type="date" name="data_inicio" value="{{ default_data_inicio }}" required>
           </div>
           <div class="col-6 col-md-2">
             <label class="form-label">Data fim</label>
-            <input class="form-control" type="date" name="data_fim" value="{{ default_data_fim }}" required>
+            <input class="form-control sv-input" type="date" name="data_fim" value="{{ default_data_fim }}" required>
           </div>
         </div>
 
@@ -90,7 +101,7 @@
         </div>
 
         <div class="table-responsive mt-3">
-          <table class="table table-sm align-middle">
+          <table class="sv-table table table-sm align-middle">
             <thead>
               <tr>
                 <th style="min-width:240px;">MESTRE</th>
@@ -101,9 +112,9 @@
             </thead>
             <tbody id="rows">
               <tr>
-                <td><input class="form-control" name="mestre_prefixo[]" placeholder="Ex: 336109" required></td>
-                <td><input class="form-control" name="minimo_qtd[]" type="number" min="1" step="1" value="1" required></td>
-                <td><input class="form-control" name="valor_unitario[]" placeholder="Ex: 10.00" required></td>
+                <td><input class="form-control sv-input" name="mestre_prefixo[]" placeholder="Ex: 336109" required></td>
+                <td><input class="form-control sv-input" name="minimo_qtd[]" type="number" min="1" step="1" value="1" required></td>
+                <td><input class="form-control sv-input" name="valor_unitario[]" placeholder="Ex: 10.00" required></td>
                 <td><button class="btn btn-outline-danger btn-sm" type="button" onclick="removeRow(this)">✕</button></td>
               </tr>
             </tbody>
@@ -117,11 +128,11 @@
     </div>
   </div>
 
-  <div class="card card-soft shadow-sm">
-    <div class="card-header bg-transparent">
+  <div class="sv-card sv-glass card card-soft shadow-sm">
+    <div class="sv-card sv-glass card-header bg-transparent">
       <b>Combos cadastrados (intersectam {{ mes }}/{{ ano }})</b>
     </div>
-    <div class="card-body">
+    <div class="sv-card sv-glass card-body">
       {% if not combos %}
         <div class="text-muted">Nenhum combo cadastrado para o período.</div>
       {% else %}
@@ -143,14 +154,14 @@
               <div class="accordion-body">
                 <div class="d-flex justify-content-end mb-2">
                   <form method="post" onsubmit="return confirm('Remover este combo?');">
-                    <input type="hidden" name="acao" value="remover">
-                    <input type="hidden" name="combo_id" value="{{ c.id }}">
+                    <input class="sv-input" type="hidden" name="acao" value="remover">
+                    <input class="sv-input" type="hidden" name="combo_id" value="{{ c.id }}">
                     <button class="btn btn-outline-danger btn-sm">Remover</button>
                   </form>
                 </div>
 
                 <div class="table-responsive">
-                  <table class="table table-sm">
+                  <table class="sv-table table table-sm">
                     <thead>
                       <tr>
                         <th>MESTRE</th>
@@ -191,9 +202,9 @@ document.getElementById('btnAddRow').addEventListener('click', () => {
   const tbody = document.getElementById('rows');
   const tr = document.createElement('tr');
   tr.innerHTML = `
-    <td><input class="form-control" name="mestre_prefixo[]" placeholder="Ex: 336109" required></td>
-    <td><input class="form-control" name="minimo_qtd[]" type="number" min="1" step="1" value="1" required></td>
-    <td><input class="form-control" name="valor_unitario[]" placeholder="Ex: 10.00" required></td>
+    <td><input class="form-control sv-input" name="mestre_prefixo[]" placeholder="Ex: 336109" required></td>
+    <td><input class="form-control sv-input" name="minimo_qtd[]" type="number" min="1" step="1" value="1" required></td>
+    <td><input class="form-control sv-input" name="valor_unitario[]" placeholder="Ex: 10.00" required></td>
     <td><button class="btn btn-outline-danger btn-sm" type="button" onclick="removeRow(this)">✕</button></td>
   `;
   tbody.appendChild(tr);
