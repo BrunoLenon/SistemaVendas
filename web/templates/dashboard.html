@@ -4,17 +4,25 @@
 
 {% block extra_head %}
 <style>
-/* Compact + wide layout (page-level only) */
-.sv-page{max-width:1400px;margin:0 auto;padding:12px 12px;}
-.sv-pagehead{margin-bottom:12px;}
-.sv-card{border-radius:16px;}
-.sv-table td,.sv-table th{padding:.55rem .6rem; vertical-align:middle;}
-/* Reduce bootstrap row gutters inside sv pages */
-.row.g-3{--bs-gutter-y: .75rem; --bs-gutter-x: .75rem;}
-</style>
+/* Dashboard: make content truly wide (base .app-page is 1200px) + compact spacing */
+.app-main > .container-fluid.py-3{ padding-top: .75rem; padding-bottom: .75rem; }
+.app-page{ max-width: 1680px; margin: 0 auto; }
 
-<style>
-.table-sm td, .table-sm th { padding: .55rem; }
+/* Compact + wide layout (page-level only) */
+.sv-page{max-width:none;margin:0 auto;padding:8px 8px;}
+.sv-pagehead{margin-bottom:10px;}
+.sv-card{border-radius:16px;}
+.sv-table td,.sv-table th{padding:.45rem .55rem; vertical-align:middle; font-size:.92rem;}
+/* Reduce bootstrap row gutters inside sv pages */
+.row.g-3{--bs-gutter-y: .6rem; --bs-gutter-x: .6rem;}
+
+/* Make big tables fit better on screen */
+.sv-card .table-responsive{max-height: calc(100vh - 330px); overflow:auto;}
+.sv-card .table-responsive thead th{position: sticky; top: 0; z-index: 2; background: rgba(15,15,15,.92); backdrop-filter: blur(6px);}
+
+/* Slightly tighter KPI cards */
+.sv-kpi{padding:10px 12px;}
+.sv-kpi .sv-kpi__value{line-height:1.05;}
 </style>
 {% endblock %}
 
