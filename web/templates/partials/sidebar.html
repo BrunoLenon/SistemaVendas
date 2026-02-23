@@ -5,98 +5,148 @@
 {% set is_vendedor = (r == 'vendedor') %}
 {% set is_financeiro = (r == 'financeiro') %}
 
-<div class="sv-sidebar">
-  <div class="sv-sidebar-brand">
-    <div class="sv-sidebar-logo">
+<style>
+  .sb-wrap{
+    padding:16px 14px 18px;
+  }
+  .sb-head{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    padding:10px 10px 14px;
+    border-bottom:1px solid rgba(255,255,255,.08);
+    margin-bottom:12px;
+  }
+  .sb-logo{
+    width:40px;height:40px;
+    border-radius:14px;
+    border:1px solid rgba(255,170,60,.18);
+    background:rgba(255,155,40,.10);
+    display:grid;place-items:center;
+    font-weight:900;
+    color:#ffb35a;
+    overflow:hidden;
+    flex:0 0 auto;
+  }
+  .sb-logo img{width:100%;height:100%;object-fit:cover;display:block;}
+  .sb-title{
+    display:flex;
+    flex-direction:column;
+    gap:2px;
+    min-width:0;
+  }
+  .sb-title strong{
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    font-size:14px;
+  }
+  .sb-title span{ color:#b9b9b9; font-size:12px; }
+
+  .sb-sec{
+    margin-top:10px;
+  }
+  .sb-sec .lbl{
+    color:#b9b9b9;
+    font-size:12px;
+    padding:8px 10px;
+    text-transform:uppercase;
+    letter-spacing:.6px;
+  }
+  .sb-link{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    padding:10px 10px;
+    border-radius:12px;
+    color:#f2f2f2;
+    text-decoration:none;
+    border:1px solid rgba(255,255,255,.08);
+    background: rgba(0,0,0,.18);
+    margin:7px 6px;
+    font-weight:700;
+    font-size:13px;
+  }
+  .sb-link:hover{ background: rgba(255,255,255,.04); }
+  .sb-link.active{
+    border:1px solid rgba(255,170,60,.35);
+    background: linear-gradient(180deg, rgba(255,155,40,.18), rgba(255,155,40,.06));
+    color:#ffb35a;
+  }
+  .sb-foot{
+    margin-top:14px;
+    padding-top:12px;
+    border-top:1px solid rgba(255,255,255,.08);
+    color:#b9b9b9;
+    font-size:12px;
+    padding-left:10px;
+  }
+</style>
+
+<div class="sb-wrap">
+  <div class="sb-head">
+    <div class="sb-logo">
       {% if branding and branding.logo_url %}
-        <img src="{{ branding.logo_url }}{% if branding.version %}?v={{ branding.version }}{% endif %}" alt="Logo">
+        <img src="{{ branding.logo_url }}" alt="Logo">
       {% else %}
-        <div class="sv-logo-fallback">SV</div>
+        VP
       {% endif %}
     </div>
-    <div class="sv-sidebar-titles">
-      <div class="sv-sidebar-title">{{ branding.system_name if branding and branding.system_name else "Veipeças" }}</div>
+
+    <div class="sb-title">
+      <strong>{{ branding.system_name if branding and branding.system_name else "Veipeças" }}</strong>
       {% if emp %}
-        <div class="sv-sidebar-subtitle">EMP {{ emp }}</div>
+        <span>EMP {{ emp }}</span>
+      {% else %}
+        <span>{{ r|capitalize }}</span>
       {% endif %}
     </div>
   </div>
 
-  <nav class="sv-nav">
-    <a class="sv-nav-item {% if path.startswith('/dashboard') or path=='/' %}active{% endif %}" href="/dashboard">
-      <span class="sv-ico">📊</span><span class="sv-text">Dashboard</span>
-    </a>
+  <div class="sb-sec">
+    <a class="sb-link {% if path=='/' or path.startswith('/dashboard') %}active{% endif %}" href="{{ url_for('dashboard') }}">🏠 Dashboard</a>
+  </div>
 
-    <div class="sv-nav-section">Relatórios</div>
-    <a class="sv-nav-item {% if path.startswith('/relatorios/campanhas') %}active{% endif %}" href="/relatorios/campanhas">
-      <span class="sv-ico">🎯</span><span class="sv-text">Campanhas</span>
-    </a>
-    <a class="sv-nav-item {% if path.startswith('/relatorios/cidades-clientes') %}active{% endif %}" href="/relatorios/cidades-clientes">
-      <span class="sv-ico">🏙️</span><span class="sv-text">Cidades & Clientes</span>
-    </a>
+  <div class="sb-sec">
+    <div class="lbl">Relatórios</div>
+    <a class="sb-link {% if path.startswith('/relatorios/campanhas') %}active{% endif %}" href="{{ url_for('relatorio_campanhas') }}">📊 Campanhas</a>
+    <a class="sb-link {% if path.startswith('/relatorios/cidades') %}active{% endif %}" href="{{ url_for('relatorio_cidades_clientes') }}">🗺️ Cidades & Clientes</a>
+  </div>
 
-    <div class="sv-nav-section">Operação</div>
-    <a class="sv-nav-item {% if path.startswith('/campanhas') and not path.startswith('/relatorios') %}active{% endif %}" href="/campanhas">
-      <span class="sv-ico">⭐</span><span class="sv-text">Campanhas (Qtd)</span>
-    </a>
-    <a class="sv-nav-item {% if path.startswith('/campanhas/ranking-marca') %}active{% endif %}" href="/campanhas/ranking-marca">
-      <span class="sv-ico">🏁</span><span class="sv-text">Ranking por Marca</span>
-    </a>
-    <a class="sv-nav-item {% if path.startswith('/metas') %}active{% endif %}" href="/metas">
-      <span class="sv-ico">🎯</span><span class="sv-text">Metas</span>
-    </a>
-    <a class="sv-nav-item {% if path.startswith('/itens_parados') %}active{% endif %}" href="/itens_parados">
-      <span class="sv-ico">🧾</span><span class="sv-text">Itens Parados</span>
-    </a>
-    <a class="sv-nav-item {% if path.startswith('/mensagens') %}active{% endif %}" href="/mensagens">
-      <span class="sv-ico">📣</span><span class="sv-text">Mensagens</span>
-    </a>
+  <div class="sb-sec">
+    <div class="lbl">Operação</div>
+    <a class="sb-link {% if path.startswith('/campanhas_qtd') or path.startswith('/campanhas') %}active{% endif %}" href="{{ url_for('campanhas_qtd') }}">⭐ Campanhas (Qtd)</a>
+    <a class="sb-link {% if path.startswith('/ranking_marca') %}active{% endif %}" href="{{ url_for('ranking_marca') }}">🏆 Ranking por Marca</a>
+    <a class="sb-link {% if path.startswith('/metas') %}active{% endif %}" href="{{ url_for('metas') }}">🎯 Metas</a>
+    <a class="sb-link {% if path.startswith('/itens_parados') %}active{% endif %}" href="{{ url_for('itens_parados') }}">📦 Itens Parados</a>
+    <a class="sb-link {% if path.startswith('/mensagens') %}active{% endif %}" href="{{ url_for('mensagens') }}">💬 Mensagens</a>
+    <a class="sb-link {% if path.startswith('/trocar_senha') or path.startswith('/senha') %}active{% endif %}" href="{{ url_for('trocar_senha') }}">🔑 Trocar senha</a>
+  </div>
 
-    <div class="sv-nav-divider"></div>
-    <a class="sv-nav-item {% if path.startswith('/senha') %}active{% endif %}" href="/senha">
-      <span class="sv-ico">🔑</span><span class="sv-text">Trocar senha</span>
-    </a>
+  {% if is_financeiro or is_admin %}
+  <div class="sb-sec">
+    <div class="lbl">Financeiro</div>
+    <a class="sb-link {% if path.startswith('/financeiro/campanhas') %}active{% endif %}" href="{{ url_for('financeiro_campanhas') }}">💰 Campanhas (Fin.)</a>
+    <a class="sb-link {% if path.startswith('/admin/fechamento_v2') %}active{% endif %}" href="{{ url_for('admin_fechamento_v2') }}">✅ Fechamento (V2)</a>
+    <a class="sb-link {% if path.startswith('/admin/fechamento') %}active{% endif %}" href="{{ url_for('admin_fechamento') }}">🗓️ Fechamento (Mês)</a>
+  </div>
+  {% endif %}
 
-    {% if is_financeiro or is_admin %}
-      <div class="sv-nav-section">Financeiro</div>
-      <a class="sv-nav-item {% if path.startswith('/financeiro/campanhas_v2') %}active{% endif %}" href="/financeiro/campanhas_v2">
-        <span class="sv-ico">💰</span><span class="sv-text">Campanhas (Fin.)</span>
-      </a>
-      <a class="sv-nav-item {% if path.startswith('/financeiro/fechamento_v2') %}active{% endif %}" href="/financeiro/fechamento_v2">
-        <span class="sv-ico">✅</span><span class="sv-text">Fechamento (V2)</span>
-      </a>
-      <a class="sv-nav-item {% if path.startswith('/admin/fechamento') %}active{% endif %}" href="/admin/fechamento">
-        <span class="sv-ico">🗓️</span><span class="sv-text">Fechamento (Mês)</span>
-      </a>
-    {% endif %}
+  {% if is_admin %}
+  <div class="sb-sec">
+    <div class="lbl">Admin</div>
+    <a class="sb-link {% if path.startswith('/admin/usuarios') %}active{% endif %}" href="{{ url_for('admin_usuarios') }}">👥 Usuários</a>
+    <a class="sb-link {% if path.startswith('/admin/emps') %}active{% endif %}" href="{{ url_for('admin_emps') }}">🏬 EMPs</a>
 
-    {% if is_admin %}
-      <div class="sv-nav-section">Admin</div>
-      <a class="sv-nav-item {% if path.startswith('/admin/usuarios') %}active{% endif %}" href="/admin/usuarios">
-        <span class="sv-ico">👤</span><span class="sv-text">Usuários</span>
-      </a>
-      <a class="sv-nav-item {% if path.startswith('/admin/emps') %}active{% endif %}" href="/admin/emps">
-        <span class="sv-ico">🏬</span><span class="sv-text">EMPs</span>
-      </a>
-      <a class="sv-nav-item {% if path.startswith('/admin/campanhas') and not path.startswith('/admin/campanhas/ranking-marca') %}active{% endif %}" href="/admin/campanhas">
-        <span class="sv-ico">🧩</span><span class="sv-text">Campanhas (Admin)</span>
-      </a>
-            <a class="sv-nav-item {% if path.startswith('/admin/campanhas/ranking-marca') %}active{% endif %}" href="/admin/campanhas/ranking-marca">
-              <span class="sv-ico">🏆</span><span class="sv-text">Ranking por Marca (Admin)</span>
-            </a>
+    <!-- ✅ NOVO: Importar -->
+    <a class="sb-link {% if path.startswith('/admin/importar') %}active{% endif %}" href="{{ url_for('admin_importar') }}">📥 Importar</a>
 
-      <a class="sv-nav-item {% if path.startswith('/admin/combos') %}active{% endif %}" href="/admin/combos">
-        <span class="sv-ico">🧱</span><span class="sv-text">Combos</span>
-      </a>
-      <a class="sv-nav-item {% if path.startswith('/admin/configuracoes') %}active{% endif %}" href="/admin/configuracoes">
-        <span class="sv-ico">⚙️</span><span class="sv-text">Configurações</span>
-      </a>
-    {% endif %}
-  </nav>
+    <a class="sb-link {% if path.startswith('/admin/campanhas') %}active{% endif %}" href="{{ url_for('admin_campanhas_qtd') }}">🧩 Campanhas (Admin)</a>
+    <a class="sb-link {% if path.startswith('/admin/ranking-marca') %}active{% endif %}" href="{{ url_for('admin_ranking_marca') }}">🏆 Ranking por Marca (Admin)</a>
+    <a class="sb-link {% if path.startswith('/admin/combos') %}active{% endif %}" href="{{ url_for('admin_combos') }}">🧾 Combos</a>
+    <a class="sb-link {% if path.startswith('/admin/configuracoes') %}active{% endif %}" href="{{ url_for('admin_configuracoes') }}">⚙️ Configurações</a>
+  </div>
+  {% endif %}
 
-  <div class="sv-sidebar-footer">
-    <button class="sv-btn sv-btn-ghost" type="button" id="sidebarToggleSidebar">
-      <span class="sv-ico">☰</span><span class="sv-text">Recolher</span>
-    </button>
+  <div class="sb-foot">
+    Dica: no celular, toque em ☰ para abrir/fechar.
   </div>
 </div>
