@@ -4,17 +4,29 @@
 
 {% block extra_head %}
 <style>
-.page-wrap { max-width: 1040px; }
+. { max-width: 1040px; }
     .card { border-radius: 14px; }
     .card-title { letter-spacing: .2px; }
+</style>
+
+<style>
+  /* Admin pages: use more width + compact spacing */
+  .sv-page.sv-page--wide{max-width: 1480px;}
+  .sv-page{padding-top:10px;padding-bottom:10px;}
+  .sv-pagehead{padding:12px;}
+  .sv-card-pad{padding:12px;}
+  .sv-table td,.sv-table th{padding:.5rem .55rem;}
+  .sv-table thead th{font-size:12px; letter-spacing:.02em;}
+  .sv-muted{opacity:.78}
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="container py-4 page-wrap">
+<div class="sv-page sv-page--wide">
 
     <!-- Topo -->
-    <div class="d-flex justify-content-between align-items-center mb-3">
+    <div class="sv-pagehead sv-glass mb-3">
+  <div class="d-flex justify-content-between align-items-center w-100">
       <div>
         <h3 class="m-0">🛠️ Administração</h3>
         <div class="text-muted">Logado como <strong>{{ usuario }}</strong></div>
@@ -45,9 +57,9 @@
       <div class="col-lg-5">
 
         <!-- ✅ Ações rápidas -->
-        <div class="card shadow-sm mb-3">
-          <div class="card-body">
-            <h5 class="card-title mb-2">⚡ Ações rápidas</h5>
+        <div class="sv-card sv-glass card shadow-sm mb-3">
+          <div class="sv-card sv-glass card-body">
+            <h5 class="sv-card sv-glass card-title mb-2">⚡ Ações rápidas</h5>
             <div class="text-muted small mb-3">
               Use os atalhos abaixo para tarefas comuns do ADMIN.
             </div>
@@ -60,28 +72,28 @@
           </div>
         </div>
 
-        <div class="card shadow-sm">
-          <div class="card-body">
-            <h5 class="card-title mb-3">➕ Criar / Atualizar usuário</h5>
+        <div class="sv-card sv-glass card shadow-sm">
+          <div class="sv-card sv-glass card-body">
+            <h5 class="sv-card sv-glass card-title mb-3">➕ Criar / Atualizar usuário</h5>
 
             <form method="post">
-              <input type="hidden" name="acao" value="criar">
+              <input class="sv-input" type="hidden" name="acao" value="criar">
 
               <div class="mb-2">
                 <label class="form-label">Usuário</label>
-                <input class="form-control" name="novo_usuario" placeholder="Ex.: RAFAEL" required>
+                <input class="form-control sv-input" name="novo_usuario" placeholder="Ex.: RAFAEL" required>
                 <div class="form-text">O sistema salva tudo em MAIÚSCULO.</div>
               </div>
 
               <div class="mb-2">
                 <label class="form-label">Senha</label>
-                <input type="password" class="form-control" name="nova_senha" required>
+                <input type="password" class="form-control sv-input" name="nova_senha" required>
                 <div class="form-text">Mínimo 4 caracteres.</div>
               </div>
 
               <div class="mb-3">
                 <label class="form-label">Perfil</label>
-                <select class="form-select" name="role" id="roleSelect">
+                <select class="form-select sv-select" name="role" id="roleSelect">
                   <option value="vendedor" selected>Vendedor</option>
                   <option value="supervisor">Supervisor</option>
                   <option value="admin">Administrador</option>
@@ -97,7 +109,7 @@
                     {% for e in emps_cadastradas %}
                       {% if e.ativo %}
                         <div class="form-check">
-                          <input class="form-check-input" type="checkbox" name="emps_multi" id="emp_new_{{ e.codigo }}" value="{{ e.codigo }}">
+                          <input class="form-check-input sv-input" type="checkbox" name="emps_multi" id="emp_new_{{ e.codigo }}" value="{{ e.codigo }}">
                           <label class="form-check-label" for="emp_new_{{ e.codigo }}">
                             {{ emp_labels.get(e.codigo|string, e.codigo) if emp_labels else (e.codigo ~ ' — ' ~ e.nome) }}
                           </label>
@@ -109,7 +121,7 @@
                     Marque 1+ empresas. <strong>Vendedor/Supervisor</strong> precisam de ao menos 1 empresa ativa. <strong>Admin</strong> é opcional.
                   </div>
                 {% else %}
-                  <input class="form-control" name="emps_text" placeholder="Ex.: 101, 102, 103">
+                  <input class="form-control sv-input" name="emps_text" placeholder="Ex.: 101, 102, 103">
                   <div class="form-text">
                     Ainda não há empresas cadastradas. Cadastre em <a href="/admin/emps">Empresas</a>. Por enquanto, informe os códigos separados por vírgula.
                   </div>
@@ -121,21 +133,21 @@
           </div>
         </div>
 
-        <div class="card shadow-sm mt-3">
-          <div class="card-body">
-            <h5 class="card-title mb-3">🔁 Resetar senha</h5>
+        <div class="sv-card sv-glass card shadow-sm mt-3">
+          <div class="sv-card sv-glass card-body">
+            <h5 class="sv-card sv-glass card-title mb-3">🔁 Resetar senha</h5>
 
             <form method="post">
-              <input type="hidden" name="acao" value="reset">
+              <input class="sv-input" type="hidden" name="acao" value="reset">
 
               <div class="mb-2">
                 <label class="form-label">Usuário</label>
-                <input class="form-control" name="alvo" placeholder="Ex.: KENNEDY" required>
+                <input class="form-control sv-input" name="alvo" placeholder="Ex.: KENNEDY" required>
               </div>
 
               <div class="mb-3">
                 <label class="form-label">Nova senha</label>
-                <input type="password" class="form-control" name="nova_senha" required>
+                <input type="password" class="form-control sv-input" name="nova_senha" required>
               </div>
 
               <button class="btn btn-outline-primary w-100">Atualizar senha</button>
@@ -148,19 +160,19 @@
         </div>
 
 
-        <div class="card shadow-sm mt-3">
-          <div class="card-body">
-            <h5 class="card-title mb-2">🏢 Empresas do usuário</h5>
+        <div class="sv-card sv-glass card shadow-sm mt-3">
+          <div class="sv-card sv-glass card-body">
+            <h5 class="sv-card sv-glass card-title mb-2">🏢 Empresas do usuário</h5>
             <div class="text-muted small mb-3">
               Selecione as <strong>empresas (lojas)</strong> que o usuário pode visualizar. A permissão oficial é pela tabela <code>usuario_emps</code>.
             </div>
 
             <form method="post" class="row g-2">
-              <input type="hidden" name="acao" value="set_emps">
+              <input class="sv-input" type="hidden" name="acao" value="set_emps">
 
               <div class="col-12">
                 <label class="form-label">Usuário</label>
-                <input class="form-control" name="alvo" placeholder="Ex.: LUCAS" required>
+                <input class="form-control sv-input" name="alvo" placeholder="Ex.: LUCAS" required>
               </div>
 
               <div class="col-12">
@@ -170,7 +182,7 @@
                     {% for e in emps_cadastradas %}
                       {% if e.ativo %}
                         <div class="form-check">
-                          <input class="form-check-input" type="checkbox" name="emps_multi" id="emp_set_{{ e.codigo }}" value="{{ e.codigo }}">
+                          <input class="form-check-input sv-input" type="checkbox" name="emps_multi" id="emp_set_{{ e.codigo }}" value="{{ e.codigo }}">
                           <label class="form-check-label" for="emp_set_{{ e.codigo }}">
                             {{ emp_labels.get(e.codigo|string, e.codigo) if emp_labels else (e.codigo ~ ' — ' ~ e.nome) }}
                           </label>
@@ -182,7 +194,7 @@
                     <strong>Vendedor/Supervisor</strong> precisam de ao menos 1 empresa ativa. <strong>Admin</strong> é opcional.
                   </div>
                 {% else %}
-                  <input class="form-control" name="emps" placeholder="Ex.: 101, 102, 103" required>
+                  <input class="form-control sv-input" name="emps" placeholder="Ex.: 101, 102, 103" required>
                   <div class="form-text">
                     Ainda não há empresas cadastradas. Cadastre em <a href="/admin/emps">Empresas</a>. Por enquanto, informe os códigos separados por vírgula.
                   </div>
@@ -196,16 +208,16 @@
           </div>
         </div>
 
-        <div class="card shadow-sm mt-3">
-          <div class="card-body">
-            <h5 class="card-title mb-3">🗑️ Remover usuário</h5>
+        <div class="sv-card sv-glass card shadow-sm mt-3">
+          <div class="sv-card sv-glass card-body">
+            <h5 class="sv-card sv-glass card-title mb-3">🗑️ Remover usuário</h5>
 
             <form method="post" onsubmit="return confirm('Tem certeza que deseja remover este usuário?');">
-              <input type="hidden" name="acao" value="remover">
+              <input class="sv-input" type="hidden" name="acao" value="remover">
 
               <div class="mb-3">
                 <label class="form-label">Usuário</label>
-                <input class="form-control" name="alvo" placeholder="Ex.: MOISES" required>
+                <input class="form-control sv-input" name="alvo" placeholder="Ex.: MOISES" required>
               </div>
 
               <button class="btn btn-outline-danger w-100">Remover</button>
@@ -216,15 +228,15 @@
 
       <!-- Coluna direita -->
       <div class="col-lg-7">
-        <div class="card shadow-sm">
-          <div class="card-body">
+        <div class="sv-card sv-glass card shadow-sm">
+          <div class="sv-card sv-glass card-body">
             <div class="d-flex justify-content-between align-items-center mb-2">
-              <h5 class="card-title mb-0">👥 Usuários cadastrados</h5>
+              <h5 class="sv-card sv-glass card-title mb-0">👥 Usuários cadastrados</h5>
               <span class="badge text-bg-light border">{{ usuarios|length }} usuários</span>
             </div>
 
             <div class="table-responsive">
-              <table class="table table-sm align-middle">
+              <table class="sv-table table table-sm align-middle">
                 <thead>
                   <tr>
                     <th>Usuário</th>

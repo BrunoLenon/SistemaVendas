@@ -9,17 +9,31 @@
   .mono{font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;}
   .item-row{background: rgba(0,0,0,.02)}
 </style>
+
+<style>
+  /* Admin pages: use more width + compact spacing */
+  .sv-page.sv-page--wide{max-width: 1480px;}
+  .sv-page{padding-top:10px;padding-bottom:10px;}
+  .sv-pagehead{padding:12px;}
+  .sv-card-pad{padding:12px;}
+  .sv-table td,.sv-table th{padding:.5rem .55rem;}
+  .sv-table thead th{font-size:12px; letter-spacing:.02em;}
+  .sv-muted{opacity:.78}
+</style>
 {% endblock %}
 
 {% block content %}
-<div class="container py-4">
+<div class="sv-page sv-page--wide">
 
-  <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+  <div class="sv-pagehead sv-glass mb-3">
+  <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 w-100">
     <div>
       <h3 class="m-0 page-title">📌 Detalhes do Fechamento</h3>
       <div class="subtitle mt-1">EMP <b>{{ emp }}</b> — Competência: <b>{{ mes }}/{{ ano }}</b></div>
-    </div>
-    <div class="d-flex gap-2">
+  </div>
+</div>
+
+<div class="d-flex gap-2">
       <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin_fechamento', emp=emp, ano=ano, mes=mes) }}">Voltar</a>
       <a class="btn btn-outline-success btn-sm" href="{{ url_for('admin_fechamento_detalhes', emp=emp, ano=ano, mes=mes, export=1) }}">Exportar Excel</a>
     </div>
@@ -28,10 +42,10 @@
   {% if not detalhes %}
     <div class="alert alert-warning">Sem dados para o período/EMP selecionada.</div>
   {% else %}
-    <div class="card shadow-sm">
-      <div class="card-body">
+    <div class="sv-card sv-glass card shadow-sm">
+      <div class="sv-card sv-glass card-body">
         <div class="table-responsive">
-          <table class="table align-middle">
+          <table class="sv-table table align-middle">
             <thead>
               <tr>
                 <th>Vendedor</th>
@@ -65,7 +79,7 @@
                       <div class="text-muted small">Sem itens detalhados.</div>
                     {% else %}
                       <div class="table-responsive">
-                        <table class="table table-sm mb-0">
+                        <table class="sv-table table table-sm mb-0">
                           <thead>
                             <tr>
                               <th>Tipo</th>

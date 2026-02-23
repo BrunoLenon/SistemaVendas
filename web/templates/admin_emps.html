@@ -4,15 +4,27 @@
 
 {% block extra_head %}
 <style>
-.page-wrap { max-width: 1100px; }
+. { max-width: 1100px; }
 .card { border-radius: 14px; }
+</style>
+
+<style>
+  /* Admin pages: use more width + compact spacing */
+  .sv-page.sv-page--wide{max-width: 1480px;}
+  .sv-page{padding-top:10px;padding-bottom:10px;}
+  .sv-pagehead{padding:12px;}
+  .sv-card-pad{padding:12px;}
+  .sv-table td,.sv-table th{padding:.5rem .55rem;}
+  .sv-table thead th{font-size:12px; letter-spacing:.02em;}
+  .sv-muted{opacity:.78}
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="container py-4 page-wrap">
+<div class="sv-page sv-page--wide">
 
-  <div class="d-flex justify-content-between align-items-center mb-3">
+  <div class="sv-pagehead sv-glass mb-3">
+  <div class="d-flex justify-content-between align-items-center w-100">
     <div>
       <h3 class="m-0">🏢 Cadastro de EMPs</h3>
       <div class="text-muted">Logado como <strong>{{ usuario }}</strong></div>
@@ -33,30 +45,30 @@
 
   <div class="row g-3">
     <div class="col-lg-4">
-      <div class="card shadow-sm">
-        <div class="card-body">
-          <h5 class="card-title mb-3">➕ Criar / Atualizar EMP</h5>
+      <div class="sv-card sv-glass card shadow-sm">
+        <div class="sv-card sv-glass card-body">
+          <h5 class="sv-card sv-glass card-title mb-3">➕ Criar / Atualizar EMP</h5>
           <form method="post" class="vstack gap-2">
-            <input type="hidden" name="acao" value="criar">
+            <input class="sv-input" type="hidden" name="acao" value="criar">
 
             <div>
               <label class="form-label">Código (EMP)</label>
-              <input class="form-control" name="codigo" placeholder="Ex.: 101" required>
+              <input class="form-control sv-input" name="codigo" placeholder="Ex.: 101" required>
             </div>
             <div>
               <label class="form-label">Nome</label>
-              <input class="form-control" name="nome" placeholder="Ex.: Veipecas" required>
+              <input class="form-control sv-input" name="nome" placeholder="Ex.: Veipecas" required>
             </div>
             <div>
               <label class="form-label">Cidade</label>
-              <input class="form-control" name="cidade" placeholder="Ex.: Goiânia">
+              <input class="form-control sv-input" name="cidade" placeholder="Ex.: Goiânia">
             </div>
             <div>
               <label class="form-label">UF</label>
-              <input class="form-control" name="uf" placeholder="Ex.: GO" maxlength="2">
+              <input class="form-control sv-input" name="uf" placeholder="Ex.: GO" maxlength="2">
             </div>
             <div class="form-check mt-1">
-              <input class="form-check-input" type="checkbox" value="1" id="ativoChk" name="ativo" checked>
+              <input class="form-check-input sv-input" type="checkbox" value="1" id="ativoChk" name="ativo" checked>
               <label class="form-check-label" for="ativoChk">Ativa</label>
             </div>
 
@@ -68,14 +80,14 @@
     </div>
 
     <div class="col-lg-8">
-      <div class="card shadow-sm">
-        <div class="card-body">
+      <div class="sv-card sv-glass card shadow-sm">
+        <div class="sv-card sv-glass card-body">
           <div class="d-flex justify-content-between align-items-center mb-2">
-            <h5 class="card-title m-0">EMPs cadastradas</h5>
+            <h5 class="sv-card sv-glass card-title m-0">EMPs cadastradas</h5>
             <span class="badge text-bg-light">{{ emps|length }} EMPs</span>
           </div>
           <div class="table-responsive">
-            <table class="table table-sm align-middle">
+            <table class="sv-table table table-sm align-middle">
               <thead>
                 <tr>
                   <th>Código</th>
@@ -102,8 +114,8 @@
                     </td>
                     <td class="text-end">
                       <form method="post" style="display:inline">
-                        <input type="hidden" name="acao" value="toggle">
-                        <input type="hidden" name="codigo" value="{{ e.codigo }}">
+                        <input class="sv-input" type="hidden" name="acao" value="toggle">
+                        <input class="sv-input" type="hidden" name="codigo" value="{{ e.codigo }}">
                         <button class="btn btn-outline-secondary btn-sm">
                           {% if e.ativo %}Desativar{% else %}Ativar{% endif %}
                         </button>

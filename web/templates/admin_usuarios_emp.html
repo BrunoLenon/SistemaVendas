@@ -2,6 +2,19 @@
 
 {% block title %}Usuários × EMP{% endblock %}
 
+{% block extra_head %}
+<style>
+  /* Admin pages: use more width + compact spacing */
+  .sv-page.sv-page--wide{max-width: 1480px;}
+  .sv-page{padding-top:10px;padding-bottom:10px;}
+  .sv-pagehead{padding:12px;}
+  .sv-card-pad{padding:12px;}
+  .sv-table td,.sv-table th{padding:.5rem .55rem;}
+  .sv-table thead th{font-size:12px; letter-spacing:.02em;}
+  .sv-muted{opacity:.78}
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="d-flex align-items-center justify-content-between mb-3">
   <div>
@@ -18,14 +31,14 @@
   <div class="alert alert-success">{{ ok }}</div>
 {% endif %}
 
-<div class="card shadow-sm mb-4">
-  <div class="card-body">
+<div class="sv-card sv-glass card shadow-sm mb-4">
+  <div class="sv-card sv-glass card-body">
     <h6 class="mb-3">Adicionar vínculo</h6>
     <form method="post" class="row g-2 align-items-end">
-      <input type="hidden" name="acao" value="add">
+      <input class="sv-input" type="hidden" name="acao" value="add">
       <div class="col-12 col-md-5">
         <label class="form-label">Usuário</label>
-        <select class="form-select" name="user_id" required>
+        <select class="form-select sv-select" name="user_id" required>
           <option value="">Selecione...</option>
           {% for u in usuarios %}
             <option value="{{ u.id }}">{{ u.usuario }} ({{ u.role }}){% if u.emp_legado %} • legado EMP {{ u.emp_legado }}{% endif %}</option>
@@ -34,12 +47,12 @@
       </div>
       <div class="col-12 col-md-3">
         <label class="form-label">EMP(s)</label>
-        <input class="form-control" name="emp" placeholder="Ex: 101, 102, 103">
+        <input class="form-control sv-input" name="emp" placeholder="Ex: 101, 102, 103">
         <div class="form-text">Você pode informar uma ou várias EMPs separadas por vírgula/space/linha.</div>
       </div>
       <div class="col-12 col-md-4">
         <label class="form-label">Selecionar EMPs existentes (opcional)</label>
-        <select class="form-select" name="emps_multi" multiple size="3">
+        <select class="form-select sv-select" name="emps_multi" multiple size="3">
           {% for e in (emps_existentes or []) %}
             <option value="{{ e }}">{{ e }}</option>
           {% endfor %}
@@ -56,14 +69,14 @@
   </div>
 </div>
 
-<div class="card shadow-sm">
-  <div class="card-body">
+<div class="sv-card sv-glass card shadow-sm">
+  <div class="sv-card sv-glass card-body">
     <h6 class="mb-3">Vínculos ativos</h6>
     {% if not links %}
       <div class="text-muted">Nenhum vínculo cadastrado ainda.</div>
     {% else %}
       <div class="table-responsive">
-        <table class="table table-sm align-middle">
+        <table class="sv-table table table-sm align-middle">
           <thead>
             <tr>
               <th>Usuário</th>
@@ -80,8 +93,8 @@
                 <td>{{ l.emp }}</td>
                 <td class="text-end">
                   <form method="post" style="display:inline;">
-                    <input type="hidden" name="acao" value="remove">
-                    <input type="hidden" name="link_id" value="{{ l.id }}">
+                    <input class="sv-input" type="hidden" name="acao" value="remove">
+                    <input class="sv-input" type="hidden" name="link_id" value="{{ l.id }}">
                     <button class="btn btn-sm btn-outline-danger" type="submit" onclick="return confirm('Remover vínculo?');">Remover</button>
                   </form>
                 </td>
