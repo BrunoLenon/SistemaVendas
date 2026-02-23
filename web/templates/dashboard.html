@@ -1,3 +1,29 @@
+
+<style>
+/* ===== Dashboard Compact Spacing ===== */
+.dashboard-compact .app-card {
+  padding: 14px 16px !important;
+}
+
+.dashboard-compact .app-card h3 {
+  margin-bottom: 10px !important;
+}
+
+.dashboard-compact .app-table th,
+.dashboard-compact .app-table td {
+  padding: 8px 12px !important;
+  font-size: 14px;
+}
+
+.dashboard-compact .app-table tbody tr {
+  height: 38px;
+}
+
+.dashboard-compact .app-table {
+  margin-bottom: 0 !important;
+}
+</style>
+
 {% extends "base.html" %}
 
 {% block title %}Dashboard - {{ vendedor or usuario }}{% endblock %}
