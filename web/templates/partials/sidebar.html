@@ -114,7 +114,7 @@
   <div class="sb-sec">
     <div class="lbl">Operação</div>
     <a class="sb-link {% if path.startswith('/campanhas_qtd') or path.startswith('/campanhas') %}active{% endif %}" href="{{ url_for('campanhas_qtd') }}">⭐ Campanhas (Qtd)</a>
-    <a class="sb-link {% if path.startswith('/ranking_marca') %}active{% endif %}" href="{{ url_for('ranking_marca') }}">🏆 Ranking por Marca</a>
+    <a class="sb-link {% if path.startswith('/campanhas/ranking-marca') or path.startswith('/ranking_marca') %}active{% endif %}" href="{{ url_for('campanhas_ranking_marca') }}">🏆 Ranking por Marca</a>
     <a class="sb-link {% if path.startswith('/metas') %}active{% endif %}" href="{{ url_for('metas') }}">🎯 Metas</a>
     <a class="sb-link {% if path.startswith('/itens_parados') %}active{% endif %}" href="{{ url_for('itens_parados') }}">📦 Itens Parados</a>
     <a class="sb-link {% if path.startswith('/mensagens') %}active{% endif %}" href="{{ url_for('mensagens') }}">💬 Mensagens</a>
