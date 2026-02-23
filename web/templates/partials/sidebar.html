@@ -132,9 +132,7 @@
   {% if is_financeiro or is_admin %}
   <div class="sb-sec">
     <div class="lbl">Financeiro</div>
-    <a class="sb-link {% if path.startswith('/financeiro/campanhas_v2') %}active{% endif %}" href="{{ url_for('financeiro_campanhas_v2') }}">💰 Campanhas (Fin.)</a>
-    <a class="sb-link {% if path.startswith('/financeiro/fechamento_v2') %}active{% endif %}" href="{{ url_for('financeiro_fechamento_v2') }}">✅ Fechamento (V2)</a>
-    <a class="sb-link {% if path.startswith('/admin/fechamento') %}active{% endif %}" href="{{ url_for('admin_fechamento') }}">🗓️ Fechamento (Mês)</a>
+    <a class="sb-link {% if path.startswith('/financeiro/campanhas') %}active{% endif %}" href="{{ url_for('financeiro_campanhas') }}">💰 Campanhas (Fin.)</a>    <a class="sb-link {% if path.startswith('/admin/fechamento') %}active{% endif %}" href="{{ url_for('admin_fechamento') }}">🗓️ Fechamento (Mês)</a>
   </div>
   {% endif %}
 

@@ -7323,75 +7323,156 @@ def err_500(e):
 # (rotas admin migradas para o blueprint blueprints/campanhas_v2_admin.py)
 
 
+
+@app.route("/financeiro/campanhas", methods=["GET", "POST"])
+@financeiro_required
+def financeiro_campanhas():
+    """Financeiro: lista campanhas V2 da competência (FECHADA) e permite marcar como PAGO.
+
+    Regras:
+      - Exibe resultados da competência (ano/mes) para EMPs fechadas (FechamentoMensal.fechado=True)
+        OU que já estejam em A_PAGAR/PAGO (visibilidade/auditoria).
+      - Permite transição para PAGO (campo status_pagamento).
+      - Admin também tem acesso via financeiro_required? (decorator já permite apenas financeiro; caso admin
+        também deva acessar, o sidebar/links do admin não são bloqueados; se quiser liberar admin aqui,
+        troque por @roles_required("financeiro","admin") conforme seu padrão.
+    """
+    from datetime import date
+
+    ano = int(request.args.get("ano") or request.form.get("ano") or date.today().year)
+    mes = int(request.args.get("mes") or request.form.get("mes") or date.today().month)
+
+    db = SessionLocal()
+    try:
+        # POST: marcar como PAGO
+        if request.method == "POST":
+            action = (request.form.get("action") or "").strip().lower()
+            if action == "marcar_pago":
+                rid = int(request.form.get("resultado_id") or 0)
+                r = db.query(CampanhaV2Resultado).filter(CampanhaV2Resultado.id == rid).first()
+                if not r:
+                    flash("Resultado não encontrado.", "danger")
+                else:
+                    # Somente permite marcar como PAGO
+                    r.status_pagamento = "PAGO"
+                    r.pago_em = datetime.utcnow()
+                    r.atualizado_em = datetime.utcnow()
+                    db.commit()
+                    flash("Marcado como PAGO.", "success")
+            return redirect(url_for("financeiro_campanhas", ano=ano, mes=mes))
+
+        # GET: carregar resultados
+        resultados = (
+            db.query(CampanhaV2Resultado)
+            .filter(
+                CampanhaV2Resultado.competencia_ano == ano,
+                CampanhaV2Resultado.competencia_mes == mes,
+                CampanhaV2Resultado.valor_recompensa != 0,
+            )
+            .order_by(CampanhaV2Resultado.emp.asc(), CampanhaV2Resultado.vendedor.asc())
+            .all()
+        )
+
+        # Map de campanhas (título/tipo)
+        campanha_ids = sorted({int(r.campanha_id) for r in resultados})
+        campanhas = (
+            db.query(CampanhaV2Master)
+            .filter(CampanhaV2Master.id.in_(campanha_ids) if campanha_ids else False)
+            .all()
+        )
+        campanhas_map = {c.id: c for c in campanhas}
+
+        # Cache de fechamento por EMP (para definir "FECHADA")
+        fechado_cache = {}
+
+        def _emp_fechada(emp_int: int) -> bool:
+            if emp_int == 0:
+                return True
+            emp_str = str(emp_int)
+            if emp_str not in fechado_cache:
+                fechado_cache[emp_str] = _competencia_fechada(db, emp_str, ano, mes)
+            return bool(fechado_cache[emp_str])
+
+        # Filtra: somente EMP fechada (FECHADA) ou status A_PAGAR/PAGO
+        visiveis = []
+        for r in resultados:
+            st = (getattr(r, "status_pagamento", None) or "PENDENTE").strip().upper()
+            emp_int = int(getattr(r, "emp", 0) or 0)
+            if _emp_fechada(emp_int) or st in ("A_PAGAR", "PAGO"):
+                visiveis.append(r)
+
+        # Monta hierarquia: EMP -> Vendedor -> Campanhas
+        relatorio = []  # lista de EMPs com seus vendedores e campanhas
+        from collections import defaultdict
+
+        emp_map = defaultdict(lambda: defaultdict(list))
+        for r in visiveis:
+            emp = int(getattr(r, "emp", 0) or 0)
+            vend = (getattr(r, "vendedor", "") or "").strip().upper() or "SEM_VENDEDOR"
+            c = campanhas_map.get(int(getattr(r, "campanha_id", 0) or 0))
+            emp_map[emp][vend].append({
+                "resultado_id": r.id,
+                "campanha_id": int(getattr(r, "campanha_id", 0) or 0),
+                "titulo": (c.titulo if c else f"#{getattr(r,'campanha_id', '')}"),
+                "tipo": (getattr(r, "tipo", None) or (c.tipo if c else "")),
+                "base": float(getattr(r, "base_num", 0) or 0),
+                "valor": float(getattr(r, "valor_recompensa", 0) or 0),
+                "status": (getattr(r, "status_pagamento", None) or "PENDENTE").strip().upper(),
+                "pago_em": getattr(r, "pago_em", None),
+            })
+
+        # Ordena e calcula subtotais
+        for emp in sorted(emp_map.keys()):
+            vendedores = []
+            total_emp = 0.0
+            for vend in sorted(emp_map[emp].keys()):
+                itens = emp_map[emp][vend]
+                # ordena: A_PAGAR, PENDENTE, PAGO
+                order = {"A_PAGAR": 0, "PENDENTE": 1, "PAGO": 2}
+                itens.sort(key=lambda x: (order.get(x["status"], 9), -x["valor"], x["titulo"]))
+                total_v = sum(x["valor"] for x in itens)
+                total_emp += total_v
+                vendedores.append({
+                    "vendedor": vend,
+                    "total": total_v,
+                    "itens": itens,
+                })
+            relatorio.append({
+                "emp": emp,
+                "fechada": _emp_fechada(emp),
+                "total": total_emp,
+                "vendedores": vendedores,
+            })
+
+        return render_template(
+            "financeiro_campanhas.html",
+            usuario=_usuario_logado(),
+            ano=ano,
+            mes=mes,
+            relatorio=relatorio,
+        )
+    finally:
+        db.close()
+
+
+# Back-compat: redireciona rotas antigas para a nova tela (sem manter página separada)
 @app.route("/financeiro/campanhas_v2", methods=["GET"])
 @financeiro_required
 def financeiro_campanhas_v2():
-    # por enquanto, redireciona para o fechamento (mesma visão)
-    return redirect(url_for("financeiro_fechamento_v2"))
-
+    return redirect(url_for("financeiro_campanhas"))
 
 @app.route("/financeiro/fechamento_v2", methods=["GET"])
 @financeiro_required
 def financeiro_fechamento_v2():
-    from datetime import date
-    ano = int(request.args.get("ano") or date.today().year)
-    mes = int(request.args.get("mes") or date.today().month)
-    db = SessionLocal()
-    try:
-        rows = (
-            db.query(CampanhaV2Resultado, CampanhaV2Master.titulo)
-            .join(CampanhaV2Master, CampanhaV2Master.id==CampanhaV2Resultado.campanha_id)
-            .filter(CampanhaV2Resultado.ano==ano, CampanhaV2Resultado.mes==mes)
-            .order_by(CampanhaV2Resultado.status_financeiro.asc(), CampanhaV2Resultado.recompensa.desc())
-            .all()
-        )
-        resultados=[]
-        for r, titulo in rows:
-            resultados.append({
-                "id": r.id,
-                "campanha_titulo": titulo,
-                "emp": r.emp,
-                "vendedor": r.vendedor,
-                "valor_base": r.valor_base,
-                "recompensa": r.recompensa,
-                "status_financeiro": r.status_financeiro,
-            })
-        return render_template("financeiro_fechamento_v2.html", resultados=resultados, ano=ano, mes=mes)
-    finally:
-        db.close()
-
+    # Página descontinuada
+    return redirect(url_for("financeiro_campanhas"))
 
 @app.route("/financeiro/fechamento_v2/status", methods=["POST"])
 @financeiro_required
 def financeiro_fechamento_v2_status():
-    rid = int(request.form.get("resultado_id") or 0)
-    status = (request.form.get("status_financeiro") or "PENDENTE").strip().upper()
-    if status not in ("PENDENTE", "A_PAGAR", "PAGO"):
-        status = "PENDENTE"
-    db = SessionLocal()
-    try:
-        r = db.query(CampanhaV2Resultado).filter(CampanhaV2Resultado.id==rid).first()
-        if not r:
-            flash("Resultado não encontrado.", "danger")
-            return redirect(url_for("financeiro_fechamento_v2"))
-        r.status_financeiro = status
-        db.commit()
-        flash("Status atualizado.", "success")
-    except Exception as e:
-        db.rollback()
-        flash(f"Erro ao atualizar status: {e}", "danger")
-    finally:
-        db.close()
-    return redirect(url_for("financeiro_fechamento_v2"))
+    # Endpoint descontinuado
+    return redirect(url_for("financeiro_campanhas"))
 
-
-
-
-
-
-# =========================================
-# Campanhas — Ranking por Marca (V2 NEW)
-# =========================================
 
 @app.route("/admin/campanhas/ranking-marca", methods=["GET", "POST"])
 @admin_required
