@@ -113,19 +113,27 @@
 
   <div class="sb-sec">
     <div class="lbl">Operação</div>
-    <a class="sb-link {% if path.startswith('/campanhas_qtd') or path.startswith('/campanhas') %}active{% endif %}" href="{{ url_for('campanhas_qtd') }}">⭐ Campanhas (Qtd)</a>
+    <a class="sb-link {% if path.startswith('/campanhas') %}active{% endif %}" href="{{ url_for('campanhas_qtd') }}">⭐ Campanhas (Qtd)</a>
+
     <a class="sb-link {% if path.startswith('/campanhas/ranking-marca') or path.startswith('/ranking_marca') %}active{% endif %}" href="{{ url_for('campanhas_ranking_marca') }}">🏆 Ranking por Marca</a>
+
     <a class="sb-link {% if path.startswith('/metas') %}active{% endif %}" href="{{ url_for('metas') }}">🎯 Metas</a>
     <a class="sb-link {% if path.startswith('/itens_parados') %}active{% endif %}" href="{{ url_for('itens_parados') }}">📦 Itens Parados</a>
-    <a class="sb-link {% if path.startswith('/mensagens') %}active{% endif %}" href="{{ url_for('mensagens') }}">💬 Mensagens</a>
-    <a class="sb-link {% if path.startswith('/trocar_senha') or path.startswith('/senha') %}active{% endif %}" href="{{ url_for('trocar_senha') }}">🔑 Trocar senha</a>
+
+    {% if is_admin or is_supervisor %}
+    <a class="sb-link {% if path.startswith('/admin/mensagens') %}active{% endif %}" href="{{ url_for('admin_mensagens') }}">💬 Mensagens</a>
+    {% else %}
+    <a class="sb-link {% if path.startswith('/mensagens') %}active{% endif %}" href="{{ url_for('mensagens_central') }}">💬 Mensagens</a>
+    {% endif %}
+
+    <a class="sb-link {% if path.startswith('/senha') %}active{% endif %}" href="{{ url_for('senha') }}">🔑 Trocar senha</a>
   </div>
 
   {% if is_financeiro or is_admin %}
   <div class="sb-sec">
     <div class="lbl">Financeiro</div>
-    <a class="sb-link {% if path.startswith('/financeiro/campanhas') %}active{% endif %}" href="{{ url_for('financeiro_campanhas') }}">💰 Campanhas (Fin.)</a>
-    <a class="sb-link {% if path.startswith('/admin/fechamento_v2') %}active{% endif %}" href="{{ url_for('admin_fechamento_v2') }}">✅ Fechamento (V2)</a>
+    <a class="sb-link {% if path.startswith('/financeiro/campanhas_v2') %}active{% endif %}" href="{{ url_for('financeiro_campanhas_v2') }}">💰 Campanhas (Fin.)</a>
+    <a class="sb-link {% if path.startswith('/financeiro/fechamento_v2') %}active{% endif %}" href="{{ url_for('financeiro_fechamento_v2') }}">✅ Fechamento (V2)</a>
     <a class="sb-link {% if path.startswith('/admin/fechamento') %}active{% endif %}" href="{{ url_for('admin_fechamento') }}">🗓️ Fechamento (Mês)</a>
   </div>
   {% endif %}
