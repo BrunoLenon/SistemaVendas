@@ -116,7 +116,6 @@
     <a class="sb-link {% if path.startswith('/campanhas') %}active{% endif %}" href="{{ url_for('campanhas_qtd') }}">⭐ Campanhas (Qtd)</a>
 
     <a class="sb-link {% if path.startswith('/campanhas/ranking-marca') %}active{% endif %}" href="{{ url_for('campanhas_ranking_marca') }}">🏆 Ranking por Marca</a>
-    <a class="sb-link {% if path.startswith('/admin/campanhas/ranking-marca') %}active{% endif %}" href="{{ url_for('admin_campanhas_ranking_marca') }}">🏆 Ranking por Marca (Admin)</a>
 
     <a class="sb-link {% if path.startswith('/metas') %}active{% endif %}" href="{{ url_for('metas') }}">🎯 Metas</a>
     <a class="sb-link {% if path.startswith('/itens_parados') %}active{% endif %}" href="{{ url_for('itens_parados') }}">📦 Itens Parados</a>
@@ -147,6 +146,7 @@
 
     <!-- ✅ NOVO: Importar -->
     <a class="sb-link {% if path.startswith('/admin/importar') %}active{% endif %}" href="{{ url_for('admin_importar') }}">📥 Importar</a>
+    <a class="sb-link {% if path.startswith('/admin/campanhas/ranking-marca') %}active{% endif %}" href="{{ url_for('admin_campanhas_ranking_marca') }}">🏆 Ranking por Marca (Admin)</a>
 
     <a class="sb-link {% if path.startswith('/admin/campanhas') %}active{% endif %}" href="{{ url_for('admin_campanhas_qtd') }}">🧩 Campanhas (Admin)</a>
     <a class="sb-link {% if path.startswith('/admin/combos') %}active{% endif %}" href="{{ url_for('admin_combos') }}">🧾 Combos</a>
