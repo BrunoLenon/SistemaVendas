@@ -216,7 +216,6 @@ def build_campanhas_page_context(
         "vendedores_options": vendedores_options,
         "vendedores_sel": vendedores_sel,
         "blocos": blocos,
-        "ui_data": ui_data,
         "emps_scope": emps_scope,
         "emps_options": emps_options,
         "emps_sel": emps_sel,
@@ -297,64 +296,7 @@ def build_relatorio_campanhas_scope(
             vendedores = [vendedor_logado]
         vendedores_por_emp[emp] = vendedores
 
-    
-    # -------- UI DATA (layout modelo) --------
-    # Converte 'blocos' (que pode conter objetos) em estrutura serializável para o JS do template.
-    # Formato:
-    # [
-    #   {emp, emp_nome, total, vendedores: [{vendedor, total, campanhas:[{campanha,qtd_min,premio_unit,vendeu,valor}]}]}
-    # ]
-    emp_label_map = {str(o.get("value")): str(o.get("label")) for o in (emps_options or []) if isinstance(o, dict)}
-    emp_groups = {}
-    for b in blocos:
-        emp = str(b.get("emp") or "")
-        vend = str(b.get("vendedor") or "")
-        total_v = float(b.get("total") or 0.0)
-        label = emp_label_map.get(emp, emp)
-        # tenta extrair nome amigável (depois do " - ")
-        emp_nome = label.split(" - ", 1)[1] if " - " in label else label
-        g = emp_groups.setdefault(emp, {"emp": emp, "emp_nome": emp_nome, "total": 0.0, "vendedores": []})
-        g["total"] += total_v
-
-        camp_list = []
-        for r in (b.get("resultados") or []):
-            # r pode ser dataclass/objeto
-            campanha = getattr(r, "campanha_nome", None) or getattr(r, "nome", None) or getattr(r, "campanha", None) or ""
-            qtd_min = getattr(r, "qtd_minima", None)
-            premio_unit = getattr(r, "recompensa_unit", None)
-            vendeu = getattr(r, "qtd_vendida", None)
-            valor = getattr(r, "valor_recompensa", None)
-            try:
-                premio_unit = float(premio_unit or 0.0)
-            except Exception:
-                premio_unit = 0.0
-            try:
-                vendeu = float(vendeu or 0.0)
-            except Exception:
-                vendeu = 0.0
-            try:
-                valor = float(valor or 0.0)
-            except Exception:
-                valor = 0.0
-            camp_list.append({
-                "campanha": str(campanha),
-                "qtd_min": int(qtd_min) if (qtd_min is not None and str(qtd_min).isdigit()) else (qtd_min if qtd_min is not None else None),
-                "premio_unit": premio_unit,
-                "vendeu": vendeu,
-                "valor": valor,
-            })
-
-        g["vendedores"].append({
-            "vendedor": vend,
-            "total": total_v,
-            "campanhas": camp_list,
-        })
-
-    ui_data = list(emp_groups.values())
-    # ordena vendedores por total desc
-    for e in ui_data:
-        e["vendedores"].sort(key=lambda x: float(x.get("total") or 0.0), reverse=True)
-return {
+    return {
         "ano": ano,
         "mes": mes,
         "emps_sel": emps_sel,
