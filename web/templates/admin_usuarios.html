@@ -4,14 +4,8 @@
 
 {% block extra_head %}
 <style>
-. { max-width: 1040px; }
-    .card { border-radius: 14px; }
-    .card-title { letter-spacing: .2px; }
-</style>
-
-<style>
   /* Admin pages: use more width + compact spacing */
-  .sv-page.sv-page--wide{max-width: 1480px;}
+  .sv-page.sv-page--wide{max-width: 1480px; width:100%;}
   .sv-page{padding-top:10px;padding-bottom:10px;}
   .sv-pagehead{padding:12px;}
   .sv-card-pad{padding:12px;}
@@ -43,6 +37,7 @@
         <a class="btn btn-outline-danger btn-sm" href="/logout">Sair</a>
       </div>
     </div>
+</div>
 
     <!-- Alerts -->
     {% if erro %}
@@ -58,8 +53,8 @@
 
         <!-- ✅ Ações rápidas -->
         <div class="sv-card sv-glass card shadow-sm mb-3">
-          <div class="sv-card sv-glass card-body">
-            <h5 class="sv-card sv-glass card-title mb-2">⚡ Ações rápidas</h5>
+          <div class="card-body sv-card-pad">
+            <h5 class="card-title mb-2">⚡ Ações rápidas</h5>
             <div class="text-muted small mb-3">
               Use os atalhos abaixo para tarefas comuns do ADMIN.
             </div>
@@ -73,8 +68,8 @@
         </div>
 
         <div class="sv-card sv-glass card shadow-sm">
-          <div class="sv-card sv-glass card-body">
-            <h5 class="sv-card sv-glass card-title mb-3">➕ Criar / Atualizar usuário</h5>
+          <div class="card-body sv-card-pad">
+            <h5 class="card-title mb-3">➕ Criar / Atualizar usuário</h5>
 
             <form method="post">
               <input class="sv-input" type="hidden" name="acao" value="criar">
@@ -134,8 +129,8 @@
         </div>
 
         <div class="sv-card sv-glass card shadow-sm mt-3">
-          <div class="sv-card sv-glass card-body">
-            <h5 class="sv-card sv-glass card-title mb-3">🔁 Resetar senha</h5>
+          <div class="card-body sv-card-pad">
+            <h5 class="card-title mb-3">🔁 Resetar senha</h5>
 
             <form method="post">
               <input class="sv-input" type="hidden" name="acao" value="reset">
@@ -161,8 +156,8 @@
 
 
         <div class="sv-card sv-glass card shadow-sm mt-3">
-          <div class="sv-card sv-glass card-body">
-            <h5 class="sv-card sv-glass card-title mb-2">🏢 Empresas do usuário</h5>
+          <div class="card-body sv-card-pad">
+            <h5 class="card-title mb-2">🏢 Empresas do usuário</h5>
             <div class="text-muted small mb-3">
               Selecione as <strong>empresas (lojas)</strong> que o usuário pode visualizar. A permissão oficial é pela tabela <code>usuario_emps</code>.
             </div>
@@ -209,8 +204,8 @@
         </div>
 
         <div class="sv-card sv-glass card shadow-sm mt-3">
-          <div class="sv-card sv-glass card-body">
-            <h5 class="sv-card sv-glass card-title mb-3">🗑️ Remover usuário</h5>
+          <div class="card-body sv-card-pad">
+            <h5 class="card-title mb-3">🗑️ Remover usuário</h5>
 
             <form method="post" onsubmit="return confirm('Tem certeza que deseja remover este usuário?');">
               <input class="sv-input" type="hidden" name="acao" value="remover">
@@ -229,13 +224,13 @@
       <!-- Coluna direita -->
       <div class="col-lg-7">
         <div class="sv-card sv-glass card shadow-sm">
-          <div class="sv-card sv-glass card-body">
+          <div class="card-body sv-card-pad">
             <div class="d-flex justify-content-between align-items-center mb-2">
-              <h5 class="sv-card sv-glass card-title mb-0">👥 Usuários cadastrados</h5>
+              <h5 class="card-title mb-0">👥 Usuários cadastrados</h5>
               <span class="badge text-bg-light border">{{ usuarios|length }} usuários</span>
             </div>
 
-            <div class="table-responsive">
+            <div class="sv-tablewrap" style="max-height: 72vh; overflow:auto;">
               <table class="sv-table table table-sm align-middle">
                 <thead>
                   <tr>
@@ -284,7 +279,6 @@
         </div>
       </div>
     </div>
-
-  </div>
+</div>
 
 {% endblock %}
