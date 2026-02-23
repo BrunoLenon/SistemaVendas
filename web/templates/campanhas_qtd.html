@@ -1,361 +1,288 @@
 {% extends "base.html" %}
-{% block title %}Campanhas (Qtd){% endblock %}
 
 {% block content %}
+{#
+  Campanhas do mês (Qtd) — Layout idêntico ao modelo fornecido.
+  IMPORTANTE: não depende de alterações no app.py nem no campanhas_service.py.
+  Renderiza hierarquia EMP → Vendedor → Campanhas a partir de ctx.blocos.
+#}
+
 <style>
-  /* ===== Layout idêntico ao MODELO (escopado para não afetar o resto) ===== */
-  .sv-camp-qtd-modelo{
-    --bg:#070707;
-    --panel:rgba(255,255,255,.04);
-    --panel2:rgba(255,255,255,.06);
-    --stroke:rgba(255,170,60,.35);
-    --stroke2:rgba(255,170,60,.18);
-    --text:#f2f2f2;
-    --muted:#b9b9b9;
-    --orange:#ff8f1f;
-    --orange2:#ffb35a;
-    --shadow: 0 18px 55px rgba(0,0,0,.55);
-    --radius:18px;
-    color:var(--text);
+  /* ====== Base visual do MODELO ====== */
+  .mq-wrap{max-width:980px;margin:0 auto;padding:14px 12px 28px;}
+  .mq-title{font-size:38px;line-height:1.05;margin:0 0 8px;color:#f3f3f3;font-weight:800;letter-spacing:-.3px}
+  .mq-sub{margin:0 0 14px;color:#cfcfcf;font-size:13px}
+  .mq-badge{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;border:1px solid rgba(255,153,0,.25);background:rgba(0,0,0,.28);color:#ffb55a;font-size:11px}
+
+  .mq-panel{border-radius:14px;border:1px solid rgba(255,153,0,.18);background:rgba(0,0,0,.35);box-shadow:0 10px 30px rgba(0,0,0,.35);padding:12px}
+  .mq-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+  .mq-card{border-radius:12px;border:1px solid rgba(255,153,0,.14);background:rgba(0,0,0,.22);padding:10px}
+  .mq-label{font-size:12px;color:#cfcfcf;margin:0 0 6px}
+  .mq-input{width:100%;border-radius:10px;border:1px solid rgba(255,153,0,.16);background:rgba(0,0,0,.35);color:#f2f2f2;padding:10px 10px;font-size:14px;outline:none}
+  .mq-input:focus{border-color:rgba(255,153,0,.35);box-shadow:0 0 0 2px rgba(255,153,0,.10)}
+  .mq-select{width:100%;height:110px;border-radius:10px;border:1px solid rgba(255,153,0,.16);background:rgba(0,0,0,.35);color:#f2f2f2;padding:8px;font-size:13px;outline:none}
+  .mq-hint{font-size:11px;color:#bdbdbd;margin-top:6px}
+
+  .mq-actions{display:flex;justify-content:flex-end;gap:10px;align-items:center;margin-top:10px}
+  .mq-btn{border-radius:999px;padding:9px 14px;font-size:13px;border:1px solid rgba(255,153,0,.20);background:rgba(0,0,0,.30);color:#f2f2f2;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;justify-content:center}
+  .mq-btn.primary{background:linear-gradient(180deg,rgba(255,153,0,.22),rgba(255,153,0,.10));color:#ffd19a}
+  .mq-btn:hover{filter:brightness(1.08)}
+
+  .mq-kpis{display:grid;grid-template-columns:160px 160px 220px 1fr;gap:10px;margin-top:10px;align-items:stretch}
+  .mq-kpi{border-radius:12px;border:1px solid rgba(255,153,0,.14);background:rgba(0,0,0,.22);padding:10px;display:flex;flex-direction:column;justify-content:center}
+  .mq-kpi .t{font-size:11px;color:#bfbfbf;margin-bottom:4px}
+  .mq-kpi .v{font-size:20px;color:#ffb55a;font-weight:800}
+  .mq-kpi .v.small{font-size:18px;color:#f2f2f2}
+  .mq-kpi-note{border-radius:12px;border:1px solid rgba(255,153,0,.10);background:rgba(0,0,0,.18);padding:10px;display:flex;align-items:center;color:#cfcfcf;font-size:12px}
+
+  /* ====== Accordion (idêntico ao modelo) ====== */
+  .acc{margin-top:12px;display:flex;flex-direction:column;gap:10px}
+  .acc-item{border-radius:12px;border:1px solid rgba(255,153,0,.16);background:rgba(0,0,0,.18);overflow:hidden}
+  .acc-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 12px;cursor:pointer}
+  .acc-left{display:flex;align-items:flex-start;gap:10px}
+  .acc-pill{min-width:34px;height:22px;border-radius:999px;display:flex;align-items:center;justify-content:center;font-size:11px;color:#ffcc8c;background:rgba(255,153,0,.12);border:1px solid rgba(255,153,0,.18);padding:0 8px}
+  .acc-title{font-weight:800;color:#f2f2f2;font-size:13px;line-height:1.1}
+  .acc-sub{color:#bdbdbd;font-size:11px;margin-top:2px}
+  .acc-right{display:flex;align-items:center;gap:8px}
+  .money{border-radius:10px;padding:6px 10px;border:1px solid rgba(255,153,0,.22);background:rgba(0,0,0,.28);color:#ffb55a;font-weight:900;font-size:12px;min-width:84px;text-align:right}
+  .chev{width:30px;height:30px;border-radius:10px;border:1px solid rgba(255,153,0,.14);background:rgba(0,0,0,.24);display:flex;align-items:center;justify-content:center;color:#cfcfcf;font-size:14px;transition:transform .18s ease}
+  .acc-item.open .chev{transform:rotate(180deg)}
+  .acc-body{display:none;border-top:1px solid rgba(255,153,0,.12);padding:10px 12px 12px}
+  .acc-item.open .acc-body{display:block}
+
+  /* ====== Tabela (idêntico ao modelo) ====== */
+  .tbl{width:100%;border-collapse:collapse;font-size:12px;color:#e9e9e9;margin-top:10px}
+  .tbl th,.tbl td{padding:10px 10px;border-bottom:1px solid rgba(255,153,0,.10)}
+  .tbl th{color:#cfcfcf;font-weight:700;text-align:left;background:rgba(0,0,0,.22)}
+  .tbl td.num,.tbl th.num{text-align:right}
+  .tbl td .tag{display:inline-flex;align-items:center;gap:6px}
+  .chk{color:#ffb55a;font-weight:900}
+  .note{margin-top:10px;color:#cfcfcf;font-size:11px}
+  .total-right{margin-top:8px;color:#ffb55a;font-weight:900;font-size:12px;text-align:right}
+
+  @media (max-width: 980px){
+    .mq-grid{grid-template-columns:1fr;}
+    .mq-kpis{grid-template-columns:1fr;}
+    .mq-title{font-size:32px}
   }
-  .sv-camp-qtd-modelo *{box-sizing:border-box}
-  .sv-camp-qtd-wrap{max-width:1100px;margin:0 auto;padding:18px 18px 42px;}
-  .sv-camp-qtd-title{display:flex;gap:14px;align-items:flex-end;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap}
-  .sv-camp-qtd-title h1{margin:0;font-size:34px;letter-spacing:.2px}
-  .sv-camp-qtd-sub{margin:6px 0 0;color:var(--muted);font-size:14px;line-height:1.35}
-  .sv-camp-qtd-badge{padding:10px 12px;border:1px solid var(--stroke2);background:linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03));border-radius:999px;color:var(--orange2);font-weight:600;font-size:13px;box-shadow:0 8px 30px rgba(0,0,0,.35);white-space:nowrap}
-  .sv-camp-qtd-card{border:1px solid var(--stroke2);background:linear-gradient(180deg, rgba(255,255,255,.055), rgba(255,255,255,.028));border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden}
-  .sv-camp-qtd-filters{padding:16px}
-  .sv-camp-qtd-grid{display:grid;grid-template-columns:1.2fr 1.2fr 1.6fr;gap:12px}
-  .sv-camp-qtd-field{padding:12px 12px 10px;border:1px solid rgba(255,255,255,.09);background:rgba(0,0,0,.25);border-radius:14px}
-  .sv-camp-qtd-label{font-size:12px;color:var(--muted);margin-bottom:8px}
-  .sv-camp-qtd-field select,.sv-camp-qtd-field input{
-    width:100%;padding:10px 10px;border-radius:12px;border:1px solid rgba(255,255,255,.10);
-    background:rgba(0,0,0,.35);color:var(--text);outline:none
-  }
-  .sv-camp-qtd-btnbar{display:flex;gap:10px;justify-content:flex-end;margin-top:12px;flex-wrap:wrap}
-  .sv-camp-qtd-btn{
-    cursor:pointer;border-radius:14px;padding:10px 14px;border:1px solid var(--stroke2);
-    background:linear-gradient(180deg, rgba(255,155,40,.18), rgba(255,155,40,.06));
-    color:var(--text);font-weight:700
-  }
-  .sv-camp-qtd-btn.secondary{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.10);color:var(--muted);font-weight:600}
-  .sv-camp-qtd-summary{padding:14px 16px;display:flex;align-items:center;justify-content:space-between;border-top:1px solid rgba(255,255,255,.08);gap:12px;flex-wrap:wrap}
-  .sv-camp-qtd-kpis{display:flex;gap:10px;flex-wrap:wrap}
-  .sv-camp-qtd-kpi{min-width:160px;padding:10px 12px;border-radius:14px;background:rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.10)}
-  .sv-camp-qtd-kpi .k{font-size:12px;color:var(--muted)}
-  .sv-camp-qtd-kpi .v{font-size:18px;font-weight:800;margin-top:4px;color:var(--orange2)}
-  .sv-camp-qtd-hint{font-size:12px;color:var(--muted)}
-  /* Accordions */
-  .sv-camp-qtd-acc{margin-top:14px}
-  .sv-camp-qtd-acc-item{border-top:1px solid rgba(255,255,255,.08)}
-  .sv-camp-qtd-acc-head{
-    display:flex;justify-content:space-between;align-items:center;gap:14px;padding:14px 16px;cursor:pointer;
-    background:rgba(0,0,0,.18)
-  }
-  .sv-camp-qtd-acc-head:hover{background:rgba(0,0,0,.26)}
-  .sv-camp-qtd-acc-left{display:flex;align-items:center;gap:12px;min-width:0}
-  .sv-camp-qtd-chip{
-    padding:6px 10px;border-radius:999px;border:1px solid var(--stroke2);
-    background:rgba(255,155,40,.10);color:var(--orange2);font-weight:800;font-size:12px;flex:0 0 auto
-  }
-  .sv-camp-qtd-empname{display:flex;flex-direction:column;gap:2px;min-width:0}
-  .sv-camp-qtd-empname strong{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .sv-camp-qtd-empname span{font-size:12px;color:var(--muted)}
-  .sv-camp-qtd-acc-right{display:flex;align-items:center;gap:10px;flex:0 0 auto}
-  .sv-camp-qtd-money{
-    font-weight:900;color:var(--orange2);font-size:14px;padding:8px 10px;border-radius:12px;border:1px solid var(--stroke2);
-    background:rgba(0,0,0,.22);white-space:nowrap
-  }
-  .sv-camp-qtd-chev{
-    width:34px;height:34px;border-radius:12px;border:1px solid rgba(255,255,255,.12);
-    display:grid;place-items:center;background:rgba(255,255,255,.04);color:var(--muted);font-weight:900
-  }
-  .sv-camp-qtd-acc-body{display:none;padding:0 16px 14px;background:rgba(0,0,0,.12)}
-  /* Vendors */
-  .sv-camp-qtd-vendors{display:grid;grid-template-columns:1fr;gap:10px;margin-top:10px}
-  .sv-camp-qtd-vendor{border:1px solid rgba(255,255,255,.10);background:rgba(0,0,0,.22);border-radius:16px;overflow:hidden}
-  .sv-camp-qtd-vendor-head{
-    display:flex;justify-content:space-between;align-items:center;gap:10px;padding:12px 12px;cursor:pointer
-  }
-  .sv-camp-qtd-vendor-head:hover{background:rgba(255,255,255,.03)}
-  .sv-camp-qtd-vendor-name{display:flex;flex-direction:column;gap:2px;min-width:0}
-  .sv-camp-qtd-vendor-name strong{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .sv-camp-qtd-vendor-name span{color:var(--muted);font-size:12px}
-  .sv-camp-qtd-vendor-body{display:none;padding:0 12px 12px}
-  .sv-camp-qtd-table{
-    width:100%;border-collapse:collapse;overflow:hidden;border-radius:14px;border:1px solid rgba(255,255,255,.10)
-  }
-  .sv-camp-qtd-table thead th{
-    text-align:left;font-size:12px;color:var(--muted);padding:10px 10px;background:rgba(255,255,255,.03);
-    border-bottom:1px solid rgba(255,255,255,.10);white-space:nowrap
-  }
-  .sv-camp-qtd-table tbody td{
-    padding:10px 10px;border-bottom:1px solid rgba(255,255,255,.06);font-size:13px;white-space:nowrap
-  }
-  .sv-camp-qtd-table tbody tr:hover{background:rgba(255,255,255,.02)}
-  .sv-camp-qtd-td-right{text-align:right}
-  .sv-camp-qtd-tfoot{
-    display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap;
-    color:var(--muted);font-size:12px
-  }
-  .sv-camp-qtd-tfoot strong{color:var(--orange2);font-size:13px}
-  @media (max-width:900px){.sv-camp-qtd-grid{grid-template-columns:1fr}.sv-camp-qtd-kpi{min-width:140px}}
 </style>
 
-{% macro emp_label(emp) -%}
-  {%- set label = emp -%}
-  {%- for opt in (emps_options or []) -%}
-    {%- if (opt.value|string) == (emp|string) -%}
-      {%- set label = opt.label -%}
-    {%- endif -%}
-  {%- endfor -%}
-  {{- label -}}
-{%- endmacro %}
+{# ---------- Helpers (Jinja) ---------- #}
+{% set blocos = (ctx.blocos if ctx and ctx.blocos is defined else []) %}
+{% set emps_options = (ctx.emps_options if ctx and ctx.emps_options is defined else []) %}
+{% set vendedores_options = (ctx.vendedores_options if ctx and ctx.vendedores_options is defined else []) %}
+{% set mes = (ctx.mes if ctx and ctx.mes is defined else request.args.get('mes', 1)) %}
+{% set ano = (ctx.ano if ctx and ctx.ano is defined else request.args.get('ano', 2026)) %}
+{% set por_pagina = (ctx.por_pagina if ctx and ctx.por_pagina is defined else request.args.get('por_pagina', 25)) %}
+{% set visao = (ctx.visao if ctx and ctx.visao is defined else request.args.get('visao', 'detalhado')) %}
 
-{% macro campanha_nome(r) -%}
-  {{ (r.campanha_nome if r.campanha_nome is defined and r.campanha_nome else
-      r.nome if r.nome is defined and r.nome else
-      r.descricao if r.descricao is defined and r.descricao else
-      r.marca if r.marca is defined and r.marca else
-      ("Campanha #" ~ (r.campanha_id if r.campanha_id is defined else ""))) }}
-{%- endmacro %}
+{% set _emp_map = namespace(m={}) %}
+{% for opt in emps_options %}
+  {% if opt.value is defined and opt.label is defined %}
+    {% set _ = _emp_map.m.update({opt.value|string: opt.label}) %}
+  {% endif %}
+{% endfor %}
 
-<div class="sv-camp-qtd-modelo">
-  <div class="sv-camp-qtd-wrap">
+{% set _total_recompensa = namespace(v=0) %}
+{% for b in blocos %}
+  {% set _total_recompensa.v = _total_recompensa.v + (b.total or 0) %}
+{% endfor %}
 
-    <div class="sv-camp-qtd-title">
-      <div>
-        <h1>Campanhas do mês (Qtd)</h1>
-        <div class="sv-camp-qtd-sub">
-          Fluxo: <b>Empresa</b> → clique para abrir <b>Vendedores</b> → clique para ver <b>Campanhas + Valores</b>.
-          O <b>Total (R$)</b> é o acumulado de <b>recompensas</b>.
+{% set _emp_groups = (blocos|groupby('emp')) %}
+{% set empresas_exibidas = _emp_groups|length %}
+
+<div class="mq-wrap">
+  <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:12px;">
+    <div>
+      <div style="color:#bdbdbd;font-size:12px;margin-bottom:6px;">Campanhas</div>
+      <h1 class="mq-title">Campanhas do mês (Qtd)</h1>
+      <p class="mq-sub">
+        Fluxo esperado: <b>Empresa</b> → clique para abrir <b>Vendedores</b> → clique para ver <b>Campanhas</b> + <b>Valores</b>.
+        O <b>Total (R$)</b> é o acumulado de <b>recompensas</b> (não é valor vendido).
+      </p>
+    </div>
+    <div class="mq-badge">MODELO / PRODUÇÃO</div>
+  </div>
+
+  <div class="mq-panel">
+    <form method="GET" action="{{ url_for('campanhas_qtd') if url_for is defined else '' }}">
+      <div class="mq-grid">
+        <div class="mq-card">
+          <div class="mq-label">Mês</div>
+          <input class="mq-input" type="number" name="mes" min="1" max="12" value="{{ mes }}">
+        </div>
+        <div class="mq-card">
+          <div class="mq-label">Ano</div>
+          <input class="mq-input" type="number" name="ano" min="2000" max="2100" value="{{ ano }}">
+        </div>
+        <div class="mq-card">
+          <div class="mq-label">Visão</div>
+          <select class="mq-input" name="visao">
+            <option value="detalhado" {% if visao == 'detalhado' %}selected{% endif %}>Detalhado (Empresa → Vendedor → Campanhas)</option>
+          </select>
+        </div>
+
+        <div class="mq-card">
+          <div class="mq-label">EMP (seleção múltipla)</div>
+          <select class="mq-select mq-multisel" name="emp" multiple>
+            {% for opt in emps_options %}
+              {% set sel = false %}
+              {% if ctx and ctx.emp_sel is defined %}
+                {% set sel = (opt.value in ctx.emp_sel) %}
+              {% endif %}
+              <option value="{{ opt.value }}" {% if sel %}selected{% endif %}>{{ opt.label }}</option>
+            {% endfor %}
+          </select>
+          <div class="mq-hint">(No sistema real: seleção múltipla sem Ctrl.)</div>
+        </div>
+
+        <div class="mq-card">
+          <div class="mq-label">Vendedor (opcional)</div>
+          <select class="mq-select mq-multisel" name="vendedor" multiple>
+            {% for opt in vendedores_options %}
+              {% set sel = false %}
+              {% if ctx and ctx.vendedor_sel is defined %}
+                {% set sel = (opt.value in ctx.vendedor_sel) %}
+              {% endif %}
+              <option value="{{ opt.value }}" {% if sel %}selected{% endif %}>{{ opt.label }}</option>
+            {% endfor %}
+          </select>
+          <div class="mq-hint">(Quando vazio: mostra todos)</div>
+        </div>
+
+        <div class="mq-card">
+          <div class="mq-label">Por página</div>
+          <input class="mq-input" type="number" name="por_pagina" min="1" max="200" value="{{ por_pagina }}">
+
+          <div class="mq-actions">
+            <button class="mq-btn primary" type="submit">Aplicar filtros</button>
+            <a class="mq-btn" href="{{ url_for('campanhas_qtd') if url_for is defined else '' }}">Limpar</a>
+          </div>
         </div>
       </div>
-      <div class="sv-camp-qtd-badge">/campanhas • layout do modelo</div>
+    </form>
+
+    <div class="mq-kpis">
+      <div class="mq-kpi">
+        <div class="t">Período</div>
+        <div class="v">{{ '%02d'|format(mes|int) }}/{{ ano }}</div>
+      </div>
+      <div class="mq-kpi">
+        <div class="t">Empresas exibidas</div>
+        <div class="v small">{{ empresas_exibidas }}</div>
+      </div>
+      <div class="mq-kpi">
+        <div class="t">Total de recompensa</div>
+        <div class="v">{{ _total_recompensa.v|brl }}</div>
+      </div>
+      <div class="mq-kpi-note">Clique na empresa para ver vendedores. Clique no vendedor para ver as campanhas.</div>
     </div>
 
-    <div class="sv-camp-qtd-card">
+    <div class="acc" id="acc-root">
+      {% for g in _emp_groups %}
+        {% set emp_codigo = g.grouper %}
+        {% set emp_nome = _emp_map.m.get(emp_codigo|string, emp_codigo) %}
 
-      <form class="sv-camp-qtd-filters" method="get" action="/campanhas">
-        <div class="sv-camp-qtd-grid">
-          <div class="sv-camp-qtd-field">
-            <div class="sv-camp-qtd-label">Mês</div>
-            <input name="mes" value="{{ mes }}" />
-          </div>
-          <div class="sv-camp-qtd-field">
-            <div class="sv-camp-qtd-label">Ano</div>
-            <input name="ano" value="{{ ano }}" />
-          </div>
-          <div class="sv-camp-qtd-field">
-            <div class="sv-camp-qtd-label">Visão</div>
-            <select>
-              <option selected>Detalhado (Empresa → Vendedor → Campanhas)</option>
-            </select>
-          </div>
+        {% set _emp_total = namespace(v=0) %}
+        {% for b in g.list %}{% set _emp_total.v = _emp_total.v + (b.total or 0) %}{% endfor %}
 
-          <div class="sv-camp-qtd-field">
-            <div class="sv-camp-qtd-label">EMP (seleção múltipla)</div>
-            <select id="empSelect" name="emp" multiple size="4">
-              {% for opt in (emps_options or []) %}
-                {% set is_sel = (emps_sel or []) and (opt.value|string) in (emps_sel|map('string')|list) %}
-                <option value="{{ opt.value }}" {% if is_sel %}selected{% endif %}>{{ opt.label }}</option>
-              {% endfor %}
-            </select>
-            <div class="sv-camp-qtd-hint" style="margin-top:8px;">(sem Ctrl: clique alterna seleção)</div>
-          </div>
-
-          <div class="sv-camp-qtd-field">
-            <div class="sv-camp-qtd-label">Vendedor (opcional)</div>
-            <select id="vendSelect" name="vendedor" multiple size="4">
-              {% for opt in (vendedores_options or []) %}
-                {% set is_sel = (vendedores_sel or []) and (opt.value|string) in (vendedores_sel|map('string')|list) %}
-                <option value="{{ opt.value }}" {% if is_sel %}selected{% endif %}>{{ opt.label }}</option>
-              {% endfor %}
-            </select>
-            <div class="sv-camp-qtd-hint" style="margin-top:8px;">(quando vazio: mostra todos no escopo)</div>
-          </div>
-
-          <div class="sv-camp-qtd-field">
-            <div class="sv-camp-qtd-label">Ações</div>
-            <div class="sv-camp-qtd-btnbar">
-              <button class="sv-camp-qtd-btn" type="submit">Aplicar filtros</button>
-              <a class="sv-camp-qtd-btn secondary" href="/campanhas?mes={{ mes }}&ano={{ ano }}">Limpar seleção</a>
+        <div class="acc-item" data-acc="emp" id="emp-{{ loop.index }}">
+          <div class="acc-head" data-toggle="emp-{{ loop.index }}">
+            <div class="acc-left">
+              <div class="acc-pill">{{ emp_codigo }}</div>
+              <div>
+                <div class="acc-title">{{ emp_nome }}</div>
+                <div class="acc-sub">{{ g.list|length }} vendedor(es) · Total de recompensa: <b>{{ _emp_total.v|brl }}</b></div>
+              </div>
+            </div>
+            <div class="acc-right">
+              <div class="money">{{ _emp_total.v|brl }}</div>
+              <div class="chev">▾</div>
             </div>
           </div>
-        </div>
-      </form>
+          <div class="acc-body">
+            {% for b in g.list %}
+              {% set vend_nome = b.vendedor %}
 
-      {% set ns = namespace(total_all=0.0, emps=[]) %}
-      {% for b in (blocos or []) %}
-        {% set ns.total_all = ns.total_all + (b.total or 0) %}
-        {% if b.emp not in ns.emps %}
-          {% set ns.emps = ns.emps + [b.emp] %}
-        {% endif %}
-      {% endfor %}
-
-      <div class="sv-camp-qtd-summary">
-        <div class="sv-camp-qtd-kpis">
-          <div class="sv-camp-qtd-kpi">
-            <div class="k">Período</div>
-            <div class="v">{{ "%02d"|format(mes|int) }}/{{ ano }}</div>
-          </div>
-          <div class="sv-camp-qtd-kpi">
-            <div class="k">Empresas exibidas</div>
-            <div class="v">{{ ns.emps|length }}</div>
-          </div>
-          <div class="sv-camp-qtd-kpi">
-            <div class="k">Total de recompensa</div>
-            <div class="v">{{ (ns.total_all or 0)|brl }}</div>
-          </div>
-        </div>
-        <div class="sv-camp-qtd-hint">Clique na empresa para ver vendedores. Clique no vendedor para ver as campanhas.</div>
-      </div>
-
-      <div class="sv-camp-qtd-acc" id="accRoot">
-        {% for emp in ns.emps %}
-          {% set ns_emp = namespace(emp_total=0.0, vend_count=0, vends=[]) %}
-          {% for b in (blocos or []) %}
-            {% if (b.emp|string) == (emp|string) %}
-              {% set ns_emp.emp_total = ns_emp.emp_total + (b.total or 0) %}
-              {% if b.vendedor not in ns_emp.vends %}
-                {% set ns_emp.vends = ns_emp.vends + [b.vendedor] %}
-              {% endif %}
-            {% endif %}
-          {% endfor %}
-          {% set ns_emp.vend_count = ns_emp.vends|length %}
-
-          <div class="sv-camp-qtd-acc-item">
-            <div class="sv-camp-qtd-acc-head" data-emp="{{ emp }}">
-              <div class="sv-camp-qtd-acc-left">
-                <span class="sv-camp-qtd-chip">{{ emp }}</span>
-                <div class="sv-camp-qtd-empname">
-                  <strong>{{ emp_label(emp) }}</strong>
-                  <span>{{ ns_emp.vend_count }} vendedor(es) • Total de recompensa: <b>{{ (ns_emp.emp_total or 0)|brl }}</b></span>
+              <div class="acc-item" data-acc="vend" id="vend-{{ loop.parent.index }}-{{ loop.index }}" style="margin-top:10px;">
+                <div class="acc-head" data-toggle="vend-{{ loop.parent.index }}-{{ loop.index }}">
+                  <div class="acc-left">
+                    <div>
+                      <div class="acc-title">{{ vend_nome }}</div>
+                      <div class="acc-sub">{{ (b.resultados or [])|length }} campanha(s) · Total do vendedor: <b>{{ (b.total or 0)|brl }}</b></div>
+                    </div>
+                  </div>
+                  <div class="acc-right">
+                    <div class="money">{{ (b.total or 0)|brl }}</div>
+                    <div class="chev">▾</div>
+                  </div>
+                </div>
+                <div class="acc-body">
+                  <table class="tbl">
+                    <thead>
+                      <tr>
+                        <th>Campanha</th>
+                        <th class="num">Qtd mín.</th>
+                        <th class="num">Prêmio (R$)</th>
+                        <th class="num">Vendeu</th>
+                        <th class="num">Valor (R$)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {% for r in (b.resultados or []) %}
+                        <tr>
+                          <td>
+                            <span class="tag"><span class="chk">✓</span> {{ r.campanha_nome }}</span>
+                          </td>
+                          <td class="num">{{ r.qtd_min if r.qtd_min is not none else '' }}</td>
+                          <td class="num">{{ (r.premio_unit or 0)|brl }}</td>
+                          <td class="num">{{ r.vendeu_qtd or 0 }}</td>
+                          <td class="num">{{ (r.valor_recompensa or 0)|brl }}</td>
+                        </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                  <div class="note">Obs.: “Vendeu” = quantidade vendida (qtd). “Valor (R$)” = recompensa acumulada.</div>
+                  <div class="total-right">Total do vendedor: {{ (b.total or 0)|brl }}</div>
                 </div>
               </div>
-              <div class="sv-camp-qtd-acc-right">
-                <div class="sv-camp-qtd-money">{{ (ns_emp.emp_total or 0)|brl }}</div>
-                <div class="sv-camp-qtd-chev">▾</div>
-              </div>
-            </div>
-
-            <div class="sv-camp-qtd-acc-body" id="empBody{{ emp }}">
-              <div class="sv-camp-qtd-vendors">
-                {% for vend in ns_emp.vends %}
-                  {% set bloco = none %}
-                  {% for b in (blocos or []) %}
-                    {% if (b.emp|string)==(emp|string) and (b.vendedor|string)==(vend|string) %}
-                      {% set bloco = b %}
-                    {% endif %}
-                  {% endfor %}
-                  {% if bloco %}
-                    <div class="sv-camp-qtd-vendor">
-                      <div class="sv-camp-qtd-vendor-head" data-emp="{{ emp }}" data-v="{{ loop.index0 }}">
-                        <div class="sv-camp-qtd-vendor-name">
-                          <strong>{{ vend }}</strong>
-                          <span>{{ (bloco.resultados or [])|length }} campanha(s) • Total do vendedor: <b>{{ (bloco.total or 0)|brl }}</b></span>
-                        </div>
-                        <div class="sv-camp-qtd-acc-right">
-                          <div class="sv-camp-qtd-money">{{ (bloco.total or 0)|brl }}</div>
-                          <div class="sv-camp-qtd-chev">▾</div>
-                        </div>
-                      </div>
-
-                      <div class="sv-camp-qtd-vendor-body" id="vendBody{{ emp }}_{{ loop.index0 }}">
-                        <table class="sv-camp-qtd-table">
-                          <thead>
-                            <tr>
-                              <th>Campanha</th>
-                              <th class="sv-camp-qtd-td-right">Qtd mín.</th>
-                              <th class="sv-camp-qtd-td-right">Prêmio (R$)</th>
-                              <th class="sv-camp-qtd-td-right">Vendeu</th>
-                              <th class="sv-camp-qtd-td-right">Valor (R$)</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {% for r in (bloco.resultados or []) %}
-                              {% set qtd_min = (r.qtd_minima if r.qtd_minima is defined else (r.minimo_qtd if r.minimo_qtd is defined else 0)) %}
-                              {% set premio_unit = (r.recompensa_unit if r.recompensa_unit is defined else (r.valor_unitario if r.valor_unitario is defined else 0)) %}
-                              {% set vendeu = (r.qtd_vendida if r.qtd_vendida is defined else 0) %}
-                              {% set valor = (r.valor_recompensa if r.valor_recompensa is defined else 0) %}
-                              <tr>
-                                <td>{{ campanha_nome(r) }}</td>
-                                <td class="sv-camp-qtd-td-right">{{ qtd_min }}</td>
-                                <td class="sv-camp-qtd-td-right">{{ premio_unit|brl }}</td>
-                                <td class="sv-camp-qtd-td-right">{{ vendeu }}</td>
-                                <td class="sv-camp-qtd-td-right"><b>{{ valor|brl }}</b></td>
-                              </tr>
-                            {% endfor %}
-                          </tbody>
-                        </table>
-
-                        <div class="sv-camp-qtd-tfoot">
-                          <div>Obs.: “Vendeu” = quantidade vendida (qtd). “Valor (R$)” = recompensa acumulada.</div>
-                          <div><strong>Total do vendedor: {{ (bloco.total or 0)|brl }}</strong></div>
-                        </div>
-                      </div>
-                    </div>
-                  {% endif %}
-                {% endfor %}
-              </div>
-            </div>
+            {% endfor %}
           </div>
-        {% endfor %}
-      </div>
-
+        </div>
+      {% endfor %}
     </div>
   </div>
 </div>
 
 <script>
-  // 1) Accordion toggle (igual ao modelo)
+  // Accordion toggle (idêntico ao modelo)
   (function(){
-    const root = document.getElementById("accRoot");
+    const root = document.getElementById('acc-root');
     if(!root) return;
-
-    root.addEventListener("click", (ev) => {
-      const empHead = ev.target.closest(".sv-camp-qtd-acc-head");
-      if (empHead){
-        const emp = empHead.getAttribute("data-emp");
-        const body = document.getElementById("empBody"+emp);
-        const open = body && body.style.display === "block";
-        if(body) body.style.display = open ? "none" : "block";
-        const chev = empHead.querySelector(".sv-camp-qtd-chev");
-        if(chev) chev.textContent = open ? "▾" : "▴";
-        return;
-      }
-
-      const vendHead = ev.target.closest(".sv-camp-qtd-vendor-head");
-      if (vendHead){
-        const emp = vendHead.getAttribute("data-emp");
-        const v = vendHead.getAttribute("data-v");
-        const body = document.getElementById(`vendBody${emp}_${v}`);
-        const open = body && body.style.display === "block";
-        if(body) body.style.display = open ? "none" : "block";
-        const chev = vendHead.querySelector(".sv-camp-qtd-chev");
-        if(chev) chev.textContent = open ? "▾" : "▴";
-      }
+    root.addEventListener('click', (ev) => {
+      const head = ev.target.closest('.acc-head');
+      if(!head) return;
+      const id = head.getAttribute('data-toggle');
+      const item = document.getElementById(id);
+      if(!item) return;
+      item.classList.toggle('open');
     });
   })();
 
-  // 2) Multi-select sem Ctrl (igual ao modelo)
+  // Multi-select sem Ctrl (modelo)
   (function(){
-    function makeNoCtrlMultiSelect(sel){
-      if(!sel) return;
-      sel.addEventListener("mousedown", function(e){
-        if (e.target && e.target.tagName === "OPTION"){
-          e.preventDefault();
-          const opt = e.target;
-          opt.selected = !opt.selected;
-          // força o browser a reconhecer a mudança
-          const ev = new Event("change", {bubbles:true});
-          sel.dispatchEvent(ev);
-        }
+    function enhanceMultiSelect(sel){
+      if(!sel || !sel.multiple) return;
+      sel.addEventListener('mousedown', (e) => {
+        const opt = e.target.closest('option');
+        if(!opt) return;
+        e.preventDefault();
+        opt.selected = !opt.selected;
+        sel.dispatchEvent(new Event('change', {bubbles:true}));
       });
     }
-    makeNoCtrlMultiSelect(document.getElementById("empSelect"));
-    makeNoCtrlMultiSelect(document.getElementById("vendSelect"));
+    document.querySelectorAll('.mq-multisel').forEach(enhanceMultiSelect);
   })();
 </script>
+
 {% endblock %}
