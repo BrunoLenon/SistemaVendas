@@ -1,5 +1,17 @@
 {% extends "base.html" %}
 {% block title %}Relatórios • Campanhas{% endblock %}
+
+{% block extra_head %}
+<style>
+/* Compact + wide layout (page-level only) */
+.sv-page{max-width:1400px;margin:0 auto;padding:12px 12px;}
+.sv-pagehead{margin-bottom:12px;}
+.sv-card{border-radius:16px;}
+.sv-table td,.sv-table th{padding:.55rem .6rem; vertical-align:middle;}
+/* Reduce bootstrap row gutters inside sv pages */
+.row.g-3{--bs-gutter-y: .75rem; --bs-gutter-x: .75rem;}
+</style>
+{% endblock %}
 {% block content %}
 
 {% set view_mode = request.args.get('view', 'detalhado') %}

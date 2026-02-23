@@ -4,6 +4,16 @@
 
 {% block extra_head %}
 <style>
+/* Compact + wide layout (page-level only) */
+.sv-page{max-width:1400px;margin:0 auto;padding:12px 12px;}
+.sv-pagehead{margin-bottom:12px;}
+.sv-card{border-radius:16px;}
+.sv-table td,.sv-table th{padding:.55rem .6rem; vertical-align:middle;}
+/* Reduce bootstrap row gutters inside sv pages */
+.row.g-3{--bs-gutter-y: .75rem; --bs-gutter-x: .75rem;}
+</style>
+
+<style>
 .table-sm td, .table-sm th { padding: .55rem; }
 </style>
 {% endblock %}
@@ -183,7 +193,7 @@
       <div class="card shadow-sm kpi">
         <div class="sv-card-body">
           <div class="text-muted small">Total líquido (mês)</div>
-          <div class="fs-4 fw-bold">R$ {{ dados_admin.valor_atual|brl }}</div>
+          <div class="fs-4 fw-bold">R$ {{ dados_admin.valor_atual|brl_rs }}</div>
         </div>
       </div>
     </div>
@@ -191,7 +201,7 @@
       <div class="card shadow-sm kpi">
         <div class="sv-card-body">
           <div class="text-muted small">Bruto (sem devolução)</div>
-          <div class="fs-4 fw-bold">R$ {{ dados_admin.valor_bruto|brl }}</div>
+          <div class="fs-4 fw-bold">R$ {{ dados_admin.valor_bruto|brl_rs }}</div>
         </div>
       </div>
     </div>
@@ -199,7 +209,7 @@
       <div class="card shadow-sm kpi">
         <div class="sv-card-body">
           <div class="text-muted small">Devolvido</div>
-          <div class="fs-4 fw-bold">R$ {{ dados_admin.valor_devolvido|brl }}</div>
+          <div class="fs-4 fw-bold">R$ {{ dados_admin.valor_devolvido|brl_rs }}</div>
         </div>
       </div>
     </div>
@@ -235,9 +245,9 @@
                 {% for row in (dados_admin.ranking_emp_list or []) %}
                   <tr class="sv-row-click" onclick="window.location='/campanhas?emp={{ row.emp }}&mes={{ mes }}&ano={{ ano }}'">
                     <td class="fw-semibold">{{ row.emp or "—" }}</td>
-                    <td class="text-end fw-semibold">R$ {{ row.valor_atual|brl }}</td>
-                    <td class="text-end text-muted">R$ {{ row.valor_bruto|brl }}</td>
-                    <td class="text-end text-muted">R$ {{ row.valor_devolvido|brl }}</td>
+                    <td class="text-end fw-semibold">R$ {{ row.valor_atual|brl_rs }}</td>
+                    <td class="text-end text-muted">R$ {{ row.valor_bruto|brl_rs }}</td>
+                    <td class="text-end text-muted">R$ {{ row.valor_devolvido|brl_rs }}</td>
                   </tr>
                 {% endfor %}
                 {% if not (dados_admin.ranking_emp_list or []) %}
@@ -269,7 +279,7 @@
                 {% for row in (dados_admin.ranking_vendedores_list or []) %}
                   <tr class="sv-row-click" onclick="window.location='/dashboard?vendedor={{ row.vendedor }}&mes={{ mes }}&ano={{ ano }}'">
                     <td class="fw-semibold">{{ row.vendedor }}</td>
-                    <td class="text-end fw-semibold">R$ {{ row.valor|brl }}</td>
+                    <td class="text-end fw-semibold">R$ {{ row.valor|brl_rs }}</td>
                   </tr>
                 {% endfor %}
                 {% if not (dados_admin.ranking_vendedores_list or []) %}
@@ -289,8 +299,8 @@
       <div class="sv-card h-100">
         <div class="sv-card-body">
           <div class="text-muted small">💰 Valor líquido</div>
-          <div class="fs-4 fw-bold">R$ {{ dados.valor_atual|brl }}</div>
-          <div class="text-muted small mt-1">Mês anterior: R$ {{ dados.valor_mes_anterior|brl }}</div>
+          <div class="fs-4 fw-bold">R$ {{ dados.valor_atual|brl_rs }}</div>
+          <div class="text-muted small mt-1">Mês anterior: R$ {{ dados.valor_mes_anterior|brl_rs }}</div>
         </div>
       </div>
     </div>
@@ -305,7 +315,7 @@
               —
             {% endif %}
           </div>
-          <div class="text-muted small mt-1">Ano passado: R$ {{ dados.valor_ano_passado|brl }}</div>
+          <div class="text-muted small mt-1">Ano passado: R$ {{ dados.valor_ano_passado|brl_rs }}</div>
         </div>
       </div>
     </div>
@@ -323,7 +333,7 @@
         <div class="sv-card-body">
           <div class="text-muted small">↩️ Devolução</div>
           <div class="fs-4 fw-bold">{{ (dados.pct_devolucao or 0)|round(2) }}%</div>
-          <div class="text-muted small mt-1">Devolvido: R$ {{ dados.valor_devolvido|brl }}</div>
+          <div class="text-muted small mt-1">Devolvido: R$ {{ dados.valor_devolvido|brl_rs }}</div>
         </div>
       </div>
     </div>
@@ -388,8 +398,8 @@
           <div class="card shadow-sm">
             <div class="sv-card-body">
               <div class="text-muted">💰 Valor líquido (com DS/CA)</div>
-              <div class="display-6">R$ {{ dados.valor_atual|brl }}</div>
-              <div class="text-muted mt-1">Ano passado: R$ {{ dados.valor_ano_passado|brl }}</div>
+              <div class="display-6">R$ {{ dados.valor_atual|brl_rs }}</div>
+              <div class="text-muted mt-1">Ano passado: R$ {{ dados.valor_ano_passado|brl_rs }}</div>
             </div>
           </div>
         </div>
@@ -410,7 +420,7 @@
           <div class="card shadow-sm">
             <div class="sv-card-body">
               <div class="text-muted">🧾 Valor bruto (sem DS/CA)</div>
-              <div class="h3 m-0">R$ {{ dados.valor_bruto|brl }}</div>
+              <div class="h3 m-0">R$ {{ dados.valor_bruto|brl_rs }}</div>
               <div class="text-muted">Somente vendas</div>
             </div>
           </div>
@@ -420,7 +430,7 @@
           <div class="card shadow-sm">
             <div class="sv-card-body">
               <div class="text-muted">↩️ Devoluções/Cancelamentos (DS/CA)</div>
-              <div class="h3 m-0">R$ {{ dados.valor_devolvido|brl }}</div>
+              <div class="h3 m-0">R$ {{ dados.valor_devolvido|brl_rs }}</div>
               <div class="text-muted">Total abatido</div>
             </div>
           </div>
@@ -486,7 +496,7 @@
                     <tr>
                       <td class="text-muted">{{ loop.index }}</td>
                       <td>{{ row.marca }}</td>
-                      <td class="text-end">R$ {{ row.valor|brl }}</td>
+                      <td class="text-end">R$ {{ row.valor|brl_rs }}</td>
                       <td class="text-end">{{ "%.2f"|format(row.pct) }}%</td>
                     </tr>
                   {% endfor %}
