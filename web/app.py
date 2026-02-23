@@ -11,6 +11,7 @@ from services.campanhas_service import (
     CampanhasDeps,
     build_campanhas_page_context,
     build_relatorio_campanhas_scope,
+)
 from services.relatorio_campanhas_service import build_relatorio_campanhas_context, build_relatorio_campanhas_unificado_context
 from services.campanhas_v2_engine import recalc_v2_competencia
 import os
@@ -80,6 +81,7 @@ from flask import (
     url_for,
     send_file,
     jsonify,
+)
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from dados_db import carregar_df, limpar_cache_df
@@ -113,6 +115,7 @@ from db import (
     AppSetting,
     BrandingTheme,
     criar_tabelas,
+)
 from importar_excel import importar_planilha
 
 # Flask app (Render/Gunicorn expects `app` at module level: web/app.py -> app:app)
@@ -143,6 +146,7 @@ app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
     SESSION_COOKIE_SECURE=IS_PROD,  # em dev/local pode ser False
+)
 
 from security_utils import audit, rate_limit, normalize_role
 
@@ -179,6 +183,7 @@ def _security_headers(resp):
         "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
         "connect-src 'self' https:; "
         "font-src 'self' https://cdn.jsdelivr.net data:;"
+    )
     resp.headers.setdefault("Content-Security-Policy", csp)
 
     # HSTS somente em produção
@@ -399,6 +404,7 @@ def _current_branding(db) -> dict:
           .filter(BrandingTheme.end_date >= today)
           .order_by(BrandingTheme.start_date.desc(), BrandingTheme.updated_at.desc())
           .first()
+    )
     if theme:
         ver = theme.updated_at.isoformat() if theme.updated_at else ""
         return {
@@ -581,6 +587,7 @@ def admin_configuracoes():
                     logo_url=logo_url,
                     favicon_url=fav_url,
                     is_active=True,
+                )
                 db.add(t)
                 db.commit()
                 msgs.append("Tema criado com sucesso.")
@@ -676,6 +683,7 @@ def admin_configuracoes():
         default_favicon=default_favicon,
         themes=themes,
         today=today.isoformat(),
+    )
 
 def _supabase_storage_upload(filename: str, content: bytes, content_type: str, folder: str) -> str:
     """Faz upload no Supabase Storage e retorna URL pública.
@@ -688,6 +696,7 @@ def _supabase_storage_upload(filename: str, content: bytes, content_type: str, f
         or os.getenv("SUPABASE_KEY")
         or os.getenv("SUPABASE_ANON_KEY")
         or ""
+    )
     if not supa_url or not key:
         raise RuntimeError("SUPABASE_URL/SUPABASE_KEY não configurados no ambiente.")
 
@@ -794,6 +803,7 @@ def _find_pending_blocking_message(db) -> Mensagem | None:
         .order_by(Mensagem.id.desc())
         .limit(50)
         .all()
+    )
 
     for msg in candidatas:
         if not _is_date_in_range(today, msg.inicio_em, msg.fim_em):
@@ -806,6 +816,7 @@ def _find_pending_blocking_message(db) -> Mensagem | None:
             .filter(MensagemUsuario.usuario_id == int(user_id))
             .first()
             is not None
+        )
 
         # Destino: empresas
         targeted_emp = False
@@ -816,6 +827,7 @@ def _find_pending_blocking_message(db) -> Mensagem | None:
                 .filter(MensagemEmpresa.mensagem_id == msg.id)
                 .first()
                 is not None
+            )
         else:
             if allowed_emps:
                 targeted_emp = (
@@ -824,6 +836,7 @@ def _find_pending_blocking_message(db) -> Mensagem | None:
                     .filter(MensagemEmpresa.emp.in_(allowed_emps))
                     .first()
                     is not None
+                )
 
         if not (targeted_user or targeted_emp):
             continue
@@ -836,6 +849,7 @@ def _find_pending_blocking_message(db) -> Mensagem | None:
             .filter(MensagemLidaDiaria.data == today)
             .first()
             is not None
+        )
         if ja_leu:
             continue
 
@@ -1014,6 +1028,7 @@ def _get_emps_vendedor(username: str) -> list[str]:
             db.query(func.distinct(Venda.emp))
             .filter(Venda.vendedor == username)
             .all()
+        )
     emps = sorted({str(r[0]).strip() for r in rows if r and r[0] is not None and str(r[0]).strip() != ""})
     return _filter_emps_cadastradas(emps, apenas_ativas=True)
 
@@ -1032,6 +1047,7 @@ def _fetch_cache_row(vendedor: str, ano: int, mes: int, emp_scope: str | None) -
                 db.query(DashboardCache)
                 .filter(DashboardCache.emp == str(emp_scope), DashboardCache.vendedor == vendedor, DashboardCache.ano == int(ano), DashboardCache.mes == int(mes))
                 .first()
+            )
             if not row:
                 return None
             ranking_list = json.loads(row.ranking_json or "[]")
@@ -1055,6 +1071,7 @@ def _fetch_cache_row(vendedor: str, ano: int, mes: int, emp_scope: str | None) -
             db.query(DashboardCache)
             .filter(DashboardCache.vendedor == vendedor, DashboardCache.ano == int(ano), DashboardCache.mes == int(mes))
             .all()
+        )
         if not rows:
             return None
         # se qualquer linha do período estiver expirada, força recálculo ao vivo
@@ -1250,6 +1267,7 @@ def _bootstrap_admin_if_needed():
             username=admin_user,
             senha_hash=generate_password_hash(admin_pass),
             role="admin",
+        )
         db.add(u)
         db.commit()
         app.logger.info("Usuario ADMIN criado automaticamente (%s)", admin_user)
@@ -1392,7 +1410,9 @@ def _competencia_fechada(db, emp: str, ano: int, mes: int) -> bool:
                 FechamentoMensal.ano == int(ano),
                 FechamentoMensal.mes == int(mes),
                 FechamentoMensal.fechado.is_(True),
+            )
             .first()
+        )
         return bool(rec)
     except Exception:
         return False
@@ -1488,6 +1508,7 @@ def _get_vendedores_cadastrados_por_emp(emp: str) -> set[str]:
                 .filter(UsuarioEmp.ativo.is_(True))
                 .filter(UsuarioEmp.emp == emp)
                 .all()
+            )
             vinc = {(r[0] or "").strip().upper() for r in rows if r and (r[0] or "").strip()}
             if vinc:
                 return vinc
@@ -1547,6 +1568,7 @@ def _mes_fechado(emp: str | None, ano: int, mes: int) -> bool:
             db.query(FechamentoMensal)
             .filter(FechamentoMensal.emp == emp_n, FechamentoMensal.ano == ano, FechamentoMensal.mes == mes)
             .first()
+        )
         return bool(row and row.fechado)
 
 def _vendedores_from_db(role: str, emp_usuario: str | None):
@@ -1664,6 +1686,7 @@ def _ano_passado_valor_mix(vendedor: str, ano: int, mes: int, emp_scope: str | N
                 Venda.vendedor == vendedor,
                 Venda.movimento >= start,
                 Venda.movimento < end,
+            )
             if emp_scope:
                 q_cnt = q_cnt.filter(Venda.emp == str(emp_scope))
             cnt = int(q_cnt.scalar() or 0)
@@ -1672,6 +1695,7 @@ def _ano_passado_valor_mix(vendedor: str, ano: int, mes: int, emp_scope: str | N
                 signed = case(
                     (Venda.mov_tipo_movto.in_(['DS', 'CA']), -Venda.valor_total),
                     else_=Venda.valor_total,
+                )
                 liquido = func.coalesce(func.sum(signed), 0.0)
                 mix = func.count(func.distinct(case((~Venda.mov_tipo_movto.in_(['DS', 'CA']), Venda.mestre), else_=None)))
 
@@ -1682,6 +1706,8 @@ def _ano_passado_valor_mix(vendedor: str, ano: int, mes: int, emp_scope: str | N
                         Venda.vendedor == vendedor,
                         Venda.movimento >= start,
                         Venda.movimento < end,
+                    )
+                )
                 if emp_scope:
                     row = row.filter(Venda.emp == str(emp_scope))
                 r = row.first()
@@ -1785,6 +1811,7 @@ def _dados_from_cache(vendedor_alvo, mes, ano, emp_scope):
         ano=ano,
         mes=mes,
         emp_scope=emp_scope,
+    )
 
     # ---- ranking ----
     ranking_list = []
@@ -1875,6 +1902,7 @@ def _dados_ao_vivo(vendedor: str, mes: int, ano: int, emp_scope: str | list[str]
             ano=ano,
             mes=mes,
             emp_scope=emp_scope,
+        )
         # ranking por marca (líquido)
         signed = case((Venda.mov_tipo_movto.in_(['DS','CA']), -Venda.valor_total), else_=Venda.valor_total)
         q_rank = base.filter(Venda.movimento >= start, Venda.movimento < end)\
@@ -1942,6 +1970,7 @@ def _resolver_vendedor_e_lista(df: pd.DataFrame | None) -> tuple[str | None, lis
         df_scope["VENDEDOR"].dropna().astype(str).str.strip().str.upper().unique().tolist()
         if not df_scope.empty
         else []
+    )
     vendedores = sorted([v for v in vendedores if v])
 
     vendedor_req = (request.args.get("vendedor") or "").strip().upper() or None
@@ -2011,6 +2040,7 @@ def _dados_admin_geral(mes: int, ano: int, emp_scope: list[str] | None = None):
         q_emp = (
             base.with_entities(Venda.emp, bruto_expr.label("bruto"), devol_expr.label("devol"), liquido_expr.label("liquido"))
             .group_by(Venda.emp)
+        )
         emp_rows = []
         for emp, bruto, devol, liquido in q_emp:
             emp_rows.append({
@@ -2025,6 +2055,7 @@ def _dados_admin_geral(mes: int, ano: int, emp_scope: list[str] | None = None):
         q_vend = (
             base.with_entities(Venda.vendedor, func.coalesce(func.sum(signed), 0.0))
             .group_by(Venda.vendedor)
+        )
         vend_rows = [{"vendedor": (v or "").strip().upper(), "valor": float(val or 0.0)} for v, val in q_vend]
         vend_rows.sort(key=lambda r: r["valor"], reverse=True)
 
@@ -2064,11 +2095,13 @@ def _clientes_destaque(vendedor: str, ano: int, mes: int, emp_scope: str | None,
             Venda.movimento >= start,
             Venda.movimento < end,
             Venda.cliente_id_norm.isnot(None),
+        )
         base_prev = db.query(Venda).filter(
             func.upper(Venda.vendedor) == vendedor,
             Venda.movimento >= start_prev,
             Venda.movimento < end_prev,
             Venda.cliente_id_norm.isnot(None),
+        )
         if emp_scope:
             base_cur = base_cur.filter(Venda.emp == str(emp_scope))
             base_prev = base_prev.filter(Venda.emp == str(emp_scope))
@@ -2078,15 +2111,19 @@ def _clientes_destaque(vendedor: str, ano: int, mes: int, emp_scope: str | None,
                 Venda.cliente_id_norm.label("cid"),
                 func.coalesce(func.max(Venda.razao), "").label("label"),
                 func.coalesce(func.sum(signed), 0.0).label("total"),
+            )
             .group_by(Venda.cliente_id_norm)
             .all()
+        )
         prev_rows = (
             base_prev.with_entities(
                 Venda.cliente_id_norm.label("cid"),
                 func.coalesce(func.max(Venda.razao), "").label("label"),
                 func.coalesce(func.sum(signed), 0.0).label("total"),
+            )
             .group_by(Venda.cliente_id_norm)
             .all()
+        )
 
     cur = {str(r.cid): {"label": (r.label or "").strip(), "total": float(r.total or 0.0)} for r in cur_rows}
     prev = {str(r.cid): {"label": (r.label or "").strip(), "total": float(r.total or 0.0)} for r in prev_rows}
@@ -2136,10 +2173,12 @@ def _dashboard_insights(vendedor: str, ano: int, mes: int, emp_scope: str | list
             func.upper(Venda.vendedor) == vendedor,
             Venda.movimento >= start,
             Venda.movimento < end,
+        )
         base_prev = db.query(Venda).filter(
             func.upper(Venda.vendedor) == vendedor,
             Venda.movimento >= start_prev,
             Venda.movimento < end_prev,
+        )
         base_hist = db.query(Venda).filter(func.upper(Venda.vendedor) == vendedor, Venda.movimento.isnot(None))
 
         if emp_scope:
@@ -2159,9 +2198,11 @@ def _dashboard_insights(vendedor: str, ano: int, mes: int, emp_scope: str | list
             base.with_entities(
                 func.coalesce(Venda.cidade_norm, "sem_cidade").label("cidade_norm"),
                 func.coalesce(func.sum(signed), 0.0).label("total"),
+            )
             .group_by(func.coalesce(Venda.cidade_norm, "sem_cidade"))
             .order_by(func.coalesce(func.sum(signed), 0.0).desc())
             .first()
+        )
         cidade_destaque = None
         if city_cur:
             cidade_destaque = {"cidade_norm": (city_cur.cidade_norm or "SEM CIDADE").upper(), "total_vendido": float(city_cur.total or 0.0)}
@@ -2171,8 +2212,10 @@ def _dashboard_insights(vendedor: str, ano: int, mes: int, emp_scope: str | list
             base_prev.with_entities(
                 func.coalesce(Venda.cidade_norm, "sem_cidade").label("cidade_norm"),
                 func.coalesce(func.sum(signed), 0.0).label("total"),
+            )
             .group_by(func.coalesce(Venda.cidade_norm, "sem_cidade"))
             .all()
+        )
         prev_map = {str(r.cidade_norm): float(r.total or 0.0) for r in prev_map_rows}
         queda_item = None
         if city_cur:
@@ -2181,8 +2224,10 @@ def _dashboard_insights(vendedor: str, ano: int, mes: int, emp_scope: str | list
                 base.with_entities(
                     func.coalesce(Venda.cidade_norm, "sem_cidade").label("cidade_norm"),
                     func.coalesce(func.sum(signed), 0.0).label("total"),
+                )
                 .group_by(func.coalesce(Venda.cidade_norm, "sem_cidade"))
                 .all()
+            )
             variacoes = []
             for r in cur_rows:
                 k = str(r.cidade_norm)
@@ -2201,13 +2246,16 @@ def _dashboard_insights(vendedor: str, ano: int, mes: int, emp_scope: str | list
             .filter(Venda.cliente_id_norm.isnot(None))
             .distinct()
             .subquery()
+        )
         min_datas = (
             base_hist.with_entities(
                 Venda.cliente_id_norm.label("cid"),
                 func.min(Venda.movimento).label("min_data"),
+            )
             .filter(Venda.cliente_id_norm.isnot(None))
             .group_by(Venda.cliente_id_norm)
             .subquery()
+        )
 
         novos = (
             db.query(func.count())
@@ -2310,6 +2358,7 @@ def dashboard():
         dados=dados,
         dados_admin=dados_admin,
         admin_geral=(bool(dados_admin) and not (vendedor_alvo or '').strip()),
+    )
 
 
 @app.get("/percentuais")
@@ -2349,6 +2398,7 @@ def percentuais():
         ano=ano,
         total=total,
         ranking_list=ranking_list,
+    )
 
 
 @app.get("/marcas")
@@ -2385,6 +2435,7 @@ def marcas():
         mes=mes,
         ano=ano,
         marcas=marcas_map,
+    )
 
 
 @app.get("/devolucoes")
@@ -2417,6 +2468,7 @@ def devolucoes():
                 .filter(Venda.movimento >= start)
                 .filter(Venda.movimento < end)
                 .filter(Venda.mov_tipo_movto.in_(['DS','CA']))
+            )
             if emp_scope:
                 q = q.filter(Venda.emp == str(emp_scope))
             q = q.group_by(Venda.marca).order_by(func.sum(Venda.valor_total).desc())
@@ -2430,6 +2482,7 @@ def devolucoes():
         mes=mes,
         ano=ano,
         devolucoes=devol,
+    )
 
 
 @app.get("/itens_parados")
@@ -2509,6 +2562,7 @@ def itens_parados():
             .filter(ItemParado.ativo.is_(True))
             .order_by(ItemParado.emp.asc(), ItemParado.codigo.asc())
             .all()
+        )
 
     itens_por_emp = {}
     for it in itens_all:
@@ -2535,6 +2589,7 @@ def itens_parados():
                     .filter(Venda.mov_tipo_movto == 'OA')
                     .filter(Venda.mestre.in_(codigos))
                     .group_by(Venda.emp, Venda.mestre)
+                )
                 for emp_v, mestre, total in q.all():
                     k_emp = str(emp_v).strip() if emp_v is not None else ''
                     k_cod = (mestre or '').strip()
@@ -2560,6 +2615,7 @@ def itens_parados():
         vendedores_lista=vendedores_lista,
         vendido_total_map=vendido_total_map,
         recomp_map=recomp_map,
+    )
 
 @app.get("/itens_parados/pdf")
 def itens_parados_pdf():
@@ -2619,6 +2675,7 @@ def itens_parados_pdf():
             .filter(ItemParado.ativo.is_(True))
             .order_by(ItemParado.emp.asc(), ItemParado.codigo.asc())
             .all()
+        )
 
     itens_por_emp = {}
     for it in itens_all:
@@ -2643,6 +2700,7 @@ def itens_parados_pdf():
                     .filter(Venda.mov_tipo_movto == 'OA')
                     .filter(Venda.mestre.in_(codigos))
                     .group_by(Venda.emp, Venda.mestre)
+                )
                 for emp_v, mestre, total in q.all():
                     k_emp = str(emp_v).strip() if emp_v is not None else ''
                     k_cod = (mestre or '').strip()
@@ -2805,6 +2863,7 @@ def _upsert_resultado(
         db.query(
             func.coalesce(func.sum(Venda.qtdade_vendida), 0.0).label("qtd"),
             func.coalesce(func.sum(Venda.valor_total), 0.0).label("valor"),
+        )
         .filter(
             Venda.emp == emp,
             Venda.vendedor == vendedor,
@@ -2813,7 +2872,9 @@ def _upsert_resultado(
             ~Venda.mov_tipo_movto.in_(["DS", "CA"]),
             cond_prefix,
             cond_marca,
+        )
         .first()
+    )
     qtd_vendida = float(base.qtd or 0.0)
     valor_vendido = float(base.valor or 0.0)
 
@@ -2847,7 +2908,9 @@ def _upsert_resultado(
             CampanhaQtdResultado.vendedor == vendedor,
             CampanhaQtdResultado.competencia_ano == int(competencia_ano),
             CampanhaQtdResultado.competencia_mes == int(competencia_mes),
+        )
         .first()
+    )
     if not res:
         res = CampanhaQtdResultado(
             campanha_id=campanha.id,
@@ -2856,6 +2919,7 @@ def _upsert_resultado(
             competencia_ano=int(competencia_ano),
             competencia_mes=int(competencia_mes),
             status_pagamento="PENDENTE",
+        )
         db.add(res)
 
     # snapshot
@@ -2922,6 +2986,7 @@ def _calc_resultado_all_vendedores(
         db.query(
             func.coalesce(func.sum(Venda.qtdade_vendida), 0.0).label("qtd"),
             func.coalesce(func.sum(Venda.valor_total), 0.0).label("valor"),
+        )
         .filter(
             Venda.emp == emp,
             Venda.movimento >= periodo_ini,
@@ -2929,7 +2994,9 @@ def _calc_resultado_all_vendedores(
             ~Venda.mov_tipo_movto.in_(["DS", "CA"]),
             cond_prefix,
             cond_marca,
+        )
         .first()
+    )
 
     qtd_vendida = float(getattr(base, "qtd", 0.0) or 0.0)
     valor_vendido = float(getattr(base, "valor", 0.0) or 0.0)
@@ -2975,6 +3042,7 @@ def _calc_resultado_all_vendedores(
         atingiu_minimo=int(atingiu),
         valor_recompensa=float(valor_recomp),
         atualizado_em=datetime.utcnow(),
+    )
 
 
 def _resolver_emp_scope_para_usuario(vendedor: str, role: str, emp_usuario: str | None) -> list[str]:
@@ -3018,6 +3086,7 @@ _campanhas_deps = CampanhasDeps(
     get_vendedores_emp_no_periodo=lambda emp, ano, mes: _get_vendedores_emp_no_periodo(emp, ano, mes),
     recalcular_resultados_campanhas_para_scope=lambda **kwargs: _recalcular_resultados_campanhas_para_scope(**kwargs),
     recalcular_resultados_combos_para_scope=lambda **kwargs: _recalcular_resultados_combos_para_scope(**kwargs),
+)
 
 @app.get("/campanhas")
 def campanhas_qtd():
@@ -3049,6 +3118,7 @@ def campanhas_qtd():
         emp_usuario=emp_usuario,
         vendedor_logado=vendedor_logado,
         args=request.args,
+    )
     return render_template("campanhas_qtd.html", **ctx)
 
 
@@ -3113,8 +3183,10 @@ def campanhas_qtd_pdf():
                     CampanhaQtdResultado.vendedor == vendedor_sel,
                     CampanhaQtdResultado.competencia_ano == int(ano),
                     CampanhaQtdResultado.competencia_mes == int(mes),
+                )
                 .order_by(CampanhaQtdResultado.valor_recompensa.desc())
                 .all()
+            )
 
             if y < 40 * mm:
                 c.showPage()
@@ -3172,6 +3244,7 @@ def _get_emps_com_vendas_no_periodo(ano: int, mes: int) -> list[str]:
             db.query(func.distinct(Venda.emp))
             .filter(Venda.movimento >= inicio_mes, Venda.movimento <= fim_mes)
             .all()
+        )
     emps = sorted({str(r[0]).strip() for r in rows if r and r[0] is not None and str(r[0]).strip() != ""})
     return _filter_emps_cadastradas(emps, apenas_ativas=True)
 
@@ -3183,6 +3256,7 @@ def _get_vendedores_emp_no_periodo(emp: str, ano: int, mes: int) -> list[str]:
             db.query(func.distinct(Venda.vendedor))
             .filter(Venda.emp == emp, Venda.movimento >= inicio_mes, Venda.movimento <= fim_mes)
             .all()
+        )
     vendedores = sorted({(r[0] or '').strip().upper() for r in rows if r and (r[0] or '').strip()})
     # Remove vendedores não cadastrados (usuários inexistentes)
     cad = _get_vendedores_cadastrados_por_emp(emp)
@@ -3229,6 +3303,7 @@ def _calc_vendas_por_vendedor_para_campanha(db, emp: str, campanha: CampanhaQtd,
             func.upper(func.trim(cast(Venda.vendedor, String))).label("vendedor"),
             func.coalesce(func.sum(Venda.qtdade_vendida), 0.0).label("qtd"),
             func.coalesce(func.sum(Venda.valor_total), 0.0).label("valor"),
+        )
         .filter(
             Venda.emp == emp,
             Venda.movimento >= periodo_ini,
@@ -3236,7 +3311,9 @@ def _calc_vendas_por_vendedor_para_campanha(db, emp: str, campanha: CampanhaQtd,
             ~Venda.mov_tipo_movto.in_(["DS", "CA"]),
             cond_prefix,
             cond_marca,
+        )
         .group_by(func.upper(func.trim(cast(Venda.vendedor, String))))
+    )
     rows = q.all()
     out: dict[str, tuple[float, float]] = {}
     for r in rows:
@@ -3263,7 +3340,9 @@ def _combos_mes_overlap(ano: int, mes: int, emp: str) -> list[CampanhaCombo]:
                 # Interseção de datas
                 CampanhaCombo.data_inicio <= fim_mes,
                 CampanhaCombo.data_fim >= inicio_mes,
+            )
             .order_by(CampanhaCombo.data_inicio.asc(), CampanhaCombo.id.asc())
+        )
         return q.all()
 
 
@@ -3323,8 +3402,10 @@ def _calc_qtd_por_vendedor_para_combo_item(db, emp: str, item: CampanhaComboItem
         db.query(
             func.upper(func.trim(cast(Venda.vendedor, String))).label("vendedor"),
             func.coalesce(func.sum(Venda.qtdade_vendida), 0.0).label("qtd"),
+        )
         .filter(*conds)
         .group_by(func.upper(func.trim(cast(Venda.vendedor, String))))
+    )
     rows = q.all()
     out: dict[str, float] = {}
     for r in rows:
@@ -3373,6 +3454,7 @@ def _recalcular_resultados_combos_para_scope(ano: int, mes: int, emps: list[str]
                     .filter(CampanhaComboItem.combo_id == combo.id)
                     .order_by(CampanhaComboItem.ordem.asc(), CampanhaComboItem.id.asc())
                     .all()
+                )
                 if not itens:
                     continue
 
@@ -3551,6 +3633,7 @@ def relatorio_campanhas():
         vendedor_logado=vendedor_logado,
         args=request.args,
         flash=flash,
+    )
     ano = int(scope["ano"])
     mes = int(scope["mes"])
     emps_sel = scope["emps_sel"]
@@ -3571,6 +3654,7 @@ def relatorio_campanhas():
         vendedores_por_emp=vendedores_por_emp,
         recalc=str(request.args.get("recalc") or "").strip() in ("1", "true", "True", "sim", "SIM"),
         flash=flash,
+    )
     # Permissões para template
     ctx["role"] = role
     ctx["is_admin"] = ctx_is_admin
@@ -3769,6 +3853,7 @@ def relatorio_campanhas():
             resumo["por_emp"].items(),
             key=lambda kv: kv[1].get("total", 0.0),
             reverse=True
+        )
         return resumo
 
     ctx["resumo"] = _calc_resumo_financeiro(rows)
@@ -3819,6 +3904,7 @@ def relatorio_campanhas_export_csv():
         vendedor_logado=vendedor_logado,
         args=request.args,
         flash=flash,
+    )
     ano = int(scope["ano"])
     mes = int(scope["mes"])
     emps_sel = scope["emps_sel"]
@@ -3838,6 +3924,7 @@ def relatorio_campanhas_export_csv():
         vendedores_por_emp=vendedores_por_emp,
         recalc=False,
         flash=flash,
+    )
 
     import csv
     from io import StringIO
@@ -3867,6 +3954,7 @@ def relatorio_campanhas_export_csv():
         mimetype="text/csv",
         as_attachment=True,
         download_name=filename,
+    )
 
 
 @app.get("/relatorios/cidades-clientes")
@@ -3960,8 +4048,10 @@ def relatorio_cidades_clientes():
                 func.count(func.distinct(func.upper(Venda.vendedor))).label("vendedores"),
                 func.count(func.distinct(Venda.cliente_id_norm)).label("clientes_unicos"),
                 func.count(func.distinct(Venda.cidade_norm)).label("cidades"),
+            )
             .group_by(Venda.emp)
             .all()
+        )
         totais_map = {str(r.emp): {
             "valor_total": float(r.valor_total or 0.0),
             "qtd_total": float(r.qtd_total or 0.0),
@@ -3980,9 +4070,11 @@ def relatorio_cidades_clientes():
                 func.coalesce(func.sum(Venda.qtdade_vendida), 0.0).label("qtd_total"),
                 func.coalesce(func.count(func.distinct(Venda.mestre)), 0).label("mix_itens"),
                 func.count(func.distinct(Venda.cliente_id_norm)).label("clientes_unicos"),
+            )
             .group_by(Venda.emp, func.coalesce(Venda.cidade_norm, "sem_cidade"))
             .order_by(Venda.emp, func.sum(Venda.valor_total).desc())
             .all()
+        )
 
         cidades_por_emp = {}
         for r in city_rows:
@@ -4006,6 +4098,7 @@ def relatorio_cidades_clientes():
         signed_val = case(
             (Venda.mov_tipo_movto.in_(["DS", "CA"]), -Venda.valor_total),
             else_=Venda.valor_total,
+        )
 
         cliente_rows = (
             base.with_entities(
@@ -4016,10 +4109,12 @@ def relatorio_cidades_clientes():
                 func.coalesce(func.sum(signed_val), 0.0).label("valor_total"),
                 func.coalesce(func.sum(Venda.qtdade_vendida), 0.0).label("qtd_total"),
                 func.coalesce(func.count(func.distinct(Venda.mestre)), 0).label("mix_itens"),
+            )
             .filter(Venda.cliente_id_norm.isnot(None))
             .group_by(Venda.emp, Venda.cliente_id_norm)
             .order_by(Venda.emp, func.coalesce(func.sum(signed_val), 0.0).desc())
             .all()
+        )
 
         clientes_por_emp = {}
         for r in cliente_rows:
@@ -4040,18 +4135,22 @@ def relatorio_cidades_clientes():
             base.with_entities(
                 Venda.emp.label("emp"),
                 Venda.cliente_id_norm.label("cid"),
+            )
             .filter(Venda.cliente_id_norm.isnot(None))
             .distinct()
             .subquery()
+        )
 
         min_datas = (
             base_hist.with_entities(
                 Venda.emp.label("emp"),
                 Venda.cliente_id_norm.label("cid"),
                 func.min(Venda.movimento).label("min_data"),
+            )
             .filter(Venda.cliente_id_norm.isnot(None))
             .group_by(Venda.emp, Venda.cliente_id_norm)
             .subquery()
+        )
 
         novos_rows = (
             db.query(clientes_periodo.c.emp.label("emp"), func.count().label("qtd"))
@@ -4059,12 +4158,14 @@ def relatorio_cidades_clientes():
             .filter(min_datas.c.min_data >= inicio)
             .group_by(clientes_periodo.c.emp)
             .all()
+        )
         recorr_rows = (
             db.query(clientes_periodo.c.emp.label("emp"), func.count().label("qtd"))
             .select_from(clientes_periodo.join(min_datas, (clientes_periodo.c.emp == min_datas.c.emp) & (clientes_periodo.c.cid == min_datas.c.cid)))
             .filter(min_datas.c.min_data < inicio)
             .group_by(clientes_periodo.c.emp)
             .all()
+        )
         novos_map = {str(r.emp): int(r.qtd or 0) for r in novos_rows}
         recorr_map = {str(r.emp): int(r.qtd or 0) for r in recorr_rows}
 
@@ -4099,6 +4200,7 @@ def relatorio_cidades_clientes():
             emp_filtro=emp_filtro,
             vendedor_filtro=vendedor_filtro,
             emp_cards=emp_cards,
+        )
     finally:
         db.close()
 
@@ -4148,12 +4250,14 @@ def relatorio_cidade_clientes_api():
     signed_val = case(
         (Venda.mov_tipo_movto.in_(["DS", "CA"]), -Venda.valor_total),
         else_=Venda.valor_total,
+    )
 
     with SessionLocal() as db:
         base = db.query(Venda).filter(
             Venda.emp == str(emp),
             Venda.movimento >= inicio,
             Venda.movimento < fim,
+        )
 
         if cidade_norm == "sem_cidade":
             base = base.filter(or_(Venda.cidade_norm.is_(None), Venda.cidade_norm == "", Venda.cidade_norm == "sem_cidade"))
@@ -4170,10 +4274,12 @@ def relatorio_cidade_clientes_api():
                 func.coalesce(func.sum(signed_val), 0.0).label("valor_total"),
                 func.coalesce(func.sum(Venda.qtdade_vendida), 0.0).label("qtd_total"),
                 func.count(func.distinct(Venda.mestre)).label("mix_itens"),
+            )
             .filter(Venda.cliente_id_norm.isnot(None))
             .group_by(Venda.cliente_id_norm)
             .order_by(func.coalesce(func.sum(signed_val), 0.0).desc())
             .all()
+        )
 
     out = []
     for r in rows:
@@ -4227,6 +4333,7 @@ def relatorio_cliente_marcas_api():
             Venda.emp == str(emp),
             extract("month", Venda.movimento) == mes,
             extract("year", Venda.movimento) == ano,
+        )
 
         # Identificação do cliente (compat)
         if razao_norm:
@@ -4247,6 +4354,7 @@ def relatorio_cliente_marcas_api():
         signed_val = case(
             (Venda.mov_tipo_movto.in_(["DS", "CA"]), -Venda.valor_total),
             else_=Venda.valor_total,
+        )
 
         total = float(base.with_entities(func.coalesce(func.sum(signed_val), 0)).scalar() or 0.0)
 
@@ -4257,9 +4365,11 @@ def relatorio_cliente_marcas_api():
                 Venda.marca.label("marca"),
                 func.coalesce(func.sum(signed_val), 0).label("valor_total"),
                 func.count(func.distinct(Venda.mestre)).label("mix_itens"),
+            )
             .group_by(Venda.marca)
             .order_by(func.coalesce(func.sum(signed_val), 0).desc())
             .all()
+        )
 
     marcas = []
     for r in marcas_rows:
@@ -4271,6 +4381,7 @@ def relatorio_cliente_marcas_api():
                 "mix_itens": int(r.mix_itens or 0),
                 "percent": (v / total * 100.0) if total else 0.0,
             }
+        )
 
     return jsonify(
         {
@@ -4282,6 +4393,7 @@ def relatorio_cliente_marcas_api():
             "mix_itens": mix_itens,
             "marcas": marcas,
         }
+    )
 
 
 
@@ -4330,6 +4442,7 @@ def relatorio_cliente_itens_api():
             Venda.emp == str(emp),
             extract("month", Venda.movimento) == mes,
             extract("year", Venda.movimento) == ano,
+        )
 
         # Identificação do cliente (compat / robusto)
         # Alguns bancos podem ter cliente_id_norm ou razao_norm inconsistentes; se vierem ambos, usamos OR.
@@ -4352,6 +4465,7 @@ def relatorio_cliente_itens_api():
         signed_val = case(
             (Venda.mov_tipo_movto.in_(["DS", "CA"]), -Venda.valor_total),
             else_=Venda.valor_total,
+        )
 
         total = base.with_entities(func.coalesce(func.sum(signed_val), 0)).scalar() or 0
         total = float(total)
@@ -4364,9 +4478,11 @@ def relatorio_cliente_itens_api():
                 Venda.mestre.label("mestre"),
                 Venda.descricao.label("descricao"),
                 func.coalesce(func.sum(signed_val), 0).label("valor_total"),
+            )
             .group_by(Venda.mestre, Venda.descricao)
             .order_by(func.coalesce(func.sum(signed_val), 0).desc())
             .all()
+        )
 
     itens = []
     for r in itens_rows:
@@ -4492,6 +4608,7 @@ def admin_usuarios():
                             senha_hash=generate_password_hash(nova_senha),
                             role=role,
                             emp=None,
+                        )
                         db.add(u_new)
                         db.commit()  # precisa do id
 
@@ -4693,6 +4810,7 @@ def admin_usuarios():
                 db.query(Emp)
                 .order_by(Emp.codigo.asc())
                 .all()
+            )
         except Exception:
             emps_cadastradas = []
 
@@ -4733,6 +4851,7 @@ def admin_usuarios():
         emps_cadastradas=emps_cadastradas,
         emp_labels=emp_labels,
         emps_disponiveis=emps_disponiveis,
+    )
 
 
 @app.route("/admin/emps", methods=["GET", "POST"])
@@ -4787,6 +4906,8 @@ def admin_emps():
                                 cidade=cidade or None,
                                 uf=uf or None,
                                 ativo=ativo,
+                            )
+                        )
                         ok = f"EMP {codigo} criada."
                     db.commit()
 
@@ -4815,6 +4936,7 @@ def admin_emps():
         erro=erro,
         ok=ok,
         emps=emps,
+    )
 
 
 @app.get("/admin/cache/refresh")
@@ -4902,6 +5024,7 @@ def admin_importar():
                 f"Erros: {resumo['erros_linha']}"
             ),
             "success",
+        )
         # Limpa cache do DataFrame para refletir novos dados imediatamente
         try:
             limpar_cache_df()
@@ -5002,6 +5125,7 @@ def admin_itens_parados():
         itens=itens,
         erro=erro,
         ok=ok,
+    )
 
 @app.route('/admin/resumos_periodo', methods=['GET', 'POST'])
 def admin_resumos_periodo():
@@ -5058,7 +5182,9 @@ def admin_resumos_periodo():
                             FechamentoMensal.emp == emp,
                             FechamentoMensal.ano == ano,
                             FechamentoMensal.mes == mes,
+                        )
                         .one_or_none()
+                    )
                     if rec is None:
                         rec = FechamentoMensal(emp=emp, ano=ano, mes=mes, fechado=True, fechado_em=datetime.utcnow())
                         db.add(rec)
@@ -5075,7 +5201,9 @@ def admin_resumos_periodo():
                             FechamentoMensal.emp == emp,
                             FechamentoMensal.ano == ano,
                             FechamentoMensal.mes == mes,
+                        )
                         .one_or_none()
+                    )
                     if rec is None:
                         rec = FechamentoMensal(emp=emp, ano=ano, mes=mes, fechado=False)
                         db.add(rec)
@@ -5105,7 +5233,9 @@ def admin_resumos_periodo():
                                 VendasResumoPeriodo.vendedor == vend,
                                 VendasResumoPeriodo.ano == ano_alvo,
                                 VendasResumoPeriodo.mes == mes_alvo,
+                            )
                             .one_or_none()
+                        )
                         if rec is None:
                             rec = VendasResumoPeriodo(
                                 emp=emp_alvo,
@@ -5116,6 +5246,7 @@ def admin_resumos_periodo():
                                 mix_produtos=mix_produtos,
                                 created_at=datetime.utcnow(),
                                 updated_at=datetime.utcnow(),
+                            )
                             db.add(rec)
                         else:
                             rec.valor_venda = valor_venda
@@ -5183,7 +5314,9 @@ def admin_resumos_periodo():
                                 VendasResumoPeriodo.vendedor == vend,
                                 VendasResumoPeriodo.ano == ano_lote,
                                 VendasResumoPeriodo.mes == mes_ref,
+                            )
                             .one_or_none()
+                        )
                         if rec is None:
                             rec = VendasResumoPeriodo(
                                 emp=emp_lote,
@@ -5194,6 +5327,7 @@ def admin_resumos_periodo():
                                 mix_produtos=mix_produtos,
                                 created_at=datetime.utcnow(),
                                 updated_at=datetime.utcnow(),
+                            )
                             db.add(rec)
                         else:
                             rec.valor_venda = valor_venda
@@ -5306,7 +5440,9 @@ def admin_resumos_periodo():
                                             VendasResumoPeriodo.vendedor == vend,
                                             VendasResumoPeriodo.ano == ano_ref,
                                             VendasResumoPeriodo.mes == mes_ref,
+                                        )
                                         .one_or_none()
+                                    )
                                     if rec is None:
                                         rec = VendasResumoPeriodo(
                                             emp=emp_ref,
@@ -5317,6 +5453,7 @@ def admin_resumos_periodo():
                                             mix_produtos=mix_produtos,
                                             created_at=datetime.utcnow(),
                                             updated_at=datetime.utcnow(),
+                                        )
                                         db.add(rec)
                                     else:
                                         rec.valor_venda = valor_venda
@@ -5341,7 +5478,9 @@ def admin_resumos_periodo():
                                 VendasResumoPeriodo.vendedor == vend,
                                 VendasResumoPeriodo.ano == ano_alvo,
                                 VendasResumoPeriodo.mes == mes_alvo,
+                            )
                             .one_or_none()
+                        )
                         if rec is None:
                             msgs.append('⚠️ Não encontrei esse resumo para excluir.')
                         else:
@@ -5356,6 +5495,7 @@ def admin_resumos_periodo():
         q = db.query(VendasResumoPeriodo).filter(
             VendasResumoPeriodo.ano == ano,
             VendasResumoPeriodo.mes == mes,
+        )
         if emp:
             q = q.filter(or_(VendasResumoPeriodo.emp == emp, VendasResumoPeriodo.emp.in_(['', 'EMPTY'])))
         if vendedor:
@@ -5366,6 +5506,7 @@ def admin_resumos_periodo():
         ano_passado = ano - 1
         q2 = db.query(VendasResumoPeriodo).filter(
             VendasResumoPeriodo.ano == ano_passado,
+        )
         if emp:
             q2 = q2.filter(or_(VendasResumoPeriodo.emp == emp, VendasResumoPeriodo.emp.in_(['', 'EMPTY'])))
         if vendedor:
@@ -5392,6 +5533,7 @@ def admin_resumos_periodo():
             vs_q = vs_q.filter(Venda.emp == emp)
         vendedores_sugeridos = (
             vs_q.distinct().order_by(Venda.vendedor.asc()).all()
+        )
         vendedores_sugeridos = [v[0] for v in vendedores_sugeridos if v and v[0]]
 
     return render_template(
@@ -5410,6 +5552,7 @@ def admin_resumos_periodo():
         fechado=fechado,
         vendedores_sugeridos=vendedores_sugeridos,
         msgs=msgs,
+    )
 
 # Compatibilidade: algumas telas/atalhos antigos apontavam para /admin/fechamento.
 # O fechamento mensal hoje é feito dentro da tela de resumos por período.
@@ -5505,6 +5648,7 @@ def admin_combos():
                         ativo=True,
                         created_at=datetime.utcnow(),
                         updated_at=datetime.utcnow(),
+                    )
                     db.add(combo)
                     db.flush()  # obtém combo.id
 
@@ -5554,6 +5698,7 @@ def admin_combos():
                     sql = text(
                         "INSERT INTO campanhas_combo_itens (combo_id, mestre_prefixo, descricao_contains, match_mestre, minimo_qtd, valor_unitario, ordem, criado_em) "
                         "VALUES (:combo_id, :mestre_prefixo, :descricao_contains, :match_mestre, :minimo_qtd, :valor_unitario, :ordem, :criado_em)"
+                    )
                     db.execute(sql, itens)
                     db.commit()
                     ok = "Combo criado com sucesso."
@@ -5567,7 +5712,9 @@ def admin_combos():
             .filter(
                 CampanhaCombo.ativo.is_(True),
                 or_(CampanhaCombo.emp.is_(None), CampanhaCombo.emp == ""),
+            )
             .all()
+        )
 
         # Também inclui combos da EMP específica quando filtrada na criação (para admin ver tudo)
         # (Na tela simples, o admin quer ver todos no período filtrado)
@@ -5579,8 +5726,10 @@ def admin_combos():
                     and_(CampanhaCombo.data_inicio <= fim_mes, CampanhaCombo.data_fim >= inicio_mes),
                     and_(CampanhaCombo.ano == ano, CampanhaCombo.mes == mes),
                 ),
+            )
             .order_by(CampanhaCombo.data_inicio.desc(), CampanhaCombo.id.desc())
             .all()
+        )
 
         combo_ids = [c.id for c in combos]
         combos_itens_map = {}
@@ -5590,6 +5739,7 @@ def admin_combos():
                 .filter(CampanhaComboItem.combo_id.in_(combo_ids))
                 .order_by(CampanhaComboItem.combo_id.asc(), CampanhaComboItem.ordem.asc(), CampanhaComboItem.id.asc())
                 .all()
+            )
             for it in itens_rows:
                 combos_itens_map.setdefault(it.combo_id, []).append(it)
 
@@ -5604,6 +5754,7 @@ def admin_combos():
         default_data_fim=default_data_fim,
         erro=erro,
         ok=ok,
+    )
 
 
 
@@ -5688,7 +5839,9 @@ def admin_fechamento():
                                 FechamentoMensal.emp == emp,
                                 FechamentoMensal.ano == int(ano),
                                 FechamentoMensal.mes == int(mes),
+                            )
                             .first()
+                        )
                         if not rec:
                             rec = FechamentoMensal(emp=emp, ano=int(ano), mes=int(mes), fechado=False)
                             db.add(rec)
@@ -5737,7 +5890,9 @@ def admin_fechamento():
                         FechamentoMensal.emp == emp,
                         FechamentoMensal.ano == int(ano),
                         FechamentoMensal.mes == int(mes),
+                    )
                     .first()
+                )
                 if rec:
                     if getattr(rec, "status", None):
                         status_fin = rec.status
@@ -5759,6 +5914,7 @@ def admin_fechamento():
         emps_options=emps_options,
         status_por_emp=status_por_emp,
         msgs=msgs,
+    )
 
 
 @app.route("/admin/campanhas", methods=["GET", "POST"])
@@ -5891,6 +6047,8 @@ def admin_campanhas_qtd():
                             data_inicio=data_inicio,
                             data_fim=data_fim,
                             ativo=1,
+                        )
+                    )
                     db.commit()
                     ok = "Campanha cadastrada com sucesso."
 
@@ -5946,8 +6104,10 @@ def admin_campanhas_qtd():
             .filter(
                 CampanhaQtdResultado.competencia_ano == int(ano),
                 CampanhaQtdResultado.competencia_mes == int(mes),
+            )
             .order_by(CampanhaQtdResultado.valor_recompensa.desc())
             .all()
+        )
 
     
     # UX: agrupa por competência (mês/ano) na lista
@@ -5970,6 +6130,7 @@ def admin_campanhas_qtd():
             mes=mes,
             erro=erro,
             ok=ok,
+        )
 
 @app.route("/admin/apagar_vendas", methods=["POST"])
 def admin_apagar_vendas():
@@ -6072,6 +6233,7 @@ def mensagens_central():
             .filter(Mensagem.ativo.is_(True))
             .order_by(Mensagem.bloqueante.desc(), Mensagem.id.desc())
             .all()
+        )
 
         out = []
         for msg in msgs:
@@ -6084,6 +6246,7 @@ def mensagens_central():
                 .filter(MensagemUsuario.usuario_id == int(user_id))
                 .first()
                 is not None
+            )
 
             targeted_emp = False
             if role == "admin" and session.get("admin_all_emps"):
@@ -6092,6 +6255,7 @@ def mensagens_central():
                     .filter(MensagemEmpresa.mensagem_id == msg.id)
                     .first()
                     is not None
+                )
             else:
                 if allowed_emps:
                     targeted_emp = (
@@ -6100,6 +6264,7 @@ def mensagens_central():
                         .filter(MensagemEmpresa.emp.in_(allowed_emps))
                         .first()
                         is not None
+                    )
 
             if not (targeted_user or targeted_emp):
                 continue
@@ -6111,6 +6276,7 @@ def mensagens_central():
                 .filter(MensagemLidaDiaria.data == today)
                 .first()
                 is not None
+            )
 
             out.append({
                 "msg": msg,
@@ -6144,6 +6310,7 @@ def mensagens_bloqueio(mensagem_id: int):
             .filter(MensagemUsuario.usuario_id == int(user_id))
             .first()
             is not None
+        )
 
         targeted_emp = False
         if role == "admin" and session.get("admin_all_emps"):
@@ -6152,6 +6319,7 @@ def mensagens_bloqueio(mensagem_id: int):
                 .filter(MensagemEmpresa.mensagem_id == msg.id)
                 .first()
                 is not None
+            )
         else:
             if allowed_emps:
                 targeted_emp = (
@@ -6160,6 +6328,7 @@ def mensagens_bloqueio(mensagem_id: int):
                     .filter(MensagemEmpresa.emp.in_(allowed_emps))
                     .first()
                     is not None
+                )
 
         if not (targeted_user or targeted_emp):
             return redirect(url_for("dashboard"))
@@ -6186,6 +6355,7 @@ def mensagens_marcar_lida(mensagem_id: int):
                 .filter(MensagemLidaDiaria.usuario_id == int(user_id))
                 .filter(MensagemLidaDiaria.data == today)
                 .first()
+            )
             if not existe:
                 db.add(MensagemLidaDiaria(
                     mensagem_id=mensagem_id,
@@ -6238,6 +6408,7 @@ def admin_mensagens():
                     .distinct()
                     .order_by(Usuario.username.asc())
                     .all()
+                )
                 allowed_user_ids = {u.id for u in users_q}
 
         if request.method == "POST":
@@ -6293,6 +6464,7 @@ def admin_mensagens():
                     inicio_em=_parse_date(inicio_em),
                     fim_em=_parse_date(fim_em),
                     created_by_user_id=int(user_id) if user_id else None,
+                )
                 db.add(msg)
                 db.flush()
 
@@ -6318,6 +6490,7 @@ def admin_mensagens():
             .order_by(Mensagem.ativo.desc(), Mensagem.id.desc())
             .limit(300)
             .all()
+        )
         # supervisor vê apenas as mensagens que ele criou
         if role == "supervisor":
             mensagens = [m for m in mensagens if m.created_by_user_id == int(user_id)]
@@ -6338,6 +6511,7 @@ def admin_mensagens():
             mensagens=mensagens,
             destinos=destinos,
             today=today,
+        )
 
 
 @app.route("/admin/mensagens/<int:mensagem_id>/toggle", methods=["POST"])
@@ -6460,6 +6634,8 @@ def _query_valor_mes(db, ano: int, mes: int, emp: str, vendedor: str) -> float:
                 VendasResumoPeriodo.vendedor == vend,
                 VendasResumoPeriodo.ano == ano,
                 VendasResumoPeriodo.mes == mes,
+            )
+        )
         if emp_n:
             q_emp = q.filter(VendasResumoPeriodo.emp == emp_n).one_or_none()
             if q_emp is not None:
@@ -6507,6 +6683,8 @@ def _query_mix_itens(db, ano: int, mes: int, emp: str, vendedor: str) -> float:
                 VendasResumoPeriodo.vendedor == vend,
                 VendasResumoPeriodo.ano == ano,
                 VendasResumoPeriodo.mes == mes,
+            )
+        )
         if emp_n:
             q_emp = q.filter(VendasResumoPeriodo.emp == emp_n).one_or_none()
             if q_emp is not None:
@@ -6540,6 +6718,7 @@ def _query_mix_itens(db, ano: int, mes: int, emp: str, vendedor: str) -> float:
           AND movimento BETWEEN :ini AND :fim
           AND mestre IS NOT NULL AND mestre <> ''
         GROUP BY mestre
+      )
       SELECT COUNT(*)::double precision
       FROM por_produto
       WHERE qtd_liquida > 0
@@ -6636,7 +6815,9 @@ def _calc_and_upsert_meta_result(db, meta: MetaPrograma, emp: str, vendedor: str
             MetaResultado.vendedor == vendedor,
             MetaResultado.ano == meta.ano,
             MetaResultado.mes == meta.mes,
+        )
         .first()
+    )
     if not res:
         res = MetaResultado(meta_id=meta.id, emp=emp, vendedor=vendedor, ano=meta.ano, mes=meta.mes)
 
@@ -6672,6 +6853,7 @@ def _calc_and_upsert_meta_result(db, meta: MetaPrograma, emp: str, vendedor: str
             db.query(MetaBaseManual)
             .filter(MetaBaseManual.meta_id == meta.id, MetaBaseManual.emp == emp, MetaBaseManual.vendedor == vendedor)
             .first()
+        )
         if bm and bm.base_valor is not None:
             base_val = _as_decimal(bm.base_valor)
         else:
@@ -6731,6 +6913,7 @@ def metas():
             .filter(MetaPrograma.ano == ano, MetaPrograma.mes == mes, MetaPrograma.ativo.is_(True))
             .order_by(MetaPrograma.tipo.asc(), MetaPrograma.nome.asc())
             .all()
+        )
 
         # aplica meta -> emps
         meta_emps_map = {}
@@ -6801,6 +6984,7 @@ def metas():
             vendedores_choices=vendedores_choices,
             emp_filtro=emp_filtro,
             vendedor_filtro=vendedor_filtro,
+        )
 
 
 @app.get("/admin/metas")
@@ -6831,6 +7015,7 @@ def admin_metas():
             .filter(MetaPrograma.ano == ano, MetaPrograma.mes == mes)
             .order_by(MetaPrograma.ativo.desc(), MetaPrograma.tipo.asc(), MetaPrograma.nome.asc())
             .all()
+        )
 
         # mapa de emps e escalas/marcas
         meta_emps = {}
@@ -6852,6 +7037,7 @@ def admin_metas():
             meta_emps=meta_emps,
             meta_escalas=meta_escalas,
             meta_marcas=meta_marcas,
+        )
 
 
 @app.post("/admin/metas/criar")
@@ -6933,6 +7119,7 @@ def admin_metas_criar():
             mes=mes,
             ativo=True if (bloqueio is None or str(bloqueio).lower() in ("1", "on", "true", "yes", "")) else False,
             created_by_user_id=session.get("user_id"),
+        )
         db.add(meta)
         db.commit()
 
@@ -7039,6 +7226,7 @@ def admin_meta_bases(meta_id: int):
                         "base_manual": float(b.base_valor) if b else None,
                         "observacao": (b.observacao if b else ""),
                     }
+                )
 
         return render_template(
             "admin_meta_bases.html",
@@ -7046,6 +7234,7 @@ def admin_meta_bases(meta_id: int):
             emp=_emp(),
             meta=meta,
             linhas=linhas,
+        )
 
 
 @app.post("/admin/metas/bases/<int:meta_id>/salvar")
@@ -7093,6 +7282,7 @@ def admin_meta_bases_salvar(meta_id: int):
                     db.query(MetaBaseManual)
                     .filter(MetaBaseManual.meta_id == meta.id, MetaBaseManual.emp == emp, MetaBaseManual.vendedor == vend)
                     .first()
+                )
                 if b:
                     db.delete(b)
                     updated += 1
@@ -7107,6 +7297,7 @@ def admin_meta_bases_salvar(meta_id: int):
                 db.query(MetaBaseManual)
                 .filter(MetaBaseManual.meta_id == meta.id, MetaBaseManual.emp == emp, MetaBaseManual.vendedor == vend)
                 .first()
+            )
             if not b:
                 b = MetaBaseManual(meta_id=meta.id, emp=emp, vendedor=vend)
             b.base_valor = base_val
@@ -7153,6 +7344,7 @@ def financeiro_fechamento_v2():
             .filter(CampanhaV2Resultado.ano==ano, CampanhaV2Resultado.mes==mes)
             .order_by(CampanhaV2Resultado.status_financeiro.asc(), CampanhaV2Resultado.recompensa.desc())
             .all()
+        )
         resultados=[]
         for r, titulo in rows:
             resultados.append({
@@ -7204,6 +7396,11 @@ def financeiro_fechamento_v2_status():
 @app.route("/admin/campanhas/ranking-marca", methods=["GET", "POST"])
 @admin_required
 def admin_campanhas_ranking_marca():
+    """
+    Admin (gestão) - Ranking por Marca (Campanhas V2)
+    - CRUD de campanhas de ranking por marca
+    - Recalcular (snapshot) por competência (ano/mes) com suporte opcional a periodo_ini/periodo_fim
+    """
     from services.ranking_marca_v2_new import (
         list_campaigns_for_admin,
         get_scope_emps,
@@ -7213,19 +7410,20 @@ def admin_campanhas_ranking_marca():
         _to_float,
         _parse_date,
         _to_int,
+    )
     from db import Emp, SessionLocal
 
     db = SessionLocal()
     erro = None
     ok = None
+    emps_opts = []
 
     try:
-        # competência para recalcular (default mês atual)
+        # competência (default mês atual)
         hoje = date.today()
         ano = _to_int(request.args.get("ano"), hoje.year)
         mes = _to_int(request.args.get("mes"), hoje.month)
-
-        anos = list(range(hoje.year - 2, hoje.year + 2 + 1))
+        anos = list(range(hoje.year - 2, hoje.year + 3))
 
         # options de EMPs (cadastro)
         emps_rows = db.query(Emp).order_by(Emp.codigo.asc()).all()
@@ -7234,10 +7432,9 @@ def admin_campanhas_ranking_marca():
         if request.method == "POST":
             acao = (request.form.get("acao") or "").strip().lower()
 
-            # helper para ler emps do multiselect (pode vir como vários inputs "emps")
+            # helper: emps do multiselect (inputs "emps")
             emps_vals = request.form.getlist("emps")
             if not emps_vals:
-                # fallback: "101,1001"
                 raw = (request.form.get("emps") or "").strip()
                 if raw:
                     emps_vals = [x.strip() for x in raw.split(",") if x.strip()]
@@ -7282,6 +7479,7 @@ def admin_campanhas_ranking_marca():
                     premio_top2=p2,
                     premio_top3=p3,
                     ativo=ativo,
+                )
                 db.commit()
                 ok = "Campanha salva com sucesso."
 
@@ -7300,9 +7498,11 @@ def admin_campanhas_ranking_marca():
                 try:
                     # Compatibilidade: algumas versões do service não aceitam periodo_ini/periodo_fim
                     import inspect as _inspect
+
                     _kwargs = dict(campanha_id=cid, ano=ano_p, mes=mes_p, actor=str(actor))
                     periodo_ini = (request.form.get("periodo_ini") or "").strip()
                     periodo_fim = (request.form.get("periodo_fim") or "").strip()
+
                     try:
                         _sig = _inspect.signature(recalc_ranking_marca)
                         if "periodo_ini" in _sig.parameters and periodo_ini:
@@ -7311,6 +7511,7 @@ def admin_campanhas_ranking_marca():
                             _kwargs["periodo_fim"] = periodo_fim
                     except Exception:
                         pass
+
                     res = recalc_ranking_marca(db, **_kwargs)
                     db.commit()
 
@@ -7332,7 +7533,6 @@ def admin_campanhas_ranking_marca():
                 erro = "Ação inválida."
 
         campanhas = list_campaigns_for_admin(db)
-
         emps_map = {int(c.id): get_scope_emps(db, int(c.id)) for c in campanhas}
 
         return render_template(
@@ -7347,25 +7547,28 @@ def admin_campanhas_ranking_marca():
             ano=ano,
             mes=mes,
             anos=anos,
+        )
 
     except Exception as e:
         db.rollback()
         erro = str(e)
-        # fallback render
         campanhas = []
         emps_map = {}
+        hoje = date.today()
+        anos = list(range(hoje.year - 2, hoje.year + 3))
         return render_template(
             "admin_campanhas_ranking_marca.html",
             role=_role(),
             emp=session.get("emp"),
             campanhas=campanhas,
             emps_map=emps_map,
-            emps_opts=[],
+            emps_opts=emps_opts,
             erro=erro,
             ok=None,
-            ano=date.today().year,
-            mes=date.today().month,
-            anos=list(range(date.today().year - 2, date.today().year + 3)),
+            ano=hoje.year,
+            mes=hoje.month,
+            anos=anos,
+        )
 
     finally:
         try:
@@ -7434,6 +7637,7 @@ def campanhas_ranking_marca():
                         .filter(CampanhaV2ResultadoNew.mes == int(mes))
                         .order_by(CampanhaV2ResultadoNew.posicao.asc().nullslast())
                         .all()
+                    )
 
         me = (session.get("nome") or session.get("username") or session.get("vendedor") or "").strip().upper()
 
@@ -7452,6 +7656,7 @@ def campanhas_ranking_marca():
             me=me,
             erro=erro,
             info=info,
+        )
 
     except Exception as e:
         erro = str(e)
@@ -7470,6 +7675,7 @@ def campanhas_ranking_marca():
             me="",
             erro=erro,
             info=None,
+        )
     finally:
         try:
             db.close()
@@ -7479,6 +7685,7 @@ def campanhas_ranking_marca():
 # ===============================
 # ADMIN - RANKING POR MARCA (GESTÃO)
 # ===============================
+@app.route("/admin/ranking-marca", methods=["GET"])
 @roles_required("admin")
 def admin_ranking_marca():
     from services.ranking_marca_service import listar_rankings_marca
@@ -7489,3 +7696,4 @@ def admin_ranking_marca():
         "admin_ranking_marca.html",
         rankings=rankings,
         role=session.get("role")
+    )
