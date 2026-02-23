@@ -7630,6 +7630,7 @@ def campanhas_ranking_marca():
                     scope_emps = get_scope_emps(db, cid)
 
                 if campanha:
+                    # Lê snapshot (rápido). Se estiver vazio ou desatualizado, tenta recálculo sob demanda (seguro).
                     resultados = (
                         db.query(CampanhaV2ResultadoNew)
                         .filter(CampanhaV2ResultadoNew.campanha_id == cid)
@@ -7638,6 +7639,51 @@ def campanhas_ranking_marca():
                         .order_by(CampanhaV2ResultadoNew.posicao.asc().nullslast())
                         .all()
                     )
+
+                    # Auto-refresh: evita admin precisar "recalcular" manualmente.
+                    # - Só dispara se NÃO houver snapshot OU se estiver antigo (ex.: > 30 min)
+                    # - Usa advisory lock no Postgres para evitar concorrência (vários acessos simultâneos)
+                    try:
+                        from datetime import datetime, timedelta
+                        from sqlalchemy import text
+                        from services.ranking_marca_v2_new import recalc_ranking_marca
+
+                        stale_minutes = 30
+                        last_calc = None
+                        if resultados:
+                            # calculado_em existe na tabela; pega o mais recente
+                            last_calc = max([getattr(r, "calculado_em", None) for r in resultados if getattr(r, "calculado_em", None)], default=None)
+
+                        need_recalc = (not resultados) or (last_calc and (datetime.utcnow() - last_calc) > timedelta(minutes=stale_minutes))
+
+                        if need_recalc:
+                            # chave bigint estável por (campanha, ano, mes)
+                            lock_key = int(cid) * 1000000 + int(ano) * 100 + int(mes)
+                            got_lock = bool(db.execute(text("SELECT pg_try_advisory_lock(:k)"), {"k": lock_key}).scalar() or False)
+                            if got_lock:
+                                try:
+                                    actor = (session.get("username") or session.get("nome") or session.get("vendedor") or "").strip()
+                                    recalc_ranking_marca(db, campanha_id=cid, ano=int(ano), mes=int(mes), actor=actor)
+                                    db.commit()
+                                except Exception:
+                                    db.rollback()
+                                finally:
+                                    db.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": lock_key})
+                                    db.flush()
+
+                                # Recarrega snapshot após recálculo
+                                resultados = (
+                                    db.query(CampanhaV2ResultadoNew)
+                                    .filter(CampanhaV2ResultadoNew.campanha_id == cid)
+                                    .filter(CampanhaV2ResultadoNew.ano == int(ano))
+                                    .filter(CampanhaV2ResultadoNew.mes == int(mes))
+                                    .order_by(CampanhaV2ResultadoNew.posicao.asc().nullslast())
+                                    .all()
+                                )
+                    except Exception:
+                        # Não quebra a página por causa do auto-refresh
+                        pass
+
 
         me = (session.get("nome") or session.get("username") or session.get("vendedor") or "").strip().upper()
 

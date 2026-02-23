@@ -10,6 +10,16 @@ from db import (
 )
 
 
+def _safe_meta_json(v):
+    """Converte meta (dict/list) para JSON string, compatível com coluna TEXT no Postgres."""
+    if v is None:
+        return None
+    if isinstance(v, (dict, list)):
+        return json.dumps(v, ensure_ascii=False, default=str)
+    # garante string (evita tipos não adaptáveis no psycopg2)
+    return str(v)
+
+
 def sync_pagamentos_v2(db, ano: int, mes: int, actor: str = "") -> dict:
     """Cria/atualiza pagamentos do Financeiro com base em campanhas_v2_resultados (NEW schema).
 
@@ -77,7 +87,7 @@ def sync_pagamentos_v2(db, ano: int, mes: int, actor: str = "") -> dict:
                 de_status=None,
                 para_status=existing.status,
                 usuario=actor,
-                meta={"ano": int(ano), "mes": int(mes), "origem": "V2", "campanha_id": origem_id, "premio": premio},
+                meta=_safe_meta_json({"ano": int(ano), "mes": int(mes), "origem": "V2", "campanha_id": origem_id, "premio": premio}),
             ))
         else:
             p = FinanceiroPagamento(
@@ -104,7 +114,7 @@ def sync_pagamentos_v2(db, ano: int, mes: int, actor: str = "") -> dict:
                 de_status=None,
                 para_status="PENDENTE",
                 usuario=actor,
-                meta={"ano": int(ano), "mes": int(mes), "origem": "V2", "campanha_id": origem_id, "premio": premio},
+                meta=_safe_meta_json({"ano": int(ano), "mes": int(mes), "origem": "V2", "campanha_id": origem_id, "premio": premio}),
             ))
 
     return {"created": created, "updated": updated, "skipped": skipped, "total": len(rows)}
@@ -136,7 +146,7 @@ def atualizar_status_pagamentos(db, pagamento_ids: list[int], novo_status: str, 
             de_status=de,
             para_status=novo_status,
             usuario=actor,
-            meta={"ids": pagamento_ids[:50], "novo_status": novo_status},
+            meta=_safe_meta_json({"ids": pagamento_ids[:50], "novo_status": novo_status}),
         ))
         count += 1
     return count
