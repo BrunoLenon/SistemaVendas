@@ -1,926 +1,16 @@
 {% extends "base.html" %}
 
-{% block title %}Relatórios - Cidades e Clientes
-<!-- Modal: Cidade -> Clientes -->
-<div class="modal fade" id="cityClientsModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-lg modal-dialog-scrollable">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title">🏙️ Clientes da cidade</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
-      </div>
-      <div class="modal-body">
-        <div id="cityClientsMeta" class="text-muted small mb-2"></div>
-        <div id="cityClientsLoading" class="text-muted">Carregando...</div>
-        <div class="table-responsive d-none d-md-block">
-          <table class="table table-sm align-middle mb-0" id="cityClientsTable" style="display:none;">
-            <thead>
-              <tr class="text-muted small">
-                <th>#</th>
-                <th>Cliente</th>
-                <th class="text-end">Valor</th>
-                <th class="text-end">Mix</th>
-              </tr>
-            </thead>
-            <tbody></tbody>
-          </table>
-        </div>
-
-        <div class="mobile-list d-md-none" id="cityClientsMobile" style="display:none;"></div>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- Modal: Cliente -> Marcas -->
-<div class="modal fade" id="clienteMarcasModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-lg modal-dialog-scrollable">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title">🏷️ Marcas do cliente</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
-      </div>
-      <div class="modal-body">
-        <div id="clienteMarcasMeta" class="text-muted small mb-2"></div>
-        <div id="clienteMarcasLoading" class="text-muted">Carregando...</div>
-        <div class="table-responsive">
-          <table class="table table-sm align-middle mb-0" id="clienteMarcasTable" style="display:none;">
-            <thead>
-              <tr class="text-muted small">
-                <th>#</th>
-                <th>Marca</th>
-                <th class="text-end">Valor</th>
-                <th class="text-end">% do cliente</th>
-              </tr>
-            </thead>
-            <tbody></tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
-
-<script>
-(function(){ if (window.__cc_city_init) return; window.__cc_city_init = true;
-  function brl(v){
-    try{
-      return new Intl.NumberFormat('pt-BR', {style:'currency', currency:'BRL'}).format(v || 0);
-    }catch(e){
-      return 'R$ ' + (v||0).toFixed(2);
-    }
-  }
-
-  const mes = "{{ mes }}";
-  const ano = "{{ ano }}";
-  const vendedor = "{{ vendedor_filtro or '' }}";
-  const empFiltro = "{{ emp_filtro or '' }}";
-
-  let lastCityCtx = null;
-  let cityReqId = 0;
-
-  async function openCityClients(emp, cidade_norm, cidade_label){
-    lastCityCtx = {emp, cidade_norm, cidade_label};
-    const modalEl = document.getElementById('cityClientsModal');
-    const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
-    document.getElementById('cityClientsMeta').textContent = `EMP ${emp} • ${cidade_label} • ${mes}/${ano}`;
-    document.getElementById('cityClientsLoading').style.display = '';
-    document.getElementById('cityClientsTable').style.display = 'none';
-    document.getElementById('cityClientsMobile').style.display = 'none';
-    document.querySelector('#cityClientsTable tbody').innerHTML = '';
-    document.getElementById('cityClientsMobile').innerHTML = '';
-    const reqId = ++cityReqId;
-    modal.show();
-
-    const qs = new URLSearchParams({emp, cidade_norm, mes, ano});
-    if (vendedor) qs.set('vendedor', vendedor);
-    const resp = await fetch('/relatorios/cidade-clientes?' + qs.toString());
-    const data = await resp.json();
-    // ignore stale responses (prevents double-render on double-click)
-    if (reqId !== cityReqId) return;
-    document.getElementById('cityClientsLoading').style.display = 'none';
-
-    if (!resp.ok || data.error){
-      document.getElementById('cityClientsMeta').textContent = (data && data.error) ? data.error : 'Erro ao carregar';
-      return;
-    }
-
-    const rows = data.clientes || [];
-    // desktop table
-    const tbody = document.querySelector('#cityClientsTable tbody');
-    rows.forEach((r, idx) => {
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td class="text-muted">${idx+1}</td>
-        <td><a href="#" class="js-client link-primary text-decoration-none" data-razao="${r.cliente_id}" data-label="${(r.cliente||'').replace(/"/g,'&quot;')}">${r.cliente}</a></td>
-        <td class="text-end">${brl(r.valor_total)}</td>
-        <td class="text-end">${r.mix_itens || 0}</td>
-      `;
-      tbody.appendChild(tr);
-    });
-    document.getElementById('cityClientsTable').style.display = '';
-    // mobile cards
-    const mob = document.getElementById('cityClientsMobile');
-    rows.forEach((r, idx) => {
-      const div = document.createElement('div');
-      div.className = 'mitem mb-2';
-      div.innerHTML = `
-        <div class="d-flex justify-content-between align-items-start gap-2">
-          <div class="title">${idx+1}. <a href="#" class="js-client link-primary text-decoration-none" data-razao="${r.cliente_id}" data-label="${(r.cliente||'').replace(/"/g,'&quot;')}">${r.cliente}</a></div>
-          <div class="text-end fw-semibold">${brl(r.valor_total)}</div>
-        </div>
-        <div class="kv mt-2"><div><span class="k">Mix</span></div><div class="fw-semibold">${r.mix_itens || 0}</div></div>
-      `;
-      mob.appendChild(div);
-    });
-    mob.style.display = '';
-  }
-
-  async function openClienteMarcas(emp, cliente_id, cliente_label){
-    const ctx = lastCityCtx || {cidade_norm: ''};
-    const cidade_norm = ctx.cidade_norm || '';
-    const modalEl = document.getElementById('clienteMarcasModal');
-    const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
-    document.getElementById('clienteMarcasMeta').textContent = `EMP ${emp} • ${cliente_label} • ${mes}/${ano}` + (cidade_norm ? ` • ${ctx.cidade_label}` : '');
-    document.getElementById('clienteMarcasLoading').style.display = '';
-    document.getElementById('clienteMarcasTable').style.display = 'none';
-    document.querySelector('#clienteMarcasTable tbody').innerHTML = '';
-    const reqId = ++cityReqId;
-    modal.show();
-
-    const qs = new URLSearchParams({emp, cliente_id, mes, ano});
-    if (vendedor) qs.set('vendedor', vendedor);
-    if (cidade_norm) qs.set('cidade_norm', cidade_norm);
-    const resp = await fetch('/relatorios/cliente-marcas?' + qs.toString());
-    const data = await resp.json();
-    document.getElementById('clienteMarcasLoading').style.display = 'none';
-
-    if (!resp.ok || data.error){
-      document.getElementById('clienteMarcasMeta').textContent = (data && data.error) ? data.error : 'Erro ao carregar';
-      return;
-    }
-
-    const rows = data.marcas || [];
-    const tbody = document.querySelector('#clienteMarcasTable tbody');
-    rows.forEach((r, idx) => {
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td class="text-muted">${idx+1}</td>
-        <td class="fw-semibold">${r.marca}</td>
-        <td class="text-end">${brl(r.valor_total)}</td>
-        <td class="text-end">${(r.percent || 0).toFixed(1)}%</td>
-      `;
-      tbody.appendChild(tr);
-    });
-    document.getElementById('clienteMarcasTable').style.display = '';
-  }
-
-  // click cidade
-  document.addEventListener('click', function(ev){
-    const a = ev.target.closest('a.js-city');
-    if (a){
-      ev.preventDefault();
-      const emp = a.getAttribute('data-emp');
-      const cidade_norm = a.getAttribute('data-cidade');
-      const label = a.textContent.trim();
-      openCityClients(emp, cidade_norm, label);
-      return;
-    }
-    const c = ev.target.closest('a.js-client');
-    if (c){
-      ev.preventDefault();
-      const emp = (lastCityCtx && lastCityCtx.emp) ? lastCityCtx.emp : (empFiltro || '');
-      const cliente_id = c.getAttribute('data-razao');
-      const label = c.getAttribute('data-label') || c.textContent.trim();
-      if (!emp){
-        return;
-      }
-      openClienteMarcas(emp, cliente_id, label);
-      return;
-    }
-  });
-})();
-</script>
-
-
-{% endblock %}
+{% block title %}Relatórios — Cidades e Clientes{% endblock %}
 
 {% block extra_head %}
 <style>
-.soft-shadow{box-shadow:0 10px 30px rgba(0,0,0,.06)}
-    .emp-card{border:0;border-radius:18px}
-    .emp-hero{border-radius:14px;background:rgba(13,110,253,.06);border:1px solid rgba(13,110,253,.12)}
-    .metric{font-weight:800;letter-spacing:-.02em}
-    .muted{color:rgba(0,0,0,.58)}
-    .table-sm td,.table-sm th{padding:.45rem .55rem}
-    .pill{border:1px solid rgba(0,0,0,.08);border-radius:999px;padding:.2rem .55rem;background:#fff}
-    .rank{width:42px}
-    .pct{min-width:88px}
-    .btn-ghost{background:rgba(0,0,0,.03);border:1px solid rgba(0,0,0,.08)}
-
-.mobile-list .mitem{border:1px solid rgba(0,0,0,.08); border-radius:14px; padding:.75rem .85rem; background:var(--bg-card);}
-[data-theme="dark"] .mobile-list .mitem{border-color: rgba(255,255,255,.10);}
-.mobile-list .mitem .title{font-weight:700;}
-.mobile-list .mitem .meta{font-size:.85rem; color:rgba(0,0,0,.58);}
-[data-theme="dark"] .mobile-list .mitem .meta{color: rgba(255,255,255,.65);}
-.mobile-list .kv{display:flex; justify-content:space-between; gap:.75rem; font-size:.9rem;}
-.mobile-list .kv .k{color:rgba(0,0,0,.58);}
-[data-theme="dark"] .mobile-list .kv .k{color: rgba(255,255,255,.65);}
-
+  .sv-page.sv-page--wide{max-width:1460px;padding:12px 10px 40px;}
+  .sv-table td,.sv-table th{vertical-align:middle;}
+  .sv-pill{display:inline-flex;align-items:center;padding:.2rem .55rem;border-radius:999px;border:1px solid rgba(255,170,60,.22);background:rgba(255,170,60,.08);color:#fff;font-size:.86rem}
 </style>
-
-<!-- Modal: Cidade -> Clientes -->
-<div class="modal fade" id="cityClientsModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-lg modal-dialog-scrollable">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title">🏙️ Clientes da cidade</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
-      </div>
-      <div class="modal-body">
-        <div id="cityClientsMeta" class="text-muted small mb-2"></div>
-        <div id="cityClientsLoading" class="text-muted">Carregando...</div>
-        <div class="table-responsive d-none d-md-block">
-          <table class="table table-sm align-middle mb-0" id="cityClientsTable" style="display:none;">
-            <thead>
-              <tr class="text-muted small">
-                <th>#</th>
-                <th>Cliente</th>
-                <th class="text-end">Valor</th>
-                <th class="text-end">Mix</th>
-              </tr>
-            </thead>
-            <tbody></tbody>
-          </table>
-        </div>
-
-        <div class="mobile-list d-md-none" id="cityClientsMobile" style="display:none;"></div>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- Modal: Cliente -> Marcas -->
-<div class="modal fade" id="clienteMarcasModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-lg modal-dialog-scrollable">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title">🏷️ Marcas do cliente</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
-      </div>
-      <div class="modal-body">
-        <div id="clienteMarcasMeta" class="text-muted small mb-2"></div>
-        <div id="clienteMarcasLoading" class="text-muted">Carregando...</div>
-        <div class="table-responsive">
-          <table class="table table-sm align-middle mb-0" id="clienteMarcasTable" style="display:none;">
-            <thead>
-              <tr class="text-muted small">
-                <th>#</th>
-                <th>Marca</th>
-                <th class="text-end">Valor</th>
-                <th class="text-end">% do cliente</th>
-              </tr>
-            </thead>
-            <tbody></tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
-
-<script>
-(function(){ if (window.__cc_client_init) return; window.__cc_client_init = true;
-  function brl(v){
-    try{
-      return new Intl.NumberFormat('pt-BR', {style:'currency', currency:'BRL'}).format(v || 0);
-    }catch(e){
-      return 'R$ ' + (v||0).toFixed(2);
-    }
-  }
-
-  const mes = "{{ mes }}";
-  const ano = "{{ ano }}";
-  const vendedor = "{{ vendedor_filtro or '' }}";
-  const empFiltro = "{{ emp_filtro or '' }}";
-
-  let lastCityCtx = null;
-  let cityReqId = 0;
-
-  async function openCityClients(emp, cidade_norm, cidade_label){
-    lastCityCtx = {emp, cidade_norm, cidade_label};
-    const modalEl = document.getElementById('cityClientsModal');
-    const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
-    document.getElementById('cityClientsMeta').textContent = `EMP ${emp} • ${cidade_label} • ${mes}/${ano}`;
-    document.getElementById('cityClientsLoading').style.display = '';
-    document.getElementById('cityClientsTable').style.display = 'none';
-    document.getElementById('cityClientsMobile').style.display = 'none';
-    document.querySelector('#cityClientsTable tbody').innerHTML = '';
-    document.getElementById('cityClientsMobile').innerHTML = '';
-    const reqId = ++cityReqId;
-    modal.show();
-
-    const qs = new URLSearchParams({emp, cidade_norm, mes, ano});
-    if (vendedor) qs.set('vendedor', vendedor);
-    const resp = await fetch('/relatorios/cidade-clientes?' + qs.toString());
-    const data = await resp.json();
-    // ignore stale responses (prevents double-render on double-click)
-    if (reqId !== cityReqId) return;
-    document.getElementById('cityClientsLoading').style.display = 'none';
-
-    if (!resp.ok || data.error){
-      document.getElementById('cityClientsMeta').textContent = (data && data.error) ? data.error : 'Erro ao carregar';
-      return;
-    }
-
-    const rows = data.clientes || [];
-    // desktop table
-    const tbody = document.querySelector('#cityClientsTable tbody');
-    rows.forEach((r, idx) => {
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td class="text-muted">${idx+1}</td>
-        <td><a href="#" class="js-client link-primary text-decoration-none" data-razao="${r.cliente_id}" data-label="${(r.cliente||'').replace(/"/g,'&quot;')}">${r.cliente}</a></td>
-        <td class="text-end">${brl(r.valor_total)}</td>
-        <td class="text-end">${r.mix_itens || 0}</td>
-      `;
-      tbody.appendChild(tr);
-    });
-    document.getElementById('cityClientsTable').style.display = '';
-    // mobile cards
-    const mob = document.getElementById('cityClientsMobile');
-    rows.forEach((r, idx) => {
-      const div = document.createElement('div');
-      div.className = 'mitem mb-2';
-      div.innerHTML = `
-        <div class="d-flex justify-content-between align-items-start gap-2">
-          <div class="title">${idx+1}. <a href="#" class="js-client link-primary text-decoration-none" data-razao="${r.cliente_id}" data-label="${(r.cliente||'').replace(/"/g,'&quot;')}">${r.cliente}</a></div>
-          <div class="text-end fw-semibold">${brl(r.valor_total)}</div>
-        </div>
-        <div class="kv mt-2"><div><span class="k">Mix</span></div><div class="fw-semibold">${r.mix_itens || 0}</div></div>
-      `;
-      mob.appendChild(div);
-    });
-    mob.style.display = '';
-  }
-
-  async function openClienteMarcas(emp, cliente_id, cliente_label){
-    const ctx = lastCityCtx || {cidade_norm: ''};
-    const cidade_norm = ctx.cidade_norm || '';
-    const modalEl = document.getElementById('clienteMarcasModal');
-    const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
-    document.getElementById('clienteMarcasMeta').textContent = `EMP ${emp} • ${cliente_label} • ${mes}/${ano}` + (cidade_norm ? ` • ${ctx.cidade_label}` : '');
-    document.getElementById('clienteMarcasLoading').style.display = '';
-    document.getElementById('clienteMarcasTable').style.display = 'none';
-    document.querySelector('#clienteMarcasTable tbody').innerHTML = '';
-    const reqId = ++cityReqId;
-    modal.show();
-
-    const qs = new URLSearchParams({emp, cliente_id, mes, ano});
-    if (vendedor) qs.set('vendedor', vendedor);
-    if (cidade_norm) qs.set('cidade_norm', cidade_norm);
-    const resp = await fetch('/relatorios/cliente-marcas?' + qs.toString());
-    const data = await resp.json();
-    document.getElementById('clienteMarcasLoading').style.display = 'none';
-
-    if (!resp.ok || data.error){
-      document.getElementById('clienteMarcasMeta').textContent = (data && data.error) ? data.error : 'Erro ao carregar';
-      return;
-    }
-
-    const rows = data.marcas || [];
-    const tbody = document.querySelector('#clienteMarcasTable tbody');
-    rows.forEach((r, idx) => {
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td class="text-muted">${idx+1}</td>
-        <td class="fw-semibold">${r.marca}</td>
-        <td class="text-end">${brl(r.valor_total)}</td>
-        <td class="text-end">${(r.percent || 0).toFixed(1)}%</td>
-      `;
-      tbody.appendChild(tr);
-    });
-    document.getElementById('clienteMarcasTable').style.display = '';
-  }
-
-  // click cidade
-  document.addEventListener('click', function(ev){
-    const a = ev.target.closest('a.js-city');
-    if (a){
-      ev.preventDefault();
-      const emp = a.getAttribute('data-emp');
-      const cidade_norm = a.getAttribute('data-cidade');
-      const label = a.textContent.trim();
-      openCityClients(emp, cidade_norm, label);
-      return;
-    }
-    const c = ev.target.closest('a.js-client');
-    if (c){
-      ev.preventDefault();
-      const emp = (lastCityCtx && lastCityCtx.emp) ? lastCityCtx.emp : (empFiltro || '');
-      const cliente_id = c.getAttribute('data-razao');
-      const label = c.getAttribute('data-label') || c.textContent.trim();
-      if (!emp){
-        return;
-      }
-      openClienteMarcas(emp, cliente_id, label);
-      return;
-    }
-  });
-})();
-</script>
-
-
 {% endblock %}
 
 {% block content %}
-<div class="container py-3" style="max-width: 1100px;">
-
-  <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
-    <div>
-      <h3 class="mb-0">📊 Relatórios por EMP</h3>
-      <div class="muted">Cidades e Clientes • Período: <b>{{ "%02d"|format(mes) }}/{{ ano }}</b>{% if escopo_label %} • <span class="pill">{{ escopo_label }}</span>{% endif %}</div>
-    </div>
-    <div class="d-flex gap-2">
-      <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('dashboard') }}">Voltar</a>
-    </div>
-  </div>
-
-  <div class="card soft-shadow border-0 mb-3">
-    <div class="card-body">
-      <form class="row g-2 align-items-end" method="GET" action="/relatorios/cidades-clientes">
-        <div class="col-6 col-md-2">
-          <label class="form-label mb-1">Mês</label>
-          <select class="form-select form-select-sm" id="mes" name="mes">
-            {% for m in range(1,13) %}
-              <option value="{{ m }}" {% if m == mes %}selected{% endif %}>{{ "%02d"|format(m) }}</option>
-            {% endfor %}
-          </select>
-        </div>
-        <div class="col-6 col-md-2">
-          <label class="form-label mb-1">Ano</label>
-          <select class="form-select form-select-sm" id="ano" name="ano">
-            {% for y in range(ano-3, ano+1) %}
-              <option value="{{ y }}" {% if y == ano %}selected{% endif %}>{{ y }}</option>
-            {% endfor %}
-          </select>
-        </div>
-
-        {% if pode_filtrar_emp %}
-        <div class="col-6 col-md-2">
-          <label class="form-label mb-1">EMP</label>
-          <input class="form-control form-control-sm" id="emp" name="emp" value="{{ emp_filtro or '' }}" placeholder="ex: 101">
-        </div>
-        {% endif %}
-
-        {% if pode_filtrar_vendedor %}
-        <div class="col-6 col-md-3">
-          <label class="form-label mb-1">Vendedor</label>
-          <input class="form-control form-control-sm" id="vendedor" name="vendedor" value="{{ vendedor_filtro or '' }}" placeholder="ex: JOAO">
-        </div>
-        {% endif %}
-
-        <div class="col-12 col-md-3 d-grid">
-          <button class="btn btn-primary btn-sm">Aplicar filtros</button>
-        </div>
-      </form>
-    </div>
-  </div>
-
-  <ul class="nav nav-pills mb-3" role="tablist">
-    <li class="nav-item" role="presentation">
-      <button class="nav-link active" id="tab-cidades" data-bs-toggle="pill" data-bs-target="#pane-cidades" type="button" role="tab">🌆 Cidades</button>
-    </li>
-    <li class="nav-item" role="presentation">
-      <button class="nav-link" id="tab-clientes" data-bs-toggle="pill" data-bs-target="#pane-clientes" type="button" role="tab">👥 Clientes</button>
-    </li>
-  </ul>
-
-  <div class="tab-content">
-
-    <!-- CIDADES -->
-    <div class="tab-pane fade show active" id="pane-cidades" role="tabpanel">
-      {% if not emp_cards or emp_cards|length == 0 %}
-        <div class="alert alert-warning">Sem dados no período selecionado.</div>
-      {% endif %}
-
-      {% for c in emp_cards %}
-      <div class="card emp-card soft-shadow mb-3">
-        <div class="card-body p-3 p-md-4">
-
-          <div class="emp-hero p-3 mb-3">
-            <div class="d-flex flex-wrap justify-content-between align-items-start gap-2">
-              <div>
-                <div class="h5 mb-0">🏬 EMP {{ c.emp }}</div>
-                <div class="muted small">Resumo rápido (clique em “Ver detalhes” para expandir)</div>
-              </div>
-              <div class="d-flex flex-wrap gap-2">
-                <div class="pill"><span class="muted small">Valor</span> <span class="metric">R$ {{ "{:,.2f}".format(c.totais.valor_total).replace(",", "X").replace(".", ",").replace("X", ".") }}</span></div>
-                <div class="pill"><span class="muted small">Cidades</span> <span class="metric">{{ c.totais.cidades }}</span></div>
-                <div class="pill"><span class="muted small">Clientes</span> <span class="metric">{{ c.totais.clientes_unicos }}</span></div>
-                <div class="pill"><span class="muted small">Vendedores</span> <span class="metric">{{ c.totais.vendedores }}</span></div>
-              </div>
-            </div>
-          </div>
-
-          <div class="row g-3">
-            <div class="col-12 col-lg-7">
-              <div class="d-flex justify-content-between align-items-center mb-2">
-                <div class="fw-semibold">Top cidades (preview)</div>
-                <button class="btn btn-sm btn-ghost" type="button" data-bs-toggle="collapse" data-bs-target="#cidades-{{ loop.index }}" aria-expanded="false">
-                  Ver detalhes
-                </button>
-              </div>
-
-              
-<!-- Mobile cards (Top cidades) -->
-<div class="mobile-list d-md-none">
-  {% for r in c.cidades_preview %}
-    <div class="mitem mb-2">
-      <div class="d-flex justify-content-between align-items-start gap-2">
-        <div>
-          <div class="title">{{ loop.index }}. {{ r.cidade_label }}</div>
-        </div>
-        <div class="text-end fw-semibold">R$ {{ r.valor_total|brl }}</div>
-      </div>
-      <div class="kv mt-2">
-        <div><span class="k">% EMP</span></div>
-        <div class="fw-semibold">{{ r.pct|round(2) }}%</div>
-      </div>
-    </div>
-  {% endfor %}
-</div>
-
-<div class="table-responsive d-none d-md-block">
-
-                <table class="table table-sm align-middle mb-0">
-                  <thead>
-                    <tr class="text-muted small">
-                      <th class="rank">#</th>
-                      <th>Cidade</th>
-                      <th class="text-end">Valor</th>
-                      <th class="text-end pct">% da EMP</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {% for r in c.cidades_preview %}
-                    <tr>
-                      <td class="text-muted">{{ loop.index }}</td>
-                      <td class="fw-semibold"><a href="#" class="link-primary text-decoration-none js-city" data-emp="{{ c.emp }}" data-cidade="{{ r.cidade_norm or 'sem_cidade' }}">{{ r.cidade_label }}</a></td>
-                      <td class="text-end">R$ {{ "{:,.2f}".format(r.valor_total).replace(",", "X").replace(".", ",").replace("X", ".") }}</td>
-                      <td class="text-end">{{ "{:.1f}%".format(r.pct) }}</td>
-                    </tr>
-                    {% endfor %}
-                    {% if c.cidades_preview|length == 0 %}
-                      <tr><td colspan="4" class="text-center text-muted py-3">Sem cidades no período.</td></tr>
-                    {% endif %}
-                  </tbody>
-                </table>
-              </div>
-
-              <div class="collapse mt-3" id="cidades-{{ loop.index }}">
-                <div class="fw-semibold mb-2">Ranking completo (todas)</div>
-                
-<!-- Mobile cards (Ranking cidades) -->
-<div class="mobile-list d-md-none">
-  {% for r in c.cidades_full %}
-    <div class="mitem mb-2">
-      <div class="d-flex justify-content-between align-items-start gap-2">
-        <div class="title">{{ loop.index }}. {{ r.cidade_label }}</div>
-        <div class="text-end fw-semibold">R$ {{ r.valor_total|brl }}</div>
-      </div>
-      <div class="kv mt-2">
-        <div><span class="k">% EMP</span></div>
-        <div class="fw-semibold">{{ r.pct|round(2) }}%</div>
-      </div>
-    </div>
-  {% endfor %}
-</div>
-
-<div class="table-responsive d-none d-md-block">
-                  <table class="table table-sm align-middle">
-                    <thead>
-                      <tr class="text-muted small">
-                        <th class="rank">#</th>
-                        <th>Cidade</th>
-                        <th class="text-end">Valor</th>
-                        <th class="text-end">% da EMP</th>
-                        <th class="text-end">Qtd</th>
-                        <th class="text-end">Clientes</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {% for r in c.cidades_full %}
-                      <tr>
-                        <td class="text-muted">{{ loop.index }}</td>
-                        <td class="fw-semibold"><a href="#" class="link-primary text-decoration-none js-city" data-emp="{{ c.emp }}" data-cidade="{{ r.cidade_norm or 'sem_cidade' }}">{{ r.cidade_label }}</a></td>
-                        <td class="text-end">R$ {{ "{:,.2f}".format(r.valor_total).replace(",", "X").replace(".", ",").replace("X", ".") }}</td>
-                        <td class="text-end">{{ "{:.1f}%".format(r.pct) }}</td>
-                        <td class="text-end">{{ "{:,.0f}".format(r.mix_itens).replace(",", ".") }}</td>
-                        <td class="text-end">{{ r.clientes_unicos }}</td>
-                      </tr>
-                      {% endfor %}
-                      {% if c.cidades_full|length == 0 %}
-                        <tr><td colspan="6" class="text-center text-muted py-3">Sem dados.</td></tr>
-                      {% endif %}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-            </div>
-
-            <div class="col-12 col-lg-5">
-              <div class="fw-semibold mb-2">Insights rápidos</div>
-              <div class="p-3 rounded-4 bg-white border">
-                <div class="d-flex justify-content-between">
-                  <div class="muted">Clientes novos</div>
-                  <div class="fw-semibold">{{ c.totais.clientes_novos }}</div>
-                </div>
-                <div class="d-flex justify-content-between mt-2">
-                  <div class="muted">Clientes recorrentes</div>
-                  <div class="fw-semibold">{{ c.totais.clientes_recorrentes }}</div>
-                </div>
-                <hr>
-                <div class="muted small">Dica: use “Ver detalhes” para enxergar o ranking completo e comparar participação por cidade.</div>
-              </div>
-            </div>
-          </div>
-
-        </div>
-      </div>
-      {% endfor %}
-    </div>
-
-    <!-- CLIENTES -->
-    <div class="tab-pane fade" id="pane-clientes" role="tabpanel">
-      {% if not emp_cards or emp_cards|length == 0 %}
-        <div class="alert alert-warning">Sem dados no período selecionado.</div>
-      {% endif %}
-
-      {% for c in emp_cards %}
-      <div class="card emp-card soft-shadow mb-3">
-        <div class="card-body p-3 p-md-4">
-
-          <div class="emp-hero p-3 mb-3">
-            <div class="d-flex flex-wrap justify-content-between align-items-start gap-2">
-              <div>
-                <div class="h5 mb-0">🏬 EMP {{ c.emp }}</div>
-                <div class="muted small">Clientes do período • Clique em “Ver detalhes” para expandir</div>
-              </div>
-              <div class="d-flex flex-wrap gap-2">
-                <div class="pill"><span class="muted small">Clientes únicos</span> <span class="metric">{{ c.totais.clientes_unicos }}</span></div>
-                <div class="pill"><span class="muted small">Novos</span> <span class="metric">{{ c.totais.clientes_novos }}</span></div>
-                <div class="pill"><span class="muted small">Recorrentes</span> <span class="metric">{{ c.totais.clientes_recorrentes }}</span></div>
-              </div>
-            </div>
-          </div>
-
-          <div class="d-flex justify-content-between align-items-center mb-2">
-            <div class="fw-semibold">Top clientes (preview)</div>
-            <button class="btn btn-sm btn-ghost" type="button" data-bs-toggle="collapse" data-bs-target="#clientes-{{ loop.index }}" aria-expanded="false">
-              Ver detalhes
-            </button>
-          </div>
-
-          
-<!-- Mobile cards (Top clientes) -->
-<div class="mobile-list d-md-none">
-  {% for r in c.clientes_preview %}
-    <div class="mitem mb-2">
-      <div class="d-flex justify-content-between align-items-start gap-2">
-        <div class="title"><a href="javascript:void(0)" class="client-row text-decoration-none" tabindex="0" data-emp="{{ c.emp }}" data-cliente="{{ r.cliente_id }}" data-razao="{{ r.razao_norm }}" data-razao="{{ r.razao_norm }}" data-label="{{ r.cliente_label }}" data-valor="{{ r.valor_total }}">{{ loop.index }}. {{ r.cliente_label }}</a></div>
-        <div class="text-end fw-semibold">R$ {{ r.valor_total|brl }}</div>
-      </div>
-      <div class="kv mt-2">
-        <div><span class="k">Qtd</span></div>
-        <div class="fw-semibold">{{ r.qtd_total }}</div>
-      </div>
-    </div>
-  {% endfor %}
-</div>
-
-<div class="table-responsive d-none d-md-block">
-            <table class="table table-sm align-middle mb-0">
-              <thead>
-                <tr class="text-muted small">
-                  <th class="rank">#</th>
-                  <th>Cliente</th>
-                  <th class="text-end">Valor</th>
-                  <th class="text-end">Qtd</th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for r in c.clientes_preview %}
-                <tr>
-                  <td class="text-muted">{{ loop.index }}</td>
-                  <td class="fw-semibold"><a href="javascript:void(0)" class="client-row text-decoration-none" tabindex="0" data-emp="{{ c.emp }}" data-cliente="{{ r.cliente_id }}" data-razao="{{ r.razao_norm }}" data-label="{{ r.cliente_label }}" data-valor="{{ r.valor_total }}">{{ r.cliente_label }}</a></td>
-                  <td class="text-end">R$ {{ "{:,.2f}".format(r.valor_total).replace(",", "X").replace(".", ",").replace("X", ".") }}</td>
-                  <td class="text-end">{{ "{:,.0f}".format(r.mix_itens).replace(",", ".") }}</td>
-                </tr>
-                {% endfor %}
-                {% if c.clientes_preview|length == 0 %}
-                  <tr><td colspan="4" class="text-center text-muted py-3">Sem clientes no período.</td></tr>
-                {% endif %}
-              </tbody>
-            </table>
-          </div>
-
-          <div class="collapse mt-3" id="clientes-{{ loop.index }}">
-            <div class="fw-semibold mb-2">Ranking completo (todas)</div>
-            
-<!-- Mobile cards (Ranking clientes) -->
-<div class="mobile-list d-md-none">
-  {% for r in c.clientes_full %}
-    <div class="mitem mb-2">
-      <div class="d-flex justify-content-between align-items-start gap-2">
-        <div class="title"><a href="javascript:void(0)" class="client-row text-decoration-none" tabindex="0" data-emp="{{ c.emp }}" data-cliente="{{ r.cliente_id }}" data-razao="{{ r.razao_norm }}" data-label="{{ r.cliente_label }}" data-valor="{{ r.valor_total }}">{{ loop.index }}. {{ r.cliente_label }}</a></div>
-        <div class="text-end fw-semibold">R$ {{ r.valor_total|brl }}</div>
-      </div>
-      <div class="kv mt-2">
-        <div><span class="k">Qtd</span></div>
-        <div class="fw-semibold">{{ r.qtd_total }}</div>
-      </div>
-    </div>
-  {% endfor %}
-</div>
-
-<div class="table-responsive d-none d-md-block">
-              <table class="table table-sm align-middle">
-                <thead>
-                  <tr class="text-muted small">
-                    <th class="rank">#</th>
-                    <th>Cliente</th>
-                    <th class="text-end">Valor</th>
-                    <th class="text-end">Qtd</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {% for r in c.clientes_full %}
-                  <tr>
-                    <td class="text-muted">{{ loop.index }}</td>
-                    <td class="fw-semibold"><a href="javascript:void(0)" class="client-row text-decoration-none" tabindex="0" data-emp="{{ c.emp }}" data-cliente="{{ r.cliente_id }}" data-razao="{{ r.razao_norm }}" data-label="{{ r.cliente_label }}" data-valor="{{ r.valor_total }}">{{ r.cliente_label }}</a></td>
-                    <td class="text-end">R$ {{ "{:,.2f}".format(r.valor_total).replace(",", "X").replace(".", ",").replace("X", ".") }}</td>
-                    <td class="text-end">{{ "{:,.0f}".format(r.mix_itens).replace(",", ".") }}</td>
-                  </tr>
-                  {% endfor %}
-                  {% if c.clientes_full|length == 0 %}
-                    <tr><td colspan="4" class="text-center text-muted py-3">Sem dados.</td></tr>
-                  {% endif %}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-        </div>
-      </div>
-      {% endfor %}
-    </div>
-
-  </div>
-
-</div>
-
-
-<!-- Modal: Detalhes do cliente -->
-<div class="modal fade" id="clientModal" tabindex="-1" aria-labelledby="clientModalLabel" aria-hidden="true">
-  <div class="modal-dialog modal-lg modal-dialog-scrollable">
-    <div class="modal-content">
-      <div class="modal-header">
-        <div>
-          <h5 class="modal-title" id="clientModalLabel">Detalhes do cliente</h5>
-          <div class="small text-muted" id="clientModalSub">—</div>
-        </div>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
-      </div>
-      <div class="modal-body">
-        <div class="d-flex flex-wrap gap-2 mb-3">
-          <span class="badge text-bg-primary" id="clientTotalBadge">Total: —</span>
-          <span class="badge text-bg-secondary" id="clientMixBadge">Itens únicos: —</span>
-        </div>
-
-        <div class="alert alert-info py-2 d-none" id="clientModalLoading">Carregando…</div>
-        <div class="alert alert-danger py-2 d-none" id="clientModalError">Falha ao carregar detalhes.</div>
-
-        <div class="table-responsive">
-          <table class="table table-sm align-middle">
-            <thead>
-              <tr>
-                <th style="width:120px">Mestre</th>
-                <th>Descrição</th>
-                <th class="text-end" style="width:140px">Valor</th>
-              </tr>
-            </thead>
-            <tbody id="clientItemsBody">
-              <tr><td class="text-muted" colspan="3">—</td></tr>
-            </tbody>
-          </table>
-        </div>
-
-        <div class="small text-muted mt-2">
-          Dica: lista de itens únicos comprados pelo cliente no período filtrado.
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button class="btn btn-outline-secondary" data-bs-dismiss="modal">Fechar</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-
-<script>
-(function(){ if (window.__cc_city_init) return; window.__cc_city_init = true;
-  const modalEl = document.getElementById('clientModal');
-  const modal = modalEl ? new bootstrap.Modal(modalEl) : null;
-
-  const elLabel = document.getElementById('clientModalLabel');
-  const elSub = document.getElementById('clientModalSub');
-  const elTotal = document.getElementById('clientTotalBadge');
-  const elMix = document.getElementById('clientMixBadge');
-  const elBody = document.getElementById('clientItemsBody');
-  const elLoading = document.getElementById('clientModalLoading');
-  const elError = document.getElementById('clientModalError');
-
-  function brl(v){
-    try{
-      return new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(v||0);
-    }catch(e){
-      return 'R$ ' + (v||0);
-    }
-  }
-  function pct(v){ return (v||0).toFixed(1) + '%'; }
-  function show(el, on){ if(!el) return; el.classList.toggle('d-none', !on); }
-
-  async function loadClient(emp, cliente_id, razao_norm){
-    const mes = document.getElementById('mes')?.value || '';
-    const ano = document.getElementById('ano')?.value || '';
-    const vendedor = document.getElementById('vendedor')?.value || '';
-
-    show(elError,false);
-    show(elLoading,true);
-    elBody.innerHTML = '<tr><td class="text-muted" colspan="3">Carregando…</td></tr>';
-
-    const params = new URLSearchParams({emp: emp, cliente_id: cliente_id, razao_norm: razao_norm, mes: mes, ano: ano, vendedor: vendedor});
-    const resp = await fetch('/relatorios/cliente-itens?' + params.toString(), {headers: {'Accept':'application/json'}});
-    if(!resp.ok) throw new Error('HTTP ' + resp.status);
-    const data = await resp.json();
-
-    elTotal.textContent = 'Total: ' + brl(data.total || 0);
-    elMix.textContent = 'Itens únicos: ' + (data.itens_unicos || 0);
-
-    if(!data.itens || !data.itens.length){
-      elBody.innerHTML = '<tr><td class="text-muted" colspan="3">Sem dados.</td></tr>';
-      return;
-    }
-
-    elBody.innerHTML = data.itens.map(it => `
-      <tr>
-        <td class="fw-semibold">${(it.mestre || '')}</td>
-        <td>${(it.descricao || '')}</td>
-        <td class="text-end">${brl(it.valor_total||0)}</td>
-      </tr>
-    `).join('');
-  }
-
-  function openForRow(row){
-    if(!modal) return;
-    const emp = row.getAttribute('data-emp') || '';
-    const cliente_id = row.getAttribute('data-cliente') || '';
-    const razao_norm = row.getAttribute('data-razao') || '';
-    const label = row.getAttribute('data-label') || '';
-    const valor = parseFloat(row.getAttribute('data-valor') || '0') || 0;
-
-    elLabel.textContent = label || 'Detalhes do cliente';
-    elSub.textContent = `EMP ${emp} • Total (cliente): ${brl(valor)}`;
-    elTotal.textContent = 'Total: —';
-    elMix.textContent = 'Itens únicos: —';
-
-    modal.show();
-
-    loadClient(emp, cliente_id, razao_norm).then(()=>show(elLoading,false)).catch(err=>{
-      console.error(err);
-      show(elLoading,false);
-      show(elError,true);
-      elBody.innerHTML = '<tr><td class="text-muted" colspan="3">Falha ao carregar.</td></tr>';
-    });
-  }
-
-  document.addEventListener('click', (e)=>{
-    const row = e.target.closest('.client-row');
-    if(row){ e.preventDefault(); openForRow(row); }
-  });
-  document.addEventListener('keydown', (e)=>{
-    const row = e.target.closest && e.target.closest('.client-row');
-    if(!row) return;
-    if(e.key === 'Enter' || e.key === ' '){
-      e.preventDefault();
-      openForRow(row);
-    }
-  });
-})();
-</script>
 
 <!-- Modal: Cidade -> Clientes -->
 <div class="modal fade" id="cityClientsModal" tabindex="-1" aria-hidden="true">
@@ -931,23 +21,33 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
       </div>
       <div class="modal-body">
-        <div id="cityClientsMeta" class="text-muted small mb-2"></div>
-        <div id="cityClientsLoading" class="text-muted">Carregando...</div>
-        <div class="table-responsive d-none d-md-block">
-          <table class="table table-sm align-middle mb-0" id="cityClientsTable" style="display:none;">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+          <div>
+            <div class="fw-bold" id="cityClientsTitle">Cidade</div>
+            <div class="text-muted small" id="cityClientsSubtitle"></div>
+          </div>
+          <div class="d-flex gap-2">
+            <input class="form-control form-control-sm" id="cityClientsSearch" placeholder="Filtrar cliente...">
+          </div>
+        </div>
+
+        <div class="table-responsive">
+          <table class="table sv-table" id="cityClientsTable">
             <thead>
-              <tr class="text-muted small">
+              <tr>
                 <th>#</th>
                 <th>Cliente</th>
+                <th>Documento</th>
+                <th class="text-end">Qtd</th>
                 <th class="text-end">Valor</th>
-                <th class="text-end">Mix</th>
+                <th>Ações</th>
               </tr>
             </thead>
             <tbody></tbody>
           </table>
         </div>
 
-        <div class="mobile-list d-md-none" id="cityClientsMobile" style="display:none;"></div>
+        <div id="cityClientsMobile" class="d-md-none"></div>
       </div>
     </div>
   </div>
@@ -962,16 +62,24 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
       </div>
       <div class="modal-body">
-        <div id="clienteMarcasMeta" class="text-muted small mb-2"></div>
-        <div id="clienteMarcasLoading" class="text-muted">Carregando...</div>
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+          <div>
+            <div class="fw-bold" id="clienteMarcasTitle">Cliente</div>
+            <div class="text-muted small" id="clienteMarcasSubtitle"></div>
+          </div>
+          <div class="d-flex gap-2">
+            <input class="form-control form-control-sm" id="clienteMarcasSearch" placeholder="Filtrar marca...">
+          </div>
+        </div>
+
         <div class="table-responsive">
-          <table class="table table-sm align-middle mb-0" id="clienteMarcasTable" style="display:none;">
+          <table class="table sv-table" id="clienteMarcasTable">
             <thead>
-              <tr class="text-muted small">
+              <tr>
                 <th>#</th>
                 <th>Marca</th>
+                <th class="text-end">Qtd</th>
                 <th class="text-end">Valor</th>
-                <th class="text-end">% do cliente</th>
               </tr>
             </thead>
             <tbody></tbody>
@@ -982,146 +90,154 @@
   </div>
 </div>
 
-<script>
-(function(){ if (window.__cc_city_init) return; window.__cc_city_init = true;
-  function brl(v){
-    try{
-      return new Intl.NumberFormat('pt-BR', {style:'currency', currency:'BRL'}).format(v || 0);
-    }catch(e){
-      return 'R$ ' + (v||0).toFixed(2);
-    }
-  }
+<div class="sv-page sv-page--wide">
+  <div class="sv-pagehead sv-glass">
+    <div class="sv-pagehead__left">
+      <div class="sv-kicker">Relatórios</div>
+      <div class="sv-title">Cidades e Clientes</div>
+      <div class="sv-sub">
+        Período: <strong>{{ "%02d"|format(mes) }}/{{ ano }}</strong>
+        {% if escopo_label %} • <span class="sv-pill">{{ escopo_label }}</span>{% endif %}
+      </div>
+    </div>
+    <div class="sv-pagehead__right">
+      <a class="sv-btn sv-btn--ghost" href="{{ url_for('dashboard') }}">Voltar</a>
+    </div>
+  </div>
 
-  const mes = "{{ mes }}";
-  const ano = "{{ ano }}";
-  const vendedor = "{{ vendedor_filtro or '' }}";
-  const empFiltro = "{{ emp_filtro or '' }}";
-
-  let lastCityCtx = null;
-  let cityReqId = 0;
-
-  async function openCityClients(emp, cidade_norm, cidade_label){
-    lastCityCtx = {emp, cidade_norm, cidade_label};
-    const modalEl = document.getElementById('cityClientsModal');
-    const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
-    document.getElementById('cityClientsMeta').textContent = `EMP ${emp} • ${cidade_label} • ${mes}/${ano}`;
-    document.getElementById('cityClientsLoading').style.display = '';
-    document.getElementById('cityClientsTable').style.display = 'none';
-    document.getElementById('cityClientsMobile').style.display = 'none';
-    document.querySelector('#cityClientsTable tbody').innerHTML = '';
-    document.getElementById('cityClientsMobile').innerHTML = '';
-    const reqId = ++cityReqId;
-    modal.show();
-
-    const qs = new URLSearchParams({emp, cidade_norm, mes, ano});
-    if (vendedor) qs.set('vendedor', vendedor);
-    const resp = await fetch('/relatorios/cidade-clientes?' + qs.toString());
-    const data = await resp.json();
-    // ignore stale responses (prevents double-render on double-click)
-    if (reqId !== cityReqId) return;
-    document.getElementById('cityClientsLoading').style.display = 'none';
-
-    if (!resp.ok || data.error){
-      document.getElementById('cityClientsMeta').textContent = (data && data.error) ? data.error : 'Erro ao carregar';
-      return;
-    }
-
-    const rows = data.clientes || [];
-    // desktop table
-    const tbody = document.querySelector('#cityClientsTable tbody');
-    rows.forEach((r, idx) => {
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td class="text-muted">${idx+1}</td>
-        <td><a href="#" class="js-client link-primary text-decoration-none" data-razao="${r.cliente_id}" data-label="${(r.cliente||'').replace(/"/g,'&quot;')}">${r.cliente}</a></td>
-        <td class="text-end">${brl(r.valor_total)}</td>
-        <td class="text-end">${r.mix_itens || 0}</td>
-      `;
-      tbody.appendChild(tr);
-    });
-    document.getElementById('cityClientsTable').style.display = '';
-    // mobile cards
-    const mob = document.getElementById('cityClientsMobile');
-    rows.forEach((r, idx) => {
-      const div = document.createElement('div');
-      div.className = 'mitem mb-2';
-      div.innerHTML = `
-        <div class="d-flex justify-content-between align-items-start gap-2">
-          <div class="title">${idx+1}. <a href="#" class="js-client link-primary text-decoration-none" data-razao="${r.cliente_id}" data-label="${(r.cliente||'').replace(/"/g,'&quot;')}">${r.cliente}</a></div>
-          <div class="text-end fw-semibold">${brl(r.valor_total)}</div>
+  <div class="sv-section">
+    <div class="sv-card sv-cardpad">
+      <div class="sv-card__head">
+        <div>
+          <div class="sv-card__title">Resumo por cidade</div>
+          <div class="sv-sub">Clique em uma cidade para ver os clientes; depois, clique no cliente para ver marcas.</div>
         </div>
-        <div class="kv mt-2"><div><span class="k">Mix</span></div><div class="fw-semibold">${r.mix_itens || 0}</div></div>
-      `;
-      mob.appendChild(div);
-    });
-    mob.style.display = '';
-  }
+      </div>
 
-  async function openClienteMarcas(emp, cliente_id, cliente_label){
-    const ctx = lastCityCtx || {cidade_norm: ''};
-    const cidade_norm = ctx.cidade_norm || '';
-    const modalEl = document.getElementById('clienteMarcasModal');
-    const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
-    document.getElementById('clienteMarcasMeta').textContent = `EMP ${emp} • ${cliente_label} • ${mes}/${ano}` + (cidade_norm ? ` • ${ctx.cidade_label}` : '');
-    document.getElementById('clienteMarcasLoading').style.display = '';
-    document.getElementById('clienteMarcasTable').style.display = 'none';
-    document.querySelector('#clienteMarcasTable tbody').innerHTML = '';
-    const reqId = ++cityReqId;
-    modal.show();
+      <div class="table-responsive" style="margin-top:10px;">
+        <table class="table sv-table">
+          <thead>
+            <tr>
+              <th>Cidade</th>
+              <th class="text-end">Clientes</th>
+              <th class="text-end">Qtd</th>
+              <th class="text-end">Valor</th>
+              <th style="width:1%"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for c in cidades %}
+              <tr>
+                <td>
+                  <div style="font-weight:900;">{{ c.cidade }}</div>
+                  <div class="sv-sub">EMP: {{ c.emp }}</div>
+                </td>
+                <td class="text-end">{{ c.qtd_clientes }}</td>
+                <td class="text-end">{{ c.qtd_total }}</td>
+                <td class="text-end">{{ (c.valor_total or 0)|float|brl_rs }}</td>
+                <td class="text-end">
+                  <button
+                    class="sv-btn sv-btn--soft sv-btn--sm"
+                    type="button"
+                    data-city="{{ c.cidade }}"
+                    data-emp="{{ c.emp }}"
+                    onclick="openCityClients(this)"
+                  >Ver clientes</button>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
 
-    const qs = new URLSearchParams({emp, cliente_id, mes, ano});
-    if (vendedor) qs.set('vendedor', vendedor);
-    if (cidade_norm) qs.set('cidade_norm', cidade_norm);
-    const resp = await fetch('/relatorios/cliente-marcas?' + qs.toString());
-    const data = await resp.json();
-    document.getElementById('clienteMarcasLoading').style.display = 'none';
+    </div>
+  </div>
+</div>
 
-    if (!resp.ok || data.error){
-      document.getElementById('clienteMarcasMeta').textContent = (data && data.error) ? data.error : 'Erro ao carregar';
-      return;
-    }
+<script>
+  // Mantém os mesmos IDs/JS (somente layout mudou)
+  async function openCityClients(btn){
+    const cidade = btn.getAttribute('data-city');
+    const emp = btn.getAttribute('data-emp');
 
-    const rows = data.marcas || [];
-    const tbody = document.querySelector('#clienteMarcasTable tbody');
-    rows.forEach((r, idx) => {
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td class="text-muted">${idx+1}</td>
-        <td class="fw-semibold">${r.marca}</td>
-        <td class="text-end">${brl(r.valor_total)}</td>
-        <td class="text-end">${(r.percent || 0).toFixed(1)}%</td>
-      `;
-      tbody.appendChild(tr);
-    });
-    document.getElementById('clienteMarcasTable').style.display = '';
-  }
+    const title = document.getElementById('cityClientsTitle');
+    const subtitle = document.getElementById('cityClientsSubtitle');
+    title.textContent = cidade || 'Cidade';
+    subtitle.textContent = `EMP ${emp} • Período {{ "%02d"|format(mes) }}/{{ ano }}`;
 
-  // click cidade
-  document.addEventListener('click', function(ev){
-    const a = ev.target.closest('a.js-city');
-    if (a){
-      ev.preventDefault();
-      const emp = a.getAttribute('data-emp');
-      const cidade_norm = a.getAttribute('data-cidade');
-      const label = a.textContent.trim();
-      openCityClients(emp, cidade_norm, label);
-      return;
-    }
-    const c = ev.target.closest('a.js-client');
-    if (c){
-      ev.preventDefault();
-      const emp = (lastCityCtx && lastCityCtx.emp) ? lastCityCtx.emp : (empFiltro || '');
-      const cliente_id = c.getAttribute('data-razao');
-      const label = c.getAttribute('data-label') || c.textContent.trim();
-      if (!emp){
+    const tbody = document.querySelector('#cityClientsTable tbody');
+    tbody.innerHTML = '<tr><td colspan="6" class="text-muted">Carregando...</td></tr>';
+
+    try{
+      const resp = await fetch(`/relatorios/cidades-clientes/api/cidade?cidade=${encodeURIComponent(cidade)}&emp=${encodeURIComponent(emp)}&mes={{ mes }}&ano={{ ano }}&vendedor={{ vendedor_filtro or "" }}&emp_filtro={{ emp_filtro or "" }}`);
+      const data = await resp.json();
+      if(!data || !data.ok){
+        tbody.innerHTML = '<tr><td colspan="6" class="text-danger">Falha ao carregar</td></tr>';
         return;
       }
-      openClienteMarcas(emp, cliente_id, label);
-      return;
-    }
-  });
-})();
-</script>
 
+      const rows = data.clientes || [];
+      tbody.innerHTML = '';
+      rows.forEach((r, idx) => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${idx+1}</td>
+          <td><b>${r.nome || ''}</b></td>
+          <td>${r.doc || ''}</td>
+          <td class="text-end">${r.qtd || 0}</td>
+          <td class="text-end">${r.valor_fmt || ''}</td>
+          <td class="text-end">
+            <button class="sv-btn sv-btn--ghost sv-btn--sm" type="button" onclick="openClienteMarcas('${(r.doc||'').replaceAll("'","")}','${(r.nome||'').replaceAll("'","")}')">Marcas</button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+
+      const modal = new bootstrap.Modal(document.getElementById('cityClientsModal'));
+      modal.show();
+
+    }catch(e){
+      tbody.innerHTML = '<tr><td colspan="6" class="text-danger">Erro ao carregar</td></tr>';
+    }
+  }
+
+  async function openClienteMarcas(doc, nome){
+    const title = document.getElementById('clienteMarcasTitle');
+    const subtitle = document.getElementById('clienteMarcasSubtitle');
+    title.textContent = nome || 'Cliente';
+    subtitle.textContent = doc || '';
+
+    const tbody = document.querySelector('#clienteMarcasTable tbody');
+    tbody.innerHTML = '<tr><td colspan="4" class="text-muted">Carregando...</td></tr>';
+
+    try{
+      const resp = await fetch(`/relatorios/cidades-clientes/api/cliente?doc=${encodeURIComponent(doc)}&mes={{ mes }}&ano={{ ano }}`);
+      const data = await resp.json();
+      if(!data || !data.ok){
+        tbody.innerHTML = '<tr><td colspan="4" class="text-danger">Falha ao carregar</td></tr>';
+        return;
+      }
+
+      const rows = data.marcas || [];
+      tbody.innerHTML = '';
+      rows.forEach((r, idx) => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${idx+1}</td>
+          <td><b>${r.marca || ''}</b></td>
+          <td class="text-end">${r.qtd || 0}</td>
+          <td class="text-end">${r.valor_fmt || ''}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+
+      const modal = new bootstrap.Modal(document.getElementById('clienteMarcasModal'));
+      modal.show();
+
+    }catch(e){
+      tbody.innerHTML = '<tr><td colspan="4" class="text-danger">Erro ao carregar</td></tr>';
+    }
+  }
+</script>
 
 {% endblock %}
