@@ -7686,7 +7686,7 @@ def campanhas_ranking_marca():
 # ADMIN - RANKING POR MARCA (GESTÃO)
 # ===============================
 @app.route("/admin/ranking-marca", methods=["GET"])
-@roles_required("admin")
+@admin_required
 def admin_ranking_marca():
     from services.ranking_marca_service import listar_rankings_marca
 
