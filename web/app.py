@@ -226,12 +226,12 @@ def brl(value):
 # --------------------------
 @app.template_filter("brl_rs")
 def brl_rs(value):
-    """Formata valores monetários no padrão brasileiro com prefixo 'R$' (ex: R$12.345,67)."""
+    """Formata valores monetários no padrão brasileiro com prefixo 'R$ ' (ex: R$ 12.345,67)."""
     s = brl(value)
     # brl() já devolve '0,00' em erro
     if s.startswith("-"):
-        return "R$-" + s[1:]
-    return "R$" + s
+        return "R$ -" + s[1:]
+    return "R$ " + s
 
 # --------------------------
 # Filtros Jinja: datas (ISO <-> BR)
