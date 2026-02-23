@@ -28,7 +28,7 @@
 
   {% if msgs %}
     {% for m in msgs %}
-      <div class="alert alert-info py-2 mb-2">{{ m }}</div>
+      <div class="alert alert-info py-2 mb-2">{{ m|safe }}</div>
     {% endfor %}
   {% endif %}
 
@@ -63,7 +63,6 @@
         </div>
 
     <form method="post" action="{{ url_for('admin_fechamento') }}" class="d-flex flex-wrap gap-2 align-items-end">
-  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           {# mantém filtros no POST #}
           {% for e in (emps_sel or []) %}
             <input type="hidden" name="emp" value="{{ e }}">

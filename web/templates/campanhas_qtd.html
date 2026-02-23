@@ -1,288 +1,263 @@
 {% extends "base.html" %}
+{% block title %}Campanhas (Qtd){% endblock %}
 
 {% block content %}
-{#
-  Campanhas do mês (Qtd) — Layout idêntico ao modelo fornecido.
-  IMPORTANTE: não depende de alterações no app.py nem no campanhas_service.py.
-  Renderiza hierarquia EMP → Vendedor → Campanhas a partir de ctx.blocos.
-#}
+<div class="sv-page">
 
-<style>
-  /* ====== Base visual do MODELO ====== */
-  .mq-wrap{max-width:980px;margin:0 auto;padding:14px 12px 28px;}
-  .mq-title{font-size:38px;line-height:1.05;margin:0 0 8px;color:#f3f3f3;font-weight:800;letter-spacing:-.3px}
-  .mq-sub{margin:0 0 14px;color:#cfcfcf;font-size:13px}
-  .mq-badge{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;border:1px solid rgba(255,153,0,.25);background:rgba(0,0,0,.28);color:#ffb55a;font-size:11px}
+  <!-- Header -->
+  <div class="sv-card sv-card--header">
+    <div class="sv-row sv-row--between sv-row--wrap sv-gap-12">
+      <div>
+        <div class="sv-breadcrumb">Campanhas</div>
+        <h1 class="sv-title">Campanhas do mês (Qtd)</h1>
+        <p class="sv-subtitle">
+          Fluxo: <b>Empresa</b> → clique para abrir <b>Vendedores</b> → clique para ver <b>Campanhas + Valores</b>.
+          O <b>Total (R$)</b> é a soma das <b>recompensas</b> (não é valor vendido).
+        </p>
+      </div>
 
-  .mq-panel{border-radius:14px;border:1px solid rgba(255,153,0,.18);background:rgba(0,0,0,.35);box-shadow:0 10px 30px rgba(0,0,0,.35);padding:12px}
-  .mq-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
-  .mq-card{border-radius:12px;border:1px solid rgba(255,153,0,.14);background:rgba(0,0,0,.22);padding:10px}
-  .mq-label{font-size:12px;color:#cfcfcf;margin:0 0 6px}
-  .mq-input{width:100%;border-radius:10px;border:1px solid rgba(255,153,0,.16);background:rgba(0,0,0,.35);color:#f2f2f2;padding:10px 10px;font-size:14px;outline:none}
-  .mq-input:focus{border-color:rgba(255,153,0,.35);box-shadow:0 0 0 2px rgba(255,153,0,.10)}
-  .mq-select{width:100%;height:110px;border-radius:10px;border:1px solid rgba(255,153,0,.16);background:rgba(0,0,0,.35);color:#f2f2f2;padding:8px;font-size:13px;outline:none}
-  .mq-hint{font-size:11px;color:#bdbdbd;margin-top:6px}
-
-  .mq-actions{display:flex;justify-content:flex-end;gap:10px;align-items:center;margin-top:10px}
-  .mq-btn{border-radius:999px;padding:9px 14px;font-size:13px;border:1px solid rgba(255,153,0,.20);background:rgba(0,0,0,.30);color:#f2f2f2;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;justify-content:center}
-  .mq-btn.primary{background:linear-gradient(180deg,rgba(255,153,0,.22),rgba(255,153,0,.10));color:#ffd19a}
-  .mq-btn:hover{filter:brightness(1.08)}
-
-  .mq-kpis{display:grid;grid-template-columns:160px 160px 220px 1fr;gap:10px;margin-top:10px;align-items:stretch}
-  .mq-kpi{border-radius:12px;border:1px solid rgba(255,153,0,.14);background:rgba(0,0,0,.22);padding:10px;display:flex;flex-direction:column;justify-content:center}
-  .mq-kpi .t{font-size:11px;color:#bfbfbf;margin-bottom:4px}
-  .mq-kpi .v{font-size:20px;color:#ffb55a;font-weight:800}
-  .mq-kpi .v.small{font-size:18px;color:#f2f2f2}
-  .mq-kpi-note{border-radius:12px;border:1px solid rgba(255,153,0,.10);background:rgba(0,0,0,.18);padding:10px;display:flex;align-items:center;color:#cfcfcf;font-size:12px}
-
-  /* ====== Accordion (idêntico ao modelo) ====== */
-  .acc{margin-top:12px;display:flex;flex-direction:column;gap:10px}
-  .acc-item{border-radius:12px;border:1px solid rgba(255,153,0,.16);background:rgba(0,0,0,.18);overflow:hidden}
-  .acc-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 12px;cursor:pointer}
-  .acc-left{display:flex;align-items:flex-start;gap:10px}
-  .acc-pill{min-width:34px;height:22px;border-radius:999px;display:flex;align-items:center;justify-content:center;font-size:11px;color:#ffcc8c;background:rgba(255,153,0,.12);border:1px solid rgba(255,153,0,.18);padding:0 8px}
-  .acc-title{font-weight:800;color:#f2f2f2;font-size:13px;line-height:1.1}
-  .acc-sub{color:#bdbdbd;font-size:11px;margin-top:2px}
-  .acc-right{display:flex;align-items:center;gap:8px}
-  .money{border-radius:10px;padding:6px 10px;border:1px solid rgba(255,153,0,.22);background:rgba(0,0,0,.28);color:#ffb55a;font-weight:900;font-size:12px;min-width:84px;text-align:right}
-  .chev{width:30px;height:30px;border-radius:10px;border:1px solid rgba(255,153,0,.14);background:rgba(0,0,0,.24);display:flex;align-items:center;justify-content:center;color:#cfcfcf;font-size:14px;transition:transform .18s ease}
-  .acc-item.open .chev{transform:rotate(180deg)}
-  .acc-body{display:none;border-top:1px solid rgba(255,153,0,.12);padding:10px 12px 12px}
-  .acc-item.open .acc-body{display:block}
-
-  /* ====== Tabela (idêntico ao modelo) ====== */
-  .tbl{width:100%;border-collapse:collapse;font-size:12px;color:#e9e9e9;margin-top:10px}
-  .tbl th,.tbl td{padding:10px 10px;border-bottom:1px solid rgba(255,153,0,.10)}
-  .tbl th{color:#cfcfcf;font-weight:700;text-align:left;background:rgba(0,0,0,.22)}
-  .tbl td.num,.tbl th.num{text-align:right}
-  .tbl td .tag{display:inline-flex;align-items:center;gap:6px}
-  .chk{color:#ffb55a;font-weight:900}
-  .note{margin-top:10px;color:#cfcfcf;font-size:11px}
-  .total-right{margin-top:8px;color:#ffb55a;font-weight:900;font-size:12px;text-align:right}
-
-  @media (max-width: 980px){
-    .mq-grid{grid-template-columns:1fr;}
-    .mq-kpis{grid-template-columns:1fr;}
-    .mq-title{font-size:32px}
-  }
-</style>
-
-{# ---------- Helpers (Jinja) ---------- #}
-{% set blocos = (ctx.blocos if ctx and ctx.blocos is defined else []) %}
-{% set emps_options = (ctx.emps_options if ctx and ctx.emps_options is defined else []) %}
-{% set vendedores_options = (ctx.vendedores_options if ctx and ctx.vendedores_options is defined else []) %}
-{% set mes = (ctx.mes if ctx and ctx.mes is defined else request.args.get('mes', 1)) %}
-{% set ano = (ctx.ano if ctx and ctx.ano is defined else request.args.get('ano', 2026)) %}
-{% set por_pagina = (ctx.por_pagina if ctx and ctx.por_pagina is defined else request.args.get('por_pagina', 25)) %}
-{% set visao = (ctx.visao if ctx and ctx.visao is defined else request.args.get('visao', 'detalhado')) %}
-
-{% set _emp_map = namespace(m={}) %}
-{% for opt in emps_options %}
-  {% if opt.value is defined and opt.label is defined %}
-    {% set _ = _emp_map.m.update({opt.value|string: opt.label}) %}
-  {% endif %}
-{% endfor %}
-
-{% set _total_recompensa = namespace(v=0) %}
-{% for b in blocos %}
-  {% set _total_recompensa.v = _total_recompensa.v + (b.total or 0) %}
-{% endfor %}
-
-{% set _emp_groups = (blocos|groupby('emp')) %}
-{% set empresas_exibidas = _emp_groups|length %}
-
-<div class="mq-wrap">
-  <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:12px;">
-    <div>
-      <div style="color:#bdbdbd;font-size:12px;margin-bottom:6px;">Campanhas</div>
-      <h1 class="mq-title">Campanhas do mês (Qtd)</h1>
-      <p class="mq-sub">
-        Fluxo esperado: <b>Empresa</b> → clique para abrir <b>Vendedores</b> → clique para ver <b>Campanhas</b> + <b>Valores</b>.
-        O <b>Total (R$)</b> é o acumulado de <b>recompensas</b> (não é valor vendido).
-      </p>
+      <div class="sv-row sv-gap-8">
+        <form method="get" action="{{ url_for('campanhas_qtd') }}" class="sv-row sv-gap-8">
+          <!-- mantém período atual -->
+          <input type="hidden" name="mes" value="{{ mes }}">
+          <input type="hidden" name="ano" value="{{ ano }}">
+          {% for e in emps_sel %}<input type="hidden" name="emp" value="{{ e }}">{% endfor %}
+          {% for v in vendedores_sel %}<input type="hidden" name="vendedor" value="{{ v }}">{% endfor %}
+          <input type="hidden" name="visao" value="{{ visao }}">
+          <input type="hidden" name="por_pagina" value="{{ por_pagina }}">
+          <button class="sv-btn sv-btn--ghost" type="submit" name="refresh" value="1">Atualizar</button>
+        </form>
+      </div>
     </div>
-    <div class="mq-badge">MODELO / PRODUÇÃO</div>
   </div>
 
-  <div class="mq-panel">
-    <form method="GET" action="{{ url_for('campanhas_qtd') if url_for is defined else '' }}">
-      <div class="mq-grid">
-        <div class="mq-card">
-          <div class="mq-label">Mês</div>
-          <input class="mq-input" type="number" name="mes" min="1" max="12" value="{{ mes }}">
-        </div>
-        <div class="mq-card">
-          <div class="mq-label">Ano</div>
-          <input class="mq-input" type="number" name="ano" min="2000" max="2100" value="{{ ano }}">
-        </div>
-        <div class="mq-card">
-          <div class="mq-label">Visão</div>
-          <select class="mq-input" name="visao">
-            <option value="detalhado" {% if visao == 'detalhado' %}selected{% endif %}>Detalhado (Empresa → Vendedor → Campanhas)</option>
-          </select>
-        </div>
-
-        <div class="mq-card">
-          <div class="mq-label">EMP (seleção múltipla)</div>
-          <select class="mq-select mq-multisel" name="emp" multiple>
-            {% for opt in emps_options %}
-              {% set sel = false %}
-              {% if ctx and ctx.emp_sel is defined %}
-                {% set sel = (opt.value in ctx.emp_sel) %}
-              {% endif %}
-              <option value="{{ opt.value }}" {% if sel %}selected{% endif %}>{{ opt.label }}</option>
-            {% endfor %}
-          </select>
-          <div class="mq-hint">(No sistema real: seleção múltipla sem Ctrl.)</div>
-        </div>
-
-        <div class="mq-card">
-          <div class="mq-label">Vendedor (opcional)</div>
-          <select class="mq-select mq-multisel" name="vendedor" multiple>
-            {% for opt in vendedores_options %}
-              {% set sel = false %}
-              {% if ctx and ctx.vendedor_sel is defined %}
-                {% set sel = (opt.value in ctx.vendedor_sel) %}
-              {% endif %}
-              <option value="{{ opt.value }}" {% if sel %}selected{% endif %}>{{ opt.label }}</option>
-            {% endfor %}
-          </select>
-          <div class="mq-hint">(Quando vazio: mostra todos)</div>
-        </div>
-
-        <div class="mq-card">
-          <div class="mq-label">Por página</div>
-          <input class="mq-input" type="number" name="por_pagina" min="1" max="200" value="{{ por_pagina }}">
-
-          <div class="mq-actions">
-            <button class="mq-btn primary" type="submit">Aplicar filtros</button>
-            <a class="mq-btn" href="{{ url_for('campanhas_qtd') if url_for is defined else '' }}">Limpar</a>
-          </div>
-        </div>
+  <!-- Filters -->
+  <form method="get" class="sv-card sv-card--section">
+    <div class="sv-grid sv-grid-3">
+      <div class="sv-field">
+        <label class="sv-label" for="mes">Mês</label>
+        <input class="sv-input" id="mes" name="mes" value="{{ mes }}" inputmode="numeric" />
       </div>
-    </form>
 
-    <div class="mq-kpis">
-      <div class="mq-kpi">
-        <div class="t">Período</div>
-        <div class="v">{{ '%02d'|format(mes|int) }}/{{ ano }}</div>
+      <div class="sv-field">
+        <label class="sv-label" for="ano">Ano</label>
+        <input class="sv-input" id="ano" name="ano" value="{{ ano }}" inputmode="numeric" />
       </div>
-      <div class="mq-kpi">
-        <div class="t">Empresas exibidas</div>
-        <div class="v small">{{ empresas_exibidas }}</div>
+
+      <div class="sv-field">
+        <label class="sv-label" for="visao">Visão</label>
+        <select class="sv-select" id="visao" name="visao">
+          <option value="detalhado" {% if visao == 'detalhado' %}selected{% endif %}>Detalhado (Empresa → Vendedor → Campanhas)</option>
+          <option value="resumo" {% if visao == 'resumo' %}selected{% endif %}>Resumo</option>
+        </select>
       </div>
-      <div class="mq-kpi">
-        <div class="t">Total de recompensa</div>
-        <div class="v">{{ _total_recompensa.v|brl }}</div>
-      </div>
-      <div class="mq-kpi-note">Clique na empresa para ver vendedores. Clique no vendedor para ver as campanhas.</div>
     </div>
 
-    <div class="acc" id="acc-root">
-      {% for g in _emp_groups %}
-        {% set emp_codigo = g.grouper %}
-        {% set emp_nome = _emp_map.m.get(emp_codigo|string, emp_codigo) %}
-
-        {% set _emp_total = namespace(v=0) %}
-        {% for b in g.list %}{% set _emp_total.v = _emp_total.v + (b.total or 0) %}{% endfor %}
-
-        <div class="acc-item" data-acc="emp" id="emp-{{ loop.index }}">
-          <div class="acc-head" data-toggle="emp-{{ loop.index }}">
-            <div class="acc-left">
-              <div class="acc-pill">{{ emp_codigo }}</div>
-              <div>
-                <div class="acc-title">{{ emp_nome }}</div>
-                <div class="acc-sub">{{ g.list|length }} vendedor(es) · Total de recompensa: <b>{{ _emp_total.v|brl }}</b></div>
-              </div>
-            </div>
-            <div class="acc-right">
-              <div class="money">{{ _emp_total.v|brl }}</div>
-              <div class="chev">▾</div>
-            </div>
+    <div class="sv-grid sv-grid-2 sv-mt-14">
+      <div class="sv-field">
+        <div class="sv-row sv-row--between sv-gap-8 sv-mb-8">
+          <div>
+            <div class="sv-label">EMP</div>
+            <div class="sv-hint">Selecione uma ou mais</div>
           </div>
-          <div class="acc-body">
-            {% for b in g.list %}
-              {% set vend_nome = b.vendedor %}
+          <button class="sv-btn sv-btn--ghost sv-btn--sm" type="button" data-action="check-all" data-target="emp">Marcar todas</button>
+        </div>
 
-              <div class="acc-item" data-acc="vend" id="vend-{{ loop.parent.index }}-{{ loop.index }}" style="margin-top:10px;">
-                <div class="acc-head" data-toggle="vend-{{ loop.parent.index }}-{{ loop.index }}">
-                  <div class="acc-left">
-                    <div>
-                      <div class="acc-title">{{ vend_nome }}</div>
-                      <div class="acc-sub">{{ (b.resultados or [])|length }} campanha(s) · Total do vendedor: <b>{{ (b.total or 0)|brl }}</b></div>
+        <div class="sv-checklist sv-checklist--tall" data-checklist="emp">
+          {% for opt in emps_options %}
+            {% set val = (opt.value if opt.value is defined else opt['value']) %}
+            {% set lab = (opt.label if opt.label is defined else opt['label']) %}
+            <label class="sv-check">
+              <input type="checkbox" name="emp" value="{{ val }}" {% if val in emps_sel %}checked{% endif %}>
+              <span>{{ lab }}</span>
+            </label>
+          {% endfor %}
+        </div>
+      </div>
+
+      <div class="sv-field">
+        <div class="sv-row sv-row--between sv-gap-8 sv-mb-8">
+          <div>
+            <div class="sv-label">Vendedor</div>
+            <div class="sv-hint">Opcional</div>
+          </div>
+          <button class="sv-btn sv-btn--ghost sv-btn--sm" type="button" data-action="check-all" data-target="vendedor">Marcar todas</button>
+        </div>
+
+        <div class="sv-checklist sv-checklist--tall" data-checklist="vendedor">
+          {% for opt in vendedores_options %}
+            {% set val = (opt.value if opt.value is defined else opt['value']) %}
+            {% set lab = (opt.label if opt.label is defined else opt['label']) %}
+            <label class="sv-check">
+              <input type="checkbox" name="vendedor" value="{{ val }}" {% if val in vendedores_sel %}checked{% endif %}>
+              <span>{{ lab }}</span>
+            </label>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    <div class="sv-row sv-row--between sv-row--wrap sv-gap-12 sv-mt-14">
+      <div class="sv-field" style="max-width: 240px;">
+        <label class="sv-label" for="por_pagina">Por página</label>
+        <input class="sv-input" id="por_pagina" name="por_pagina" value="{{ por_pagina }}" inputmode="numeric" />
+      </div>
+
+      <div class="sv-row sv-gap-8">
+        <button class="sv-btn sv-btn--primary" type="submit">Aplicar filtros</button>
+        <a class="sv-btn sv-btn--ghost" href="{{ url_for('campanhas_qtd') }}">Limpar</a>
+      </div>
+    </div>
+  </form>
+
+  <!-- KPIs -->
+  <div class="sv-grid sv-grid-4 sv-mt-14">
+    <div class="sv-kpi">
+      <div class="sv-kpi__label">Total de recompensa (R$)</div>
+      <div class="sv-kpi__value">{{ total_recompensa|brl }}</div>
+      <div class="sv-kpi__hint">{{ total_campanhas }} campanhas (linhas)</div>
+    </div>
+
+    <div class="sv-kpi">
+      <div class="sv-kpi__label">Empresas exibidas</div>
+      <div class="sv-kpi__value">{{ emps_data|length }}</div>
+      <div class="sv-kpi__hint">Ordenadas por total</div>
+    </div>
+
+    <div class="sv-kpi">
+      <div class="sv-kpi__label">Período</div>
+      <div class="sv-kpi__value">{{ "%02d"|format(mes|int) }}/{{ ano }}</div>
+      <div class="sv-kpi__hint">Filtros aplicados</div>
+    </div>
+
+    <div class="sv-kpi">
+      <div class="sv-kpi__label">Visão</div>
+      <div class="sv-kpi__value">{{ "Detalhado" if visao == "detalhado" else "Resumo" }}</div>
+      <div class="sv-kpi__hint">EMP → Vendedor → Campanhas</div>
+    </div>
+  </div>
+
+  <!-- Conteúdo (hierarquia EMP -> Vendedor -> Campanhas) -->
+  <div class="sv-card sv-card--section sv-mt-14">
+    <div class="sv-row sv-row--between sv-row--wrap sv-gap-12 sv-mb-10">
+      <div>
+        <div class="sv-section-title">Detalhamento</div>
+        <div class="sv-hint">Clique na EMP para abrir os vendedores. Clique no vendedor para ver as campanhas.</div>
+      </div>
+      <div class="sv-hint">EMPs: {{ emps_data|length }}</div>
+    </div>
+
+    {% if emps_data|length == 0 %}
+      <div class="sv-muted">Nenhum resultado com os filtros atuais.</div>
+    {% else %}
+      <div class="sv-acc">
+        {% for emp in emps_data %}
+          <details class="sv-details sv-details--emp">
+            <summary class="sv-details__summary sv-row sv-row--between sv-gap-12">
+              <div class="sv-row sv-gap-10" style="min-width:0;">
+                <span class="sv-chip">{{ emp.emp }}</span>
+                <div style="min-width:0;">
+                  <div class="sv-strong sv-truncate">{{ emp.emp_label }}</div>
+                  <div class="sv-muted">{{ emp.vendedores|length }} vendedor(es)</div>
+                </div>
+              </div>
+              <div class="sv-row sv-gap-10" style="align-items:center;">
+                <div class="sv-pill">{{ emp.emp_total|brl }}</div>
+              </div>
+            </summary>
+
+            <div class="sv-details__panel">
+              {% if emp.vendedores|length == 0 %}
+                <div class="sv-muted">Sem vendedores no período (ou filtro restritivo).</div>
+              {% else %}
+                {% for vend in emp.vendedores %}
+                  <details class="sv-details sv-details--vend">
+                    <summary class="sv-details__summary sv-row sv-row--between sv-gap-12">
+                      <div style="min-width:0;">
+                        <div class="sv-strong sv-truncate">{{ vend.vendedor }}</div>
+                        <div class="sv-muted">Campanhas: {{ vend.resultados|length }}</div>
+                      </div>
+                      <div class="sv-pill">{{ vend.total_recompensa|brl }}</div>
+                    </summary>
+
+                    <div class="sv-details__panel">
+                      <div class="sv-mini-table-wrap">
+                        <table class="sv-mini-table">
+                          <thead>
+                            <tr>
+                              <th>Campanha</th>
+                              <th style="width:90px; text-align:right;">Qtd mín.</th>
+                              <th style="width:110px; text-align:right;">Prêmio (R$)</th>
+                              <th style="width:90px; text-align:right;">Vendeu</th>
+                              <th style="width:130px; text-align:right;">Valor (R$)</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {% for r in vend.resultados %}
+                              <tr class="{% if r.atingiu_minimo %}is-ok{% endif %}">
+                                <td class="sv-strong">{{ r.titulo }}</td>
+                                <td style="text-align:right;">{{ r.qtd_minima }}</td>
+                                <td style="text-align:right;">{{ r.recompensa_unit|brl }}</td>
+                                <td style="text-align:right;">{{ r.qtd_vendida }}</td>
+                                <td style="text-align:right;"><b>{{ r.valor_recompensa|brl }}</b></td>
+                              </tr>
+                            {% endfor %}
+                            {% if vend.resultados|length == 0 %}
+                              <tr><td colspan="5" class="sv-muted">Sem campanhas.</td></tr>
+                            {% endif %}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      <div class="sv-row sv-row--between sv-gap-10 sv-mt-10">
+                        <div class="sv-hint">Obs.: “Vendeu” = quantidade vendida (qtd). “Valor (R$)” = recompensa acumulada.</div>
+                        <div class="sv-strong">Total do vendedor: {{ vend.total_recompensa|brl }}</div>
+                      </div>
                     </div>
-                  </div>
-                  <div class="acc-right">
-                    <div class="money">{{ (b.total or 0)|brl }}</div>
-                    <div class="chev">▾</div>
-                  </div>
-                </div>
-                <div class="acc-body">
-                  <table class="tbl">
-                    <thead>
-                      <tr>
-                        <th>Campanha</th>
-                        <th class="num">Qtd mín.</th>
-                        <th class="num">Prêmio (R$)</th>
-                        <th class="num">Vendeu</th>
-                        <th class="num">Valor (R$)</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {% for r in (b.resultados or []) %}
-                        <tr>
-                          <td>
-                            <span class="tag"><span class="chk">✓</span> {{ r.campanha_nome }}</span>
-                          </td>
-                          <td class="num">{{ r.qtd_min if r.qtd_min is not none else '' }}</td>
-                          <td class="num">{{ (r.premio_unit or 0)|brl }}</td>
-                          <td class="num">{{ r.vendeu_qtd or 0 }}</td>
-                          <td class="num">{{ (r.valor_recompensa or 0)|brl }}</td>
-                        </tr>
-                      {% endfor %}
-                    </tbody>
-                  </table>
-                  <div class="note">Obs.: “Vendeu” = quantidade vendida (qtd). “Valor (R$)” = recompensa acumulada.</div>
-                  <div class="total-right">Total do vendedor: {{ (b.total or 0)|brl }}</div>
-                </div>
-              </div>
-            {% endfor %}
-          </div>
-        </div>
-      {% endfor %}
-    </div>
+                  </details>
+                {% endfor %}
+              {% endif %}
+            </div>
+          </details>
+        {% endfor %}
+      </div>
+    {% endif %}
   </div>
+
 </div>
 
 <script>
-  // Accordion toggle (idêntico ao modelo)
-  (function(){
-    const root = document.getElementById('acc-root');
-    if(!root) return;
-    root.addEventListener('click', (ev) => {
-      const head = ev.target.closest('.acc-head');
-      if(!head) return;
-      const id = head.getAttribute('data-toggle');
-      const item = document.getElementById(id);
-      if(!item) return;
-      item.classList.toggle('open');
-    });
-  })();
-
-  // Multi-select sem Ctrl (modelo)
-  (function(){
-    function enhanceMultiSelect(sel){
-      if(!sel || !sel.multiple) return;
-      sel.addEventListener('mousedown', (e) => {
-        const opt = e.target.closest('option');
-        if(!opt) return;
-        e.preventDefault();
-        opt.selected = !opt.selected;
-        sel.dispatchEvent(new Event('change', {bubbles:true}));
-      });
-    }
-    document.querySelectorAll('.mq-multisel').forEach(enhanceMultiSelect);
-  })();
+(function() {
+  // Marcar todas / desmarcar todas para checklists
+  function toggleAll(targetName) {
+    const box = document.querySelector('[data-checklist="'+targetName+'"]');
+    if (!box) return;
+    const inputs = box.querySelectorAll('input[type="checkbox"]');
+    const allChecked = Array.from(inputs).every(i => i.checked);
+    inputs.forEach(i => i.checked = !allChecked);
+  }
+  document.querySelectorAll('[data-action="check-all"]').forEach(btn => {
+    btn.addEventListener('click', () => toggleAll(btn.getAttribute('data-target')));
+  });
+})();
 </script>
 
+<style>
+/* Ajustes visuais específicos desta página (mantém padrão dark/orange) */
+.sv-mini-table-wrap { overflow:auto; border: 1px solid rgba(255,168,0,.18); border-radius: 14px; }
+.sv-mini-table { width:100%; border-collapse: collapse; min-width: 560px; }
+.sv-mini-table th, .sv-mini-table td { padding: 10px 12px; border-bottom: 1px solid rgba(255,168,0,.10); font-size: 13px; }
+.sv-mini-table thead th { position: sticky; top: 0; background: rgba(10,10,10,.75); backdrop-filter: blur(10px); }
+.sv-mini-table tbody tr.is-ok td:first-child::before { content: "✓ "; color: rgba(255,168,0,.95); }
+.sv-acc { display:flex; flex-direction:column; gap:10px; }
+.sv-details--emp, .sv-details--vend { border:1px solid rgba(255,168,0,.14); border-radius: 16px; background: rgba(255,255,255,.02); }
+.sv-details--vend { margin-top: 10px; }
+.sv-details__summary { padding: 12px 12px; list-style:none; cursor:pointer; }
+.sv-details__summary::-webkit-details-marker { display:none; }
+.sv-details__panel { padding: 0 12px 12px; }
+.sv-pill { padding: 8px 10px; border-radius: 12px; border: 1px solid rgba(255,168,0,.22); background: rgba(0,0,0,.20); font-weight: 800; color: rgba(255,200,120,.95); }
+.sv-chip { padding: 6px 10px; border-radius: 999px; border: 1px solid rgba(255,168,0,.22); background: rgba(255,168,0,.08); font-weight: 900; color: rgba(255,200,120,.95); }
+.sv-truncate { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width: 520px; display:block; }
+@media (max-width: 920px) { .sv-truncate { max-width: 280px; } }
+</style>
 {% endblock %}

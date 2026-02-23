@@ -58,7 +58,6 @@
     </div>
     <div class="card-body">
       <form method="post" id="formCombo">
-  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="acao" value="criar">
         <div class="row g-3">
           <div class="col-12 col-md-6">
@@ -144,7 +143,6 @@
               <div class="accordion-body">
                 <div class="d-flex justify-content-end mb-2">
                   <form method="post" onsubmit="return confirm('Remover este combo?');">
-  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <input type="hidden" name="acao" value="remover">
                     <input type="hidden" name="combo_id" value="{{ c.id }}">
                     <button class="btn btn-outline-danger btn-sm">Remover</button>

@@ -34,7 +34,6 @@
         <td><code>{{ r.status_financeiro }}</code></td>
         <td>
           <form method="post" action="/financeiro/fechamento_v2/status" style="display:flex; gap:6px;">
-  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="resultado_id" value="{{ r.id }}">
             <select name="status_financeiro">
               <option value="PENDENTE" {% if r.status_financeiro=="PENDENTE" %}selected{% endif %}>PENDENTE</option>

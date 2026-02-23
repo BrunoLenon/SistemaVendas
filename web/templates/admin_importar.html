@@ -118,7 +118,6 @@
 {% endif %}
 
             <form action="/admin/importar" method="POST" enctype="multipart/form-data" id="formImport">
-  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <div class="dropzone" id="dropzone">
                 <div class="d-flex align-items-start gap-3">
                   <div class="fs-3">📄</div>
@@ -264,7 +263,6 @@
             <div class="tab-content mt-3">
               <div class="tab-pane fade show active" id="painel-dia" role="tabpanel">
                 <form method="POST" action="/admin/apagar_vendas" onsubmit="return confirmDelete(this);">
-  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                   <input type="hidden" name="tipo" value="dia">
                   <label class="form-label">Selecione o dia</label>
                   <input class="form-control" type="date" name="valor" required>
@@ -275,7 +273,6 @@
 
               <div class="tab-pane fade" id="painel-mes" role="tabpanel">
                 <form method="POST" action="/admin/apagar_vendas" onsubmit="return confirmDelete(this);">
-  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                   <input type="hidden" name="tipo" value="mes">
                   <label class="form-label">Selecione o mês</label>
                   <input class="form-control" type="month" name="valor" required>
