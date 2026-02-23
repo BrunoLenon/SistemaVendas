@@ -44,7 +44,61 @@
       .sv-chev{ width:32px; height:32px; border-radius:11px; }
     }
 
-  </style>
+  
+    /* Refinamento: deixar 100% igual ao modelo (pill + botão chevron) */
+    .sv-details__summary{ list-style:none; }
+    .sv-details__summary::-webkit-details-marker{ display:none; }
+
+    .sv-details--emp > .sv-details__summary{
+      padding:14px 16px;
+      cursor:pointer;
+      background:rgba(0,0,0,.18);
+      border:1px solid rgba(255,168,0,.12);
+      border-radius:18px;
+      box-shadow: 0 10px 34px rgba(0,0,0,.35);
+      align-items:center;
+    }
+    .sv-details--vend > .sv-details__summary{
+      padding:12px 12px;
+      cursor:pointer;
+      background:rgba(0,0,0,.22);
+      border:1px solid rgba(255,255,255,.10);
+      border-radius:16px;
+      align-items:center;
+    }
+    .sv-details--vend{ margin-top:10px; }
+
+    .sv-acc-right{ display:flex; align-items:center; gap:10px; }
+
+    .sv-money-pill{
+      font-weight:900;
+      color: rgba(255,190,120,.98);
+      font-size:14px;
+      padding:8px 10px;
+      border-radius:12px;
+      border:1px solid rgba(255,168,0,.18);
+      background:rgba(0,0,0,.22);
+      white-space:nowrap;
+      box-shadow: 0 8px 22px rgba(0,0,0,.25);
+    }
+
+    .sv-chev{
+      width:34px;
+      height:34px;
+      border-radius:12px;
+      border:1px solid rgba(255,255,255,.12);
+      display:grid;
+      place-items:center;
+      background:rgba(255,255,255,.04);
+      color:rgba(255,255,255,.70);
+      font-weight:900;
+      transition: transform .18s ease, background .18s ease;
+    }
+    details[open] > .sv-details__summary .sv-chev{ transform: rotate(180deg); background:rgba(255,255,255,.06); }
+
+    /* Painel interno com espaçamento igual ao modelo */
+    .sv-details__panel{ padding:12px 16px 14px; background:rgba(0,0,0,.12); border-radius:0 0 18px 18px; }
+</style>
 
 
   <!-- Header -->
@@ -201,7 +255,7 @@
                 <span class="sv-chip">{{ emp.emp }}</span>
                 <div style="min-width:0;">
                   <div class="sv-strong sv-truncate">{{ emp.emp_label }}</div>
-                  <div class="sv-muted">{{ emp.vendedores|length }} vendedor(es)</div>
+                  <div class="sv-muted">{{ emp.vendedores|length }} vendedor(es) • Total de recompensa: <b>{{ emp.emp_total|brl }}</b></div>
                 </div>
               </div>
               <div class="sv-acc-right">
@@ -219,7 +273,7 @@
                     <summary class="sv-details__summary sv-row sv-row--between sv-gap-12">
                       <div style="min-width:0;">
                         <div class="sv-strong sv-truncate">{{ vend.vendedor }}</div>
-                        <div class="sv-muted">Campanhas: {{ vend.resultados|length }}</div>
+                        <div class="sv-muted">{{ vend.resultados|length }} campanha(s) • Total do vendedor: <b>{{ vend.total_recompensa|brl }}</b></div>
                       </div>
                       <div class="sv-acc-right">
                       <div class="sv-money-pill">{{ vend.total_recompensa|brl }}</div>
