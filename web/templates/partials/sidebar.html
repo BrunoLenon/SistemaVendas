@@ -148,7 +148,7 @@
     <a class="sb-link {% if path.startswith('/admin/importar') %}active{% endif %}" href="{{ url_for('admin_importar') }}">📥 Importar</a>
 
     <a class="sb-link {% if path.startswith('/admin/campanhas') %}active{% endif %}" href="{{ url_for('admin_campanhas_qtd') }}">🧩 Campanhas (Admin)</a>
-    <a class="sb-link {% if path.startswith('/admin/ranking-marca') %}active{% endif %}" href="{{ url_for('admin_ranking_marca') }}">🏆 Ranking por Marca (Admin)</a>
+    <a class="sb-link {% if path.startswith('/campanhas/ranking-marca') or path.startswith('/ranking_marca') %}active{% endif %}" href="{{ url_for('campanhas_ranking_marca') }}">🏆 Ranking por Marca (Admin)</a>
     <a class="sb-link {% if path.startswith('/admin/combos') %}active{% endif %}" href="{{ url_for('admin_combos') }}">🧾 Combos</a>
     <a class="sb-link {% if path.startswith('/admin/configuracoes') %}active{% endif %}" href="{{ url_for('admin_configuracoes') }}">⚙️ Configurações</a>
   </div>
