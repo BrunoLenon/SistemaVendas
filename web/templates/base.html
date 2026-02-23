@@ -39,13 +39,12 @@
       min-height:100vh;
     }
 
-    /* Layout logado */
     .app-shell{
       display:flex;
       min-height:100vh;
     }
 
-    /* Sidebar fixa */
+    /* Sidebar fixa (somente quando logado) */
     .sidebar{
       width:var(--sidebar-w);
       position:fixed;
@@ -56,16 +55,23 @@
       border-right:1px solid rgba(255,255,255,.08);
       background: rgba(0,0,0,.35);
       backdrop-filter: blur(10px);
+      z-index: 10;
     }
 
-    /* Conteúdo (empurra por causa da sidebar fixa) */
+    /* Conteúdo padrão (logado: empurra por causa da sidebar fixa) */
     .main{
       margin-left:var(--sidebar-w);
       width:calc(100% - var(--sidebar-w));
       padding: 22px 18px 42px;
     }
 
-    /* Topbar simples (opcional) */
+    /* Conteúdo quando NÃO logado (sem sidebar) */
+    body.no-sidebar .main{
+      margin-left:0;
+      width:100%;
+      padding: 18px 14px 32px;
+    }
+
     .topbar{
       display:flex;
       justify-content:space-between;
@@ -104,6 +110,7 @@
       overflow:hidden;
       text-overflow:ellipsis;
     }
+
     .user-actions{
       display:flex;
       align-items:center;
@@ -123,7 +130,6 @@
     }
     .user-actions a:hover{ filter: brightness(1.08); }
 
-    /* Mobile: sidebar vira overlay */
     .mobile-toggle{
       display:none;
       cursor:pointer;
@@ -137,12 +143,12 @@
 
     @media (max-width: 980px){
       .sidebar{
-        position:fixed;
         transform: translateX(-100%);
         transition: transform .22s ease;
         z-index: 50;
       }
       body.sidebar-open .sidebar{ transform: translateX(0); }
+
       .main{
         margin-left:0;
         width:100%;
@@ -154,17 +160,20 @@
   {% block extra_head %}{% endblock %}
 </head>
 
-<body>
-  {% set r = (role|default('')|lower) %}
-  {% set is_logged = (r in ['admin','supervisor','vendedor','financeiro']) %}
+{% set r = (role|default('')|lower) %}
+{% set is_logged = (r in ['admin','supervisor','vendedor','financeiro']) %}
 
-  {% if is_logged %}
-    <div class="app-shell">
+<body class="{% if not is_logged %}no-sidebar{% endif %}">
+  <div class="app-shell">
+
+    {% if is_logged %}
       <aside class="sidebar">
         {% include "partials/sidebar.html" %}
       </aside>
+    {% endif %}
 
-      <main class="main">
+    <main class="main">
+      {% if is_logged %}
         <div class="topbar">
           <div class="brand">
             <button class="mobile-toggle" type="button" onclick="document.body.classList.toggle('sidebar-open')">☰</button>
@@ -189,16 +198,12 @@
             <a href="{{ url_for('auth.logout') }}">Sair</a>
           </div>
         </div>
+      {% endif %}
 
-        {% include "partials/flashes.html" %}
-        {% block content %}{% endblock %}
-      </main>
-    </div>
-
-  {% else %}
-    {% include "partials/flashes.html" %}
-    {% block content %}{% endblock %}
-  {% endif %}
+      {% include "partials/flashes.html" %}
+      {% block content %}{% endblock %}
+    </main>
+  </div>
 
   {% block extra_scripts %}
   <script>
