@@ -7674,3 +7674,19 @@ def campanhas_ranking_marca():
             db.close()
         except Exception:
             pass
+
+# ===============================
+# ADMIN - RANKING POR MARCA (GESTÃO)
+# ===============================
+@app.route("/admin/ranking-marca", methods=["GET"])
+@roles_required("admin")
+def admin_ranking_marca():
+    from services.ranking_marca_service import listar_rankings_marca
+
+    rankings = listar_rankings_marca()
+
+    return render_template(
+        "admin_ranking_marca.html",
+        rankings=rankings,
+        role=session.get("role")
+    )

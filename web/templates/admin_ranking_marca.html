@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Ranking por Marca (Admin){% endblock %}
+
+{% block content %}
+<div class="wrap" style="max-width:1100px;margin:0 auto;padding:20px 0 40px;">
+
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+    <div>
+      <h1 style="margin:0;">🏆 Ranking por Marca (Admin)</h1>
+      <div style="color:#b9b9b9;font-size:14px;margin-top:6px;">
+        Gestão de regras de ranking por marca.
+      </div>
+    </div>
+
+    <a href="#" class="btn">+ Novo Ranking</a>
+  </div>
+
+  <div class="card" style="border:1px solid rgba(255,255,255,.08);border-radius:16px;overflow:hidden;">
+    <table style="width:100%;border-collapse:collapse;">
+      <thead style="background:rgba(255,255,255,.03);">
+        <tr>
+          <th style="padding:12px;text-align:left;">Marca</th>
+          <th style="padding:12px;text-align:center;">Período</th>
+          <th style="padding:12px;text-align:center;">1º</th>
+          <th style="padding:12px;text-align:center;">2º</th>
+          <th style="padding:12px;text-align:center;">3º</th>
+          <th style="padding:12px;text-align:center;">Status</th>
+          <th style="padding:12px;text-align:right;">Ações</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if rankings %}
+          {% for r in rankings %}
+          <tr style="border-top:1px solid rgba(255,255,255,.06);">
+            <td style="padding:12px;">{{ r.marca }}</td>
+            <td style="padding:12px;text-align:center;">{{ r.mes }}/{{ r.ano }}</td>
+            <td style="padding:12px;text-align:center;">R$ {{ r.premio_1|brl }}</td>
+            <td style="padding:12px;text-align:center;">R$ {{ r.premio_2|brl }}</td>
+            <td style="padding:12px;text-align:center;">R$ {{ r.premio_3|brl }}</td>
+            <td style="padding:12px;text-align:center;">
+              {% if r.ativo %}
+                <span style="color:#4caf50;">Ativo</span>
+              {% else %}
+                <span style="color:#f44336;">Inativo</span>
+              {% endif %}
+            </td>
+            <td style="padding:12px;text-align:right;">
+              <a href="#" style="margin-right:10px;">Editar</a>
+              <a href="#" style="color:#f44336;">Excluir</a>
+            </td>
+          </tr>
+          {% endfor %}
+        {% else %}
+          <tr>
+            <td colspan="7" style="padding:20px;text-align:center;color:#b9b9b9;">
+              Nenhum ranking cadastrado.
+            </td>
+          </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
