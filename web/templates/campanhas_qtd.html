@@ -4,6 +4,36 @@
 {% block content %}
 <div class="sv-page">
 
+  <style>
+    /* Refinos do layout (EMP/Vendedor) - Total à direita com rótulo */
+    .sv-totalbox{
+      min-width: 140px;
+      padding: 10px 12px;
+      border-radius: 14px;
+      border: 1px solid rgba(255,165,60,.22);
+      background: rgba(0,0,0,.18);
+      text-align: right;
+    }
+    .sv-totalbox__label{
+      font-size: 11px;
+      color: rgba(255,255,255,.65);
+      letter-spacing: .2px;
+      margin-bottom: 4px;
+    }
+    .sv-totalbox__value{
+      font-size: 15px;
+      font-weight: 800;
+      color: rgba(255,190,120,.98);
+      line-height: 1.1;
+      white-space: nowrap;
+    }
+    @media (max-width: 780px){
+      .sv-totalbox{ min-width: 120px; }
+      .sv-totalbox__value{ font-size: 14px; }
+    }
+  </style>
+
+
   <!-- Header -->
   <div class="sv-card sv-card--header">
     <div class="sv-row sv-row--between sv-row--wrap sv-gap-12">
@@ -162,7 +192,7 @@
                 </div>
               </div>
               <div class="sv-row sv-gap-10" style="align-items:center;">
-                <div class="sv-pill">{{ emp.emp_total|brl }}</div>
+                <div class="sv-totalbox"><div class="sv-totalbox__label">Total (R$)</div><div class="sv-totalbox__value">{{ emp.emp_total|brl }}</div></div>
               </div>
             </summary>
 
@@ -177,7 +207,7 @@
                         <div class="sv-strong sv-truncate">{{ vend.vendedor }}</div>
                         <div class="sv-muted">Campanhas: {{ vend.resultados|length }}</div>
                       </div>
-                      <div class="sv-pill">{{ vend.total_recompensa|brl }}</div>
+                      <div class="sv-totalbox"><div class="sv-totalbox__label">Total (R$)</div><div class="sv-totalbox__value">{{ vend.total_recompensa|brl }}</div></div>
                     </summary>
 
                     <div class="sv-details__panel">
