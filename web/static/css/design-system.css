@@ -251,7 +251,18 @@ html, body { height: 100%; }
 
 /* Table */
 .sv-tablewrap{overflow:auto;border-radius:14px;border:1px solid rgba(255,140,0,.16)}
-.sv-table{width:100%;border-collapse:separate;border-spacing:0;min-width:720px}
+.sv-table{width:100%;border-collapse:separate;border-spacing:0;min-width:50px;table-layout:fixed}
+/* ===== sv-table responsiveness ===== */
+.sv-table th, .sv-table td{
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.sv-table th.text-end, .sv-table td.text-end,
+.sv-table th.text-nowrap, .sv-table td.text-nowrap{
+  white-space: nowrap;
+}
+
 .sv-table thead th{
   position:sticky;top:0;
   background:rgba(20,20,20,.92);
