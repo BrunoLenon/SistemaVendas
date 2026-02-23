@@ -391,3 +391,8 @@ def admin_campanhas_ranking_marca():
     return handlers.admin_campanhas_ranking_marca()
 
 
+
+
+@bp.route("/admin/ranking-marca", methods=["GET", "POST"], endpoint='admin_ranking_marca')
+def admin_ranking_marca():
+    return handlers.admin_ranking_marca()
