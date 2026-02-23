@@ -1,364 +1,456 @@
 {% extends "base.html" %}
-{% block title %}Campanhas (Qtd){% endblock %}
+{% block title %}Campanhas do mês (Qtd){% endblock %}
 
 {% block content %}
-<div class="sv-page">
+<div class="mq">
+  <div class="wrap">
+    <div class="topbar">
+      <div>
+        <div class="kicker">Campanhas</div>
+        <h1>Campanhas do mês (Qtd)</h1>
+        <div class="sub">
+          Fluxo esperado: <strong>Empresa</strong> → clique para abrir <strong>Vendedores</strong> → clique para ver <strong>Campanhas + Valores</strong>.
+          O <strong>Total (R$)</strong> é o acumulado de <strong>recompensas</strong> (não é valor vendido).
+        </div>
+      </div>
+      <div class="badge">MODELO / PRODUÇÃO</div>
+    </div>
 
-  <style>
-    /* Ajuste visual: total estilo "pill" + chevron (igual ao modelo) */
-    summary::-webkit-details-marker{ display:none; }
+    <div class="card">
+      <form method="get" class="grid">
+        <div class="field">
+          <label>Mês</label>
+          <input name="mes" value="{{ mes }}" inputmode="numeric" />
+        </div>
 
-    .sv-acc-right{
-      display:flex;
-      align-items:center;
-      gap:10px;
-      flex:0 0 auto;
+        <div class="field">
+          <label>Ano</label>
+          <input name="ano" value="{{ ano }}" inputmode="numeric" />
+        </div>
+
+        <div class="field">
+          <label>Visão</label>
+          <select name="visao">
+            <option value="detalhado" {% if visao == "detalhado" %}selected{% endif %}>Detalhado (Empresa → Vendedor → Campanhas)</option>
+            <option value="resumido" {% if visao == "resumido" %}selected{% endif %}>Resumido (Empresa → Total)</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label>EMP (seleção múltipla)</label>
+          <select id="empSel" name="emp" multiple size="6">
+            {% for opt in emp_options %}
+              <option value="{{ opt.value }}" {% if opt.value in emp_sel %}selected{% endif %}>{{ opt.label }}</option>
+            {% endfor %}
+          </select>
+          <small>(No sistema real: seleção múltipla sem Ctrl.)</small>
+        </div>
+
+        <div class="field">
+          <label>Vendedor (opcional)</label>
+          <select id="vendSel" name="vendedor" multiple size="6">
+            {% for opt in vendedores_options %}
+              <option value="{{ opt.value }}" {% if opt.value in vendedor_sel %}selected{% endif %}>{{ opt.label }}</option>
+            {% endfor %}
+          </select>
+          <small>(Quando vazio: mostra todos)</small>
+        </div>
+
+        <div class="field">
+          <label>Por página</label>
+          <input name="por_pagina" value="{{ por_pagina }}" inputmode="numeric" />
+          <div class="btnbar">
+            <button class="btn" type="submit">Aplicar filtros</button>
+            <a class="btn ghost" href="{{ url_for('campanhas_qtd') }}">Limpar</a>
+          </div>
+        </div>
+      </form>
+
+      <div class="kpis">
+        <div class="kpi">
+          <div class="kpi-title">Período</div>
+          <div class="kpi-value">{{ "%02d"|format(mes) }}/{{ ano }}</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-title">Empresas exibidas</div>
+          <div class="kpi-value">{{ blocos|length }}</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-title">Total de recompensa</div>
+          <div class="kpi-value" id="kpiTotal">{{ total_premio|brl }}</div>
+        </div>
+        <div class="kpi-note">
+          Clique na empresa para ver vendedores. Clique no vendedor para ver as campanhas.
+        </div>
+      </div>
+
+      <div class="acc" id="accRoot">
+        {% for e in blocos %}
+        {# e: {emp, emp_label, total, vendedores:[{vendedor, total, campanhas:[...] }]} #}
+        <div class="acc-item">
+          <div class="acc-head" data-emp="{{ loop.index0 }}">
+            <div class="acc-left">
+              <span class="chip">{{ e.emp }}</span>
+              <div class="empname">
+                <strong>{{ e.emp_label or e.emp }}</strong>
+                <div class="meta">{{ e.vendedores|length }} vendedor(es) · Total de recompensa: <strong>{{ e.total|brl }}</strong></div>
+              </div>
+            </div>
+            <div class="acc-right">
+              <span class="money">{{ e.total|brl }}</span>
+              <span class="chev">▾</span>
+            </div>
+          </div>
+
+          <div class="acc-body" id="empBody{{ loop.index0 }}" style="display:none">
+            {% for v in e.vendedores %}
+            <div class="vendor">
+              <div class="vendor-head" data-emp="{{ loop.parent.index0 }}" data-v="{{ loop.index0 }}">
+                <div class="vendor-left">
+                  <strong>{{ v.vendedor }}</strong>
+                  <div class="meta">{{ v.campanhas|length }} campanha(s) · Total do vendedor: <strong>{{ v.total|brl }}</strong></div>
+                </div>
+                <div class="vendor-right">
+                  <span class="money">{{ v.total|brl }}</span>
+                  <span class="chev">▾</span>
+                </div>
+              </div>
+
+              <div class="vendor-body" id="vendBody{{ loop.parent.index0 }}_{{ loop.index0 }}" style="display:none">
+                <table class="tbl">
+                  <thead>
+                    <tr>
+                      <th>Campanha</th>
+                      <th class="tcenter">Qtd mín.</th>
+                      <th class="tcenter">Prêmio (R$)</th>
+                      <th class="tcenter">Vendeu</th>
+                      <th class="tright">Valor (R$)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for c in v.campanhas %}
+                    <tr>
+                      <td class="camp"><span class="ok">✓</span> {{ c.nome }}</td>
+                      <td class="tcenter">{{ c.qtd_min if c.qtd_min is not none else "-" }}</td>
+                      <td class="tcenter">{{ c.premio_unit|brl }}</td>
+                      <td class="tcenter">{{ c.qtd_vendida }}</td>
+                      <td class="tright">{{ c.valor|brl }}</td>
+                    </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+
+                <div class="foot">
+                  <div class="meta">Obs.: “Vendeu” = quantidade vendida (qtd). “Valor (R$)” = recompensa acumulada.</div>
+                  <div><strong>Total do vendedor: {{ v.total|brl }}</strong></div>
+                </div>
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<style>
+
+    .mq{
+      --bg:#070707;
+      --panel:rgba(255,255,255,.04);
+      --panel2:rgba(255,255,255,.06);
+      --stroke:rgba(255,170,60,.35);
+      --stroke2:rgba(255,170,60,.18);
+      --text:#f2f2f2;
+      --muted:#b9b9b9;
+      --orange:#ff8f1f;
+      --orange2:#ffb35a;
+      --shadow: 0 18px 55px rgba(0,0,0,.55);
+      --radius:18px;
     }
-    .sv-money-pill{
-      font-weight:900;
-      color: rgba(255,190,120,.98);
+    *{box-sizing:border-box}
+     .mq{
+      margin:0;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+      background:
+        radial-gradient(1200px 700px at 35% 20%, rgba(255,140,0,.16), transparent 58%),
+        radial-gradient(900px 500px at 70% 65%, rgba(255,100,0,.10), transparent 60%),
+        linear-gradient(180deg, #050505 0%, #0a0a0a 65%, #050505 100%);
+      color:var(--text);
+      min-height:100vh;
+    }
+    .wrap{
+      max-width:1100px;
+      margin:32px auto;
+      padding:0 18px 42px;
+    }
+    .title{
+      display:flex;
+      gap:14px;
+      align-items:flex-end;
+      justify-content:space-between;
+      margin-bottom:14px;
+    }
+    h1{
+      margin:0;
+      font-size:34px;
+      letter-spacing:.2px;
+    }
+    .subtitle{
+      margin:6px 0 0;
+      color:var(--muted);
       font-size:14px;
-      padding:8px 10px;
-      border-radius:12px;
-      border:1px solid rgba(255,170,60,.18);
-      background:rgba(0,0,0,.22);
+      line-height:1.35;
+    }
+    .badge{
+      padding:10px 12px;
+      border:1px solid var(--stroke2);
+      background:linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03));
+      border-radius:999px;
+      color:var(--orange2);
+      font-weight:600;
+      font-size:13px;
+      box-shadow:0 8px 30px rgba(0,0,0,.35);
       white-space:nowrap;
     }
-    .sv-chev{
-      width:34px;
-      height:34px;
-      border-radius:12px;
-      border:1px solid rgba(255,255,255,.12);
+    .card{
+      border:1px solid var(--stroke2);
+      background:linear-gradient(180deg, rgba(255,255,255,.055), rgba(255,255,255,.028));
+      border-radius:var(--radius);
+      box-shadow:var(--shadow);
+      overflow:hidden;
+    }
+    .filters{
+      padding:16px;
+    }
+    .grid{
       display:grid;
-      place-items:center;
+      grid-template-columns: 1.2fr 1.2fr 1.6fr;
+      gap:12px;
+    }
+    .field{
+      padding:12px 12px 10px;
+      border:1px solid rgba(255,255,255,.09);
+      background:rgba(0,0,0,.25);
+      border-radius:14px;
+    }
+    .label{
+      font-size:12px;
+      color:var(--muted);
+      margin-bottom:8px;
+    }
+    select, input{
+      width:100%;
+      padding:10px 10px;
+      border-radius:12px;
+      border:1px solid rgba(255,255,255,.10);
+      background:rgba(0,0,0,.35);
+      color:var(--text);
+      outline:none;
+    }
+    .btnbar{
+      display:flex;
+      gap:10px;
+      justify-content:flex-end;
+      margin-top:12px;
+      flex-wrap:wrap;
+    }
+    button{
+      cursor:pointer;
+      border-radius:14px;
+      padding:10px 14px;
+      border:1px solid var(--stroke2);
+      background:linear-gradient(180deg, rgba(255,155,40,.18), rgba(255,155,40,.06));
+      color:var(--text);
+      font-weight:700;
+    }
+    button.secondary{
       background:rgba(255,255,255,.04);
-      color: rgba(255,255,255,.65);
-      font-weight:900;
-      transition: transform .15s ease;
+      border:1px solid rgba(255,255,255,.10);
+      color:var(--muted);
+      font-weight:600;
     }
-    details[open] > summary .sv-chev{
-      transform: rotate(180deg);
+    .summary{
+      padding:14px 16px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      border-top:1px solid rgba(255,255,255,.08);
+      gap:12px;
+      flex-wrap:wrap;
     }
-    @media (max-width: 780px){
-      .sv-money-pill{ font-size: 13px; padding:7px 9px; }
-      .sv-chev{ width:32px; height:32px; border-radius:11px; }
+    .kpis{
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
     }
-
-  
-    /* Refinamento: deixar 100% igual ao modelo (pill + botão chevron) */
-    .sv-details__summary{ list-style:none; }
-    .sv-details__summary::-webkit-details-marker{ display:none; }
-
-    .sv-details--emp > .sv-details__summary{
+    .kpi{
+      min-width:160px;
+      padding:10px 12px;
+      border-radius:14px;
+      background:rgba(0,0,0,.25);
+      border:1px solid rgba(255,255,255,.10);
+    }
+    .kpi .k{font-size:12px; color:var(--muted)}
+    .kpi .v{font-size:18px; font-weight:800; margin-top:4px; color:var(--orange2)}
+    .hint{
+      font-size:12px;
+      color:var(--muted);
+    }
+    .acc{ margin-top:14px; }
+    .acc-item{ border-top:1px solid rgba(255,255,255,.08); }
+    .acc-head{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:14px;
       padding:14px 16px;
       cursor:pointer;
       background:rgba(0,0,0,.18);
-      border:1px solid rgba(255,168,0,.12);
-      border-radius:18px;
-      box-shadow: 0 10px 34px rgba(0,0,0,.35);
-      align-items:center;
     }
-    .sv-details--vend > .sv-details__summary{
-      padding:12px 12px;
-      cursor:pointer;
-      background:rgba(0,0,0,.22);
-      border:1px solid rgba(255,255,255,.10);
-      border-radius:16px;
-      align-items:center;
+    .acc-head:hover{ background:rgba(0,0,0,.26); }
+    .acc-left{ display:flex; align-items:center; gap:12px; min-width:0; }
+    .chip{
+      padding:6px 10px;
+      border-radius:999px;
+      border:1px solid var(--stroke2);
+      background:rgba(255,155,40,.10);
+      color:var(--orange2);
+      font-weight:800;
+      font-size:12px;
+      flex:0 0 auto;
     }
-    .sv-details--vend{ margin-top:10px; }
-
-    .sv-acc-right{ display:flex; align-items:center; gap:10px; }
-
-    .sv-money-pill{
+    .empname{ display:flex; flex-direction:column; gap:2px; min-width:0; }
+    .empname strong{ font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .empname span{ font-size:12px; color:var(--muted); }
+    .acc-right{ display:flex; align-items:center; gap:10px; flex:0 0 auto; }
+    .money{
       font-weight:900;
-      color: rgba(255,190,120,.98);
+      color:var(--orange2);
       font-size:14px;
       padding:8px 10px;
       border-radius:12px;
-      border:1px solid rgba(255,168,0,.18);
+      border:1px solid var(--stroke2);
       background:rgba(0,0,0,.22);
       white-space:nowrap;
-      box-shadow: 0 8px 22px rgba(0,0,0,.25);
     }
-
-    .sv-chev{
-      width:34px;
-      height:34px;
+    .chev{
+      width:34px; height:34px;
       border-radius:12px;
       border:1px solid rgba(255,255,255,.12);
-      display:grid;
-      place-items:center;
+      display:grid; place-items:center;
       background:rgba(255,255,255,.04);
-      color:rgba(255,255,255,.70);
+      color:var(--muted);
       font-weight:900;
-      transition: transform .18s ease, background .18s ease;
     }
-    details[open] > .sv-details__summary .sv-chev{ transform: rotate(180deg); background:rgba(255,255,255,.06); }
-
-    /* Painel interno com espaçamento igual ao modelo */
-    .sv-details__panel{ padding:12px 16px 14px; background:rgba(0,0,0,.12); border-radius:0 0 18px 18px; }
+    .acc- .mq{ display:none; padding:0 16px 14px; background:rgba(0,0,0,.12); }
+    .vendors{ display:grid; grid-template-columns: 1fr; gap:10px; margin-top:10px; }
+    .vendor{
+      border:1px solid rgba(255,255,255,.10);
+      background:rgba(0,0,0,.22);
+      border-radius:16px;
+      overflow:hidden;
+    }
+    .vendor-head{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:10px;
+      padding:12px 12px;
+      cursor:pointer;
+    }
+    .vendor-head:hover{ background:rgba(255,255,255,.03); }
+    .vendor-name{ display:flex; flex-direction:column; gap:2px; min-width:0; }
+    .vendor-name strong{ font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .vendor-name span{ color:var(--muted); font-size:12px; }
+    .vendor- .mq{ display:none; padding:0 12px 12px; }
+    table{
+      width:100%;
+      border-collapse:collapse;
+      overflow:hidden;
+      border-radius:14px;
+      border:1px solid rgba(255,255,255,.10);
+    }
+    thead th{
+      text-align:left;
+      font-size:12px;
+      color:var(--muted);
+      padding:10px 10px;
+      background:rgba(255,255,255,.03);
+      border-bottom:1px solid rgba(255,255,255,.10);
+      white-space:nowrap;
+    }
+    tbody td{
+      padding:10px 10px;
+      border-bottom:1px solid rgba(255,255,255,.06);
+      font-size:13px;
+      white-space:nowrap;
+    }
+    tbody tr:hover{ background:rgba(255,255,255,.02); }
+    .td-right{text-align:right}
+    .tfoot{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:10px;
+      margin-top:10px;
+      flex-wrap:wrap;
+      color:var(--muted);
+      font-size:12px;
+    }
+    .tfoot strong{ color:var(--orange2); font-size:13px; }
+    @media (max-width: 900px){
+      .grid{ grid-template-columns: 1fr; }
+      .kpi{ min-width: 140px; }
+    }
+  
 </style>
 
-
-  <!-- Header -->
-  <div class="sv-card sv-card--header">
-    <div class="sv-row sv-row--between sv-row--wrap sv-gap-12">
-      <div>
-        <div class="sv-breadcrumb">Campanhas</div>
-        <h1 class="sv-title">Campanhas do mês (Qtd)</h1>
-        <p class="sv-subtitle">
-          Fluxo: <b>Empresa</b> → clique para abrir <b>Vendedores</b> → clique para ver <b>Campanhas + Valores</b>.
-          O <b>Total (R$)</b> é a soma das <b>recompensas</b> (não é valor vendido).
-        </p>
-      </div>
-
-      <div class="sv-row sv-gap-8">
-        <form method="get" action="{{ url_for('campanhas_qtd') }}" class="sv-row sv-gap-8">
-          <!-- mantém período atual -->
-          <input type="hidden" name="mes" value="{{ mes }}">
-          <input type="hidden" name="ano" value="{{ ano }}">
-          {% for e in emps_sel %}<input type="hidden" name="emp" value="{{ e }}">{% endfor %}
-          {% for v in vendedores_sel %}<input type="hidden" name="vendedor" value="{{ v }}">{% endfor %}
-          <input type="hidden" name="visao" value="{{ visao }}">
-          <input type="hidden" name="por_pagina" value="{{ por_pagina }}">
-          <button class="sv-btn sv-btn--ghost" type="submit" name="refresh" value="1">Atualizar</button>
-        </form>
-      </div>
-    </div>
-  </div>
-
-  <!-- Filters -->
-  <form method="get" class="sv-card sv-card--section">
-    <div class="sv-grid sv-grid-3">
-      <div class="sv-field">
-        <label class="sv-label" for="mes">Mês</label>
-        <input class="sv-input" id="mes" name="mes" value="{{ mes }}" inputmode="numeric" />
-      </div>
-
-      <div class="sv-field">
-        <label class="sv-label" for="ano">Ano</label>
-        <input class="sv-input" id="ano" name="ano" value="{{ ano }}" inputmode="numeric" />
-      </div>
-
-      <div class="sv-field">
-        <label class="sv-label" for="visao">Visão</label>
-        <select class="sv-select" id="visao" name="visao">
-          <option value="detalhado" {% if visao == 'detalhado' %}selected{% endif %}>Detalhado (Empresa → Vendedor → Campanhas)</option>
-          <option value="resumo" {% if visao == 'resumo' %}selected{% endif %}>Resumo</option>
-        </select>
-      </div>
-    </div>
-
-    <div class="sv-grid sv-grid-2 sv-mt-14">
-      <div class="sv-field">
-        <div class="sv-row sv-row--between sv-gap-8 sv-mb-8">
-          <div>
-            <div class="sv-label">EMP</div>
-            <div class="sv-hint">Selecione uma ou mais</div>
-          </div>
-          <button class="sv-btn sv-btn--ghost sv-btn--sm" type="button" data-action="check-all" data-target="emp">Marcar todas</button>
-        </div>
-
-        <div class="sv-checklist sv-checklist--tall" data-checklist="emp">
-          {% for opt in emps_options %}
-            {% set val = (opt.value if opt.value is defined else opt['value']) %}
-            {% set lab = (opt.label if opt.label is defined else opt['label']) %}
-            <label class="sv-check">
-              <input type="checkbox" name="emp" value="{{ val }}" {% if val in emps_sel %}checked{% endif %}>
-              <span>{{ lab }}</span>
-            </label>
-          {% endfor %}
-        </div>
-      </div>
-
-      <div class="sv-field">
-        <div class="sv-row sv-row--between sv-gap-8 sv-mb-8">
-          <div>
-            <div class="sv-label">Vendedor</div>
-            <div class="sv-hint">Opcional</div>
-          </div>
-          <button class="sv-btn sv-btn--ghost sv-btn--sm" type="button" data-action="check-all" data-target="vendedor">Marcar todas</button>
-        </div>
-
-        <div class="sv-checklist sv-checklist--tall" data-checklist="vendedor">
-          {% for opt in vendedores_options %}
-            {% set val = (opt.value if opt.value is defined else opt['value']) %}
-            {% set lab = (opt.label if opt.label is defined else opt['label']) %}
-            <label class="sv-check">
-              <input type="checkbox" name="vendedor" value="{{ val }}" {% if val in vendedores_sel %}checked{% endif %}>
-              <span>{{ lab }}</span>
-            </label>
-          {% endfor %}
-        </div>
-      </div>
-    </div>
-
-    <div class="sv-row sv-row--between sv-row--wrap sv-gap-12 sv-mt-14">
-      <div class="sv-field" style="max-width: 240px;">
-        <label class="sv-label" for="por_pagina">Por página</label>
-        <input class="sv-input" id="por_pagina" name="por_pagina" value="{{ por_pagina }}" inputmode="numeric" />
-      </div>
-
-      <div class="sv-row sv-gap-8">
-        <button class="sv-btn sv-btn--primary" type="submit">Aplicar filtros</button>
-        <a class="sv-btn sv-btn--ghost" href="{{ url_for('campanhas_qtd') }}">Limpar</a>
-      </div>
-    </div>
-  </form>
-
-  <!-- KPIs -->
-  <div class="sv-grid sv-grid-4 sv-mt-14">
-    <div class="sv-kpi">
-      <div class="sv-kpi__label">Total de recompensa (R$)</div>
-      <div class="sv-kpi__value">{{ total_recompensa|brl }}</div>
-      <div class="sv-kpi__hint">{{ total_campanhas }} campanhas (linhas)</div>
-    </div>
-
-    <div class="sv-kpi">
-      <div class="sv-kpi__label">Empresas exibidas</div>
-      <div class="sv-kpi__value">{{ emps_data|length }}</div>
-      <div class="sv-kpi__hint">Ordenadas por total</div>
-    </div>
-
-    <div class="sv-kpi">
-      <div class="sv-kpi__label">Período</div>
-      <div class="sv-kpi__value">{{ "%02d"|format(mes|int) }}/{{ ano }}</div>
-      <div class="sv-kpi__hint">Filtros aplicados</div>
-    </div>
-
-    <div class="sv-kpi">
-      <div class="sv-kpi__label">Visão</div>
-      <div class="sv-kpi__value">{{ "Detalhado" if visao == "detalhado" else "Resumo" }}</div>
-      <div class="sv-kpi__hint">EMP → Vendedor → Campanhas</div>
-    </div>
-  </div>
-
-  <!-- Conteúdo (hierarquia EMP -> Vendedor -> Campanhas) -->
-  <div class="sv-card sv-card--section sv-mt-14">
-    <div class="sv-row sv-row--between sv-row--wrap sv-gap-12 sv-mb-10">
-      <div>
-        <div class="sv-section-title">Detalhamento</div>
-        <div class="sv-hint">Clique na EMP para abrir os vendedores. Clique no vendedor para ver as campanhas.</div>
-      </div>
-      <div class="sv-hint">EMPs: {{ emps_data|length }}</div>
-    </div>
-
-    {% if emps_data|length == 0 %}
-      <div class="sv-muted">Nenhum resultado com os filtros atuais.</div>
-    {% else %}
-      <div class="sv-acc">
-        {% for emp in emps_data %}
-          <details class="sv-details sv-details--emp">
-            <summary class="sv-details__summary sv-row sv-row--between sv-gap-12">
-              <div class="sv-row sv-gap-10" style="min-width:0;">
-                <span class="sv-chip">{{ emp.emp }}</span>
-                <div style="min-width:0;">
-                  <div class="sv-strong sv-truncate">{{ emp.emp_label }}</div>
-                  <div class="sv-muted">{{ emp.vendedores|length }} vendedor(es) • Total de recompensa: <b>{{ emp.emp_total|brl }}</b></div>
-                </div>
-              </div>
-              <div class="sv-acc-right">
-                <div class="sv-money-pill">{{ emp.emp_total|brl }}</div>
-                <div class="sv-chev">▾</div>
-              </div>
-            </summary>
-
-            <div class="sv-details__panel">
-              {% if emp.vendedores|length == 0 %}
-                <div class="sv-muted">Sem vendedores no período (ou filtro restritivo).</div>
-              {% else %}
-                {% for vend in emp.vendedores %}
-                  <details class="sv-details sv-details--vend">
-                    <summary class="sv-details__summary sv-row sv-row--between sv-gap-12">
-                      <div style="min-width:0;">
-                        <div class="sv-strong sv-truncate">{{ vend.vendedor }}</div>
-                        <div class="sv-muted">{{ vend.resultados|length }} campanha(s) • Total do vendedor: <b>{{ vend.total_recompensa|brl }}</b></div>
-                      </div>
-                      <div class="sv-acc-right">
-                      <div class="sv-money-pill">{{ vend.total_recompensa|brl }}</div>
-                      <div class="sv-chev">▾</div>
-                    </div>
-                    </summary>
-
-                    <div class="sv-details__panel">
-                      <div class="sv-mini-table-wrap">
-                        <table class="sv-mini-table">
-                          <thead>
-                            <tr>
-                              <th>Campanha</th>
-                              <th style="width:90px; text-align:right;">Qtd mín.</th>
-                              <th style="width:110px; text-align:right;">Prêmio (R$)</th>
-                              <th style="width:90px; text-align:right;">Vendeu</th>
-                              <th style="width:130px; text-align:right;">Valor (R$)</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {% for r in vend.resultados %}
-                              <tr class="{% if r.atingiu_minimo %}is-ok{% endif %}">
-                                <td class="sv-strong">{{ r.titulo }}</td>
-                                <td style="text-align:right;">{{ r.qtd_minima }}</td>
-                                <td style="text-align:right;">{{ r.recompensa_unit|brl }}</td>
-                                <td style="text-align:right;">{{ r.qtd_vendida }}</td>
-                                <td style="text-align:right;"><b>{{ r.valor_recompensa|brl }}</b></td>
-                              </tr>
-                            {% endfor %}
-                            {% if vend.resultados|length == 0 %}
-                              <tr><td colspan="5" class="sv-muted">Sem campanhas.</td></tr>
-                            {% endif %}
-                          </tbody>
-                        </table>
-                      </div>
-
-                      <div class="sv-row sv-row--between sv-gap-10 sv-mt-10">
-                        <div class="sv-hint">Obs.: “Vendeu” = quantidade vendida (qtd). “Valor (R$)” = recompensa acumulada.</div>
-                        <div class="sv-strong">Total do vendedor: {{ vend.total_recompensa|brl }}</div>
-                      </div>
-                    </div>
-                  </details>
-                {% endfor %}
-              {% endif %}
-            </div>
-          </details>
-        {% endfor %}
-      </div>
-    {% endif %}
-  </div>
-
-</div>
-
 <script>
-(function() {
-  // Marcar todas / desmarcar todas para checklists
-  function toggleAll(targetName) {
-    const box = document.querySelector('[data-checklist="'+targetName+'"]');
-    if (!box) return;
-    const inputs = box.querySelectorAll('input[type="checkbox"]');
-    const allChecked = Array.from(inputs).every(i => i.checked);
-    inputs.forEach(i => i.checked = !allChecked);
+(function(){
+  // Multi-select sem Ctrl (toggle no clique)
+  function enableToggleSelect(sel){
+    if(!sel) return;
+    sel.addEventListener("mousedown", function(e){
+      const opt = e.target.closest("option");
+      if(!opt) return;
+      e.preventDefault();
+      opt.selected = !opt.selected;
+      // dispara change para UX
+      sel.dispatchEvent(new Event("change", {bubbles:true}));
+    });
   }
-  document.querySelectorAll('[data-action="check-all"]').forEach(btn => {
-    btn.addEventListener('click', () => toggleAll(btn.getAttribute('data-target')));
+  enableToggleSelect(document.getElementById("empSel"));
+  enableToggleSelect(document.getElementById("vendSel"));
+
+  // Accordions (mesmo comportamento do modelo)
+  const root = document.getElementById("accRoot");
+  if(!root) return;
+  root.addEventListener("click", (ev) => {
+    const empHead = ev.target.closest(".acc-head");
+    if (empHead){
+      const idx = empHead.getAttribute("data-emp");
+      const body = document.getElementById("empBody"+idx);
+      const open = body && body.style.display === "block";
+      if(body) body.style.display = open ? "none" : "block";
+      const chev = empHead.querySelector(".chev");
+      if(chev) chev.textContent = open ? "▾" : "▴";
+      return;
+    }
+    const vendHead = ev.target.closest(".vendor-head");
+    if (vendHead){
+      const e = vendHead.getAttribute("data-emp");
+      const v = vendHead.getAttribute("data-v");
+      const body = document.getElementById(`vendBody${e}_${v}`);
+      const open = body && body.style.display === "block";
+      if(body) body.style.display = open ? "none" : "block";
+      const chev = vendHead.querySelector(".chev");
+      if(chev) chev.textContent = open ? "▾" : "▴";
+    }
   });
 })();
 </script>
-
-<style>
-/* Ajustes visuais específicos desta página (mantém padrão dark/orange) */
-.sv-mini-table-wrap { overflow:auto; border: 1px solid rgba(255,168,0,.18); border-radius: 14px; }
-.sv-mini-table { width:100%; border-collapse: collapse; min-width: 560px; }
-.sv-mini-table th, .sv-mini-table td { padding: 10px 12px; border-bottom: 1px solid rgba(255,168,0,.10); font-size: 13px; }
-.sv-mini-table thead th { position: sticky; top: 0; background: rgba(10,10,10,.75); backdrop-filter: blur(10px); }
-.sv-mini-table tbody tr.is-ok td:first-child::before { content: "✓ "; color: rgba(255,168,0,.95); }
-.sv-acc { display:flex; flex-direction:column; gap:10px; }
-.sv-details--emp, .sv-details--vend { border:1px solid rgba(255,168,0,.14); border-radius: 16px; background: rgba(255,255,255,.02); }
-.sv-details--vend { margin-top: 10px; }
-.sv-details__summary { padding: 12px 12px; list-style:none; cursor:pointer; }
-.sv-details__summary::-webkit-details-marker { display:none; }
-.sv-details__panel { padding: 0 12px 12px; }
-.sv-pill { padding: 8px 10px; border-radius: 12px; border: 1px solid rgba(255,168,0,.22); background: rgba(0,0,0,.20); font-weight: 800; color: rgba(255,200,120,.95); }
-.sv-chip { padding: 6px 10px; border-radius: 999px; border: 1px solid rgba(255,168,0,.22); background: rgba(255,168,0,.08); font-weight: 900; color: rgba(255,200,120,.95); }
-.sv-truncate { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width: 520px; display:block; }
-@media (max-width: 920px) { .sv-truncate { max-width: 280px; } }
-</style>
 {% endblock %}
