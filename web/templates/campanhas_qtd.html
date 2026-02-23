@@ -5,32 +5,45 @@
 <div class="sv-page">
 
   <style>
-    /* Refinos do layout (EMP/Vendedor) - Total à direita com rótulo */
-    .sv-totalbox{
-      min-width: 140px;
-      padding: 10px 12px;
-      border-radius: 14px;
-      border: 1px solid rgba(255,165,60,.22);
-      background: rgba(0,0,0,.18);
-      text-align: right;
+    /* Ajuste visual: total estilo "pill" + chevron (igual ao modelo) */
+    summary::-webkit-details-marker{ display:none; }
+
+    .sv-acc-right{
+      display:flex;
+      align-items:center;
+      gap:10px;
+      flex:0 0 auto;
     }
-    .sv-totalbox__label{
-      font-size: 11px;
-      color: rgba(255,255,255,.65);
-      letter-spacing: .2px;
-      margin-bottom: 4px;
-    }
-    .sv-totalbox__value{
-      font-size: 15px;
-      font-weight: 800;
+    .sv-money-pill{
+      font-weight:900;
       color: rgba(255,190,120,.98);
-      line-height: 1.1;
-      white-space: nowrap;
+      font-size:14px;
+      padding:8px 10px;
+      border-radius:12px;
+      border:1px solid rgba(255,170,60,.18);
+      background:rgba(0,0,0,.22);
+      white-space:nowrap;
+    }
+    .sv-chev{
+      width:34px;
+      height:34px;
+      border-radius:12px;
+      border:1px solid rgba(255,255,255,.12);
+      display:grid;
+      place-items:center;
+      background:rgba(255,255,255,.04);
+      color: rgba(255,255,255,.65);
+      font-weight:900;
+      transition: transform .15s ease;
+    }
+    details[open] > summary .sv-chev{
+      transform: rotate(180deg);
     }
     @media (max-width: 780px){
-      .sv-totalbox{ min-width: 120px; }
-      .sv-totalbox__value{ font-size: 14px; }
+      .sv-money-pill{ font-size: 13px; padding:7px 9px; }
+      .sv-chev{ width:32px; height:32px; border-radius:11px; }
     }
+
   </style>
 
 
@@ -191,8 +204,9 @@
                   <div class="sv-muted">{{ emp.vendedores|length }} vendedor(es)</div>
                 </div>
               </div>
-              <div class="sv-row sv-gap-10" style="align-items:center;">
-                <div class="sv-totalbox"><div class="sv-totalbox__label">Total (R$)</div><div class="sv-totalbox__value">{{ emp.emp_total|brl }}</div></div>
+              <div class="sv-acc-right">
+                <div class="sv-money-pill">{{ emp.emp_total|brl }}</div>
+                <div class="sv-chev">▾</div>
               </div>
             </summary>
 
@@ -207,7 +221,10 @@
                         <div class="sv-strong sv-truncate">{{ vend.vendedor }}</div>
                         <div class="sv-muted">Campanhas: {{ vend.resultados|length }}</div>
                       </div>
-                      <div class="sv-totalbox"><div class="sv-totalbox__label">Total (R$)</div><div class="sv-totalbox__value">{{ vend.total_recompensa|brl }}</div></div>
+                      <div class="sv-acc-right">
+                      <div class="sv-money-pill">{{ vend.total_recompensa|brl }}</div>
+                      <div class="sv-chev">▾</div>
+                    </div>
                     </summary>
 
                     <div class="sv-details__panel">
