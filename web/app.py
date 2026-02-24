@@ -3715,6 +3715,7 @@ def relatorio_campanhas():
 
         titulo = str(_pick(r, "titulo", "campanha", "CAMPANHA") or "").strip() or "—"
         valor = _to_float(_pick(r, "valor_recompensa", "valor", "VALOR_RECOMPENSA") or 0)
+        vendeu_rs = _to_float(_pick(r, "valor_vendido", "vendeu_rs", "VENDEU_RS", "valor_total_vendido") or 0)
         st = _norm_status(_pick(r, "status_pagamento", "status", "STATUS_PAGAMENTO") or "PENDENTE")
 
         key = (emp_r, vend_r)
@@ -3738,6 +3739,7 @@ def relatorio_campanhas():
         g["campanhas"].append({
             "titulo": titulo,
             "valor": valor,
+            "vendeu_rs": vendeu_rs,
             "status": st,
         })
 
@@ -7674,19 +7676,3 @@ def campanhas_ranking_marca():
             db.close()
         except Exception:
             pass
-
-
-@app.route("/financeiro/campanhas")
-@login_required
-def financeiro_campanhas():
-    """
-    Endpoint compatível com o menu lateral (sidebar).
-    Caso a implementação atual esteja em /financeiro/campanhas_v2, redireciona para lá.
-    """
-    try:
-        return redirect(url_for("financeiro_campanhas_v2"))
-    except Exception:
-        # fallback: se não existir v2, renderiza página simples informativa
-        return redirect("/financeiro/campanhas_v2")
-
-

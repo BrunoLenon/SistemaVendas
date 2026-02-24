@@ -1,72 +1,12 @@
 {% extends "base.html" %}
 {% block title %}Relatórios • Campanhas{% endblock %}
-
-{% block extra_head %}
-<style>
-/* Compact + wide layout (page-level only) */
-.sv-page{max-width:1400px;margin:0 auto;padding:12px 12px;}
-.sv-pagehead{margin-bottom:12px;}
-.sv-card{border-radius:16px;}
-.sv-table td,.sv-table th{padding:.55rem .6rem; vertical-align:middle;}
-/* Reduce bootstrap row gutters inside sv pages */
-.row.g-3{--bs-gutter-y: .75rem; --bs-gutter-x: .75rem;}
-
-
-/* --- relatorio_campanhas: table stability fixes --- */
-.rel-campanhas .sv-table{ table-layout: fixed; width:100%; }
-.rel-campanhas .sv-table th:nth-child(1), .rel-campanhas .sv-table td:nth-child(1){ width:90px; }
-.rel-campanhas .sv-table th:nth-child(2), .rel-campanhas .sv-table td:nth-child(2){ width:260px; }
-.rel-campanhas .sv-table th:nth-child(3), .rel-campanhas .sv-table td:nth-child(3){ width:520px; }
-.rel-campanhas .sv-table th:nth-child(4), .rel-campanhas .sv-table td:nth-child(4){ width:140px; }
-.rel-campanhas .sv-table th:nth-child(5), .rel-campanhas .sv-table td:nth-child(5){ width:140px; }
-
-/* Prevent "letter by letter" breaks */
-.rel-campanhas .sv-table th,
-.rel-campanhas .sv-table td,
-.rel-campanhas .sv-subtable th,
-.rel-campanhas .sv-subtable td{
-  word-break: normal !important;
-  overflow-wrap: break-word;
-}
-
-/* Keep small columns compact */
-.rel-campanhas .sv-table td:nth-child(1),
-.rel-campanhas .sv-table td:nth-child(4),
-.rel-campanhas .sv-table td:nth-child(5){ white-space: nowrap; }
-
-/* Vendedor: single line with ellipsis */
-.rel-campanhas .sv-table td:nth-child(2){
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* Campanhas cell can wrap naturally */
-.rel-campanhas .sv-table td:nth-child(3){ white-space: normal; }
-
-/* Inline details (Ver campanhas) should open with a usable width */
-.rel-campanhas details.sv-acc{ width:100%; }
-.rel-campanhas details.sv-acc > summary{ cursor:pointer; }
-.rel-campanhas .sv-acc__body{
-  min-width: 420px;
-  max-width: 640px;
-  overflow: auto;
-}
-
-/* Subtable nicer spacing */
-.rel-campanhas .sv-subtable{ width:100%; border-collapse: separate; border-spacing:0; }
-.rel-campanhas .sv-subtable th{ white-space: nowrap; }
-.rel-campanhas .sv-subtable td:nth-child(2){ white-space: nowrap; }
-
-</style>
-{% endblock %}
 {% block content %}
 
 {% set view_mode = request.args.get('view', 'detalhado') %}
 {% set resumo = ctx.get('resumo', {}) %}
 {% set status = resumo.get('status', {}) %}
 
-<div class="sv-page rel-campanhas">
+<div class="sv-page">
 
   <!-- Header -->
   <div class="sv-pagehead sv-glass">
@@ -301,6 +241,7 @@
                       <thead>
                         <tr>
                           <th>Campanha</th>
+                          <th class="sv-right">Vendeu (R$)</th>
                           <th class="sv-right">Valor</th>
                           <th>Status</th>
                         </tr>
@@ -309,6 +250,7 @@
                         {% for c in g.campanhas %}
                           <tr>
                             <td>{{ c.titulo }}</td>
+                            <td class="sv-right">{{ (c.vendeu_rs or 0)|brl_rs }}</td>
                             <td class="sv-right">{{ c.valor|brl_rs }}</td>
                             <td>
                               <span class="sv-pill {{ 'sv-pill-warn' if c.status=='PENDENTE' else ('sv-pill-info' if c.status=='A_PAGAR' else ('sv-pill-ok' if c.status=='PAGO' else '')) }}">{{ c.status }}</span>

@@ -47,6 +47,9 @@ class UnifiedRow:
     qtd_base: float | None
     qtd_premiada: float | None
 
+    # Total vendido (R$) do(s) item(ns) da campanha no período (quando aplicável)
+    valor_vendido: float | None
+
     valor_recompensa: float
     status_pagamento: str
     pago_em: Any | None
@@ -153,6 +156,7 @@ def build_unified_rows(
                         atingiu_gate=bool(int(getattr(r, "atingiu_minimo", 0) or 0)),
                         qtd_base=_safe_float(getattr(r, "qtd_vendida", None)),
                         qtd_premiada=qtd_prem,
+                        valor_vendido=_safe_float(getattr(r, "valor_vendido", None)),
                         valor_recompensa=valor_recompensa,
                         status_pagamento=str(getattr(r, "status_pagamento", "PENDENTE") or "PENDENTE"),
                         pago_em=getattr(r, "pago_em", None),
@@ -185,6 +189,7 @@ def build_unified_rows(
                         atingiu_gate=bool(int(getattr(r, "atingiu_gate", 0) or 0)),
                         qtd_base=None,
                         qtd_premiada=None,
+                        valor_vendido=None,
                         valor_recompensa=_safe_float(getattr(r, "valor_recompensa", 0.0)),
                         status_pagamento=str(getattr(r, "status_pagamento", "PENDENTE") or "PENDENTE"),
                         pago_em=getattr(r, "pago_em", None),
@@ -222,6 +227,7 @@ def build_unified_rows(
                             atingiu_gate=True if _safe_float(getattr(r, "base_valor_vendido", 0.0)) > 0 else False,
                             qtd_base=_safe_float(getattr(r, "base_valor_vendido", 0.0)),
                             qtd_premiada=None,
+                            valor_vendido=_safe_float(getattr(r, "base_valor_vendido", 0.0)),
                             valor_recompensa=_safe_float(getattr(r, "valor_recompensa", 0.0)),
                             status_pagamento=str(getattr(r, "status_pagamento", "PENDENTE") or "PENDENTE"),
                             pago_em=getattr(r, "pago_em", None),
@@ -276,6 +282,7 @@ def build_unified_rows(
                                 atingiu_gate=True if base_val_f > 0 else False,
                                 qtd_base=base_val_f,
                                 qtd_premiada=None,
+                                valor_vendido=base_val_f,
                                 valor_recompensa=valor,
                                 status_pagamento="PENDENTE",
                                 pago_em=None,
