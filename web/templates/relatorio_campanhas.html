@@ -1,12 +1,24 @@
 {% extends "base.html" %}
 {% block title %}Relatórios • Campanhas{% endblock %}
+
+{% block extra_head %}
+<style>
+/* Compact + wide layout (page-level only) */
+.sv-page{max-width:1400px;margin:0 auto;padding:12px 12px;}
+.sv-pagehead{margin-bottom:12px;}
+.sv-card{border-radius:16px;}
+.sv-table td,.sv-table th{padding:.55rem .6rem; vertical-align:middle;}
+/* Reduce bootstrap row gutters inside sv pages */
+.row.g-3{--bs-gutter-y: .75rem; --bs-gutter-x: .75rem;}
+</style>
+{% endblock %}
 {% block content %}
 
 {% set view_mode = request.args.get('view', 'detalhado') %}
 {% set resumo = ctx.get('resumo', {}) %}
 {% set status = resumo.get('status', {}) %}
 
-<div class="sv-page">
+<div class="sv-page sv-page--relcamp">
 
   <!-- Header -->
   <div class="sv-pagehead sv-glass">
@@ -212,6 +224,13 @@
 
     <div class="sv-tablewrap">
       <table class="sv-table sv-table--grouped">
+        <colgroup>
+          <col style="width:72px" />
+          <col style="width:280px" />
+          <col />
+          <col style="width:140px" />
+          <col style="width:120px" />
+        </colgroup>
         <thead>
           <tr>
             <th>EMP</th>
@@ -241,7 +260,6 @@
                       <thead>
                         <tr>
                           <th>Campanha</th>
-                          <th class="sv-right">Vendeu (R$)</th>
                           <th class="sv-right">Valor</th>
                           <th>Status</th>
                         </tr>
@@ -250,7 +268,6 @@
                         {% for c in g.campanhas %}
                           <tr>
                             <td>{{ c.titulo }}</td>
-                            <td class="sv-right">{{ (c.vendeu_rs or 0)|brl_rs }}</td>
                             <td class="sv-right">{{ c.valor|brl_rs }}</td>
                             <td>
                               <span class="sv-pill {{ 'sv-pill-warn' if c.status=='PENDENTE' else ('sv-pill-info' if c.status=='A_PAGAR' else ('sv-pill-ok' if c.status=='PAGO' else '')) }}">{{ c.status }}</span>
@@ -300,5 +317,34 @@
     });
   })();
 </script>
+
+<style>
+  /* Ajustes de proporção (apenas /relatorios/campanhas)
+     - evita o dropdown ficar estreito e quebrar cabeçalhos/letras
+     - melhora leitura sem mexer na funcionalidade
+  */
+  .sv-page--relcamp .sv-tablewrap { overflow-x: auto; }
+  .sv-page--relcamp .sv-table th,
+  .sv-page--relcamp .sv-table td { vertical-align: top; }
+  .sv-page--relcamp .sv-acc--inline {
+    display: block;
+    width: 100%;
+    max-width: none;
+  }
+  .sv-page--relcamp .sv-acc__sum { gap: 10px; }
+  .sv-page--relcamp .sv-acc__label { flex: 1 1 auto; min-width: 0; }
+  .sv-page--relcamp .sv-subtable {
+    width: 100%;
+    table-layout: auto;
+  }
+  .sv-page--relcamp .sv-subtable th,
+  .sv-page--relcamp .sv-subtable td {
+    white-space: nowrap; }
+  .sv-page--relcamp .sv-subtable th:first-child,
+  .sv-page--relcamp .sv-subtable td:first-child { white-space: normal; }
+  @media (max-width: 1100px) {
+    .sv-page--relcamp .sv-table { min-width: 980px; }
+  }
+</style>
 
 {% endblock %}
