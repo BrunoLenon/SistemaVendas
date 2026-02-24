@@ -49,6 +49,15 @@ class UnifiedRow:
     recompensa_unit: float | None = None
     valor_vendido: float | None = None
 
+    # Compat: alguns templates/rotas antigos esperam `r.atingiu`.
+    # Mantemos `atingiu_gate` como fonte de verdade e oferecemos um alias.
+    @property
+    def atingiu(self) -> bool:
+        try:
+            return bool(self.atingiu_gate or False)
+        except Exception:
+            return False
+
 
     # campos calculados (defaults evitam erro de ordem no dataclass)
     atingiu_gate: bool | None = None
@@ -164,6 +173,8 @@ def build_unified_rows(
             for r in q_qtd.all():
                 recompensa_unit = _safe_float(getattr(r, "recompensa_unit", 0.0))
                 valor_recompensa = _safe_float(getattr(r, "valor_recompensa", 0.0))
+                qtd_minima = getattr(r, "qtd_minima", None)
+                valor_vendido = _safe_float(getattr(r, "valor_vendido", 0.0))
                 qtd_prem = None
                 if recompensa_unit > 0 and valor_recompensa > 0:
                     qtd_prem = valor_recompensa / recompensa_unit
@@ -176,6 +187,11 @@ def build_unified_rows(
                         emp=str(getattr(r, "emp", emp)),
                         vendedor=str(getattr(r, "vendedor", "")).strip().upper(),
                         titulo=str(getattr(r, "titulo", "") or "").strip() or f"Campanha #{getattr(r,'campanha_id', '')}",
+                        # campos usados no relatório detalhado (/relatorios/campanhas)
+                        item_codigo=str(getattr(r, "produto_prefixo", "") or "").strip() or None,
+                        qtd_minima=_safe_float(qtd_minima) if qtd_minima is not None else None,
+                        recompensa_unit=recompensa_unit,
+                        valor_vendido=valor_vendido,
                         atingiu_gate=bool(int(getattr(r, "atingiu_minimo", 0) or 0)),
                         qtd_base=_safe_float(getattr(r, "qtd_vendida", None)),
                         qtd_premiada=qtd_prem,
