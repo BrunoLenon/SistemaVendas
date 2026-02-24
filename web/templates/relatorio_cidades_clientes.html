@@ -126,6 +126,9 @@
             </tr>
           </thead>
           <tbody>
+            {% if cidades|length == 0 %}
+              <tr><td colspan="5" class="text-muted" style="padding:18px;">Nenhum dado encontrado para o período selecionado.</td></tr>
+            {% else %}
             {% for c in cidades %}
               <tr>
                 <td>
@@ -146,6 +149,7 @@
                 </td>
               </tr>
             {% endfor %}
+            {% endif %}
           </tbody>
         </table>
       </div>
