@@ -3987,8 +3987,8 @@ def relatorio_cidades_clientes():
 
     db = SessionLocal()
     try:
-        base = db.query(Venda).filter(Venda.ano == ano, Venda.mes == mes)
-        base_hist = db.query(Venda).filter(Venda.ano.isnot(None), Venda.mes.isnot(None))
+        base = db.query(Venda).filter(Venda.movimento >= inicio, Venda.movimento < fim)
+        base_hist = db.query(Venda).filter(Venda.movimento.isnot(None))
 
         escopo_label = None
         pode_filtrar_emp = False
@@ -4094,20 +4094,7 @@ def relatorio_cidades_clientes():
                 "clientes_unicos": int(r.clientes_unicos or 0),
             })
 
-        
-        # Lista "flat" (para visão resumida por cidade)
-        cidades = []
-        for emp, items in (cidades_por_emp or {}).items():
-            for it in items:
-                cidades.append({
-                    "emp": emp,
-                    "cidade": it.get("cidade_label") or "SEM CIDADE",
-                    "qtd_clientes": int(it.get("clientes_unicos") or 0),
-                    "qtd_total": float(it.get("qtd_total") or 0.0),
-                    "valor_total": float(it.get("valor_total") or 0.0),
-                })
-
-# Top clientes por EMP (por valor no período)
+        # Top clientes por EMP (por valor no período)
         signed_val = case(
             (Venda.mov_tipo_movto.in_(["DS", "CA"]), -Venda.valor_total),
             else_=Venda.valor_total,
@@ -4213,161 +4200,11 @@ def relatorio_cidades_clientes():
             emp_filtro=emp_filtro,
             vendedor_filtro=vendedor_filtro,
             emp_cards=emp_cards,
-            cidades=cidades,
         )
     finally:
         db.close()
 
 
-
-
-
-
-@app.get("/relatorios/cidades-clientes/api/cidade")
-def relatorio_cidades_clientes_api_cidade():
-    """Retorna clientes de uma cidade (por EMP) no período (mês/ano)."""
-    red = _login_required()
-    if red:
-        return red
-
-    role = (_role() or "").strip().lower()
-    vendedor_logado = (_usuario_logado() or "").strip().upper()
-
-    hoje = date.today()
-    mes = int(request.args.get("mes") or hoje.month)
-    ano = int(request.args.get("ano") or hoje.year)
-
-    emp = (request.args.get("emp") or "").strip()
-    cidade_norm = (request.args.get("cidade_norm") or "").strip().lower()
-
-    db = SessionLocal()
-    try:
-        q = db.query(Venda).filter(Venda.ano == ano, Venda.mes == mes)
-
-        if role == "admin":
-            if emp:
-                q = q.filter(Venda.emp == emp)
-        elif role == "supervisor":
-            allowed_emps = _allowed_emps()
-            if allowed_emps:
-                if emp and emp in allowed_emps:
-                    q = q.filter(Venda.emp == emp)
-                else:
-                    q = q.filter(Venda.emp.in_(allowed_emps))
-            else:
-                q = q.filter(text("1=0"))
-        else:
-            q = q.filter(func.upper(Venda.vendedor) == vendedor_logado)
-            if emp:
-                q = q.filter(Venda.emp == emp)
-
-        if cidade_norm in ("", "sem_cidade", "none"):
-            q = q.filter((Venda.cidade_norm.is_(None)) | (Venda.cidade_norm == ""))
-        else:
-            q = q.filter(func.lower(Venda.cidade_norm) == cidade_norm)
-
-        signed_val = case(
-            (Venda.mov_tipo_movto.in_(["DS", "CA"]), -Venda.valor_total),
-            else_=Venda.valor_total,
-        )
-
-        rows = (
-            q.with_entities(
-                Venda.cliente_id_norm.label("cliente_id"),
-                func.coalesce(func.max(Venda.razao_norm), func.max(Venda.razao), "").label("cliente_label"),
-                func.coalesce(func.sum(signed_val), 0.0).label("valor_total"),
-                func.coalesce(func.sum(Venda.qtdade_vendida), 0.0).label("qtd_total"),
-            )
-            .filter(Venda.cliente_id_norm.isnot(None))
-            .group_by(Venda.cliente_id_norm)
-            .order_by(func.sum(signed_val).desc())
-            .limit(400)
-            .all()
-        )
-
-        data = []
-        for r in rows:
-            data.append({
-                "cliente_id": r.cliente_id,
-                "cliente_label": (r.cliente_label or "").strip(),
-                "qtd_total": float(r.qtd_total or 0.0),
-                "valor_total": float(r.valor_total or 0.0),
-            })
-
-        return jsonify({"ok": True, "items": data})
-    finally:
-        db.close()
-
-
-@app.get("/relatorios/cidades-clientes/api/cliente")
-def relatorio_cidades_clientes_api_cliente():
-    """Retorna marcas (ou resumo) de um cliente no período (mês/ano), opcional por EMP."""
-    red = _login_required()
-    if red:
-        return red
-
-    role = (_role() or "").strip().lower()
-    vendedor_logado = (_usuario_logado() or "").strip().upper()
-
-    hoje = date.today()
-    mes = int(request.args.get("mes") or hoje.month)
-    ano = int(request.args.get("ano") or hoje.year)
-
-    emp = (request.args.get("emp") or "").strip()
-    cliente_id = (request.args.get("cliente_id") or "").strip()
-
-    db = SessionLocal()
-    try:
-        q = db.query(Venda).filter(Venda.ano == ano, Venda.mes == mes)
-
-        if role == "admin":
-            if emp:
-                q = q.filter(Venda.emp == emp)
-        elif role == "supervisor":
-            allowed_emps = _allowed_emps()
-            if allowed_emps:
-                if emp and emp in allowed_emps:
-                    q = q.filter(Venda.emp == emp)
-                else:
-                    q = q.filter(Venda.emp.in_(allowed_emps))
-            else:
-                q = q.filter(text("1=0"))
-        else:
-            q = q.filter(func.upper(Venda.vendedor) == vendedor_logado)
-            if emp:
-                q = q.filter(Venda.emp == emp)
-
-        if cliente_id:
-            q = q.filter(Venda.cliente_id_norm == cliente_id)
-
-        signed_val = case(
-            (Venda.mov_tipo_movto.in_(["DS", "CA"]), -Venda.valor_total),
-            else_=Venda.valor_total,
-        )
-
-        rows = (
-            q.with_entities(
-                func.coalesce(Venda.marca, "SEM MARCA").label("marca"),
-                func.coalesce(func.sum(signed_val), 0.0).label("valor_total"),
-                func.coalesce(func.sum(Venda.qtdade_vendida), 0.0).label("qtd_total"),
-            )
-            .group_by(func.coalesce(Venda.marca, "SEM MARCA"))
-            .order_by(func.sum(signed_val).desc())
-            .limit(200)
-            .all()
-        )
-
-        data = []
-        for r in rows:
-            data.append({
-                "marca": (r.marca or "SEM MARCA"),
-                "qtd_total": float(r.qtd_total or 0.0),
-                "valor_total": float(r.valor_total or 0.0),
-            })
-
-        return jsonify({"ok": True, "items": data})
-    finally:
-        db.close()
 
 
 
@@ -7837,3 +7674,19 @@ def campanhas_ranking_marca():
             db.close()
         except Exception:
             pass
+
+
+@app.route("/financeiro/campanhas")
+@login_required
+def financeiro_campanhas():
+    """
+    Endpoint compatível com o menu lateral (sidebar).
+    Caso a implementação atual esteja em /financeiro/campanhas_v2, redireciona para lá.
+    """
+    try:
+        return redirect(url_for("financeiro_campanhas_v2"))
+    except Exception:
+        # fallback: se não existir v2, renderiza página simples informativa
+        return redirect("/financeiro/campanhas_v2")
+
+
