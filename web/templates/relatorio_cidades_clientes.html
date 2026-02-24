@@ -10,13 +10,12 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
       </div>
       <div class="modal-body">
-        <div id="cityClientsMeta" class="text-sv-muted small mb-2"></div>
-        <div id="cityClientsLoading" class="text-sv-muted">Carregando...</div>
+        <div id="cityClientsMeta" class="text-muted small mb-2"></div>
+        <div id="cityClientsLoading" class="text-muted">Carregando...</div>
         <div class="table-responsive d-none d-md-block">
-          <div class="sv-tablewrap">
-<table class="sv-table" id="cityClientsTable" style="display:none;">
+          <table class="sv-table">
             <thead>
-              <tr class="text-sv-muted small">
+              <tr class="text-muted small">
                 <th>#</th>
                 <th>Cliente</th>
                 <th class="text-end">Valor</th>
@@ -25,7 +24,6 @@
             </thead>
             <tbody></tbody>
           </table>
-</div>
         </div>
 
         <div class="mobile-list d-md-none" id="cityClientsMobile" style="display:none;"></div>
@@ -43,13 +41,12 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
       </div>
       <div class="modal-body">
-        <div id="clienteMarcasMeta" class="text-sv-muted small mb-2"></div>
-        <div id="clienteMarcasLoading" class="text-sv-muted">Carregando...</div>
+        <div id="clienteMarcasMeta" class="text-muted small mb-2"></div>
+        <div id="clienteMarcasLoading" class="text-muted">Carregando...</div>
         <div class="table-responsive">
-          <div class="sv-tablewrap">
-<table class="sv-table" id="clienteMarcasTable" style="display:none;">
+          <table class="sv-table">
             <thead>
-              <tr class="text-sv-muted small">
+              <tr class="text-muted small">
                 <th>#</th>
                 <th>Marca</th>
                 <th class="text-end">Valor</th>
@@ -58,7 +55,6 @@
             </thead>
             <tbody></tbody>
           </table>
-</div>
         </div>
       </div>
     </div>
@@ -115,7 +111,7 @@
     rows.forEach((r, idx) => {
       const tr = document.createElement('tr');
       tr.innerHTML = `
-        <td class="text-sv-muted">${idx+1}</td>
+        <td class="text-muted">${idx+1}</td>
         <td><a href="#" class="js-client link-primary text-decoration-none" data-razao="${r.cliente_id}" data-label="${(r.cliente||'').replace(/"/g,'&quot;')}">${r.cliente}</a></td>
         <td class="text-end">${brl(r.valor_total)}</td>
         <td class="text-end">${r.mix_itens || 0}</td>
@@ -169,7 +165,7 @@
     rows.forEach((r, idx) => {
       const tr = document.createElement('tr');
       tr.innerHTML = `
-        <td class="text-sv-muted">${idx+1}</td>
+        <td class="text-muted">${idx+1}</td>
         <td class="fw-semibold">${r.marca}</td>
         <td class="text-end">${brl(r.valor_total)}</td>
         <td class="text-end">${(r.percent || 0).toFixed(1)}%</td>
@@ -215,9 +211,9 @@
     .emp-card{border:0;border-radius:18px}
     .emp-hero{border-radius:14px;background:rgba(13,110,253,.06);border:1px solid rgba(13,110,253,.12)}
     .metric{font-weight:800;letter-spacing:-.02em}
-    .sv-muted{color:rgba(0,0,0,.58)}
+    .muted{color:rgba(0,0,0,.58)}
     .table-sm td,.table-sm th{padding:.45rem .55rem}
-    .sv-pill{border:1px solid rgba(0,0,0,.08);border-radius:999px;padding:.2rem .55rem;background:#fff}
+    .pill{border:1px solid rgba(0,0,0,.08);border-radius:999px;padding:.2rem .55rem;background:#fff}
     .rank{width:42px}
     .pct{min-width:88px}
     .btn-ghost{background:rgba(0,0,0,.03);border:1px solid rgba(0,0,0,.08)}
@@ -242,13 +238,12 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
       </div>
       <div class="modal-body">
-        <div id="cityClientsMeta" class="text-sv-muted small mb-2"></div>
-        <div id="cityClientsLoading" class="text-sv-muted">Carregando...</div>
+        <div id="cityClientsMeta" class="text-muted small mb-2"></div>
+        <div id="cityClientsLoading" class="text-muted">Carregando...</div>
         <div class="table-responsive d-none d-md-block">
-          <div class="sv-tablewrap">
-<table class="sv-table" id="cityClientsTable" style="display:none;">
+          <table class="sv-table">
             <thead>
-              <tr class="text-sv-muted small">
+              <tr class="text-muted small">
                 <th>#</th>
                 <th>Cliente</th>
                 <th class="text-end">Valor</th>
@@ -257,7 +252,6 @@
             </thead>
             <tbody></tbody>
           </table>
-</div>
         </div>
 
         <div class="mobile-list d-md-none" id="cityClientsMobile" style="display:none;"></div>
@@ -275,13 +269,12 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
       </div>
       <div class="modal-body">
-        <div id="clienteMarcasMeta" class="text-sv-muted small mb-2"></div>
-        <div id="clienteMarcasLoading" class="text-sv-muted">Carregando...</div>
+        <div id="clienteMarcasMeta" class="text-muted small mb-2"></div>
+        <div id="clienteMarcasLoading" class="text-muted">Carregando...</div>
         <div class="table-responsive">
-          <div class="sv-tablewrap">
-<table class="sv-table" id="clienteMarcasTable" style="display:none;">
+          <table class="sv-table">
             <thead>
-              <tr class="text-sv-muted small">
+              <tr class="text-muted small">
                 <th>#</th>
                 <th>Marca</th>
                 <th class="text-end">Valor</th>
@@ -290,7 +283,6 @@
             </thead>
             <tbody></tbody>
           </table>
-</div>
         </div>
       </div>
     </div>
@@ -347,7 +339,7 @@
     rows.forEach((r, idx) => {
       const tr = document.createElement('tr');
       tr.innerHTML = `
-        <td class="text-sv-muted">${idx+1}</td>
+        <td class="text-muted">${idx+1}</td>
         <td><a href="#" class="js-client link-primary text-decoration-none" data-razao="${r.cliente_id}" data-label="${(r.cliente||'').replace(/"/g,'&quot;')}">${r.cliente}</a></td>
         <td class="text-end">${brl(r.valor_total)}</td>
         <td class="text-end">${r.mix_itens || 0}</td>
@@ -401,7 +393,7 @@
     rows.forEach((r, idx) => {
       const tr = document.createElement('tr');
       tr.innerHTML = `
-        <td class="text-sv-muted">${idx+1}</td>
+        <td class="text-muted">${idx+1}</td>
         <td class="fw-semibold">${r.marca}</td>
         <td class="text-end">${brl(r.valor_total)}</td>
         <td class="text-end">${(r.percent || 0).toFixed(1)}%</td>
@@ -442,22 +434,21 @@
 {% endblock %}
 
 {% block content %}
-
-<div class="sv-page">
 <div class="container py-3" style="max-width: 1100px;">
 
   <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
     <div>
-      <h3 class="mb-0">📊 Relatórios por EMP</h3>
-      <div class="sv-muted">Cidades e Clientes • Período: <b>{{ "%02d"|format(mes) }}/{{ ano }}</b>{% if escopo_label %} • <span class="sv-pill">{{ escopo_label }}</span>{% endif %}</div>
+      <h3 class="mb-0">📊 Cidades &amp; Clientes</h3>
+      <div class="muted">Cidades e Clientes • Período: <b>{{ "%02d"|format(mes) }}/{{ ano }}</b>{% if escopo_label %} • <span class="pill">{{ escopo_label }}</span>{% endif %}</div>
     </div>
-    <div class="d-flex gap-2">
-      <a class="sv-btn sv-btn--ghost" href="{{ url_for('dashboard') }}">Voltar</a>
+    <div class="d-flex gap-2 cc-tabs">
+
+      <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('dashboard') }}">Voltar</a>
     </div>
   </div>
 
-  <div class="card soft-shadow border-0 mb-3">
-    <div class="card-body">
+  <div class="sv-card sv-glass soft-shadow border-0 mb-3" cc-emp-card>
+    <div class="sv-card sv-glass-body" cc-emp-card>
       <form class="row g-2 align-items-end" method="GET" action="/relatorios/cidades-clientes">
         <div class="col-6 col-md-2">
           <label class="form-label mb-1">Mês</label>
@@ -497,12 +488,12 @@
     </div>
   </div>
 
-  <ul class="d-flex gap-2 mb-3" role="tablist">
+  <ul class="nav nav-pills mb-3" role="tablist">
     <li class="nav-item" role="presentation">
-      <button class="sv-btn" id="tab-cidades" data-bs-toggle="sv-pill" data-bs-target="#pane-cidades" type="button" role="tab">🌆 Cidades</button>
+      <button class="nav-link active" id="tab-cidades" data-bs-toggle="pill" data-bs-target="#pane-cidades" type="button" role="tab">🌆 Cidades</button>
     </li>
     <li class="nav-item" role="presentation">
-      <button class="sv-btn sv-btn--ghost" id="tab-clientes" data-bs-toggle="sv-pill" data-bs-target="#pane-clientes" type="button" role="tab">👥 Clientes</button>
+      <button class="nav-link" id="tab-clientes" data-bs-toggle="pill" data-bs-target="#pane-clientes" type="button" role="tab">👥 Clientes</button>
     </li>
   </ul>
 
@@ -515,20 +506,20 @@
       {% endif %}
 
       {% for c in emp_cards %}
-      <div class="card emp-card soft-shadow mb-3">
-        <div class="card-body p-3 p-md-4">
+      <div class="sv-card sv-glass emp-sv-card sv-glass soft-shadow mb-3" cc-emp-card>
+        <div class="sv-card sv-glass-body p-3 p-md-4" cc-emp-card>
 
           <div class="emp-hero p-3 mb-3">
             <div class="d-flex flex-wrap justify-content-between align-items-start gap-2">
               <div>
                 <div class="h5 mb-0">🏬 EMP {{ c.emp }}</div>
-                <div class="sv-muted small">Resumo rápido (clique em “Ver detalhes” para expandir)</div>
+                <div class="muted small">Resumo rápido (clique em “Ver detalhes” para expandir)</div>
               </div>
               <div class="d-flex flex-wrap gap-2">
-                <div class="sv-pill"><span class="sv-muted small">Valor</span> <span class="metric">R$ {{ "{:,.2f}".format(c.totais.valor_total).replace(",", "X").replace(".", ",").replace("X", ".") }}</span></div>
-                <div class="sv-pill"><span class="sv-muted small">Cidades</span> <span class="metric">{{ c.totais.cidades }}</span></div>
-                <div class="sv-pill"><span class="sv-muted small">Clientes</span> <span class="metric">{{ c.totais.clientes_unicos }}</span></div>
-                <div class="sv-pill"><span class="sv-muted small">Vendedores</span> <span class="metric">{{ c.totais.vendedores }}</span></div>
+                <div class="pill"><span class="muted small">Valor</span> <span class="metric">R$ {{ "{:,.2f}".format(c.totais.valor_total).replace(",", "X").replace(".", ",").replace("X", ".") }}</span></div>
+                <div class="pill"><span class="muted small">Cidades</span> <span class="metric">{{ c.totais.cidades }}</span></div>
+                <div class="pill"><span class="muted small">Clientes</span> <span class="metric">{{ c.totais.clientes_unicos }}</span></div>
+                <div class="pill"><span class="muted small">Vendedores</span> <span class="metric">{{ c.totais.vendedores }}</span></div>
               </div>
             </div>
           </div>
@@ -563,10 +554,9 @@
 
 <div class="table-responsive d-none d-md-block">
 
-                <div class="sv-tablewrap">
-<table class="sv-table">
+                <table class="sv-table">
                   <thead>
-                    <tr class="text-sv-muted small">
+                    <tr class="text-muted small">
                       <th class="rank">#</th>
                       <th>Cidade</th>
                       <th class="text-end">Valor</th>
@@ -576,18 +566,17 @@
                   <tbody>
                     {% for r in c.cidades_preview %}
                     <tr>
-                      <td class="text-sv-muted">{{ loop.index }}</td>
+                      <td class="text-muted">{{ loop.index }}</td>
                       <td class="fw-semibold"><a href="#" class="link-primary text-decoration-none js-city" data-emp="{{ c.emp }}" data-cidade="{{ r.cidade_norm or 'sem_cidade' }}">{{ r.cidade_label }}</a></td>
                       <td class="text-end">R$ {{ "{:,.2f}".format(r.valor_total).replace(",", "X").replace(".", ",").replace("X", ".") }}</td>
                       <td class="text-end">{{ "{:.1f}%".format(r.pct) }}</td>
                     </tr>
                     {% endfor %}
                     {% if c.cidades_preview|length == 0 %}
-                      <tr><td colspan="4" class="text-center text-sv-muted py-3">Sem cidades no período.</td></tr>
+                      <tr><td colspan="4" class="text-center text-muted py-3">Sem cidades no período.</td></tr>
                     {% endif %}
                   </tbody>
                 </table>
-</div>
               </div>
 
               <div class="collapse mt-3" id="cidades-{{ loop.index }}">
@@ -610,10 +599,9 @@
 </div>
 
 <div class="table-responsive d-none d-md-block">
-                  <div class="sv-tablewrap">
-<table class="sv-table">
+                  <table class="sv-table">
                     <thead>
-                      <tr class="text-sv-muted small">
+                      <tr class="text-muted small">
                         <th class="rank">#</th>
                         <th>Cidade</th>
                         <th class="text-end">Valor</th>
@@ -625,7 +613,7 @@
                     <tbody>
                       {% for r in c.cidades_full %}
                       <tr>
-                        <td class="text-sv-muted">{{ loop.index }}</td>
+                        <td class="text-muted">{{ loop.index }}</td>
                         <td class="fw-semibold"><a href="#" class="link-primary text-decoration-none js-city" data-emp="{{ c.emp }}" data-cidade="{{ r.cidade_norm or 'sem_cidade' }}">{{ r.cidade_label }}</a></td>
                         <td class="text-end">R$ {{ "{:,.2f}".format(r.valor_total).replace(",", "X").replace(".", ",").replace("X", ".") }}</td>
                         <td class="text-end">{{ "{:.1f}%".format(r.pct) }}</td>
@@ -634,29 +622,28 @@
                       </tr>
                       {% endfor %}
                       {% if c.cidades_full|length == 0 %}
-                        <tr><td colspan="6" class="text-center text-sv-muted py-3">Sem dados.</td></tr>
+                        <tr><td colspan="6" class="text-center text-muted py-3">Sem dados.</td></tr>
                       {% endif %}
                     </tbody>
                   </table>
-</div>
                 </div>
               </div>
 
             </div>
 
-            <div class="col-12 col-lg-5">
+            <div class="col-12 col-lg-5" cc-insights">
               <div class="fw-semibold mb-2">Insights rápidos</div>
-              <div class="p-3 rounded-4 bg-white border">
+              <div class="p-3 rounded-4 sv-glass border">
                 <div class="d-flex justify-content-between">
-                  <div class="sv-muted">Clientes novos</div>
+                  <div class="muted">Clientes novos</div>
                   <div class="fw-semibold">{{ c.totais.clientes_novos }}</div>
                 </div>
                 <div class="d-flex justify-content-between mt-2">
-                  <div class="sv-muted">Clientes recorrentes</div>
+                  <div class="muted">Clientes recorrentes</div>
                   <div class="fw-semibold">{{ c.totais.clientes_recorrentes }}</div>
                 </div>
                 <hr>
-                <div class="sv-muted small">Dica: use “Ver detalhes” para enxergar o ranking completo e comparar participação por cidade.</div>
+                <div class="muted small">Dica: use “Ver detalhes” para enxergar o ranking completo e comparar participação por cidade.</div>
               </div>
             </div>
           </div>
@@ -673,19 +660,19 @@
       {% endif %}
 
       {% for c in emp_cards %}
-      <div class="card emp-card soft-shadow mb-3">
-        <div class="card-body p-3 p-md-4">
+      <div class="sv-card sv-glass emp-sv-card sv-glass soft-shadow mb-3" cc-emp-card>
+        <div class="sv-card sv-glass-body p-3 p-md-4" cc-emp-card>
 
           <div class="emp-hero p-3 mb-3">
             <div class="d-flex flex-wrap justify-content-between align-items-start gap-2">
               <div>
                 <div class="h5 mb-0">🏬 EMP {{ c.emp }}</div>
-                <div class="sv-muted small">Clientes do período • Clique em “Ver detalhes” para expandir</div>
+                <div class="muted small">Clientes do período • Clique em “Ver detalhes” para expandir</div>
               </div>
               <div class="d-flex flex-wrap gap-2">
-                <div class="sv-pill"><span class="sv-muted small">Clientes únicos</span> <span class="metric">{{ c.totais.clientes_unicos }}</span></div>
-                <div class="sv-pill"><span class="sv-muted small">Novos</span> <span class="metric">{{ c.totais.clientes_novos }}</span></div>
-                <div class="sv-pill"><span class="sv-muted small">Recorrentes</span> <span class="metric">{{ c.totais.clientes_recorrentes }}</span></div>
+                <div class="pill"><span class="muted small">Clientes únicos</span> <span class="metric">{{ c.totais.clientes_unicos }}</span></div>
+                <div class="pill"><span class="muted small">Novos</span> <span class="metric">{{ c.totais.clientes_novos }}</span></div>
+                <div class="pill"><span class="muted small">Recorrentes</span> <span class="metric">{{ c.totais.clientes_recorrentes }}</span></div>
               </div>
             </div>
           </div>
@@ -715,10 +702,9 @@
 </div>
 
 <div class="table-responsive d-none d-md-block">
-            <div class="sv-tablewrap">
-<table class="sv-table">
+            <table class="sv-table">
               <thead>
-                <tr class="text-sv-muted small">
+                <tr class="text-muted small">
                   <th class="rank">#</th>
                   <th>Cliente</th>
                   <th class="text-end">Valor</th>
@@ -728,18 +714,17 @@
               <tbody>
                 {% for r in c.clientes_preview %}
                 <tr>
-                  <td class="text-sv-muted">{{ loop.index }}</td>
+                  <td class="text-muted">{{ loop.index }}</td>
                   <td class="fw-semibold"><a href="javascript:void(0)" class="client-row text-decoration-none" tabindex="0" data-emp="{{ c.emp }}" data-cliente="{{ r.cliente_id }}" data-razao="{{ r.razao_norm }}" data-label="{{ r.cliente_label }}" data-valor="{{ r.valor_total }}">{{ r.cliente_label }}</a></td>
                   <td class="text-end">R$ {{ "{:,.2f}".format(r.valor_total).replace(",", "X").replace(".", ",").replace("X", ".") }}</td>
                   <td class="text-end">{{ "{:,.0f}".format(r.mix_itens).replace(",", ".") }}</td>
                 </tr>
                 {% endfor %}
                 {% if c.clientes_preview|length == 0 %}
-                  <tr><td colspan="4" class="text-center text-sv-muted py-3">Sem clientes no período.</td></tr>
+                  <tr><td colspan="4" class="text-center text-muted py-3">Sem clientes no período.</td></tr>
                 {% endif %}
               </tbody>
             </table>
-</div>
           </div>
 
           <div class="collapse mt-3" id="clientes-{{ loop.index }}">
@@ -762,10 +747,9 @@
 </div>
 
 <div class="table-responsive d-none d-md-block">
-              <div class="sv-tablewrap">
-<table class="sv-table">
+              <table class="sv-table">
                 <thead>
-                  <tr class="text-sv-muted small">
+                  <tr class="text-muted small">
                     <th class="rank">#</th>
                     <th>Cliente</th>
                     <th class="text-end">Valor</th>
@@ -775,18 +759,17 @@
                 <tbody>
                   {% for r in c.clientes_full %}
                   <tr>
-                    <td class="text-sv-muted">{{ loop.index }}</td>
+                    <td class="text-muted">{{ loop.index }}</td>
                     <td class="fw-semibold"><a href="javascript:void(0)" class="client-row text-decoration-none" tabindex="0" data-emp="{{ c.emp }}" data-cliente="{{ r.cliente_id }}" data-razao="{{ r.razao_norm }}" data-label="{{ r.cliente_label }}" data-valor="{{ r.valor_total }}">{{ r.cliente_label }}</a></td>
                     <td class="text-end">R$ {{ "{:,.2f}".format(r.valor_total).replace(",", "X").replace(".", ",").replace("X", ".") }}</td>
                     <td class="text-end">{{ "{:,.0f}".format(r.mix_itens).replace(",", ".") }}</td>
                   </tr>
                   {% endfor %}
                   {% if c.clientes_full|length == 0 %}
-                    <tr><td colspan="4" class="text-center text-sv-muted py-3">Sem dados.</td></tr>
+                    <tr><td colspan="4" class="text-center text-muted py-3">Sem dados.</td></tr>
                   {% endif %}
                 </tbody>
               </table>
-</div>
             </div>
           </div>
 
@@ -807,22 +790,21 @@
       <div class="modal-header">
         <div>
           <h5 class="modal-title" id="clientModalLabel">Detalhes do cliente</h5>
-          <div class="small text-sv-muted" id="clientModalSub">—</div>
+          <div class="small text-muted" id="clientModalSub">—</div>
         </div>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
       </div>
       <div class="modal-body">
         <div class="d-flex flex-wrap gap-2 mb-3">
-          <span class="badge text-bg-primary" id="clientTotalBadge">Total: —</span>
-          <span class="badge text-bg-secondary" id="clientMixBadge">Itens únicos: —</span>
+          <span class="sv-pill text-bg-primary" id="clientTotalBadge">Total: —</span>
+          <span class="sv-pill text-bg-secondary" id="clientMixBadge">Itens únicos: —</span>
         </div>
 
         <div class="alert alert-info py-2 d-none" id="clientModalLoading">Carregando…</div>
         <div class="alert alert-danger py-2 d-none" id="clientModalError">Falha ao carregar detalhes.</div>
 
         <div class="table-responsive">
-          <div class="sv-tablewrap">
-<table class="sv-table">
+          <table class="sv-table">
             <thead>
               <tr>
                 <th style="width:120px">Mestre</th>
@@ -831,18 +813,17 @@
               </tr>
             </thead>
             <tbody id="clientItemsBody">
-              <tr><td class="text-sv-muted" colspan="3">—</td></tr>
+              <tr><td class="text-muted" colspan="3">—</td></tr>
             </tbody>
           </table>
-</div>
         </div>
 
-        <div class="small text-sv-muted mt-2">
+        <div class="small text-muted mt-2">
           Dica: lista de itens únicos comprados pelo cliente no período filtrado.
         </div>
       </div>
       <div class="modal-footer">
-        <button class="sv-btn sv-btn--ghost" data-bs-dismiss="modal">Fechar</button>
+        <button class="btn btn-outline-secondary" data-bs-dismiss="modal">Fechar</button>
       </div>
     </div>
   </div>
@@ -880,7 +861,7 @@
 
     show(elError,false);
     show(elLoading,true);
-    elBody.innerHTML = '<tr><td class="text-sv-muted" colspan="3">Carregando…</td></tr>';
+    elBody.innerHTML = '<tr><td class="text-muted" colspan="3">Carregando…</td></tr>';
 
     const params = new URLSearchParams({emp: emp, cliente_id: cliente_id, razao_norm: razao_norm, mes: mes, ano: ano, vendedor: vendedor});
     const resp = await fetch('/relatorios/cliente-itens?' + params.toString(), {headers: {'Accept':'application/json'}});
@@ -891,7 +872,7 @@
     elMix.textContent = 'Itens únicos: ' + (data.itens_unicos || 0);
 
     if(!data.itens || !data.itens.length){
-      elBody.innerHTML = '<tr><td class="text-sv-muted" colspan="3">Sem dados.</td></tr>';
+      elBody.innerHTML = '<tr><td class="text-muted" colspan="3">Sem dados.</td></tr>';
       return;
     }
 
@@ -923,7 +904,7 @@
       console.error(err);
       show(elLoading,false);
       show(elError,true);
-      elBody.innerHTML = '<tr><td class="text-sv-muted" colspan="3">Falha ao carregar.</td></tr>';
+      elBody.innerHTML = '<tr><td class="text-muted" colspan="3">Falha ao carregar.</td></tr>';
     });
   }
 
@@ -951,13 +932,12 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
       </div>
       <div class="modal-body">
-        <div id="cityClientsMeta" class="text-sv-muted small mb-2"></div>
-        <div id="cityClientsLoading" class="text-sv-muted">Carregando...</div>
+        <div id="cityClientsMeta" class="text-muted small mb-2"></div>
+        <div id="cityClientsLoading" class="text-muted">Carregando...</div>
         <div class="table-responsive d-none d-md-block">
-          <div class="sv-tablewrap">
-<table class="sv-table" id="cityClientsTable" style="display:none;">
+          <table class="sv-table">
             <thead>
-              <tr class="text-sv-muted small">
+              <tr class="text-muted small">
                 <th>#</th>
                 <th>Cliente</th>
                 <th class="text-end">Valor</th>
@@ -966,7 +946,6 @@
             </thead>
             <tbody></tbody>
           </table>
-</div>
         </div>
 
         <div class="mobile-list d-md-none" id="cityClientsMobile" style="display:none;"></div>
@@ -984,13 +963,12 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
       </div>
       <div class="modal-body">
-        <div id="clienteMarcasMeta" class="text-sv-muted small mb-2"></div>
-        <div id="clienteMarcasLoading" class="text-sv-muted">Carregando...</div>
+        <div id="clienteMarcasMeta" class="text-muted small mb-2"></div>
+        <div id="clienteMarcasLoading" class="text-muted">Carregando...</div>
         <div class="table-responsive">
-          <div class="sv-tablewrap">
-<table class="sv-table" id="clienteMarcasTable" style="display:none;">
+          <table class="sv-table">
             <thead>
-              <tr class="text-sv-muted small">
+              <tr class="text-muted small">
                 <th>#</th>
                 <th>Marca</th>
                 <th class="text-end">Valor</th>
@@ -999,7 +977,6 @@
             </thead>
             <tbody></tbody>
           </table>
-</div>
         </div>
       </div>
     </div>
@@ -1056,7 +1033,7 @@
     rows.forEach((r, idx) => {
       const tr = document.createElement('tr');
       tr.innerHTML = `
-        <td class="text-sv-muted">${idx+1}</td>
+        <td class="text-muted">${idx+1}</td>
         <td><a href="#" class="js-client link-primary text-decoration-none" data-razao="${r.cliente_id}" data-label="${(r.cliente||'').replace(/"/g,'&quot;')}">${r.cliente}</a></td>
         <td class="text-end">${brl(r.valor_total)}</td>
         <td class="text-end">${r.mix_itens || 0}</td>
@@ -1110,7 +1087,7 @@
     rows.forEach((r, idx) => {
       const tr = document.createElement('tr');
       tr.innerHTML = `
-        <td class="text-sv-muted">${idx+1}</td>
+        <td class="text-muted">${idx+1}</td>
         <td class="fw-semibold">${r.marca}</td>
         <td class="text-end">${brl(r.valor_total)}</td>
         <td class="text-end">${(r.percent || 0).toFixed(1)}%</td>
@@ -1146,6 +1123,6 @@
   });
 })();
 </script>
-</div>
+
 
 {% endblock %}
