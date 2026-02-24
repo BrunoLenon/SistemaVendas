@@ -4092,7 +4092,7 @@ def relatorio_cidades_clientes():
                 "qtd_total": float(r.qtd_total or 0.0),
                 "mix_itens": int(getattr(r, "mix_itens", 0) or 0),
                 "clientes_unicos": int(r.clientes_unicos or 0),
-
+            })
         # Lista "flat" para o template (Resumo por cidade)
         cidades = []
         for emp, items in cidades_por_emp.items():
@@ -4104,8 +4104,6 @@ def relatorio_cidades_clientes():
                     "qtd_total": it.get("qtd_total", 0),
                     "valor_total": it.get("valor_total", 0.0),
                 })
-
-            })
 
         # Top clientes por EMP (por valor no período)
         signed_val = case(
