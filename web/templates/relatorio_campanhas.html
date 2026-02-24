@@ -11,6 +11,39 @@
 /* Reduce bootstrap row gutters inside sv pages */
 .row.g-3{--bs-gutter-y: .75rem; --bs-gutter-x: .75rem;}
 
+/* Expand-row (like "modelo"): subtabela ocupa largura total da tabela */
+.sv-expbtn{
+  width:100%;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  padding:10px 12px;
+  border-radius:12px;
+  background: rgba(0,0,0,.18);
+  border:1px solid rgba(255,153,0,.22);
+  color: rgba(255,255,255,.92);
+  font-weight:800;
+  letter-spacing:.2px;
+}
+.sv-expbtn:hover{ border-color: rgba(255,153,0,.38); background: rgba(0,0,0,.24); }
+.sv-expbtn__chev{
+  width:10px;height:10px;
+  border-right:2px solid rgba(255,153,0,.9);
+  border-bottom:2px solid rgba(255,153,0,.9);
+  transform: rotate(45deg);
+  transition: transform .15s ease;
+  margin-right:2px;
+}
+.sv-expbtn[aria-expanded="true"] .sv-expbtn__chev{ transform: rotate(-135deg); }
+
+.sv-expand-row{ display:none; }
+.sv-expand-row.is-open{ display:table-row; }
+.sv-subcard--full{ margin-top:10px; }
+
+/* Densidade: reduzir altura de linhas no agrupado */
+.sv-table.sv-table--grouped td,.sv-table.sv-table--grouped th{ padding:.45rem .55rem; }
+
 
 /* ---- Subtabela (campanhas por vendedor) ---- */
 .sv-subcard{
@@ -222,8 +255,66 @@
                         <td class="sv-right">{{ vd.get('status', {}).get('PENDENTE', 0.0) | brl_rs }}</td>
                         <td class="sv-right">{{ vd.get('status', {}).get('A_PAGAR', 0.0) | brl_rs }}</td>
                         <td class="sv-right">{{ vd.get('status', {}).get('PAGO', 0.0) | brl_rs }}</td>
+            </tr>
+            <tr class="sv-expand-row" id="exp-{{ loop.index0 }}">
+              <td colspan="5">
+                <div class="sv-subcard sv-subcard--full">
+                  <table class="sv-subtable sv-subtable--wide">
+                    <thead>
+                      <tr>
+                        <th>Campanha / Item</th>
+                        <th class="sv-center">Qtd mín.</th>
+                        <th class="sv-right">Recomp. (R$/un)</th>
+                        <th class="sv-center">Qtd vendida</th>
+                        <th class="sv-right">Vendeu (R$)</th>
+                        <th class="sv-right">Valor (R$)</th>
+                        <th class="sv-center">Status</th>
                       </tr>
-                    {% endfor %}
+                    </thead>
+                    <tbody>
+                      {% set _tot_vendeu = 0 %}
+                      {% set _tot_premio = 0 %}
+                      {% for c in g.campanhas %}
+                        {% set _tot_vendeu = _tot_vendeu + (c.vendeu_rs or 0) %}
+                        {% set _tot_premio = _tot_premio + (c.valor or 0) %}
+                        <tr>
+                          <td class="sv-nowrap">{{ c.titulo }}</td>
+                          <td class="sv-center">{{ (c.qtd_minima or '-') }}</td>
+                          <td class="sv-right">{{ (c.recompensa_unit or 0)|brl_rs }}</td>
+                          <td class="sv-center">{{ (c.qtd_vendida or 0) }}</td>
+                          <td class="sv-right">{{ (c.vendeu_rs or 0)|brl_rs }}</td>
+                          <td class="sv-right">{{ (c.valor or 0)|brl_rs }}</td>
+                          <td class="sv-center">
+                            {% if c.atingiu %}
+                              <span class="sv-pill sv-pill--ok">ATINGIU</span>
+                            {% else %}
+                              <span class="sv-pill sv-pill--warn">NÃO ATINGIU</span>
+                            {% endif %}
+                          </td>
+                        </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+
+                  <div class="sv-subtotals">
+                    <div class="sv-subtotals__line">
+                      <span>Total vendido em campanhas:</span>
+                      <strong>{{ _tot_vendeu|brl_rs }}</strong>
+                    </div>
+                    <div class="sv-subtotals__line">
+                      <span>Total premiação:</span>
+                      <strong>{{ _tot_premio|brl_rs }}</strong>
+                    </div>
+                  </div>
+
+                  <div class="sv-note">
+                    <span class="sv-muted">Obs.: “Valor (R$)” = Qtd vendida × Recompensa (apenas se atingiu). “Vendeu (R$)” = soma do valor_total vendido dos itens da campanha na competência.</span>
+                  </div>
+                </div>
+              </td>
+            </tr>
+
+          {% endfor %}
                     {% if vend_sorted|length == 0 %}
                       <tr><td colspan="6" class="sv-muted">Sem dados para os filtros escolhidos.</td></tr>
                     {% endif %}
@@ -269,69 +360,13 @@
                 <div class="sv-muted">Campanhas: {{ g.campanhas_count }} • Total: {{ g.total|brl_rs }}</div>
               </td>
               <td>
-                <details class="sv-acc sv-acc--inline">
-                  <summary class="sv-acc__sum">
-                    <span class="sv-acc__label">Ver campanhas ({{ g.campanhas_count }})</span>
-                    <span class="sv-acc__chev" aria-hidden="true"></span>
-                  </summary>
-                  <div class="sv-acc__body">
-                    
-                    <div class="sv-subcard">
-                      <table class="sv-subtable sv-subtable--wide">
-                        <thead>
-                          <tr>
-                            <th>Campanha / Item</th>
-                            <th class="sv-center">Qtd mín.</th>
-                            <th class="sv-right">Recomp. (R$/un)</th>
-                            <th class="sv-center">Qtd vendida</th>
-                            <th class="sv-right">Vendeu (R$)</th>
-                            <th class="sv-right">Valor (R$)</th>
-                            <th class="sv-center">Status</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {% set _tot_vendeu = 0 %}
-                          {% set _tot_premio = 0 %}
-                          {% for c in g.campanhas %}
-                            {% set _tot_vendeu = _tot_vendeu + (c.vendeu_rs or 0) %}
-                            {% set _tot_premio = _tot_premio + (c.valor or 0) %}
-                            <tr>
-                              <td class="sv-nowrap">{{ c.titulo }}</td>
-                              <td class="sv-center">{{ (c.qtd_minima or '-') }}</td>
-                              <td class="sv-right">{{ (c.recompensa_unit or 0)|brl_rs }}</td>
-                              <td class="sv-center">{{ (c.qtd_vendida or 0) }}</td>
-                              <td class="sv-right">{{ (c.vendeu_rs or 0)|brl_rs }}</td>
-                              <td class="sv-right">{{ (c.valor or 0)|brl_rs }}</td>
-                              <td class="sv-center">
-                                {% if c.atingiu %}
-                                  <span class="sv-pill sv-pill--ok">ATINGIU</span>
-                                {% else %}
-                                  <span class="sv-pill sv-pill--warn">NÃO ATINGIU</span>
-                                {% endif %}
-                              </td>
-                            </tr>
-                          {% endfor %}
-                        </tbody>
-                      </table>
-
-                      <div class="sv-subtotals">
-                        <div class="sv-subtotals__line">
-                          <span>Total vendido em campanhas:</span>
-                          <strong>{{ _tot_vendeu|brl_rs }}</strong>
-                        </div>
-                        <div class="sv-subtotals__line">
-                          <span>Total premiação:</span>
-                          <strong>{{ _tot_premio|brl_rs }}</strong>
-                        </div>
-                      </div>
-
-                      <div class="sv-note">
-                        Obs.: “Valor (R$)” = Qtd vendida × Recompensa (apenas se atingiu). “Vendeu (R$)” = soma do valor total vendido dos itens da campanha na competência.
-                      </div>
-                    </div>
-
-                  </div>
-                </details>
+                <button type="button"
+                        class="sv-expbtn"
+                        data-expand-id="exp-{{ loop.index0 }}"
+                        aria-expanded="false">
+                  <span class="sv-expbtn__label">Ver campanhas ({{ g.campanhas_count }})</span>
+                  <span class="sv-expbtn__chev" aria-hidden="true"></span>
+                </button>
               </td>
               <td class="sv-right">{{ g.total|brl_rs }}</td>
               <td>
@@ -356,6 +391,32 @@
 </div>
 
 <script>
+  
+  // Expandir/fechar subtabela por vendedor (linha extra com colspan)
+  (function(){
+    function closeAll(){
+      document.querySelectorAll('.sv-expand-row.is-open').forEach(function(r){ r.classList.remove('is-open'); });
+      document.querySelectorAll('.sv-expbtn[aria-expanded="true"]').forEach(function(b){ b.setAttribute('aria-expanded','false'); });
+    }
+    document.addEventListener('click', function(ev){
+      var btn = ev.target.closest('.sv-expbtn');
+      if(!btn) return;
+      var id = btn.getAttribute('data-expand-id');
+      var row = document.getElementById(id);
+      if(!row) return;
+
+      var willOpen = !row.classList.contains('is-open');
+      closeAll(); // deixa só uma aberta (menos mouse/scroll)
+      if(willOpen){
+        row.classList.add('is-open');
+        btn.setAttribute('aria-expanded','true');
+        // garante que o começo da subtabela fique visível
+        row.scrollIntoView({block:'nearest', behavior:'smooth'});
+      }
+    });
+  })();
+
+
   // "Marcar todas" para checklists
   (function(){
     function checkAll(name){
