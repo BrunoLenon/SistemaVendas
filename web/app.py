@@ -226,12 +226,12 @@ def brl(value):
 # --------------------------
 @app.template_filter("brl_rs")
 def brl_rs(value):
-    """Formata valores monetários no padrão brasileiro com prefixo 'R$ ' (ex: R$ 12.345,67)."""
+    """Formata valores monetários no padrão brasileiro com prefixo 'R$' (ex: R$12.345,67)."""
     s = brl(value)
     # brl() já devolve '0,00' em erro
     if s.startswith("-"):
-        return "R$ -" + s[1:]
-    return "R$ " + s
+        return "R$-" + s[1:]
+    return "R$" + s
 
 # --------------------------
 # Filtros Jinja: datas (ISO <-> BR)
@@ -3987,8 +3987,8 @@ def relatorio_cidades_clientes():
 
     db = SessionLocal()
     try:
-        base = db.query(Venda).filter(Venda.movimento >= inicio, Venda.movimento < fim)
-        base_hist = db.query(Venda).filter(Venda.movimento.isnot(None))
+        base = db.query(Venda).filter(Venda.ano == ano, Venda.mes == mes)
+        base_hist = db.query(Venda).filter(Venda.ano.isnot(None), Venda.mes.isnot(None))
 
         escopo_label = None
         pode_filtrar_emp = False
@@ -4094,7 +4094,20 @@ def relatorio_cidades_clientes():
                 "clientes_unicos": int(r.clientes_unicos or 0),
             })
 
-        # Top clientes por EMP (por valor no período)
+        
+        # Lista "flat" (para visão resumida por cidade)
+        cidades = []
+        for emp, items in (cidades_por_emp or {}).items():
+            for it in items:
+                cidades.append({
+                    "emp": emp,
+                    "cidade": it.get("cidade_label") or "SEM CIDADE",
+                    "qtd_clientes": int(it.get("clientes_unicos") or 0),
+                    "qtd_total": float(it.get("qtd_total") or 0.0),
+                    "valor_total": float(it.get("valor_total") or 0.0),
+                })
+
+# Top clientes por EMP (por valor no período)
         signed_val = case(
             (Venda.mov_tipo_movto.in_(["DS", "CA"]), -Venda.valor_total),
             else_=Venda.valor_total,
@@ -4200,11 +4213,161 @@ def relatorio_cidades_clientes():
             emp_filtro=emp_filtro,
             vendedor_filtro=vendedor_filtro,
             emp_cards=emp_cards,
+            cidades=cidades,
         )
     finally:
         db.close()
 
 
+
+
+
+
+@app.get("/relatorios/cidades-clientes/api/cidade")
+def relatorio_cidades_clientes_api_cidade():
+    """Retorna clientes de uma cidade (por EMP) no período (mês/ano)."""
+    red = _login_required()
+    if red:
+        return red
+
+    role = (_role() or "").strip().lower()
+    vendedor_logado = (_usuario_logado() or "").strip().upper()
+
+    hoje = date.today()
+    mes = int(request.args.get("mes") or hoje.month)
+    ano = int(request.args.get("ano") or hoje.year)
+
+    emp = (request.args.get("emp") or "").strip()
+    cidade_norm = (request.args.get("cidade_norm") or "").strip().lower()
+
+    db = SessionLocal()
+    try:
+        q = db.query(Venda).filter(Venda.ano == ano, Venda.mes == mes)
+
+        if role == "admin":
+            if emp:
+                q = q.filter(Venda.emp == emp)
+        elif role == "supervisor":
+            allowed_emps = _allowed_emps()
+            if allowed_emps:
+                if emp and emp in allowed_emps:
+                    q = q.filter(Venda.emp == emp)
+                else:
+                    q = q.filter(Venda.emp.in_(allowed_emps))
+            else:
+                q = q.filter(text("1=0"))
+        else:
+            q = q.filter(func.upper(Venda.vendedor) == vendedor_logado)
+            if emp:
+                q = q.filter(Venda.emp == emp)
+
+        if cidade_norm in ("", "sem_cidade", "none"):
+            q = q.filter((Venda.cidade_norm.is_(None)) | (Venda.cidade_norm == ""))
+        else:
+            q = q.filter(func.lower(Venda.cidade_norm) == cidade_norm)
+
+        signed_val = case(
+            (Venda.mov_tipo_movto.in_(["DS", "CA"]), -Venda.valor_total),
+            else_=Venda.valor_total,
+        )
+
+        rows = (
+            q.with_entities(
+                Venda.cliente_id_norm.label("cliente_id"),
+                func.coalesce(func.max(Venda.razao_norm), func.max(Venda.razao), "").label("cliente_label"),
+                func.coalesce(func.sum(signed_val), 0.0).label("valor_total"),
+                func.coalesce(func.sum(Venda.qtdade_vendida), 0.0).label("qtd_total"),
+            )
+            .filter(Venda.cliente_id_norm.isnot(None))
+            .group_by(Venda.cliente_id_norm)
+            .order_by(func.sum(signed_val).desc())
+            .limit(400)
+            .all()
+        )
+
+        data = []
+        for r in rows:
+            data.append({
+                "cliente_id": r.cliente_id,
+                "cliente_label": (r.cliente_label or "").strip(),
+                "qtd_total": float(r.qtd_total or 0.0),
+                "valor_total": float(r.valor_total or 0.0),
+            })
+
+        return jsonify({"ok": True, "items": data})
+    finally:
+        db.close()
+
+
+@app.get("/relatorios/cidades-clientes/api/cliente")
+def relatorio_cidades_clientes_api_cliente():
+    """Retorna marcas (ou resumo) de um cliente no período (mês/ano), opcional por EMP."""
+    red = _login_required()
+    if red:
+        return red
+
+    role = (_role() or "").strip().lower()
+    vendedor_logado = (_usuario_logado() or "").strip().upper()
+
+    hoje = date.today()
+    mes = int(request.args.get("mes") or hoje.month)
+    ano = int(request.args.get("ano") or hoje.year)
+
+    emp = (request.args.get("emp") or "").strip()
+    cliente_id = (request.args.get("cliente_id") or "").strip()
+
+    db = SessionLocal()
+    try:
+        q = db.query(Venda).filter(Venda.ano == ano, Venda.mes == mes)
+
+        if role == "admin":
+            if emp:
+                q = q.filter(Venda.emp == emp)
+        elif role == "supervisor":
+            allowed_emps = _allowed_emps()
+            if allowed_emps:
+                if emp and emp in allowed_emps:
+                    q = q.filter(Venda.emp == emp)
+                else:
+                    q = q.filter(Venda.emp.in_(allowed_emps))
+            else:
+                q = q.filter(text("1=0"))
+        else:
+            q = q.filter(func.upper(Venda.vendedor) == vendedor_logado)
+            if emp:
+                q = q.filter(Venda.emp == emp)
+
+        if cliente_id:
+            q = q.filter(Venda.cliente_id_norm == cliente_id)
+
+        signed_val = case(
+            (Venda.mov_tipo_movto.in_(["DS", "CA"]), -Venda.valor_total),
+            else_=Venda.valor_total,
+        )
+
+        rows = (
+            q.with_entities(
+                func.coalesce(Venda.marca, "SEM MARCA").label("marca"),
+                func.coalesce(func.sum(signed_val), 0.0).label("valor_total"),
+                func.coalesce(func.sum(Venda.qtdade_vendida), 0.0).label("qtd_total"),
+            )
+            .group_by(func.coalesce(Venda.marca, "SEM MARCA"))
+            .order_by(func.sum(signed_val).desc())
+            .limit(200)
+            .all()
+        )
+
+        data = []
+        for r in rows:
+            data.append({
+                "marca": (r.marca or "SEM MARCA"),
+                "qtd_total": float(r.qtd_total or 0.0),
+                "valor_total": float(r.valor_total or 0.0),
+            })
+
+        return jsonify({"ok": True, "items": data})
+    finally:
+        db.close()
 
 
 
@@ -7396,11 +7559,6 @@ def financeiro_fechamento_v2_status():
 @app.route("/admin/campanhas/ranking-marca", methods=["GET", "POST"])
 @admin_required
 def admin_campanhas_ranking_marca():
-    """
-    Admin (gestão) - Ranking por Marca (Campanhas V2)
-    - CRUD de campanhas de ranking por marca
-    - Recalcular (snapshot) por competência (ano/mes) com suporte opcional a periodo_ini/periodo_fim
-    """
     from services.ranking_marca_v2_new import (
         list_campaigns_for_admin,
         get_scope_emps,
@@ -7416,14 +7574,14 @@ def admin_campanhas_ranking_marca():
     db = SessionLocal()
     erro = None
     ok = None
-    emps_opts = []
 
     try:
-        # competência (default mês atual)
+        # competência para recalcular (default mês atual)
         hoje = date.today()
         ano = _to_int(request.args.get("ano"), hoje.year)
         mes = _to_int(request.args.get("mes"), hoje.month)
-        anos = list(range(hoje.year - 2, hoje.year + 3))
+
+        anos = list(range(hoje.year - 2, hoje.year + 2 + 1))
 
         # options de EMPs (cadastro)
         emps_rows = db.query(Emp).order_by(Emp.codigo.asc()).all()
@@ -7432,9 +7590,10 @@ def admin_campanhas_ranking_marca():
         if request.method == "POST":
             acao = (request.form.get("acao") or "").strip().lower()
 
-            # helper: emps do multiselect (inputs "emps")
+            # helper para ler emps do multiselect (pode vir como vários inputs "emps")
             emps_vals = request.form.getlist("emps")
             if not emps_vals:
+                # fallback: "101,1001"
                 raw = (request.form.get("emps") or "").strip()
                 if raw:
                     emps_vals = [x.strip() for x in raw.split(",") if x.strip()]
@@ -7498,11 +7657,9 @@ def admin_campanhas_ranking_marca():
                 try:
                     # Compatibilidade: algumas versões do service não aceitam periodo_ini/periodo_fim
                     import inspect as _inspect
-
                     _kwargs = dict(campanha_id=cid, ano=ano_p, mes=mes_p, actor=str(actor))
                     periodo_ini = (request.form.get("periodo_ini") or "").strip()
                     periodo_fim = (request.form.get("periodo_fim") or "").strip()
-
                     try:
                         _sig = _inspect.signature(recalc_ranking_marca)
                         if "periodo_ini" in _sig.parameters and periodo_ini:
@@ -7511,7 +7668,6 @@ def admin_campanhas_ranking_marca():
                             _kwargs["periodo_fim"] = periodo_fim
                     except Exception:
                         pass
-
                     res = recalc_ranking_marca(db, **_kwargs)
                     db.commit()
 
@@ -7533,6 +7689,7 @@ def admin_campanhas_ranking_marca():
                 erro = "Ação inválida."
 
         campanhas = list_campaigns_for_admin(db)
+
         emps_map = {int(c.id): get_scope_emps(db, int(c.id)) for c in campanhas}
 
         return render_template(
@@ -7552,22 +7709,21 @@ def admin_campanhas_ranking_marca():
     except Exception as e:
         db.rollback()
         erro = str(e)
+        # fallback render
         campanhas = []
         emps_map = {}
-        hoje = date.today()
-        anos = list(range(hoje.year - 2, hoje.year + 3))
         return render_template(
             "admin_campanhas_ranking_marca.html",
             role=_role(),
             emp=session.get("emp"),
             campanhas=campanhas,
             emps_map=emps_map,
-            emps_opts=emps_opts,
+            emps_opts=[],
             erro=erro,
             ok=None,
-            ano=hoje.year,
-            mes=hoje.month,
-            anos=anos,
+            ano=date.today().year,
+            mes=date.today().month,
+            anos=list(range(date.today().year - 2, date.today().year + 3)),
         )
 
     finally:
@@ -7630,7 +7786,6 @@ def campanhas_ranking_marca():
                     scope_emps = get_scope_emps(db, cid)
 
                 if campanha:
-                    # Lê snapshot (rápido). Se estiver vazio ou desatualizado, tenta recálculo sob demanda (seguro).
                     resultados = (
                         db.query(CampanhaV2ResultadoNew)
                         .filter(CampanhaV2ResultadoNew.campanha_id == cid)
@@ -7639,51 +7794,6 @@ def campanhas_ranking_marca():
                         .order_by(CampanhaV2ResultadoNew.posicao.asc().nullslast())
                         .all()
                     )
-
-                    # Auto-refresh: evita admin precisar "recalcular" manualmente.
-                    # - Só dispara se NÃO houver snapshot OU se estiver antigo (ex.: > 30 min)
-                    # - Usa advisory lock no Postgres para evitar concorrência (vários acessos simultâneos)
-                    try:
-                        from datetime import datetime, timedelta
-                        from sqlalchemy import text
-                        from services.ranking_marca_v2_new import recalc_ranking_marca
-
-                        stale_minutes = 30
-                        last_calc = None
-                        if resultados:
-                            # calculado_em existe na tabela; pega o mais recente
-                            last_calc = max([getattr(r, "calculado_em", None) for r in resultados if getattr(r, "calculado_em", None)], default=None)
-
-                        need_recalc = (not resultados) or (last_calc and (datetime.utcnow() - last_calc) > timedelta(minutes=stale_minutes))
-
-                        if need_recalc:
-                            # chave bigint estável por (campanha, ano, mes)
-                            lock_key = int(cid) * 1000000 + int(ano) * 100 + int(mes)
-                            got_lock = bool(db.execute(text("SELECT pg_try_advisory_lock(:k)"), {"k": lock_key}).scalar() or False)
-                            if got_lock:
-                                try:
-                                    actor = (session.get("username") or session.get("nome") or session.get("vendedor") or "").strip()
-                                    recalc_ranking_marca(db, campanha_id=cid, ano=int(ano), mes=int(mes), actor=actor)
-                                    db.commit()
-                                except Exception:
-                                    db.rollback()
-                                finally:
-                                    db.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": lock_key})
-                                    db.flush()
-
-                                # Recarrega snapshot após recálculo
-                                resultados = (
-                                    db.query(CampanhaV2ResultadoNew)
-                                    .filter(CampanhaV2ResultadoNew.campanha_id == cid)
-                                    .filter(CampanhaV2ResultadoNew.ano == int(ano))
-                                    .filter(CampanhaV2ResultadoNew.mes == int(mes))
-                                    .order_by(CampanhaV2ResultadoNew.posicao.asc().nullslast())
-                                    .all()
-                                )
-                    except Exception:
-                        # Não quebra a página por causa do auto-refresh
-                        pass
-
 
         me = (session.get("nome") or session.get("username") or session.get("vendedor") or "").strip().upper()
 
@@ -7727,28 +7837,3 @@ def campanhas_ranking_marca():
             db.close()
         except Exception:
             pass
-
-# ===============================
-# ADMIN - RANKING POR MARCA (GESTÃO)
-# ===============================
-@app.route("/admin/ranking-marca", methods=["GET"])
-@admin_required
-def admin_ranking_marca():
-    from services.ranking_marca_service import listar_rankings_marca
-
-    rankings = listar_rankings_marca()
-
-    return render_template(
-        "admin_ranking_marca.html",
-        rankings=rankings,
-        role=session.get("role")
-    )
-
-
-@app.route("/financeiro/campanhas")
-@login_required
-def financeiro_campanhas():
-    # Compatibilidade: sidebar aponta para este endpoint.
-    # Se o fluxo novo ainda estiver em /financeiro/campanhas_v2, redireciona.
-    return redirect(url_for("financeiro_campanhas_v2"))
-
