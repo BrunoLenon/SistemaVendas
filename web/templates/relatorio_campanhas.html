@@ -10,6 +10,32 @@
 .sv-table td,.sv-table th{padding:.55rem .6rem; vertical-align:middle;}
 /* Reduce bootstrap row gutters inside sv pages */
 .row.g-3{--bs-gutter-y: .75rem; --bs-gutter-x: .75rem;}
+
+
+/* ---- Subtabela (campanhas por vendedor) ---- */
+.sv-subcard{
+  margin-top:10px;
+  padding:12px;
+  background: rgba(0,0,0,.28);
+  border:1px solid rgba(255,153,0,.22);
+  border-radius:14px;
+  overflow:auto;
+}
+.sv-subtable{ width:100%; border-collapse:collapse; font-size:12px; min-width:880px; }
+.sv-subtable thead th{ position:sticky; top:0; background: rgba(0,0,0,.35); backdrop-filter: blur(8px); }
+.sv-subtable th, .sv-subtable td{ padding:10px 12px; border-bottom:1px solid rgba(255,255,255,.08); }
+.sv-center{ text-align:center; }
+.sv-right{ text-align:right; }
+.sv-nowrap{ white-space:nowrap; }
+.sv-pill{ display:inline-block; padding:6px 10px; border-radius:999px; font-size:11px; font-weight:800; letter-spacing:.3px; }
+.sv-pill--ok{ background:rgba(29,200,110,.14); border:1px solid rgba(29,200,110,.40); color:#B7F7D0; }
+.sv-pill--warn{ background:rgba(255,165,0,.12); border:1px solid rgba(255,165,0,.38); color:#FFD08A; }
+.sv-subtotals{ display:flex; flex-direction:column; gap:4px; margin-top:10px; align-items:flex-end; }
+.sv-subtotals__line{ display:flex; gap:10px; color:rgba(255,255,255,.70); }
+.sv-subtotals__line strong{ color: var(--sv-accent, #ff9a00); }
+.sv-note{ margin-top:8px; font-size:12px; color:rgba(255,255,255,.62); }
+
+
 </style>
 {% endblock %}
 {% block content %}
@@ -18,7 +44,7 @@
 {% set resumo = ctx.get('resumo', {}) %}
 {% set status = resumo.get('status', {}) %}
 
-<div class="sv-page sv-page--relcamp">
+<div class="sv-page">
 
   <!-- Header -->
   <div class="sv-pagehead sv-glass">
@@ -224,13 +250,6 @@
 
     <div class="sv-tablewrap">
       <table class="sv-table sv-table--grouped">
-        <colgroup>
-          <col style="width:72px" />
-          <col style="width:280px" />
-          <col />
-          <col style="width:140px" />
-          <col style="width:120px" />
-        </colgroup>
         <thead>
           <tr>
             <th>EMP</th>
@@ -256,26 +275,61 @@
                     <span class="sv-acc__chev" aria-hidden="true"></span>
                   </summary>
                   <div class="sv-acc__body">
-                    <table class="sv-subtable">
-                      <thead>
-                        <tr>
-                          <th>Campanha</th>
-                          <th class="sv-right">Valor</th>
-                          <th>Status</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {% for c in g.campanhas %}
+                    
+                    <div class="sv-subcard">
+                      <table class="sv-subtable sv-subtable--wide">
+                        <thead>
                           <tr>
-                            <td>{{ c.titulo }}</td>
-                            <td class="sv-right">{{ c.valor|brl_rs }}</td>
-                            <td>
-                              <span class="sv-pill {{ 'sv-pill-warn' if c.status=='PENDENTE' else ('sv-pill-info' if c.status=='A_PAGAR' else ('sv-pill-ok' if c.status=='PAGO' else '')) }}">{{ c.status }}</span>
-                            </td>
+                            <th>Campanha / Item</th>
+                            <th class="sv-center">Qtd mín.</th>
+                            <th class="sv-right">Recomp. (R$/un)</th>
+                            <th class="sv-center">Qtd vendida</th>
+                            <th class="sv-right">Vendeu (R$)</th>
+                            <th class="sv-right">Valor (R$)</th>
+                            <th class="sv-center">Status</th>
                           </tr>
-                        {% endfor %}
-                      </tbody>
-                    </table>
+                        </thead>
+                        <tbody>
+                          {% set _tot_vendeu = 0 %}
+                          {% set _tot_premio = 0 %}
+                          {% for c in g.campanhas %}
+                            {% set _tot_vendeu = _tot_vendeu + (c.vendeu_rs or 0) %}
+                            {% set _tot_premio = _tot_premio + (c.valor or 0) %}
+                            <tr>
+                              <td class="sv-nowrap">{{ c.titulo }}</td>
+                              <td class="sv-center">{{ (c.qtd_minima or '-') }}</td>
+                              <td class="sv-right">{{ (c.recompensa_unit or 0)|brl_rs }}</td>
+                              <td class="sv-center">{{ (c.qtd_vendida or 0) }}</td>
+                              <td class="sv-right">{{ (c.vendeu_rs or 0)|brl_rs }}</td>
+                              <td class="sv-right">{{ (c.valor or 0)|brl_rs }}</td>
+                              <td class="sv-center">
+                                {% if c.atingiu %}
+                                  <span class="sv-pill sv-pill--ok">ATINGIU</span>
+                                {% else %}
+                                  <span class="sv-pill sv-pill--warn">NÃO ATINGIU</span>
+                                {% endif %}
+                              </td>
+                            </tr>
+                          {% endfor %}
+                        </tbody>
+                      </table>
+
+                      <div class="sv-subtotals">
+                        <div class="sv-subtotals__line">
+                          <span>Total vendido em campanhas:</span>
+                          <strong>{{ _tot_vendeu|brl_rs }}</strong>
+                        </div>
+                        <div class="sv-subtotals__line">
+                          <span>Total premiação:</span>
+                          <strong>{{ _tot_premio|brl_rs }}</strong>
+                        </div>
+                      </div>
+
+                      <div class="sv-note">
+                        Obs.: “Valor (R$)” = Qtd vendida × Recompensa (apenas se atingiu). “Vendeu (R$)” = soma do valor total vendido dos itens da campanha na competência.
+                      </div>
+                    </div>
+
                   </div>
                 </details>
               </td>
@@ -317,34 +371,5 @@
     });
   })();
 </script>
-
-<style>
-  /* Ajustes de proporção (apenas /relatorios/campanhas)
-     - evita o dropdown ficar estreito e quebrar cabeçalhos/letras
-     - melhora leitura sem mexer na funcionalidade
-  */
-  .sv-page--relcamp .sv-tablewrap { overflow-x: auto; }
-  .sv-page--relcamp .sv-table th,
-  .sv-page--relcamp .sv-table td { vertical-align: top; }
-  .sv-page--relcamp .sv-acc--inline {
-    display: block;
-    width: 100%;
-    max-width: none;
-  }
-  .sv-page--relcamp .sv-acc__sum { gap: 10px; }
-  .sv-page--relcamp .sv-acc__label { flex: 1 1 auto; min-width: 0; }
-  .sv-page--relcamp .sv-subtable {
-    width: 100%;
-    table-layout: auto;
-  }
-  .sv-page--relcamp .sv-subtable th,
-  .sv-page--relcamp .sv-subtable td {
-    white-space: nowrap; }
-  .sv-page--relcamp .sv-subtable th:first-child,
-  .sv-page--relcamp .sv-subtable td:first-child { white-space: normal; }
-  @media (max-width: 1100px) {
-    .sv-page--relcamp .sv-table { min-width: 980px; }
-  }
-</style>
 
 {% endblock %}

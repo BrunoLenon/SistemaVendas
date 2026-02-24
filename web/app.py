@@ -3715,7 +3715,6 @@ def relatorio_campanhas():
 
         titulo = str(_pick(r, "titulo", "campanha", "CAMPANHA") or "").strip() or "—"
         valor = _to_float(_pick(r, "valor_recompensa", "valor", "VALOR_RECOMPENSA") or 0)
-        vendeu_rs = _to_float(_pick(r, "valor_vendido", "vendeu_rs", "VENDEU_RS", "valor_total_vendido") or 0)
         st = _norm_status(_pick(r, "status_pagamento", "status", "STATUS_PAGAMENTO") or "PENDENTE")
 
         key = (emp_r, vend_r)
@@ -3738,9 +3737,14 @@ def relatorio_campanhas():
 
         g["campanhas"].append({
             "titulo": titulo,
-            "valor": valor,
-            "vendeu_rs": vendeu_rs,
+            "item_codigo": getattr(r, "item_codigo", None),
+            "qtd_minima": getattr(r, "qtd_minima", None),
+            "recompensa_unit": getattr(r, "recompensa_unit", None),
+            "qtd_vendida": float(getattr(r, "qtd_base", 0) or 0),
+            "vendeu_rs": float(getattr(r, "valor_vendido", 0) or 0),
+            "valor": valor,  # premiação (R$)
             "status": st,
+            "atingiu": bool(getattr(r, "atingiu", False)),
         })
 
     # Status agregado por vendedor:
@@ -7676,3 +7680,19 @@ def campanhas_ranking_marca():
             db.close()
         except Exception:
             pass
+
+
+@app.route("/financeiro/campanhas")
+@login_required
+def financeiro_campanhas():
+    """
+    Endpoint compatível com o menu lateral (sidebar).
+    Caso a implementação atual esteja em /financeiro/campanhas_v2, redireciona para lá.
+    """
+    try:
+        return redirect(url_for("financeiro_campanhas_v2"))
+    except Exception:
+        # fallback: se não existir v2, renderiza página simples informativa
+        return redirect("/financeiro/campanhas_v2")
+
+
