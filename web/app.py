@@ -4093,17 +4093,6 @@ def relatorio_cidades_clientes():
                 "mix_itens": int(getattr(r, "mix_itens", 0) or 0),
                 "clientes_unicos": int(r.clientes_unicos or 0),
             })
-        # Lista "flat" para o template (Resumo por cidade)
-        cidades = []
-        for emp, items in cidades_por_emp.items():
-            for it in items:
-                cidades.append({
-                    "emp": emp,
-                    "cidade": it.get("cidade_label") or "SEM CIDADE",
-                    "qtd_clientes": it.get("clientes_unicos", 0),
-                    "qtd_total": it.get("qtd_total", 0),
-                    "valor_total": it.get("valor_total", 0.0),
-                })
 
         # Top clientes por EMP (por valor no período)
         signed_val = case(
@@ -4214,154 +4203,6 @@ def relatorio_cidades_clientes():
         )
     finally:
         db.close()
-
-
-
-@app.get("/relatorios/cidades-clientes/api/cidade")
-def api_rel_cidade_clientes():
-    """Retorna clientes de uma cidade/EMP no período."""
-    red = _login_required()
-    if red:
-        return jsonify({"ok": False, "error": "login"}), 401
-
-    role = (_role() or "").strip().lower()
-    vendedor_logado = (_usuario_logado() or "").strip().upper()
-
-    cidade = (request.args.get("cidade") or "").strip()
-    emp = (request.args.get("emp") or "").strip()
-    mes = int(request.args.get("mes") or date.today().month)
-    ano = int(request.args.get("ano") or date.today().year)
-
-    vendedor_filtro = (request.args.get("vendedor") or "").strip().upper()
-    emp_filtro = (request.args.get("emp_filtro") or "").strip()
-
-    # janela do período
-    inicio = date(ano, mes, 1)
-    fim = date(ano + 1, 1, 1) if mes == 12 else date(ano, mes + 1, 1)
-
-    db = SessionLocal()
-    try:
-        q = db.query(Venda).filter(Venda.movimento >= inicio, Venda.movimento < fim)
-
-        # Escopo por permissão
-        if role == "admin":
-            if emp_filtro:
-                q = q.filter(Venda.emp == emp_filtro)
-            if vendedor_filtro:
-                q = q.filter(func.upper(Venda.vendedor) == vendedor_filtro)
-
-        elif role == "supervisor":
-            allowed_emps = _allowed_emps()
-            if not allowed_emps:
-                return jsonify({"ok": True, "clientes": []})
-            q = q.filter(Venda.emp.in_(allowed_emps))
-            if emp_filtro and emp_filtro in allowed_emps:
-                q = q.filter(Venda.emp == emp_filtro)
-            if vendedor_filtro:
-                q = q.filter(func.upper(Venda.vendedor) == vendedor_filtro)
-
-        else:
-            q = q.filter(func.upper(Venda.vendedor) == vendedor_logado)
-
-        # filtros obrigatórios da cidade/emp clicado
-        if emp:
-            q = q.filter(Venda.emp == emp)
-        if cidade and cidade.upper() != "SEM CIDADE":
-            q = q.filter(func.coalesce(Venda.cidade_norm, "").ilike(cidade))
-        else:
-            q = q.filter((Venda.cidade_norm.is_(None)) | (Venda.cidade_norm == "") )
-
-        rows = (
-            q.with_entities(
-                Venda.cliente_id_norm.label("doc"),
-                func.max(Venda.razao_norm).label("nome"),
-                func.coalesce(func.sum(Venda.qtdade_vendida), 0.0).label("qtd"),
-                func.coalesce(func.sum(Venda.valor_total), 0.0).label("valor"),
-            )
-            .group_by(Venda.cliente_id_norm)
-            .order_by(func.sum(Venda.valor_total).desc())
-            .limit(300)
-            .all()
-        )
-
-        clientes = []
-        for r in rows:
-            valor = float(r.valor or 0.0)
-            clientes.append({
-                "doc": (r.doc or ""),
-                "nome": (r.nome or ""),
-                "qtd": float(r.qtd or 0.0),
-                "valor": valor,
-                "valor_fmt": brl_rs(valor),
-            })
-
-        return jsonify({"ok": True, "clientes": clientes})
-    finally:
-        db.close()
-
-
-@app.get("/relatorios/cidades-clientes/api/cliente")
-def api_rel_cliente_marcas():
-    """Retorna marcas compradas por um cliente no período."""
-    red = _login_required()
-    if red:
-        return jsonify({"ok": False, "error": "login"}), 401
-
-    role = (_role() or "").strip().lower()
-    vendedor_logado = (_usuario_logado() or "").strip().upper()
-
-    doc = (request.args.get("doc") or "").strip()
-    mes = int(request.args.get("mes") or date.today().month)
-    ano = int(request.args.get("ano") or date.today().year)
-
-    inicio = date(ano, mes, 1)
-    fim = date(ano + 1, 1, 1) if mes == 12 else date(ano, mes + 1, 1)
-
-    db = SessionLocal()
-    try:
-        q = db.query(Venda).filter(Venda.movimento >= inicio, Venda.movimento < fim)
-
-        # escopo
-        if role == "admin":
-            pass
-        elif role == "supervisor":
-            allowed_emps = _allowed_emps()
-            if not allowed_emps:
-                return jsonify({"ok": True, "marcas": []})
-            q = q.filter(Venda.emp.in_(allowed_emps))
-        else:
-            q = q.filter(func.upper(Venda.vendedor) == vendedor_logado)
-
-        if doc:
-            q = q.filter(Venda.cliente_id_norm == doc)
-
-        rows = (
-            q.with_entities(
-                func.coalesce(Venda.marca, "N/I").label("marca"),
-                func.coalesce(func.sum(Venda.qtdade_vendida), 0.0).label("qtd"),
-                func.coalesce(func.sum(Venda.valor_total), 0.0).label("valor"),
-            )
-            .group_by(func.coalesce(Venda.marca, "N/I"))
-            .order_by(func.sum(Venda.valor_total).desc())
-            .limit(200)
-            .all()
-        )
-
-        marcas = []
-        for r in rows:
-            valor = float(r.valor or 0.0)
-            marcas.append({
-                "marca": r.marca,
-                "qtd": float(r.qtd or 0.0),
-                "valor": valor,
-                "valor_fmt": brl_rs(valor),
-            })
-
-        return jsonify({"ok": True, "marcas": marcas})
-    finally:
-        db.close()
-
-
 
 
 
@@ -7902,3 +7743,12 @@ def admin_ranking_marca():
         rankings=rankings,
         role=session.get("role")
     )
+
+
+@app.route("/financeiro/campanhas")
+@login_required
+def financeiro_campanhas():
+    # Compatibilidade: sidebar aponta para este endpoint.
+    # Se o fluxo novo ainda estiver em /financeiro/campanhas_v2, redireciona.
+    return redirect(url_for("financeiro_campanhas_v2"))
+
