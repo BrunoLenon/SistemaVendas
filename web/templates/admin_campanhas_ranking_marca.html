@@ -3,8 +3,32 @@
 
 {% block title %}Admin — Ranking por Marca{% endblock %}
 
+{% block extra_head %}{{ super() }}
+<style>
+/* Ajuste específico desta página: evita quebra vertical de texto e distribui colunas */
+.page-admin-ranking-marca .sv-table{table-layout:auto;}
+.page-admin-ranking-marca .sv-table th,
+.page-admin-ranking-marca .sv-table td{vertical-align:middle;}
+.page-admin-ranking-marca .sv-table .col-id{width:70px;}
+.page-admin-ranking-marca .sv-table .col-nome{width:240px;}
+.page-admin-ranking-marca .sv-table .col-marca{width:180px;}
+.page-admin-ranking-marca .sv-table .col-escopo{width:120px;}
+.page-admin-ranking-marca .sv-table .col-premios{width:260px;}
+.page-admin-ranking-marca .sv-table .col-vigencia{width:200px;}
+.page-admin-ranking-marca .sv-table .col-ativa{width:90px;}
+.page-admin-ranking-marca .sv-table .col-acoes{width:280px;}
+/* Marca/pills não devem quebrar caractere a caractere */
+.page-admin-ranking-marca .sv-table .col-marca,
+.page-admin-ranking-marca .sv-table .col-marca *{white-space:nowrap;word-break:normal;overflow-wrap:normal;}
+/* Colunas longas: permite quebra suave em linhas */
+.page-admin-ranking-marca .sv-table .col-premios{white-space:normal;}
+/* Evita o 'N M E' (quebra de cabeçalho em colunas estreitas) */
+.page-admin-ranking-marca .sv-table th{white-space:nowrap;}
+</style>
+{% endblock %}
+
 {% block content %}
-<div class="sv-page">
+<div class="sv-page page-admin-ranking-marca">
   <div class="sv-pagehead sv-glass">
     <div class="sv-pagehead__left">
       <div class="sv-h1">Admin • Ranking por Marca</div>
@@ -116,14 +140,14 @@
           <table class="sv-table">
             <thead>
               <tr>
-                <th style="width:70px;">ID</th>
-                <th>Nome</th>
-                <th style="width:160px;">Marca</th>
-                <th style="width:120px;">Escopo</th>
-                <th style="width:220px;">Prêmios</th>
-                <th style="width:180px;">Vigência</th>
-                <th style="width:90px;">Ativa</th>
-                <th style="width:260px;">Ações</th>
+                <th class="col-id" style="width:70px;">ID</th>
+                <th class="col-nome">Nome</th>
+                <th class="col-marca" style="width:160px;">Marca</th>
+                <th class="col-escopo" style="width:120px;">Escopo</th>
+                <th class="col-premios" style="width:220px;">Prêmios</th>
+                <th class="col-vigencia" style="width:180px;">Vigência</th>
+                <th class="col-ativa" style="width:90px;">Ativa</th>
+                <th class="col-acoes" style="width:260px;">Ações</th>
               </tr>
             </thead>
             <tbody>
@@ -144,8 +168,8 @@
                     →
                     {% if c.vigencia_fim %}{{ c.vigencia_fim }}{% else %}-{% endif %}
                   </td>
-                  <td>{{ "Sim" if c.ativo else "Não" }}</td>
-                  <td>
+                  <td class="col-ativa">{{ "Sim" if c.ativo else "Não" }}</td>
+                  <td class="col-acoes">
                     <div class="d-flex flex-wrap gap-2">
                       <form method="post" action="{{ url_for('admin_campanhas_ranking_marca') }}">
                         <input type="hidden" name="acao" value="recalcular">
