@@ -49,16 +49,18 @@ class UnifiedRow:
     recompensa_unit: float | None = None
     valor_vendido: float | None = None
 
-    atingiu_gate: bool | None
-    qtd_base: float | None
-    qtd_premiada: float | None
 
-    valor_recompensa: float
-    status_pagamento: str
-    pago_em: Any | None
+    # campos calculados (defaults evitam erro de ordem no dataclass)
+    atingiu_gate: bool | None = None
+    qtd_base: float | None = None
+    qtd_premiada: float | None = None
+
+    valor_recompensa: float = 0.0
+    status_pagamento: str = "PENDENTE"
+    pago_em: Any | None = None
 
     # ids para drilldown
-    origem_id: int | None
+    origem_id: int | None = None
 
     # Compatibilidade: permite tratar UnifiedRow como dict em alguns pontos do app/templates
     # (ex.: r.get('emp'), r['emp']).
