@@ -116,7 +116,7 @@
               </tr>
             </thead>
             <tbody>
-              {% for row in resultados.linhas %}
+              {% for row in resultados.linhas|sort(attribute='vendedor')|sort(attribute='emp') %}
               <tr>
                 <td>EMP {{ row.emp }}</td>
                 <td>{{ row.vendedor }}</td>
