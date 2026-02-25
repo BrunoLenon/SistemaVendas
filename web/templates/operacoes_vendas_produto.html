@@ -1,0 +1,240 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="sv-page">
+  <div class="sv-pagehead">
+    <div>
+      <div class="sv-title">Pesquisa de Vendas por Produto</div>
+      <div class="sv-subtitle">Agrupado por mês, com média mensal. Busca flexível por descrição do produto (começa com) + filtros opcionais.</div>
+    </div>
+    <div class="d-flex gap-2 flex-wrap">
+      <a class="sv-btn sv-btn-ghost" href="{{ url_for('operacoes_vendas_produto', **request.args.to_dict(), export=1) }}">⬇️ Exportar Excel</a>
+    </div>
+  </div>
+
+  <form class="sv-card mt-3" method="get" action="{{ url_for('operacoes_vendas_produto') }}">
+    <div class="sv-card-body">
+      <div class="row g-2 align-items-end">
+        <div class="col-12 col-lg-5">
+          <label class="sv-label">Produto (descrição)</label>
+          <input class="sv-input" id="produtoInput" name="produto" value="{{ filtros.produto or '' }}" placeholder="Ex.: PNEU TRAS 90 90 18" autocomplete="off">
+          <div class="sv-help">Dica: use termos na ordem. Ex.: <b>PNEU TRAS</b> encontra <i>PNEU TRASEIRO ...</i></div>
+          <div id="produtoSugestoes" class="sv-suggest d-none"></div>
+        </div>
+
+        <div class="col-12 col-lg-3">
+          <label class="sv-label">Marca (opcional)</label>
+          <input class="sv-input" name="marca" value="{{ filtros.marca or '' }}" placeholder="Ex.: MAGGION">
+        </div>
+
+        <div class="col-6 col-lg-2">
+          <label class="sv-label">De</label>
+          <select class="sv-input" name="mes_ini">
+            {% for m in meses_select %}
+              <option value="{{ m.value }}" {% if m.value==filtros.mes_ini %}selected{% endif %}>{{ m.label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="col-6 col-lg-2">
+          <label class="sv-label">Até</label>
+          <select class="sv-input" name="mes_fim">
+            {% for m in meses_select %}
+              <option value="{{ m.value }}" {% if m.value==filtros.mes_fim %}selected{% endif %}>{{ m.label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        {% if filtros.emps_disponiveis and filtros.emps_disponiveis|length > 0 %}
+        <div class="col-12">
+          <label class="sv-label">Empresas (opcional)</label>
+          <div class="sv-chipset">
+            {% for e in filtros.emps_disponiveis %}
+              {% set checked = (e in filtros.emps_sel) %}
+              <label class="sv-chip {% if checked %}active{% endif %}">
+                <input type="checkbox" name="emp" value="{{ e }}" {% if checked %}checked{% endif %}>
+                EMP {{ e }}
+              </label>
+            {% endfor %}
+          </div>
+          <div class="sv-help">Se não marcar nada, considera “geral” dentro do seu escopo de acesso.</div>
+        </div>
+        {% endif %}
+
+        <div class="col-12 d-flex gap-2 flex-wrap mt-2">
+          <button class="sv-btn" type="submit">🔎 Pesquisar</button>
+          <a class="sv-btn sv-btn-ghost" href="{{ url_for('operacoes_vendas_produto') }}">Limpar</a>
+        </div>
+      </div>
+    </div>
+  </form>
+
+  {% if not resultados or resultados.linhas|length == 0 %}
+    <div class="sv-card mt-3">
+      <div class="sv-card-body">
+        <div class="sv-empty">
+          {% if filtros.produto or filtros.marca %}
+            Nenhum resultado para os filtros informados.
+          {% else %}
+            Informe um <b>produto</b> e/ou <b>marca</b> para pesquisar.
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  {% else %}
+    <div class="sv-card mt-3">
+      <div class="sv-card-body">
+        <div class="sv-kpis">
+          <div class="sv-kpi">
+            <div class="k">Total (Qtd)</div>
+            <div class="v">{{ resultados.total_qtd|int }}</div>
+          </div>
+          <div class="sv-kpi">
+            <div class="k">Média mensal</div>
+            <div class="v">{{ resultados.media_mensal|round(2) }}</div>
+          </div>
+          <div class="sv-kpi">
+            <div class="k">Meses</div>
+            <div class="v">{{ resultados.meses|length }}</div>
+          </div>
+        </div>
+
+        <div class="sv-tablewrap mt-3">
+          <table class="table sv-table sv-table-compact">
+            <thead>
+              <tr>
+                <th style="min-width:140px">Empresa</th>
+                <th style="min-width:180px">Vendedor</th>
+                {% for mm in resultados.meses %}
+                  <th class="text-end" style="min-width:110px">{{ mm.label }}</th>
+                {% endfor %}
+                <th class="text-end" style="min-width:110px">Total</th>
+                <th class="text-end" style="min-width:110px">Média</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in resultados.linhas %}
+              <tr>
+                <td>EMP {{ row.emp }}</td>
+                <td>{{ row.vendedor }}</td>
+                {% for mm in resultados.meses %}
+                  <td class="text-end">{{ row.por_mes.get(mm.key, 0)|round(2) }}</td>
+                {% endfor %}
+                <td class="text-end"><b>{{ row.total|round(2) }}</b></td>
+                <td class="text-end">{{ row.media|round(2) }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+
+        <div class="sv-footnote mt-2">Obs.: Devoluções/Cancelamentos (DS/CA) entram como negativo.</div>
+      </div>
+    </div>
+  {% endif %}
+</div>
+
+<style>
+  /* Sugestões (typeahead) */
+  .sv-suggest{
+    position: relative;
+    margin-top: 6px;
+  }
+  .sv-suggest .box{
+    position:absolute;
+    z-index: 30;
+    left:0; right:0;
+    background: rgba(10,10,10,.96);
+    border: 1px solid rgba(255,255,255,.10);
+    border-radius: 12px;
+    overflow:hidden;
+    box-shadow: 0 18px 40px rgba(0,0,0,.55);
+  }
+  .sv-suggest .item{
+    padding: 10px 12px;
+    cursor:pointer;
+    border-bottom:1px solid rgba(255,255,255,.06);
+    font-size: 13px;
+    color:#f2f2f2;
+  }
+  .sv-suggest .item:hover{
+    background: rgba(255,155,40,.10);
+    color:#ffb35a;
+  }
+
+  /* Chipset */
+  .sv-chipset{
+    display:flex;
+    flex-wrap:wrap;
+    gap:8px;
+  }
+  .sv-chip{
+    display:inline-flex;
+    align-items:center;
+    gap:8px;
+    padding:8px 10px;
+    border-radius: 999px;
+    border:1px solid rgba(255,255,255,.12);
+    background: rgba(0,0,0,.18);
+    font-weight:700;
+    font-size: 12px;
+    cursor:pointer;
+    user-select:none;
+  }
+  .sv-chip input{ display:none; }
+  .sv-chip.active{
+    border:1px solid rgba(255,170,60,.35);
+    background: linear-gradient(180deg, rgba(255,155,40,.16), rgba(255,155,40,.06));
+    color:#ffb35a;
+  }
+</style>
+
+<script>
+(function(){
+  const input = document.getElementById('produtoInput');
+  const sug = document.getElementById('produtoSugestoes');
+  if(!input || !sug) return;
+
+  let t=null;
+  function closeSug(){ sug.classList.add('d-none'); sug.innerHTML=''; }
+
+  async function fetchSug(){
+    const q = (input.value||'').trim();
+    const marca = (document.querySelector('input[name="marca"]')?.value||'').trim();
+    if(q.length < 3){ closeSug(); return; }
+
+    const params = new URLSearchParams();
+    params.set('q', q);
+    if(marca) params.set('marca', marca);
+
+    // empresas selecionadas (se houver)
+    document.querySelectorAll('input[name="emp"]:checked').forEach(el => params.append('emp', el.value));
+
+    const resp = await fetch("{{ url_for('api_produtos_suggest') }}?"+params.toString(), {headers:{'X-Requested-With':'fetch'}});
+    if(!resp.ok){ closeSug(); return; }
+    const data = await resp.json();
+    if(!data || !data.items || data.items.length===0){ closeSug(); return; }
+
+    sug.classList.remove('d-none');
+    sug.innerHTML = '<div class="box">'+data.items.map(x => '<div class="item" data-v="'+encodeURIComponent(x)+'">'+x+'</div>').join('')+'</div>';
+
+    sug.querySelectorAll('.item').forEach(it=>{
+      it.addEventListener('click', ()=>{
+        input.value = decodeURIComponent(it.getAttribute('data-v'));
+        closeSug();
+        input.focus();
+      });
+    });
+  }
+
+  input.addEventListener('input', ()=>{
+    if(t) clearTimeout(t);
+    t=setTimeout(fetchSug, 220);
+  });
+  document.addEventListener('click', (e)=>{
+    if(e.target===input) return;
+    if(sug.contains(e.target)) return;
+    closeSug();
+  });
+})();
+</script>
+{% endblock %}
