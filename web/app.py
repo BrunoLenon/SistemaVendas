@@ -7707,7 +7707,7 @@ def operacoes_vendas_produto():
     - Retorna matriz: EMP + Vendedor + colunas por mês + média mensal
     - Exporta Excel via ?export=1
     """
-    from db import SessionLocal, Venda
+    from db import SessionLocal, Venda, Usuario, UsuarioEmp
     from sqlalchemy import func, case
     from flask import jsonify
     from io import BytesIO
@@ -7787,7 +7787,7 @@ def operacoes_vendas_produto():
         if not allowed:
             emps_disponiveis = [r[0] for r in db.query(Venda.emp).filter(Venda.emp.isnot(None)).distinct().order_by(Venda.emp.asc()).limit(60).all()]
 
-        do_search = bool(produto_raw or marca_raw)
+        do_search = bool(produto_raw or marca_raw or mestre_raw)
 
         if do_search:
             campo_desc = func.lower(func.trim(func.coalesce(Venda.descricao_norm, Venda.descricao, "")))
@@ -7830,16 +7830,30 @@ def operacoes_vendas_produto():
             rows = (
                 db.query(
                     Venda.emp.label("emp"),
-                    Venda.vendedor.label("vendedor"),
+                    Usuario.username.label("vendedor"),
                     q_year,
                     q_month,
                     func.coalesce(func.sum(signed_qty), 0.0).label("qtd"),
                 )
+                # Somente vendedores cadastrados (usuarios.role='vendedor') e vinculados à EMP via usuario_emps (ativo=TRUE)
+                .join(
+                    Usuario,
+                    func.lower(func.trim(func.coalesce(Venda.vendedor, "")))
+                    == func.lower(func.trim(func.coalesce(Usuario.username, ""))),
+                )
+                .join(
+                    UsuarioEmp,
+                    (UsuarioEmp.usuario_id == Usuario.id)
+                    & (UsuarioEmp.emp == Venda.emp)
+                    & (UsuarioEmp.ativo.is_(True)),
+                )
+                .filter(Usuario.role == "vendedor")
                 .filter(*conds)
-                .group_by(Venda.emp, Venda.vendedor, q_year, q_month)
-                .order_by(Venda.emp.asc(), Venda.vendedor.asc(), q_year.asc(), q_month.asc())
+                .group_by(Venda.emp, Usuario.username, q_year, q_month)
+                .order_by(Venda.emp.asc(), Usuario.username.asc(), q_year.asc(), q_month.asc())
                 .all()
             )
+
 
             # pivot
             meses_meta = [{"key": f"{int(y):04d}-{int(m):02d}", "label": f"{int(m):02d}/{int(y):04d}"} for (y, m) in months]
@@ -7872,7 +7886,7 @@ def operacoes_vendas_produto():
                 })
 
             # ordena por total desc
-            linhas.sort(key=lambda x: (x["total"], x["emp"], x["vendedor"]), reverse=True)
+            linhas.sort(key=lambda x: (x["emp"], x["vendedor"]))
 
             media_mensal_global = 0.0
             # média global: total / meses com resultado (considera meses com qualquer dado em qualquer linha)
@@ -7954,7 +7968,7 @@ def operacoes_vendas_produto():
 @login_required
 def api_produtos_suggest():
     """Sugestões rápidas de descrição (typeahead) para a pesquisa de produtos."""
-    from db import SessionLocal, Venda
+    from db import SessionLocal, Venda, Usuario, UsuarioEmp
     from sqlalchemy import func
     from flask import jsonify
     import unicodedata, re
