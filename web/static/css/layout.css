@@ -2,27 +2,43 @@
 /* Layout shell + collapsible sidebar */
 .app-shell{
   display: flex;
-  min-height: calc(100vh - 56px); /* navbar approx */
+  min-height: 100vh;
 }
 
-.app-sidebar{
-  width: 280px;
-  background: var(--sidebar-bg);
-  border-right: 1px solid rgba(255,255,255,.08);
-  position: sticky;
-  top: 56px;
-  height: calc(100vh - 56px);
-  overflow-y: auto;
+/* Desktop (lg+): sidebar fica FIXO na lateral esquerda */
+@media (min-width: 992px){
+  .app-sidebar{
+    width: 280px;
+    background: var(--sidebar-bg);
+    border-right: 1px solid rgba(255,255,255,.08);
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100vh;
+    overflow-y: auto;
+    z-index: 1040; /* acima do conteúdo, abaixo de modais */
+  }
+
+  .app-main{
+    flex: 1;
+    min-width: 0;
+    margin-left: 280px;
+  }
+
+  body.sidebar-collapsed .app-sidebar{
+    width: 84px;
+  }
+  body.sidebar-collapsed .app-main{
+    margin-left: 84px;
+  }
 }
 
-.app-main{
-  flex: 1;
-  min-width: 0;
+/* Mobile/Tablet: sidebar é offcanvas; não reserva espaço */
+@media (max-width: 991.98px){
+  .app-sidebar{ position: static; width: 100%; height: auto; }
+  .app-main{ flex: 1; min-width: 0; margin-left: 0; }
 }
 
-body.sidebar-collapsed .app-sidebar{
-  width: 84px;
-}
 body.sidebar-collapsed .sv-sidebar-title,
 body.sidebar-collapsed .sv-sidebar-subtitle,
 body.sidebar-collapsed .sv-text,
