@@ -7808,11 +7808,11 @@ def operacoes_vendas_produto():
                     conds.append(campo_desc.like(pattern))
 
 
-# mestre (opcional) - começa com (prefixo). Combina com produto/descrição quando ambos informados.
-if mestre_raw:
-    mn = _norm(mestre_raw)
-    campo_mestre = func.lower(func.trim(func.coalesce(Venda.mestre, "")))
-    conds.append(campo_mestre.like(mn + "%"))
+            # mestre (opcional) - começa com (prefixo). Combina com produto/descrição quando ambos informados.
+            if mestre_raw:
+                mn = _norm(mestre_raw)
+                campo_mestre = func.lower(func.trim(func.coalesce(Venda.mestre, "")))
+                conds.append(campo_mestre.like(mn + "%"))
 
             # marca (opcional) - começa com
             if marca_raw:
