@@ -34,6 +34,8 @@
   .cc-click{cursor:pointer}
   .cc-click:hover{background:rgba(255,140,0,.06)}
 
+  body.sv-modal-open{overflow:hidden}
+
   /* Modal (mantém bootstrap, mas escurece) */
   .modal-content{background:#0f1115;border:1px solid rgba(255,140,0,.22);border-radius:16px}
   .modal-header{border-bottom:1px solid rgba(255,255,255,.08)}
@@ -331,45 +333,6 @@
   </div>
 </div>
 
-<!-- Modal: cliente -> itens (recuperado da v56) -->
-<div class="modal fade" id="modalItens" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-lg modal-dialog-scrollable">
-    <div class="modal-content">
-      <div class="modal-header">
-        <div>
-          <div class="modal-title" id="modalItensTitle">Itens</div>
-          <div class="sv-muted" id="modalItensSub">—</div>
-        </div>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-      </div>
-      <div class="modal-body">
-        <div class="sv-row" style="gap:10px; margin-bottom:10px">
-          <span class="sv-badge" id="modalItensTotal">Total: —</span>
-          <span class="sv-badge sv-badge--muted" id="modalItensMix">Itens únicos: —</span>
-        </div>
-        <div class="sv-table-wrap">
-          <table class="sv-table sv-table--compact" id="tblItens">
-            <thead>
-              <tr>
-                <th style="width:120px">Mestre</th>
-                <th>Descrição</th>
-                <th class="text-end" style="width:180px">Valor (R$)</th>
-              </tr>
-            </thead>
-            <tbody></tbody>
-          </table>
-        </div>
-        <div class="sv-muted" style="margin-top:10px">
-          Itens comprados pelo cliente no período filtrado.
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="sv-btn sv-btn--ghost" data-bs-dismiss="modal">Fechar</button>
-      </div>
-    </div>
-  </div>
-</div>
-
 <script>
   // Tabs
   (function(){
@@ -412,12 +375,57 @@
     };
   }
 
+  // Modal helpers (sem Bootstrap JS)
+  function svShowModal(el){
+    if(!el) return;
+    el.style.display = 'block';
+    el.classList.add('show');
+    el.setAttribute('aria-hidden','false');
+    document.body.classList.add('sv-modal-open');
+
+    // backdrop
+    let bd = document.getElementById('svModalBackdrop');
+    if(!bd){
+      bd = document.createElement('div');
+      bd.id = 'svModalBackdrop';
+      bd.className = 'modal-backdrop fade show';
+      document.body.appendChild(bd);
+      bd.addEventListener('click', () => svHideModal(el));
+    }
+    // esc
+    const onKey = (e) => { if(e.key === 'Escape') svHideModal(el); };
+    el._svOnKey = onKey;
+    document.addEventListener('keydown', onKey);
+  }
+
+  function svHideModal(el){
+    if(!el) return;
+    el.classList.remove('show');
+    el.style.display = 'none';
+    el.setAttribute('aria-hidden','true');
+    document.body.classList.remove('sv-modal-open');
+
+    const bd = document.getElementById('svModalBackdrop');
+    if(bd) bd.remove();
+
+    if(el._svOnKey){
+      document.removeEventListener('keydown', el._svOnKey);
+      el._svOnKey = null;
+    }
+  }
+
+  // Bind close buttons
+  document.querySelectorAll('[data-bs-dismiss="modal"]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const modal = btn.closest('.modal');
+      if(modal) svHideModal(modal);
+    });
+  });
+
   // Modal: cidade -> clientes
   const modalClientes = document.getElementById('modalClientes');
-  const bsModalClientes = modalClientes ? new bootstrap.Modal(modalClientes) : null;
-
-  function openClientesModal(emp, cidade_norm, cidade_label){
-    if(!bsModalClientes) return;
+function openClientesModal(emp, cidade_norm, cidade_label){
+    if(!modalClientes) return;
     const q = _qs();
     document.getElementById('modalClientesTitle').textContent = 'Clientes — EMP ' + emp;
     document.getElementById('modalClientesSub').textContent = 'Cidade: ' + (cidade_label || cidade_norm);
@@ -448,9 +456,7 @@
               <td class="text-end sv-right">${escapeHtml(qtd)}</td>
               <td class="text-end sv-right">${escapeHtml(mix)}</td>
               <td class="text-end">
-                <a class="sv-link" href="#" onclick="openItensModal('${emp}','${cidade_norm}','', '${cliente_id}', '${escapeHtmlAttr(cliente)}'); return false;">Itens</a>
-                <span class="sv-muted" style="margin:0 6px">•</span>
-                <a class="sv-link" href="#" onclick="openMarcasModal('${emp}','${cidade_norm}','', '${cliente_id}', '${escapeHtmlAttr(cliente)}'); return false;">Marcas</a>
+                <a class="sv-link" href="#" onclick="openMarcasModal('${emp}','${cidade_norm}','', '${cliente_id}', '${escapeHtmlAttr(cliente)}'); return false;">Ver marcas</a>
               </td>
             </tr>
           `;
@@ -460,19 +466,13 @@
         tbody.innerHTML = '<tr><td colspan="6" class="sv-muted">Erro ao carregar.</td></tr>';
       });
 
-    bsModalClientes.show();
+    svShowModal(modalClientes);
   }
 
   // Modal: cliente -> marcas
   const modalMarcas = document.getElementById('modalMarcas');
-  const bsModalMarcas = modalMarcas ? new bootstrap.Modal(modalMarcas) : null;
-
-  // Modal: cliente -> itens
-  const modalItens = document.getElementById('modalItens');
-  const bsModalItens = modalItens ? new bootstrap.Modal(modalItens) : null;
-
-  function openMarcasModal(emp, cidade_norm, razao_norm, cliente_id, cliente_label){
-    if(!bsModalMarcas) return;
+function openMarcasModal(emp, cidade_norm, razao_norm, cliente_id, cliente_label){
+    if(!modalMarcas) return;
     const q = _qs();
     document.getElementById('modalMarcasTitle').textContent = 'Marcas — EMP ' + emp;
     document.getElementById('modalMarcasSub').textContent = 'Cliente: ' + (cliente_label || cliente_id);
@@ -524,62 +524,7 @@
         tbody.innerHTML = '<tr><td colspan="5" class="sv-muted">Erro ao carregar.</td></tr>';
       });
 
-    bsModalMarcas.show();
-  }
-
-  function openItensModal(emp, cidade_norm, razao_norm, cliente_id, cliente_label){
-    if(!bsModalItens) return;
-    const q = _qs();
-    document.getElementById('modalItensTitle').textContent = 'Itens — EMP ' + emp;
-    document.getElementById('modalItensSub').textContent = 'Cliente: ' + (cliente_label || cliente_id);
-
-    const tbody = document.querySelector('#tblItens tbody');
-    tbody.innerHTML = '<tr><td colspan="3" class="sv-muted">Carregando…</td></tr>';
-    document.getElementById('modalItensTotal').textContent = 'Total: —';
-    document.getElementById('modalItensMix').textContent = 'Itens únicos: —';
-
-    const params = new URLSearchParams({
-      emp: emp,
-      mes: q.mes,
-      ano: q.ano,
-      vendedor: q.vendedor || ''
-    });
-    if(razao_norm){
-      params.set('razao_norm', razao_norm);
-    }else if(cliente_id){
-      params.set('cliente_id', cliente_id);
-    }
-    if(cidade_norm){
-      params.set('cidade_norm', cidade_norm);
-    }
-
-    fetch('/relatorios/cliente-itens?' + params.toString())
-      .then(r => r.json())
-      .then(data => {
-        const itens = (data && data.itens) ? data.itens : [];
-        document.getElementById('modalItensTotal').textContent = 'Total: ' + (data.total || 0).toLocaleString('pt-BR', {style:'currency', currency:'BRL'});
-        document.getElementById('modalItensMix').textContent = 'Itens únicos: ' + (data.itens_unicos || 0).toLocaleString('pt-BR');
-
-        if(!itens.length){
-          tbody.innerHTML = '<tr><td colspan="3" class="sv-muted">Sem dados.</td></tr>';
-          return;
-        }
-        tbody.innerHTML = itens.map(it => {
-          const v = (it.valor_total || 0).toLocaleString('pt-BR', {style:'currency', currency:'BRL'});
-          return `
-            <tr>
-              <td class="text-nowrap" style="font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace">${escapeHtml(it.mestre || '')}</td>
-              <td>${escapeHtml(it.descricao || '')}</td>
-              <td class="text-end sv-right">${escapeHtml(v)}</td>
-            </tr>
-          `;
-        }).join('');
-      })
-      .catch(() => {
-        tbody.innerHTML = '<tr><td colspan="3" class="sv-muted">Erro ao carregar.</td></tr>';
-      });
-
-    bsModalItens.show();
+    svShowModal(modalMarcas);
   }
 
   function escapeHtml(s){
