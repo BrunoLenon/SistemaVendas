@@ -11,21 +11,27 @@
       <div class="sv-subtitle">Agrupado por mês, com média mensal. Busca flexível por descrição do produto (começa com) + filtros opcionais.</div>
     </div>
     <div class="d-flex gap-2 flex-wrap">
-      <a class="sv-btn sv-btn-ghost" href="{{ url_for('operacoes_vendas_produto') }}?export=1{% if filtros.produto %}&produto={{ filtros.produto|urlencode }}{% endif %}{% if filtros.marca %}&marca={{ filtros.marca|urlencode }}{% endif %}{% if filtros.emp %}&emp={{ filtros.emp|urlencode }}{% endif %}{% if filtros.mes_ini %}&mes_ini={{ filtros.mes_ini }}{% endif %}{% if filtros.mes_fim %}&mes_fim={{ filtros.mes_fim }}{% endif %}">⬇️ Exportar Excel</a>
+      <a class="sv-btn sv-btn-ghost" href="{{ url_for('operacoes_vendas_produto') }}?export=1{% if filtros.produto %}&produto={{ filtros.produto|urlencode }}{% endif %}{% if filtros.marca %}&marca={{ filtros.marca|urlencode }}{% endif %}{% if filtros.mestre %}&mestre={{ filtros.mestre|urlencode }}{% endif %}{% if filtros.emp %}&emp={{ filtros.emp|urlencode }}{% endif %}{% if filtros.mes_ini %}&mes_ini={{ filtros.mes_ini }}{% endif %}{% if filtros.mes_fim %}&mes_fim={{ filtros.mes_fim }}{% endif %}">⬇️ Exportar Excel</a>
     </div>
   </div>
 
   <form class="sv-card mt-3" method="get" action="{{ url_for('operacoes_vendas_produto') }}">
     <div class="sv-card-body">
       <div class="row g-2 align-items-end">
-        <div class="col-12 col-lg-5">
+        <div class="col-12 col-lg-4">
           <label class="sv-label">Produto (descrição)</label>
           <input class="sv-input" id="produtoInput" name="produto" value="{{ filtros.produto or '' }}" placeholder="Ex.: PNEU TRAS 90 90 18" autocomplete="off">
           <div class="sv-help">Dica: use termos na ordem. Ex.: <b>PNEU TRAS</b> encontra <i>PNEU TRASEIRO ...</i></div>
           <div id="produtoSugestoes" class="sv-suggest d-none"></div>
         </div>
 
-        <div class="col-12 col-lg-3">
+        <div class="col-6 col-lg-2">
+          <label class="sv-label">Mestre (cód.)</label>
+          <input class="sv-input" name="mestre" value="{{ filtros.mestre or '' }}" placeholder="Ex.: 39007">
+          <div class="sv-help">Opcional. Combina com a descrição (ex.: mestre + produto).</div>
+        </div>
+
+        <div class="col-6 col-lg-2">
           <label class="sv-label">Marca (opcional)</label>
           <input class="sv-input" name="marca" value="{{ filtros.marca or '' }}" placeholder="Ex.: MAGGION">
         </div>
@@ -116,7 +122,7 @@
               </tr>
             </thead>
             <tbody>
-              {% for row in resultados.linhas|sort(attribute='vendedor')|sort(attribute='emp') %}
+              {% for row in resultados.linhas %}
               <tr>
                 <td>EMP {{ row.emp }}</td>
                 <td>{{ row.vendedor }}</td>

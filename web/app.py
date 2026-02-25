@@ -7739,6 +7739,7 @@ def operacoes_vendas_produto():
     # ===== filtros =====
     produto_raw = (request.args.get("produto") or "").strip()
     marca_raw = (request.args.get("marca") or "").strip()
+    mestre_raw = (request.args.get("mestre") or "").strip()
 
     # meses (default: Jan -> mês atual do ano atual)
     today = date.today()
@@ -7805,6 +7806,13 @@ def operacoes_vendas_produto():
                 if tokens:
                     pattern = tokens[0] + "%" + "%".join(tokens[1:]) + "%"
                     conds.append(campo_desc.like(pattern))
+
+
+# mestre (opcional) - começa com (prefixo). Combina com produto/descrição quando ambos informados.
+if mestre_raw:
+    mn = _norm(mestre_raw)
+    campo_mestre = func.lower(func.trim(func.coalesce(Venda.mestre, "")))
+    conds.append(campo_mestre.like(mn + "%"))
 
             # marca (opcional) - começa com
             if marca_raw:
@@ -7920,6 +7928,7 @@ def operacoes_vendas_produto():
         filtros = {
             "produto": produto_raw,
             "marca": marca_raw,
+            "mestre": mestre_raw,
             "mes_ini": mes_ini,
             "mes_fim": mes_fim,
             "emps_sel": emps_sel,
