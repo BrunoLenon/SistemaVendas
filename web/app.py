@@ -7989,12 +7989,18 @@ def api_produtos_suggest():
         # tenta usar o ano atual como prioridade
         from datetime import date
         today = date.today()
-        rows = (
+        subq = (
             db.query(func.coalesce(Venda.descricao, Venda.mestre).label("d"))
             .filter(*conds)
             .filter(Venda.movimento >= date(today.year, 1, 1))
             .distinct()
-            .order_by(func.length(func.coalesce(Venda.descricao, Venda.mestre)).asc())
+            .subquery()
+        )
+        # Postgres exige que expressões do ORDER BY apareçam no SELECT quando usamos DISTINCT.
+        # Por isso fazemos o DISTINCT em subquery e ordenamos fora.
+        rows = (
+            db.query(subq.c.d)
+            .order_by(func.length(subq.c.d).asc())
             .limit(18)
             .all()
         )
