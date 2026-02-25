@@ -1,5 +1,9 @@
 {% extends "base.html" %}
 {% block content %}
+{% macro fmt_int(n) -%}
+  {%- set v = (n or 0) -%}
+  {{ "{:,.0f}".format(v).replace(",", "X").replace(".", ",").replace("X", ".") }}
+{%- endmacro %}
 <div class="sv-page">
   <div class="sv-pagehead">
     <div>
@@ -47,12 +51,12 @@
         {% if filtros.emps_disponiveis and filtros.emps_disponiveis|length > 0 %}
         <div class="col-12">
           <label class="sv-label">Empresas (opcional)</label>
-          <div class="sv-chipset">
+          <div class="sv-checklist">
             {% for e in filtros.emps_disponiveis %}
               {% set checked = (e in filtros.emps_sel) %}
-              <label class="sv-chip {% if checked %}active{% endif %}">
+              <label class="sv-checkitem">
                 <input type="checkbox" name="emp" value="{{ e }}" {% if checked %}checked{% endif %}>
-                EMP {{ e }}
+                <span>EMP {{ e }}</span>
               </label>
             {% endfor %}
           </div>
@@ -90,7 +94,7 @@
           </div>
           <div class="sv-kpi">
             <div class="k">Média mensal</div>
-            <div class="v">{{ resultados.media_mensal|round(2) }}</div>
+            <div class="v">{{ fmt_int(resultados.media_mensal) }}</div>
           </div>
           <div class="sv-kpi">
             <div class="k">Meses</div>
@@ -117,10 +121,10 @@
                 <td>EMP {{ row.emp }}</td>
                 <td>{{ row.vendedor }}</td>
                 {% for mm in resultados.meses %}
-                  <td class="text-end">{{ row.por_mes.get(mm.key, 0)|round(2) }}</td>
+                  <td class="text-end">{{ fmt_int(row.por_mes.get(mm.key, 0)) }}</td>
                 {% endfor %}
-                <td class="text-end"><b>{{ row.total|round(2) }}</b></td>
-                <td class="text-end">{{ row.media|round(2) }}</td>
+                <td class="text-end"><b>{{ fmt_int(row.total) }}</b></td>
+                <td class="text-end">{{ fmt_int(row.media) }}</td>
               </tr>
               {% endfor %}
             </tbody>
@@ -134,6 +138,48 @@
 </div>
 
 <style>
+  /* Ajustes de leitura (dark) */
+  .sv-table{
+    --bs-table-bg: transparent;
+    --bs-table-color: rgba(255,255,255,.92);
+    --bs-table-striped-bg: rgba(255,255,255,.04);
+    --bs-table-striped-color: rgba(255,255,255,.92);
+    --bs-table-hover-bg: rgba(255,140,0,.08);
+    --bs-table-hover-color: rgba(255,255,255,.95);
+  }
+  .sv-table tbody tr{
+    background: rgba(0,0,0,.18);
+  }
+  .sv-table tbody tr:nth-child(even){
+    background: rgba(255,255,255,.03);
+  }
+  .sv-checklist{
+    display:grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px 12px;
+    padding: 10px;
+    border: 1px solid rgba(255,255,255,.10);
+    border-radius: 14px;
+    background: rgba(0,0,0,.18);
+    max-height: 180px;
+    overflow:auto;
+  }
+  @media (max-width: 576px){
+    .sv-checklist{ grid-template-columns: 1fr; max-height: 220px; }
+  }
+  .sv-checkitem{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    font-size: 13px;
+    color: rgba(255,255,255,.88);
+    user-select:none;
+  }
+  .sv-checkitem input{
+    width: 16px; height: 16px;
+    accent-color: #ff8c00;
+  }
+
   /* Sugestões (typeahead) */
   .sv-suggest{
     position: relative;
