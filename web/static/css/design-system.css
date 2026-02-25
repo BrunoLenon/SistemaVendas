@@ -326,3 +326,20 @@ details[open].sv-acc .sv-acc__chev { transform: rotate(45deg); }
 .sv-subtable th { text-align: left; font-size: 0.78rem; letter-spacing: .06em; text-transform: uppercase; color: rgba(255,255,255,0.7); padding: 8px 0; }
 .sv-subtable td { padding: 8px 0; border-top: 1px solid rgba(255,255,255,0.06); }
 .sv-subtable .sv-right { text-align: right; }
+
+/* ===== Mobile density & table usability ===== */
+@media (max-width: 576px){
+  .sv-page{ padding: 8px; }
+  .sv-section{ margin-top: 10px; }
+  .sv-pagehead{ padding: 10px; border-radius: 14px; gap: 10px; }
+  .sv-h1{ font-size: 18px; }
+  .sv-sub{ font-size: 12px; }
+  .sv-kpi-grid{ gap: 10px; }
+  .sv-kpi{ padding: 12px; }
+  .sv-kpi__value{ font-size: 20px; margin-top: 6px; }
+  .sv-tablewrap{ border-radius: 12px; }
+  .sv-tablewrap .sv-table{ min-width: 760px; table-layout: auto; }
+  .sv-table thead th{ padding: 10px 10px; font-size: 11px; }
+  .sv-table td{ padding: 10px 10px; font-size: 12px; }
+  .sv-btn-xs{ padding: 6px 9px; }
+}

@@ -148,7 +148,7 @@ body.sidebar-collapsed .sv-sidebar-logo img{
 
 /* ===== Desktop (lg+) fixed sidebar ===== */
 @media (min-width: 992px){
-  .app-shell{ display:block; }
+  .app-shell{ display:flex; }
   .app-sidebar{
     position: fixed;
     top: 56px;
@@ -163,4 +163,10 @@ body.sidebar-collapsed .sv-sidebar-logo img{
   body.sidebar-collapsed .app-main{
     margin-left: 84px;
   }
+}
+
+
+/* ===== Mobile tweaks ===== */
+@media (max-width: 576px){
+  .app-main > .container-fluid{ padding-left: 10px !important; padding-right: 10px !important; padding-top: 10px !important; padding-bottom: 10px !important; }
 }

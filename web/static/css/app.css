@@ -357,3 +357,23 @@ body{
 /* Linha clicável em tabelas */
 .sv-row-click{ cursor: pointer; }
 .sv-row-click:hover{ background: rgba(245,158,11,.08); }
+
+/* ===== Mobile / Offcanvas polish ===== */
+.offcanvas{
+  background: var(--sidebar-bg);
+  color: var(--text-main);
+}
+.offcanvas .offcanvas-header{
+  border-bottom: 1px solid rgba(255,255,255,.08);
+}
+.offcanvas .btn-close{
+  filter: invert(1) grayscale(1);
+  opacity: .85;
+}
+@media (max-width: 576px){
+  .offcanvas.offcanvas-start{ width: 86vw; max-width: 340px; }
+  .app-topbar .container-fluid{ padding-left: 10px; padding-right: 10px; }
+  .app-topbar .btn{ padding: .25rem .55rem; border-radius: 10px; }
+  .navbar-brand{ font-size: 15px; }
+  .app-page{ max-width: 100%; }
+}
