@@ -12,6 +12,13 @@
   .sv-table td,.sv-table th{padding:.5rem .55rem;}
   .sv-table thead th{font-size:12px; letter-spacing:.02em;}
   .sv-muted{opacity:.78}
+
+  /* Users list readability (avoid white Bootstrap backgrounds) */
+  .sv-users-table{--bs-table-bg: transparent;}
+  .sv-users-table tbody td{background: rgba(5,5,5,.45) !important;}
+  .sv-users-table tbody tr:nth-child(even) td{background: rgba(255,255,255,.03) !important;}
+  .sv-users-table tbody tr:hover td{background: rgba(255,140,0,.10) !important;}
+
 </style>
 {% endblock %}
 
@@ -231,7 +238,7 @@
             </div>
 
             <div class="sv-tablewrap" style="max-height: 72vh; overflow:auto;">
-              <table class="sv-table table table-sm align-middle">
+              <table class="sv-table sv-users-table table table-sm align-middle">
                 <thead>
                   <tr>
                     <th>Usuário</th>
