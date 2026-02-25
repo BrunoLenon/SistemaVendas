@@ -7,7 +7,7 @@
       <div class="sv-subtitle">Agrupado por mês, com média mensal. Busca flexível por descrição do produto (começa com) + filtros opcionais.</div>
     </div>
     <div class="d-flex gap-2 flex-wrap">
-      <a class="sv-btn sv-btn-ghost" href="{{ url_for('operacoes_vendas_produto', **request.args.to_dict(), export=1) }}">⬇️ Exportar Excel</a>
+      <a class="sv-btn sv-btn-ghost" href="{{ url_for('operacoes_vendas_produto') }}?export=1{% if filtros.produto %}&produto={{ filtros.produto|urlencode }}{% endif %}{% if filtros.marca %}&marca={{ filtros.marca|urlencode }}{% endif %}{% if filtros.emp %}&emp={{ filtros.emp|urlencode }}{% endif %}{% if filtros.mes_ini %}&mes_ini={{ filtros.mes_ini }}{% endif %}{% if filtros.mes_fim %}&mes_fim={{ filtros.mes_fim }}{% endif %}">⬇️ Exportar Excel</a>
     </div>
   </div>
 
