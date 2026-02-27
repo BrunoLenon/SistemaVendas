@@ -4227,6 +4227,9 @@ def relatorio_cidade_clientes_api():
     """
     red = _login_required()
     if red:
+        # Se for chamada AJAX/JSON (fetch), devolve 401 em JSON ao invés de redirect HTML
+        if request.headers.get("X-Requested-With") == "fetch" or "application/json" in (request.headers.get("Accept") or ""):
+            return jsonify({"error": "not_authenticated"}), 401
         return red
 
     role = (_role() or "").strip().lower()
@@ -4308,6 +4311,9 @@ def relatorio_cliente_marcas_api():
     """Retorna JSON com participação por marca para um cliente (RAZAO_NORM) no período."""
     red = _login_required()
     if red:
+        # Se for chamada AJAX/JSON (fetch), devolve 401 em JSON ao invés de redirect HTML
+        if request.headers.get("X-Requested-With") == "fetch" or "application/json" in (request.headers.get("Accept") or ""):
+            return jsonify({"error": "not_authenticated"}), 401
         return red
 
     role = (_role() or "").strip().lower()
@@ -4416,6 +4422,9 @@ def relatorio_cliente_marca_itens_api():
     """
     red = _login_required()
     if red:
+        # Se for chamada AJAX/JSON (fetch), devolve 401 em JSON ao invés de redirect HTML
+        if request.headers.get("X-Requested-With") == "fetch" or "application/json" in (request.headers.get("Accept") or ""):
+            return jsonify({"error": "not_authenticated"}), 401
         return red
 
     role = (_role() or "").strip().lower()

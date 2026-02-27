@@ -439,6 +439,32 @@
       document.body.appendChild(bd);
       bd.addEventListener('click', () => svHideModal(el));
     }
+
+  // Helper: fetch JSON com fallback (evita quebrar quando o servidor devolver HTML/redirect)
+  async function svFetchJSON(url){
+    const resp = await fetch(url, { headers: { "X-Requested-With": "fetch", "Accept": "application/json" } });
+    const text = await resp.text();
+    let data = null;
+    try {
+      data = text ? JSON.parse(text) : null;
+    } catch (e) {
+      // Provável redirect para login (HTML) ou resposta não-JSON
+      const isHtml = (text || "").trim().toLowerCase().startsWith("<!doctype") || (text || "").includes("<html");
+      const msg = isHtml ? "Sessão expirada. Recarregue a página." : "Resposta inválida do servidor.";
+      const err = new Error(msg);
+      err._raw = text;
+      err.status = resp.status;
+      throw err;
+    }
+    if (!resp.ok){
+      const msg = (data && (data.error || data.message)) ? (data.error || data.message) : "Erro no servidor.";
+      const err = new Error(msg);
+      err.data = data;
+      err.status = resp.status;
+      throw err;
+    }
+    return data || {};
+  }
     // esc
     const onKey = (e) => { if(e.key === 'Escape') svHideModal(el); };
     el._svOnKey = onKey;
@@ -481,8 +507,7 @@ function openClientesModal(emp, cidade_norm, cidade_label){
     tbody.innerHTML = '<tr><td colspan="6" class="sv-muted">Carregando…</td></tr>';
 
     const url = `/relatorios/cidade-clientes?emp=${encodeURIComponent(emp)}&cidade_norm=${encodeURIComponent(cidade_norm)}&mes=${encodeURIComponent(q.mes)}&ano=${encodeURIComponent(q.ano)}&vendedor=${encodeURIComponent(q.vendedor || '')}`;
-    fetch(url)
-      .then(r => r.json())
+    svFetchJSON(url)
       .then(data => {
         const rows = (data && data.clientes) ? data.clientes : [];
         if(!rows.length){
@@ -511,8 +536,9 @@ function openClientesModal(emp, cidade_norm, cidade_label){
           `;
         }).join('');
       })
-      .catch(() => {
-        tbody.innerHTML = '<tr><td colspan="6" class="sv-muted">Erro ao carregar.</td></tr>';
+      .catch((err) => {
+        const msg = (err && err.message) ? err.message : 'Erro ao carregar.';
+        tbody.innerHTML = `<tr><td colspan="6" class="sv-muted">${msg}</td></tr>`;
       });
 
     svShowModal(modalClientes);
@@ -569,8 +595,9 @@ function openMarcasModal(emp, cidade_norm, razao_norm, cliente_id, cliente_label
           `;
         }).join('');
       })
-      .catch(() => {
-        tbody.innerHTML = '<tr><td colspan="5" class="sv-muted">Erro ao carregar.</td></tr>';
+      .catch((err) => {
+        const msg = (err && err.message) ? err.message : 'Erro ao carregar.';
+        tbody.innerHTML = `<tr><td colspan="5" class="sv-muted">${msg}</td></tr>`;
       });
 
     svShowModal(modalMarcas);
@@ -668,8 +695,9 @@ function openMarcasModal(emp, cidade_norm, razao_norm, cliente_id, cliente_label
           `;
         }).join('');
       })
-      .catch(() => {
-        tbody.innerHTML = '<tr><td colspan="5" class="sv-muted">Erro ao carregar.</td></tr>';
+      .catch((err) => {
+        const msg = (err && err.message) ? err.message : 'Erro ao carregar.';
+        tbody.innerHTML = `<tr><td colspan="5" class="sv-muted">${msg}</td></tr>`;
       });
 
     // reset search
