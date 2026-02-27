@@ -119,7 +119,7 @@
 
     <a class="sb-link {% if path.startswith('/metas') %}active{% endif %}" href="{{ url_for('metas') }}">🎯 Metas</a>
     <a class="sb-link {% if path.startswith('/itens_parados') %}active{% endif %}" href="{{ url_for('itens_parados') }}">📦 Itens Parados</a>
-    <a class="sb-link {% if path.startswith('/operacoes/vendas-produtos') %}active{% endif %}" href="{{ url_for('operacoes_vendas_produto') }}">🔎 Vendas (Produtos)</a>
+    <a class="sb-link {% if path.startswith('/operacoes/vendas-produtos') %}active{% endif %}" href="/operacoes/vendas-produtos">🔎 Vendas (Produtos)</a>
 
     {% if is_admin or is_supervisor %}
     <a class="sb-link {% if path.startswith('/admin/mensagens') %}active{% endif %}" href="{{ url_for('admin_mensagens') }}">💬 Mensagens</a>
