@@ -420,6 +420,26 @@
       ano: u.searchParams.get('ano') || '{{ ano }}',
       vendedor: u.searchParams.get('vendedor') || '{{ vendedor_filtro or '' }}'
     };
+
+  // Fetch JSON blindado (evita "Erro ao carregar" quando o backend responde HTML/redirect)
+  async function svFetchJSON(url){
+    const res = await fetch(url, { headers: { "X-Requested-With": "fetch" } });
+    const text = await res.text();
+    try{
+      return JSON.parse(text);
+    }catch(e){
+      console.error("svFetchJSON: resposta não é JSON", {url, status: res.status, text: text.slice(0, 500)});
+      // Heurística simples: se veio HTML, provavelmente sessão expirada/redirect
+      if(text && text.trim().startsWith("<")){
+        throw new Error("Resposta HTML (possível sessão expirada). Recarregue a página.");
+      }
+      throw new Error("Resposta inválida do servidor.");
+    }
+  }
+
+  function _jsEscape(s){
+    return (s ?? "").toString().replaceAll("\\","\\\\").replaceAll("'","\\'");
+  }
   }
 
   // Modal helpers (sem Bootstrap JS)
@@ -439,32 +459,6 @@
       document.body.appendChild(bd);
       bd.addEventListener('click', () => svHideModal(el));
     }
-
-  // Helper: fetch JSON com fallback (evita quebrar quando o servidor devolver HTML/redirect)
-  async function svFetchJSON(url){
-    const resp = await fetch(url, { headers: { "X-Requested-With": "fetch", "Accept": "application/json" } });
-    const text = await resp.text();
-    let data = null;
-    try {
-      data = text ? JSON.parse(text) : null;
-    } catch (e) {
-      // Provável redirect para login (HTML) ou resposta não-JSON
-      const isHtml = (text || "").trim().toLowerCase().startsWith("<!doctype") || (text || "").includes("<html");
-      const msg = isHtml ? "Sessão expirada. Recarregue a página." : "Resposta inválida do servidor.";
-      const err = new Error(msg);
-      err._raw = text;
-      err.status = resp.status;
-      throw err;
-    }
-    if (!resp.ok){
-      const msg = (data && (data.error || data.message)) ? (data.error || data.message) : "Erro no servidor.";
-      const err = new Error(msg);
-      err.data = data;
-      err.status = resp.status;
-      throw err;
-    }
-    return data || {};
-  }
     // esc
     const onKey = (e) => { if(e.key === 'Escape') svHideModal(el); };
     el._svOnKey = onKey;
@@ -520,25 +514,29 @@ function openClientesModal(emp, cidade_norm, cidade_label){
           const mix = (r.mix_itens || 0).toLocaleString('pt-BR');
           const cliente = (r.cliente || r.cliente_id || '').toString();
           const cliente_id = (r.cliente_id || '').toString();
-          const safeClienteLabel = (cliente_label || cliente_id || '').toString().replaceAll("'","\\'");
-          const safeMarca = (marca || '').toString().replaceAll("'","\\'");
+          const safeClienteLabel = _jsEscape(cliente || cliente_id);
+
+          const safeMarca = _jsEscape(marca);
+          const safeClienteLabel = _jsEscape(cliente_label || cliente_id);
           return `
-            <tr style="cursor:pointer" onclick="openItensMarcaModal('${emp}', '${cidade_norm||''}', '${razao_norm||''}', '${cliente_id||''}', '${safeClienteLabel}', '${safeMarca}')">
-              <td class="sv-right">${idx+1}</td>
+            <tr class="cc-click" onclick="openItensMarcaModal('${emp}','${cidade_norm||''}','${razao_norm||''}','${cliente_id||''}','${safeClienteLabel}','${safeMarca}')">
+              <td class=\"sv-right\">${idx+1}</td>
               <td class="text-nowrap">${escapeHtml(cliente)}</td>
               <td class="text-end sv-right">${escapeHtml(valor)}</td>
               <td class="text-end sv-right">${escapeHtml(qtd)}</td>
               <td class="text-end sv-right">${escapeHtml(mix)}</td>
               <td class="text-end">
-                <a class="sv-link" href="#" onclick="openMarcasModal('${emp}','${cidade_norm}','', '${cliente_id}', '${escapeHtmlAttr(cliente)}'); return false;">Ver marcas</a>
+                <a class="sv-link" href="#"
+                   onclick="openMarcasModal('${emp}','${cidade_norm}','', '${cliente_id}', '${safeClienteLabel}'); return false;">
+                   Ver marcas
+                </a>
               </td>
             </tr>
           `;
         }).join('');
       })
-      .catch((err) => {
-        const msg = (err && err.message) ? err.message : 'Erro ao carregar.';
-        tbody.innerHTML = `<tr><td colspan="6" class="sv-muted">${msg}</td></tr>`;
+      .catch.catch(() => {
+        tbody.innerHTML = '<tr><td colspan="6" class="sv-muted">Erro ao carregar.</td></tr>';
       });
 
     svShowModal(modalClientes);
@@ -571,8 +569,7 @@ function openMarcasModal(emp, cidade_norm, razao_norm, cliente_id, cliente_label
       params.set('cidade_norm', cidade_norm);
     }
 
-    fetch('/relatorios/cliente-marcas?' + params.toString())
-      .then(r => r.json())
+    svFetchJSON('/relatorios/cliente-marcas?' + params.toString())
       .then(data => {
         const rows = (data && data.marcas) ? data.marcas : [];
         if(!rows.length){
@@ -584,9 +581,11 @@ function openMarcasModal(emp, cidade_norm, razao_norm, cliente_id, cliente_label
           const qtd = (r.qtd_total || 0).toLocaleString('pt-BR');
           const mix = (r.mix_itens || 0).toLocaleString('pt-BR');
           const marca = (r.marca || '').toString();
+          const safeMarca = _jsEscape(marca);
+          const safeClienteLabel = _jsEscape(cliente_label || cliente_id);
           return `
-            <tr>
-              <td class="sv-right">${idx+1}</td>
+            <tr class="cc-click" onclick="openItensMarcaModal('${emp}','${cidade_norm||''}','${razao_norm||''}','${cliente_id||''}','${safeClienteLabel}','${safeMarca}')">
+              <td class=\"sv-right\">${idx+1}</td>
               <td class="text-nowrap">${escapeHtml(marca)}</td>
               <td class="text-end sv-right">${escapeHtml(valor)}</td>
               <td class="text-end sv-right">${escapeHtml(qtd)}</td>
@@ -595,9 +594,8 @@ function openMarcasModal(emp, cidade_norm, razao_norm, cliente_id, cliente_label
           `;
         }).join('');
       })
-      .catch((err) => {
-        const msg = (err && err.message) ? err.message : 'Erro ao carregar.';
-        tbody.innerHTML = `<tr><td colspan="5" class="sv-muted">${msg}</td></tr>`;
+      .catch(() => {
+        tbody.innerHTML = '<tr><td colspan="5" class="sv-muted">Erro ao carregar.</td></tr>';
       });
 
     svShowModal(modalMarcas);
@@ -662,8 +660,7 @@ function openMarcasModal(emp, cidade_norm, razao_norm, cliente_id, cliente_label
       params.set('cidade_norm', cidade_norm);
     }
 
-    fetch('/relatorios/cliente-marca-itens?' + params.toString())
-      .then(r => r.json())
+    svFetchJSON('/relatorios/cliente-marca-itens?' + params.toString())
       .then(data => {
         const rows = (data && data.itens) ? data.itens : [];
         const tot = (data && data.totais) ? data.totais : null;
@@ -684,9 +681,11 @@ function openMarcasModal(emp, cidade_norm, razao_norm, cliente_id, cliente_label
           const des = (r.des || '').toString();
           const qtd = (r.qtd_total || 0).toLocaleString('pt-BR');
           const valor = (r.valor_total || 0).toLocaleString('pt-BR', {style:'currency', currency:'BRL'});
+          const safeMarca = _jsEscape(marca);
+          const safeClienteLabel = _jsEscape(cliente_label || cliente_id);
           return `
-            <tr>
-              <td class="sv-right">${idx+1}</td>
+            <tr class="cc-click" onclick="openItensMarcaModal('${emp}','${cidade_norm||''}','${razao_norm||''}','${cliente_id||''}','${safeClienteLabel}','${safeMarca}')">
+              <td class=\"sv-right\">${idx+1}</td>
               <td class="text-nowrap">${escapeHtml(codigo)}</td>
               <td>${escapeHtml(des)}</td>
               <td class="text-end sv-right">${escapeHtml(qtd)}</td>
@@ -695,9 +694,8 @@ function openMarcasModal(emp, cidade_norm, razao_norm, cliente_id, cliente_label
           `;
         }).join('');
       })
-      .catch((err) => {
-        const msg = (err && err.message) ? err.message : 'Erro ao carregar.';
-        tbody.innerHTML = `<tr><td colspan="5" class="sv-muted">${msg}</td></tr>`;
+      .catch(() => {
+        tbody.innerHTML = '<tr><td colspan="5" class="sv-muted">Erro ao carregar.</td></tr>';
       });
 
     // reset search
