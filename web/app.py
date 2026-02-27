@@ -4401,25 +4401,18 @@ def relatorio_cliente_marcas_api():
         }
     )
 
-
-
-
-
 ## Relatório (AJAX): cliente + marca -> itens (modal)
 @app.get("/relatorios/cliente-marca-itens")
 def relatorio_cliente_marca_itens_api():
-    """Retorna JSON com itens comprados por um cliente filtrado por marca no período.
+    """Retorna JSON com itens comprados de uma MARCA por um cliente no período.
 
     Parâmetros:
       - emp (obrigatório)
-      - marca (obrigatório; use 'SEM MARCA' para marca vazia)
+      - marca (obrigatório)
       - mes, ano (obrigatórios)
-      - cliente_id (cliente_id_norm) OU razao_norm (compat)
+      - vendedor (opcional)
+      - cliente_id (cliente_id_norm) OU razao_norm (legado)
       - cidade_norm (opcional)
-      - vendedor (opcional, mas restringido por perfil)
-
-    Retorna:
-      - itens: lista de {mestre, descricao, qtd_total, valor_total}
     """
     red = _login_required()
     if red:
@@ -4456,16 +4449,11 @@ def relatorio_cliente_marca_itens_api():
         )
 
         # Identificação do cliente (compat)
-        if cliente_id and razao_norm:
-            base = base.filter(or_(Venda.cliente_id_norm == cliente_id, Venda.razao_norm == razao_norm))
-        elif cliente_id:
-            base = base.filter(Venda.cliente_id_norm == cliente_id)
-        elif razao_norm:
+        if razao_norm:
             base = base.filter(Venda.razao_norm == razao_norm)
         else:
-            return jsonify({"error": "Parâmetros inválidos"}), 400
+            base = base.filter(Venda.cliente_id_norm == cliente_id)
 
-        # Cidade (opcional)
         if cidade_norm:
             if cidade_norm == "sem_cidade":
                 base = base.filter(or_(Venda.cidade_norm.is_(None), Venda.cidade_norm == "", Venda.cidade_norm == "sem_cidade"))
@@ -4475,11 +4463,7 @@ def relatorio_cliente_marca_itens_api():
         if vendedor:
             base = base.filter(func.upper(Venda.vendedor) == vendedor)
 
-        # Marca
-        if marca.upper() in ("SEM MARCA", "SEM_MARCA"):
-            base = base.filter(or_(Venda.marca.is_(None), Venda.marca == "", Venda.marca == "SEM MARCA"))
-        else:
-            base = base.filter(Venda.marca == marca)
+        base = base.filter(func.upper(Venda.marca) == marca.upper())
 
         signed_val = case(
             (Venda.mov_tipo_movto.in_(["DS", "CA"]), -Venda.valor_total),
@@ -4490,36 +4474,46 @@ def relatorio_cliente_marca_itens_api():
             else_=Venda.qtdade_vendida,
         )
 
-        itens_rows = (
+        rows = (
             base.with_entities(
                 Venda.mestre.label("mestre"),
-                Venda.descricao.label("descricao"),
-                func.coalesce(func.sum(signed_qtd), 0.0).label("qtd_total"),
-                func.coalesce(func.sum(signed_val), 0.0).label("valor_total"),
+                Venda.des.label("des"),
+                func.coalesce(func.sum(signed_qtd), 0).label("qtd_total"),
+                func.coalesce(func.sum(signed_val), 0).label("valor_total"),
             )
-            .group_by(Venda.mestre, Venda.descricao)
-            .order_by(func.coalesce(func.sum(signed_val), 0.0).desc())
+            .group_by(Venda.mestre, Venda.des)
+            .order_by(func.coalesce(func.sum(signed_val), 0).desc())
             .all()
         )
 
-    itens = []
-    for r in itens_rows:
-        itens.append({
-            "mestre": (r.mestre or "").strip(),
-            "descricao": (r.descricao or "").strip(),
-            "qtd_total": float(r.qtd_total or 0.0),
-            "valor_total": float(r.valor_total or 0.0),
-        })
+        out = []
+        total_val = 0.0
+        total_qtd = 0.0
+        for r in rows:
+            v = float(r.valor_total or 0.0)
+            q = float(r.qtd_total or 0.0)
+            total_val += v
+            total_qtd += q
+            out.append({
+                "mestre": str(r.mestre or ""),
+                "des": str(r.des or ""),
+                "qtd_total": q,
+                "valor_total": v,
+            })
 
     return jsonify({
-        "emp": emp,
+        "emp": str(emp),
         "marca": marca,
-        "cliente_id": cliente_id,
         "razao_norm": razao_norm,
+        "cliente_id": cliente_id,
         "ano": ano,
         "mes": mes,
-        "itens": itens,
+        "totais": {"valor_total": total_val, "qtd_total": total_qtd},
+        "itens": out,
     })
+
+
+
 
 
 
