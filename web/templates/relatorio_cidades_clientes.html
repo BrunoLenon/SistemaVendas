@@ -334,67 +334,47 @@
 </div>
 
 
-<!-- Modal: marca -> itens -->
+<!-- MODAL: Marca -> Itens (Cliente) -->
 <div class="modal fade" id="modalItensMarca" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-xl modal-dialog-centered">
-    <div class="modal-content sv-card" style="padding:0;overflow:hidden">
-      <div class="sv-card-header" style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
         <div>
           <div class="modal-title" id="modalItensMarcaTitle">Itens</div>
           <div class="sv-muted" id="modalItensMarcaSub">—</div>
         </div>
-        <button type="button" class="btn sv-btn-outline" data-bs-dismiss="modal" aria-label="Close">✕</button>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
-
-      <div class="sv-card-body">
-        <div class="sv-row sv-row-tight" style="align-items:center;gap:12px;margin-bottom:10px">
-          <div class="sv-field" style="min-width:280px;max-width:420px;flex:1">
-            <label class="sv-label">Buscar item</label>
-            <input id="ccSearchItens" class="sv-input" placeholder="código ou descrição..." autocomplete="off"/>
-          </div>
-          <div class="sv-muted" id="ccItensTotais" style="font-weight:900"></div>
+      <div class="modal-body">
+        <div class="sv-muted" style="margin-bottom:10px">
+          Código, descrição, quantidade e valor total (somado no período).
         </div>
-
-        <div class="table-responsive sv-table-wrap">
-          <table class="table sv-table" id="tblItensMarca">
+        <div class="sv-tablewrap">
+          <table class="sv-table" id="tblItensMarca">
             <thead>
               <tr>
-                <th style="width:56px" class="sv-right">#</th>
-                <th style="width:140px">Código</th>
+                <th style="width:40px">#</th>
+                <th style="width:120px">Código</th>
                 <th>Descrição</th>
-                <th style="width:140px" class="text-end sv-right">Qtd</th>
-                <th style="width:180px" class="text-end sv-right">Valor</th>
+                <th class="text-end" style="width:110px">Qtd</th>
+                <th class="text-end" style="width:170px">Valor</th>
               </tr>
             </thead>
             <tbody>
-              <tr><td colspan="5" class="sv-muted">—</td></tr>
+              <tr><td colspan="5" class="sv-muted">Carregando…</td></tr>
             </tbody>
           </table>
         </div>
       </div>
-
-      <div class="sv-card-footer" style="display:flex;justify-content:flex-end;gap:10px">
-        <button type="button" class="btn sv-btn-outline" data-bs-dismiss="modal">Fechar</button>
+      <div class="modal-footer">
+        <button type="button" class="sv-btn sv-btn--ghost" data-bs-dismiss="modal">Fechar</button>
       </div>
     </div>
   </div>
 </div>
 
-<script>
-  // Helper: fetch JSON de forma blindada (evita quebrar quando o servidor retorna HTML/redirect)
-  async function svFetchJSON(url){
-    const res = await fetch(url, { headers: { "X-Requested-With": "fetch" } });
-    const text = await res.text();
-    try{
-      return JSON.parse(text);
-    }catch(e){
-      console.error("svFetchJSON: resposta não-JSON", {url, status: res.status, text: text.slice(0, 300)});
-      // sinaliza sessão expirada / HTML inesperado
-      throw new Error("Resposta inválida do servidor (não é JSON).");
-    }
-  }
-  function svEscSQ(v){ return (v ?? "").toString().replaceAll("\\", "\\\\").replaceAll("'", "\\'"); }
 
+<script>
   // Tabs
   (function(){
     const btns = document.querySelectorAll('.cc-segbtn');
@@ -420,16 +400,11 @@
     if(!item) return;
     item.classList.toggle('open');
   }
-  // Alias (compat): algumas versões antigas chamavam cToggle(...)
-  function cToggle(emp){ return ccToggle(emp); }
-
   function ccToggleDetails(emp){
     const el = document.getElementById('cc-details-' + emp);
     if(!el) return;
     el.style.display = (el.style.display === 'none' || !el.style.display) ? 'block' : 'none';
   }
-  function cToggleDetails(emp){ return ccToggleDetails(emp); }
-
 
   // Helpers
   function _qs(){
@@ -500,9 +475,10 @@ function openClientesModal(emp, cidade_norm, cidade_label){
     tbody.innerHTML = '<tr><td colspan="6" class="sv-muted">Carregando…</td></tr>';
 
     const url = `/relatorios/cidade-clientes?emp=${encodeURIComponent(emp)}&cidade_norm=${encodeURIComponent(cidade_norm)}&mes=${encodeURIComponent(q.mes)}&ano=${encodeURIComponent(q.ano)}&vendedor=${encodeURIComponent(q.vendedor || '')}`;
-    svFetchJSON(url)
+    fetch(url)
+      .then(r => r.json())
       .then(data => {
-        const rows = (data && (data.clientes || data.rows)) ? (data.clientes || data.rows) : [];
+        const rows = (data && data.clientes) ? data.clientes : [];
         if(!rows.length){
           tbody.innerHTML = '<tr><td colspan="6" class="sv-muted">Sem dados.</td></tr>';
           return;
@@ -511,27 +487,28 @@ function openClientesModal(emp, cidade_norm, cidade_label){
           const valor = (r.valor_total || 0).toLocaleString('pt-BR', {style:'currency', currency:'BRL'});
           const qtd = (r.qtd_total || 0).toLocaleString('pt-BR');
           const mix = (r.mix_itens || 0).toLocaleString('pt-BR');
-          const marca = (r.marca || '').toString();
-
+          const cliente = (r.cliente || r.cliente_id || '').toString();
+          const cliente_id = (r.cliente_id || '').toString();
           return `
-            <tr style="cursor:pointer" onclick="openItensMarcaModal('${svEscSQ(emp)}','${svEscSQ(cidade_norm||'')}','${svEscSQ(razao_norm||'')}','${svEscSQ(cliente_id||'')}','${svEscSQ(cliente_label||cliente_id||'')}','${svEscSQ(marca)}')">
+            <tr>
               <td class="sv-right">${idx+1}</td>
-              <td class="text-nowrap">${escapeHtml(marca)}</td>
+              <td class="text-nowrap">${escapeHtml(cliente)}</td>
               <td class="text-end sv-right">${escapeHtml(valor)}</td>
               <td class="text-end sv-right">${escapeHtml(qtd)}</td>
               <td class="text-end sv-right">${escapeHtml(mix)}</td>
+              <td class="text-end">
+                <a class="sv-link" href="#" onclick="openMarcasModal('${emp}','${cidade_norm}','', '${cliente_id}', '${escapeHtmlAttr(cliente)}'); return false;">Ver marcas</a>
+              </td>
             </tr>
           `;
         }).join('');
       })
-      .catch((err) => {
-        console.error(err);
+      .catch(() => {
         tbody.innerHTML = '<tr><td colspan="6" class="sv-muted">Erro ao carregar.</td></tr>';
       });
 
     svShowModal(modalClientes);
   }
-
 
   // Modal: cliente -> marcas
   const modalMarcas = document.getElementById('modalMarcas');
@@ -573,8 +550,9 @@ function openMarcasModal(emp, cidade_norm, razao_norm, cliente_id, cliente_label
           const qtd = (r.qtd_total || 0).toLocaleString('pt-BR');
           const mix = (r.mix_itens || 0).toLocaleString('pt-BR');
           const marca = (r.marca || '').toString();
+          // linha clicável: abre itens da marca para este cliente
           return `
-            <tr>
+            <tr class="cc-click" onclick="openItensMarcaModal('${emp}','${cidade_norm}','${razao_norm}','${cliente_id}','${escapeHtmlAttr(cliente_label || cliente_id)}','${escapeHtmlAttr(marca)}');">
               <td class="sv-right">${idx+1}</td>
               <td class="text-nowrap">${escapeHtml(marca)}</td>
               <td class="text-end sv-right">${escapeHtml(valor)}</td>
@@ -591,91 +569,46 @@ function openMarcasModal(emp, cidade_norm, razao_norm, cliente_id, cliente_label
     svShowModal(modalMarcas);
   }
 
-  
-  // Modal: marca -> itens
+
+  // Modal: marca -> itens (cliente)
   const modalItensMarca = document.getElementById('modalItensMarca');
-
-  function _applyLocalFilter(inputEl, tableEl){
-    if(!inputEl || !tableEl) return;
-    const q = (inputEl.value || '').trim().toLowerCase();
-    const rows = tableEl.querySelectorAll('tbody tr');
-    rows.forEach(tr => {
-      const txt = (tr.textContent || '').toLowerCase();
-      tr.style.display = (!q || txt.includes(q)) ? '' : 'none';
-    });
-  }
-
-  // bind searches
-  const _bindSearch = () => {
-    const sc = document.getElementById('ccSearchClientes');
-    const tc = document.getElementById('tblClientes');
-    if(sc && tc){ sc.addEventListener('input', () => _applyLocalFilter(sc, tc)); }
-
-    const sm = document.getElementById('ccSearchMarcas');
-    const tm = document.getElementById('tblMarcas');
-    if(sm && tm){ sm.addEventListener('input', () => _applyLocalFilter(sm, tm)); }
-
-    const si = document.getElementById('ccSearchItens');
-    const ti = document.getElementById('tblItensMarca');
-    if(si && ti){ si.addEventListener('input', () => _applyLocalFilter(si, ti)); }
-  };
-  _bindSearch();
-
   function openItensMarcaModal(emp, cidade_norm, razao_norm, cliente_id, cliente_label, marca){
     if(!modalItensMarca) return;
     const q = _qs();
-
-    document.getElementById('modalItensMarcaTitle').textContent = 'Itens — EMP ' + emp;
-    document.getElementById('modalItensMarcaSub').textContent =
-      'Cliente: ' + (cliente_label || cliente_id) + ' • Marca: ' + (marca || '');
+    document.getElementById('modalItensMarcaTitle').textContent = 'Itens — ' + (marca || 'SEM MARCA') + ' • EMP ' + emp;
+    document.getElementById('modalItensMarcaSub').textContent = 'Cliente: ' + (cliente_label || cliente_id);
 
     const tbody = document.querySelector('#tblItensMarca tbody');
     tbody.innerHTML = '<tr><td colspan="5" class="sv-muted">Carregando…</td></tr>';
-    const totalsEl = document.getElementById('ccItensTotais');
-    if(totalsEl) totalsEl.textContent = '';
 
     const params = new URLSearchParams({
       emp: emp,
-      marca: marca || '',
       mes: q.mes,
       ano: q.ano,
-      vendedor: q.vendedor || ''
+      vendedor: q.vendedor || '',
+      marca: marca || ''
     });
-    if(razao_norm){
-      params.set('razao_norm', razao_norm);
-    }else if(cliente_id){
-      params.set('cliente_id', cliente_id);
-    }
-    if(cidade_norm){
-      params.set('cidade_norm', cidade_norm);
-    }
+    if(razao_norm) params.set('razao_norm', razao_norm);
+    if(cliente_id) params.set('cliente_id', cliente_id);
+    if(cidade_norm) params.set('cidade_norm', cidade_norm);
 
     fetch('/relatorios/cliente-marca-itens?' + params.toString())
       .then(r => r.json())
       .then(data => {
         const rows = (data && data.itens) ? data.itens : [];
-        const tot = (data && data.totais) ? data.totais : null;
-
-        if(totalsEl && tot){
-          const v = (tot.valor_total || 0).toLocaleString('pt-BR', {style:'currency', currency:'BRL'});
-          const qd = (tot.qtd_total || 0).toLocaleString('pt-BR');
-          totalsEl.textContent = 'Total: ' + qd + ' un • ' + v;
-        }
-
         if(!rows.length){
           tbody.innerHTML = '<tr><td colspan="5" class="sv-muted">Sem dados.</td></tr>';
           return;
         }
-
         tbody.innerHTML = rows.map((r, idx) => {
-          const codigo = (r.mestre || '').toString();
-          const des = (r.des || '').toString();
+          const cod = (r.mestre || '').toString();
+          const des = (r.descricao || '').toString();
           const qtd = (r.qtd_total || 0).toLocaleString('pt-BR');
           const valor = (r.valor_total || 0).toLocaleString('pt-BR', {style:'currency', currency:'BRL'});
           return `
             <tr>
               <td class="sv-right">${idx+1}</td>
-              <td class="text-nowrap">${escapeHtml(codigo)}</td>
+              <td class="text-nowrap">${escapeHtml(cod)}</td>
               <td>${escapeHtml(des)}</td>
               <td class="text-end sv-right">${escapeHtml(qtd)}</td>
               <td class="text-end sv-right">${escapeHtml(valor)}</td>
@@ -687,14 +620,11 @@ function openMarcasModal(emp, cidade_norm, razao_norm, cliente_id, cliente_label
         tbody.innerHTML = '<tr><td colspan="5" class="sv-muted">Erro ao carregar.</td></tr>';
       });
 
-    // reset search
-    const si = document.getElementById('ccSearchItens');
-    if(si){ si.value=''; }
-
     svShowModal(modalItensMarca);
   }
 
-function escapeHtml(s){
+
+  function escapeHtml(s){
     return (s ?? '').toString()
       .replaceAll('&','&amp;')
       .replaceAll('<','&lt;')
