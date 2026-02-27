@@ -381,6 +381,20 @@
 </div>
 
 <script>
+  // Helper: fetch JSON de forma blindada (evita quebrar quando o servidor retorna HTML/redirect)
+  async function svFetchJSON(url){
+    const res = await fetch(url, { headers: { "X-Requested-With": "fetch" } });
+    const text = await res.text();
+    try{
+      return JSON.parse(text);
+    }catch(e){
+      console.error("svFetchJSON: resposta não-JSON", {url, status: res.status, text: text.slice(0, 300)});
+      // sinaliza sessão expirada / HTML inesperado
+      throw new Error("Resposta inválida do servidor (não é JSON).");
+    }
+  }
+  function svEscSQ(v){ return (v ?? "").toString().replaceAll("\\", "\\\\").replaceAll("'", "\\'"); }
+
   // Tabs
   (function(){
     const btns = document.querySelectorAll('.cc-segbtn');
@@ -406,11 +420,16 @@
     if(!item) return;
     item.classList.toggle('open');
   }
+  // Alias (compat): algumas versões antigas chamavam cToggle(...)
+  function cToggle(emp){ return ccToggle(emp); }
+
   function ccToggleDetails(emp){
     const el = document.getElementById('cc-details-' + emp);
     if(!el) return;
     el.style.display = (el.style.display === 'none' || !el.style.display) ? 'block' : 'none';
   }
+  function cToggleDetails(emp){ return ccToggleDetails(emp); }
+
 
   // Helpers
   function _qs(){
@@ -420,26 +439,6 @@
       ano: u.searchParams.get('ano') || '{{ ano }}',
       vendedor: u.searchParams.get('vendedor') || '{{ vendedor_filtro or '' }}'
     };
-
-  // Fetch JSON blindado (evita "Erro ao carregar" quando o backend responde HTML/redirect)
-  async function svFetchJSON(url){
-    const res = await fetch(url, { headers: { "X-Requested-With": "fetch" } });
-    const text = await res.text();
-    try{
-      return JSON.parse(text);
-    }catch(e){
-      console.error("svFetchJSON: resposta não é JSON", {url, status: res.status, text: text.slice(0, 500)});
-      // Heurística simples: se veio HTML, provavelmente sessão expirada/redirect
-      if(text && text.trim().startsWith("<")){
-        throw new Error("Resposta HTML (possível sessão expirada). Recarregue a página.");
-      }
-      throw new Error("Resposta inválida do servidor.");
-    }
-  }
-
-  function _jsEscape(s){
-    return (s ?? "").toString().replaceAll("\\","\\\\").replaceAll("'","\\'");
-  }
   }
 
   // Modal helpers (sem Bootstrap JS)
@@ -503,7 +502,7 @@ function openClientesModal(emp, cidade_norm, cidade_label){
     const url = `/relatorios/cidade-clientes?emp=${encodeURIComponent(emp)}&cidade_norm=${encodeURIComponent(cidade_norm)}&mes=${encodeURIComponent(q.mes)}&ano=${encodeURIComponent(q.ano)}&vendedor=${encodeURIComponent(q.vendedor || '')}`;
     svFetchJSON(url)
       .then(data => {
-        const rows = (data && data.clientes) ? data.clientes : [];
+        const rows = (data && (data.clientes || data.rows)) ? (data.clientes || data.rows) : [];
         if(!rows.length){
           tbody.innerHTML = '<tr><td colspan="6" class="sv-muted">Sem dados.</td></tr>';
           return;
@@ -512,35 +511,27 @@ function openClientesModal(emp, cidade_norm, cidade_label){
           const valor = (r.valor_total || 0).toLocaleString('pt-BR', {style:'currency', currency:'BRL'});
           const qtd = (r.qtd_total || 0).toLocaleString('pt-BR');
           const mix = (r.mix_itens || 0).toLocaleString('pt-BR');
-          const cliente = (r.cliente || r.cliente_id || '').toString();
-          const cliente_id = (r.cliente_id || '').toString();
-          const safeClienteLabel = _jsEscape(cliente || cliente_id);
+          const marca = (r.marca || '').toString();
 
-          const safeMarca = _jsEscape(marca);
-          const safeClienteLabel = _jsEscape(cliente_label || cliente_id);
           return `
-            <tr class="cc-click" onclick="openItensMarcaModal('${emp}','${cidade_norm||''}','${razao_norm||''}','${cliente_id||''}','${safeClienteLabel}','${safeMarca}')">
-              <td class=\"sv-right\">${idx+1}</td>
-              <td class="text-nowrap">${escapeHtml(cliente)}</td>
+            <tr style="cursor:pointer" onclick="openItensMarcaModal('${svEscSQ(emp)}','${svEscSQ(cidade_norm||'')}','${svEscSQ(razao_norm||'')}','${svEscSQ(cliente_id||'')}','${svEscSQ(cliente_label||cliente_id||'')}','${svEscSQ(marca)}')">
+              <td class="sv-right">${idx+1}</td>
+              <td class="text-nowrap">${escapeHtml(marca)}</td>
               <td class="text-end sv-right">${escapeHtml(valor)}</td>
               <td class="text-end sv-right">${escapeHtml(qtd)}</td>
               <td class="text-end sv-right">${escapeHtml(mix)}</td>
-              <td class="text-end">
-                <a class="sv-link" href="#"
-                   onclick="openMarcasModal('${emp}','${cidade_norm}','', '${cliente_id}', '${safeClienteLabel}'); return false;">
-                   Ver marcas
-                </a>
-              </td>
             </tr>
           `;
         }).join('');
       })
-      .catch.catch(() => {
+      .catch((err) => {
+        console.error(err);
         tbody.innerHTML = '<tr><td colspan="6" class="sv-muted">Erro ao carregar.</td></tr>';
       });
 
     svShowModal(modalClientes);
   }
+
 
   // Modal: cliente -> marcas
   const modalMarcas = document.getElementById('modalMarcas');
@@ -569,7 +560,8 @@ function openMarcasModal(emp, cidade_norm, razao_norm, cliente_id, cliente_label
       params.set('cidade_norm', cidade_norm);
     }
 
-    svFetchJSON('/relatorios/cliente-marcas?' + params.toString())
+    fetch('/relatorios/cliente-marcas?' + params.toString())
+      .then(r => r.json())
       .then(data => {
         const rows = (data && data.marcas) ? data.marcas : [];
         if(!rows.length){
@@ -581,11 +573,9 @@ function openMarcasModal(emp, cidade_norm, razao_norm, cliente_id, cliente_label
           const qtd = (r.qtd_total || 0).toLocaleString('pt-BR');
           const mix = (r.mix_itens || 0).toLocaleString('pt-BR');
           const marca = (r.marca || '').toString();
-          const safeMarca = _jsEscape(marca);
-          const safeClienteLabel = _jsEscape(cliente_label || cliente_id);
           return `
-            <tr class="cc-click" onclick="openItensMarcaModal('${emp}','${cidade_norm||''}','${razao_norm||''}','${cliente_id||''}','${safeClienteLabel}','${safeMarca}')">
-              <td class=\"sv-right\">${idx+1}</td>
+            <tr>
+              <td class="sv-right">${idx+1}</td>
               <td class="text-nowrap">${escapeHtml(marca)}</td>
               <td class="text-end sv-right">${escapeHtml(valor)}</td>
               <td class="text-end sv-right">${escapeHtml(qtd)}</td>
@@ -660,7 +650,8 @@ function openMarcasModal(emp, cidade_norm, razao_norm, cliente_id, cliente_label
       params.set('cidade_norm', cidade_norm);
     }
 
-    svFetchJSON('/relatorios/cliente-marca-itens?' + params.toString())
+    fetch('/relatorios/cliente-marca-itens?' + params.toString())
+      .then(r => r.json())
       .then(data => {
         const rows = (data && data.itens) ? data.itens : [];
         const tot = (data && data.totais) ? data.totais : null;
@@ -681,11 +672,9 @@ function openMarcasModal(emp, cidade_norm, razao_norm, cliente_id, cliente_label
           const des = (r.des || '').toString();
           const qtd = (r.qtd_total || 0).toLocaleString('pt-BR');
           const valor = (r.valor_total || 0).toLocaleString('pt-BR', {style:'currency', currency:'BRL'});
-          const safeMarca = _jsEscape(marca);
-          const safeClienteLabel = _jsEscape(cliente_label || cliente_id);
           return `
-            <tr class="cc-click" onclick="openItensMarcaModal('${emp}','${cidade_norm||''}','${razao_norm||''}','${cliente_id||''}','${safeClienteLabel}','${safeMarca}')">
-              <td class=\"sv-right\">${idx+1}</td>
+            <tr>
+              <td class="sv-right">${idx+1}</td>
               <td class="text-nowrap">${escapeHtml(codigo)}</td>
               <td>${escapeHtml(des)}</td>
               <td class="text-end sv-right">${escapeHtml(qtd)}</td>
