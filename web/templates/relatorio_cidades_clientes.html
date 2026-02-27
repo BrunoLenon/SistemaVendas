@@ -40,6 +40,11 @@
   .modal-footer{border-top:1px solid rgba(255,255,255,.08)}
   .modal-title{color:#fff;font-weight:900}
   .btn-close{filter:invert(1)}
+
+.sv-modal { display:none; position:fixed; inset:0; z-index:1050; overflow:auto; }
+.sv-modal .modal-dialog { margin: 6vh auto; }
+.sv-modal-backdrop { position:fixed; inset:0; background: rgba(0,0,0,.65); z-index:1040; }
+body.modal-open { overflow:hidden; }
 </style>
 {% endblock %}
 
@@ -259,7 +264,7 @@
 </div>
 
 <!-- MODAL: Cidade -> Clientes -->
-<div class="modal fade" id="modalClientes" tabindex="-1" aria-hidden="true">
+<div class="modal sv-modal" id="modalClientes" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-lg modal-dialog-scrollable">
     <div class="modal-content">
       <div class="modal-header">
@@ -267,7 +272,7 @@
           <div class="modal-title" id="modalClientesTitle">Clientes</div>
           <div class="sv-muted" id="modalClientesSub">—</div>
         </div>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        <button type="button" class="btn-close" data-sv-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body">
         <div class="sv-tablewrap">
@@ -289,14 +294,14 @@
         </div>
       </div>
       <div class="modal-footer">
-        <button type="button" class="sv-btn sv-btn--ghost" data-bs-dismiss="modal">Fechar</button>
+        <button type="button" class="sv-btn sv-btn--ghost" data-sv-dismiss="modal">Fechar</button>
       </div>
     </div>
   </div>
 </div>
 
 <!-- MODAL: Cliente -> Marcas -->
-<div class="modal fade" id="modalMarcas" tabindex="-1" aria-hidden="true">
+<div class="modal sv-modal" id="modalMarcas" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-lg modal-dialog-scrollable">
     <div class="modal-content">
       <div class="modal-header">
@@ -304,7 +309,7 @@
           <div class="modal-title" id="modalMarcasTitle">Marcas</div>
           <div class="sv-muted" id="modalMarcasSub">—</div>
         </div>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        <button type="button" class="btn-close" data-sv-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body">
         <div class="sv-tablewrap">
@@ -325,13 +330,67 @@
         </div>
       </div>
       <div class="modal-footer">
-        <button type="button" class="sv-btn sv-btn--ghost" data-bs-dismiss="modal">Fechar</button>
+        <button type="button" class="sv-btn sv-btn--ghost" data-sv-dismiss="modal">Fechar</button>
       </div>
     </div>
   </div>
 </div>
 
 <script>
+
+// ---------------------------------------------------------------------------
+// Modal helpers (SEM dependência do Bootstrap JS)
+// ---------------------------------------------------------------------------
+function svEnsureBackdrop() {
+  let bd = document.getElementById('svModalBackdrop');
+  if (!bd) {
+    bd = document.createElement('div');
+    bd.id = 'svModalBackdrop';
+    bd.className = 'sv-modal-backdrop';
+    bd.style.display = 'none';
+    document.body.appendChild(bd);
+    bd.addEventListener('click', () => {
+      // fecha o topo (se existir)
+      const open = document.querySelector('.sv-modal.show');
+      if (open) svHideModal(open);
+    });
+  }
+  return bd;
+}
+
+function svShowModal(elOrId) {
+  const el = typeof elOrId === 'string' ? document.getElementById(elOrId) : elOrId;
+  if (!el) return;
+  const bd = svEnsureBackdrop();
+  el.classList.add('show');
+  el.style.display = 'block';
+  el.setAttribute('aria-hidden', 'false');
+  document.body.classList.add('modal-open');
+  bd.style.display = 'block';
+}
+
+function svHideModal(elOrId) {
+  const el = typeof elOrId === 'string' ? document.getElementById(elOrId) : elOrId;
+  if (!el) return;
+  const bd = svEnsureBackdrop();
+  el.classList.remove('show');
+  el.style.display = 'none';
+  el.setAttribute('aria-hidden', 'true');
+  // se não houver mais nenhum modal aberto, remove backdrop
+  if (!document.querySelector('.sv-modal.show')) {
+    document.body.classList.remove('modal-open');
+    bd.style.display = 'none';
+  }
+}
+
+// fecha modais com ESC
+document.addEventListener('keydown', (ev) => {
+  if (ev.key === 'Escape') {
+    const open = document.querySelector('.sv-modal.show');
+    if (open) svHideModal(open);
+  }
+});
+
   // Tabs
   (function(){
     const btns = document.querySelectorAll('.cc-segbtn');
@@ -375,10 +434,10 @@
 
   // Modal: cidade -> clientes
   const modalClientes = document.getElementById('modalClientes');
-  const bsModalClientes = modalClientes ? new bootstrap.Modal(modalClientes) : null;
+  const svModalClientes = modalClientes ? { show: () => svShowModal(modalClientes), hide: () => svHideModal(modalClientes) } : null;
 
   function openClientesModal(emp, cidade_norm, cidade_label){
-    if(!bsModalClientes) return;
+    if(!svModalClientes) return;
     const q = _qs();
     document.getElementById('modalClientesTitle').textContent = 'Clientes — EMP ' + emp;
     document.getElementById('modalClientesSub').textContent = 'Cidade: ' + (cidade_label || cidade_norm);
@@ -419,15 +478,15 @@
         tbody.innerHTML = '<tr><td colspan="6" class="sv-muted">Erro ao carregar.</td></tr>';
       });
 
-    bsModalClientes.show();
+    svModalClientes && svModalClientes.show();
   }
 
   // Modal: cliente -> marcas
   const modalMarcas = document.getElementById('modalMarcas');
-  const bsModalMarcas = modalMarcas ? new bootstrap.Modal(modalMarcas) : null;
+  const svModalMarcas = modalMarcas ? { show: () => svShowModal(modalMarcas), hide: () => svHideModal(modalMarcas) } : null;
 
   function openMarcasModal(emp, cidade_norm, razao_norm, cliente_id, cliente_label){
-    if(!bsModalMarcas) return;
+    if(!svModalMarcas) return;
     const q = _qs();
     document.getElementById('modalMarcasTitle').textContent = 'Marcas — EMP ' + emp;
     document.getElementById('modalMarcasSub').textContent = 'Cliente: ' + (cliente_label || cliente_id);
@@ -479,7 +538,7 @@
         tbody.innerHTML = '<tr><td colspan="5" class="sv-muted">Erro ao carregar.</td></tr>';
       });
 
-    bsModalMarcas.show();
+    svModalMarcas && svModalMarcas.show();
   }
 
   function escapeHtml(s){
@@ -493,5 +552,22 @@
   function escapeHtmlAttr(s){
     return escapeHtml(s).replaceAll('`','');
   }
+
+
+// bind de botões de fechar
+function svBindDismiss() {
+  document.querySelectorAll('[data-sv-dismiss="modal"]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const modal = btn.closest('.sv-modal');
+      if (modal) svHideModal(modal);
+    });
+  });
+}
+// executa no load
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', svBindDismiss);
+} else {
+  svBindDismiss();
+}
 </script>
 {% endblock %}
