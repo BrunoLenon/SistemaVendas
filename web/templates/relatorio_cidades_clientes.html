@@ -34,8 +34,6 @@
   .cc-click{cursor:pointer}
   .cc-click:hover{background:rgba(255,140,0,.06)}
 
-  body.sv-modal-open{overflow:hidden}
-
   /* Modal (mantém bootstrap, mas escurece) */
   .modal-content{background:#0f1115;border:1px solid rgba(255,140,0,.22);border-radius:16px}
   .modal-header{border-bottom:1px solid rgba(255,255,255,.08)}
@@ -140,7 +138,7 @@
                         <tr class="cc-click" onclick="openClientesModal('{{ card.emp }}','{{ row.cidade_norm }}','{{ row.cidade_label|e }}')">
                           <td class="sv-right">{{ loop.index }}</td>
                           <td class="text-nowrap">{{ row.cidade_label }}</td>
-                          <td class="text-end sv-right">{{ row.valor_total_brl }}</td>
+                          <td class="text-end sv-right">{{ row.valor_total|brl_rs }}</td>
                           <td class="text-end sv-right">{{ "%.1f"|format(row.pct) }}%</td>
                         </tr>
                       {% endfor %}
@@ -170,7 +168,7 @@
                           <tr class="cc-click" onclick="openClientesModal('{{ card.emp }}','{{ row.cidade_norm }}','{{ row.cidade_label|e }}')">
                             <td class="sv-right">{{ loop.index }}</td>
                             <td class="text-nowrap">{{ row.cidade_label }}</td>
-                            <td class="text-end sv-right">{{ row.valor_total_brl }}</td>
+                            <td class="text-end sv-right">{{ row.valor_total|brl_rs }}</td>
                             <td class="text-end sv-right">{{ "%.1f"|format(row.pct) }}%</td>
                             <td class="text-end sv-right">{{ row.qtd_total_fmt }}</td>
                             <td class="text-end sv-right">{{ row.mix_itens }}</td>
@@ -240,13 +238,13 @@
                     <tr class="cc-click" onclick="openMarcasModal('{{ card.emp }}','{{ row.cidade_norm or '' }}','{{ row.razao_norm or '' }}','{{ row.cliente_id }}','{{ (row.cliente_label or row.cliente_id)|e }}')">
                       <td class="sv-right">{{ loop.index }}</td>
                       <td class="text-nowrap">{{ row.cliente_label or row.cliente_id }}</td>
-                      <td class="text-end sv-right">{{ row.valor_total_brl }}</td>
+                      <td class="text-end sv-right">{{ row.valor_total|brl_rs }}</td>
                       <td class="text-end sv-right">{{ row.qtd_total_fmt }}</td>
                       <td class="text-end sv-right">{{ row.mix_itens }}</td>
                     </tr>
                   {% endfor %}
                   {% if card.clientes_preview|length == 0 %}
-                    <tr><td colspan="5" class="sv-muted">Sem dados no período.</td></tr>
+                    <tr><td colspan="4" class="sv-muted">Sem dados no período.</td></tr>
                   {% endif %}
                 </tbody>
               </table>
@@ -279,7 +277,6 @@
                 <th style="width:40px">#</th>
                 <th>Cliente</th>
                 <th class="text-end" style="width:160px">Valor</th>
-                <th class="text-end" style="width:90px">Qtd</th>
                 <th class="text-end" style="width:90px">Mix</th>
                 <th style="width:120px"></th>
               </tr>
@@ -316,12 +313,47 @@
                 <th style="width:40px">#</th>
                 <th>Marca</th>
                 <th class="text-end" style="width:160px">Valor</th>
-                <th class="text-end" style="width:90px">Qtd</th>
                 <th class="text-end" style="width:90px">Mix</th>
               </tr>
             </thead>
             <tbody>
-              <tr><td colspan="5" class="sv-muted">Carregando…</td></tr>
+              <tr><td colspan="4" class="sv-muted">Carregando…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="sv-btn sv-btn--ghost" data-bs-dismiss="modal">Fechar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- Modal Itens (Marca do Cliente) -->
+<div class="modal fade" id="modalItensMarca" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content sv-modal">
+      <div class="modal-header">
+        <div>
+          <h5 class="modal-title" id="itensTitle">Itens — EMP</h5>
+          <div class="sv-muted" id="itensSubtitle">Cliente: — | Marca: —</div>
+        </div>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Fechar"></button>
+      </div>
+      <div class="modal-body">
+        <div class="sv-table-wrap">
+          <table class="sv-table sv-table--compact">
+            <thead>
+              <tr>
+                <th style="width:140px">MESTRE</th>
+                <th>DESCRICAO</th>
+                <th class="text-end" style="width:110px">QTD</th>
+                <th class="text-end" style="width:140px">VALOR_TOTAL</th>
+              </tr>
+            </thead>
+            <tbody id="tblItensMarcaBody">
+              <tr><td colspan="4" class="sv-muted">Selecione uma marca…</td></tr>
             </tbody>
           </table>
         </div>
@@ -375,57 +407,12 @@
     };
   }
 
-  // Modal helpers (sem Bootstrap JS)
-  function svShowModal(el){
-    if(!el) return;
-    el.style.display = 'block';
-    el.classList.add('show');
-    el.setAttribute('aria-hidden','false');
-    document.body.classList.add('sv-modal-open');
-
-    // backdrop
-    let bd = document.getElementById('svModalBackdrop');
-    if(!bd){
-      bd = document.createElement('div');
-      bd.id = 'svModalBackdrop';
-      bd.className = 'modal-backdrop fade show';
-      document.body.appendChild(bd);
-      bd.addEventListener('click', () => svHideModal(el));
-    }
-    // esc
-    const onKey = (e) => { if(e.key === 'Escape') svHideModal(el); };
-    el._svOnKey = onKey;
-    document.addEventListener('keydown', onKey);
-  }
-
-  function svHideModal(el){
-    if(!el) return;
-    el.classList.remove('show');
-    el.style.display = 'none';
-    el.setAttribute('aria-hidden','true');
-    document.body.classList.remove('sv-modal-open');
-
-    const bd = document.getElementById('svModalBackdrop');
-    if(bd) bd.remove();
-
-    if(el._svOnKey){
-      document.removeEventListener('keydown', el._svOnKey);
-      el._svOnKey = null;
-    }
-  }
-
-  // Bind close buttons
-  document.querySelectorAll('[data-bs-dismiss="modal"]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const modal = btn.closest('.modal');
-      if(modal) svHideModal(modal);
-    });
-  });
-
   // Modal: cidade -> clientes
   const modalClientes = document.getElementById('modalClientes');
-function openClientesModal(emp, cidade_norm, cidade_label){
-    if(!modalClientes) return;
+  const bsModalClientes = modalClientes ? new bootstrap.Modal(modalClientes) : null;
+
+  function openClientesModal(emp, cidade_norm, cidade_label){
+    if(!bsModalClientes) return;
     const q = _qs();
     document.getElementById('modalClientesTitle').textContent = 'Clientes — EMP ' + emp;
     document.getElementById('modalClientesSub').textContent = 'Cidade: ' + (cidade_label || cidade_norm);
@@ -466,19 +453,24 @@ function openClientesModal(emp, cidade_norm, cidade_label){
         tbody.innerHTML = '<tr><td colspan="6" class="sv-muted">Erro ao carregar.</td></tr>';
       });
 
-    svShowModal(modalClientes);
+    bsModalClientes.show();
   }
 
   // Modal: cliente -> marcas
   const modalMarcas = document.getElementById('modalMarcas');
-function openMarcasModal(emp, cidade_norm, razao_norm, cliente_id, cliente_label){
-    if(!modalMarcas) return;
+  const bsModalMarcas = modalMarcas ? new bootstrap.Modal(modalMarcas) : null;
+  const modalItensMarca = document.getElementById('modalItensMarca');
+  const bsModalItensMarca = modalItensMarca ? new bootstrap.Modal(modalItensMarca) : null;
+
+
+  function openMarcasModal(emp, cidade_norm, razao_norm, cliente_id, cliente_label){
+    if(!bsModalMarcas) return;
     const q = _qs();
     document.getElementById('modalMarcasTitle').textContent = 'Marcas — EMP ' + emp;
     document.getElementById('modalMarcasSub').textContent = 'Cliente: ' + (cliente_label || cliente_id);
 
     const tbody = document.querySelector('#tblMarcas tbody');
-    tbody.innerHTML = '<tr><td colspan="5" class="sv-muted">Carregando…</td></tr>';
+    tbody.innerHTML = '<tr class="sv-row-click" onclick="openItensMarcaModal('${escapeHtmlAttr(emp)}','${escapeHtmlAttr(cliente)}','${escapeHtmlAttr(marca)}')"><td colspan="4" class="sv-muted">Carregando…</td></tr>';
 
     // compat: API aceita razao_norm (legado) ou cliente_id
     const params = new URLSearchParams({
@@ -501,7 +493,7 @@ function openMarcasModal(emp, cidade_norm, razao_norm, cliente_id, cliente_label
       .then(data => {
         const rows = (data && data.marcas) ? data.marcas : [];
         if(!rows.length){
-          tbody.innerHTML = '<tr><td colspan="5" class="sv-muted">Sem dados.</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="4" class="sv-muted">Sem dados.</td></tr>';
           return;
         }
         tbody.innerHTML = rows.map((r, idx) => {
@@ -514,20 +506,67 @@ function openMarcasModal(emp, cidade_norm, razao_norm, cliente_id, cliente_label
               <td class="sv-right">${idx+1}</td>
               <td class="text-nowrap">${escapeHtml(marca)}</td>
               <td class="text-end sv-right">${escapeHtml(valor)}</td>
-              <td class="text-end sv-right">${escapeHtml(qtd)}</td>
               <td class="text-end sv-right">${escapeHtml(mix)}</td>
             </tr>
           `;
         }).join('');
       })
       .catch(() => {
-        tbody.innerHTML = '<tr><td colspan="5" class="sv-muted">Erro ao carregar.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="4" class="sv-muted">Erro ao carregar.</td></tr>';
       });
 
-    svShowModal(modalMarcas);
+    bsModalMarcas.show();
   }
 
-  function escapeHtml(s){
+  
+  function openItensMarcaModal(emp, cliente, marca){
+    const ano = window.currentFilters?.ano || '';
+    const mes = window.currentFilters?.mes || '';
+    const vendedor = window.currentFilters?.vendedor || '';
+    const cidade = window.currentFilters?.cidade || ''; // opcional (não usamos aqui, mas mantém padrão)
+
+    const title = document.getElementById('itensTitle');
+    const sub = document.getElementById('itensSubtitle');
+    const tbody = document.getElementById('tblItensMarcaBody');
+
+    title.textContent = `Itens — EMP ${emp}`;
+    sub.textContent = `Cliente: ${cliente} | Marca: ${marca}`;
+
+    tbody.innerHTML = '<tr><td colspan="4" class="sv-muted">Carregando…</td></tr>';
+
+    const url = `/relatorios/cliente-marca-itens?emp=${encodeURIComponent(emp)}&cliente=${encodeURIComponent(cliente)}&marca=${encodeURIComponent(marca)}&mes=${encodeURIComponent(mes)}&ano=${encodeURIComponent(ano)}&vendedor=${encodeURIComponent(vendedor)}`;
+
+    fetch(url)
+      .then(r => r.json())
+      .then(data => {
+        const items = data.items || [];
+        if (!items.length){
+          tbody.innerHTML = '<tr><td colspan="4" class="sv-muted">Sem itens.</td></tr>';
+          return;
+        }
+        tbody.innerHTML = items.map((it, idx) => {
+          const mestre = it.mestre ?? '';
+          const descricao = it.descricao ?? '';
+          const qtd = fmtBrInt(it.qtd_total ?? 0);
+          const valor = fmtBrCurrency(it.valor_total ?? 0);
+          return `
+            <tr>
+              <td class="sv-td">${escapeHtml(mestre)}</td>
+              <td class="sv-td">${escapeHtml(descricao)}</td>
+              <td class="sv-td num">${escapeHtml(qtd)}</td>
+              <td class="sv-td num">${escapeHtml(valor)}</td>
+            </tr>
+          `;
+        }).join('');
+      })
+      .catch(() => {
+        tbody.innerHTML = '<tr><td colspan="4" class="sv-muted">Erro ao carregar.</td></tr>';
+      });
+
+    if (bsModalItensMarca) bsModalItensMarca.show();
+  }
+
+function escapeHtml(s){
     return (s ?? '').toString()
       .replaceAll('&','&amp;')
       .replaceAll('<','&lt;')

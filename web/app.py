@@ -4403,6 +4403,92 @@ def relatorio_cliente_marcas_api():
 
 
 
+
+
+## Relatório (AJAX): cliente + marca -> itens (modal)
+@app.get("/relatorios/cliente-marca-itens")
+@login_required
+def relatorios_cliente_marca_itens():
+    emp = request.args.get("emp", type=str)
+    razao_norm = (request.args.get("cliente") or "").strip()
+    marca_raw = (request.args.get("marca") or "").strip()
+
+    ano = request.args.get("ano", type=int)
+    mes = request.args.get("mes", type=int)
+    vendedor = (request.args.get("vendedor") or "").strip()
+
+    if not emp or not razao_norm or not marca_raw or not ano or not mes:
+        return jsonify({"error": "Parâmetros inválidos."}), 400
+
+    # normaliza a marca do mesmo jeito que o modal envia
+    marca = marca_raw if marca_raw else "SEM MARCA"
+
+    # Filtro de data (mês/ano)
+    dt_ini, dt_fim = _month_range(ano, mes)
+
+    base = (
+        db.session.query(Venda)
+        .filter(Venda.emp == str(emp))
+        .filter(Venda.movimento >= dt_ini)
+        .filter(Venda.movimento < dt_fim)
+        .filter(Venda.razao_norm == razao_norm)
+    )
+
+    # Filtro opcional de vendedor
+    if vendedor:
+        base = base.filter(Venda.vendedor_norm == _norm(vendedor))
+
+    # Marca
+    if marca == "SEM MARCA":
+        base = base.filter(or_(Venda.marca.is_(None), Venda.marca == ""))
+    else:
+        base = base.filter(Venda.marca == marca)
+
+    # Movimento de devolução/cancelamento (negativo)
+    signed_qty = case(
+        (Venda.tipo_movto.in_(["DS", "CA"]), -Venda.quantidade),
+        else_=Venda.quantidade,
+    )
+    signed_val = case(
+        (Venda.tipo_movto.in_(["DS", "CA"]), -Venda.valor_total),
+        else_=Venda.valor_total,
+    )
+
+    rows = (
+        base.with_entities(
+            Venda.mestre.label("mestre"),
+            func.max(Venda.descricao).label("descricao"),
+            func.coalesce(func.sum(signed_qty), 0).label("qtd_total"),
+            func.coalesce(func.sum(signed_val), 0).label("valor_total"),
+        )
+        .group_by(Venda.mestre)
+        .order_by(func.coalesce(func.sum(signed_val), 0).desc())
+        .limit(200)
+        .all()
+    )
+
+    itens = []
+    for r in rows:
+        itens.append(
+            {
+                "mestre": (r.mestre or "").strip(),
+                "descricao": (r.descricao or "").strip(),
+                "qtd_total": float(r.qtd_total or 0),
+                "valor_total": float(r.valor_total or 0.0),
+            }
+        )
+
+    return jsonify(
+        {
+            "emp": str(emp),
+            "cliente": razao_norm,
+            "marca": marca,
+            "ano": ano,
+            "mes": mes,
+            "itens": itens,
+        }
+    )
+
 ## Relatório (AJAX): cliente -> itens (modal)
 @app.get("/relatorios/cliente-itens")
 def relatorio_cliente_itens_api():
@@ -7707,7 +7793,7 @@ def operacoes_vendas_produto():
     - Retorna matriz: EMP + Vendedor + colunas por mês + média mensal
     - Exporta Excel via ?export=1
     """
-    from db import SessionLocal, Venda, Usuario, UsuarioEmp
+    from db import SessionLocal, Venda
     from sqlalchemy import func, case
     from flask import jsonify
     from io import BytesIO
@@ -7787,7 +7873,7 @@ def operacoes_vendas_produto():
         if not allowed:
             emps_disponiveis = [r[0] for r in db.query(Venda.emp).filter(Venda.emp.isnot(None)).distinct().order_by(Venda.emp.asc()).limit(60).all()]
 
-        do_search = bool(produto_raw or marca_raw or mestre_raw)
+        do_search = bool(produto_raw or marca_raw)
 
         if do_search:
             campo_desc = func.lower(func.trim(func.coalesce(Venda.descricao_norm, Venda.descricao, "")))
@@ -7830,30 +7916,16 @@ def operacoes_vendas_produto():
             rows = (
                 db.query(
                     Venda.emp.label("emp"),
-                    Usuario.username.label("vendedor"),
+                    Venda.vendedor.label("vendedor"),
                     q_year,
                     q_month,
                     func.coalesce(func.sum(signed_qty), 0.0).label("qtd"),
                 )
-                # Somente vendedores cadastrados (usuarios.role='vendedor') e vinculados à EMP via usuario_emps (ativo=TRUE)
-                .join(
-                    Usuario,
-                    func.lower(func.trim(func.coalesce(Venda.vendedor, "")))
-                    == func.lower(func.trim(func.coalesce(Usuario.username, ""))),
-                )
-                .join(
-                    UsuarioEmp,
-                    (UsuarioEmp.usuario_id == Usuario.id)
-                    & (UsuarioEmp.emp == Venda.emp)
-                    & (UsuarioEmp.ativo.is_(True)),
-                )
-                .filter(Usuario.role == "vendedor")
                 .filter(*conds)
-                .group_by(Venda.emp, Usuario.username, q_year, q_month)
-                .order_by(Venda.emp.asc(), Usuario.username.asc(), q_year.asc(), q_month.asc())
+                .group_by(Venda.emp, Venda.vendedor, q_year, q_month)
+                .order_by(Venda.emp.asc(), Venda.vendedor.asc(), q_year.asc(), q_month.asc())
                 .all()
             )
-
 
             # pivot
             meses_meta = [{"key": f"{int(y):04d}-{int(m):02d}", "label": f"{int(m):02d}/{int(y):04d}"} for (y, m) in months]
@@ -7886,7 +7958,7 @@ def operacoes_vendas_produto():
                 })
 
             # ordena por total desc
-            linhas.sort(key=lambda x: (x["emp"], x["vendedor"]))
+            linhas.sort(key=lambda x: (x["total"], x["emp"], x["vendedor"]), reverse=True)
 
             media_mensal_global = 0.0
             # média global: total / meses com resultado (considera meses com qualquer dado em qualquer linha)
@@ -7968,7 +8040,7 @@ def operacoes_vendas_produto():
 @login_required
 def api_produtos_suggest():
     """Sugestões rápidas de descrição (typeahead) para a pesquisa de produtos."""
-    from db import SessionLocal, Venda, Usuario, UsuarioEmp
+    from db import SessionLocal, Venda
     from sqlalchemy import func
     from flask import jsonify
     import unicodedata, re
