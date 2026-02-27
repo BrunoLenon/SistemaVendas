@@ -589,60 +589,6 @@ def build_relatorio_campanhas_unificado_context(
             flash("Não foi possível recalcular agora. Tente novamente em instantes.", "warning")
             print(f"[RELATORIO_UNIFICADO] erro recalc: {e}")
 
-
-# Auto-recalc COMBO quando houver combos cadastrados na competência, mas não houver snapshot no período.
-# Motivo: /admin/combos cria campanhas, mas o snapshot pode não existir ainda (ex.: nunca rodou recálculo).
-# Isso mantém o relatório coerente sem exigir ação manual do Admin.
-if not recalc:
-    try:
-        missing_emps = []
-        with SessionLocal() as db:
-            for emp in emps_sel:
-                emp_s = str(emp)
-                vendedores = vendedores_por_emp.get(emp_s) or []
-                if not vendedores:
-                    continue
-
-                # Existe combo cadastrado na competência para esta EMP (ou global)?
-                existe_combo = (
-                    db.query(CampanhaCombo.id)
-                    .filter(
-                        CampanhaCombo.ano == int(ano),
-                        CampanhaCombo.mes == int(mes),
-                        or_(CampanhaCombo.emp.is_(None), CampanhaCombo.emp == "", CampanhaCombo.emp == emp_s),
-                    )
-                    .first()
-                )
-                if not existe_combo:
-                    continue
-
-                # Já existe snapshot de resultados para os vendedores do escopo?
-                existe_snap = (
-                    db.query(CampanhaComboResultado.id)
-                    .filter(
-                        CampanhaComboResultado.competencia_ano == int(ano),
-                        CampanhaComboResultado.competencia_mes == int(mes),
-                        CampanhaComboResultado.emp == emp_s,
-                        CampanhaComboResultado.vendedor.in_(vendedores),
-                    )
-                    .first()
-                )
-                if not existe_snap:
-                    missing_emps.append(emp_s)
-
-        if missing_emps:
-            try:
-                deps.recalcular_resultados_combos_para_scope(
-                    ano=ano, mes=mes, emps=missing_emps, vendedores_por_emp=vendedores_por_emp
-                )
-            except TypeError:
-                deps.recalcular_resultados_combos_para_scope(
-                    ano=ano, mes=mes, emps_scope=missing_emps, vendedores_por_emp=vendedores_por_emp
-                )
-    except Exception as e:
-        # Falha silenciosa (não derruba a página); o relatório seguirá sem combos caso não seja possível recalcular.
-        print(f"[RELATORIO_UNIFICADO] auto-recalc combo falhou: {e}")
-
     # Monta linhas unificadas
     try:
         rows = build_unified_rows(
