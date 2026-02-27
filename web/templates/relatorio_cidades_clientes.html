@@ -470,7 +470,7 @@
     document.getElementById('modalMarcasSub').textContent = 'Cliente: ' + (cliente_label || cliente_id);
 
     const tbody = document.querySelector('#tblMarcas tbody');
-    tbody.innerHTML = '<tr class="sv-row-click" onclick="openItensMarcaModal('${escapeHtmlAttr(emp)}','${escapeHtmlAttr(cliente)}','${escapeHtmlAttr(marca)}')"><td colspan="4" class="sv-muted">Carregando…</td></tr>';
+    tbody.innerHTML = `<tr class="sv-row-click" onclick="openItensMarcaModal('${escapeHtmlAttr(emp)}','${escapeHtmlAttr(cliente)}','${escapeHtmlAttr(marca)}')"><td colspan="4" class="sv-muted">Carregando…</td></tr>`;
 
     // compat: API aceita razao_norm (legado) ou cliente_id
     const params = new URLSearchParams({
