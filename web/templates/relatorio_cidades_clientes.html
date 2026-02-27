@@ -40,22 +40,6 @@
   .modal-footer{border-top:1px solid rgba(255,255,255,.08)}
   .modal-title{color:#fff;font-weight:900}
   .btn-close{filter:invert(1)}
-
-/* --- SV modal (no bootstrap) --- */
-.sv-modal-backdrop{
-  position: fixed; inset: 0; background: rgba(0,0,0,.65);
-  backdrop-filter: blur(2px);
-  z-index: 9998; display:none;
-}
-.sv-modal{
-  display:none;
-  position: fixed; inset: 0;
-  z-index: 9999;
-  overflow: auto;
-  padding: 24px 12px;
-}
-.sv-modal.sv-show{ display:block; }
-body.sv-modal-lock{ overflow: hidden; }
 </style>
 {% endblock %}
 
@@ -275,12 +259,12 @@ body.sv-modal-lock{ overflow: hidden; }
 </div>
 
 <!-- MODAL: Cidade -> Clientes -->
-<div class="modal fade sv-modal" id="modalClientes" tabindex="-1" aria-hidden="true">
+<div class="modal fade" id="modalClientes" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-lg modal-dialog-scrollable">
     <div class="modal-content">
       <div class="modal-header">
         <div>
-          <div class="modal-title sv-modal" id="modalClientesTitle">Clientes</div>
+          <div class="modal-title" id="modalClientesTitle">Clientes</div>
           <div class="sv-muted" id="modalClientesSub">—</div>
         </div>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
@@ -312,12 +296,12 @@ body.sv-modal-lock{ overflow: hidden; }
 </div>
 
 <!-- MODAL: Cliente -> Marcas -->
-<div class="modal fade sv-modal" id="modalMarcas" tabindex="-1" aria-hidden="true">
+<div class="modal fade" id="modalMarcas" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-lg modal-dialog-scrollable">
     <div class="modal-content">
       <div class="modal-header">
         <div>
-          <div class="modal-title sv-modal" id="modalMarcasTitle">Marcas</div>
+          <div class="modal-title" id="modalMarcasTitle">Marcas</div>
           <div class="sv-muted" id="modalMarcasSub">—</div>
         </div>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
@@ -391,6 +375,7 @@ body.sv-modal-lock{ overflow: hidden; }
 
   // Modal: cidade -> clientes
   const modalClientes = document.getElementById('modalClientes');
+  const bsModalClientes = modalClientes ? new bootstrap.Modal(modalClientes) : null;
 
   function openClientesModal(emp, cidade_norm, cidade_label){
     if(!bsModalClientes) return;
@@ -434,11 +419,12 @@ body.sv-modal-lock{ overflow: hidden; }
         tbody.innerHTML = '<tr><td colspan="6" class="sv-muted">Erro ao carregar.</td></tr>';
       });
 
-    svModalShow('modalClientes');
+    bsModalClientes.show();
   }
 
   // Modal: cliente -> marcas
   const modalMarcas = document.getElementById('modalMarcas');
+  const bsModalMarcas = modalMarcas ? new bootstrap.Modal(modalMarcas) : null;
 
   function openMarcasModal(emp, cidade_norm, razao_norm, cliente_id, cliente_label){
     if(!bsModalMarcas) return;
@@ -493,7 +479,7 @@ body.sv-modal-lock{ overflow: hidden; }
         tbody.innerHTML = '<tr><td colspan="5" class="sv-muted">Erro ao carregar.</td></tr>';
       });
 
-    svModalShow('modalMarcas');
+    bsModalMarcas.show();
   }
 
   function escapeHtml(s){
@@ -507,55 +493,5 @@ body.sv-modal-lock{ overflow: hidden; }
   function escapeHtmlAttr(s){
     return escapeHtml(s).replaceAll('`','');
   }
-
-// --- SV modal helpers (no bootstrap dependency) ---
-function svModalEl(id){ return document.getElementById(id); }
-function svAnyModalOpen(){ return !!document.querySelector('.sv-modal.sv-show'); }
-function svEnsureBackdrop(){
-  let bd = document.getElementById('svModalBackdrop');
-  if(!bd){
-    bd = document.createElement('div');
-    bd.id = 'svModalBackdrop';
-    bd.className = 'sv-modal-backdrop';
-    bd.addEventListener('click', () => {
-      // fecha o modal aberto mais ao topo (último)
-      const open = Array.from(document.querySelectorAll('.sv-modal.sv-show'));
-      if(open.length){ svModalHide(open[open.length-1].id); }
-    });
-    document.body.appendChild(bd);
-  }
-  bd.style.display = 'block';
-  document.body.classList.add('sv-modal-lock');
-}
-function svCleanupBackdrop(){
-  const bd = document.getElementById('svModalBackdrop');
-  if(bd && !svAnyModalOpen()){
-    bd.style.display = 'none';
-    document.body.classList.remove('sv-modal-lock');
-  }
-}
-function svModalShow(id){
-  const m = svModalEl(id);
-  if(!m) return;
-  svEnsureBackdrop();
-  m.style.display = 'block';
-  m.classList.add('sv-show');
-  m.setAttribute('aria-hidden','false');
-}
-function svModalHide(id){
-  const m = svModalEl(id);
-  if(!m) return;
-  m.classList.remove('sv-show');
-  m.setAttribute('aria-hidden','true');
-  m.style.display = 'none';
-  svCleanupBackdrop();
-}
-// fecha ao clicar em elementos com [data-sv-modal-close]
-document.addEventListener('click', (ev) => {
-  const btn = ev.target.closest('[data-sv-modal-close]');
-  if(!btn) return;
-  const id = btn.getAttribute('data-sv-modal-close');
-  if(id) svModalHide(id);
-});
 </script>
 {% endblock %}
