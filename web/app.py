@@ -3501,6 +3501,62 @@ def _recalcular_resultados_combos_para_scope(ano: int, mes: int, emps: list[str]
             db.commit()
 
 
+
+def _ensure_combo_resultados_para_scope(ano: int, mes: int, emps: list[str], vendedores_por_emp: dict[str, list[str]], force: bool = False) -> None:
+    """Garante que existam snapshots de COMBO (campanhas_combo_resultados) para o escopo.
+
+    Regra: só recalcula quando:
+      - force=True (ex.: recalc=1)
+      - existem combos ativos que intersectam a competência e ainda não há nenhum resultado gravado
+
+    Importante: é um passo *aditivo* (não altera regras de cálculo). Evita que combos cadastrados
+    em /admin/combos não apareçam no /relatorios/campanhas por falta de snapshot.
+    """
+    try:
+        ano_i = int(ano)
+        mes_i = int(mes)
+    except Exception:
+        return
+
+    emps = [str(e) for e in (emps or []) if str(e).strip()]
+    if not emps:
+        return
+
+    emps_para_recalc: list[str] = []
+    for emp in emps:
+        vends = [v.strip().upper() for v in (vendedores_por_emp.get(emp) or []) if (v or "").strip()]
+        if not vends:
+            continue
+
+        combos = _combos_mes_overlap(ano_i, mes_i, emp)
+        if not combos:
+            continue
+
+        if force:
+            emps_para_recalc.append(emp)
+            continue
+
+        with SessionLocal() as db:
+            exists = (
+                db.query(CampanhaComboResultado.id)
+                .filter(
+                    CampanhaComboResultado.emp == emp,
+                    CampanhaComboResultado.competencia_ano == ano_i,
+                    CampanhaComboResultado.competencia_mes == mes_i,
+                )
+                .limit(1)
+                .first()
+            )
+        if not exists:
+            emps_para_recalc.append(emp)
+
+    if not emps_para_recalc:
+        return
+
+    vendedores_scope = {emp: vendedores_por_emp.get(emp) or [] for emp in emps_para_recalc}
+    _recalcular_resultados_combos_para_scope(ano_i, mes_i, emps_para_recalc, vendedores_scope)
+
+
 def _build_campanhas_escolhidas_por_vendedor(campanhas: list[CampanhaQtd], vendedores: list[str]) -> dict[str, list[CampanhaQtd]]:
     """Aplica a regra de prioridade por chave (prefixo+marca): campanha do vendedor substitui campanha geral."""
     # geral: vendedor NULL
@@ -3641,6 +3697,10 @@ def relatorio_campanhas():
     emps_scope = scope["emps_scope"]
     vendedores_por_emp = scope["vendedores_por_emp"]
 
+    # Se houver combos cadastrados na competência e ainda não houver snapshot,
+    # garante o cálculo automático para que apareçam no relatório (sem depender de recalc manual).
+    recalc_flag = str(request.args.get("recalc") or "").strip() in ("1", "true", "True", "sim", "SIM")
+    _ensure_combo_resultados_para_scope(ano, mes, emps_scope, vendedores_por_emp, force=recalc_flag)
 
     ctx = build_relatorio_campanhas_unificado_context(
         _campanhas_deps,
@@ -3652,7 +3712,7 @@ def relatorio_campanhas():
         emps_sel=emps_sel,
         vendedores_sel=vendedores_sel,
         vendedores_por_emp=vendedores_por_emp,
-        recalc=str(request.args.get("recalc") or "").strip() in ("1", "true", "True", "sim", "SIM"),
+        recalc=recalc_flag,
         flash=flash,
     )
     # Permissões para template
@@ -3917,6 +3977,9 @@ def relatorio_campanhas_export_csv():
     vendedores_sel = scope["vendedores_sel"]
     emps_scope = scope["emps_scope"]
     vendedores_por_emp = scope["vendedores_por_emp"]
+
+    # Export também deve incluir combos: garante snapshot quando ainda não existir.
+    _ensure_combo_resultados_para_scope(ano, mes, emps_scope, vendedores_por_emp, force=False)
 
     ctx = build_relatorio_campanhas_unificado_context(
         _campanhas_deps,
