@@ -7523,7 +7523,7 @@ def err_500(e):
 
 
 @app.route("/admin/metas-v2", methods=["GET", "POST"])
-@roles_required("admin")
+@admin_required
 def admin_metas_v2():
     # período (default: mês atual)
     hoje = date.today()
