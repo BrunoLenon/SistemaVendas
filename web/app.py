@@ -7950,13 +7950,21 @@ def operacoes_vendas_produto():
                 campo_marca = func.lower(func.trim(func.coalesce(Venda.marca, "")))
                 conds.append(campo_marca.like(mn + "%"))
 
-            signed_qty = case(
-                (Venda.mov_tipo_movto.in_(["DS", "CA"]), -func.coalesce(Venda.qtdade_vendida, 0.0)),
+            signed_qty_pos = case(
+                (Venda.mov_tipo_movto.in_(["DS", "CA"]), 0.0),
                 else_=func.coalesce(Venda.qtdade_vendida, 0.0),
             )
-            signed_val = case(
-                (Venda.mov_tipo_movto.in_(["DS", "CA"]), -func.coalesce(Venda.valor_total, 0.0)),
+            signed_qty_neg = case(
+                (Venda.mov_tipo_movto.in_(["DS", "CA"]), func.coalesce(Venda.qtdade_vendida, 0.0)),
+                else_=0.0,
+            )
+            signed_val_pos = case(
+                (Venda.mov_tipo_movto.in_(["DS", "CA"]), 0.0),
                 else_=func.coalesce(Venda.valor_total, 0.0),
+            )
+            signed_val_neg = case(
+                (Venda.mov_tipo_movto.in_(["DS", "CA"]), func.coalesce(Venda.valor_total, 0.0)),
+                else_=0.0,
             )
             q_year = func.extract("year", Venda.movimento).label("ano")
             q_month = func.extract("month", Venda.movimento).label("mes")
@@ -7967,10 +7975,12 @@ def operacoes_vendas_produto():
                     Usuario.username.label("vendedor"),
                     q_year,
                     q_month,
-                    func.coalesce(func.sum(signed_qty), 0.0).label("qtd"),
-                    func.coalesce(func.sum(signed_val), 0.0).label("valor"),
+                    func.coalesce(func.sum(signed_qty_pos), 0.0).label("qtd_pos"),
+                    func.coalesce(func.sum(signed_qty_neg), 0.0).label("qtd_neg"),
+                    func.coalesce(func.sum(signed_val_pos), 0.0).label("val_pos"),
+                    func.coalesce(func.sum(signed_val_neg), 0.0).label("val_neg"),
                 )
-                # Somente vendedores cadastrados (usuarios.role='vendedor') e vinculados à EMP via usuario_emps (ativo=TRUE)
+                # Somente vendedores cadastrados (usuarios.role='vendedor') e vinculados à EMP via usuario_emps (ativo=TRUE) cadastrados (usuarios.role='vendedor') e vinculados à EMP via usuario_emps (ativo=TRUE)
                 .join(
                     Usuario,
                     func.lower(func.trim(func.coalesce(Venda.vendedor, "")))
@@ -8001,17 +8011,29 @@ def operacoes_vendas_produto():
                 key = (emp, vend)
                 mm_key = f"{int(r.ano):04d}-{int(r.mes):02d}"
                 by_key.setdefault(key, {})
-                by_key[key].setdefault(mm_key, {"qtd": 0.0, "valor": 0.0})
-                by_key[key][mm_key]["qtd"] = float(getattr(r, "qtd", 0.0) or 0.0)
-                by_key[key][mm_key]["valor"] = float(getattr(r, "valor", 0.0) or 0.0)
+                by_key[key].setdefault(mm_key, {"qtd": 0.0, "valor": 0.0, "qtd_pos": 0.0, "qtd_neg": 0.0, "val_pos": 0.0, "val_neg": 0.0})
+                by_key[key][mm_key]["qtd"] = float((getattr(r, "qtd_pos", 0.0) or 0.0) - (getattr(r, "qtd_neg", 0.0) or 0.0))
+                by_key[key][mm_key]["qtd_pos"] = float(getattr(r, "qtd_pos", 0.0) or 0.0)
+                by_key[key][mm_key]["qtd_neg"] = float(getattr(r, "qtd_neg", 0.0) or 0.0)
+                by_key[key][mm_key]["valor"] = float((getattr(r, "val_pos", 0.0) or 0.0) - (getattr(r, "val_neg", 0.0) or 0.0))
+                by_key[key][mm_key]["val_pos"] = float(getattr(r, "val_pos", 0.0) or 0.0)
+                by_key[key][mm_key]["val_neg"] = float(getattr(r, "val_neg", 0.0) or 0.0)
 
             linhas = []
             total_qtd_all = 0.0
             total_val_all = 0.0
+            total_qtd_bruto_all = 0.0
+            total_qtd_devol_all = 0.0
+            total_val_bruto_all = 0.0
+            total_val_devol_all = 0.0
 
             for (emp, vend), mp in by_key.items():
                 total_qtd = 0.0
                 total_val = 0.0
+                total_qtd_bruto = 0.0
+                total_qtd_devol = 0.0
+                total_val_bruto = 0.0
+                total_val_devol = 0.0
                 count_mes_qtd = 0
                 count_mes_val = 0
 
@@ -8020,10 +8042,20 @@ def operacoes_vendas_produto():
 
                 for mm in meses_meta:
                     k = mm["key"]
-                    vq = float((mp.get(k, {}) or {}).get("qtd", 0.0))
-                    vv = float((mp.get(k, {}) or {}).get("valor", 0.0))
+                    cell = (mp.get(k, {}) or {})
+                    vq_pos = float(cell.get("qtd_pos", 0.0))
+                    vq_neg = float(cell.get("qtd_neg", 0.0))
+                    vv_pos = float(cell.get("val_pos", 0.0))
+                    vv_neg = float(cell.get("val_neg", 0.0))
+                    vq = float(cell.get("qtd", 0.0))
+                    vv = float(cell.get("valor", 0.0))
                     por_mes_qtd[k] = vq
                     por_mes_val[k] = vv
+
+                    total_qtd_bruto += vq_pos
+                    total_qtd_devol += vq_neg
+                    total_val_bruto += vv_pos
+                    total_val_devol += vv_neg
 
                     total_qtd += vq
                     total_val += vv
@@ -8038,6 +8070,10 @@ def operacoes_vendas_produto():
 
                 total_qtd_all += total_qtd
                 total_val_all += total_val
+                total_qtd_bruto_all += total_qtd_bruto
+                total_qtd_devol_all += total_qtd_devol
+                total_val_bruto_all += total_val_bruto
+                total_val_devol_all += total_val_devol
 
                 linhas.append(
                     {
@@ -8046,14 +8082,29 @@ def operacoes_vendas_produto():
                         "por_mes_qtd": por_mes_qtd,
                         "por_mes_val": por_mes_val,
                         "total_qtd": total_qtd,
+                        "total_qtd_bruto": total_qtd_bruto,
+                        "total_qtd_devol": total_qtd_devol,
                         "total_val": total_val,
+                        "total_val_bruto": total_val_bruto,
+                        "total_val_devol": total_val_devol,
                         "media_qtd": media_qtd,
                         "media_val": media_val,
                     }
                 )
 
-            # ordena por EMP + vendedor (mantém padrão atual)
-            linhas.sort(key=lambda x: (x["emp"], x["vendedor"]))
+            # ordenação
+            sort = (request.args.get("sort") or "").strip().lower() or "total_desc"
+            if sort not in ("total_desc", "emp_vendedor"):
+                sort = "total_desc"
+
+            if sort == "emp_vendedor":
+                linhas.sort(key=lambda x: (x["emp"], x["vendedor"]))
+            else:
+                # total desc (respeita o modo)
+                if modo == "valor":
+                    linhas.sort(key=lambda x: (-float(x.get("total_val", 0.0) or 0.0), x["emp"], x["vendedor"]))
+                else:
+                    linhas.sort(key=lambda x: (-float(x.get("total_qtd", 0.0) or 0.0), x["emp"], x["vendedor"]))
 
             # médias globais: total / meses que tiveram dado (qualquer linha)
             media_mensal_global_qtd = 0.0
@@ -8082,6 +8133,13 @@ def operacoes_vendas_produto():
                 "media_mensal_qtd": media_mensal_global_qtd,
                 "media_mensal_val": media_mensal_global_val,
                 "modo": modo,
+                "sort": sort,
+                "total_qtd_bruto": total_qtd_bruto_all,
+                "total_qtd_devol": total_qtd_devol_all,
+                "total_val_bruto": total_val_bruto_all,
+                "total_val_devol": total_val_devol_all,
+                "num_emps": len({l["emp"] for l in linhas}),
+                "num_vendedores": len(linhas),
             }
 
             # ===== export excel =====
@@ -8092,8 +8150,19 @@ def operacoes_vendas_produto():
                 ws = wb.active
                 ws.title = "Vendas por Produto"
 
+                # linha 1: filtros (para auditoria no Excel)
+                filtros_txt = f"Produto: {produto_raw or '-'} | Marca: {marca_raw or '-'} | Mestre: {mestre_raw or '-'} | Período: {mes_ini} a {mes_fim} | Modo: {modo} | Sort: {sort}"
+                ws.append([filtros_txt])
+                ws.append([])
+
                 headers = ["EMP", "Vendedor"] + [m["label"] for m in meses_meta] + [("Total (R$)" if modo=="valor" else "Total (Qtd)"), ("Média (R$)" if modo=="valor" else "Média (Qtd)")]
                 ws.append(headers)
+
+                # estilos básicos
+                header_row = ws.max_row
+                for c in range(1, len(headers)+1):
+                    cell = ws.cell(row=header_row, column=c)
+                    cell.font = openpyxl.styles.Font(bold=True)
 
                 for l in linhas:
                     row = [l["emp"], l["vendedor"]]
@@ -8108,10 +8177,40 @@ def operacoes_vendas_produto():
                         row += [float(l.get("total_qtd", 0.0)), float(l.get("media_qtd", 0.0))]
                     ws.append(row)
 
-                # ajustes simples
+                
+                # linha total (somente para conferência rápida)
+                total_label = "TOTAL"
+                total_row = [total_label, ""]  # EMP/Vendedor
+                for m in meses_meta:
+                    if modo == "valor":
+                        total_row.append(sum(float((x.get("por_mes_val") or {}).get(m["key"], 0.0)) for x in linhas))
+                    else:
+                        total_row.append(sum(float((x.get("por_mes_qtd") or {}).get(m["key"], 0.0)) for x in linhas))
+                if modo == "valor":
+                    total_row += [float(resultados.get("total_val", 0.0)), float(resultados.get("media_mensal_val", 0.0))]
+                else:
+                    total_row += [float(resultados.get("total_qtd", 0.0)), float(resultados.get("media_mensal_qtd", 0.0))]
+                ws.append(total_row)
+
+                # formatação numérica
+                first_data_row = header_row + 1
+                last_row = ws.max_row
+                for r in range(first_data_row, last_row + 1):
+                    for c in range(3, len(headers) + 1):
+                        cell = ws.cell(row=r, column=c)
+                        if modo == "valor":
+                            cell.number_format = '"R$" #,##0.00'
+                        else:
+                            cell.number_format = '#,##0'
+
+                # destaca última linha (TOTAL)
+                for c in range(1, len(headers) + 1):
+                    cell = ws.cell(row=ws.max_row, column=c)
+                    cell.font = openpyxl.styles.Font(bold=True)
+# ajustes simples
                 for col in range(1, len(headers) + 1):
                     ws.column_dimensions[get_column_letter(col)].width = 14 if col > 2 else 18
-                ws.freeze_panes = "C2"
+                ws.freeze_panes = "C4"
 
                 bio = BytesIO()
                 wb.save(bio)
@@ -8129,6 +8228,7 @@ def operacoes_vendas_produto():
             "marca": marca_raw,
             "mestre": mestre_raw,
             "modo": modo,
+            "sort": resultados.get("sort") if resultados else (request.args.get("sort") or "total_desc"),
             "mes_ini": mes_ini,
             "mes_fim": mes_fim,
             "emps_sel": emps_sel,

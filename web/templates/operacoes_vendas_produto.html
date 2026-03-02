@@ -15,7 +15,7 @@
       <div class="sv-subtitle">Agrupado por mês, com média mensal. Busca flexível por descrição do produto (começa com) + filtros opcionais.</div>
     </div>
     <div class="d-flex gap-2 flex-wrap">
-      <a class="sv-btn sv-btn-ghost" href="{{ url_for('operacoes_vendas_produto') }}?export=1{% if filtros.produto %}&produto={{ filtros.produto|urlencode }}{% endif %}{% if filtros.marca %}&marca={{ filtros.marca|urlencode }}{% endif %}{% if filtros.mestre %}&mestre={{ filtros.mestre|urlencode }}{% endif %}{% if filtros.modo %}&modo={{ filtros.modo }}{% endif %}{% if filtros.emps_sel %}{% for e in filtros.emps_sel %}&emp={{ e|urlencode }}{% endfor %}{% endif %}{% if filtros.mes_ini %}&mes_ini={{ filtros.mes_ini }}{% endif %}{% if filtros.mes_fim %}&mes_fim={{ filtros.mes_fim }}{% endif %}">⬇️ Exportar Excel</a>
+      <a class="sv-btn sv-btn-ghost" href="{{ url_for('operacoes_vendas_produto') }}?export=1{% if filtros.produto %}&produto={{ filtros.produto|urlencode }}{% endif %}{% if filtros.marca %}&marca={{ filtros.marca|urlencode }}{% endif %}{% if filtros.mestre %}&mestre={{ filtros.mestre|urlencode }}{% endif %}{% if filtros.modo %}&modo={{ filtros.modo }}{% endif %}{% if filtros.sort %}&sort={{ filtros.sort }}{% endif %}{% if filtros.emps_sel %}{% for e in filtros.emps_sel %}&emp={{ e|urlencode }}{% endfor %}{% endif %}{% if filtros.mes_ini %}&mes_ini={{ filtros.mes_ini }}{% endif %}{% if filtros.mes_fim %}&mes_fim={{ filtros.mes_fim }}{% endif %}">⬇️ Exportar Excel</a>
     </div>
   </div>
 
@@ -47,6 +47,14 @@
             <option value="valor" {% if filtros.modo=='valor' %}selected{% endif %}>Valor (R$)</option>
           </select>
           <div class="sv-help">Dica: para pesquisar <b>marca</b>, normalmente use <b>Valor</b>.</div>
+        <div class="col-12 col-lg-2">
+          <label class="sv-label">Ordenação</label>
+          <select class="sv-input" name="sort">
+            <option value="total_desc" {% if (filtros.sort or 'total_desc')=='total_desc' %}selected{% endif %}>Total (desc)</option>
+            <option value="emp_vendedor" {% if filtros.sort=='emp_vendedor' %}selected{% endif %}>EMP / Vendedor</option>
+          </select>
+        </div>
+
         </div>
 
 
@@ -107,14 +115,31 @@
   {% else %}
     <div class="sv-card mt-3">
       <div class="sv-card-body">
+        
         <div class="sv-kpis">
           <div class="sv-kpi">
-            <div class="k">Total</div>
+            <div class="k">Total Líquido</div>
             <div class="v">{% if resultados.modo=='valor' %}{{ fmt_brl(resultados.total_val) }}{% else %}{{ fmt_int(resultados.total_qtd) }}{% endif %}</div>
+          </div>
+          <div class="sv-kpi">
+            <div class="k">Vendido (Bruto)</div>
+            <div class="v">{% if resultados.modo=='valor' %}{{ fmt_brl(resultados.total_val_bruto) }}{% else %}{{ fmt_int(resultados.total_qtd_bruto) }}{% endif %}</div>
+          </div>
+          <div class="sv-kpi">
+            <div class="k">Devol./Canc.</div>
+            <div class="v">{% if resultados.modo=='valor' %}{{ fmt_brl(resultados.total_val_devol) }}{% else %}{{ fmt_int(resultados.total_qtd_devol) }}{% endif %}</div>
           </div>
           <div class="sv-kpi">
             <div class="k">Média mensal</div>
             <div class="v">{% if resultados.modo=='valor' %}{{ fmt_brl(resultados.media_mensal_val) }}{% else %}{{ fmt_int(resultados.media_mensal_qtd) }}{% endif %}</div>
+          </div>
+          <div class="sv-kpi">
+            <div class="k">Vendedores</div>
+            <div class="v">{{ resultados.num_vendedores }}</div>
+          </div>
+          <div class="sv-kpi">
+            <div class="k">EMPs</div>
+            <div class="v">{{ resultados.num_emps }}</div>
           </div>
           <div class="sv-kpi">
             <div class="k">Meses</div>
