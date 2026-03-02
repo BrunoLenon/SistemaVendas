@@ -13,14 +13,6 @@ from services.campanhas_service import (
     build_relatorio_campanhas_scope,
 )
 from services.relatorio_campanhas_service import build_relatorio_campanhas_context, build_relatorio_campanhas_unificado_context
-
-from services.metas_v2_service import (
-    list_programas as metas_v2_list_programas,
-    upsert_programa as metas_v2_upsert_programa,
-    calcular_e_snapshot as metas_v2_calcular_e_snapshot,
-    list_resultados as metas_v2_list_resultados,
-    get_programa as metas_v2_get_programa,
-)
 from services.campanhas_v2_engine import recalc_v2_competencia
 import os
 import re
@@ -3509,62 +3501,6 @@ def _recalcular_resultados_combos_para_scope(ano: int, mes: int, emps: list[str]
             db.commit()
 
 
-
-def _ensure_combo_resultados_para_scope(ano: int, mes: int, emps: list[str], vendedores_por_emp: dict[str, list[str]], force: bool = False) -> None:
-    """Garante que existam snapshots de COMBO (campanhas_combo_resultados) para o escopo.
-
-    Regra: só recalcula quando:
-      - force=True (ex.: recalc=1)
-      - existem combos ativos que intersectam a competência e ainda não há nenhum resultado gravado
-
-    Importante: é um passo *aditivo* (não altera regras de cálculo). Evita que combos cadastrados
-    em /admin/combos não apareçam no /relatorios/campanhas por falta de snapshot.
-    """
-    try:
-        ano_i = int(ano)
-        mes_i = int(mes)
-    except Exception:
-        return
-
-    emps = [str(e) for e in (emps or []) if str(e).strip()]
-    if not emps:
-        return
-
-    emps_para_recalc: list[str] = []
-    for emp in emps:
-        vends = [v.strip().upper() for v in (vendedores_por_emp.get(emp) or []) if (v or "").strip()]
-        if not vends:
-            continue
-
-        combos = _combos_mes_overlap(ano_i, mes_i, emp)
-        if not combos:
-            continue
-
-        if force:
-            emps_para_recalc.append(emp)
-            continue
-
-        with SessionLocal() as db:
-            exists = (
-                db.query(CampanhaComboResultado.id)
-                .filter(
-                    CampanhaComboResultado.emp == emp,
-                    CampanhaComboResultado.competencia_ano == ano_i,
-                    CampanhaComboResultado.competencia_mes == mes_i,
-                )
-                .limit(1)
-                .first()
-            )
-        if not exists:
-            emps_para_recalc.append(emp)
-
-    if not emps_para_recalc:
-        return
-
-    vendedores_scope = {emp: vendedores_por_emp.get(emp) or [] for emp in emps_para_recalc}
-    _recalcular_resultados_combos_para_scope(ano_i, mes_i, emps_para_recalc, vendedores_scope)
-
-
 def _build_campanhas_escolhidas_por_vendedor(campanhas: list[CampanhaQtd], vendedores: list[str]) -> dict[str, list[CampanhaQtd]]:
     """Aplica a regra de prioridade por chave (prefixo+marca): campanha do vendedor substitui campanha geral."""
     # geral: vendedor NULL
@@ -3705,10 +3641,6 @@ def relatorio_campanhas():
     emps_scope = scope["emps_scope"]
     vendedores_por_emp = scope["vendedores_por_emp"]
 
-    # Se houver combos cadastrados na competência e ainda não houver snapshot,
-    # garante o cálculo automático para que apareçam no relatório (sem depender de recalc manual).
-    recalc_flag = str(request.args.get("recalc") or "").strip() in ("1", "true", "True", "sim", "SIM")
-    _ensure_combo_resultados_para_scope(ano, mes, emps_scope, vendedores_por_emp, force=recalc_flag)
 
     ctx = build_relatorio_campanhas_unificado_context(
         _campanhas_deps,
@@ -3720,7 +3652,7 @@ def relatorio_campanhas():
         emps_sel=emps_sel,
         vendedores_sel=vendedores_sel,
         vendedores_por_emp=vendedores_por_emp,
-        recalc=recalc_flag,
+        recalc=str(request.args.get("recalc") or "").strip() in ("1", "true", "True", "sim", "SIM"),
         flash=flash,
     )
     # Permissões para template
@@ -3985,9 +3917,6 @@ def relatorio_campanhas_export_csv():
     vendedores_sel = scope["vendedores_sel"]
     emps_scope = scope["emps_scope"]
     vendedores_por_emp = scope["vendedores_por_emp"]
-
-    # Export também deve incluir combos: garante snapshot quando ainda não existir.
-    _ensure_combo_resultados_para_scope(ano, mes, emps_scope, vendedores_por_emp, force=False)
 
     ctx = build_relatorio_campanhas_unificado_context(
         _campanhas_deps,
@@ -7520,214 +7449,6 @@ def err_500(e):
 # (rotas admin migradas para o blueprint blueprints/campanhas_v2_admin.py)
 
 
-
-
-@app.route("/admin/metas-v2", methods=["GET", "POST"])
-@admin_required
-def admin_metas_v2():
-    # período (default: mês atual)
-    hoje = date.today()
-    ano = int(request.args.get("ano") or request.form.get("ano") or hoje.year)
-    mes = int(request.args.get("mes") or request.form.get("mes") or hoje.month)
-
-    edit_id = request.args.get("edit")
-    edit_programa = None
-
-    with SessionLocal() as db:
-        emps_all = db.query(Emp).order_by(Emp.codigo.asc()).all()
-
-        # defaults
-        baseline_tipo = "ano_passado"
-        baseline_janela_meses = 3
-        ativo = True
-        gate_enabled = False
-        gate_min_valor = "1000,00"
-        emps_selected = []
-        crescimento_faixas = [{"limite": "5", "recompensa_pct": "0,10"}, {"limite": "10", "recompensa_pct": "0,15"}]
-        mix_faixas = [{"limite": "1500", "recompensa_pct": "0,10"}, {"limite": "1800", "recompensa_pct": "0,20"}]
-
-        if edit_id:
-            edit_programa = metas_v2_get_programa(db, int(edit_id))
-            if edit_programa:
-                baseline_tipo = (edit_programa.get("baseline_tipo") or baseline_tipo)
-                baseline_janela_meses = int(edit_programa.get("baseline_janela_meses") or baseline_janela_meses)
-                ativo = bool(edit_programa.get("ativo", True))
-                gate_enabled = bool(edit_programa.get("gate_itens_parados_enabled", False))
-                gate_min_valor = str(edit_programa.get("gate_itens_parados_min_valor") or gate_min_valor)
-                emps_selected = list(edit_programa.get("emps") or [])
-                crescimento_faixas = []
-                mix_faixas = []
-                for c in (edit_programa.get("criterios") or []):
-                    if c.get("tipo") == "crescimento":
-                        crescimento_faixas = c.get("faixas") or []
-                    if c.get("tipo") == "mix":
-                        mix_faixas = c.get("faixas") or []
-
-        if request.method == "POST":
-            action = request.form.get("action") or "salvar"
-            programa_id = request.form.get("programa_id") or None
-            if programa_id:
-                try:
-                    programa_id = int(programa_id)
-                except Exception:
-                    programa_id = None
-
-            if action == "recalcular":
-                pid = int(request.form.get("programa_id"))
-                prog = metas_v2_get_programa(db, pid)
-                if prog:
-                    emp_scopes = list(prog.get("emps") or [])
-                    metas_v2_calcular_e_snapshot(db, pid, ano=ano, mes=mes, emp_scopes=emp_scopes, vendedor_scopes=None)
-                    db.commit()
-                return redirect(url_for("admin_metas_v2", ano=ano, mes=mes))
-
-            # salvar (com/sem recalcular)
-            nome = (request.form.get("nome") or "").strip() or f"Metas {mes:02d}/{ano}"
-            baseline_tipo = (request.form.get("baseline_tipo") or "ano_passado").strip()
-            baseline_janela_meses = int(request.form.get("baseline_janela_meses") or 3)
-            ativo = bool(request.form.get("ativo"))
-            gate_enabled = bool(request.form.get("gate_enabled"))
-            gate_min_valor = (request.form.get("gate_min_valor") or "0").strip().replace(".", "").replace(",", ".")
-            try:
-                gate_min_valor_f = float(gate_min_valor)
-            except Exception:
-                gate_min_valor_f = 0.0
-
-            emps_selected = request.form.getlist("emp_alvo")
-
-            crescimento_lim = request.form.getlist("crescimento_limite[]")
-            crescimento_rec = request.form.getlist("crescimento_recompensa[]")
-            crescimento_faixas_in = [{"limite": a, "recompensa_pct": b} for a, b in zip(crescimento_lim, crescimento_rec)]
-
-            mix_lim = request.form.getlist("mix_limite[]")
-            mix_rec = request.form.getlist("mix_recompensa[]")
-            mix_faixas_in = [{"limite": a, "recompensa_pct": b} for a, b in zip(mix_lim, mix_rec)]
-
-            pid = metas_v2_upsert_programa(
-                db,
-                programa_id=programa_id,
-                nome=nome,
-                ano=ano,
-                mes=mes,
-                ativo=ativo,
-                baseline_tipo=baseline_tipo,
-                baseline_janela_meses=baseline_janela_meses,
-                gate_enabled=gate_enabled,
-                gate_min_valor=gate_min_valor_f,
-                emps=emps_selected,
-                crescimento_faixas=crescimento_faixas_in,
-                mix_faixas=mix_faixas_in,
-            )
-            db.commit()
-
-            if action == "salvar_recalcular":
-                prog = metas_v2_get_programa(db, pid)
-                emp_scopes = list((prog or {}).get("emps") or [])
-                metas_v2_calcular_e_snapshot(db, pid, ano=ano, mes=mes, emp_scopes=emp_scopes, vendedor_scopes=None)
-                db.commit()
-
-            return redirect(url_for("admin_metas_v2", ano=ano, mes=mes))
-
-        programas = metas_v2_list_programas(db, ano, mes)
-
-    return render_template(
-        "admin_metas_v2.html",
-        ano=ano,
-        mes=mes,
-        programas=programas,
-        emps_all=emps_all,
-        emps_selected=emps_selected,
-        edit_programa=edit_programa,
-        baseline_tipo=baseline_tipo,
-        baseline_janela_meses=baseline_janela_meses,
-        ativo=ativo,
-        gate_enabled=gate_enabled,
-        gate_min_valor=str(gate_min_valor),
-        crescimento_faixas=crescimento_faixas,
-        mix_faixas=mix_faixas,
-    )
-
-
-@app.route("/metas-v2")
-@login_required
-def metas_v2():
-    hoje = date.today()
-    ano = int(request.args.get("ano") or hoje.year)
-    mes = int(request.args.get("mes") or hoje.month)
-    programa_id = request.args.get("programa")
-    recalc = request.args.get("recalc")
-
-    is_admin = bool(_is_admin())
-    role = _role()
-
-    emp_scopes = _allowed_emps()
-
-    # vendedor scope (para perfil vendedor)
-    vendedor_scope = None
-    if role == "vendedor":
-        vendedor_scope = (session.get("nome") or "").strip() or None
-
-    with SessionLocal() as db:
-        programa = None
-        if programa_id:
-            programa = metas_v2_get_programa(db, int(programa_id))
-        else:
-            # pega o primeiro programa ativo do período que intersecta EMPs do usuário
-            rows = db.execute(
-                text(
-                    """
-                    select id
-                      from metas_v2_programas
-                     where ano=:ano and mes=:mes and ativo=true
-                     order by id desc
-                    """
-                ),
-                {"ano": ano, "mes": mes},
-            ).scalars().all()
-            for pid in rows:
-                p = metas_v2_get_programa(db, int(pid))
-                if not p:
-                    continue
-                if set(p.get("emps") or []).intersection(set(emp_scopes)):
-                    programa = p
-                    break
-
-        if not programa:
-            return render_template("metas_v2.html", programa=None, resultados=[], ano=ano, mes=mes, is_admin=is_admin)
-
-        # restringe EMPs ao programa + escopo do usuário
-        emp_scopes_final = sorted(set(emp_scopes).intersection(set(programa.get("emps") or [])))
-
-        if recalc:
-            metas_v2_calcular_e_snapshot(
-                db,
-                int(programa["id"]),
-                ano=ano,
-                mes=mes,
-                emp_scopes=emp_scopes_final,
-                vendedor_scopes=[vendedor_scope] if vendedor_scope else None,
-            )
-            db.commit()
-
-        resultados = metas_v2_list_resultados(
-            db,
-            int(programa["id"]),
-            ano,
-            mes,
-            emp_scopes_final,
-            vendedor=vendedor_scope if vendedor_scope else None,
-        )
-
-    return render_template(
-        "metas_v2.html",
-        programa=programa,
-        resultados=resultados,
-        ano=ano,
-        mes=mes,
-        is_admin=is_admin,
-    )
-
-
 @app.route("/financeiro/campanhas_v2", methods=["GET"])
 @financeiro_required
 def financeiro_campanhas_v2():
@@ -8140,6 +7861,16 @@ def operacoes_vendas_produto():
     marca_raw = (request.args.get("marca") or "").strip()
     mestre_raw = (request.args.get("mestre") or "").strip()
 
+    modo = (request.args.get("modo") or "").strip().lower()
+    if not modo:
+        # default inteligente: se filtrar apenas por marca, tende a ser por valor
+        if marca_raw and not produto_raw and not mestre_raw:
+            modo = "valor"
+        else:
+            modo = "qtd"
+    if modo not in ("qtd", "valor"):
+        modo = "qtd"
+
     # meses (default: Jan -> mês atual do ano atual)
     today = date.today()
     meses_select = []
@@ -8223,6 +7954,10 @@ def operacoes_vendas_produto():
                 (Venda.mov_tipo_movto.in_(["DS", "CA"]), -func.coalesce(Venda.qtdade_vendida, 0.0)),
                 else_=func.coalesce(Venda.qtdade_vendida, 0.0),
             )
+            signed_val = case(
+                (Venda.mov_tipo_movto.in_(["DS", "CA"]), -func.coalesce(Venda.valor_total, 0.0)),
+                else_=func.coalesce(Venda.valor_total, 0.0),
+            )
             q_year = func.extract("year", Venda.movimento).label("ano")
             q_month = func.extract("month", Venda.movimento).label("mes")
 
@@ -8233,6 +7968,7 @@ def operacoes_vendas_produto():
                     q_year,
                     q_month,
                     func.coalesce(func.sum(signed_qty), 0.0).label("qtd"),
+                    func.coalesce(func.sum(signed_val), 0.0).label("valor"),
                 )
                 # Somente vendedores cadastrados (usuarios.role='vendedor') e vinculados à EMP via usuario_emps (ativo=TRUE)
                 .join(
@@ -8256,52 +7992,96 @@ def operacoes_vendas_produto():
 
             # pivot
             meses_meta = [{"key": f"{int(y):04d}-{int(m):02d}", "label": f"{int(m):02d}/{int(y):04d}"} for (y, m) in months]
+
+            # by_key[(emp,vendedor)][month_key] = {"qtd":..., "valor":...}
             by_key = {}
             for r in rows:
                 emp = (r.emp or "").strip()
                 vend = (r.vendedor or "").strip()
                 key = (emp, vend)
                 mm_key = f"{int(r.ano):04d}-{int(r.mes):02d}"
-                by_key.setdefault(key, {})[mm_key] = float(r.qtd or 0.0)
+                by_key.setdefault(key, {})
+                by_key[key].setdefault(mm_key, {"qtd": 0.0, "valor": 0.0})
+                by_key[key][mm_key]["qtd"] = float(getattr(r, "qtd", 0.0) or 0.0)
+                by_key[key][mm_key]["valor"] = float(getattr(r, "valor", 0.0) or 0.0)
 
             linhas = []
             total_qtd_all = 0.0
-            for (emp, vend), mp in by_key.items():
-                total = 0.0
-                count_mes = 0
-                for mm in meses_meta:
-                    v = float(mp.get(mm["key"], 0.0))
-                    total += v
-                    if abs(v) > 1e-9:
-                        count_mes += 1
-                media = (total / count_mes) if count_mes else 0.0
-                total_qtd_all += total
-                linhas.append({
-                    "emp": emp,
-                    "vendedor": vend,
-                    "por_mes": mp,
-                    "total": total,
-                    "media": media,
-                })
+            total_val_all = 0.0
 
-            # ordena por total desc
+            for (emp, vend), mp in by_key.items():
+                total_qtd = 0.0
+                total_val = 0.0
+                count_mes_qtd = 0
+                count_mes_val = 0
+
+                por_mes_qtd = {}
+                por_mes_val = {}
+
+                for mm in meses_meta:
+                    k = mm["key"]
+                    vq = float((mp.get(k, {}) or {}).get("qtd", 0.0))
+                    vv = float((mp.get(k, {}) or {}).get("valor", 0.0))
+                    por_mes_qtd[k] = vq
+                    por_mes_val[k] = vv
+
+                    total_qtd += vq
+                    total_val += vv
+
+                    if abs(vq) > 1e-9:
+                        count_mes_qtd += 1
+                    if abs(vv) > 1e-9:
+                        count_mes_val += 1
+
+                media_qtd = (total_qtd / count_mes_qtd) if count_mes_qtd else 0.0
+                media_val = (total_val / count_mes_val) if count_mes_val else 0.0
+
+                total_qtd_all += total_qtd
+                total_val_all += total_val
+
+                linhas.append(
+                    {
+                        "emp": emp,
+                        "vendedor": vend,
+                        "por_mes_qtd": por_mes_qtd,
+                        "por_mes_val": por_mes_val,
+                        "total_qtd": total_qtd,
+                        "total_val": total_val,
+                        "media_qtd": media_qtd,
+                        "media_val": media_val,
+                    }
+                )
+
+            # ordena por EMP + vendedor (mantém padrão atual)
             linhas.sort(key=lambda x: (x["emp"], x["vendedor"]))
 
-            media_mensal_global = 0.0
-            # média global: total / meses com resultado (considera meses com qualquer dado em qualquer linha)
-            meses_com_dado = set()
+            # médias globais: total / meses que tiveram dado (qualquer linha)
+            media_mensal_global_qtd = 0.0
+            media_mensal_global_val = 0.0
+
+            meses_com_dado_qtd = set()
+            meses_com_dado_val = set()
             for l in linhas:
-                for k,v in l["por_mes"].items():
+                for k, v in (l.get("por_mes_qtd") or {}).items():
                     if abs(float(v)) > 1e-9:
-                        meses_com_dado.add(k)
-            if meses_com_dado:
-                media_mensal_global = total_qtd_all / len(meses_com_dado)
+                        meses_com_dado_qtd.add(k)
+                for k, v in (l.get("por_mes_val") or {}).items():
+                    if abs(float(v)) > 1e-9:
+                        meses_com_dado_val.add(k)
+
+            if meses_com_dado_qtd:
+                media_mensal_global_qtd = total_qtd_all / len(meses_com_dado_qtd)
+            if meses_com_dado_val:
+                media_mensal_global_val = total_val_all / len(meses_com_dado_val)
 
             resultados = {
                 "meses": meses_meta,
                 "linhas": linhas,
                 "total_qtd": total_qtd_all,
-                "media_mensal": media_mensal_global,
+                "total_val": total_val_all,
+                "media_mensal_qtd": media_mensal_global_qtd,
+                "media_mensal_val": media_mensal_global_val,
+                "modo": modo,
             }
 
             # ===== export excel =====
@@ -8312,14 +8092,20 @@ def operacoes_vendas_produto():
                 ws = wb.active
                 ws.title = "Vendas por Produto"
 
-                headers = ["EMP", "Vendedor"] + [m["label"] for m in meses_meta] + ["Total", "Média"]
+                headers = ["EMP", "Vendedor"] + [m["label"] for m in meses_meta] + [("Total (R$)" if modo=="valor" else "Total (Qtd)"), ("Média (R$)" if modo=="valor" else "Média (Qtd)")]
                 ws.append(headers)
 
                 for l in linhas:
                     row = [l["emp"], l["vendedor"]]
                     for m in meses_meta:
-                        row.append(float(l["por_mes"].get(m["key"], 0.0)))
-                    row += [float(l["total"]), float(l["media"])]
+                        if modo == "valor":
+                            row.append(float((l.get("por_mes_val") or {}).get(m["key"], 0.0)))
+                        else:
+                            row.append(float((l.get("por_mes_qtd") or {}).get(m["key"], 0.0)))
+                    if modo == "valor":
+                        row += [float(l.get("total_val", 0.0)), float(l.get("media_val", 0.0))]
+                    else:
+                        row += [float(l.get("total_qtd", 0.0)), float(l.get("media_qtd", 0.0))]
                     ws.append(row)
 
                 # ajustes simples
@@ -8342,6 +8128,7 @@ def operacoes_vendas_produto():
             "produto": produto_raw,
             "marca": marca_raw,
             "mestre": mestre_raw,
+            "modo": modo,
             "mes_ini": mes_ini,
             "mes_fim": mes_fim,
             "emps_sel": emps_sel,

@@ -104,7 +104,7 @@
     <div class="cc-acc">
       {% for card in emp_cards %}
         <div class="cc-acc-item" data-emp="{{ card.emp }}">
-          <div class="cc-acc-head" data-action="toggle-acc" data-target="{{ card.emp }}">
+          <div class="cc-acc-head" onclick="ccToggle('{{ card.emp }}')">
             <div>
               <div class="cc-acc-title">📊 EMP {{ card.emp }} <span class="sv-muted">•</span> <span class="sv-muted">Valor {{ card.total_valor_brl }}</span></div>
               <div class="cc-acc-sub">Ranking por cidade + insights (clique para abrir/fechar)</div>
@@ -122,7 +122,7 @@
               <div>
                 <div class="d-flex align-items-center justify-content-between gap-2">
                   <div class="sv-h3" style="margin:0">Top cidades</div>
-                  <a class="sv-link" href="#" data-action="toggle-details" data-emp="{{ card.emp }}">Ver detalhes</a>
+                  <a class="sv-link" href="#" onclick="ccToggleDetails('{{ card.emp }}'); return false;">Ver detalhes</a>
                 </div>
 
                 <div class="sv-tablewrap sv-mt-2">
@@ -137,7 +137,7 @@
                     </thead>
                     <tbody>
                       {% for row in card.cidades_preview %}
-                        <tr class="cc-click" data-action="open-clientes" data-emp="{{ card.emp }}" data-cidade-norm="{{ row.cidade_norm }}" data-cidade-label="{{ row.cidade_label|e }}">
+                        <tr class="cc-click" onclick="openClientesModal('{{ card.emp }}','{{ row.cidade_norm }}','{{ row.cidade_label|e }}')">
                           <td class="sv-right">{{ loop.index }}</td>
                           <td class="text-nowrap">{{ row.cidade_label }}</td>
                           <td class="text-end sv-right">{{ row.valor_total_brl }}</td>
@@ -167,7 +167,7 @@
                       </thead>
                       <tbody>
                         {% for row in card.cidades_full %}
-                          <tr class="cc-click" data-action="open-clientes" data-emp="{{ card.emp }}" data-cidade-norm="{{ row.cidade_norm }}" data-cidade-label="{{ row.cidade_label|e }}">
+                          <tr class="cc-click" onclick="openClientesModal('{{ card.emp }}','{{ row.cidade_norm }}','{{ row.cidade_label|e }}')">
                             <td class="sv-right">{{ loop.index }}</td>
                             <td class="text-nowrap">{{ row.cidade_label }}</td>
                             <td class="text-end sv-right">{{ row.valor_total_brl }}</td>
@@ -213,7 +213,7 @@
     <div class="cc-acc">
       {% for card in emp_cards %}
         <div class="cc-acc-item" data-emp="{{ card.emp }}-clientes">
-          <div class="cc-acc-head" data-action="toggle-acc" data-target="{{ card.emp }}-clientes">
+          <div class="cc-acc-head" onclick="ccToggle('{{ card.emp }}-clientes')">
             <div>
               <div class="cc-acc-title">👤 EMP {{ card.emp }} <span class="sv-muted">•</span> <span class="sv-muted">Top clientes (por valor)</span></div>
               <div class="cc-acc-sub">Clique para abrir/fechar</div>
@@ -237,7 +237,7 @@
                 </thead>
                 <tbody>
                   {% for row in card.clientes_preview %}
-                    <tr class="cc-click" data-action="open-marcas" data-emp="{{ card.emp }}" data-cidade-norm="{{ row.cidade_norm or '' }}" data-razao-norm="{{ row.razao_norm or '' }}" data-cliente-id="{{ row.cliente_id }}" data-cliente-label="{{ (row.cliente_label or row.cliente_id)|e }}">
+                    <tr class="cc-click" onclick="openMarcasModal('{{ card.emp }}','{{ row.cidade_norm or '' }}','{{ row.razao_norm or '' }}','{{ row.cliente_id }}','{{ (row.cliente_label or row.cliente_id)|e }}')">
                       <td class="sv-right">{{ loop.index }}</td>
                       <td class="text-nowrap">{{ row.cliente_label or row.cliente_id }}</td>
                       <td class="text-end sv-right">{{ row.valor_total_brl }}</td>
@@ -374,15 +374,266 @@
 </div>
 
 
-
 <script>
-  // Config da página (evita variáveis globais soltas)
-  window.SV_CC_CONFIG = {
-    mes: "{{ mes }}",
-    ano: "{{ ano }}",
-    vendedor_default: "{{ (vendedor_filtro or '') }}"
-  };
-</script>
-<script defer src="{{ url_for('static', filename='js/relatorio_cidades_clientes.js') }}"></script>
+  // Tabs
+  (function(){
+    const btns = document.querySelectorAll('.cc-segbtn');
+    const tabC = document.getElementById('tab-cidades');
+    const tabK = document.getElementById('tab-clientes');
+    btns.forEach(b => b.addEventListener('click', () => {
+      btns.forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+      const which = b.getAttribute('data-tab');
+      if(which === 'clientes'){
+        tabC.style.display = 'none';
+        tabK.style.display = 'block';
+      }else{
+        tabK.style.display = 'none';
+        tabC.style.display = 'block';
+      }
+    }));
+  })();
 
+  // Accordion
+  function ccToggle(emp){
+    const item = document.querySelector('.cc-acc-item[data-emp="' + emp + '"]');
+    if(!item) return;
+    item.classList.toggle('open');
+  }
+  function ccToggleDetails(emp){
+    const el = document.getElementById('cc-details-' + emp);
+    if(!el) return;
+    el.style.display = (el.style.display === 'none' || !el.style.display) ? 'block' : 'none';
+  }
+
+  // Helpers
+  function _qs(){
+    const u = new URL(window.location.href);
+    return {
+      mes: u.searchParams.get('mes') || '{{ mes }}',
+      ano: u.searchParams.get('ano') || '{{ ano }}',
+      vendedor: u.searchParams.get('vendedor') || '{{ vendedor_filtro or '' }}'
+    };
+  }
+
+  // Modal helpers (sem Bootstrap JS)
+  function svShowModal(el){
+    if(!el) return;
+    el.style.display = 'block';
+    el.classList.add('show');
+    el.setAttribute('aria-hidden','false');
+    document.body.classList.add('sv-modal-open');
+
+    // backdrop
+    let bd = document.getElementById('svModalBackdrop');
+    if(!bd){
+      bd = document.createElement('div');
+      bd.id = 'svModalBackdrop';
+      bd.className = 'modal-backdrop fade show';
+      document.body.appendChild(bd);
+      bd.addEventListener('click', () => svHideModal(el));
+    }
+    // esc
+    const onKey = (e) => { if(e.key === 'Escape') svHideModal(el); };
+    el._svOnKey = onKey;
+    document.addEventListener('keydown', onKey);
+  }
+
+  function svHideModal(el){
+    if(!el) return;
+    el.classList.remove('show');
+    el.style.display = 'none';
+    el.setAttribute('aria-hidden','true');
+    document.body.classList.remove('sv-modal-open');
+
+    const bd = document.getElementById('svModalBackdrop');
+    if(bd) bd.remove();
+
+    if(el._svOnKey){
+      document.removeEventListener('keydown', el._svOnKey);
+      el._svOnKey = null;
+    }
+  }
+
+  // Bind close buttons
+  document.querySelectorAll('[data-bs-dismiss="modal"]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const modal = btn.closest('.modal');
+      if(modal) svHideModal(modal);
+    });
+  });
+
+  // Modal: cidade -> clientes
+  const modalClientes = document.getElementById('modalClientes');
+function openClientesModal(emp, cidade_norm, cidade_label){
+    if(!modalClientes) return;
+    const q = _qs();
+    document.getElementById('modalClientesTitle').textContent = 'Clientes — EMP ' + emp;
+    document.getElementById('modalClientesSub').textContent = 'Cidade: ' + (cidade_label || cidade_norm);
+
+    const tbody = document.querySelector('#tblClientes tbody');
+    tbody.innerHTML = '<tr><td colspan="6" class="sv-muted">Carregando…</td></tr>';
+
+    const url = `/relatorios/cidade-clientes?emp=${encodeURIComponent(emp)}&cidade_norm=${encodeURIComponent(cidade_norm)}&mes=${encodeURIComponent(q.mes)}&ano=${encodeURIComponent(q.ano)}&vendedor=${encodeURIComponent(q.vendedor || '')}`;
+    fetch(url)
+      .then(r => r.json())
+      .then(data => {
+        const rows = (data && data.clientes) ? data.clientes : [];
+        if(!rows.length){
+          tbody.innerHTML = '<tr><td colspan="6" class="sv-muted">Sem dados.</td></tr>';
+          return;
+        }
+        tbody.innerHTML = rows.map((r, idx) => {
+          const valor = (r.valor_total || 0).toLocaleString('pt-BR', {style:'currency', currency:'BRL'});
+          const qtd = (r.qtd_total || 0).toLocaleString('pt-BR');
+          const mix = (r.mix_itens || 0).toLocaleString('pt-BR');
+          const cliente = (r.cliente || r.cliente_id || '').toString();
+          const cliente_id = (r.cliente_id || '').toString();
+          return `
+            <tr>
+              <td class="sv-right">${idx+1}</td>
+              <td class="text-nowrap">${escapeHtml(cliente)}</td>
+              <td class="text-end sv-right">${escapeHtml(valor)}</td>
+              <td class="text-end sv-right">${escapeHtml(qtd)}</td>
+              <td class="text-end sv-right">${escapeHtml(mix)}</td>
+              <td class="text-end">
+                <a class="sv-link" href="#" onclick="openMarcasModal('${emp}','${cidade_norm}','', '${cliente_id}', '${escapeHtmlAttr(cliente)}'); return false;">Ver marcas</a>
+              </td>
+            </tr>
+          `;
+        }).join('');
+      })
+      .catch(() => {
+        tbody.innerHTML = '<tr><td colspan="6" class="sv-muted">Erro ao carregar.</td></tr>';
+      });
+
+    svShowModal(modalClientes);
+  }
+
+  // Modal: cliente -> marcas
+  const modalMarcas = document.getElementById('modalMarcas');
+function openMarcasModal(emp, cidade_norm, razao_norm, cliente_id, cliente_label){
+    if(!modalMarcas) return;
+    const q = _qs();
+    document.getElementById('modalMarcasTitle').textContent = 'Marcas — EMP ' + emp;
+    document.getElementById('modalMarcasSub').textContent = 'Cliente: ' + (cliente_label || cliente_id);
+
+    const tbody = document.querySelector('#tblMarcas tbody');
+    tbody.innerHTML = '<tr><td colspan="5" class="sv-muted">Carregando…</td></tr>';
+
+    // compat: API aceita razao_norm (legado) ou cliente_id
+    const params = new URLSearchParams({
+      emp: emp,
+      mes: q.mes,
+      ano: q.ano,
+      vendedor: q.vendedor || ''
+    });
+    if(razao_norm){
+      params.set('razao_norm', razao_norm);
+    }else if(cliente_id){
+      params.set('cliente_id', cliente_id);
+    }
+    if(cidade_norm){
+      params.set('cidade_norm', cidade_norm);
+    }
+
+    fetch('/relatorios/cliente-marcas?' + params.toString())
+      .then(r => r.json())
+      .then(data => {
+        const rows = (data && data.marcas) ? data.marcas : [];
+        if(!rows.length){
+          tbody.innerHTML = '<tr><td colspan="5" class="sv-muted">Sem dados.</td></tr>';
+          return;
+        }
+        tbody.innerHTML = rows.map((r, idx) => {
+          const valor = (r.valor_total || 0).toLocaleString('pt-BR', {style:'currency', currency:'BRL'});
+          const qtd = (r.qtd_total || 0).toLocaleString('pt-BR');
+          const mix = (r.mix_itens || 0).toLocaleString('pt-BR');
+          const marca = (r.marca || '').toString();
+          // linha clicável: abre itens da marca para este cliente
+          return `
+            <tr class="cc-click" onclick="openItensMarcaModal('${emp}','${cidade_norm}','${razao_norm}','${cliente_id}','${escapeHtmlAttr(cliente_label || cliente_id)}','${escapeHtmlAttr(marca)}');">
+              <td class="sv-right">${idx+1}</td>
+              <td class="text-nowrap">${escapeHtml(marca)}</td>
+              <td class="text-end sv-right">${escapeHtml(valor)}</td>
+              <td class="text-end sv-right">${escapeHtml(qtd)}</td>
+              <td class="text-end sv-right">${escapeHtml(mix)}</td>
+            </tr>
+          `;
+        }).join('');
+      })
+      .catch(() => {
+        tbody.innerHTML = '<tr><td colspan="5" class="sv-muted">Erro ao carregar.</td></tr>';
+      });
+
+    svShowModal(modalMarcas);
+  }
+
+
+  // Modal: marca -> itens (cliente)
+  const modalItensMarca = document.getElementById('modalItensMarca');
+  function openItensMarcaModal(emp, cidade_norm, razao_norm, cliente_id, cliente_label, marca){
+    if(!modalItensMarca) return;
+    const q = _qs();
+    document.getElementById('modalItensMarcaTitle').textContent = 'Itens — ' + (marca || 'SEM MARCA') + ' • EMP ' + emp;
+    document.getElementById('modalItensMarcaSub').textContent = 'Cliente: ' + (cliente_label || cliente_id);
+
+    const tbody = document.querySelector('#tblItensMarca tbody');
+    tbody.innerHTML = '<tr><td colspan="5" class="sv-muted">Carregando…</td></tr>';
+
+    const params = new URLSearchParams({
+      emp: emp,
+      mes: q.mes,
+      ano: q.ano,
+      vendedor: q.vendedor || '',
+      marca: marca || ''
+    });
+    if(razao_norm) params.set('razao_norm', razao_norm);
+    if(cliente_id) params.set('cliente_id', cliente_id);
+    if(cidade_norm) params.set('cidade_norm', cidade_norm);
+
+    fetch('/relatorios/cliente-marca-itens?' + params.toString())
+      .then(r => r.json())
+      .then(data => {
+        const rows = (data && data.itens) ? data.itens : [];
+        if(!rows.length){
+          tbody.innerHTML = '<tr><td colspan="5" class="sv-muted">Sem dados.</td></tr>';
+          return;
+        }
+        tbody.innerHTML = rows.map((r, idx) => {
+          const cod = (r.mestre || '').toString();
+          const des = (r.descricao || '').toString();
+          const qtd = (r.qtd_total || 0).toLocaleString('pt-BR');
+          const valor = (r.valor_total || 0).toLocaleString('pt-BR', {style:'currency', currency:'BRL'});
+          return `
+            <tr>
+              <td class="sv-right">${idx+1}</td>
+              <td class="text-nowrap">${escapeHtml(cod)}</td>
+              <td>${escapeHtml(des)}</td>
+              <td class="text-end sv-right">${escapeHtml(qtd)}</td>
+              <td class="text-end sv-right">${escapeHtml(valor)}</td>
+            </tr>
+          `;
+        }).join('');
+      })
+      .catch(() => {
+        tbody.innerHTML = '<tr><td colspan="5" class="sv-muted">Erro ao carregar.</td></tr>';
+      });
+
+    svShowModal(modalItensMarca);
+  }
+
+
+  function escapeHtml(s){
+    return (s ?? '').toString()
+      .replaceAll('&','&amp;')
+      .replaceAll('<','&lt;')
+      .replaceAll('>','&gt;')
+      .replaceAll('"','&quot;')
+      .replaceAll("'",'&#39;');
+  }
+  function escapeHtmlAttr(s){
+    return escapeHtml(s).replaceAll('`','');
+  }
+</script>
 {% endblock %}

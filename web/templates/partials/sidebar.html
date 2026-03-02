@@ -117,8 +117,7 @@
 
     <a class="sb-link {% if path.startswith('/campanhas/ranking-marca') %}active{% endif %}" href="{{ url_for('campanhas_ranking_marca') }}">🏆 Ranking por Marca</a>
 
-    <a class="sb-link {% if path.startswith('/metas-v2') %}active{% endif %}" href="/metas-v2">🎯 Metas (V2)</a>
-    <a class="sb-link {% if path.startswith('/metas') and not path.startswith('/metas-v2') %}active{% endif %}" href="{{ url_for('metas') }}">🎯 Metas</a>
+    <a class="sb-link {% if path.startswith('/metas') %}active{% endif %}" href="{{ url_for('metas') }}">🎯 Metas</a>
     <a class="sb-link {% if path.startswith('/itens_parados') %}active{% endif %}" href="{{ url_for('itens_parados') }}">📦 Itens Parados</a>
     <a class="sb-link {% if path.startswith('/operacoes/vendas-produtos') %}active{% endif %}" href="{{ url_for('operacoes_vendas_produto') }}">🔎 Vendas (Produtos)</a>
 
@@ -152,7 +151,6 @@
 
     <a class="sb-link {% if path.startswith('/admin/campanhas') %}active{% endif %}" href="{{ url_for('admin_campanhas_qtd') }}">🧩 Campanhas (Admin)</a>
     <a class="sb-link {% if path.startswith('/admin/combos') %}active{% endif %}" href="{{ url_for('admin_combos') }}">🧾 Combos</a>
-    <a class="sb-link {% if path.startswith('/admin/metas') %}active{% endif %}" href="{{ url_for('admin_metas') }}">🎯 Metas (Admin)</a>
     <a class="sb-link {% if path.startswith('/admin/configuracoes') %}active{% endif %}" href="{{ url_for('admin_configuracoes') }}">⚙️ Configurações</a>
   </div>
   {% endif %}

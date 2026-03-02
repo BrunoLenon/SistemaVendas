@@ -1,256 +1,300 @@
 {% extends "base.html" %}
-{% block title %}Administrador - Metas{% endblock %}
-
-{% block extra_head %}
-<style>
-  /* Admin pages: more width + compact spacing (aligned with sv-*) */
-  .sv-page.sv-page--wide{max-width:1480px;}
-  .sv-page{padding-top:10px;padding-bottom:10px;}
-  .sv-pagehead{padding:12px;}
-  .sv-card-pad{padding:12px;}
-  .sv-table td,.sv-table th{padding:.5rem .55rem;}
-  .sv-table thead th{font-size:12px; letter-spacing:.02em;}
-  .sv-muted{opacity:.78}
-
-  .meta-emp-list{max-height:260px; overflow:auto;}
-  @media(min-width:992px){
-    .meta-emp-cols{columns:2; column-gap:18px;}
-    .meta-emp-cols .form-check{break-inside:avoid;}
-  }
-
-  /* Keep the “Nova meta” title/actions visible when scrolling the form */
-  .meta-sticky-actions{position:sticky; top:10px; z-index:2; backdrop-filter: blur(10px);}
-</style>
-{% endblock %}
+{% block title %}Admin - Metas{% endblock %}
 
 {% block content %}
-<div class="sv-page sv-page--wide">
-
-  <div class="sv-pagehead sv-glass mb-3">
-    <div class="d-flex justify-content-between align-items-start w-100 gap-2 flex-wrap">
-      <div>
-        <h3 class="m-0">🎯 Metas (Admin)</h3>
-        <div class="text-muted sv-muted">Cadastre metas mensais (Crescimento, MIX e Share de Marcas) com escadas e empresas alvo.</div>
-      </div>
-      <div class="d-flex gap-2 align-items-center flex-wrap justify-content-end">
-        <form class="d-flex gap-2" method="get" action="{{ url_for('admin_metas') }}">
-          <input class="form-control form-control-sm sv-input" style="width:110px" name="mes" value="{{ '%02d'|format(mes) }}" placeholder="Mês">
-          <input class="form-control form-control-sm sv-input" style="width:120px" name="ano" value="{{ ano }}" placeholder="Ano">
-          <button class="btn btn-sm btn-outline-secondary">Ir</button>
-        </form>
-        <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('dashboard') }}">Dashboard</a>
-        <a class="btn btn-sm btn-outline-danger" href="/logout">Sair</a>
-      </div>
-    </div>
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+  <div>
+    <h4 class="m-0">🏁 Administração de Metas</h4>
+    <div class="text-muted small">Cadastre metas mensais (Crescimento, MIX e Share de Marcas) com escadas e empresas alvo.</div>
   </div>
 
-  <div class="row g-3">
-    <div class="col-12 col-lg-5">
-      <div class="sv-card sv-glass card shadow-sm">
-        <div class="sv-card-pad">
-          <div class="d-flex justify-content-between align-items-center mb-2 meta-sticky-actions">
-            <h5 class="m-0">➕ Nova meta</h5>
-            <span class="badge text-bg-light border">{{ '%02d'|format(mes) }}/{{ ano }}</span>
-          </div>
-
-          <form method="post" action="{{ url_for('admin_metas_criar') }}" class="vstack gap-2">
-            <div class="row g-2">
-              <div class="col-12">
-                <label class="form-label small">Nome</label>
-                <input class="form-control sv-input" name="nome" placeholder="Ex.: Meta Crescimento (Jan)" required>
-              </div>
-
-              <div class="col-12 col-md-6">
-                <label class="form-label small">Tipo</label>
-                <select class="form-select sv-input" name="tipo" required>
-                  <option value="CRESCIMENTO">📈 Crescimento</option>
-                  <option value="MIX">🧩 MIX (itens únicos)</option>
-                  <option value="SHARE_MARCA">🏷️ Share de Marcas</option>
-                </select>
-              </div>
-
-              <div class="col-6 col-md-3">
-                <label class="form-label small">Mês</label>
-                <input class="form-control sv-input" name="mes" value="{{ '%02d'|format(mes) }}" required>
-              </div>
-              <div class="col-6 col-md-3">
-                <label class="form-label small">Ano</label>
-                <input class="form-control sv-input" name="ano" value="{{ ano }}" required>
-              </div>
-
-              <div class="col-12">
-                <label class="form-label small">Empresas (obrigatório)</label>
-                <input class="form-control form-control-sm sv-input mb-2" id="empSearch" placeholder="Buscar empresa... (ex: 1001, Manaus)">
-
-                <div class="border rounded p-2 meta-emp-list">
-                  <div class="meta-emp-cols" id="empList">
-                    {% for e in emps_rows %}
-                      <div class="form-check">
-                        <input class="form-check-input sv-input" type="checkbox" name="emps" value="{{ e.codigo }}" id="emp_{{ e.codigo }}" data-emp-search="{{ (e.codigo ~ ' ' ~ (e.nome or '') ~ ' ' ~ (e.cidade or '') ~ ' ' ~ (e.uf or ''))|lower }}">
-                        <label class="form-check-label" for="emp_{{ e.codigo }}">
-                          <span class="fw-semibold">{{ e.codigo }}</span> — {{ e.nome }}{% if e.cidade %} <span class="sv-muted">({{ e.cidade }}{% if e.uf %}/{{ e.uf }}{% endif %})</span>{% endif %}
-                        </label>
-                      </div>
-                    {% endfor %}
-                  </div>
-                </div>
-
-                <div class="text-muted small mt-1 sv-muted">Supervisor só enxerga as empresas dele.</div>
-              </div>
-
-              <div class="col-12">
-                <label class="form-label small">Escada (faixas)</label>
-                {#
-                  UI "pro" para escada: tabela com adicionar/remover e um textarea oculto como fonte de verdade.
-                  O backend continua recebendo o campo "escalas" no formato linha-a-linha "limite:bonus".
-                #}
-                <textarea class="form-control d-none" name="escalas" id="escalas_text" rows="5"></textarea>
-
-                <div class="border rounded p-2 sv-glass">
-                  <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
-                    <div class="text-muted small sv-muted">
-                      <span class="fw-semibold">Limite</span> → <span class="fw-semibold">Bônus</span>
-                      <span class="ms-1">(bônus é % sobre o valor do mês, ex.: <code>0,10%</code>)</span>
-                    </div>
-                    <div class="d-flex gap-2">
-                      <button type="button" class="btn btn-sm btn-outline-secondary" id="escada_exemplo">Inserir exemplo</button>
-                      <button type="button" class="btn btn-sm btn-outline-primary" id="escada_add">+ Adicionar faixa</button>
-                    </div>
-                  </div>
-
-                  <div class="table-responsive">
-                    <table class="sv-table table table-sm align-middle mb-0" id="escadas_table">
-                      <thead>
-                        <tr>
-                          <th style="width: 40%">Limite</th>
-                          <th style="width: 40%">Bônus (%)</th>
-                          <th class="text-end" style="width: 20%">&nbsp;</th>
-                        </tr>
-                      </thead>
-                      <tbody></tbody>
-                    </table>
-                  </div>
-
-                  <div class="text-muted small mt-2 sv-muted">
-                    <ul class="mb-0 ps-3">
-                      <li><b>Crescimento</b> e <b>Share</b>: limite em <b>% atingido</b> (ex.: 5, 10, 20).</li>
-                      <li><b>MIX</b>: limite é a <b>qtde de itens únicos</b> (ex.: 1500, 1700).</li>
-                      <li>Use bônus como <b>0,10</b> para 0,10% (pode digitar com vírgula).</li>
-                    </ul>
-                  </div>
-                </div>
-
-                <noscript>
-                  <div class="alert alert-warning mt-2 mb-0">
-                    Seu navegador está sem JavaScript. Preencha a escada manualmente (uma linha por faixa): <code>limite:bonus</code>
-                  </div>
-                  <textarea class="form-control mt-2" name="escalas" rows="5" placeholder="Ex.:\n5:0.10\n10:0.20\n20:0.30" required></textarea>
-                </noscript>
-              </div>
-
-              <div class="col-12">
-                <label class="form-label small">Marcas (apenas Share de Marcas)</label>
-                <textarea class="form-control sv-input" name="marcas" rows="3" placeholder="EVOL, CREVON, VEI"></textarea>
-                <div class="text-muted small mt-1 sv-muted">Pode separar por vírgula, ponto-e-vírgula ou quebra de linha.</div>
-              </div>
-
-              <div class="col-12 d-grid">
-                <button class="btn btn-primary">Criar meta</button>
-              </div>
-            </div>
-          </form>
-
-        </div>
-      </div>
-
-      <div class="alert alert-info mt-3 mb-0">
-        <b>Importante (Crescimento):</b> se houver férias/troca de carteira, ajuste a <b>Base manual</b> por vendedor/empresa no mês.
-      </div>
-    </div>
-
-    <div class="col-12 col-lg-7">
-      <div class="sv-card sv-glass card shadow-sm">
-        <div class="sv-card-pad">
-          <div class="d-flex justify-content-between align-items-center mb-2">
-            <h5 class="m-0">📋 Metas cadastradas</h5>
-            <span class="badge text-bg-light border">{{ metas_list|length }} metas</span>
-          </div>
-
-          {% if metas_list|length == 0 %}
-            <div class="text-muted sv-muted">Nenhuma meta cadastrada para este período.</div>
-          {% else %}
-            <div class="table-responsive">
-              <table class="sv-table table table-sm align-middle mb-0">
-                <thead>
-                  <tr>
-                    <th>Nome</th>
-                    <th>Tipo</th>
-                    <th>Empresas</th>
-                    <th>Escada</th>
-                    <th>Marcas</th>
-                    <th class="text-end">Ações</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {% for m in metas_list %}
-                    <tr>
-                      <td class="fw-semibold">
-                        {{ m.nome }}
-                        {% if not m.ativo %}
-                          <span class="badge text-bg-secondary ms-1">inativa</span>
-                        {% endif %}
-                      </td>
-                      <td class="text-muted sv-muted">
-                        {% if m.tipo == 'CRESCIMENTO' %}📈 Crescimento{% elif m.tipo == 'MIX' %}🧩 MIX{% elif m.tipo == 'SHARE_MARCA' %}🏷️ Share{% else %}{{ m.tipo }}{% endif %}
-                      </td>
-                      <td class="small">
-                        {% for e in (meta_emps.get(m.id) or []) %}
-                          <span class="badge text-bg-light border">{{ e }}</span>
-                        {% endfor %}
-                      </td>
-                      <td class="small">
-                        {% for esc in (meta_escalas.get(m.id) or []) %}
-                          {% set bonus = ('%.2f' % (esc.bonus_percentual or 0))|replace('.',',') %}
-                          {% if m.tipo == 'MIX' %}
-                            <span class="badge text-bg-light border me-1 mb-1">≥ {{ esc.limite_min }} → {{ bonus }}%</span>
-                          {% else %}
-                            <span class="badge text-bg-light border me-1 mb-1">≥ {{ esc.limite_min }}% → {{ bonus }}%</span>
-                          {% endif %}
-                        {% endfor %}
-                      </td>
-                      <td class="small">
-                        {% if m.tipo == 'SHARE_MARCA' %}
-                          {% for mk in (meta_marcas.get(m.id) or []) %}
-                            <span class="badge text-bg-light border">{{ mk }}</span>
-                          {% endfor %}
-                        {% else %}
-                          <span class="text-muted sv-muted">—</span>
-                        {% endif %}
-                      </td>
-                      <td class="text-end">
-                        {% if m.tipo == 'CRESCIMENTO' %}
-                          <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin_meta_bases', meta_id=m.id) }}">Bases</a>
-                        {% endif %}
-                        <form class="d-inline" method="post" action="{{ url_for('admin_metas_toggle', meta_id=m.id) }}">
-                          <input type="hidden" name="ano" value="{{ ano }}">
-                          <input type="hidden" name="mes" value="{{ mes }}">
-                          <button class="btn btn-sm btn-outline-secondary">
-                            {% if m.ativo %}Desativar{% else %}Ativar{% endif %}
-                          </button>
-                        </form>
-                      </td>
-                    </tr>
-                  {% endfor %}
-                </tbody>
-              </table>
-            </div>
-          {% endif %}
-
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <script src="{{ url_for('static', filename='js/pages/admin_metas.js') }}"></script>
+  <form class="d-flex gap-2" method="get" action="{{ url_for('admin_metas') }}">
+    <input class="form-control form-control-sm" style="width:110px" name="mes" value="{{ '%02d'|format(mes) }}" placeholder="Mês">
+    <input class="form-control form-control-sm" style="width:120px" name="ano" value="{{ ano }}" placeholder="Ano">
+    <button class="btn btn-sm btn-outline-primary">Ir</button>
+  </form>
 </div>
+
+<div class="row g-3">
+  <div class="col-12 col-lg-5">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h6 class="mb-3">➕ Nova meta</h6>
+
+        <form method="post" action="{{ url_for('admin_metas_criar') }}">
+          <div class="row g-2">
+            <div class="col-12">
+              <label class="form-label small">Nome</label>
+              <input class="form-control" name="nome" placeholder="Ex.: Meta Crescimento (Jan)" required>
+            </div>
+
+            <div class="col-12 col-md-6">
+              <label class="form-label small">Tipo</label>
+              <select class="form-select" name="tipo" required>
+                <option value="CRESCIMENTO">📈 Crescimento</option>
+                <option value="MIX">🧩 MIX (itens únicos)</option>
+                <option value="SHARE_MARCA">🏷️ Share de Marcas</option>
+              </select>
+            </div>
+
+            <div class="col-6 col-md-3">
+              <label class="form-label small">Mês</label>
+              <input class="form-control" name="mes" value="{{ '%02d'|format(mes) }}" required>
+            </div>
+            <div class="col-6 col-md-3">
+              <label class="form-label small">Ano</label>
+              <input class="form-control" name="ano" value="{{ ano }}" required>
+            </div>
+
+            <div class="col-12">
+              <label class="form-label small">Empresas (obrigatório)</label>
+              <div class="border rounded p-2" style="max-height:180px; overflow:auto;">
+                {% for e in emps_rows %}
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="emps" value="{{ e.codigo }}" id="emp_{{ e.codigo }}">
+                    <label class="form-check-label" for="emp_{{ e.codigo }}">
+                      {{ e.codigo }} — {{ e.nome }}{% if e.cidade %} ({{ e.cidade }}{% if e.uf %}/{{ e.uf }}{% endif %}){% endif %}
+                    </label>
+                  </div>
+                {% endfor %}
+              </div>
+              <div class="text-muted small mt-1">Supervisor só enxerga as empresas dele.</div>
+            </div>
+
+            <div class="col-12">
+              <label class="form-label small">Escada (faixas)</label>
+              {#
+                UI "pro" para escada: tabela com adicionar/remover e um textarea oculto como fonte de verdade.
+                O backend continua recebendo o campo "escalas" no formato linha-a-linha "limite:bonus".
+              #}
+              <textarea class="form-control d-none" name="escalas" id="escalas_text" rows="5"></textarea>
+
+              <div class="border rounded p-2 bg-light">
+                <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+                  <div class="text-muted small">
+                    <span class="fw-semibold">Limite</span> → <span class="fw-semibold">Bônus</span>
+                    <span class="ms-1">(bônus é % sobre o valor do mês, ex.: <code>0,10%</code>)</span>
+                  </div>
+                  <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="escada_exemplo">Inserir exemplo</button>
+                    <button type="button" class="btn btn-sm btn-outline-primary" id="escada_add">+ Adicionar faixa</button>
+                  </div>
+                </div>
+
+                <div class="table-responsive">
+                  <table class="table table-sm align-middle mb-0" id="escadas_table">
+                    <thead>
+                      <tr>
+                        <th style="width: 40%">Limite</th>
+                        <th style="width: 40%">Bônus (%)</th>
+                        <th class="text-end" style="width: 20%">&nbsp;</th>
+                      </tr>
+                    </thead>
+                    <tbody></tbody>
+                  </table>
+                </div>
+
+                <div class="text-muted small mt-2">
+                  <ul class="mb-0 ps-3">
+                    <li><b>Crescimento</b> e <b>Share</b>: limite em <b>% atingido</b> (ex.: 5, 10, 20).</li>
+                    <li><b>MIX</b>: limite é a <b>qtde de itens únicos</b> (ex.: 1500, 1700).</li>
+                    <li>Use bônus como <b>0,10</b> para 0,10% (pode digitar com vírgula).</li>
+                  </ul>
+                </div>
+              </div>
+
+              <noscript>
+                <div class="alert alert-warning mt-2 mb-0">
+                  Seu navegador está sem JavaScript. Preencha a escada manualmente (uma linha por faixa): <code>limite:bonus</code>
+                </div>
+                <textarea class="form-control mt-2" name="escalas" rows="5" placeholder="Ex.:\n5:0.10\n10:0.20\n20:0.30" required></textarea>
+              </noscript>
+            </div>
+
+            <div class="col-12">
+              <label class="form-label small">Marcas (apenas Share de Marcas)</label>
+              <textarea class="form-control" name="marcas" rows="3" placeholder="EVOL, CREVON, VEI"></textarea>
+              <div class="text-muted small mt-1">Pode separar por vírgula, ponto-e-vírgula ou quebra de linha.</div>
+            </div>
+
+            <div class="col-12 d-grid">
+              <button class="btn btn-primary">Criar meta</button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div class="alert alert-info mt-3">
+      <b>Importante (Crescimento):</b> se houver férias/troca de carteira, ajuste a <b>Base manual</b> por vendedor/empresa no mês.
+    </div>
+  </div>
+
+  <div class="col-12 col-lg-7">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <h6 class="m-0">📋 Metas cadastradas ({{ '%02d'|format(mes) }}/{{ ano }})</h6>
+        </div>
+
+        {% if metas_list|length == 0 %}
+          <div class="text-muted">Nenhuma meta cadastrada para este período.</div>
+        {% else %}
+          <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+              <thead>
+                <tr>
+                  <th>Nome</th>
+                  <th>Tipo</th>
+                  <th>Empresas</th>
+                  <th>Escada</th>
+                  <th>Marcas</th>
+                  <th class="text-end">Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for m in metas_list %}
+                  <tr>
+                    <td class="fw-semibold">
+                      {{ m.nome }}
+                      {% if not m.ativo %}
+                        <span class="badge text-bg-secondary ms-1">inativa</span>
+                      {% endif %}
+                    </td>
+                    <td class="text-muted">
+                      {% if m.tipo == 'CRESCIMENTO' %}📈 Crescimento{% elif m.tipo == 'MIX' %}🧩 MIX{% elif m.tipo == 'SHARE_MARCA' %}🏷️ Share{% else %}{{ m.tipo }}{% endif %}
+                    </td>
+                    <td class="small">
+                      {% for e in (meta_emps.get(m.id) or []) %}
+                        <span class="badge text-bg-light border">{{ e }}</span>
+                      {% endfor %}
+                    </td>
+                    <td class="small">
+                      {% for esc in (meta_escalas.get(m.id) or []) %}
+                        {% set bonus = ('%.2f' % (esc.bonus_percentual or 0))|replace('.',',') %}
+                        {% if m.tipo == 'MIX' %}
+                          <span class="badge text-bg-light border me-1 mb-1">≥ {{ esc.limite_min }} → {{ bonus }}%</span>
+                        {% else %}
+                          <span class="badge text-bg-light border me-1 mb-1">≥ {{ esc.limite_min }}% → {{ bonus }}%</span>
+                        {% endif %}
+                      {% endfor %}
+                    </td>
+                    <td class="small">
+                      {% if m.tipo == 'SHARE_MARCA' %}
+                        {% for mk in (meta_marcas.get(m.id) or []) %}
+                          <span class="badge text-bg-light border">{{ mk }}</span>
+                        {% endfor %}
+                      {% else %}
+                        <span class="text-muted">—</span>
+                      {% endif %}
+                    </td>
+                    <td class="text-end">
+                      {% if m.tipo == 'CRESCIMENTO' %}
+                        <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin_meta_bases', meta_id=m.id) }}">Bases</a>
+                      {% endif %}
+                      <form class="d-inline" method="post" action="{{ url_for('admin_metas_toggle', meta_id=m.id) }}">
+                        <input type="hidden" name="ano" value="{{ ano }}">
+                        <input type="hidden" name="mes" value="{{ mes }}">
+                        <button class="btn btn-sm btn-outline-secondary">
+                          {% if m.ativo %}Desativar{% else %}Ativar{% endif %}
+                        </button>
+                      </form>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // Builder da escada: mantém um textarea oculto (escalas_text) como fonte de verdade.
+  (function () {
+    const table = document.getElementById('escadas_table');
+    const tbody = table ? table.querySelector('tbody') : null;
+    const hidden = document.getElementById('escalas_text');
+    const btnAdd = document.getElementById('escada_add');
+    const btnEx = document.getElementById('escada_exemplo');
+
+    if (!tbody || !hidden || !btnAdd) return;
+
+    function normalizeNumber(v) {
+      if (v == null) return '';
+      return String(v).trim().replace(',', '.');
+    }
+
+    function serialize() {
+      const rows = Array.from(tbody.querySelectorAll('tr'));
+      const lines = [];
+      for (const r of rows) {
+        const lim = normalizeNumber(r.querySelector('input[data-kind="lim"]')?.value || '');
+        const bon = normalizeNumber(r.querySelector('input[data-kind="bon"]')?.value || '');
+        if (!lim || !bon) continue;
+        lines.push(`${lim}:${bon}`);
+      }
+      hidden.value = lines.join('\n');
+    }
+
+    function addRow(lim = '', bon = '') {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>
+          <input class="form-control form-control-sm" data-kind="lim" inputmode="decimal" placeholder="Ex.: 5" value="${lim}">
+        </td>
+        <td>
+          <div class="input-group input-group-sm">
+            <input class="form-control" data-kind="bon" inputmode="decimal" placeholder="Ex.: 0,10" value="${bon}">
+            <span class="input-group-text">%</span>
+          </div>
+        </td>
+        <td class="text-end">
+          <button type="button" class="btn btn-sm btn-outline-danger" title="Remover">✕</button>
+        </td>
+      `;
+
+      tr.querySelector('button').addEventListener('click', () => {
+        tr.remove();
+        serialize();
+      });
+
+      tr.querySelectorAll('input').forEach(inp => {
+        inp.addEventListener('input', serialize);
+        inp.addEventListener('change', serialize);
+      });
+
+      tbody.appendChild(tr);
+      serialize();
+    }
+
+    // Começa com 1 linha vazia para guiar.
+    addRow();
+
+    btnAdd.addEventListener('click', () => addRow());
+
+    if (btnEx) {
+      btnEx.addEventListener('click', () => {
+        tbody.innerHTML = '';
+        addRow('5', '0,10');
+        addRow('10', '0,20');
+        addRow('20', '0,30');
+      });
+    }
+
+    // Garante que antes de enviar o form o textarea oculto esteja preenchido.
+    const form = hidden.closest('form');
+    if (form) {
+      form.addEventListener('submit', (ev) => {
+        serialize();
+        if (!hidden.value || hidden.value.trim().length === 0) {
+          ev.preventDefault();
+          alert('Preencha ao menos uma faixa na escada (Limite e Bônus).');
+        }
+      });
+    }
+  })();
+</script>
 {% endblock %}
