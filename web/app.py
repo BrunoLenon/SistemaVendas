@@ -13,6 +13,14 @@ from services.campanhas_service import (
     build_relatorio_campanhas_scope,
 )
 from services.relatorio_campanhas_service import build_relatorio_campanhas_context, build_relatorio_campanhas_unificado_context
+
+from services.metas_v2_service import (
+    list_programas as metas_v2_list_programas,
+    upsert_programa as metas_v2_upsert_programa,
+    calcular_e_snapshot as metas_v2_calcular_e_snapshot,
+    list_resultados as metas_v2_list_resultados,
+    get_programa as metas_v2_get_programa,
+)
 from services.campanhas_v2_engine import recalc_v2_competencia
 import os
 import re
@@ -7510,6 +7518,214 @@ def err_500(e):
 # Campanhas V2 (Enterprise)
 # ==========================
 # (rotas admin migradas para o blueprint blueprints/campanhas_v2_admin.py)
+
+
+
+
+@app.route("/admin/metas-v2", methods=["GET", "POST"])
+@roles_required("admin")
+def admin_metas_v2():
+    # período (default: mês atual)
+    hoje = date.today()
+    ano = int(request.args.get("ano") or request.form.get("ano") or hoje.year)
+    mes = int(request.args.get("mes") or request.form.get("mes") or hoje.month)
+
+    edit_id = request.args.get("edit")
+    edit_programa = None
+
+    with SessionLocal() as db:
+        emps_all = db.query(Emp).order_by(Emp.codigo.asc()).all()
+
+        # defaults
+        baseline_tipo = "ano_passado"
+        baseline_janela_meses = 3
+        ativo = True
+        gate_enabled = False
+        gate_min_valor = "1000,00"
+        emps_selected = []
+        crescimento_faixas = [{"limite": "5", "recompensa_pct": "0,10"}, {"limite": "10", "recompensa_pct": "0,15"}]
+        mix_faixas = [{"limite": "1500", "recompensa_pct": "0,10"}, {"limite": "1800", "recompensa_pct": "0,20"}]
+
+        if edit_id:
+            edit_programa = metas_v2_get_programa(db, int(edit_id))
+            if edit_programa:
+                baseline_tipo = (edit_programa.get("baseline_tipo") or baseline_tipo)
+                baseline_janela_meses = int(edit_programa.get("baseline_janela_meses") or baseline_janela_meses)
+                ativo = bool(edit_programa.get("ativo", True))
+                gate_enabled = bool(edit_programa.get("gate_itens_parados_enabled", False))
+                gate_min_valor = str(edit_programa.get("gate_itens_parados_min_valor") or gate_min_valor)
+                emps_selected = list(edit_programa.get("emps") or [])
+                crescimento_faixas = []
+                mix_faixas = []
+                for c in (edit_programa.get("criterios") or []):
+                    if c.get("tipo") == "crescimento":
+                        crescimento_faixas = c.get("faixas") or []
+                    if c.get("tipo") == "mix":
+                        mix_faixas = c.get("faixas") or []
+
+        if request.method == "POST":
+            action = request.form.get("action") or "salvar"
+            programa_id = request.form.get("programa_id") or None
+            if programa_id:
+                try:
+                    programa_id = int(programa_id)
+                except Exception:
+                    programa_id = None
+
+            if action == "recalcular":
+                pid = int(request.form.get("programa_id"))
+                prog = metas_v2_get_programa(db, pid)
+                if prog:
+                    emp_scopes = list(prog.get("emps") or [])
+                    metas_v2_calcular_e_snapshot(db, pid, ano=ano, mes=mes, emp_scopes=emp_scopes, vendedor_scopes=None)
+                    db.commit()
+                return redirect(url_for("admin_metas_v2", ano=ano, mes=mes))
+
+            # salvar (com/sem recalcular)
+            nome = (request.form.get("nome") or "").strip() or f"Metas {mes:02d}/{ano}"
+            baseline_tipo = (request.form.get("baseline_tipo") or "ano_passado").strip()
+            baseline_janela_meses = int(request.form.get("baseline_janela_meses") or 3)
+            ativo = bool(request.form.get("ativo"))
+            gate_enabled = bool(request.form.get("gate_enabled"))
+            gate_min_valor = (request.form.get("gate_min_valor") or "0").strip().replace(".", "").replace(",", ".")
+            try:
+                gate_min_valor_f = float(gate_min_valor)
+            except Exception:
+                gate_min_valor_f = 0.0
+
+            emps_selected = request.form.getlist("emp_alvo")
+
+            crescimento_lim = request.form.getlist("crescimento_limite[]")
+            crescimento_rec = request.form.getlist("crescimento_recompensa[]")
+            crescimento_faixas_in = [{"limite": a, "recompensa_pct": b} for a, b in zip(crescimento_lim, crescimento_rec)]
+
+            mix_lim = request.form.getlist("mix_limite[]")
+            mix_rec = request.form.getlist("mix_recompensa[]")
+            mix_faixas_in = [{"limite": a, "recompensa_pct": b} for a, b in zip(mix_lim, mix_rec)]
+
+            pid = metas_v2_upsert_programa(
+                db,
+                programa_id=programa_id,
+                nome=nome,
+                ano=ano,
+                mes=mes,
+                ativo=ativo,
+                baseline_tipo=baseline_tipo,
+                baseline_janela_meses=baseline_janela_meses,
+                gate_enabled=gate_enabled,
+                gate_min_valor=gate_min_valor_f,
+                emps=emps_selected,
+                crescimento_faixas=crescimento_faixas_in,
+                mix_faixas=mix_faixas_in,
+            )
+            db.commit()
+
+            if action == "salvar_recalcular":
+                prog = metas_v2_get_programa(db, pid)
+                emp_scopes = list((prog or {}).get("emps") or [])
+                metas_v2_calcular_e_snapshot(db, pid, ano=ano, mes=mes, emp_scopes=emp_scopes, vendedor_scopes=None)
+                db.commit()
+
+            return redirect(url_for("admin_metas_v2", ano=ano, mes=mes))
+
+        programas = metas_v2_list_programas(db, ano, mes)
+
+    return render_template(
+        "admin_metas_v2.html",
+        ano=ano,
+        mes=mes,
+        programas=programas,
+        emps_all=emps_all,
+        emps_selected=emps_selected,
+        edit_programa=edit_programa,
+        baseline_tipo=baseline_tipo,
+        baseline_janela_meses=baseline_janela_meses,
+        ativo=ativo,
+        gate_enabled=gate_enabled,
+        gate_min_valor=str(gate_min_valor),
+        crescimento_faixas=crescimento_faixas,
+        mix_faixas=mix_faixas,
+    )
+
+
+@app.route("/metas-v2")
+@login_required
+def metas_v2():
+    hoje = date.today()
+    ano = int(request.args.get("ano") or hoje.year)
+    mes = int(request.args.get("mes") or hoje.month)
+    programa_id = request.args.get("programa")
+    recalc = request.args.get("recalc")
+
+    is_admin = bool(_is_admin())
+    role = _role()
+
+    emp_scopes = _allowed_emps()
+
+    # vendedor scope (para perfil vendedor)
+    vendedor_scope = None
+    if role == "vendedor":
+        vendedor_scope = (session.get("nome") or "").strip() or None
+
+    with SessionLocal() as db:
+        programa = None
+        if programa_id:
+            programa = metas_v2_get_programa(db, int(programa_id))
+        else:
+            # pega o primeiro programa ativo do período que intersecta EMPs do usuário
+            rows = db.execute(
+                text(
+                    """
+                    select id
+                      from metas_v2_programas
+                     where ano=:ano and mes=:mes and ativo=true
+                     order by id desc
+                    """
+                ),
+                {"ano": ano, "mes": mes},
+            ).scalars().all()
+            for pid in rows:
+                p = metas_v2_get_programa(db, int(pid))
+                if not p:
+                    continue
+                if set(p.get("emps") or []).intersection(set(emp_scopes)):
+                    programa = p
+                    break
+
+        if not programa:
+            return render_template("metas_v2.html", programa=None, resultados=[], ano=ano, mes=mes, is_admin=is_admin)
+
+        # restringe EMPs ao programa + escopo do usuário
+        emp_scopes_final = sorted(set(emp_scopes).intersection(set(programa.get("emps") or [])))
+
+        if recalc:
+            metas_v2_calcular_e_snapshot(
+                db,
+                int(programa["id"]),
+                ano=ano,
+                mes=mes,
+                emp_scopes=emp_scopes_final,
+                vendedor_scopes=[vendedor_scope] if vendedor_scope else None,
+            )
+            db.commit()
+
+        resultados = metas_v2_list_resultados(
+            db,
+            int(programa["id"]),
+            ano,
+            mes,
+            emp_scopes_final,
+            vendedor=vendedor_scope if vendedor_scope else None,
+        )
+
+    return render_template(
+        "metas_v2.html",
+        programa=programa,
+        resultados=resultados,
+        ano=ano,
+        mes=mes,
+        is_admin=is_admin,
+    )
 
 
 @app.route("/financeiro/campanhas_v2", methods=["GET"])

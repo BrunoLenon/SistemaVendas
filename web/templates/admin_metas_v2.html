@@ -1,0 +1,238 @@
+{% extends "base.html" %}
+{% block title %}Admin - Metas (V2){% endblock %}
+
+{% block content %}
+<div class="sv-page">
+  <div class="sv-page-header">
+    <div>
+      <h1 class="sv-h1">Metas (V2) — Vendedores</h1>
+      <div class="sv-muted">Crescimento + Mix (com escada de faixas) e gate opcional por Itens Parados.</div>
+    </div>
+    <div class="sv-actions">
+      <a class="sv-btn sv-btn-ghost" href="/admin/metas">Abrir Metas (legado)</a>
+      <a class="sv-btn" href="/metas-v2">Ver como Operação</a>
+    </div>
+  </div>
+
+  <div class="sv-grid sv-grid-2">
+    <div class="sv-card">
+      <div class="sv-card-header">
+        <div class="sv-card-title">Cadastro / Edição</div>
+        <div class="sv-muted">Crie um programa por mês/ano (pode ter mais de um).</div>
+      </div>
+
+      <form method="POST" class="sv-form" id="formMetasV2">
+        <input type="hidden" name="programa_id" value="{{ edit_programa.id if edit_programa else '' }}"/>
+
+        <div class="sv-row">
+          <div class="sv-col">
+            <label class="sv-label">Nome</label>
+            <input class="sv-input" name="nome" value="{{ edit_programa.nome if edit_programa else '' }}" placeholder="Ex.: Metas Fevereiro 2026"/>
+          </div>
+          <div class="sv-col sv-col-3">
+            <label class="sv-label">Ano</label>
+            <input class="sv-input" type="number" name="ano" value="{{ ano }}" min="2020" max="2099"/>
+          </div>
+          <div class="sv-col sv-col-3">
+            <label class="sv-label">Mês</label>
+            <input class="sv-input" type="number" name="mes" value="{{ mes }}" min="1" max="12"/>
+          </div>
+        </div>
+
+        <div class="sv-row">
+          <div class="sv-col">
+            <label class="sv-label">Baseline (para Crescimento)</label>
+            <select class="sv-input" name="baseline_tipo">
+              <option value="ano_passado" {% if baseline_tipo=='ano_passado' %}selected{% endif %}>Mesmo mês do ano passado (vendas_resumo_periodo)</option>
+              <option value="media_meses" {% if baseline_tipo=='media_meses' %}selected{% endif %}>Média dos últimos N meses (vendas_resumo_periodo)</option>
+            </select>
+          </div>
+          <div class="sv-col sv-col-3">
+            <label class="sv-label">N (média)</label>
+            <input class="sv-input" type="number" name="baseline_janela_meses" value="{{ baseline_janela_meses }}" min="1" max="12"/>
+          </div>
+          <div class="sv-col sv-col-3">
+            <label class="sv-label">Ativo</label>
+            <label class="sv-switch">
+              <input type="checkbox" name="ativo" {% if ativo %}checked{% endif %}/>
+              <span> </span>
+            </label>
+          </div>
+        </div>
+
+        <div class="sv-divider"></div>
+
+        <div class="sv-row sv-row-center">
+          <div class="sv-col">
+            <div class="sv-flex sv-flex-between">
+              <div>
+                <div class="sv-label">Gate — Itens Parados</div>
+                <div class="sv-muted">Se habilitar, só soma recompensas se o vendedor vender pelo menos um mínimo de itens parados no mês.</div>
+              </div>
+              <label class="sv-switch">
+                <input type="checkbox" name="gate_enabled" id="gate_enabled" {% if gate_enabled %}checked{% endif %}/>
+                <span> </span>
+              </label>
+            </div>
+          </div>
+          <div class="sv-col sv-col-3">
+            <label class="sv-label">Mínimo (R$)</label>
+            <input class="sv-input" type="text" name="gate_min_valor" value="{{ gate_min_valor }}" placeholder="1000,00"/>
+          </div>
+        </div>
+
+        <div class="sv-divider"></div>
+
+        <div class="sv-block">
+          <div class="sv-card-subtitle">Empresas (EMPs)</div>
+          <div class="sv-muted">Escolha onde o programa vale. Admin vê tudo; Operação filtra automaticamente.</div>
+          <div class="sv-checkbox-grid">
+            {% for e in emps_all %}
+              <label class="sv-check">
+                <input type="checkbox" name="emp_alvo" value="{{ e.codigo }}"
+                  {% if e.codigo in emps_selected %}checked{% endif %}/>
+                <span>{{ e.codigo }} — {{ e.nome }}</span>
+              </label>
+            {% endfor %}
+          </div>
+        </div>
+
+        <div class="sv-divider"></div>
+
+        <div class="sv-block">
+          <div class="sv-flex sv-flex-between">
+            <div>
+              <div class="sv-card-subtitle">Crescimento (faixas)</div>
+              <div class="sv-muted">Limite em % (ex.: 5, 10, 15) → Recompensa em % (ex.: 0,10; 0,15)</div>
+            </div>
+            <button type="button" class="sv-btn sv-btn-ghost" onclick="MetaV2.addFaixa('crescimento')">+ faixa</button>
+          </div>
+
+          <div class="sv-table-wrap">
+            <table class="sv-table" id="tbl_crescimento">
+              <thead>
+                <tr>
+                  <th>Limite (%)</th>
+                  <th>Recompensa (%)</th>
+                  <th style="width:48px;"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for f in crescimento_faixas %}
+                <tr>
+                  <td><input class="sv-input sv-input-sm" name="crescimento_limite[]" value="{{ f.limite }}"></td>
+                  <td><input class="sv-input sv-input-sm" name="crescimento_recompensa[]" value="{{ f.recompensa_pct }}"></td>
+                  <td><button type="button" class="sv-btn sv-btn-danger sv-btn-xs" onclick="MetaV2.delRow(this)">×</button></td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="sv-divider"></div>
+
+        <div class="sv-block">
+          <div class="sv-flex sv-flex-between">
+            <div>
+              <div class="sv-card-subtitle">Mix (faixas)</div>
+              <div class="sv-muted">Limite em itens únicos (ex.: 1500, 1800) → Recompensa em %</div>
+            </div>
+            <button type="button" class="sv-btn sv-btn-ghost" onclick="MetaV2.addFaixa('mix')">+ faixa</button>
+          </div>
+
+          <div class="sv-table-wrap">
+            <table class="sv-table" id="tbl_mix">
+              <thead>
+                <tr>
+                  <th>Limite (itens)</th>
+                  <th>Recompensa (%)</th>
+                  <th style="width:48px;"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for f in mix_faixas %}
+                <tr>
+                  <td><input class="sv-input sv-input-sm" name="mix_limite[]" value="{{ f.limite }}"></td>
+                  <td><input class="sv-input sv-input-sm" name="mix_recompensa[]" value="{{ f.recompensa_pct }}"></td>
+                  <td><button type="button" class="sv-btn sv-btn-danger sv-btn-xs" onclick="MetaV2.delRow(this)">×</button></td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="sv-actions sv-mt">
+          <button class="sv-btn" name="action" value="salvar">Salvar</button>
+          <button class="sv-btn sv-btn-ghost" name="action" value="salvar_recalcular">Salvar e Recalcular</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="sv-card">
+      <div class="sv-card-header">
+        <div class="sv-card-title">Programas do período</div>
+        <div class="sv-muted">Ano {{ ano }}, mês {{ mes }}.</div>
+      </div>
+
+      {% if programas %}
+        <div class="sv-table-wrap">
+          <table class="sv-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Nome</th>
+                <th>EMPs</th>
+                <th>Baseline</th>
+                <th>Gate</th>
+                <th style="width:240px;">Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for p in programas %}
+              <tr>
+                <td>{{ p.id }}</td>
+                <td><strong>{{ p.nome }}</strong></td>
+                <td class="sv-muted">{{ p.emps|join(', ') }}</td>
+                <td class="sv-muted">
+                  {% if p.baseline_tipo == 'media_meses' %}Média {{ p.baseline_janela_meses }}m{% else %}Ano passado{% endif %}
+                </td>
+                <td class="sv-muted">
+                  {% if p.gate_itens_parados_enabled %}Sim ({{ p.gate_itens_parados_min_valor }}){% else %}Não{% endif %}
+                </td>
+                <td>
+                  <div class="sv-actions">
+                    <a class="sv-btn sv-btn-xs" href="/admin/metas-v2?ano={{ ano }}&mes={{ mes }}&edit={{ p.id }}">Editar</a>
+                    <a class="sv-btn sv-btn-ghost sv-btn-xs" href="/metas-v2?programa={{ p.id }}&ano={{ ano }}&mes={{ mes }}">Ver resultados</a>
+                    <form method="POST" style="display:inline;">
+                      <input type="hidden" name="programa_id" value="{{ p.id }}"/>
+                      <input type="hidden" name="ano" value="{{ ano }}"/>
+                      <input type="hidden" name="mes" value="{{ mes }}"/>
+                      <button class="sv-btn sv-btn-ghost sv-btn-xs" name="action" value="recalcular">Recalcular</button>
+                    </form>
+                  </div>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <div class="sv-empty">Nenhum programa encontrado para este período.</div>
+      {% endif %}
+
+      <div class="sv-divider"></div>
+      <div class="sv-muted">
+        <strong>Importante:</strong> o Crescimento usa <code>vendas_resumo_periodo</code> como referência (ano passado ou média).
+        Para meses novos (2026+), se o resumo não existir, o sistema usa o total de vendas do mês como referência do “atual”.
+      </div>
+      <div class="sv-muted sv-mt">
+        Rode o SQL em <code>web/sql/metas_v2.sql</code> no Supabase antes de usar.
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/static/js/pages/admin_metas_v2.js?v=1"></script>
+{% endblock %}
