@@ -7871,11 +7871,6 @@ def operacoes_vendas_produto():
     if modo not in ("qtd", "valor"):
         modo = "qtd"
 
-
-    sort_raw = (request.args.get("sort") or "").strip().lower()
-    if sort_raw not in ("total_desc", "emp_vendedor"):
-        sort_raw = "total_desc"
-
     # meses (default: Jan -> mês atual do ano atual)
     today = date.today()
     meses_select = []
@@ -8057,17 +8052,8 @@ def operacoes_vendas_produto():
                     }
                 )
 
-            # ordenação (mantém página, mas melhora leitura):
-            # - total_desc (padrão): ordena pelo total líquido do modo selecionado (qtd/valor)
-            # - emp_vendedor: ordena por EMP + Vendedor (clássico)
-            sort_mode = (request.args.get("sort") or "total_desc").strip().lower()
-            if sort_mode == "emp_vendedor":
-                linhas.sort(key=lambda x: (x["emp"], x["vendedor"]))
-            else:
-                if modo == "valor":
-                    linhas.sort(key=lambda x: (x["emp"], -(x.get("total_val") or 0.0), x["vendedor"]))
-                else:
-                    linhas.sort(key=lambda x: (x["emp"], -(x.get("total_qtd") or 0.0), x["vendedor"]))
+            # ordena por EMP + vendedor (mantém padrão atual)
+            linhas.sort(key=lambda x: (x["emp"], x["vendedor"]))
 
             # médias globais: total / meses que tiveram dado (qualquer linha)
             media_mensal_global_qtd = 0.0
@@ -8147,7 +8133,6 @@ def operacoes_vendas_produto():
             "mes_fim": mes_fim,
             "emps_sel": emps_sel,
             "emps_disponiveis": emps_disponiveis,
-            "sort": sort_raw,
         }
 
         return render_template(
