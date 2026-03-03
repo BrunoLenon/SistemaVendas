@@ -594,60 +594,6 @@ class MetaRecompensaItem(Base):
         Index("ix_meta_recomp_meta_ordem", "meta_id", "ordem"),
     )
 
-class MetaGateVendedorEmp(Base):
-    """Configuração de Gate por Vendedor+EMP (por período).
-
-    - Gate é sempre valor líquido (CA deduz, DS ignora).
-    - Um vendedor pode ter gates diferentes em EMPs diferentes.
-    """
-
-    __tablename__ = "metas_gate_vendedor_emp"
-
-    id = Column(Integer, primary_key=True)
-
-    emp = Column(String(30), nullable=False, index=True)
-    vendedor = Column(String(80), nullable=False, index=True)
-
-    periodo_tipo = Column(String(20), nullable=False, default="MENSAL", server_default="MENSAL", index=True)  # MENSAL | DATA_RANGE
-    ano = Column(Integer, nullable=True, index=True)
-    mes = Column(Integer, nullable=True, index=True)
-    data_ini = Column(Date, nullable=True, index=True)
-    data_fim = Column(Date, nullable=True, index=True)
-
-    gate_valor = Column(Float, nullable=False, default=0.0)
-
-    ativo = Column(Boolean, nullable=False, default=True)
-    created_by_user_id = Column(Integer, nullable=True, index=True)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-
-
-class MetaRecompensaLojaItem(Base):
-    """Regras de pagamento por item por Loja (EMP), independentes do gate.
-
-    O vendedor só recebe estas regras se bater o gate configurado para ele na EMP.
-    """
-
-    __tablename__ = "metas_recompensas_loja_itens"
-
-    id = Column(Integer, primary_key=True)
-
-    emp = Column(String(30), nullable=False, index=True)
-    ordem = Column(Integer, nullable=False, default=0)
-
-    mestre = Column(String(60), nullable=True, index=True)
-    marca = Column(String(120), nullable=True, index=True)
-    produto_like = Column(String(200), nullable=True)
-
-    recompensa_por_un = Column(Float, nullable=False, default=0.0)
-
-    ativo = Column(Boolean, nullable=False, default=True)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-
-    __table_args__ = (
-        Index("ix_meta_recomp_loja_emp_ordem", "emp", "ordem"),
-    )
-
-
 
 class MetaResultado(Base):
     """Resultado calculado por meta/vendedor/EMP/mês.
@@ -1490,43 +1436,6 @@ def ensure_schema_metas():
                     created_at TIMESTAMP NOT NULL DEFAULT NOW()
                 );
             """))
-            # gate por vendedor+EMP
-            conn.execute(text("""
-                CREATE TABLE IF NOT EXISTS metas_gate_vendedor_emp (
-                    id SERIAL PRIMARY KEY,
-                    emp VARCHAR(30) NOT NULL,
-                    vendedor VARCHAR(80) NOT NULL,
-                    periodo_tipo VARCHAR(20) NOT NULL DEFAULT 'MENSAL',
-                    ano INTEGER,
-                    mes INTEGER,
-                    data_ini DATE,
-                    data_fim DATE,
-                    gate_valor DOUBLE PRECISION NOT NULL DEFAULT 0,
-                    ativo BOOLEAN NOT NULL DEFAULT TRUE,
-                    created_by_user_id INTEGER,
-                    created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT (NOW())
-                );
-            """))
-            # índice simples
-            conn.execute(text("""CREATE INDEX IF NOT EXISTS ix_metas_gate_emp_vend_periodo ON metas_gate_vendedor_emp(emp, vendedor, periodo_tipo, ano, mes);"""))
-            conn.execute(text("""CREATE INDEX IF NOT EXISTS ix_metas_gate_emp_vend_range ON metas_gate_vendedor_emp(emp, vendedor, data_ini, data_fim);"""))
-
-            # regras por loja (EMP)
-            conn.execute(text("""
-                CREATE TABLE IF NOT EXISTS metas_recompensas_loja_itens (
-                    id SERIAL PRIMARY KEY,
-                    emp VARCHAR(30) NOT NULL,
-                    ordem INTEGER NOT NULL DEFAULT 0,
-                    mestre VARCHAR(60),
-                    marca VARCHAR(120),
-                    produto_like VARCHAR(200),
-                    recompensa_por_un DOUBLE PRECISION NOT NULL DEFAULT 0,
-                    ativo BOOLEAN NOT NULL DEFAULT TRUE,
-                    created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT (NOW())
-                );
-            """))
-            conn.execute(text("""CREATE INDEX IF NOT EXISTS ix_meta_recomp_loja_emp_ordem ON metas_recompensas_loja_itens(emp, ordem);"""))
-
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_meta_recomp_meta ON metas_recompensas_itens (meta_id);"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_meta_recomp_meta_ordem ON metas_recompensas_itens (meta_id, ordem);"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_meta_recomp_mestre ON metas_recompensas_itens (mestre);"))

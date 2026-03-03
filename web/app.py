@@ -112,8 +112,6 @@ from db import (
     MetaBaseManual,
     MetaResultado,
     MetaRecompensaItem,
-    MetaGateVendedorEmp,
-    MetaRecompensaLojaItem,
     ensure_schema_metas,
     FechamentoMensal,
     AppSetting,
@@ -238,11 +236,20 @@ def brl_rs(value):
     return "R$" + s
 
 # --------------------------
+# Alias de filtro Jinja (compat)
+# Muitos templates antigos usam `moeda_br`.
+# --------------------------
+@app.template_filter("moeda_br")
+def moeda_br(value):
+    """Alias compatível: moeda brasileira com prefixo 'R$' (ex: R$12.345,67)."""
+    return brl_rs(value)
+
+# --------------------------
 # Filtros Jinja: datas (ISO <-> BR)
 # --------------------------
 @app.template_filter("date_iso")
 def date_iso(value):
-    """Converte date/datetime/str para YYYY-MM-DD (compatível com <input type="date">)."""
+    """Converte date/datetime/str para YYYY-MM-DD (compatível com <input type=\"date\">)."""
     if value is None:
         return ""
     try:
@@ -7285,7 +7292,6 @@ def metas():
         vendedores_choices = _get_vendedores_no_periodo(db, ano, mes, emps_scope) if role != "vendedor" else vendedores
 
         # nomes amigáveis dos tipos
-        
         tipo_label = {"CRESCIMENTO": "📈 Crescimento", "MIX": "🧩 MIX", "SHARE_MARCA": "🏷️ Share de Marcas", "GATE_ITEM_REWARD": "🎯 Gate + R$/Item"}
 
         return render_template(
@@ -7321,8 +7327,6 @@ def admin_metas():
     hoje = date.today()
     ano = int(request.args.get("ano") or hoje.year)
     mes = int(request.args.get("mes") or hoje.month)
-    tab = (request.args.get("tab") or "padrao").strip()
-    emp_itens = (request.args.get("emp_itens") or "").strip()
 
     with SessionLocal() as db:
         emps_allowed = _allowed_emps()
@@ -7350,38 +7354,6 @@ def admin_metas():
             meta_marcas[m.id] = [r[0] for r in db.query(MetaMarca.marca).filter(MetaMarca.meta_id == m.id).all()]
             meta_regras[m.id] = db.query(MetaRecompensaItem).filter(MetaRecompensaItem.meta_id == m.id).order_by(MetaRecompensaItem.ordem.asc()).all()
 
-        
-        # --- Tabs: padrao | gate | itens ---
-        tab = tab if tab in ("padrao", "gate", "itens") else "padrao"
-
-        emps_scope = [str(e.codigo) for e in emps_rows] if emps_rows else []
-        vendedores_choices = _get_vendedores_no_periodo(db, ano, mes, emps_scope)
-
-        # Gates por vendedor+EMP (mensal)
-        gates_list = (
-            db.query(MetaGateVendedorEmp)
-            .filter(
-                MetaGateVendedorEmp.periodo_tipo == "MENSAL",
-                MetaGateVendedorEmp.ano == ano,
-                MetaGateVendedorEmp.mes == mes,
-            )
-            .order_by(MetaGateVendedorEmp.emp.asc(), MetaGateVendedorEmp.vendedor.asc())
-            .all()
-        )
-        if emps_scope:
-            gates_list = [g for g in gates_list if str(g.emp) in set(emps_scope)]
-
-        if not emp_itens and emps_scope:
-            emp_itens = emps_scope[0]
-
-        loja_itens_list = []
-        if emp_itens:
-            loja_itens_list = (
-                db.query(MetaRecompensaLojaItem)
-                .filter(MetaRecompensaLojaItem.emp == emp_itens)
-                .order_by(MetaRecompensaLojaItem.ativo.desc(), MetaRecompensaLojaItem.ordem.asc(), MetaRecompensaLojaItem.id.asc())
-                .all()
-            )
         return render_template(
             "admin_metas.html",
             role=role,
@@ -7394,11 +7366,6 @@ def admin_metas():
             meta_escalas=meta_escalas,
             meta_marcas=meta_marcas,
             meta_regras=meta_regras,
-            tab=tab,
-            vendedores_choices=vendedores_choices,
-            emp_itens=emp_itens,
-            gates_list=gates_list,
-            loja_itens_list=loja_itens_list,
         )
 
 
@@ -7600,220 +7567,6 @@ def admin_metas_toggle(meta_id: int):
 
     flash("Status atualizado.", "success")
     return redirect(url_for("admin_metas", ano=ano, mes=mes))
-
-
-
-@app.post("/admin/metas/gate/salvar")
-def admin_metas_gate_salvar():
-    red = _login_required()
-    if red:
-        return red
-
-    role = _role() or ""
-    if role not in ("admin", "supervisor"):
-        flash("Acesso negado.", "danger")
-        return redirect(url_for("dashboard"))
-
-    # Garante schema
-    ensure_schema_metas()
-
-    ano = int(request.form.get("ano") or date.today().year)
-    mes = int(request.form.get("mes") or date.today().month)
-
-    emp = (request.form.get("emp") or "").strip()
-    vendedor = (request.form.get("vendedor") or "").strip().upper()
-    gate_raw = (request.form.get("gate_valor") or "").strip()
-
-    def _ptbr_to_float(s: str) -> float:
-        s = (s or "").strip()
-        if not s:
-            return 0.0
-        s = s.replace("R$", "").replace(" ", "")
-        # remove thousands '.', keep decimal ','
-        s = s.replace(".", "").replace(",", ".")
-        try:
-            return float(s)
-        except Exception:
-            return 0.0
-
-    gate_valor = _ptbr_to_float(gate_raw)
-
-    if not emp or not vendedor:
-        flash("Informe EMP e Vendedor.", "warning")
-        return redirect(url_for("admin_metas", ano=ano, mes=mes, tab="gate"))
-
-    with SessionLocal() as db:
-        # supervisor só pode suas EMPs
-        emps_allowed = _allowed_emps()
-        if role == "supervisor" and emps_allowed and str(emp) not in set(emps_allowed):
-            flash("Acesso negado para esta EMP.", "danger")
-            return redirect(url_for("admin_metas", ano=ano, mes=mes, tab="gate"))
-
-        row = (
-            db.query(MetaGateVendedorEmp)
-            .filter(
-                MetaGateVendedorEmp.periodo_tipo == "MENSAL",
-                MetaGateVendedorEmp.ano == ano,
-                MetaGateVendedorEmp.mes == mes,
-                MetaGateVendedorEmp.emp == emp,
-                MetaGateVendedorEmp.vendedor == vendedor,
-            )
-            .first()
-        )
-        if row:
-            row.gate_valor = gate_valor
-            row.ativo = True
-            row.created_by_user_id = getattr(_user(), "id", None) if callable(_user) else None
-        else:
-            row = MetaGateVendedorEmp(
-                emp=emp,
-                vendedor=vendedor,
-                periodo_tipo="MENSAL",
-                ano=ano,
-                mes=mes,
-                gate_valor=gate_valor,
-                ativo=True,
-                created_by_user_id=getattr(_user(), "id", None) if callable(_user) else None,
-            )
-            db.add(row)
-        db.commit()
-
-    flash("Gate salvo com sucesso.", "success")
-    return redirect(url_for("admin_metas", ano=ano, mes=mes, tab="gate"))
-
-
-@app.post("/admin/metas/gate/excluir/<int:gate_id>")
-def admin_metas_gate_excluir(gate_id: int):
-    red = _login_required()
-    if red:
-        return red
-
-    role = _role() or ""
-    if role not in ("admin", "supervisor"):
-        flash("Acesso negado.", "danger")
-        return redirect(url_for("dashboard"))
-
-    ano = int(request.form.get("ano") or date.today().year)
-    mes = int(request.form.get("mes") or date.today().month)
-
-    with SessionLocal() as db:
-        row = db.query(MetaGateVendedorEmp).filter(MetaGateVendedorEmp.id == gate_id).first()
-        if not row:
-            flash("Gate não encontrado.", "warning")
-            return redirect(url_for("admin_metas", ano=ano, mes=mes, tab="gate"))
-
-        emps_allowed = _allowed_emps()
-        if role == "supervisor" and emps_allowed and str(row.emp) not in set(emps_allowed):
-            flash("Acesso negado para esta EMP.", "danger")
-            return redirect(url_for("admin_metas", ano=ano, mes=mes, tab="gate"))
-
-        db.delete(row)
-        db.commit()
-
-    flash("Gate removido.", "success")
-    return redirect(url_for("admin_metas", ano=ano, mes=mes, tab="gate"))
-
-
-@app.post("/admin/metas/loja-itens/salvar")
-def admin_metas_loja_itens_salvar():
-    red = _login_required()
-    if red:
-        return red
-
-    role = _role() or ""
-    if role not in ("admin", "supervisor"):
-        flash("Acesso negado.", "danger")
-        return redirect(url_for("dashboard"))
-
-    ensure_schema_metas()
-
-    ano = int(request.form.get("ano") or date.today().year)
-    mes = int(request.form.get("mes") or date.today().month)
-
-    emp = (request.form.get("emp") or "").strip()
-    mestre = (request.form.get("mestre") or "").strip() or None
-    marca = (request.form.get("marca") or "").strip() or None
-    produto_like = (request.form.get("produto_like") or "").strip() or None
-    ordem = int((request.form.get("ordem") or "0").strip() or 0)
-
-    recomp_raw = (request.form.get("recompensa_por_un") or "").strip()
-
-    def _ptbr_to_float(s: str) -> float:
-        s = (s or "").strip()
-        if not s:
-            return 0.0
-        s = s.replace("R$", "").replace(" ", "")
-        s = s.replace(".", "").replace(",", ".")
-        try:
-            return float(s)
-        except Exception:
-            return 0.0
-
-    recompensa = _ptbr_to_float(recomp_raw)
-
-    if not emp:
-        flash("Informe a EMP.", "warning")
-        return redirect(url_for("admin_metas", ano=ano, mes=mes, tab="itens"))
-
-    if not (mestre or marca or produto_like):
-        flash("Informe ao menos Mestre, Marca ou Produto (termos).", "warning")
-        return redirect(url_for("admin_metas", ano=ano, mes=mes, tab="itens", emp_itens=emp))
-
-    with SessionLocal() as db:
-        emps_allowed = _allowed_emps()
-        if role == "supervisor" and emps_allowed and str(emp) not in set(emps_allowed):
-            flash("Acesso negado para esta EMP.", "danger")
-            return redirect(url_for("admin_metas", ano=ano, mes=mes, tab="itens"))
-
-        row = MetaRecompensaLojaItem(
-            emp=emp,
-            ordem=ordem,
-            mestre=mestre,
-            marca=marca,
-            produto_like=produto_like,
-            recompensa_por_un=recompensa,
-            ativo=True,
-        )
-        db.add(row)
-        db.commit()
-
-    flash("Regra adicionada.", "success")
-    return redirect(url_for("admin_metas", ano=ano, mes=mes, tab="itens", emp_itens=emp))
-
-
-@app.post("/admin/metas/loja-itens/excluir/<int:regra_id>")
-def admin_metas_loja_itens_excluir(regra_id: int):
-    red = _login_required()
-    if red:
-        return red
-
-    role = _role() or ""
-    if role not in ("admin", "supervisor"):
-        flash("Acesso negado.", "danger")
-        return redirect(url_for("dashboard"))
-
-    ano = int(request.form.get("ano") or date.today().year)
-    mes = int(request.form.get("mes") or date.today().month)
-    emp_itens = (request.form.get("emp_itens") or "").strip()
-
-    with SessionLocal() as db:
-        row = db.query(MetaRecompensaLojaItem).filter(MetaRecompensaLojaItem.id == regra_id).first()
-        if not row:
-            flash("Regra não encontrada.", "warning")
-            return redirect(url_for("admin_metas", ano=ano, mes=mes, tab="itens", emp_itens=emp_itens))
-
-        emps_allowed = _allowed_emps()
-        if role == "supervisor" and emps_allowed and str(row.emp) not in set(emps_allowed):
-            flash("Acesso negado para esta EMP.", "danger")
-            return redirect(url_for("admin_metas", ano=ano, mes=mes, tab="itens", emp_itens=emp_itens))
-
-        emp_itens = emp_itens or str(row.emp)
-        db.delete(row)
-        db.commit()
-
-    flash("Regra removida.", "success")
-    return redirect(url_for("admin_metas", ano=ano, mes=mes, tab="itens", emp_itens=emp_itens))
-
 
 
 @app.get("/admin/metas/bases/<int:meta_id>")
