@@ -162,6 +162,7 @@
 
     <a class="sb-link {% if path.startswith('/admin/campanhas') %}active{% endif %}" href="{{ url_for('admin_campanhas_qtd') }}">🧩 Campanhas (Admin)</a>
     <a class="sb-link {% if path.startswith('/admin/combos') %}active{% endif %}" href="{{ url_for('admin_combos') }}">🧾 Combos</a>
+    <a class="sb-link {% if path.startswith('/admin/itens_parados') %}active{% endif %}" href="{{ url_for('admin_itens_parados') }}">📦 Itens Parados (Pontos)</a>
     <a class="sb-link {% if path.startswith('/admin/configuracoes') %}active{% endif %}" href="{{ url_for('admin_configuracoes') }}">⚙️ Configurações</a>
   </div>
   {% endif %}

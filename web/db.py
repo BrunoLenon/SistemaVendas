@@ -293,7 +293,16 @@ class ItemParado(Base):
     quantidade = Column(Integer, nullable=True)
 
     # Percentual de recompensa (ex: 10 para 10%)
-    recompensa_pct = Column(Float, nullable=False, default=0.0)
+    \1
+    # Modo do incentivo: 'PONTOS' (novo) ou 'PCT' (legado)
+    modo = Column(String(20), nullable=False, default=\"PONTOS\")
+
+    # Período opcional do item parado (se vazio, sempre ativo enquanto 'ativo=True')
+    data_inicio = Column(Date, nullable=True)
+    data_fim = Column(Date, nullable=True)
+
+    # Multiplicador de pontos (opcional). Ex.: 2.0 = vale o dobro de pontos
+    multiplicador_pontos = Column(Float, nullable=False, default=1.0)
 
     ativo = Column(Boolean, nullable=False, default=True)
 
@@ -332,7 +341,16 @@ class ItemParadoResultado(Base):
     titulo = Column(String(255), nullable=False, default="")
 
     base_valor_vendido = Column(Float, nullable=False, default=0.0)
-    recompensa_pct = Column(Float, nullable=False, default=0.0)
+    \1
+    # Modo do incentivo: 'PONTOS' (novo) ou 'PCT' (legado)
+    modo = Column(String(20), nullable=False, default=\"PONTOS\")
+
+    # Período opcional do item parado (se vazio, sempre ativo enquanto 'ativo=True')
+    data_inicio = Column(Date, nullable=True)
+    data_fim = Column(Date, nullable=True)
+
+    # Multiplicador de pontos (opcional). Ex.: 2.0 = vale o dobro de pontos
+    multiplicador_pontos = Column(Float, nullable=False, default=1.0)
     valor_recompensa = Column(Float, nullable=False, default=0.0)
 
     status_pagamento = Column(String(20), nullable=False, default="PENDENTE")
@@ -353,6 +371,93 @@ class ItemParadoResultado(Base):
         Index("ix_itens_parados_res_vend", "vendedor"),
     )
 
+
+class ItensParadosPontosConfig(Base):
+    __tablename__ = "itens_parados_pontos_config"
+
+    id = Column(Integer, primary_key=True)
+
+    # Se emp for NULL, vale como configuração global (fallback)
+    emp = Column(String(30), nullable=True, index=True)
+
+    base_reais = Column(Integer, nullable=False, default=100)  # ex: 100 = 1 ponto a cada R$100
+    valor_por_ponto = Column(Float, nullable=False, default=10.0)  # ex: 10.0 = cada ponto vale R$10
+
+    ativo = Column(Boolean, nullable=False, default=True)
+
+    criado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
+    atualizado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        Index("ix_itens_parados_pontos_cfg_emp", "emp"),
+    )
+
+
+class ItensParadosPontosBonus(Base):
+    __tablename__ = "itens_parados_pontos_bonus"
+
+    id = Column(Integer, primary_key=True)
+
+    # Se emp for NULL, vale como bonus global (fallback)
+    emp = Column(String(30), nullable=True, index=True)
+
+    min_pontos = Column(Integer, nullable=False, default=10)   # ex: 10 pontos
+    bonus_valor = Column(Float, nullable=False, default=50.0)  # ex: R$50
+
+    ativo = Column(Boolean, nullable=False, default=True)
+
+    criado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
+    atualizado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        Index("ix_itens_parados_pontos_bonus_emp", "emp"),
+        Index("ix_itens_parados_pontos_bonus_min", "min_pontos"),
+    )
+
+
+class ItensParadosPontosFechamento(Base):
+    __tablename__ = "itens_parados_pontos_fechamentos"
+
+    id = Column(Integer, primary_key=True)
+
+    emp = Column(String(30), nullable=True, index=True)  # NULL = fechamento geral (todas EMPs)
+    data_inicio = Column(Date, nullable=False, index=True)
+    data_fim = Column(Date, nullable=False, index=True)
+
+    criado_por = Column(String(80), nullable=True)
+    criado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class ItensParadosPontosResultado(Base):
+    __tablename__ = "itens_parados_pontos_resultados"
+
+    id = Column(Integer, primary_key=True)
+
+    fechamento_id = Column(Integer, nullable=False, index=True)
+
+    emp = Column(String(30), nullable=False, index=True)
+    vendedor = Column(String(80), nullable=False, index=True)
+
+    valor_vendido = Column(Float, nullable=False, default=0.0)
+    pontos = Column(Integer, nullable=False, default=0)
+
+    base_reais = Column(Integer, nullable=False, default=100)
+    valor_por_ponto = Column(Float, nullable=False, default=10.0)
+
+    bonus_extra = Column(Float, nullable=False, default=0.0)
+    total = Column(Float, nullable=False, default=0.0)
+
+    status_pagamento = Column(String(20), nullable=False, default="PENDENTE")
+    pago_em = Column(DateTime, nullable=True)
+
+    criado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
+    atualizado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        Index("ix_itens_parados_pontos_res_emp", "emp"),
+        Index("ix_itens_parados_pontos_res_vend", "vendedor"),
+        Index("ix_itens_parados_pontos_res_fech", "fechamento_id"),
+    )
 
 class CampanhaQtd(Base):
     """Campanhas de recompensa por quantidade (por EMP e opcionalmente por vendedor).

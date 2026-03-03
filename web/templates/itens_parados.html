@@ -1,122 +1,205 @@
 {% extends "base.html" %}
 
-{% block title %}Itens parados - {{ vendedor or '' }}{% endblock %}
+{% block title %}Itens Parados (Pontos){% endblock %}
 
 {% block content %}
-<div class="container py-4">
+<div class="container py-4" style="max-width:1200px;">
 
-    <div class="d-flex justify-content-between align-items-center mb-3">
-      <div>
-        <h3 class="m-0">📦 Itens parados / Liquidação</h3>
-        <div class="text-muted">Lista por EMP. O valor de recompensa só aparece quando houver venda no período selecionado.</div>
-      </div>
-      <div class="d-flex gap-2">
-        <a class="btn btn-outline-secondary" href="{{ url_for('dashboard') }}">Voltar</a>
-      </div>
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+      <h3 class="m-0">📦 Itens Parados (Pontos)</h3>
+      <div class="text-muted">Pontuação por período. Regra: <b>1 ponto</b> a cada <b>R$ {{ base_reais }}</b> vendidos. Cada ponto vale <b>R$ {{ '%.2f'|format(valor_por_ponto) }}</b>.</div>
     </div>
-<div class="card shadow-sm mb-3">
-      <div class="card-body">
-        <form class="row g-2 align-items-end" method="get" action="/itens_parados">
-          <div class="col-12 col-md-2">
-            <label class="form-label">Mês</label>
-            <input class="form-control" type="number" name="mes" min="1" max="12" value="{{ mes }}">
+
+    {% if role_name == 'admin' %}
+      <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin_itens_parados') }}">Configurar / Fechamento</a>
+    {% endif %}
+  </div>
+
+  <!-- filtros -->
+  <div class="card mb-3">
+    <div class="card-body">
+      <form method="get" class="row g-2 align-items-end">
+        {% if role_name == 'admin' %}
+          <div class="col-md-3">
+            <label class="form-label">EMP</label>
+            <select name="emp" class="form-select form-select-sm">
+              <option value="">Todas</option>
+              {% for e in emps_disponiveis %}
+                <option value="{{ e }}" {% if emp_scope == e %}selected{% endif %}>{{ e }}</option>
+              {% endfor %}
+            </select>
           </div>
-          <div class="col-12 col-md-2">
-            <label class="form-label">Ano</label>
-            <input class="form-control" type="number" name="ano" min="2000" max="2100" value="{{ ano }}">
+          <div class="col-md-3">
+            <label class="form-label">Vendedor (opcional)</label>
+            <input name="vendedor" class="form-control form-control-sm" value="{{ vendedor or '' }}" placeholder="Nome exato">
           </div>
-
-          {% if role in ['admin','supervisor'] %}
-            <div class="col-12 col-md-4">
-              <label class="form-label">Vendedor</label>
-              <select class="form-select" name="vendedor">
-                <option value="">(não selecionar)</option>
-                {% for v in vendedores_lista %}
-                  <option value="{{ v }}" {% if vendedor == v %}selected{% endif %}>{{ v }}</option>
-                {% endfor %}
-              </select>
-              <div class="form-text">Sem vendedor selecionado: mostra apenas o catálogo de itens.</div>
-            </div>
-          {% endif %}
-
-          {% if role == 'admin' %}
-            <div class="col-12 col-md-2">
-              <label class="form-label">EMP (opcional)</label>
-              <input class="form-control" name="emp" placeholder="ex: 101" value="{{ emp_param }}">
-            </div>
-          {% endif %}
-
-          <div class="col-12 col-md-2 d-grid">
-            <button class="btn btn-primary" type="submit">Atualizar</button>
+        {% elif role_name == 'supervisor' %}
+          <div class="col-md-3">
+            <label class="form-label">Vendedor (opcional)</label>
+            <input name="vendedor" class="form-control form-control-sm" value="{{ vendedor or '' }}" placeholder="Nome exato">
           </div>
-        </form>
+        {% endif %}
 
-        <div class="mt-3 d-flex flex-wrap gap-2">
-          <a class="btn btn-outline-primary"
-             href="/itens_parados/pdf?mes={{ mes }}&ano={{ ano }}{% if vendedor %}&vendedor={{ vendedor }}{% endif %}{% if emp_param %}&emp={{ emp_param }}{% endif %}">
-            Exportar PDF
-          </a>
-          <div class="text-muted small align-self-center">
-            EMPs no seu escopo: {{ emp_scopes|join(', ') }}
+        <div class="col-md-3">
+          <label class="form-label">Data início</label>
+          <input type="date" name="di" class="form-control form-control-sm" value="{{ data_inicio }}">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">Data fim</label>
+          <input type="date" name="df" class="form-control form-control-sm" value="{{ data_fim }}">
+        </div>
+        <div class="col-md-3">
+          <button class="btn btn-primary btn-sm w-100">Aplicar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  {% if resumo %}
+    <div class="row g-3 mb-3">
+      <div class="col-md-3">
+        <div class="card">
+          <div class="card-body">
+            <div class="text-muted small">Vendeu no período</div>
+            <div class="fs-5 fw-semibold">R$ {{ '%.2f'|format(resumo.valor_vendido or 0) }}</div>
           </div>
         </div>
       </div>
-    </div>
-
-    {% for emp in emp_scopes %}
-      {% set itens = itens_por_emp.get(emp, []) %}
-      <div class="card shadow-sm mb-3">
-        <div class="card-header bg-white d-flex justify-content-between align-items-center">
-          <div>
-            <strong>EMP {{ emp }}</strong>
-            <span class="text-muted ms-2">({{ itens|length }} item(ns))</span>
+      <div class="col-md-2">
+        <div class="card">
+          <div class="card-body">
+            <div class="text-muted small">Pontos (inteiros)</div>
+            <div class="fs-4 fw-semibold">{{ resumo.pontos }}</div>
           </div>
-          <span class="badge text-bg-light">Período {{ "%02d"|format(mes) }}/{{ ano }}</span>
         </div>
-        <div class="card-body p-0">
+      </div>
+      <div class="col-md-3">
+        <div class="card">
+          <div class="card-body">
+            <div class="text-muted small">Bônus base</div>
+            <div class="fs-5 fw-semibold">R$ {{ '%.2f'|format(resumo.premio_base or 0) }}</div>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-2">
+        <div class="card">
+          <div class="card-body">
+            <div class="text-muted small">Bônus extra</div>
+            <div class="fs-5 fw-semibold">R$ {{ '%.2f'|format(resumo.bonus_extra or 0) }}</div>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-2">
+        <div class="card">
+          <div class="card-body">
+            <div class="text-muted small">Total</div>
+            <div class="fs-5 fw-semibold">R$ {{ '%.2f'|format(resumo.total or 0) }}</div>
+          </div>
+        </div>
+      </div>
+      {% if resumo.falta_para_prox is not none %}
+      <div class="col-12">
+        <div class="text-muted small">
+          Faltam <b>R$ {{ '%.2f'|format(resumo.falta_para_prox or 0) }}</b> para o próximo ponto.
+        </div>
+      </div>
+      {% endif %}
+    </div>
+  {% endif %}
+
+  <div class="row g-3">
+    <div class="col-lg-7">
+      <div class="card">
+        <div class="card-body">
+          <h5 class="card-title mb-3">Ranking no período</h5>
+
           <div class="table-responsive">
-            <table class="table table-striped table-hover mb-0 align-middle">
-              <thead class="table-light">
+            <table class="table table-sm table-hover align-middle">
+              <thead>
                 <tr>
-                  <th style="width:120px;">Código</th>
-                  <th>Descrição</th>
-                  <th style="width:110px;" class="text-end">Quantidade</th>
-                  <th style="width:120px;" class="text-end">Recompensa</th>
-                  <th style="width:140px;" class="text-end">Valor</th>
+                  <th>EMP</th>
+                  <th>Vendedor</th>
+                  <th class="text-end">Vendeu (R$)</th>
+                  <th class="text-center">Pontos</th>
+                  <th class="text-end">Bônus base</th>
+                  <th class="text-end">Bônus extra</th>
+                  <th class="text-end">Total</th>
                 </tr>
               </thead>
               <tbody>
-                {% if itens %}
-                  {% for it in itens %}
-                    {% set cod = (it.codigo or '')|trim %}
-                    {% set valor = recomp_map.get((emp, cod), 0.0) %}
-                    <tr>
-                      <td><code>{{ cod }}</code></td>
-                      <td>{{ it.descricao }}</td>
-                      <td class="text-end">{{ it.quantidade }}</td>
-                      <td class="text-end">{{ (it.recompensa_pct or 0)|int }}%</td>
-                      <td class="text-end">
-                        {% if valor and valor > 0 %}
-                          R$ {{ "{:,.2f}".format(valor).replace(",", "X").replace(".", ",").replace("X", ".") }}
-                        {% else %}
-                          <span class="text-muted">—</span>
-                        {% endif %}
-                      </td>
-                    </tr>
-                  {% endfor %}
-                {% else %}
+                {% for r in resultados %}
                   <tr>
-                    <td colspan="5" class="text-center text-muted py-4">
-                      Nenhum item cadastrado para a EMP {{ emp }}.
-                    </td>
+                    <td><code>{{ r.emp }}</code></td>
+                    <td>{{ r.vendedor }}</td>
+                    <td class="text-end">R$ {{ '%.2f'|format(r.valor_vendido or 0) }}</td>
+                    <td class="text-center"><span class="badge bg-primary">{{ r.pontos }}</span></td>
+                    <td class="text-end">R$ {{ '%.2f'|format(r.premio_base or 0) }}</td>
+                    <td class="text-end">R$ {{ '%.2f'|format(r.bonus_extra or 0) }}</td>
+                    <td class="text-end"><b>R$ {{ '%.2f'|format(r.total or 0) }}</b></td>
                   </tr>
-                {% endif %}
+                {% else %}
+                  <tr><td colspan="7" class="text-muted">Sem vendas de itens parados no período.</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+
+          <div class="text-muted small mt-2">
+            * Pontos são inteiros (floor). Vendas abaixo de R$ {{ base_reais }} não geram ponto.
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-5">
+      <div class="card mb-3">
+        <div class="card-body">
+          <h5 class="card-title mb-2">Faixas de bônus extra</h5>
+          <div class="text-muted small mb-2">Aplica o maior bônus cujo mínimo foi atingido.</div>
+          <ul class="mb-0">
+            {% for t in tiers %}
+              <li>{{ t.min_pontos }} pontos → <b>R$ {{ '%.2f'|format(t.bonus_valor or 0) }}</b></li>
+            {% else %}
+              <li class="text-muted">Nenhuma faixa configurada.</li>
+            {% endfor %}
+          </ul>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-body">
+          <h5 class="card-title mb-3">Itens elegíveis (ativos)</h5>
+          <div class="table-responsive">
+            <table class="table table-sm align-middle">
+              <thead>
+                <tr>
+                  <th>EMP</th>
+                  <th>Código</th>
+                  <th>Descrição</th>
+                  <th class="text-center">Mult.</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for it in itens %}
+                  <tr>
+                    <td><code>{{ it.emp }}</code></td>
+                    <td><code>{{ it.codigo }}</code></td>
+                    <td>{{ it.descricao or '' }}</td>
+                    <td class="text-center">{{ '%.2f'|format(it.multiplicador_pontos or 1.0) }}</td>
+                  </tr>
+                {% else %}
+                  <tr><td colspan="4" class="text-muted">Nenhum item cadastrado.</td></tr>
+                {% endfor %}
               </tbody>
             </table>
           </div>
         </div>
       </div>
-    {% endfor %}
 
+    </div>
   </div>
+
+</div>
 {% endblock %}
