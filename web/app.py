@@ -238,6 +238,12 @@ def brl_rs(value):
 # --------------------------
 # Filtros Jinja: datas (ISO <-> BR)
 # --------------------------
+
+@app.template_filter("moeda_br")
+def moeda_br(value):
+    """Alias para formatação BRL (R$ 1.000,00)."""
+    return brl_rs(value)
+
 @app.template_filter("date_iso")
 def date_iso(value):
     """Converte date/datetime/str para YYYY-MM-DD (compatível com <input type=\"date\">)."""
