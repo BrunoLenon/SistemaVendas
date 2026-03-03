@@ -1414,6 +1414,18 @@ END $$;
                         ) THEN
                             ALTER TABLE metas_recompensas_loja_itens
                                 ADD COLUMN produto_terms VARCHAR(200) NULL;
+                        
+                        IF EXISTS (
+                            SELECT 1 FROM information_schema.columns
+                            WHERE table_schema='public' AND table_name='metas_recompensas_loja_itens'
+                        ) AND NOT EXISTS (
+                            SELECT 1 FROM information_schema.columns
+                            WHERE table_schema='public' AND table_name='metas_recompensas_loja_itens'
+                              AND column_name='recompensa_un'
+                        ) THEN
+                            ALTER TABLE metas_recompensas_loja_itens
+                                ADD COLUMN recompensa_un NUMERIC(14,4) NOT NULL DEFAULT 0;
+                        END IF;
                         END IF;
                     END $$;
                 """))
