@@ -1,3 +1,16 @@
+
+{# --- Sidebar: normalize role for permission checks --- #}
+{% set role_final = (role_final if role_final is defined and role_final else (role if role is defined and role else None)) %}
+{% if not role_final %}
+  {% set role_final = session.get('perfil') or session.get('role') or session.get('usuario_perfil') or session.get('user_role') %}
+{% endif %}
+{% if role_final %}
+  {% set role_final = role_final|string|lower %}
+{% endif %}
+{% set is_admin = role_final in ['admin', 'administrador'] %}
+{% set is_supervisor = role_final in ['supervisor', 'supervisao', 'supervisão'] %}
+{% set is_financeiro = role_final in ['financeiro', 'financas', 'finanças'] %}
+
 {% set r = (role|default('')|lower) %}
 {% set path = request.path %}
 {% set is_admin = (r == 'admin') %}
