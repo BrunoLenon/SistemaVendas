@@ -354,8 +354,8 @@
           </div>
 
           <div class="col-12 col-md-4">
-            <label class="form-label small">Produto (termos)</label>
-            <input class="form-control form-control-sm" name="produto" placeholder="Ex.: PNEU (pode ter vários termos)">
+            <label class="form-label small">Produto (termos) (termos)</label>
+            <input class="form-control form-control-sm" name="produto_terms" placeholder="Ex.: PNEU (pode ter vários termos)">
           </div>
 
           <div class="col-12 col-md-3">
@@ -395,10 +395,10 @@
                   <td>{{ it.emp }}</td>
                   <td>{{ it.mestre or '—' }}</td>
                   <td>{{ it.marca or '—' }}</td>
-                  <td class="text-truncate" style="max-width:220px">{{ it.produto or '—' }}</td>
+                  <td class="text-truncate" style="max-width:220px">{{ it.produto_terms or '—' }}</td>
                   <td class="text-end">{{ it.recompensa_un|moeda_br }}</td>
                   <td class="text-end">
-                    <form method="post" action="{{ url_for('admin_metas_loja_item_remover', item_id=it.id) }}" onsubmit="return confirm('Remover esta regra?');">
+                    <form method="post" action="{{ url_for('admin_metas_loja_item_excluir', item_id=it.id) }}" onsubmit="return confirm('Remover esta regra?');">
                       <button class="btn btn-sm btn-outline-danger" type="submit">Remover</button>
                     </form>
                   </td>

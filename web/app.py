@@ -8396,8 +8396,13 @@ def admin_metas_loja_item_salvar():
     emp = (request.form.get("emp") or "").strip()
     mestre = (request.form.get("mestre") or "").strip() or None
     marca = (request.form.get("marca") or "").strip().upper() or None
-    produto = (request.form.get("produto") or "").strip().upper() or None
-    recompensa_un = _float_br(request.form.get("recompensa_un") or "0")
+
+    # compat: o template antigo enviava "produto"; o novo envia "produto_terms"
+    produto_terms = (request.form.get("produto_terms") or request.form.get("produto") or "").strip() or None
+    if produto_terms:
+        produto_terms = produto_terms.upper()
+
+    recompensa_un = _float_br(request.form.get("recompensa_un") or request.form.get("recompensa_por_un") or "0")
 
     if not emp or recompensa_un <= 0:
         flash("Informe EMP e R$/un.", "warning")
@@ -8413,8 +8418,8 @@ def admin_metas_loja_item_salvar():
             emp=emp,
             mestre=mestre,
             marca=marca,
-            produto=produto,
-            recompensa_un=recompensa_un,
+            produto_like=produto_terms,       # coluna real no banco (legado)
+            recompensa_por_un=float(recompensa_un or 0),  # coluna real no banco (legado)
             ativo=True,
         )
         db.add(obj)
