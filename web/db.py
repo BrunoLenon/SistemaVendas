@@ -475,6 +475,14 @@ class MetaPrograma(Base):
     ano = Column(Integer, nullable=False, index=True)
     mes = Column(Integer, nullable=False, index=True)
 
+    # Período flexível (compatível): default MENSAL (usa ano/mes). Opcionalmente pode ser DATA_RANGE (usa data_ini/data_fim).
+    periodo_tipo = Column(String(20), nullable=False, default="MENSAL", server_default="MENSAL", index=True)  # MENSAL | DATA_RANGE
+    data_ini = Column(Date, nullable=True)
+    data_fim = Column(Date, nullable=True)
+
+    # Para metas tipo GATE_ITEM_REWARD: valor mínimo (gate) em R$ líquido para liberar pagamento por item
+    gate_valor_meta = Column(Float, nullable=True)
+
     ativo = Column(Boolean, nullable=False, default=True)
 
     created_by_user_id = Column(Integer, nullable=True, index=True)
@@ -533,6 +541,37 @@ class MetaMarca(Base):
     __table_args__ = (
         UniqueConstraint("meta_id", "marca", name="uq_meta_marca"),
         Index("ix_meta_marca_marca", "marca"),
+    )
+
+
+
+class MetaRecompensaItem(Base):
+    """Regras de recompensa por item (após gate) para metas tipo GATE_ITEM_REWARD.
+
+    Uma linha pode filtrar por:
+      - mestre (código) OU
+      - marca (match exato) OU
+      - produto_like (prefixo/termos na descrição)
+    """
+
+    __tablename__ = "metas_recompensas_itens"
+
+    id = Column(Integer, primary_key=True)
+    meta_id = Column(Integer, nullable=False, index=True)
+
+    ordem = Column(Integer, nullable=False, default=0)
+    ativo = Column(Boolean, nullable=False, default=True)
+
+    mestre = Column(String(40), nullable=True, index=True)
+    marca = Column(String(120), nullable=True, index=True)
+    produto_like = Column(String(200), nullable=True)
+
+    recompensa_por_un = Column(Float, nullable=False, default=0.0)
+
+    __table_args__ = (
+        Index("ix_meta_recomp_item_meta", "meta_id"),
+        Index("ix_meta_recomp_item_mestre", "mestre"),
+        Index("ix_meta_recomp_item_marca", "marca"),
     )
 
 
