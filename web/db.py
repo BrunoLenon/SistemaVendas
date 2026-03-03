@@ -477,15 +477,15 @@ class MetaPrograma(Base):
 
 
 
-# Período flexível (mantém compatibilidade com ano/mes)
-# - periodo_tipo: 'MENSAL' (default) ou 'DATA_RANGE'
-# - data_ini/data_fim: usados quando periodo_tipo == 'DATA_RANGE'
-periodo_tipo = Column(String(20), nullable=False, default="MENSAL", index=True)
-data_ini = Column(Date, nullable=True)
-data_fim = Column(Date, nullable=True)
+    # Período flexível (mantém compatibilidade com ano/mes)
+    # - periodo_tipo: 'MENSAL' (default) ou 'DATA_RANGE'
+    # - data_ini/data_fim: usados quando periodo_tipo == 'DATA_RANGE'
+    periodo_tipo = Column(String(20), nullable=False, default="MENSAL", index=True)
+    data_ini = Column(Date, nullable=True)
+    data_fim = Column(Date, nullable=True)
 
-# Gate para metas por valor (ex.: 10.000,00) — valor líquido do período
-gate_valor_meta = Column(Float, nullable=True)
+    # Gate para metas por valor (ex.: 10.000,00) — valor líquido do período
+    gate_valor_meta = Column(Float, nullable=True)
     ativo = Column(Boolean, nullable=False, default=True)
 
     created_by_user_id = Column(Integer, nullable=True, index=True)
