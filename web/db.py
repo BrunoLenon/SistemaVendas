@@ -1344,35 +1344,36 @@ END $$;
                         ativo BOOLEAN NOT NULL DEFAULT TRUE,
                         created_at TIMESTAMP NOT NULL DEFAULT NOW()
                     );
- 
+                """))
+
                 # Compat: versões antigas podem ter a coluna como vendedor_id (ou não ter).
                 # Garantimos que usuario_id exista antes de criar índices que dependem dela.
                 conn.execute(text("""
-                DO $$
-                BEGIN
-                    IF EXISTS (
-                        SELECT 1 FROM information_schema.columns
-                        WHERE table_schema = 'public'
-                          AND table_name = 'metas_gate_vendedor_emp'
-                          AND column_name = 'vendedor_id'
-                    ) AND NOT EXISTS (
-                        SELECT 1 FROM information_schema.columns
-                        WHERE table_schema = 'public'
-                          AND table_name = 'metas_gate_vendedor_emp'
-                          AND column_name = 'usuario_id'
-                    ) THEN
-                        EXECUTE 'ALTER TABLE metas_gate_vendedor_emp RENAME COLUMN vendedor_id TO usuario_id';
-                    ELSIF NOT EXISTS (
-                        SELECT 1 FROM information_schema.columns
-                        WHERE table_schema = 'public'
-                          AND table_name = 'metas_gate_vendedor_emp'
-                          AND column_name = 'usuario_id'
-                    ) THEN
-                        EXECUTE 'ALTER TABLE metas_gate_vendedor_emp ADD COLUMN usuario_id INTEGER';
-                    END IF;
-                END $$;
+                    DO $$
+                    BEGIN
+                        IF EXISTS (
+                            SELECT 1 FROM information_schema.columns
+                            WHERE table_schema = 'public'
+                              AND table_name = 'metas_gate_vendedor_emp'
+                              AND column_name = 'vendedor_id'
+                        ) AND NOT EXISTS (
+                            SELECT 1 FROM information_schema.columns
+                            WHERE table_schema = 'public'
+                              AND table_name = 'metas_gate_vendedor_emp'
+                              AND column_name = 'usuario_id'
+                        ) THEN
+                            EXECUTE 'ALTER TABLE metas_gate_vendedor_emp RENAME COLUMN vendedor_id TO usuario_id';
+                        ELSIF NOT EXISTS (
+                            SELECT 1 FROM information_schema.columns
+                            WHERE table_schema = 'public'
+                              AND table_name = 'metas_gate_vendedor_emp'
+                              AND column_name = 'usuario_id'
+                        ) THEN
+                            EXECUTE 'ALTER TABLE metas_gate_vendedor_emp ADD COLUMN usuario_id INTEGER';
+                        END IF;
+                    END $$;
                 """))
-               """))
+
                 conn.execute(text("""
                     CREATE UNIQUE INDEX IF NOT EXISTS uq_metas_gate_vend_emp_v2
                     ON metas_gate_vendedor_emp(emp, usuario_id, ano, mes);
