@@ -474,13 +474,6 @@ class MetaPrograma(Base):
 
     ano = Column(Integer, nullable=False, index=True)
     mes = Column(Integer, nullable=False, index=True)
-    # Período (compatível): MENSAL (ano/mes) ou DATA_RANGE (data_ini/data_fim)
-    periodo_tipo = Column(String(20), nullable=False, default='MENSAL', server_default='MENSAL', index=True)
-    data_ini = Column(Date, nullable=True, index=True)
-    data_fim = Column(Date, nullable=True, index=True)
-    # Gate (para tipo GATE_ITEM_REWARD): valor líquido mínimo para habilitar pagamento por item
-    gate_valor_meta = Column(Float, nullable=True)
-
 
     ativo = Column(Boolean, nullable=False, default=True)
 
@@ -565,36 +558,6 @@ class MetaBaseManual(Base):
     )
 
 
-
-class MetaRecompensaItem(Base):
-    """Regras de pagamento por item após bater o gate (tipo GATE_ITEM_REWARD).
-
-    Uma regra pode ser por mestre, marca e/ou termos na descrição (produto_like).
-    Para pontuar: CA deduz, DS ignora (aplicado no cálculo).
-    """
-
-    __tablename__ = "metas_recompensas_itens"
-
-    id = Column(Integer, primary_key=True)
-    meta_id = Column(Integer, nullable=False, index=True)
-
-    ordem = Column(Integer, nullable=False, default=0)
-
-    mestre = Column(String(60), nullable=True, index=True)
-    marca = Column(String(120), nullable=True, index=True)
-    produto_like = Column(String(200), nullable=True)
-
-    recompensa_por_un = Column(Float, nullable=False, default=0.0)
-
-    ativo = Column(Boolean, nullable=False, default=True)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-
-    __table_args__ = (
-        Index("ix_meta_recomp_meta", "meta_id"),
-        Index("ix_meta_recomp_meta_ordem", "meta_id", "ordem"),
-    )
-
-
 class MetaResultado(Base):
     """Resultado calculado por meta/vendedor/EMP/mês.
 
@@ -623,9 +586,6 @@ class MetaResultado(Base):
     bonus_percentual = Column(Float, nullable=False, default=0.0)
     premio = Column(Float, nullable=False, default=0.0)
 
-    # Detalhes para auditoria (JSON serializado) — usado em metas avançadas
-    detalhes_json = Column(Text, nullable=True)
-
     calculado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
 
     __table_args__ = (
@@ -638,6 +598,40 @@ class MetaResultado(Base):
 # =========================
 # Campanhas Combo (Kit) — gate mínimo + pagamento por unidade (após bater todos os mínimos)
 # =========================
+
+class MetaGateVendedorEmp(Base):
+    __tablename__ = "metas_gate_vendedor_emp"
+
+    id = Column(Integer, primary_key=True)
+    emp = Column(String(20), nullable=False, index=True)
+    usuario_id = Column(Integer, nullable=False, index=True)
+    ano = Column(Integer, nullable=False, index=True)
+    mes = Column(Integer, nullable=False, index=True)
+    gate_valor = Column(Numeric(14, 2), nullable=False, default=0)
+    ativo = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("emp", "usuario_id", "ano", "mes", name="uq_metas_gate_vend_emp"),
+    )
+
+
+class MetaRecompensaLojaItem(Base):
+    __tablename__ = "metas_recompensas_loja_itens"
+
+    id = Column(Integer, primary_key=True)
+    emp = Column(String(20), nullable=False, index=True)
+    mestre = Column(String(50), nullable=True, index=True)
+    marca = Column(String(80), nullable=True, index=True)
+    produto_terms = Column(String(200), nullable=True)
+    recompensa_un = Column(Numeric(14, 4), nullable=False, default=0)
+    ativo = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        Index("ix_metas_recomp_loja_emp_ativo", "emp", "ativo"),
+    )
+
 class CampanhaCombo(Base):
     __tablename__ = "campanhas_combo"
 
@@ -1336,6 +1330,57 @@ END $$;
             except Exception:
                 pass
 
+            # --- Metas: Gate por vendedor+EMP e regras de premiação por loja (R$/item) ---
+            # Obs: idempotente (Render). Não quebra se já existir.
+            try:
+                conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS metas_gate_vendedor_emp (
+                        id SERIAL PRIMARY KEY,
+                        emp VARCHAR(20) NOT NULL,
+                        usuario_id INTEGER NOT NULL,
+                        ano INTEGER NOT NULL,
+                        mes INTEGER NOT NULL,
+                        gate_valor NUMERIC(14,2) NOT NULL DEFAULT 0,
+                        ativo BOOLEAN NOT NULL DEFAULT TRUE,
+                        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+                    );
+                """))
+                conn.execute(text("""
+                    CREATE UNIQUE INDEX IF NOT EXISTS uq_metas_gate_vend_emp
+                    ON metas_gate_vendedor_emp(emp, usuario_id, ano, mes);
+                """))
+                conn.execute(text("""
+                    CREATE INDEX IF NOT EXISTS ix_metas_gate_vend_emp_emp
+                    ON metas_gate_vendedor_emp(emp);
+                """))
+                conn.execute(text("""
+                    CREATE INDEX IF NOT EXISTS ix_metas_gate_vend_emp_usuario
+                    ON metas_gate_vendedor_emp(usuario_id);
+                """))
+
+                conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS metas_recompensas_loja_itens (
+                        id SERIAL PRIMARY KEY,
+                        emp VARCHAR(20) NOT NULL,
+                        mestre VARCHAR(50) NULL,
+                        marca VARCHAR(80) NULL,
+                        produto_terms VARCHAR(200) NULL,
+                        recompensa_un NUMERIC(14,4) NOT NULL DEFAULT 0,
+                        ativo BOOLEAN NOT NULL DEFAULT TRUE,
+                        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+                    );
+                """))
+                conn.execute(text("""
+                    CREATE INDEX IF NOT EXISTS ix_metas_recomp_loja_emp
+                    ON metas_recompensas_loja_itens(emp);
+                """))
+                conn.execute(text("""
+                    CREATE INDEX IF NOT EXISTS ix_metas_recomp_loja_emp_ativo
+                    ON metas_recompensas_loja_itens(emp, ativo);
+                """))
+            except Exception:
+                pass
+
             # Bancos mais antigos podem ter criado `status` como ENUM ou com restrições.
             # Neste caso, o valor 'a_pagar' pode não existir e a atualização falha silenciosamente.
             # Tentamos adicionar o valor ao ENUM, se for aplicável, sem derrubar a aplicação.
@@ -1400,85 +1445,3 @@ class FinanceiroPagamentoAudit(Base):
     alterado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
 
     motivo = Column(Text, nullable=True)
-
-
-
-def ensure_schema_metas():
-    """Garante compatibilidade de schema para Metas (produção sem AUTO_MIGRATE).
-
-    - Adiciona colunas novas em metas_programas e metas_resultados se não existirem
-    - Cria tabelas auxiliares de metas (idempotente)
-    Tudo em try/except para não derrubar o app.
-    """
-    try:
-        from sqlalchemy import text
-        with engine.begin() as conn:
-            # metas_programas: colunas novas (compatível)
-            conn.execute(text("ALTER TABLE metas_programas ADD COLUMN IF NOT EXISTS periodo_tipo varchar(20) NOT NULL DEFAULT 'MENSAL';"))
-            conn.execute(text("ALTER TABLE metas_programas ADD COLUMN IF NOT EXISTS data_ini date;"))
-            conn.execute(text("ALTER TABLE metas_programas ADD COLUMN IF NOT EXISTS data_fim date;"))
-            conn.execute(text("ALTER TABLE metas_programas ADD COLUMN IF NOT EXISTS gate_valor_meta double precision;"))
-
-            # metas_resultados: detalhes para auditoria
-            conn.execute(text("ALTER TABLE metas_resultados ADD COLUMN IF NOT EXISTS detalhes_json text;"))
-
-            # regras de pagamento por item (modelo antigo - por meta)
-            conn.execute(text("""
-                CREATE TABLE IF NOT EXISTS metas_recompensas_itens (
-                    id SERIAL PRIMARY KEY,
-                    meta_id INTEGER NOT NULL,
-                    ordem INTEGER NOT NULL DEFAULT 0,
-                    mestre VARCHAR(60),
-                    marca VARCHAR(120),
-                    produto_like VARCHAR(200),
-                    recompensa_por_un DOUBLE PRECISION NOT NULL DEFAULT 0,
-                    ativo BOOLEAN NOT NULL DEFAULT TRUE,
-                    created_at TIMESTAMP NOT NULL DEFAULT NOW()
-                );
-            """))
-            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_meta_recomp_meta ON metas_recompensas_itens (meta_id);"))
-            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_meta_recomp_meta_ordem ON metas_recompensas_itens (meta_id, ordem);"))
-            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_meta_recomp_mestre ON metas_recompensas_itens (mestre);"))
-            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_meta_recomp_marca ON metas_recompensas_itens (marca);"))
-
-            # Gate por vendedor + EMP (novo)
-            conn.execute(text("""
-                CREATE TABLE IF NOT EXISTS metas_gate_vendedor_emp (
-                    id SERIAL PRIMARY KEY,
-                    emp INTEGER NOT NULL,
-                    usuario_id INTEGER,
-                    ano INTEGER NOT NULL,
-                    mes INTEGER NOT NULL,
-                    gate_valor DOUBLE PRECISION NOT NULL DEFAULT 0,
-                    ativo BOOLEAN NOT NULL DEFAULT TRUE,
-                    created_at TIMESTAMP NOT NULL DEFAULT NOW()
-                );
-            """))
-            # Garantir coluna usuario_id (caso tabela já exista com schema antigo)
-            conn.execute(text("ALTER TABLE metas_gate_vendedor_emp ADD COLUMN IF NOT EXISTS usuario_id INTEGER;"))
-
-            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_metas_gate_emp_ano_mes ON metas_gate_vendedor_emp (emp, ano, mes);"))
-            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_metas_gate_usuario ON metas_gate_vendedor_emp (usuario_id);"))
-
-            # Itens premiados por loja (EMP) - regras globais por EMP
-            conn.execute(text("""
-                CREATE TABLE IF NOT EXISTS metas_recompensas_loja_itens (
-                    id SERIAL PRIMARY KEY,
-                    emp INTEGER NOT NULL,
-                    ordem INTEGER NOT NULL DEFAULT 0,
-                    mestre VARCHAR(60),
-                    marca VARCHAR(120),
-                    produto_like VARCHAR(200),
-                    recompensa_por_un DOUBLE PRECISION NOT NULL DEFAULT 0,
-                    ativo BOOLEAN NOT NULL DEFAULT TRUE,
-                    created_at TIMESTAMP NOT NULL DEFAULT NOW()
-                );
-            """))
-            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_meta_loja_emp ON metas_recompensas_loja_itens (emp);"))
-            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_meta_loja_emp_ordem ON metas_recompensas_loja_itens (emp, ordem);"))
-
-    except Exception:
-        # Nunca derrubar o app por DDL
-        pass
-
-
