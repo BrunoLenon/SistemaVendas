@@ -60,26 +60,6 @@ def admin_mensagens():
 def admin_mensagens_toggle(mensagem_id):
     return handlers.admin_mensagens_toggle(mensagem_id=mensagem_id)
 
-@bp.route("/admin/metas", methods=['GET'], endpoint='admin_metas')
-def admin_metas():
-    return handlers.admin_metas()
-
-@bp.route("/admin/metas/criar", methods=['POST'], endpoint='admin_metas_criar')
-def admin_metas_criar():
-    return handlers.admin_metas_criar()
-
-@bp.route("/admin/metas/toggle/<int:meta_id>", methods=['POST'], endpoint='admin_metas_toggle')
-def admin_metas_toggle(meta_id):
-    return handlers.admin_metas_toggle(meta_id=meta_id)
-
-@bp.route("/admin/metas/bases/<int:meta_id>", methods=['GET'], endpoint='admin_meta_bases')
-def admin_meta_bases(meta_id):
-    return handlers.admin_meta_bases(meta_id=meta_id)
-
-@bp.route("/admin/metas/bases/<int:meta_id>/salvar", methods=['POST'], endpoint='admin_meta_bases_salvar')
-def admin_meta_bases_salvar(meta_id):
-    return handlers.admin_meta_bases_salvar(meta_id=meta_id)
-
 @bp.route("/admin/campanhas_v2", methods=["GET", "POST"], endpoint="admin_campanhas_v2")
 def admin_campanhas_v2():
     """Cadastro de campanhas V2 (fonte da verdade).
