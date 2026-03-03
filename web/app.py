@@ -785,6 +785,11 @@ def _allowed_emps() -> list[str]:
             return _filter_emps_cadastradas([str(e) for e in emps_int], apenas_ativas=True)
     except Exception:
         return []
+
+def _emps_allowed() -> list[str]:
+    """Compat: alias para _allowed_emps()."""
+    return _allowed_emps()
+
 def _is_date_in_range(today: date, inicio: date | None, fim: date | None) -> bool:
     if inicio and today < inicio:
         return False
