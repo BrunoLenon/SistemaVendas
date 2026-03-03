@@ -295,7 +295,7 @@ class ItemParado(Base):
     # Percentual de recompensa (ex: 10 para 10%)
     percentual = Column(Float, nullable=True)
     # Modo do incentivo: 'PONTOS' (novo) ou 'PCT' (legado)
-    modo = Column(String(20), nullable=False, default=\"PONTOS\")
+    modo = Column(String(20), nullable=False, default="PONTOS")
 
     # Período opcional do item parado (se vazio, sempre ativo enquanto 'ativo=True')
     data_inicio = Column(Date, nullable=True)
@@ -344,7 +344,7 @@ class ItemParadoResultado(Base):
     pontos = Column(Integer, nullable=False, default=0)
     percentual = Column(Float, nullable=True)
     # Modo do incentivo: 'PONTOS' (novo) ou 'PCT' (legado)
-    modo = Column(String(20), nullable=False, default=\"PONTOS\")
+    modo = Column(String(20), nullable=False, default="PONTOS")
 
     # Período opcional do item parado (se vazio, sempre ativo enquanto 'ativo=True')
     data_inicio = Column(Date, nullable=True)
