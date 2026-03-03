@@ -785,11 +785,6 @@ def _allowed_emps() -> list[str]:
             return _filter_emps_cadastradas([str(e) for e in emps_int], apenas_ativas=True)
     except Exception:
         return []
-
-
-def _emps_allowed() -> list[str]:
-    """Alias compat para código legado. Use _allowed_emps()."""
-    return _allowed_emps()
 def _is_date_in_range(today: date, inicio: date | None, fim: date | None) -> bool:
     if inicio and today < inicio:
         return False
@@ -8332,6 +8327,7 @@ def admin_metas_gate_salvar():
             obj = MetaGateVendedorEmp(
                 emp=emp,
                 usuario_id=usuario_id,
+                vendedor=(lambda u: (u.username if u else str(usuario_id)))(db.query(Usuario).get(usuario_id)),
                 ano=ano,
                 mes=mes,
                 gate_valor=gate_valor,

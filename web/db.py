@@ -604,6 +604,8 @@ class MetaGateVendedorEmp(Base):
 
     id = Column(Integer, primary_key=True)
     emp = Column(String(20), nullable=False, index=True)
+    # Campo legado no banco (NOT NULL). Guardamos o username do vendedor por compatibilidade.
+    vendedor = Column(String(80), nullable=False, default="")
     usuario_id = Column(Integer, nullable=False, index=True)
     ano = Column(Integer, nullable=False, index=True)
     mes = Column(Integer, nullable=False, index=True)
@@ -619,60 +621,18 @@ class MetaGateVendedorEmp(Base):
 class MetaRecompensaLojaItem(Base):
     __tablename__ = "metas_recompensas_loja_itens"
 
-    # OBS:
-    # Esta tabela existe em bases "legadas" com colunas:
-    #   - produto_like (texto) e recompensa_por_un (float)
-    # Em versões novas tentamos usar os nomes:
-    #   - produto_terms e recompensa_un
-    # Para evitar novos crashes de deploy por "UndefinedColumn", mapeamos SOMENTE as colunas legadas
-    # (que existem na maioria das bases) e expomos propriedades compatíveis.
-    #
-    # Se no futuro você padronizar o schema e remover as colunas legadas, aí sim mapeie direto para
-    # produto_terms / recompensa_un e crie uma migration versionada.
-
     id = Column(Integer, primary_key=True)
     emp = Column(String(20), nullable=False, index=True)
-    ordem = Column(Integer, nullable=True)
-
     mestre = Column(String(50), nullable=True, index=True)
     marca = Column(String(80), nullable=True, index=True)
-
-    # nomes legados (existem no Supabase hoje)
-    produto_like = Column(String(200), nullable=True)
-    recompensa_por_un = Column(Float, nullable=False, default=0)
-
+    produto_terms = Column(String(200), nullable=True)
+    recompensa_un = Column(Numeric(14, 4), nullable=False, default=0)
     ativo = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
     __table_args__ = (
         Index("ix_metas_recomp_loja_emp_ativo", "emp", "ativo"),
     )
-
-    # --------
-    # Compat API (novos nomes)
-    # --------
-    @property
-    def produto_terms(self) -> str | None:
-        return self.produto_like
-
-    @produto_terms.setter
-    def produto_terms(self, value: str | None) -> None:
-        self.produto_like = value
-
-    @property
-    def recompensa_un(self) -> float:
-        try:
-            return float(self.recompensa_por_un or 0)
-        except Exception:
-            return 0.0
-
-    @recompensa_un.setter
-    def recompensa_un(self, value) -> None:
-        try:
-            self.recompensa_por_un = float(value or 0)
-        except Exception:
-            self.recompensa_por_un = 0.0
-
 
 class CampanhaCombo(Base):
     __tablename__ = "campanhas_combo"
