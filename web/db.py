@@ -1407,7 +1407,7 @@ def ensure_schema_metas():
     """Garante compatibilidade de schema para Metas (produção sem AUTO_MIGRATE).
 
     - Adiciona colunas novas em metas_programas e metas_resultados se não existirem
-    - Cria tabela metas_recompensas_itens se não existir
+    - Cria tabelas auxiliares de metas (idempotente)
     Tudo em try/except para não derrubar o app.
     """
     try:
@@ -1422,7 +1422,7 @@ def ensure_schema_metas():
             # metas_resultados: detalhes para auditoria
             conn.execute(text("ALTER TABLE metas_resultados ADD COLUMN IF NOT EXISTS detalhes_json text;"))
 
-            # regras de pagamento por item
+            # regras de pagamento por item (modelo antigo - por meta)
             conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS metas_recompensas_itens (
                     id SERIAL PRIMARY KEY,
@@ -1440,43 +1440,44 @@ def ensure_schema_metas():
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_meta_recomp_meta_ordem ON metas_recompensas_itens (meta_id, ordem);"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_meta_recomp_mestre ON metas_recompensas_itens (mestre);"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_meta_recomp_marca ON metas_recompensas_itens (marca);"))
-    # Gate por vendedor+EMP (novo)
-conn.execute(text('''
-    CREATE TABLE IF NOT EXISTS metas_gate_vendedor_emp (
-        id SERIAL PRIMARY KEY,
-        emp INTEGER NOT NULL,
-        usuario_id INTEGER,
-        ano INTEGER NOT NULL,
-        mes INTEGER NOT NULL,
-        gate_valor DOUBLE PRECISION NOT NULL DEFAULT 0,
-        ativo BOOLEAN NOT NULL DEFAULT TRUE,
-        created_at TIMESTAMP NOT NULL DEFAULT NOW()
-    );
-'''))
-# Garantir coluna usuario_id (caso tabela já exista com schema antigo)
-conn.execute(text("ALTER TABLE metas_gate_vendedor_emp ADD COLUMN IF NOT EXISTS usuario_id INTEGER;"))
 
-conn.execute(text("CREATE INDEX IF NOT EXISTS ix_metas_gate_emp_ano_mes ON metas_gate_vendedor_emp (emp, ano, mes);"))
-conn.execute(text("CREATE INDEX IF NOT EXISTS ix_metas_gate_usuario ON metas_gate_vendedor_emp (usuario_id);"))
+            # Gate por vendedor + EMP (novo)
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS metas_gate_vendedor_emp (
+                    id SERIAL PRIMARY KEY,
+                    emp INTEGER NOT NULL,
+                    usuario_id INTEGER,
+                    ano INTEGER NOT NULL,
+                    mes INTEGER NOT NULL,
+                    gate_valor DOUBLE PRECISION NOT NULL DEFAULT 0,
+                    ativo BOOLEAN NOT NULL DEFAULT TRUE,
+                    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+                );
+            """))
+            # Garantir coluna usuario_id (caso tabela já exista com schema antigo)
+            conn.execute(text("ALTER TABLE metas_gate_vendedor_emp ADD COLUMN IF NOT EXISTS usuario_id INTEGER;"))
 
-# Itens premiados por loja (EMP) - regras globais por EMP
-conn.execute(text('''
-    CREATE TABLE IF NOT EXISTS metas_recompensas_loja_itens (
-        id SERIAL PRIMARY KEY,
-        emp INTEGER NOT NULL,
-        ordem INTEGER NOT NULL DEFAULT 0,
-        mestre VARCHAR(60),
-        marca VARCHAR(120),
-        produto_like VARCHAR(200),
-        recompensa_por_un DOUBLE PRECISION NOT NULL DEFAULT 0,
-        ativo BOOLEAN NOT NULL DEFAULT TRUE,
-        created_at TIMESTAMP NOT NULL DEFAULT NOW()
-    );
-'''))
-conn.execute(text("CREATE INDEX IF NOT EXISTS ix_meta_loja_emp ON metas_recompensas_loja_itens (emp);"))
-conn.execute(text("CREATE INDEX IF NOT EXISTS ix_meta_loja_emp_ordem ON metas_recompensas_loja_itens (emp, ordem);"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_metas_gate_emp_ano_mes ON metas_gate_vendedor_emp (emp, ano, mes);"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_metas_gate_usuario ON metas_gate_vendedor_emp (usuario_id);"))
 
-except Exception:
+            # Itens premiados por loja (EMP) - regras globais por EMP
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS metas_recompensas_loja_itens (
+                    id SERIAL PRIMARY KEY,
+                    emp INTEGER NOT NULL,
+                    ordem INTEGER NOT NULL DEFAULT 0,
+                    mestre VARCHAR(60),
+                    marca VARCHAR(120),
+                    produto_like VARCHAR(200),
+                    recompensa_por_un DOUBLE PRECISION NOT NULL DEFAULT 0,
+                    ativo BOOLEAN NOT NULL DEFAULT TRUE,
+                    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+                );
+            """))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_meta_loja_emp ON metas_recompensas_loja_itens (emp);"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_meta_loja_emp_ordem ON metas_recompensas_loja_itens (emp, ordem);"))
+
+    except Exception:
         # Nunca derrubar o app por DDL
         pass
 
