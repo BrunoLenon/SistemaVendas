@@ -136,8 +136,6 @@
     <a class="sb-link {% if path.startswith('/financeiro/campanhas_v2') %}active{% endif %}" href="{{ url_for('financeiro_campanhas_v2') }}">💰 Campanhas (Fin.)</a>
     <a class="sb-link {% if path.startswith('/financeiro/fechamento_v2') %}active{% endif %}" href="{{ url_for('financeiro_fechamento_v2') }}">✅ Fechamento (V2)</a>
     <a class="sb-link {% if path.startswith('/admin/fechamento') %}active{% endif %}" href="{{ url_for('admin_fechamento') }}">🗓️ Fechamento (Mês)</a>
-      <a class="sb-link {% if path.startswith('/admin/resumos_periodo') %}active{% endif %}" href="{{ url_for('admin_resumos_periodo') }}">🗓️ Resumos por Período</a>
-      <a class="sb-link {% if path.startswith('/admin/metas') %}active{% endif %}" href="{{ url_for('admin_metas') }}">🎯 Metas</a>
   </div>
   {% endif %}
 
@@ -150,6 +148,7 @@
     <!-- ✅ NOVO: Importar -->
     <a class="sb-link {% if path.startswith('/admin/importar') %}active{% endif %}" href="{{ url_for('admin_importar') }}">📥 Importar</a>
     <a class="sb-link {% if path.startswith('/admin/campanhas/ranking-marca') %}active{% endif %}" href="{{ url_for('admin_campanhas_ranking_marca') }}">🏆 Ranking por Marca (Admin)</a>
+    <a class="sb-link {% if path.startswith('/admin/resumos_periodo') %}active{% endif %}" href="{{ url_for('admin_resumos_periodo') }}">🗓️ Resumos por Período</a>
 
     <a class="sb-link {% if path.startswith('/admin/campanhas') %}active{% endif %}" href="{{ url_for('admin_campanhas_qtd') }}">🧩 Campanhas (Admin)</a>
     <a class="sb-link {% if path.startswith('/admin/combos') %}active{% endif %}" href="{{ url_for('admin_combos') }}">🧾 Combos</a>

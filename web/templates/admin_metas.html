@@ -1,60 +1,209 @@
 {% extends "base.html" %}
-{% block title %}Admin - Metas
+{% block title %}Admin - Metas</div>
+
+<div id="tab-gate" style="display:none;">
+  <div class="row g-3">
+    <div class="col-12 col-xl-6">
+      <div class="sv-card sv-card-compact">
+        <div class="d-flex align-items-center justify-content-between mb-2">
+          <h5 class="m-0">🎯 Gate por vendedor (EMP + Vendedor)</h5>
+          <div class="small text-muted">Período: {{ "%02d"|format(mes) }}/{{ ano }}</div>
+        </div>
+        <form method="post" action="{{ url_for('admin_metas_gate_salvar') }}" class="row g-2">
+          <input type="hidden" name="ano" value="{{ ano }}">
+          <input type="hidden" name="mes" value="{{ mes }}">
+
+          <div class="col-12 col-md-6">
+            <label class="form-label">Empresa (EMP)</label>
+            <select class="form-select" name="emp" required>
+              <option value="">Selecione...</option>
+              {% for e in emps_rows %}
+                <option value="{{ e.codigo }}">{{ e.codigo }} — {{ e.nome }}</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div class="col-12 col-md-6">
+            <label class="form-label">Vendedor</label>
+            <select class="form-select" name="usuario_id" required>
+              <option value="">Selecione...</option>
+              {% for u in vendedores %}
+                <option value="{{ u.id }}">{{ u.username }}</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div class="col-12 col-md-6">
+            <label class="form-label">Gate (R$ líquido)</label>
+            <input class="form-control" name="gate_valor" placeholder="Ex.: 10000,00" required>
+            <div class="form-text">Gate = valor líquido (CA deduz / DS ignora). Se não bater, não recebe itens da loja.</div>
+          </div>
+
+          <div class="col-12 col-md-6 d-flex align-items-end">
+            <button class="sv-btn sv-btn-primary w-100" type="submit">Salvar gate</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div class="col-12 col-xl-6">
+      <div class="sv-card sv-card-compact">
+        <h5 class="mb-2">Gates cadastrados ({{ "%02d"|format(mes) }}/{{ ano }})</h5>
+        <div class="table-responsive">
+          <table class="table table-sm align-middle">
+            <thead>
+              <tr>
+                <th>EMP</th>
+                <th>Vendedor</th>
+                <th class="text-end">Gate (R$)</th>
+                <th class="text-end"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% if gates_list %}
+                {% for g in gates_list %}
+                  <tr>
+                    <td>{{ g.emp }}</td>
+                    <td>{{ g.username }}</td>
+                    <td class="text-end">{{ g.gate_valor|brl_rs }}</td>
+                    <td class="text-end">
+                      <form method="post" action="{{ url_for('admin_metas_gate_excluir', gate_id=g.id) }}" onsubmit="return confirm('Excluir este gate?');">
+                        <button class="sv-btn sv-btn-ghost sv-btn-sm" type="submit">Excluir</button>
+                      </form>
+                    </td>
+                  </tr>
+                {% endfor %}
+              {% else %}
+                <tr><td colspan="4" class="text-muted">Nenhum gate cadastrado para este período.</td></tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
+        <div class="small text-muted">Regra: se o prêmio final ficar negativo, zera (não recebe).</div>
+      </div>
+    </div>
+
+    <div class="col-12">
+      <div class="sv-card sv-card-compact">
+        <div class="d-flex align-items-center justify-content-between mb-2">
+          <h5 class="m-0">🧾 Itens pagos por loja (regras gerais da EMP)</h5>
+          <div class="small text-muted">O vendedor só recebe se bater o gate da EMP no período.</div>
+        </div>
+
+        <form method="post" action="{{ url_for('admin_metas_loja_item_salvar') }}" class="row g-2">
+          <div class="col-12 col-md-3">
+            <label class="form-label">Empresa (EMP)</label>
+            <select class="form-select" name="emp" required>
+              <option value="">Selecione...</option>
+              {% for e in emps_rows %}
+                <option value="{{ e.codigo }}">{{ e.codigo }} — {{ e.nome }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-12 col-md-2">
+            <label class="form-label">Mestre (cód.)</label>
+            <input class="form-control" name="mestre" placeholder="Ex.: 39007">
+          </div>
+          <div class="col-12 col-md-2">
+            <label class="form-label">Marca</label>
+            <input class="form-control" name="marca" placeholder="Ex.: EVOL">
+          </div>
+          <div class="col-12 col-md-3">
+            <label class="form-label">Produto (termos)</label>
+            <input class="form-control" name="produto" placeholder="Ex.: PNEU (aceita vários termos)">
+          </div>
+          <div class="col-12 col-md-2">
+            <label class="form-label">R$/un</label>
+            <input class="form-control" name="recompensa_un" placeholder="Ex.: 1,00" required>
+          </div>
+          <div class="col-12 d-flex justify-content-end">
+            <button class="sv-btn sv-btn-primary" type="submit">Adicionar regra</button>
+          </div>
+        </form>
+
+        <hr class="my-3">
+
+        <div class="table-responsive">
+          <table class="table table-sm align-middle">
+            <thead>
+              <tr>
+                <th>EMP</th>
+                <th>Mestre</th>
+                <th>Marca</th>
+                <th>Produto</th>
+                <th class="text-end">R$/un</th>
+                <th class="text-end"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% if loja_itens_list %}
+                {% for r in loja_itens_list %}
+                  <tr>
+                    <td>{{ r.emp }}</td>
+                    <td>{{ r.mestre or "-" }}</td>
+                    <td>{{ r.marca or "-" }}</td>
+                    <td>{{ r.produto or "-" }}</td>
+                    <td class="text-end">{{ r.recompensa_un|brl_rs }}</td>
+                    <td class="text-end">
+                      <form method="post" action="{{ url_for('admin_metas_loja_item_excluir', item_id=r.id) }}" onsubmit="return confirm('Excluir esta regra?');">
+                        <button class="sv-btn sv-btn-ghost sv-btn-sm" type="submit">Excluir</button>
+                      </form>
+                    </td>
+                  </tr>
+                {% endfor %}
+              {% else %}
+                <tr><td colspan="6" class="text-muted">Nenhuma regra cadastrada.</td></tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
+
+        <div class="small text-muted mt-2">
+          <b>Regras confirmadas:</b> Gate e quantidades usam somente vendas positivas (CA deduz / DS ignora). Se o resultado final for negativo, zera.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
-(function(){
-  const tipoEl = document.getElementById('tipoMeta');
-  const gateFields = document.getElementById('gateFields');
-  const periodoTipo = document.getElementById('periodo_tipo');
-  const wrapIni = document.getElementById('wrap_data_ini');
-  const wrapFim = document.getElementById('wrap_data_fim');
-  const di = document.getElementById('data_ini');
-  const df = document.getElementById('data_fim');
-
-  function setDefaultDates(){
-    const ano = parseInt(document.querySelector('input[name="ano"]').value || '0');
-    const mes = parseInt(document.querySelector('input[name="mes"]').value || '0');
-    if(!ano || !mes) return;
-    const first = new Date(ano, mes-1, 1);
-    const last = new Date(ano, mes, 0);
-    const fmt = (d)=> d.toISOString().slice(0,10);
-    if(di && !di.value) di.value = fmt(first);
-    if(df && !df.value) df.value = fmt(last);
-  }
-
-  function refresh(){
-    const t = (tipoEl && tipoEl.value || '').toUpperCase();
-    if(gateFields) gateFields.style.display = (t === 'GATE_ITEM_REWARD') ? 'block' : 'none';
-
-    // marcas apenas para SHARE_MARCA: campo é o textarea name=marcas
-    const marcasLabel = document.querySelector('label.form-label.small:nth-of-type(1)');
-    const marcasArea = document.querySelector('textarea[name="marcas"]');
-    if(marcasArea){
-      const wrap = marcasArea.closest('.col-12');
-      if(wrap) wrap.style.display = (t === 'SHARE_MARCA') ? 'block' : 'none';
+  (function() {
+    const btns = document.querySelectorAll('.sv-tab-btn');
+    const tabPadrao = document.getElementById('tab-padrao');
+    const tabGate = document.getElementById('tab-gate');
+    function setTab(name) {
+      btns.forEach(b => b.classList.toggle('is-active', b.dataset.tab === name));
+      tabPadrao.style.display = (name === 'padrao') ? '' : 'none';
+      tabGate.style.display = (name === 'gate') ? '' : 'none';
+      try { localStorage.setItem('admin_metas_tab', name); } catch(e) {}
     }
-
-    if(t === 'GATE_ITEM_REWARD'){
-      setDefaultDates();
-      const p = (periodoTipo && periodoTipo.value || 'MENSAL').toUpperCase();
-      const showRange = (p === 'DATA_RANGE');
-      if(wrapIni) wrapIni.style.display = showRange ? 'block' : 'none';
-      if(wrapFim) wrapFim.style.display = showRange ? 'block' : 'none';
-    }
-  }
-
-  if(tipoEl) tipoEl.addEventListener('change', refresh);
-  if(periodoTipo) periodoTipo.addEventListener('change', refresh);
-  refresh();
-})();
+    btns.forEach(b => b.addEventListener('click', () => setTab(b.dataset.tab)));
+    let saved = null;
+    try { saved = localStorage.getItem('admin_metas_tab'); } catch(e) {}
+    if (saved === 'gate') setTab('gate');
+  })();
 </script>
-
 {% endblock %}
 
 {% block content %}
+<style>
+  .sv-tab-btn.is-active{
+    border-color: rgba(255,140,0,.55) !important;
+    background: rgba(255,140,0,.08) !important;
+  }
+</style>
+<div class="sv-card sv-card-compact mb-3">
+  <div class="d-flex flex-wrap gap-2 align-items-center">
+    <button type="button" class="sv-btn sv-btn-ghost sv-tab-btn is-active" data-tab="padrao">Metas padrão</button>
+    <button type="button" class="sv-btn sv-btn-ghost sv-tab-btn" data-tab="gate">🎯 Gate + Itens por Loja</button>
+    <div class="ms-auto small text-muted">Tudo continua em <b>/admin/metas</b>, só organizado por abas.</div>
+  </div>
+</div>
+<div id="tab-padrao">
 <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
   <div>
     <h4 class="m-0">🏁 Administração de Metas</h4>
-    <div class="text-muted small">Cadastre metas (Crescimento, MIX, Share de Marcas) e o novo tipo 🎯 Gate + R$/Item.</div>
+    <div class="text-muted small">Cadastre metas mensais (Crescimento, MIX e Share de Marcas) com escadas e empresas alvo.</div>
   </div>
 
   <form class="d-flex gap-2" method="get" action="{{ url_for('admin_metas') }}">
@@ -83,7 +232,6 @@
                 <option value="CRESCIMENTO">📈 Crescimento</option>
                 <option value="MIX">🧩 MIX (itens únicos)</option>
                 <option value="SHARE_MARCA">🏷️ Share de Marcas</option>
-              <option value="GATE_ITEM_REWARD">🎯 Gate + R$/Item</option>
               </select>
             </div>
 
@@ -165,43 +313,6 @@
               <label class="form-label small">Marcas (apenas Share de Marcas)</label>
               <textarea class="form-control" name="marcas" rows="3" placeholder="EVOL, CREVON, VEI"></textarea>
               <div class="text-muted small mt-1">Pode separar por vírgula, ponto-e-vírgula ou quebra de linha.</div>
-            </div>
-
-
-            <div class="col-12" id="gateFields" style="display:none;">
-              <div class="sv-card sv-card-muted" style="margin-top:8px;">
-                <div class="sv-card-h">🎯 Gate + R$/Item</div>
-                <div class="sv-card-b">
-                  <div class="row g-2">
-                    <div class="col-md-4">
-                      <label class="form-label small">Período</label>
-                      <select class="form-select form-select-sm" name="periodo_tipo" id="periodo_tipo">
-                        <option value="MENSAL">Mensal (Ano/Mês)</option>
-                        <option value="DATA_RANGE">Intervalo (Datas)</option>
-                      </select>
-                      <div class="text-muted small mt-1">Mensal pode usar resumo por período. Intervalo calcula direto em vendas.</div>
-                    </div>
-                    <div class="col-md-4" id="wrap_data_ini">
-                      <label class="form-label small">Data inicial</label>
-                      <input class="form-control form-control-sm" type="date" name="data_ini" id="data_ini" value="">
-                    </div>
-                    <div class="col-md-4" id="wrap_data_fim">
-                      <label class="form-label small">Data final</label>
-                      <input class="form-control form-control-sm" type="date" name="data_fim" id="data_fim" value="">
-                    </div>
-                    <div class="col-md-4">
-                      <label class="form-label small">Gate (R$ líquido mínimo)</label>
-                      <input class="form-control form-control-sm" name="gate_valor_meta" placeholder="Ex.: 10000,00">
-                      <div class="text-muted small mt-1">Gate = valor líquido (CA deduz / DS ignora).</div>
-                    </div>
-                    <div class="col-12">
-                      <label class="form-label small">Regras (1 por linha)</label>
-                      <textarea class="form-control" name="regras_itens" rows="4" placeholder="produto=PNEU;recomp=1.00&#10;marca=EVOL;recomp=0.50&#10;mestre=39007;recomp=1.00"></textarea>
-                      <div class="text-muted small mt-1">Qtd premiada = somente vendas positivas (CA deduz / DS ignora).</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
             </div>
 
             <div class="col-12 d-grid">
@@ -384,53 +495,4 @@
     }
   })();
 </script>
-
-<script>
-(function(){
-  const tipoEl = document.getElementById('tipoMeta');
-  const gateFields = document.getElementById('gateFields');
-  const periodoTipo = document.getElementById('periodo_tipo');
-  const wrapIni = document.getElementById('wrap_data_ini');
-  const wrapFim = document.getElementById('wrap_data_fim');
-  const di = document.getElementById('data_ini');
-  const df = document.getElementById('data_fim');
-
-  function setDefaultDates(){
-    const ano = parseInt(document.querySelector('input[name="ano"]').value || '0');
-    const mes = parseInt(document.querySelector('input[name="mes"]').value || '0');
-    if(!ano || !mes) return;
-    const first = new Date(ano, mes-1, 1);
-    const last = new Date(ano, mes, 0);
-    const fmt = (d)=> d.toISOString().slice(0,10);
-    if(di && !di.value) di.value = fmt(first);
-    if(df && !df.value) df.value = fmt(last);
-  }
-
-  function refresh(){
-    const t = (tipoEl && tipoEl.value || '').toUpperCase();
-    if(gateFields) gateFields.style.display = (t === 'GATE_ITEM_REWARD') ? 'block' : 'none';
-
-    // marcas apenas para SHARE_MARCA: campo é o textarea name=marcas
-    const marcasLabel = document.querySelector('label.form-label.small:nth-of-type(1)');
-    const marcasArea = document.querySelector('textarea[name="marcas"]');
-    if(marcasArea){
-      const wrap = marcasArea.closest('.col-12');
-      if(wrap) wrap.style.display = (t === 'SHARE_MARCA') ? 'block' : 'none';
-    }
-
-    if(t === 'GATE_ITEM_REWARD'){
-      setDefaultDates();
-      const p = (periodoTipo && periodoTipo.value || 'MENSAL').toUpperCase();
-      const showRange = (p === 'DATA_RANGE');
-      if(wrapIni) wrapIni.style.display = showRange ? 'block' : 'none';
-      if(wrapFim) wrapFim.style.display = showRange ? 'block' : 'none';
-    }
-  }
-
-  if(tipoEl) tipoEl.addEventListener('change', refresh);
-  if(periodoTipo) periodoTipo.addEventListener('change', refresh);
-  refresh();
-})();
-</script>
-
 {% endblock %}
