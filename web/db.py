@@ -1399,6 +1399,24 @@ END $$;
                         created_at TIMESTAMP NOT NULL DEFAULT NOW()
                     );
                 """))
+
+                # Compat: tabela já existia sem a coluna `produto_terms`
+                conn.execute(text("""
+                    DO $$
+                    BEGIN
+                        IF EXISTS (
+                            SELECT 1 FROM information_schema.tables
+                            WHERE table_schema='public' AND table_name='metas_recompensas_loja_itens'
+                        ) AND NOT EXISTS (
+                            SELECT 1 FROM information_schema.columns
+                            WHERE table_schema='public' AND table_name='metas_recompensas_loja_itens'
+                              AND column_name='produto_terms'
+                        ) THEN
+                            ALTER TABLE metas_recompensas_loja_itens
+                                ADD COLUMN produto_terms VARCHAR(200) NULL;
+                        END IF;
+                    END $$;
+                """))
                 conn.execute(text("""
                     CREATE INDEX IF NOT EXISTS ix_metas_recomp_loja_emp
                     ON metas_recompensas_loja_itens(emp);
