@@ -148,8 +148,6 @@
     <!-- ✅ NOVO: Importar -->
     <a class="sb-link {% if path.startswith('/admin/importar') %}active{% endif %}" href="{{ url_for('admin_importar') }}">📥 Importar</a>
     <a class="sb-link {% if path.startswith('/admin/campanhas/ranking-marca') %}active{% endif %}" href="{{ url_for('admin_campanhas_ranking_marca') }}">🏆 Ranking por Marca (Admin)</a>
-        <a class="sb-link {% if request.path.startswith('/admin/metas') %}active{% endif %}" href="{{ url_for('admin_metas') }}">🎯 Metas (Admin)</a>
-    <a class="sb-link {% if path.startswith('/admin/resumos_periodo') %}active{% endif %}" href="{{ url_for('admin_resumos_periodo') }}">🗓️ Resumos por Período</a>
 
     <a class="sb-link {% if path.startswith('/admin/campanhas') %}active{% endif %}" href="{{ url_for('admin_campanhas_qtd') }}">🧩 Campanhas (Admin)</a>
     <a class="sb-link {% if path.startswith('/admin/combos') %}active{% endif %}" href="{{ url_for('admin_combos') }}">🧾 Combos</a>

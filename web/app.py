@@ -111,8 +111,6 @@ from db import (
     MetaMarca,
     MetaBaseManual,
     MetaResultado,
-    MetaGateVendedorEmp,
-    MetaRecompensaLojaItem,
     FechamentoMensal,
     AppSetting,
     BrandingTheme,
@@ -238,12 +236,6 @@ def brl_rs(value):
 # --------------------------
 # Filtros Jinja: datas (ISO <-> BR)
 # --------------------------
-
-@app.template_filter("moeda_br")
-def moeda_br(value):
-    """Alias para formatação BRL (R$ 1.000,00)."""
-    return brl_rs(value)
-
 @app.template_filter("date_iso")
 def date_iso(value):
     """Converte date/datetime/str para YYYY-MM-DD (compatível com <input type=\"date\">)."""
@@ -785,11 +777,6 @@ def _allowed_emps() -> list[str]:
             return _filter_emps_cadastradas([str(e) for e in emps_int], apenas_ativas=True)
     except Exception:
         return []
-
-def _emps_allowed() -> list[str]:
-    """Compat: alias para _allowed_emps()."""
-    return _allowed_emps()
-
 def _is_date_in_range(today: date, inicio: date | None, fim: date | None) -> bool:
     if inicio and today < inicio:
         return False
@@ -7165,39 +7152,6 @@ def admin_metas():
             meta_escalas[m.id] = db.query(MetaEscala).filter(MetaEscala.meta_id == m.id).order_by(MetaEscala.ordem.asc()).all()
             meta_marcas[m.id] = [r[0] for r in db.query(MetaMarca.marca).filter(MetaMarca.meta_id == m.id).all()]
 
-
-
-        # ---------------------------
-        # Aba: Gate + Itens por Loja
-        # ---------------------------
-        vendedores = db.query(Usuario).filter(Usuario.role == "vendedor").order_by(Usuario.username.asc()).all()
-
-        gates_q = db.query(MetaGateVendedorEmp).filter(MetaGateVendedorEmp.ano == ano, MetaGateVendedorEmp.mes == mes)
-        if role == "supervisor" and emps_allowed:
-            gates_q = gates_q.filter(MetaGateVendedorEmp.emp.in_(list(emps_allowed)))
-        gates_rows = gates_q.order_by(MetaGateVendedorEmp.emp.asc(), MetaGateVendedorEmp.usuario_id.asc()).all()
-
-        # mapa de username para exibir na tabela
-        user_ids = sorted({g.usuario_id for g in gates_rows})
-        users_map = {}
-        if user_ids:
-            for u in db.query(Usuario).filter(Usuario.id.in_(user_ids)).all():
-                users_map[u.id] = u.username
-
-        gates_list = []
-        for g in gates_rows:
-            gates_list.append({
-                "id": g.id,
-                "emp": g.emp,
-                "usuario_id": g.usuario_id,
-                "username": users_map.get(g.usuario_id, f"ID {g.usuario_id}"),
-                "gate_valor": g.gate_valor or 0.0,
-            })
-
-        loja_q = db.query(MetaRecompensaLojaItem).filter(MetaRecompensaLojaItem.ativo.is_(True))
-        if role == "supervisor" and emps_allowed:
-            loja_q = loja_q.filter(MetaRecompensaLojaItem.emp.in_(list(emps_allowed)))
-        loja_itens_list = loja_q.order_by(MetaRecompensaLojaItem.emp.asc(), MetaRecompensaLojaItem.id.desc()).all()
         return render_template(
             "admin_metas.html",
             role=role,
@@ -7209,9 +7163,6 @@ def admin_metas():
             meta_emps=meta_emps,
             meta_escalas=meta_escalas,
             meta_marcas=meta_marcas,
-            vendedores=vendedores,
-            gates_list=gates_list,
-            loja_itens_list=loja_itens_list,
         )
 
 
@@ -8269,202 +8220,3 @@ def api_produtos_suggest():
             db.close()
         except Exception:
             pass
-
-
-
-# ==========================================================
-# Admin Metas - Gate por vendedor e Itens pagos por Loja (EMP)
-# ==========================================================
-
-def _float_br(val: str) -> float:
-    s = (val or "").strip()
-    if not s:
-        return 0.0
-    s = s.replace(" ", "")
-    s = s.replace(".", "").replace(",", ".")
-    try:
-        return float(s)
-    except Exception:
-        return 0.0
-
-
-@app.post("/admin/metas/gate/salvar")
-def admin_metas_gate_salvar():
-    red = _login_required()
-    if red:
-        return red
-
-    role = _role() or ""
-    if role not in ("admin", "supervisor"):
-        abort(403)
-
-    ano = int(request.form.get("ano") or datetime.utcnow().year)
-    mes = int(request.form.get("mes") or datetime.utcnow().month)
-    emp = (request.form.get("emp") or "").strip()
-    usuario_id = int(request.form.get("usuario_id") or 0)
-    gate_valor = _float_br(request.form.get("gate_valor") or "0")
-
-    if not emp or usuario_id <= 0:
-        flash("Informe EMP e Vendedor.", "warning")
-        return redirect(url_for("admin_metas", ano=ano, mes=mes))
-
-    # valida escopo EMP (supervisor)
-    emps_allowed = _emps_allowed()
-    if role == "supervisor" and emps_allowed and emp not in emps_allowed:
-        abort(403)
-
-    db = SessionLocal()
-    try:
-        obj = (
-            db.query(MetaGateVendedorEmp)
-            .filter(
-                MetaGateVendedorEmp.emp == emp,
-                MetaGateVendedorEmp.usuario_id == usuario_id,
-                MetaGateVendedorEmp.ano == ano,
-                MetaGateVendedorEmp.mes == mes,
-            )
-            .first()
-        )
-        if obj:
-            obj.gate_valor = gate_valor
-            obj.ativo = True
-        else:
-            obj = MetaGateVendedorEmp(
-                emp=emp,
-                usuario_id=usuario_id,
-                vendedor=(lambda u: (u.username if u else str(usuario_id)))(db.query(Usuario).get(usuario_id)),
-                ano=ano,
-                mes=mes,
-                gate_valor=gate_valor,
-                ativo=True,
-            )
-            db.add(obj)
-
-        db.commit()
-        flash("Gate salvo.", "success")
-    except Exception as e:
-        db.rollback()
-        app.logger.exception("Erro ao salvar gate")
-        flash(f"Erro ao salvar gate: {e}", "danger")
-    finally:
-        db.close()
-
-    return redirect(url_for("admin_metas", ano=ano, mes=mes))
-
-
-@app.post("/admin/metas/gate/excluir/<int:gate_id>")
-def admin_metas_gate_excluir(gate_id: int):
-    red = _login_required()
-    if red:
-        return red
-
-    role = _role() or ""
-    if role not in ("admin", "supervisor"):
-        abort(403)
-
-    ano = int(request.args.get("ano") or datetime.utcnow().year)
-    mes = int(request.args.get("mes") or datetime.utcnow().month)
-
-    db = SessionLocal()
-    try:
-        obj = db.query(MetaGateVendedorEmp).filter(MetaGateVendedorEmp.id == gate_id).first()
-        if not obj:
-            flash("Gate não encontrado.", "warning")
-            return redirect(url_for("admin_metas", ano=ano, mes=mes))
-
-        emps_allowed = _emps_allowed()
-        if role == "supervisor" and emps_allowed and obj.emp not in emps_allowed:
-            abort(403)
-
-        db.delete(obj)
-        db.commit()
-        flash("Gate excluído.", "success")
-    except Exception as e:
-        db.rollback()
-        app.logger.exception("Erro ao excluir gate")
-        flash(f"Erro ao excluir gate: {e}", "danger")
-    finally:
-        db.close()
-
-    return redirect(url_for("admin_metas", ano=ano, mes=mes))
-
-
-@app.post("/admin/metas/loja-itens/salvar")
-def admin_metas_loja_item_salvar():
-    red = _login_required()
-    if red:
-        return red
-
-    role = _role() or ""
-    if role not in ("admin", "supervisor"):
-        abort(403)
-
-    emp = (request.form.get("emp") or "").strip()
-    mestre = (request.form.get("mestre") or "").strip() or None
-    marca = (request.form.get("marca") or "").strip().upper() or None
-    produto = (request.form.get("produto") or "").strip().upper() or None
-    recompensa_un = _float_br(request.form.get("recompensa_un") or "0")
-
-    if not emp or recompensa_un <= 0:
-        flash("Informe EMP e R$/un.", "warning")
-        return redirect(url_for("admin_metas"))
-
-    emps_allowed = _emps_allowed()
-    if role == "supervisor" and emps_allowed and emp not in emps_allowed:
-        abort(403)
-
-    db = SessionLocal()
-    try:
-        obj = MetaRecompensaLojaItem(
-            emp=emp,
-            mestre=mestre,
-            marca=marca,
-            produto=produto,
-            recompensa_un=recompensa_un,
-            ativo=True,
-        )
-        db.add(obj)
-        db.commit()
-        flash("Regra adicionada.", "success")
-    except Exception as e:
-        db.rollback()
-        app.logger.exception("Erro ao salvar regra de loja")
-        flash(f"Erro ao salvar regra: {e}", "danger")
-    finally:
-        db.close()
-
-    return redirect(url_for("admin_metas"))
-
-
-@app.post("/admin/metas/loja-itens/excluir/<int:item_id>")
-def admin_metas_loja_item_excluir(item_id: int):
-    red = _login_required()
-    if red:
-        return red
-
-    role = _role() or ""
-    if role not in ("admin", "supervisor"):
-        abort(403)
-
-    db = SessionLocal()
-    try:
-        obj = db.query(MetaRecompensaLojaItem).filter(MetaRecompensaLojaItem.id == item_id).first()
-        if not obj:
-            flash("Regra não encontrada.", "warning")
-            return redirect(url_for("admin_metas"))
-
-        emps_allowed = _emps_allowed()
-        if role == "supervisor" and emps_allowed and obj.emp not in emps_allowed:
-            abort(403)
-
-        db.delete(obj)
-        db.commit()
-        flash("Regra excluída.", "success")
-    except Exception as e:
-        db.rollback()
-        app.logger.exception("Erro ao excluir regra")
-        flash(f"Erro ao excluir regra: {e}", "danger")
-    finally:
-        db.close()
-
-    return redirect(url_for("admin_metas"))

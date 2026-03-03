@@ -2,7 +2,7 @@ import os
 from datetime import datetime
 from urllib.parse import quote_plus
 
-from sqlalchemy import create_engine, Column, Integer, String, Float, Date, DateTime, Text, Boolean, Index, UniqueConstraint, text, func, Numeric
+from sqlalchemy import create_engine, Column, Integer, String, Float, Date, DateTime, Text, Boolean, Index, UniqueConstraint, text, func
 from sqlalchemy.orm import declarative_base, sessionmaker, synonym
 
 # =====================
@@ -598,42 +598,6 @@ class MetaResultado(Base):
 # =========================
 # Campanhas Combo (Kit) — gate mínimo + pagamento por unidade (após bater todos os mínimos)
 # =========================
-
-class MetaGateVendedorEmp(Base):
-    __tablename__ = "metas_gate_vendedor_emp"
-
-    id = Column(Integer, primary_key=True)
-    emp = Column(String(20), nullable=False, index=True)
-    # Campo legado no banco (NOT NULL). Guardamos o username do vendedor por compatibilidade.
-    vendedor = Column(String(80), nullable=False, default="")
-    usuario_id = Column(Integer, nullable=False, index=True)
-    ano = Column(Integer, nullable=False, index=True)
-    mes = Column(Integer, nullable=False, index=True)
-    gate_valor = Column(Numeric(14, 2), nullable=False, default=0)
-    ativo = Column(Boolean, nullable=False, default=True)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-
-    __table_args__ = (
-        UniqueConstraint("emp", "usuario_id", "ano", "mes", name="uq_metas_gate_vend_emp"),
-    )
-
-
-class MetaRecompensaLojaItem(Base):
-    __tablename__ = "metas_recompensas_loja_itens"
-
-    id = Column(Integer, primary_key=True)
-    emp = Column(String(20), nullable=False, index=True)
-    mestre = Column(String(50), nullable=True, index=True)
-    marca = Column(String(80), nullable=True, index=True)
-    produto_terms = Column(String(200), nullable=True)
-    recompensa_un = Column(Numeric(14, 4), nullable=False, default=0)
-    ativo = Column(Boolean, nullable=False, default=True)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-
-    __table_args__ = (
-        Index("ix_metas_recomp_loja_emp_ativo", "emp", "ativo"),
-    )
-
 class CampanhaCombo(Base):
     __tablename__ = "campanhas_combo"
 
@@ -1329,97 +1293,6 @@ END $$;
                 pass
             try:
                 conn.execute(text("ALTER TABLE fechamento_mensal ALTER COLUMN fechado_em DROP NOT NULL;"))
-            except Exception:
-                pass
-
-            # --- Metas: Gate por vendedor+EMP e regras de premiação por loja (R$/item) ---
-            # Obs: idempotente (Render). Não quebra se já existir.
-            try:
-                conn.execute(text("""
-                    CREATE TABLE IF NOT EXISTS metas_gate_vendedor_emp (
-                        id SERIAL PRIMARY KEY,
-                        emp VARCHAR(20) NOT NULL,
-                        usuario_id INTEGER NOT NULL,
-                        ano INTEGER NOT NULL,
-                        mes INTEGER NOT NULL,
-                        gate_valor NUMERIC(14,2) NOT NULL DEFAULT 0,
-                        ativo BOOLEAN NOT NULL DEFAULT TRUE,
-                        created_at TIMESTAMP NOT NULL DEFAULT NOW()
-                    );
-                """))
-
-                # Compat: versões antigas podem ter a coluna como vendedor_id (ou não ter).
-                # Garantimos que usuario_id exista antes de criar índices que dependem dela.
-                conn.execute(text("""
-                    DO $$
-                    BEGIN
-                        IF EXISTS (
-                            SELECT 1 FROM information_schema.columns
-                            WHERE table_schema = 'public'
-                              AND table_name = 'metas_gate_vendedor_emp'
-                              AND column_name = 'vendedor_id'
-                        ) AND NOT EXISTS (
-                            SELECT 1 FROM information_schema.columns
-                            WHERE table_schema = 'public'
-                              AND table_name = 'metas_gate_vendedor_emp'
-                              AND column_name = 'usuario_id'
-                        ) THEN
-                            EXECUTE 'ALTER TABLE metas_gate_vendedor_emp RENAME COLUMN vendedor_id TO usuario_id';
-                        ELSIF NOT EXISTS (
-                            SELECT 1 FROM information_schema.columns
-                            WHERE table_schema = 'public'
-                              AND table_name = 'metas_gate_vendedor_emp'
-                              AND column_name = 'usuario_id'
-                        ) THEN
-                            EXECUTE 'ALTER TABLE metas_gate_vendedor_emp ADD COLUMN usuario_id INTEGER';
-                        END IF;
-                    END $$;
-                """))
-
-                conn.execute(text("""
-                    CREATE UNIQUE INDEX IF NOT EXISTS uq_metas_gate_vend_emp_v2
-                    ON metas_gate_vendedor_emp(emp, usuario_id, ano, mes);
-                """))
-                conn.execute(text("""
-                    CREATE INDEX IF NOT EXISTS ix_metas_gate_vend_emp_emp
-                    ON metas_gate_vendedor_emp(emp);
-                """))
-                conn.execute(text("""
-                    CREATE INDEX IF NOT EXISTS ix_metas_gate_vend_emp_usuario
-                    ON metas_gate_vendedor_emp(usuario_id);
-                """))
-
-                conn.execute(text("""
-                    CREATE TABLE IF NOT EXISTS metas_recompensas_loja_itens (
-                        id SERIAL PRIMARY KEY,
-                        emp VARCHAR(20) NOT NULL,
-                        mestre VARCHAR(50) NULL,
-                        marca VARCHAR(80) NULL,
-                        produto_terms VARCHAR(200) NULL,
-                        recompensa_un NUMERIC(14,4) NOT NULL DEFAULT 0,
-                        ativo BOOLEAN NOT NULL DEFAULT TRUE,
-                        created_at TIMESTAMP NOT NULL DEFAULT NOW()
-                    );
-                """))
-                conn.execute(text("""
-                    CREATE INDEX IF NOT EXISTS ix_metas_recomp_loja_emp
-                    ON metas_recompensas_loja_itens(emp);
-                """))
-                conn.execute(text("""
-                    CREATE INDEX IF NOT EXISTS ix_metas_recomp_loja_emp_ativo
-                    ON metas_recompensas_loja_itens(emp, ativo);
-                """))
-            except Exception:
-                pass
-
-            # Reforço de compatibilidade: bancos antigos podem ter a tabela já existente
-            # sem algumas colunas novas. Garantimos via ALTER TABLE IF NOT EXISTS.
-            try:
-                conn.execute(text("ALTER TABLE metas_recompensas_loja_itens ADD COLUMN IF NOT EXISTS produto_terms VARCHAR(200);"))
-            except Exception:
-                pass
-            try:
-                conn.execute(text("ALTER TABLE metas_recompensas_loja_itens ADD COLUMN IF NOT EXISTS recompensa_un NUMERIC(14,4) NOT NULL DEFAULT 0;"))
             except Exception:
                 pass
 
