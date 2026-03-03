@@ -1399,36 +1399,6 @@ END $$;
                         created_at TIMESTAMP NOT NULL DEFAULT NOW()
                     );
                 """))
-
-                # Compat: tabela já existia sem a coluna `produto_terms`
-                conn.execute(text("""
-                    DO $$
-                    BEGIN
-                        IF EXISTS (
-                            SELECT 1 FROM information_schema.tables
-                            WHERE table_schema='public' AND table_name='metas_recompensas_loja_itens'
-                        ) AND NOT EXISTS (
-                            SELECT 1 FROM information_schema.columns
-                            WHERE table_schema='public' AND table_name='metas_recompensas_loja_itens'
-                              AND column_name='produto_terms'
-                        ) THEN
-                            ALTER TABLE metas_recompensas_loja_itens
-                                ADD COLUMN produto_terms VARCHAR(200) NULL;
-                        
-                        IF EXISTS (
-                            SELECT 1 FROM information_schema.columns
-                            WHERE table_schema='public' AND table_name='metas_recompensas_loja_itens'
-                        ) AND NOT EXISTS (
-                            SELECT 1 FROM information_schema.columns
-                            WHERE table_schema='public' AND table_name='metas_recompensas_loja_itens'
-                              AND column_name='recompensa_un'
-                        ) THEN
-                            ALTER TABLE metas_recompensas_loja_itens
-                                ADD COLUMN recompensa_un NUMERIC(14,4) NOT NULL DEFAULT 0;
-                        END IF;
-                        END IF;
-                    END $$;
-                """))
                 conn.execute(text("""
                     CREATE INDEX IF NOT EXISTS ix_metas_recomp_loja_emp
                     ON metas_recompensas_loja_itens(emp);
@@ -1437,6 +1407,17 @@ END $$;
                     CREATE INDEX IF NOT EXISTS ix_metas_recomp_loja_emp_ativo
                     ON metas_recompensas_loja_itens(emp, ativo);
                 """))
+            except Exception:
+                pass
+
+            # Reforço de compatibilidade: bancos antigos podem ter a tabela já existente
+            # sem algumas colunas novas. Garantimos via ALTER TABLE IF NOT EXISTS.
+            try:
+                conn.execute(text("ALTER TABLE metas_recompensas_loja_itens ADD COLUMN IF NOT EXISTS produto_terms VARCHAR(200);"))
+            except Exception:
+                pass
+            try:
+                conn.execute(text("ALTER TABLE metas_recompensas_loja_itens ADD COLUMN IF NOT EXISTS recompensa_un NUMERIC(14,4) NOT NULL DEFAULT 0;"))
             except Exception:
                 pass
 
