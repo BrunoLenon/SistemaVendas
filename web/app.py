@@ -5259,6 +5259,12 @@ def admin_resumos_periodo():
     if red:
         return red
 
+    # garante colunas/tabelas necessárias (safe, idempotente)
+    try:
+        criar_tabelas()
+    except Exception:
+        pass
+
     # filtros
     emp = _emp_norm(request.values.get('emp', ''))
     vendedor = (request.values.get('vendedor') or '').strip().upper()
@@ -5300,14 +5306,7 @@ def admin_resumos_periodo():
         if acao in {'salvar', 'excluir'} and _mes_fechado(emp_alvo, ano_alvo, mes_alvo):
             msgs.append('⚠️ Mês fechado. Reabra o mês para editar os resumos.')
         else:
-            
-# Garante schema mínimo (colunas/tabelas) para resumos/metas
-try:
-    criar_tabelas()
-except Exception:
-    pass
-
-with SessionLocal() as db:
+            with SessionLocal() as db:
                 if acao == 'fechar':
                     rec = (
                         db.query(FechamentoMensal)
@@ -7027,13 +7026,13 @@ def metas():
 
 
 
-# Garante colunas/tabelas novas de metas (compatível com bancos antigos),
-# sem depender de AUTO_MIGRATE=1.
-try:
-    criar_tabelas()
-except Exception:
-    # Se falhar, seguimos e deixamos o erro aparecer no ponto exato (mais fácil de depurar).
-    pass
+    # Garante colunas/tabelas novas de metas (compatível com bancos antigos),
+    # sem depender de AUTO_MIGRATE=1.
+    try:
+        criar_tabelas()
+    except Exception:
+        # Se falhar, seguimos e deixamos o erro aparecer no ponto exato (mais fácil de depurar).
+        pass
 
     # filtros
     emp_filtro = (request.args.get("emp") or "").strip()
@@ -7140,6 +7139,12 @@ def admin_metas():
     if role not in ("admin", "supervisor"):
         flash("Acesso negado.", "danger")
         return redirect(url_for("dashboard"))
+
+    # garante colunas/tabelas necessárias (safe, idempotente)
+    try:
+        criar_tabelas()
+    except Exception:
+        pass
 
     hoje = date.today()
     ano = int(request.args.get("ano") or hoje.year)
