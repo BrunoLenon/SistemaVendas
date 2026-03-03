@@ -475,14 +475,17 @@ class MetaPrograma(Base):
     ano = Column(Integer, nullable=False, index=True)
     mes = Column(Integer, nullable=False, index=True)
 
-    # Período flexível (compatível): default MENSAL (usa ano/mes). Opcionalmente pode ser DATA_RANGE (usa data_ini/data_fim).
-    periodo_tipo = Column(String(20), nullable=False, default="MENSAL", server_default="MENSAL", index=True)  # MENSAL | DATA_RANGE
-    data_ini = Column(Date, nullable=True)
-    data_fim = Column(Date, nullable=True)
 
-    # Para metas tipo GATE_ITEM_REWARD: valor mínimo (gate) em R$ líquido para liberar pagamento por item
-    gate_valor_meta = Column(Float, nullable=True)
 
+# Período flexível (mantém compatibilidade com ano/mes)
+# - periodo_tipo: 'MENSAL' (default) ou 'DATA_RANGE'
+# - data_ini/data_fim: usados quando periodo_tipo == 'DATA_RANGE'
+periodo_tipo = Column(String(20), nullable=False, default="MENSAL", index=True)
+data_ini = Column(Date, nullable=True)
+data_fim = Column(Date, nullable=True)
+
+# Gate para metas por valor (ex.: 10.000,00) — valor líquido do período
+gate_valor_meta = Column(Float, nullable=True)
     ativo = Column(Boolean, nullable=False, default=True)
 
     created_by_user_id = Column(Integer, nullable=True, index=True)
@@ -506,6 +509,30 @@ class MetaProgramaEmp(Base):
         Index("ix_meta_emp_emp", "emp"),
     )
 
+
+
+
+class MetaRecompensaItem(Base):
+    """Regras de premiação por item (aplicadas apenas quando gate é atingido)."""
+
+    __tablename__ = "metas_recompensas_itens"
+
+    id = Column(Integer, primary_key=True)
+    meta_id = Column(Integer, nullable=False, index=True)
+
+    mestre = Column(String(60), nullable=True, index=True)
+    marca = Column(String(120), nullable=True, index=True)
+    produto_like = Column(String(200), nullable=True)
+
+    recompensa_por_un = Column(Float, nullable=False, default=0.0)
+    ativo = Column(Boolean, nullable=False, default=True)
+    ordem = Column(Integer, nullable=False, default=0)
+
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        Index("ix_metas_recompensas_meta_ordem", "meta_id", "ordem"),
+    )
 
 class MetaEscala(Base):
     """Faixas (escada) de atingimento -> bônus.
@@ -541,37 +568,6 @@ class MetaMarca(Base):
     __table_args__ = (
         UniqueConstraint("meta_id", "marca", name="uq_meta_marca"),
         Index("ix_meta_marca_marca", "marca"),
-    )
-
-
-
-class MetaRecompensaItem(Base):
-    """Regras de recompensa por item (após gate) para metas tipo GATE_ITEM_REWARD.
-
-    Uma linha pode filtrar por:
-      - mestre (código) OU
-      - marca (match exato) OU
-      - produto_like (prefixo/termos na descrição)
-    """
-
-    __tablename__ = "metas_recompensas_itens"
-
-    id = Column(Integer, primary_key=True)
-    meta_id = Column(Integer, nullable=False, index=True)
-
-    ordem = Column(Integer, nullable=False, default=0)
-    ativo = Column(Boolean, nullable=False, default=True)
-
-    mestre = Column(String(40), nullable=True, index=True)
-    marca = Column(String(120), nullable=True, index=True)
-    produto_like = Column(String(200), nullable=True)
-
-    recompensa_por_un = Column(Float, nullable=False, default=0.0)
-
-    __table_args__ = (
-        Index("ix_meta_recomp_item_meta", "meta_id"),
-        Index("ix_meta_recomp_item_mestre", "mestre"),
-        Index("ix_meta_recomp_item_marca", "marca"),
     )
 
 
@@ -625,6 +621,8 @@ class MetaResultado(Base):
     bonus_percentual = Column(Float, nullable=False, default=0.0)
     premio = Column(Float, nullable=False, default=0.0)
 
+
+    detalhes_json = Column(Text, nullable=True)
     calculado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
 
     __table_args__ = (
@@ -1167,6 +1165,35 @@ def criar_tabelas():
     try:
         with engine.connect() as conn:
             conn = conn.execution_options(isolation_level="AUTOCOMMIT")
+
+# ==========================
+# Metas: compat schema patch
+# ==========================
+conn.execute(text("ALTER TABLE metas_programas ADD COLUMN IF NOT EXISTS periodo_tipo varchar(20) NOT NULL DEFAULT 'MENSAL';"))
+conn.execute(text("ALTER TABLE metas_programas ADD COLUMN IF NOT EXISTS data_ini date;"))
+conn.execute(text("ALTER TABLE metas_programas ADD COLUMN IF NOT EXISTS data_fim date;"))
+conn.execute(text("ALTER TABLE metas_programas ADD COLUMN IF NOT EXISTS gate_valor_meta double precision;"))
+conn.execute(text("CREATE INDEX IF NOT EXISTS ix_metas_programas_periodo_tipo ON metas_programas (periodo_tipo);"))
+
+conn.execute(text("ALTER TABLE metas_resultados ADD COLUMN IF NOT EXISTS detalhes_json text;"))
+
+conn.execute(text("""
+    CREATE TABLE IF NOT EXISTS metas_recompensas_itens (
+        id SERIAL PRIMARY KEY,
+        meta_id INTEGER NOT NULL,
+        mestre VARCHAR(60),
+        marca VARCHAR(120),
+        produto_like VARCHAR(200),
+        recompensa_por_un DOUBLE PRECISION NOT NULL DEFAULT 0,
+        ativo BOOLEAN NOT NULL DEFAULT TRUE,
+        ordem INTEGER NOT NULL DEFAULT 0,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+"""))
+conn.execute(text("CREATE INDEX IF NOT EXISTS ix_metas_recompensas_meta ON metas_recompensas_itens (meta_id);"))
+conn.execute(text("CREATE INDEX IF NOT EXISTS ix_metas_recompensas_mestre ON metas_recompensas_itens (mestre);"))
+conn.execute(text("CREATE INDEX IF NOT EXISTS ix_metas_recompensas_marca ON metas_recompensas_itens (marca);"))
+
             # Cadastro de EMPs (lojas/filiais)
             conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS emps (

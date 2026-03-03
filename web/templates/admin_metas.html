@@ -34,7 +34,6 @@
                 <option value="CRESCIMENTO">📈 Crescimento</option>
                 <option value="MIX">🧩 MIX (itens únicos)</option>
                 <option value="SHARE_MARCA">🏷️ Share de Marcas</option>
-                <option value="GATE_ITEM_REWARD">🎯 Gate + R$/Item</option>
               </select>
             </div>
 
@@ -115,27 +114,6 @@
             <div class="col-12">
               <label class="form-label small">Marcas (apenas Share de Marcas)</label>
               <textarea class="form-control" name="marcas" rows="3" placeholder="EVOL, CREVON, VEI"></textarea>
-              <div class="mt-2 p-2 border rounded" id="gate_box" style="display:none;">
-                <div class="fw-semibold mb-2">🎯 Gate + R$/Item (novo)</div>
-                <div class="row g-2">
-                  <div class="col-12 col-md-6">
-                    <label class="form-label small">Gate (R$ líquido mínimo)</label>
-                    <input class="form-control" name="gate_valor_meta" placeholder="Ex.: 10000,00">
-                    <div class="text-muted small mt-1">Gate é <b>valor líquido</b> (CA deduz, DS ignora).</div>
-                  </div>
-                  <div class="col-12">
-                    <label class="form-label small">Regras de premiação por item (1 por linha)</label>
-                    <textarea class="form-control" name="regras_itens" rows="5" placeholder="mestre=39007;recomp=1.00
-marca=EVOL;recomp=0.50
-produto=PNEU;recomp=1.00"></textarea>
-                    <div class="text-muted small mt-1">
-                      Use <code>mestre</code> (código), ou <code>marca</code>, ou <code>produto</code> (termos na descrição) + <code>recomp</code> (R$/un).<br>
-                      Ex.: <code>produto=PNEU;recomp=1.00</code>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
               <div class="text-muted small mt-1">Pode separar por vírgula, ponto-e-vírgula ou quebra de linha.</div>
             </div>
 
@@ -184,7 +162,7 @@ produto=PNEU;recomp=1.00"></textarea>
                       {% endif %}
                     </td>
                     <td class="text-muted">
-                      {% if m.tipo == 'CRESCIMENTO' %}📈 Crescimento{% elif m.tipo == 'MIX' %}🧩 MIX{% elif m.tipo == 'SHARE_MARCA' %}🏷️ Share{% elif m.tipo == 'GATE_ITEM_REWARD' %}🎯 Gate + R$/Item{% else %}{{ m.tipo }}{% endif %}
+                      {% if m.tipo == 'CRESCIMENTO' %}📈 Crescimento{% elif m.tipo == 'MIX' %}🧩 MIX{% elif m.tipo == 'SHARE_MARCA' %}🏷️ Share{% else %}{{ m.tipo }}{% endif %}
                     </td>
                     <td class="small">
                       {% for e in (meta_emps.get(m.id) or []) %}
@@ -236,17 +214,6 @@ produto=PNEU;recomp=1.00"></textarea>
 <script>
   // Builder da escada: mantém um textarea oculto (escalas_text) como fonte de verdade.
   (function () {
-    const tipoSel = document.querySelector('select[name="tipo"]');
-    const gateBox = document.getElementById('gate_box');
-    function syncGateBox(){
-      if(!tipoSel || !gateBox) return;
-      gateBox.style.display = (tipoSel.value === 'GATE_ITEM_REWARD') ? '' : 'none';
-    }
-    if(tipoSel){
-      tipoSel.addEventListener('change', syncGateBox);
-      syncGateBox();
-    }
-
     const table = document.getElementById('escadas_table');
     const tbody = table ? table.querySelector('tbody') : null;
     const hidden = document.getElementById('escalas_text');
