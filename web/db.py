@@ -1358,6 +1358,28 @@ END $$;
                     ON metas_gate_vendedor_emp(usuario_id);
                 """))
 
+                # Compat: bancos antigos podem ter a tabela sem a coluna usuario_id (criada em versões mais novas)
+                # Mantemos isso idempotente e seguro:
+                conn.execute(text("ALTER TABLE metas_gate_vendedor_emp ADD COLUMN IF NOT EXISTS usuario_id INTEGER;"))
+                # Se existir a coluna vendedor_id em versões antigas, copiamos para usuario_id quando possível
+                conn.execute(text("""
+                    DO $$
+                    BEGIN
+                        IF EXISTS (
+                            SELECT 1 FROM information_schema.columns
+                            WHERE table_name='metas_gate_vendedor_emp' AND column_name='vendedor_id'
+                        ) THEN
+                            UPDATE metas_gate_vendedor_emp
+                               SET usuario_id = vendedor_id
+                             WHERE usuario_id IS NULL;
+                        END IF;
+                    EXCEPTION WHEN OTHERS THEN
+                        -- mantém compatibilidade sem quebrar boot
+                        NULL;
+                    END $$;
+                """))
+
+
                 conn.execute(text("""
                     CREATE TABLE IF NOT EXISTS metas_recompensas_loja_itens (
                         id SERIAL PRIMARY KEY,
