@@ -6931,6 +6931,127 @@ def _get_emps_no_periodo(db, ano: int, mes: int, emps_allowed: list[str]) -> lis
     return [str(r[0]).strip() for r in rows if r and r[0] is not None and str(r[0]).strip()]
 
 
+
+def _periodo_bounds_meta(meta: MetaPrograma):
+    """Retorna (ini, fim) conforme meta.periodo_tipo.
+    - MENSAL: usa ano/mes
+    - DATA_RANGE: usa data_ini/data_fim (inclusive)
+    """
+    try:
+        p = (getattr(meta, "periodo_tipo", None) or "MENSAL").upper()
+    except Exception:
+        p = "MENSAL"
+    if p == "DATA_RANGE" and getattr(meta, "data_ini", None) and getattr(meta, "data_fim", None):
+        return meta.data_ini, meta.data_fim
+    return _periodo_bounds_ym(meta.ano, meta.mes)
+
+
+def _query_valor_periodo(db, meta: MetaPrograma, emp: str, vendedor: str) -> float:
+    """Valor líquido do período (CA deduz, DS ignora)."""
+    ini, fim = _periodo_bounds_meta(meta)
+    # mensal mantém compat com resumo_periodo
+    p = (getattr(meta, "periodo_tipo", None) or "MENSAL").upper()
+    if p != "DATA_RANGE":
+        return float(_query_valor_mes(db, meta.ano, meta.mes, emp, vendedor) or 0.0)
+
+    # range: sempre calcula direto em vendas (não temos resumo por intervalo)
+    vend = (vendedor or "").strip().upper()
+    emp_n = _emp_norm(emp)
+    sql = f"""
+      SELECT SUM(
+        CASE
+          WHEN mov_tipo_movto = 'DS' THEN 0
+          WHEN mov_tipo_movto = 'CA' THEN -COALESCE(valor_total,0)
+          ELSE COALESCE(valor_total,0)
+        END
+      )::double precision AS valor_periodo
+      FROM vendas
+      WHERE emp = :emp
+        AND vendedor = :vendedor
+        AND movimento BETWEEN :ini AND :fim
+    """
+    row = db.execute(text(sql), {"emp": emp_n, "vendedor": vend, "ini": ini, "fim": fim}).fetchone()
+    return float(row[0] or 0.0) if row else 0.0
+
+
+def _query_qtd_regra_item(db, emp: str, vendedor: str, ini, fim, regra: MetaRecompensaItem) -> float:
+    """Qtd líquida (CA deduz, DS ignora) para uma regra."""
+    vend = (vendedor or "").strip().upper()
+    emp_n = _emp_norm(emp)
+
+    where = ["emp = :emp", "vendedor = :vendedor", "movimento BETWEEN :ini AND :fim"]
+    params = {"emp": emp_n, "vendedor": vend, "ini": ini, "fim": fim}
+
+    if getattr(regra, "mestre", None):
+        where.append("mestre = :mestre")
+        params["mestre"] = str(regra.mestre).strip()
+
+    if getattr(regra, "marca", None):
+        where.append("UPPER(COALESCE(marca,'')) = :marca")
+        params["marca"] = str(regra.marca).strip().upper()
+
+    plike = (getattr(regra, "produto_like", None) or "").strip()
+    if plike:
+        terms = [t.strip().upper() for t in re.split(r"\s+", plike) if t.strip()]
+        for i, t in enumerate(terms):
+            where.append(f"UPPER(COALESCE(des,'')) LIKE :t{i}")
+            params[f"t{i}"] = f"%{t}%"
+
+    sql = f"""
+      SELECT SUM(
+        CASE
+          WHEN mov_tipo_movto = 'DS' THEN 0
+          WHEN mov_tipo_movto = 'CA' THEN -COALESCE(qtdade_vendida,0)
+          ELSE COALESCE(qtdade_vendida,0)
+        END
+      )::double precision AS qtd_liq
+      FROM vendas
+      WHERE {' AND '.join(where)}
+    """
+    row = db.execute(text(sql), params).fetchone()
+    return float(row[0] or 0.0) if row else 0.0
+
+
+def _parse_regras_itens(raw: str):
+    """Parse de regras em linhas: mestre=;marca=;produto=;recomp=.
+    Retorna lista de dicts normalizados.
+    """
+    rules = []
+    if not raw:
+        return rules
+    for ln in raw.splitlines():
+        ln = (ln or "").strip()
+        if not ln:
+            continue
+        parts = [p.strip() for p in ln.split(";") if p.strip()]
+        d = {}
+        for p in parts:
+            if "=" not in p:
+                continue
+            k, v = p.split("=", 1)
+            k = k.strip().lower()
+            v = v.strip()
+            if k in ("mestre", "codigo", "cod"):
+                d["mestre"] = v
+            elif k in ("marca",):
+                d["marca"] = v.upper()
+            elif k in ("produto", "desc", "descricao", "termos"):
+                d["produto_like"] = v
+            elif k in ("recomp", "recompensa", "valor", "r$"):
+                d["recompensa_por_un"] = v.replace(".", "").replace(",", ".") if v.count(",")==1 and v.count(".")>1 else v.replace(",", ".")
+        # valida: precisa ter recompensa e algum filtro
+        if not d.get("recompensa_por_un"):
+            continue
+        try:
+            d["recompensa_por_un"] = float(d["recompensa_por_un"])
+        except Exception:
+            continue
+        if not (d.get("mestre") or d.get("marca") or d.get("produto_like")):
+            continue
+        rules.append(d)
+    return rules
+
+
 def _calc_and_upsert_meta_result(db, meta: MetaPrograma, emp: str, vendedor: str) -> MetaResultado:
     # Carrega escalas e configurações
     escalas = db.query(MetaEscala).filter(MetaEscala.meta_id == meta.id).order_by(MetaEscala.ordem.asc()).all()
@@ -6976,6 +7097,68 @@ def _calc_and_upsert_meta_result(db, meta: MetaPrograma, emp: str, vendedor: str
         res.share_pct = float(share_pct)
         res.bonus_percentual = float(bonus)
         res.premio = float(premio)
+
+
+    elif meta.tipo == "GATE_ITEM_REWARD":
+        # Gate + pagamento por item (R$/un)
+        valor_periodo = _as_decimal(_query_valor_periodo(db, meta, emp, vendedor))
+        gate = _as_decimal(getattr(meta, "gate_valor_meta", None) or 0.0)
+
+        ini, fim = _periodo_bounds_meta(meta)
+
+        detalhes = {
+            "tipo": "GATE_ITEM_REWARD",
+            "periodo_tipo": (getattr(meta, "periodo_tipo", None) or "MENSAL"),
+            "data_ini": str(ini),
+            "data_fim": str(fim),
+            "gate_valor_meta": float(gate),
+            "valor_periodo": float(valor_periodo),
+            "passou_gate": bool(valor_periodo >= gate) if gate > 0 else True,
+            "regras": [],
+        }
+
+        premio_total = Decimal("0.00")
+
+        if gate > 0 and valor_periodo < gate:
+            # não passou o gate
+            premio_total = Decimal("0.00")
+        else:
+            regras = (
+                db.query(MetaRecompensaItem)
+                .filter(MetaRecompensaItem.meta_id == meta.id, MetaRecompensaItem.ativo.is_(True))
+                .order_by(MetaRecompensaItem.ordem.asc(), MetaRecompensaItem.id.asc())
+                .all()
+            )
+            for r in regras:
+                qtd = _query_qtd_regra_item(db, emp, vendedor, ini, fim, r)
+                # prêmio só sobre qtd líquida positiva; se ficar negativo, zera
+                qtd_premiada = float(qtd or 0.0)
+                if qtd_premiada < 0:
+                    qtd_premiada = 0.0
+                por_un = float(getattr(r, "recompensa_por_un", 0.0) or 0.0)
+                premio_r = _money2(_as_decimal(qtd_premiada) * _as_decimal(por_un))
+                premio_total += premio_r
+                detalhes["regras"].append(
+                    {
+                        "id": r.id,
+                        "mestre": r.mestre,
+                        "marca": r.marca,
+                        "produto_like": r.produto_like,
+                        "qtd_liq": float(qtd or 0.0),
+                        "qtd_premiada": float(qtd_premiada),
+                        "recompensa_por_un": por_un,
+                        "premio": float(premio_r),
+                    }
+                )
+
+        res.valor_mes = float(valor_periodo)  # compat: usa valor_mes como valor do período
+        res.bonus_percentual = 0.0
+        res.premio = float(_money2(premio_total))
+        try:
+            res.detalhes_json = json.dumps(detalhes, ensure_ascii=False)
+        except Exception:
+            res.detalhes_json = None
+
 
     else:  # CRESCIMENTO
         valor_mes = _as_decimal(_query_valor_mes(db, meta.ano, meta.mes, emp, vendedor))
@@ -7100,7 +7283,7 @@ def metas():
         vendedores_choices = _get_vendedores_no_periodo(db, ano, mes, emps_scope) if role != "vendedor" else vendedores
 
         # nomes amigáveis dos tipos
-        tipo_label = {"CRESCIMENTO": "📈 Crescimento", "MIX": "🧩 MIX", "SHARE_MARCA": "🏷️ Share de Marcas"}
+        tipo_label = {"CRESCIMENTO": "📈 Crescimento", "MIX": "🧩 MIX", "SHARE_MARCA": "🏷️ Share de Marcas", "GATE_ITEM_REWARD": "🎯 Gate + R$/Item"}
 
         return render_template(
             "metas.html",
@@ -7155,10 +7338,12 @@ def admin_metas():
         meta_emps = {}
         meta_escalas = {}
         meta_marcas = {}
+        meta_regras = {}
         for m in metas_list:
             meta_emps[m.id] = [r[0] for r in db.query(MetaProgramaEmp.emp).filter(MetaProgramaEmp.meta_id == m.id).all()]
             meta_escalas[m.id] = db.query(MetaEscala).filter(MetaEscala.meta_id == m.id).order_by(MetaEscala.ordem.asc()).all()
             meta_marcas[m.id] = [r[0] for r in db.query(MetaMarca.marca).filter(MetaMarca.meta_id == m.id).all()]
+            meta_regras[m.id] = db.query(MetaRecompensaItem).filter(MetaRecompensaItem.meta_id == m.id).order_by(MetaRecompensaItem.ordem.asc()).all()
 
         return render_template(
             "admin_metas.html",
@@ -7171,6 +7356,7 @@ def admin_metas():
             meta_emps=meta_emps,
             meta_escalas=meta_escalas,
             meta_marcas=meta_marcas,
+            meta_regras=meta_regras,
         )
 
 
@@ -7191,18 +7377,62 @@ def admin_metas_criar():
     mes = int(request.form.get("mes") or date.today().month)
     bloqueio = request.form.get("ativo")  # checkbox
 
+    periodo_tipo = (request.form.get("periodo_tipo") or "MENSAL").strip().upper()
+    data_ini_raw = (request.form.get("data_ini") or "").strip()
+    data_fim_raw = (request.form.get("data_fim") or "").strip()
+    gate_raw = (request.form.get("gate_valor_meta") or "").strip()
+    regras_raw = (request.form.get("regras_itens") or "").strip()
+
     emps = request.form.getlist("emps") or []
 
     escalas_raw = (request.form.get("escalas") or "").strip()
     marcas_raw = (request.form.get("marcas") or "").strip()
 
-    if not nome or tipo not in ("CRESCIMENTO", "MIX", "SHARE_MARCA"):
+    if not nome or tipo not in ("CRESCIMENTO", "MIX", "SHARE_MARCA", "GATE_ITEM_REWARD"):
         flash("Preencha Nome e Tipo da meta.", "danger")
         return redirect(url_for("admin_metas", ano=ano, mes=mes))
 
     if not emps:
         flash("Selecione ao menos 1 Empresa.", "danger")
         return redirect(url_for("admin_metas", ano=ano, mes=mes))
+
+
+    # validações extras para Gate + Item
+    data_ini = None
+    data_fim = None
+    gate_valor_meta = None
+    regras_itens = []
+
+    if tipo == "GATE_ITEM_REWARD":
+        # período
+        if periodo_tipo not in ("MENSAL", "DATA_RANGE"):
+            periodo_tipo = "MENSAL"
+        if periodo_tipo == "DATA_RANGE":
+            try:
+                data_ini = datetime.strptime(data_ini_raw, "%Y-%m-%d").date()
+                data_fim = datetime.strptime(data_fim_raw, "%Y-%m-%d").date()
+            except Exception:
+                flash("Informe Data inicial e Data final (AAAA-MM-DD) para período por intervalo.", "danger")
+                return redirect(url_for("admin_metas", ano=ano, mes=mes))
+            if data_fim < data_ini:
+                flash("Data final deve ser maior ou igual à data inicial.", "danger")
+                return redirect(url_for("admin_metas", ano=ano, mes=mes))
+        # gate
+        gate_txt = (gate_raw or "").replace(".", "").replace(",", ".") if (gate_raw.count(",")==1 and gate_raw.count(".")>1) else (gate_raw or "").replace(",", ".")
+        try:
+            gate_valor_meta = float(gate_txt) if gate_txt else 0.0
+        except Exception:
+            gate_valor_meta = 0.0
+        if gate_valor_meta is None or gate_valor_meta <= 0:
+            flash("Informe o Gate (valor líquido mínimo) para a meta.", "danger")
+            return redirect(url_for("admin_metas", ano=ano, mes=mes))
+
+        # regras
+        regras_itens = _parse_regras_itens(regras_raw)
+        if not regras_itens:
+            flash("Informe ao menos 1 regra de premiação (ex.: produto=PNEU;recomp=1.00).", "danger")
+            return redirect(url_for("admin_metas", ano=ano, mes=mes))
+
 
     # parse escalas: linhas "limite=bonus" ou "limite:bonus"
     escalas = []
@@ -7224,7 +7454,7 @@ def admin_metas_criar():
         except Exception:
             continue
 
-    if not escalas:
+    if tipo != "GATE_ITEM_REWARD" and not escalas:
         flash("Informe as faixas (escadas) no formato 'limite:bonus'.", "danger")
         return redirect(url_for("admin_metas", ano=ano, mes=mes))
 
@@ -7251,6 +7481,10 @@ def admin_metas_criar():
             tipo=tipo,
             ano=ano,
             mes=mes,
+            periodo_tipo=periodo_tipo,
+            data_ini=data_ini,
+            data_fim=data_fim,
+            gate_valor_meta=gate_valor_meta,
             ativo=True if (bloqueio is None or str(bloqueio).lower() in ("1", "on", "true", "yes", "")) else False,
             created_by_user_id=session.get("user_id"),
         )
@@ -7266,6 +7500,24 @@ def admin_metas_criar():
         # marcas
         for m in marcas:
             db.add(MetaMarca(meta_id=meta.id, marca=m))
+
+
+        # regras de pagamento por item (apenas GATE_ITEM_REWARD)
+        if tipo == "GATE_ITEM_REWARD":
+            # limpa antigas (se houver)
+            db.query(MetaRecompensaItem).filter(MetaRecompensaItem.meta_id == meta.id).delete()
+            for ordem, rr in enumerate(regras_itens):
+                db.add(
+                    MetaRecompensaItem(
+                        meta_id=meta.id,
+                        ordem=ordem,
+                        mestre=rr.get("mestre"),
+                        marca=rr.get("marca"),
+                        produto_like=rr.get("produto_like"),
+                        recompensa_por_un=float(rr.get("recompensa_por_un") or 0.0),
+                        ativo=True,
+                    )
+                )
 
         db.commit()
 
