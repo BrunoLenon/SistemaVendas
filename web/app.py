@@ -785,6 +785,11 @@ def _allowed_emps() -> list[str]:
             return _filter_emps_cadastradas([str(e) for e in emps_int], apenas_ativas=True)
     except Exception:
         return []
+
+
+def _emps_allowed() -> list[str]:
+    """Alias compat para código legado. Use _allowed_emps()."""
+    return _allowed_emps()
 def _is_date_in_range(today: date, inicio: date | None, fim: date | None) -> bool:
     if inicio and today < inicio:
         return False
@@ -8396,13 +8401,8 @@ def admin_metas_loja_item_salvar():
     emp = (request.form.get("emp") or "").strip()
     mestre = (request.form.get("mestre") or "").strip() or None
     marca = (request.form.get("marca") or "").strip().upper() or None
-
-    # compat: o template antigo enviava "produto"; o novo envia "produto_terms"
-    produto_terms = (request.form.get("produto_terms") or request.form.get("produto") or "").strip() or None
-    if produto_terms:
-        produto_terms = produto_terms.upper()
-
-    recompensa_un = _float_br(request.form.get("recompensa_un") or request.form.get("recompensa_por_un") or "0")
+    produto = (request.form.get("produto") or "").strip().upper() or None
+    recompensa_un = _float_br(request.form.get("recompensa_un") or "0")
 
     if not emp or recompensa_un <= 0:
         flash("Informe EMP e R$/un.", "warning")
@@ -8418,8 +8418,8 @@ def admin_metas_loja_item_salvar():
             emp=emp,
             mestre=mestre,
             marca=marca,
-            produto_like=produto_terms,       # coluna real no banco (legado)
-            recompensa_por_un=float(recompensa_un or 0),  # coluna real no banco (legado)
+            produto=produto,
+            recompensa_un=recompensa_un,
             ativo=True,
         )
         db.add(obj)
