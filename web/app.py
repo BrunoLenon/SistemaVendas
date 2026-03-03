@@ -111,6 +111,8 @@ from db import (
     MetaMarca,
     MetaBaseManual,
     MetaResultado,
+    MetaRecompensaItem,
+    ensure_schema_metas,
     FechamentoMensal,
     AppSetting,
     BrandingTheme,
@@ -5259,11 +5261,8 @@ def admin_resumos_periodo():
     if red:
         return red
 
-    # garante colunas/tabelas necessárias (safe, idempotente)
-    try:
-        criar_tabelas()
-    except Exception:
-        pass
+    # Garante schema das Metas/Resumos (produção sem AUTO_MIGRATE)
+    ensure_schema_metas()
 
     # filtros
     emp = _emp_norm(request.values.get('emp', ''))
@@ -7024,16 +7023,6 @@ def metas():
     ano = int(request.args.get("ano") or hoje.year)
     mes = int(request.args.get("mes") or hoje.month)
 
-
-
-    # Garante colunas/tabelas novas de metas (compatível com bancos antigos),
-    # sem depender de AUTO_MIGRATE=1.
-    try:
-        criar_tabelas()
-    except Exception:
-        # Se falhar, seguimos e deixamos o erro aparecer no ponto exato (mais fácil de depurar).
-        pass
-
     # filtros
     emp_filtro = (request.args.get("emp") or "").strip()
     vendedor_filtro = (request.args.get("vendedor") or "").strip().upper()
@@ -7140,11 +7129,8 @@ def admin_metas():
         flash("Acesso negado.", "danger")
         return redirect(url_for("dashboard"))
 
-    # garante colunas/tabelas necessárias (safe, idempotente)
-    try:
-        criar_tabelas()
-    except Exception:
-        pass
+    # Garante schema de Metas (produção sem AUTO_MIGRATE)
+    ensure_schema_metas()
 
     hoje = date.today()
     ano = int(request.args.get("ano") or hoje.year)
