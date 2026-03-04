@@ -4599,18 +4599,18 @@ def admin_itens_parados():
 
     with SessionLocal() as db:
         if request.method == 'POST':
-			acao = (request.form.get('acao') or '').strip().lower()
-			# Aceita aliases para evitar "Ação inválida" se algum HTML/JS enviar outro valor
-			alias_map = {
-				'create': 'criar',
-				'novo': 'criar',
-				'add': 'criar',
-				'inserir': 'criar',
-				'delete': 'remover',
-				'remove': 'remover',
-				'excluir': 'remover',
-			}
-			acao = alias_map.get(acao, acao)
+            acao = (request.form.get('acao') or '').strip().lower()
+            # Aceita aliases para evitar "Ação inválida" se algum HTML/JS enviar outro valor
+            alias_map = {
+                'create': 'criar',
+                'novo': 'criar',
+                'add': 'criar',
+                'inserir': 'criar',
+                'delete': 'remover',
+                'remove': 'remover',
+                'excluir': 'remover',
+            }
+            acao = alias_map.get(acao, acao)
             try:
                 if acao == 'criar':
                     emp = (request.form.get('emp') or '').strip()
@@ -4627,19 +4627,19 @@ def admin_itens_parados():
                     quantidade = int(quantidade_raw) if quantidade_raw else None
                     recompensa_pct = float(recompensa_raw) if recompensa_raw else 0.0
 
-					# Compatibilidade: algumas versões do modelo podem não ter 'recompensa_pct'
-					kwargs = dict(
-						emp=str(emp),
-						codigo=str(codigo),
-						descricao=descricao or None,
-						quantidade=quantidade,
-						ativo=1,
-					)
-					if hasattr(ItemParado, 'recompensa_pct'):
-						kwargs['recompensa_pct'] = recompensa_pct
-					elif hasattr(ItemParado, 'recompensa'):
-						kwargs['recompensa'] = recompensa_pct
-					db.add(ItemParado(**kwargs))
+                    # Compatibilidade: algumas versões do modelo podem não ter 'recompensa_pct'
+                    kwargs = dict(
+                        emp=str(emp),
+                        codigo=str(codigo),
+                        descricao=descricao or None,
+                        quantidade=quantidade,
+                        ativo=1,
+                    )
+                    if hasattr(ItemParado, 'recompensa_pct'):
+                        kwargs['recompensa_pct'] = recompensa_pct
+                    elif hasattr(ItemParado, 'recompensa'):
+                        kwargs['recompensa'] = recompensa_pct
+                    db.add(ItemParado(**kwargs))
                     db.commit()
                     ok = 'Item cadastrado com sucesso.'
 
@@ -4662,8 +4662,8 @@ def admin_itens_parados():
                     db.commit()
                     ok = 'Item removido.'
 
-				else:
-					raise ValueError(f"Ação inválida: '{acao}'.")
+                else:
+                    raise ValueError(f"Ação inválida: '{acao}'.")
 
             except Exception as e:
                 db.rollback()
