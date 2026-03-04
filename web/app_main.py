@@ -19,6 +19,7 @@ import re
 import mimetypes
 import logging
 import json
+import math
 from datetime import date, datetime, timedelta
 import calendar
 from io import BytesIO
@@ -2411,234 +2412,370 @@ def devolucoes():
 
 @app.get("/itens_parados")
 def itens_parados():
-    """Relatório de itens parados (liquidação) por EMP.
+    """Painel operacional de Itens Parados (Pontos).
 
-    Cadastro é feito pelo ADMIN por EMP.
-    - ADMIN: pode visualizar todas as EMPs (e opcionalmente filtrar por EMP e/ou vendedor)
-    - SUPERVISOR: visualiza somente a EMP cadastrada no usuário
-    - VENDEDOR: a(s) EMP(s) é(são) derivada(s) de vendas.emp (pode ser multi-EMP)
+    - Admin: pode ver todas EMPs (ou filtrar por uma) e opcionalmente filtrar por vendedor.
+    - Supervisor: vê apenas EMPs vinculadas (usuario_emps) e pode filtrar por vendedor.
+    - Vendedor: vê apenas seus próprios resultados (e EMPs vinculadas; fallback = EMPs derivadas das vendas).
 
-    O campo "Valor" só aparece quando houver venda do código no período selecionado.
+    Regra base (por EMP ou global):
+      pontos = (valor_vendido / base_reais) * multiplicador_pontos
+      valor  = pontos * valor_por_ponto
+
+    Obs: pontos podem ser fracionados (mais justo). Arredondamento só na apresentação.
     """
     red = _login_required()
     if red:
         return red
 
+    role = (_role() or "").lower()
+
+    # --------- Filtros de período (di/df) ----------
+    # Se não vier data, usa o mês/ano padrão do sistema.
     mes, ano = _mes_ano_from_request()
-    role = (_role() or '').lower()
+    di_raw = (request.args.get("di") or "").strip()
+    df_raw = (request.args.get("df") or "").strip()
 
-    # --- vendedor alvo (para cálculo do VALOR) ---
-    vendedor_alvo = None
-    vendedores_lista = []
-
-    if role in {'admin', 'supervisor'}:
-        emp_supervisor = _emp() if role == 'supervisor' else None
-        if role == 'supervisor' and not emp_supervisor:
-            flash('Seu usuário supervisor não possui EMP cadastrada. Solicite ao ADMIN para cadastrar.', 'warning')
-            return redirect(url_for('dashboard'))
-
-        vendedores_lista = _get_vendedores_db(role, emp_supervisor)
-        vendedor_req = (request.args.get('vendedor') or '').strip().upper() or None
-        if vendedor_req and vendedor_req in vendedores_lista:
-            vendedor_alvo = vendedor_req
-        else:
-            vendedor_alvo = None  # admin/supervisor sem seleção = só lista
-
+    if di_raw and df_raw:
+        try:
+            di = date.fromisoformat(di_raw)
+            df = date.fromisoformat(df_raw)
+        except Exception:
+            di = None
+            df = None
     else:
-        vendedor_alvo = (_usuario_logado() or '').strip().upper()
+        di = None
+        df = None
 
-    # --- EMP(s) visíveis para o usuário ---
-    emp_param = (request.args.get('emp') or '').strip()
-    emp_scopes = []
+    if not di or not df:
+        start, end = _periodo_bounds(ano, mes)  # [start, end)
+        di = start
+        df = (end - timedelta(days=1))
+        di_raw = di.isoformat()
+        df_raw = df.isoformat()
 
-    if role == 'admin':
-        if emp_param:
-            emp_scopes = [str(emp_param)]
-        else:
-            # admin sem filtro: mostrar todas as EMPs que possuem itens cadastrados
-            with SessionLocal() as db:
-                # `itens_parados.ativo` is boolean in the database (TRUE/FALSE)
+    if df < di:
+        di, df = df, di
+
+    # --------- Filtros de escopo (EMP / vendedor) ----------
+    emp_scope = (request.args.get("emp") or "").strip()
+    vendedor_req = (request.args.get("vendedor") or "").strip().upper()
+
+    # Vendedor alvo: vendedor enxerga apenas ele; admin/supervisor podem filtrar ou ver agregado.
+    if role == "vendedor":
+        vendedor_alvo = (_usuario_logado() or "").strip().upper()
+        vendedor_req = vendedor_alvo
+    else:
+        vendedor_alvo = vendedor_req or None
+
+    # EMPs visíveis
+    with SessionLocal() as db:
+        if role == "admin":
+            if emp_scope:
+                emp_scopes = [str(emp_scope)]
+            else:
+                # Apenas EMPs que têm itens ativos cadastrados (evita dropdown gigante)
                 emp_scopes = [str(x[0]) for x in db.query(ItemParado.emp).filter(ItemParado.ativo.is_(True)).distinct().all()]
-
-    elif role == 'supervisor':
-        emps = _allowed_emps()
-        emp_scopes = emps if emps else ([str(_emp())] if _emp() else [])
-
-    else:
-        # vendedor: EMP(s) via usuario_emps (recomendado); fallback = derivadas das vendas
-        emps = _allowed_emps()
-        if emps:
-            emp_scopes = emps
+        elif role == "supervisor":
+            emps = _allowed_emps()
+            emp_scopes = emps if emps else ([str(_emp())] if _emp() else [])
+            if emp_scope:
+                # permite filtrar dentro do que o supervisor já pode ver
+                emp_scopes = [e for e in emp_scopes if str(e) == str(emp_scope)]
         else:
-            with SessionLocal() as db:
-                emp_scopes = [str(x[0]) for x in db.query(Venda.emp).filter(Venda.vendedor == vendedor_alvo).distinct().all()]
+            emps = _allowed_emps()
+            if emps:
+                emp_scopes = emps if (not emp_scope) else [e for e in emps if str(e) == str(emp_scope)]
+            else:
+                # fallback: EMPs derivadas das vendas do vendedor
+                q = db.query(Venda.emp).filter(Venda.vendedor == vendedor_req).distinct()
+                emp_scopes = [str(x[0]) for x in q.all() if x and x[0]]
 
-    emp_scopes = sorted({e.strip() for e in emp_scopes if e and str(e).strip()})
+    emp_scopes = sorted({e.strip() for e in (emp_scopes or []) if e and str(e).strip()})
+
     if not emp_scopes:
-        flash('Não foi possível identificar a EMP para este usuário (sem vendas registradas).', 'warning')
-        return redirect(url_for('dashboard'))
+        flash("Não foi possível identificar a EMP para este usuário.", "warning")
+        return redirect(url_for("dashboard"))
 
-    # --- Buscar itens por EMP e agrupar ---
+    # Dropdown de EMPs para filtros
+    emps_disponiveis = emp_scopes[:] if role != "admin" else None
+    if role == "admin":
+        with SessionLocal() as db:
+            emps_disponiveis = sorted({str(x[0]) for x in db.query(ItemParado.emp).distinct().all() if x and x[0]})
+
+    # Dropdown de vendedores (somente admin/supervisor)
+    vendedores_lista = []
+    if role in {"admin", "supervisor"}:
+        emp_sup = _emp() if role == "supervisor" else None
+        vendedores_lista = _get_vendedores_db(role, emp_sup)
+
+    # --------- Itens ativos por EMP (respeitando janela opcional do item) ----------
     with SessionLocal() as db:
         itens_all = (
             db.query(ItemParado)
             .filter(ItemParado.emp.in_(emp_scopes))
             .filter(ItemParado.ativo.is_(True))
+            .filter(or_(ItemParado.data_inicio.is_(None), ItemParado.data_inicio <= df))
+            .filter(or_(ItemParado.data_fim.is_(None), ItemParado.data_fim >= di))
             .order_by(ItemParado.emp.asc(), ItemParado.codigo.asc())
             .all()
         )
 
-    itens_por_emp = {}
+        # Config de pontos (preferência: EMP selecionada única; fallback: global)
+        cfg_emp_target = emp_scope if emp_scope else (emp_scopes[0] if len(emp_scopes) == 1 else None)
+        cfg = None
+        if cfg_emp_target:
+            cfg = (
+                db.query(ItensParadosPontosConfig)
+                .filter(ItensParadosPontosConfig.emp == str(cfg_emp_target))
+                .filter(ItensParadosPontosConfig.ativo.is_(True))
+                .order_by(ItensParadosPontosConfig.id.desc())
+                .first()
+            )
+        if not cfg:
+            cfg = (
+                db.query(ItensParadosPontosConfig)
+                .filter(ItensParadosPontosConfig.emp.is_(None))
+                .filter(ItensParadosPontosConfig.ativo.is_(True))
+                .order_by(ItensParadosPontosConfig.id.desc())
+                .first()
+            )
+
+        base_reais = int(getattr(cfg, "base_reais", 100) or 100)
+        valor_por_ponto = float(getattr(cfg, "valor_por_ponto", 10.0) or 10.0)
+
+    # Agrupa itens por EMP (para exibição)
+    itens_por_emp: dict[str, list] = {}
     for it in itens_all:
-        e = str(it.emp).strip() if it.emp is not None else ''
+        e = str(it.emp).strip() if it.emp is not None else ""
         itens_por_emp.setdefault(e, []).append(it)
 
-    # --- Calcular vendido_total por (emp, codigo) e recompensa ---
-    vendido_total_map = {}
-    recomp_map = {}
+    # --------- Vendas agregadas (1 query) ----------
+    vendido_map: dict[tuple[str, str], float] = {}  # (emp, codigo) -> total
+    pontos_map: dict[tuple[str, str], float] = {}
+    valor_map: dict[tuple[str, str], float] = {}
 
-    if vendedor_alvo and itens_all:
-        # lista de códigos (mestre) cadastrados nos itens
-        codigos = [ (i.codigo or '').strip() for i in itens_all if (i.codigo or '').strip() ]
-        codigos = sorted(set(codigos))
+    resumo = None
+
+    if itens_all:
+        codigos = sorted({(i.codigo or "").strip() for i in itens_all if (i.codigo or "").strip()})
         if codigos:
-            start, end = _periodo_bounds(ano, mes)
             with SessionLocal() as db:
                 q = (
                     db.query(Venda.emp, Venda.mestre, func.coalesce(func.sum(Venda.valor_total), 0.0))
                     .filter(Venda.emp.in_(emp_scopes))
-                    .filter(Venda.vendedor == vendedor_alvo)
-                    .filter(Venda.movimento >= start)
-                    .filter(Venda.movimento < end)
-                    .filter(Venda.mov_tipo_movto == 'OA')
+                    .filter(Venda.movimento >= di)
+                    .filter(Venda.movimento <= df)
+                    .filter(Venda.mov_tipo_movto.in_(["OA"]))  # vendas (ajuste aqui se você quiser somar DS/CA)
                     .filter(Venda.mestre.in_(codigos))
-                    .group_by(Venda.emp, Venda.mestre)
                 )
-                for emp_v, mestre, total in q.all():
-                    k_emp = str(emp_v).strip() if emp_v is not None else ''
-                    k_cod = (mestre or '').strip()
-                    vendido_total_map[(k_emp, k_cod)] = float(total or 0.0)
+                if vendedor_alvo:
+                    q = q.filter(Venda.vendedor == vendedor_alvo)
 
-            for it in itens_all:
-                emp_it = str(it.emp).strip() if it.emp is not None else ''
-                cod = (it.codigo or '').strip()
-                total = vendido_total_map.get((emp_it, cod), 0.0)
-                pct = float(it.recompensa_pct or 0.0)
-                valor = (total * (pct / 100.0)) if total > 0 and pct > 0 else 0.0
-                recomp_map[(emp_it, cod)] = valor
+                q = q.group_by(Venda.emp, Venda.mestre)
+
+                for emp_v, mestre, total in q.all():
+                    k_emp = str(emp_v).strip() if emp_v is not None else ""
+                    k_cod = (mestre or "").strip()
+                    vendido_map[(k_emp, k_cod)] = float(total or 0.0)
+
+    # --------- Calcula pontos/valor por item (em memória, rápido) ----------
+    total_vendido = 0.0
+    total_pontos = 0.0
+    total_valor = 0.0
+
+    for it in itens_all:
+        emp_it = str(it.emp).strip() if it.emp is not None else ""
+        cod = (it.codigo or "").strip()
+        vendido = float(vendido_map.get((emp_it, cod), 0.0) or 0.0)
+        mult = float(getattr(it, "multiplicador_pontos", 1.0) or 1.0)
+        pontos = (vendido / float(base_reais or 100)) * mult if vendido > 0 else 0.0
+        valor = pontos * float(valor_por_ponto or 0.0)
+
+        vendido_map[(emp_it, cod)] = vendido
+        pontos_map[(emp_it, cod)] = pontos
+        valor_map[(emp_it, cod)] = valor
+
+        total_vendido += vendido
+        total_pontos += pontos
+        total_valor += valor
+
+    if (role == "vendedor") or (vendedor_alvo):
+        # Resumo aparece quando há um vendedor alvo (vendedor logado ou filtro selecionado)
+        falta_para_prox = None
+        if base_reais and base_reais > 0:
+            resto = total_vendido % float(base_reais)
+            falta_para_prox = float(base_reais) - resto if resto > 0 else 0.0
+
+        resumo = {
+            "valor_vendido": total_vendido,
+            "pontos": total_pontos,
+            "premio_base": total_valor,
+            "bonus_extra": 0.0,
+            "total": total_valor,
+            "falta_para_prox": falta_para_prox,
+        }
 
     return render_template(
         "itens_parados.html",
+        role_name=role,
         role=role,
         mes=mes,
         ano=ano,
-        emp_param=emp_param,
-        emp_scopes=emp_scopes,
+        data_inicio=di_raw,
+        data_fim=df_raw,
+        emp_scope=emp_scope or "",
+        emps_disponiveis=emps_disponiveis or [],
+        vendedor=vendedor_req if vendedor_req else "",
+        vendedores_lista=vendedores_lista or [],
+        base_reais=base_reais,
+        valor_por_ponto=valor_por_ponto,
+        resumo=resumo,
+        itens=itens_all,
         itens_por_emp=itens_por_emp,
-        vendedor=vendedor_alvo,
-        vendedores_lista=vendedores_lista,
-        vendido_total_map=vendido_total_map,
-        recomp_map=recomp_map,
+        vendido_map=vendido_map,
+        pontos_map=pontos_map,
+        valor_map=valor_map,
     )
 
 @app.get("/itens_parados/pdf")
 def itens_parados_pdf():
-    """Exporta o relatório de itens parados em PDF (mes/ano e escopo do usuário)."""
+    """Exporta o painel de Itens Parados (Pontos) em PDF.
+
+    Usa os mesmos filtros de /itens_parados (emp, vendedor, di/df).
+    """
     red = _login_required()
     if red:
         return red
 
+    role = (_role() or "").lower()
+
+    # período (di/df) com fallback mês/ano
     mes, ano = _mes_ano_from_request()
-    role = (_role() or '').lower()
+    di_raw = (request.args.get("di") or "").strip()
+    df_raw = (request.args.get("df") or "").strip()
 
-    # Reaproveita a lógica da tela para determinar vendedor/emp_scopes/itens e valores
-    vendedor_alvo = None
-    vendedores_lista = []
+    di = df = None
+    if di_raw and df_raw:
+        try:
+            di = date.fromisoformat(di_raw)
+            df = date.fromisoformat(df_raw)
+        except Exception:
+            di = df = None
+    if not di or not df:
+        start, end = _periodo_bounds(ano, mes)
+        di = start
+        df = (end - timedelta(days=1))
+        di_raw = di.isoformat()
+        df_raw = df.isoformat()
+    if df < di:
+        di, df = df, di
 
-    if role in {'admin', 'supervisor'}:
-        emp_supervisor = _emp() if role == 'supervisor' else None
-        if role == 'supervisor' and not emp_supervisor:
-            flash('Seu usuário supervisor não possui EMP cadastrada. Solicite ao ADMIN para cadastrar.', 'warning')
-            return redirect(url_for('dashboard'))
+    emp_scope = (request.args.get("emp") or "").strip()
+    vendedor_req = (request.args.get("vendedor") or "").strip().upper()
 
-        vendedores_lista = _get_vendedores_db(role, emp_supervisor)
-        vendedor_req = (request.args.get('vendedor') or '').strip().upper() or None
-        if vendedor_req and vendedor_req in vendedores_lista:
-            vendedor_alvo = vendedor_req
-        else:
-            vendedor_alvo = None
+    if role == "vendedor":
+        vendedor_alvo = (_usuario_logado() or "").strip().upper()
+        vendedor_req = vendedor_alvo
     else:
-        vendedor_alvo = (_usuario_logado() or '').strip().upper()
-
-    emp_param = (request.args.get('emp') or '').strip()
-    emp_scopes = []
-
-    if role == 'admin':
-        if emp_param:
-            emp_scopes = [str(emp_param)]
-        else:
-            with SessionLocal() as db:
-                # `itens_parados.ativo` is boolean in the database (TRUE/FALSE)
-                emp_scopes = [str(x[0]) for x in db.query(ItemParado.emp).filter(ItemParado.ativo.is_(True)).distinct().all()]
-    elif role == 'supervisor':
-        emps = _allowed_emps()
-        emp_scopes = emps if emps else ([str(_emp())] if _emp() else [])
-    else:
-        with SessionLocal() as db:
-                emp_scopes = [str(x[0]) for x in db.query(Venda.emp).filter(Venda.vendedor == vendedor_alvo).distinct().all()]
-
-    emp_scopes = sorted({e.strip() for e in emp_scopes if e and str(e).strip()})
-    if not emp_scopes:
-        flash('Não foi possível identificar a EMP para este usuário (sem vendas registradas).', 'warning')
-        return redirect(url_for('dashboard'))
+        vendedor_alvo = vendedor_req or None
 
     with SessionLocal() as db:
+        # EMPs visíveis
+        if role == "admin":
+            if emp_scope:
+                emp_scopes = [str(emp_scope)]
+            else:
+                emp_scopes = [str(x[0]) for x in db.query(ItemParado.emp).filter(ItemParado.ativo.is_(True)).distinct().all()]
+        elif role == "supervisor":
+            emps = _allowed_emps()
+            emp_scopes = emps if emps else ([str(_emp())] if _emp() else [])
+            if emp_scope:
+                emp_scopes = [e for e in emp_scopes if str(e) == str(emp_scope)]
+        else:
+            emps = _allowed_emps()
+            if emps:
+                emp_scopes = emps if (not emp_scope) else [e for e in emps if str(e) == str(emp_scope)]
+            else:
+                q = db.query(Venda.emp).filter(Venda.vendedor == vendedor_req).distinct()
+                emp_scopes = [str(x[0]) for x in q.all() if x and x[0]]
+
+        emp_scopes = sorted({e.strip() for e in (emp_scopes or []) if e and str(e).strip()})
+        if not emp_scopes:
+            flash("Não foi possível identificar a EMP para este usuário.", "warning")
+            return redirect(url_for("dashboard"))
+
+        # itens
         itens_all = (
             db.query(ItemParado)
             .filter(ItemParado.emp.in_(emp_scopes))
             .filter(ItemParado.ativo.is_(True))
+            .filter(or_(ItemParado.data_inicio.is_(None), ItemParado.data_inicio <= df))
+            .filter(or_(ItemParado.data_fim.is_(None), ItemParado.data_fim >= di))
             .order_by(ItemParado.emp.asc(), ItemParado.codigo.asc())
             .all()
         )
 
-    itens_por_emp = {}
-    for it in itens_all:
-        e = str(it.emp).strip() if it.emp is not None else ''
-        itens_por_emp.setdefault(e, []).append(it)
+        # config (preferência: EMP única)
+        cfg_emp_target = emp_scope if emp_scope else (emp_scopes[0] if len(emp_scopes) == 1 else None)
+        cfg = None
+        if cfg_emp_target:
+            cfg = (
+                db.query(ItensParadosPontosConfig)
+                .filter(ItensParadosPontosConfig.emp == str(cfg_emp_target), ItensParadosPontosConfig.ativo.is_(True))
+                .order_by(ItensParadosPontosConfig.id.desc())
+                .first()
+            )
+        if not cfg:
+            cfg = (
+                db.query(ItensParadosPontosConfig)
+                .filter(ItensParadosPontosConfig.emp.is_(None), ItensParadosPontosConfig.ativo.is_(True))
+                .order_by(ItensParadosPontosConfig.id.desc())
+                .first()
+            )
+        base_reais = int(getattr(cfg, "base_reais", 100) or 100)
+        valor_por_ponto = float(getattr(cfg, "valor_por_ponto", 10.0) or 10.0)
 
-    vendido_total_map = {}
-    recomp_map = {}
+        vendido_map = {}
+        pontos_map = {}
+        valor_map = {}
 
-    if vendedor_alvo and itens_all:
-        codigos = [ (i.codigo or '').strip() for i in itens_all if (i.codigo or '').strip() ]
-        codigos = sorted(set(codigos))
-        if codigos:
-            start, end = _periodo_bounds(ano, mes)
-            with SessionLocal() as db:
+        if itens_all:
+            codigos = sorted({(i.codigo or "").strip() for i in itens_all if (i.codigo or "").strip()})
+            if codigos:
                 q = (
                     db.query(Venda.emp, Venda.mestre, func.coalesce(func.sum(Venda.valor_total), 0.0))
                     .filter(Venda.emp.in_(emp_scopes))
-                    .filter(Venda.vendedor == vendedor_alvo)
-                    .filter(Venda.movimento >= start)
-                    .filter(Venda.movimento < end)
-                    .filter(Venda.mov_tipo_movto == 'OA')
+                    .filter(Venda.movimento >= di)
+                    .filter(Venda.movimento <= df)
+                    .filter(Venda.mov_tipo_movto.in_(["OA"]))
                     .filter(Venda.mestre.in_(codigos))
-                    .group_by(Venda.emp, Venda.mestre)
                 )
+                if vendedor_alvo:
+                    q = q.filter(Venda.vendedor == vendedor_alvo)
+                q = q.group_by(Venda.emp, Venda.mestre)
+
                 for emp_v, mestre, total in q.all():
-                    k_emp = str(emp_v).strip() if emp_v is not None else ''
-                    k_cod = (mestre or '').strip()
-                    vendido_total_map[(k_emp, k_cod)] = float(total or 0.0)
+                    k_emp = str(emp_v).strip() if emp_v is not None else ""
+                    k_cod = (mestre or "").strip()
+                    vendido_map[(k_emp, k_cod)] = float(total or 0.0)
 
-            for it in itens_all:
-                emp_it = str(it.emp).strip() if it.emp is not None else ''
-                cod = (it.codigo or '').strip()
-                total = vendido_total_map.get((emp_it, cod), 0.0)
-                pct = float(it.recompensa_pct or 0.0)
-                valor = (total * (pct / 100.0)) if total > 0 and pct > 0 else 0.0
-                recomp_map[(emp_it, cod)] = valor
+        # calcula por item
+        itens_por_emp = {}
+        for it in itens_all:
+            e = str(it.emp).strip() if it.emp is not None else ""
+            itens_por_emp.setdefault(e, []).append(it)
 
-    # --- Gerar PDF (ReportLab) ---
+            cod = (it.codigo or "").strip()
+            vendido = float(vendido_map.get((e, cod), 0.0) or 0.0)
+            mult = float(getattr(it, "multiplicador_pontos", 1.0) or 1.0)
+            pontos = (vendido / float(base_reais or 100)) * mult if vendido > 0 else 0.0
+            valor = pontos * float(valor_por_ponto or 0.0)
+
+            pontos_map[(e, cod)] = pontos
+            valor_map[(e, cod)] = valor
+
+    # --- PDF (ReportLab) ---
     from reportlab.lib.pagesizes import A4
     from reportlab.pdfgen import canvas
     from reportlab.lib.units import mm
@@ -2647,24 +2784,27 @@ def itens_parados_pdf():
     c = canvas.Canvas(buf, pagesize=A4)
     width, height = A4
 
-    titulo = "Relatório - Itens Parados"
-    periodo = f"Período: {mes:02d}/{ano}"
-    vendedor_txt = f"Vendedor: {vendedor_alvo}" if vendedor_alvo else "Vendedor: (não selecionado)"
+    titulo = "Relatório - Itens Parados (Pontos)"
+    periodo = f"Período: {di_raw} até {df_raw}"
+    vendedor_txt = f"Vendedor: {vendedor_alvo}" if vendedor_alvo else "Vendedor: (agregado)"
+    regra = f"Regra: 1 ponto a cada R$ {base_reais} | R$ por ponto: {valor_por_ponto:.2f}"
     agora = datetime.now().strftime("%d/%m/%Y %H:%M")
 
+    def br_money(x: float) -> str:
+        return f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
     def draw_header():
-        y = height - 18*mm
-        c.setFont("Helvetica-Bold", 14)
-        c.drawString(18*mm, y, titulo)
-        c.setFont("Helvetica", 10)
-        c.drawString(18*mm, y-6*mm, periodo)
-        c.drawString(18*mm, y-11*mm, vendedor_txt)
-        c.drawRightString(width-18*mm, y-6*mm, f"Gerado em: {agora}")
-        return y-18*mm
+        y = height - 18 * mm
+        c.setFont("Helvetica-Bold", 13)
+        c.drawString(18 * mm, y, titulo)
+        c.setFont("Helvetica", 9)
+        c.drawString(18 * mm, y - 6 * mm, periodo)
+        c.drawString(18 * mm, y - 11 * mm, vendedor_txt)
+        c.drawString(18 * mm, y - 16 * mm, regra)
+        c.drawRightString(width - 18 * mm, y - 6 * mm, f"Gerado em: {agora}")
+        return y - 22 * mm
 
     y = draw_header()
-
-    # tabela simples por EMP
     c.setFont("Helvetica", 9)
 
     for emp in emp_scopes:
@@ -2672,347 +2812,59 @@ def itens_parados_pdf():
         if not itens_emp:
             continue
 
-        # quebra página se necessário
-        if y < 35*mm:
+        if y < 35 * mm:
             c.showPage()
             y = draw_header()
             c.setFont("Helvetica", 9)
 
         c.setFont("Helvetica-Bold", 11)
-        c.drawString(18*mm, y, f"EMP {emp}")
-        y -= 6*mm
+        c.drawString(18 * mm, y, f"EMP {emp}")
+        y -= 6 * mm
         c.setFont("Helvetica-Bold", 9)
-        c.drawString(18*mm, y, "CÓDIGO")
-        c.drawString(40*mm, y, "DESCRIÇÃO")
-        c.drawRightString(width-55*mm, y, "QTD")
-        c.drawRightString(width-35*mm, y, "%")
-        c.drawRightString(width-18*mm, y, "VALOR")
-        y -= 4*mm
+        c.drawString(18 * mm, y, "CÓDIGO")
+        c.drawString(42 * mm, y, "DESCRIÇÃO")
+        c.drawRightString(width - 68 * mm, y, "VENDEU")
+        c.drawRightString(width - 42 * mm, y, "PONTOS")
+        c.drawRightString(width - 18 * mm, y, "VALOR")
+        y -= 4 * mm
         c.setLineWidth(0.5)
-        c.line(18*mm, y, width-18*mm, y)
-        y -= 5*mm
+        c.line(18 * mm, y, width - 18 * mm, y)
+        y -= 5 * mm
         c.setFont("Helvetica", 9)
 
         for it in itens_emp:
-            cod = (it.codigo or '').strip()
-            desc = (it.descricao or '').strip()
-            qtd = it.quantidade or 0
-            pct = float(it.recompensa_pct or 0.0)
+            cod = (it.codigo or "").strip()
+            desc = (it.descricao or "").strip()
+            vendido = float(vendido_map.get((emp, cod), 0.0) or 0.0)
+            pontos = float(pontos_map.get((emp, cod), 0.0) or 0.0)
+            valor = float(valor_map.get((emp, cod), 0.0) or 0.0)
 
-            valor = recomp_map.get((emp, cod), 0.0)
-            valor_txt = "" if valor <= 0 else f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-
-            # quebra página
-            if y < 20*mm:
+            if y < 20 * mm:
                 c.showPage()
                 y = draw_header()
                 c.setFont("Helvetica", 9)
 
-            c.drawString(18*mm, y, cod[:20])
-            c.drawString(40*mm, y, desc[:55])
-            c.drawRightString(width-55*mm, y, str(qtd))
-            c.drawRightString(width-35*mm, y, f"{pct:.0f}%")
-            c.drawRightString(width-18*mm, y, valor_txt)
-            y -= 5*mm
+            c.drawString(18 * mm, y, cod[:18])
+            c.drawString(42 * mm, y, desc[:48])
+            c.drawRightString(width - 68 * mm, y, br_money(vendido))
+            c.drawRightString(width - 42 * mm, y, f"{pontos:.2f}")
+            c.drawRightString(width - 18 * mm, y, br_money(valor))
+            y -= 5 * mm
 
-        y -= 4*mm
+        y -= 4 * mm
 
     c.showPage()
     c.save()
-    buf.seek(0)
+    pdf_bytes = buf.getvalue()
+    buf.close()
 
-    filename = f"itens_parados_{mes:02d}_{ano}.pdf"
-    return send_file(buf, mimetype="application/pdf", as_attachment=True, download_name=filename)
-
-# ---------------------------------------------------------------------
-# Campanhas de recompensa por quantidade (prefixo + marca)
-# ---------------------------------------------------------------------
-def _campanhas_mes_overlap(ano: int, mes: int, emp: str | None) -> list[CampanhaQtd]:
-    """Retorna campanhas que intersectam o mês (e opcionalmente a EMP)."""
-    inicio_mes, fim_mes = _periodo_bounds(int(ano), int(mes))
-    with SessionLocal() as db:
-        q = db.query(CampanhaQtd).filter(CampanhaQtd.ativo == 1)
-        if emp:
-            emp_str = str(emp)
-            # suporta campanhas globais (emp = 'ALL'/'*'/'') e campanhas específicas da EMP
-            q = q.filter(or_(CampanhaQtd.emp == emp_str, CampanhaQtd.emp.in_(['ALL', '*', ''])))
-        # overlap: inicio <= fim_mes AND fim >= inicio_mes
-        q = q.filter(and_(CampanhaQtd.data_inicio <= fim_mes, CampanhaQtd.data_fim >= inicio_mes))
-        return q.order_by(CampanhaQtd.emp.asc(), CampanhaQtd.data_inicio.asc()).all()
-
-def _upsert_resultado(
-    db,
-    campanha: CampanhaQtd,
-    vendedor: str,
-    emp: str,
-    competencia_ano: int,
-    competencia_mes: int,
-    periodo_ini: date,
-    periodo_fim: date,
-) -> CampanhaQtdResultado:
-    """Calcula e grava (upsert) o snapshot do resultado da campanha."""
-    vendedor = (vendedor or "").strip().upper()
-    emp = str(emp)
-
-    # Campo usado para match do item:
-    # - campo_match='codigo'   -> prefixo em Venda.mestre (compatibilidade com base antiga)
-    # - campo_match='descricao'-> prefixo em Venda.descricao_norm (novo)
-    campo_match = (getattr(campanha, "campo_match", None) or "codigo").strip().lower()
-
-    def _norm_prefix(s: str) -> str:
-        import unicodedata, re
-        s = (s or "").strip()
-        s = "".join(c for c in unicodedata.normalize("NFKD", s) if not unicodedata.combining(c))
-        s = re.sub(r"\s+", " ", s).strip().lower()
-        return s
-
-    if campo_match == "descricao":
-        prefix_raw = (getattr(campanha, "descricao_prefixo", "") or "").strip()
-        # fallback: se não preencher descricao_prefixo, usa produto_prefixo como prefixo de descrição
-        if not prefix_raw:
-            prefix_raw = (campanha.produto_prefixo or "").strip()
-        prefix = _norm_prefix(prefix_raw)
-        # descricao_norm já é esperado estar normalizado; garantimos lower/trim para evitar mismatch
-        campo_item = func.lower(func.trim(func.coalesce(Venda.descricao_norm, "")))
-        cond_prefix = campo_item.like(prefix + "%")
-    else:
-        prefix_raw = (campanha.produto_prefixo or "").strip()
-        prefix = prefix_raw
-        prefix_up = prefix.upper()
-        campo_item = func.upper(func.trim(cast(Venda.mestre, String)))
-        cond_prefix = campo_item.like(prefix_up + "%")
-    cond_marca = func.upper(func.trim(cast(Venda.marca, String))) == (campanha.marca or "").strip().upper()
-
-    base = (
-        db.query(
-            func.coalesce(func.sum(Venda.qtdade_vendida), 0.0).label("qtd"),
-            func.coalesce(func.sum(Venda.valor_total), 0.0).label("valor"),
-        )
-        .filter(
-            Venda.emp == emp,
-            Venda.vendedor == vendedor,
-            Venda.movimento >= periodo_ini,
-            Venda.movimento <= periodo_fim,
-            ~Venda.mov_tipo_movto.in_(["DS", "CA"]),
-            cond_prefix,
-            cond_marca,
-        )
-        .first()
+    from flask import Response
+    filename = f"itens_parados_{di_raw}_{df_raw}.pdf"
+    return Response(
+        pdf_bytes,
+        mimetype="application/pdf",
+        headers={"Content-Disposition": f"inline; filename={filename}"},
     )
-    qtd_vendida = float(base.qtd or 0.0)
-    valor_vendido = float(base.valor or 0.0)
-
-    min_qtd = getattr(campanha, "qtd_minima", None)
-    min_val = getattr(campanha, "valor_minimo", None)
-
-    atingiu = 1
-    if min_qtd is not None and float(min_qtd) > 0:
-        atingiu = 1 if qtd_vendida >= float(min_qtd) else 0
-    if atingiu and min_val is not None and float(min_val) > 0:
-        atingiu = 1 if valor_vendido >= float(min_val) else 0
-
-    try:
-        recompensa_unit_dec = Decimal(str(campanha.recompensa_unit or 0))
-    except Exception:
-        recompensa_unit_dec = Decimal("0")
-
-    if atingiu:
-        valor_recomp_dec = (Decimal(str(qtd_vendida)) * recompensa_unit_dec)
-        # arredondamento monetário
-        valor_recomp = float(valor_recomp_dec.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
-    else:
-        valor_recomp = 0.0
-
-    # Upsert por chave única
-    res = (
-        db.query(CampanhaQtdResultado)
-        .filter(
-            CampanhaQtdResultado.campanha_id == campanha.id,
-            CampanhaQtdResultado.emp == emp,
-            CampanhaQtdResultado.vendedor == vendedor,
-            CampanhaQtdResultado.competencia_ano == int(competencia_ano),
-            CampanhaQtdResultado.competencia_mes == int(competencia_mes),
-        )
-        .first()
-    )
-    if not res:
-        res = CampanhaQtdResultado(
-            campanha_id=campanha.id,
-            emp=emp,
-            vendedor=vendedor,
-            competencia_ano=int(competencia_ano),
-            competencia_mes=int(competencia_mes),
-            status_pagamento="PENDENTE",
-        )
-        db.add(res)
-
-    # snapshot
-    res.titulo = campanha.titulo
-    res.produto_prefixo = (locals().get('prefix_raw') or prefix)
-    res.marca = (campanha.marca or "").strip()
-    res.recompensa_unit = float(campanha.recompensa_unit or 0.0)
-    res.qtd_minima = float(min_qtd) if (min_qtd is not None and float(min_qtd) > 0) else None
-    res.data_inicio = campanha.data_inicio
-    res.data_fim = campanha.data_fim
-
-    res.qtd_vendida = qtd_vendida
-    res.valor_vendido = valor_vendido
-    res.atingiu_minimo = int(atingiu)
-    res.valor_recompensa = float(valor_recomp)
-    res.atualizado_em = datetime.utcnow()
-    return res
-
-
-
-def _calc_resultado_all_vendedores(
-    db,
-    campanha: CampanhaQtd,
-    emp: str,
-    competencia_ano: int,
-    competencia_mes: int,
-    periodo_ini: date,
-    periodo_fim: date,
-):
-    """Calcula (sem persistir) o agregado da campanha para TODOS os vendedores da EMP no período.
-
-    Otimização: evita multiplicar o custo por N vendedores quando o filtro está em 'TODOS'.
-    Mantém as mesmas regras de cálculo (qtd_vendida/valor_total, exclusões DS/CA, match por prefixo+marca),
-    apenas removendo o filtro por vendedor.
-    """
-    emp = str(emp)
-
-    campo_match = (getattr(campanha, "campo_match", None) or "codigo").strip().lower()
-
-    def _norm_prefix(s: str) -> str:
-        import unicodedata, re
-        s = (s or "").strip()
-        s = "".join(c for c in unicodedata.normalize("NFKD", s) if not unicodedata.combining(c))
-        s = re.sub(r"\s+", " ", s).strip().lower()
-        return s
-
-    if campo_match == "descricao":
-        prefix_raw = (getattr(campanha, "descricao_prefixo", "") or "").strip()
-        if not prefix_raw:
-            prefix_raw = (campanha.produto_prefixo or "").strip()
-        prefix = _norm_prefix(prefix_raw)
-        campo_item = func.lower(func.trim(func.coalesce(Venda.descricao_norm, "")))
-        cond_prefix = campo_item.like(prefix + "%")
-    else:
-        prefix_raw = (campanha.produto_prefixo or "").strip()
-        prefix = prefix_raw
-        prefix_up = prefix.upper()
-        campo_item = func.upper(func.trim(cast(Venda.mestre, String)))
-        cond_prefix = campo_item.like(prefix_up + "%")
-
-    cond_marca = func.upper(func.trim(cast(Venda.marca, String))) == (campanha.marca or "").strip().upper()
-
-    base = (
-        db.query(
-            func.coalesce(func.sum(Venda.qtdade_vendida), 0.0).label("qtd"),
-            func.coalesce(func.sum(Venda.valor_total), 0.0).label("valor"),
-        )
-        .filter(
-            Venda.emp == emp,
-            Venda.movimento >= periodo_ini,
-            Venda.movimento <= periodo_fim,
-            ~Venda.mov_tipo_movto.in_(["DS", "CA"]),
-            cond_prefix,
-            cond_marca,
-        )
-        .first()
-    )
-
-    qtd_vendida = float(getattr(base, "qtd", 0.0) or 0.0)
-    valor_vendido = float(getattr(base, "valor", 0.0) or 0.0)
-
-    min_qtd = getattr(campanha, "qtd_minima", None)
-    min_val = getattr(campanha, "valor_minimo", None)
-
-    atingiu = 1
-    if min_qtd is not None and float(min_qtd) > 0:
-        atingiu = 1 if qtd_vendida >= float(min_qtd) else 0
-    if atingiu and min_val is not None and float(min_val) > 0:
-        atingiu = 1 if valor_vendido >= float(min_val) else 0
-
-    try:
-        recompensa_unit_dec = Decimal(str(campanha.recompensa_unit or 0))
-    except Exception:
-        recompensa_unit_dec = Decimal("0")
-
-    if atingiu:
-        valor_recomp_dec = (Decimal(str(qtd_vendida)) * recompensa_unit_dec)
-        valor_recomp = float(valor_recomp_dec.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
-    else:
-        valor_recomp = 0.0
-
-    # Objeto leve com os mesmos campos que o template usa
-    from types import SimpleNamespace
-    return SimpleNamespace(
-        campanha_id=campanha.id,
-        emp=emp,
-        vendedor="__ALL__",
-        competencia_ano=int(competencia_ano),
-        competencia_mes=int(competencia_mes),
-        status_pagamento="PENDENTE",
-        titulo=campanha.titulo,
-        produto_prefixo=prefix_raw,
-        marca=(campanha.marca or "").strip(),
-        recompensa_unit=float(campanha.recompensa_unit or 0.0),
-        qtd_minima=float(min_qtd) if (min_qtd is not None and float(min_qtd) > 0) else None,
-        data_inicio=campanha.data_inicio,
-        data_fim=campanha.data_fim,
-        qtd_vendida=qtd_vendida,
-        valor_vendido=valor_vendido,
-        atingiu_minimo=int(atingiu),
-        valor_recompensa=float(valor_recomp),
-        atualizado_em=datetime.utcnow(),
-    )
-
-
-def _resolver_emp_scope_para_usuario(vendedor: str, role: str, emp_usuario: str | None) -> list[str]:
-    """Retorna lista de EMPs que o usuário pode visualizar (para campanhas e relatórios).
-
-    Regra nova (recomendada):
-    - Supervisor/Vendedor: usa usuario_emps (session['allowed_emps']) quando disponível.
-    - Fallback: supervisor usa emp_usuario; vendedor infere pelas vendas.
-    """
-    role = (role or "").strip().lower()
-    if role == "admin":
-        return []
-
-    if role in ("supervisor", "vendedor"):
-        emps = _allowed_emps()
-        if emps:
-            return emps
-
-    if role == "supervisor":
-        return [str(emp_usuario)] if emp_usuario else []
-
-    return _get_emps_vendedor(vendedor)
-
-
-# --------------------------
-# Services (injeção de deps)
-# --------------------------
-_campanhas_deps = CampanhasDeps(
-    SessionLocal=SessionLocal,
-    parse_multi_args=_parse_multi_args_from,
-    get_emp_options=_get_emp_options,
-    get_vendedores_db=_get_vendedores_db,
-    get_emps_vendedor=_get_emps_vendedor,
-    get_all_emp_codigos=_get_all_emp_codigos,
-    periodo_bounds=_periodo_bounds,
-    resolver_emp_scope_para_usuario=_resolver_emp_scope_para_usuario,
-    campanhas_mes_overlap=_campanhas_mes_overlap,
-    upsert_resultado=_upsert_resultado,
-    calc_resultado_all_vendedores=_calc_resultado_all_vendedores,
-    get_emps_com_vendas_no_periodo=lambda ano, mes: _get_emps_com_vendas_no_periodo(ano, mes),
-    get_vendedores_emp_no_periodo=lambda emp, ano, mes: _get_vendedores_emp_no_periodo(emp, ano, mes),
-    recalcular_resultados_campanhas_para_scope=lambda **kwargs: _recalcular_resultados_campanhas_para_scope(**kwargs),
-    recalcular_resultados_combos_para_scope=lambda **kwargs: _recalcular_resultados_combos_para_scope(**kwargs),
-)
-
-
 
 @app.get("/relatorios/campanhas")
 def relatorio_campanhas():
@@ -4583,9 +4435,16 @@ def admin_importar():
 
 @app.route("/admin/itens_parados", methods=["GET", "POST"])
 def admin_itens_parados():
-    """Cadastro de itens parados (liquidação) por EMP.
+    """Admin — Itens Parados (Pontos)
 
-    Campos: EMP, Código, Descrição, Quantidade, Recompensa(%).
+    Tela única para:
+      - cadastrar itens por EMP (catálogo)
+      - configurar regra de pontos (global ou por EMP)
+      - configurar bônus por faixas (opcional)
+      - realizar fechamento manual por período (gera snapshot em itens_parados_pontos_resultados)
+
+    Observação: a visão operacional (/itens_parados) calcula ao vivo (1 query agregada).
+    O fechamento é útil quando você quiser travar/aprovar um período e enviar ao Financeiro.
     """
     red = _login_required()
     if red:
@@ -4597,97 +4456,409 @@ def admin_itens_parados():
     erro = None
     ok = None
 
+    ver_fech = None
+    try:
+        ver_fech = int(request.args.get("ver_fech") or 0) or None
+    except Exception:
+        ver_fech = None
+
+    # Normaliza aliases de ações (HTML)
+    acao = (request.values.get("acao") or request.values.get("action") or "").strip().lower()
+    acao_alias = {
+        "criar": "criar_item",
+        "criar_item": "criar_item",
+        "adicionar_item": "criar_item",
+        "cadastrar_item": "criar_item",
+        "toggle": "toggle_item",
+        "toggle_item": "toggle_item",
+        "ativar_item": "toggle_item",
+        "excluir": "excluir_item",
+        "excluir_item": "excluir_item",
+        "deletar_item": "excluir_item",
+        "remover_item": "excluir_item",
+        "salvar_config": "salvar_config",
+        "criar_bonus": "criar_bonus",
+        "toggle_bonus": "toggle_bonus",
+        "excluir_bonus": "excluir_bonus",
+        "fechar_periodo": "fechar_periodo",
+    }
+    acao = acao_alias.get(acao, acao)
+
     with SessionLocal() as db:
-        if request.method == 'POST':
-            acao = (request.values.get('acao') or request.values.get('action') or '').strip().lower()
-            if not acao:
-                # Se o usuário apertar ENTER em um input, o browser pode submeter o form sem o botão (sem 'acao').
-                # Nesse caso, assumimos a ação padrão de criar.
-                acao = 'criar'
-                # Normaliza aliases vindos do HTML (botões) para ações internas
-                acao_alias = {
-                    'criar_item': 'criar',
-                    'adicionar_item': 'criar',
-                    'cadastrar_item': 'criar',
-                    'toggle_item': 'toggle',
-                    'ativar_item': 'toggle',
-                    'excluir_item': 'excluir',
-                    'deletar_item': 'excluir',
-                    'remover_item': 'excluir',
-                    # ações ainda não implementadas nesta rota (evita crash por 'Ação inválida')
-                    'salvar_config': 'noop',
-                    'criar_bonus': 'noop',
-                    'toggle_bonus': 'noop',
-                    'excluir_bonus': 'noop',
-                    'fechar_periodo': 'noop',
-                }
-                acao = acao_alias.get(acao, acao)
-            try:
-                if acao in ('criar','novo','create'):
-                    emp = (request.form.get('emp') or '').strip()
-                    codigo = (request.form.get('codigo') or '').strip()
-                    descricao = (request.form.get('descricao') or '').strip()
-                    quantidade_raw = (request.form.get('quantidade') or '').strip()
-                    recompensa_raw = (request.form.get('percentual') or '').strip().replace(',', '.')
+        try:
+            if request.method == "POST" and acao:
+                # ===================== ITENS =====================
+                if acao == "criar_item":
+                    emp = (request.form.get("emp") or "").strip()
+                    codigo = (request.form.get("codigo") or "").strip()
+                    descricao = (request.form.get("descricao") or "").strip()
+                    mult_raw = (request.form.get("multiplicador_pontos") or "").strip().replace(",", ".")
+                    di_raw = (request.form.get("data_inicio") or "").strip()
+                    df_raw = (request.form.get("data_fim") or "").strip()
+                    ativo = bool(request.form.get("ativo"))
 
                     if not emp:
-                        raise ValueError('Informe a EMP.')
+                        raise ValueError("Informe a EMP.")
                     if not codigo:
-                        raise ValueError('Informe o CÓDIGO.')
+                        raise ValueError("Informe o CÓDIGO.")
 
-                    quantidade = int(quantidade_raw) if quantidade_raw else None
-                    percentual = float(recompensa_raw) if recompensa_raw else 0.0
+                    try:
+                        mult = float(mult_raw) if mult_raw else 1.0
+                    except Exception:
+                        mult = 1.0
+                    if mult <= 0:
+                        mult = 1.0
 
-                    db.add(ItemParado(
+                    try:
+                        di = date.fromisoformat(di_raw) if di_raw else None
+                    except Exception:
+                        di = None
+                    try:
+                        df = date.fromisoformat(df_raw) if df_raw else None
+                    except Exception:
+                        df = None
+
+                    it = ItemParado(
                         emp=str(emp),
                         codigo=str(codigo),
                         descricao=descricao or None,
-                        quantidade=quantidade,
-                        percentual=percentual,
-                        ativo=1,
-                    ))
+                        modo="PONTOS",
+                        multiplicador_pontos=mult,
+                        data_inicio=di,
+                        data_fim=df,
+                        ativo=True if ativo else True,  # novo item nasce ativo
+                    )
+                    db.add(it)
                     db.commit()
-                    ok = 'Item cadastrado com sucesso.'
+                    ok = "Item cadastrado com sucesso."
 
-                elif acao in ('toggle','ativar','desativar'):
-                    item_id = int(request.form.get('item_id') or 0)
+                elif acao == "toggle_item":
+                    item_id = int(request.form.get("item_id") or 0)
                     it = db.query(ItemParado).filter(ItemParado.id == item_id).first()
                     if not it:
-                        raise ValueError('Item não encontrado.')
-                    it.ativo = 0 if int(it.ativo or 0) == 1 else 1
+                        raise ValueError("Item não encontrado.")
+                    it.ativo = not bool(it.ativo)
                     it.atualizado_em = datetime.utcnow()
                     db.commit()
-                    ok = 'Status do item atualizado.'
+                    ok = "Status do item atualizado."
 
-                elif acao in ('remover','excluir','delete','apagar'):
-                    item_id = int(request.form.get('item_id') or 0)
+                elif acao == "excluir_item":
+                    item_id = int(request.form.get("item_id") or 0)
                     it = db.query(ItemParado).filter(ItemParado.id == item_id).first()
                     if not it:
-                        raise ValueError('Item não encontrado.')
+                        raise ValueError("Item não encontrado.")
                     db.delete(it)
                     db.commit()
-                    ok = 'Item removido.'
+                    ok = "Item removido."
 
-                elif acao == 'noop':
-                    flash('Ação ainda não implementada nesta tela.', 'warning')
-                    return redirect(url_for('admin_itens_parados'))
+                # ===================== CONFIG =====================
+                elif acao == "salvar_config":
+                    emp = (request.form.get("cfg_emp") or "").strip() or None
+                    base_reais_raw = (request.form.get("base_reais") or "").strip()
+                    vpp_raw = (request.form.get("valor_por_ponto") or "").strip().replace(",", ".")
+                    if not base_reais_raw:
+                        raise ValueError("Informe 'base_reais'.")
+                    try:
+                        base_reais = int(float(base_reais_raw))
+                    except Exception:
+                        raise ValueError("base_reais inválido.")
+                    if base_reais <= 0:
+                        raise ValueError("base_reais deve ser > 0.")
+                    try:
+                        valor_por_ponto = float(vpp_raw) if vpp_raw else 0.0
+                    except Exception:
+                        raise ValueError("valor_por_ponto inválido.")
+
+                    # Desativa configs antigas para o mesmo emp (mantém 1 ativa)
+                    db.query(ItensParadosPontosConfig).filter(
+                        (ItensParadosPontosConfig.emp == emp) if emp else ItensParadosPontosConfig.emp.is_(None)
+                    ).update({"ativo": False, "atualizado_em": datetime.utcnow()}, synchronize_session=False)
+
+                    cfg = ItensParadosPontosConfig(
+                        emp=emp,
+                        base_reais=base_reais,
+                        valor_por_ponto=valor_por_ponto,
+                        ativo=True,
+                        criado_em=datetime.utcnow(),
+                        atualizado_em=datetime.utcnow(),
+                    )
+                    db.add(cfg)
+                    db.commit()
+                    ok = "Configuração salva."
+
+                # ===================== BONUS =====================
+                elif acao == "criar_bonus":
+                    emp = (request.form.get("bonus_emp") or "").strip() or None
+                    min_pontos_raw = (request.form.get("min_pontos") or "").strip()
+                    bonus_valor_raw = (request.form.get("bonus_valor") or "").strip().replace(",", ".")
+                    try:
+                        min_pontos = int(float(min_pontos_raw))
+                    except Exception:
+                        raise ValueError("min_pontos inválido.")
+                    if min_pontos <= 0:
+                        raise ValueError("min_pontos deve ser > 0.")
+                    try:
+                        bonus_valor = float(bonus_valor_raw) if bonus_valor_raw else 0.0
+                    except Exception:
+                        raise ValueError("bonus_valor inválido.")
+
+                    b = ItensParadosPontosBonus(
+                        emp=emp,
+                        min_pontos=min_pontos,
+                        bonus_valor=bonus_valor,
+                        ativo=True,
+                        criado_em=datetime.utcnow(),
+                        atualizado_em=datetime.utcnow(),
+                    )
+                    db.add(b)
+                    db.commit()
+                    ok = "Bônus cadastrado."
+
+                elif acao == "toggle_bonus":
+                    bonus_id = int(request.form.get("bonus_id") or 0)
+                    b = db.query(ItensParadosPontosBonus).filter(ItensParadosPontosBonus.id == bonus_id).first()
+                    if not b:
+                        raise ValueError("Bônus não encontrado.")
+                    b.ativo = not bool(b.ativo)
+                    b.atualizado_em = datetime.utcnow()
+                    db.commit()
+                    ok = "Status do bônus atualizado."
+
+                elif acao == "excluir_bonus":
+                    bonus_id = int(request.form.get("bonus_id") or 0)
+                    b = db.query(ItensParadosPontosBonus).filter(ItensParadosPontosBonus.id == bonus_id).first()
+                    if not b:
+                        raise ValueError("Bônus não encontrado.")
+                    db.delete(b)
+                    db.commit()
+                    ok = "Bônus removido."
+
+                # ===================== FECHAMENTO =====================
+                elif acao == "fechar_periodo":
+                    emp = (request.form.get("fech_emp") or "").strip() or None
+                    di_raw = (request.form.get("fech_di") or "").strip()
+                    df_raw = (request.form.get("fech_df") or "").strip()
+                    if not di_raw or not df_raw:
+                        raise ValueError("Informe data início e data fim.")
+                    try:
+                        di = date.fromisoformat(di_raw)
+                        df = date.fromisoformat(df_raw)
+                    except Exception:
+                        raise ValueError("Datas inválidas (use AAAA-MM-DD).")
+                    if df < di:
+                        di, df = df, di
+
+                    # Determina EMPs do fechamento
+                    if emp:
+                        emps = [str(emp)]
+                    else:
+                        emps = [str(x[0]) for x in db.query(ItemParado.emp).filter(ItemParado.ativo.is_(True)).distinct().all()]
+                    emps = sorted({e.strip() for e in emps if e and str(e).strip()})
+                    if not emps:
+                        raise ValueError("Não há itens ativos cadastrados para fechar.")
+
+                    # Cria fechamento
+                    f = ItensParadosPontosFechamento(
+                        emp=emp,
+                        data_inicio=di,
+                        data_fim=df,
+                        criado_por=_usuario_logado(),
+                        criado_em=datetime.utcnow(),
+                    )
+                    db.add(f)
+                    db.commit()
+                    fechamento_id = int(f.id)
+
+                    # Carrega config global
+                    cfg_global = (
+                        db.query(ItensParadosPontosConfig)
+                        .filter(ItensParadosPontosConfig.emp.is_(None), ItensParadosPontosConfig.ativo.is_(True))
+                        .order_by(ItensParadosPontosConfig.id.desc())
+                        .first()
+                    )
+
+                    # Carrega bonus global ativo
+                    bonus_global = (
+                        db.query(ItensParadosPontosBonus)
+                        .filter(ItensParadosPontosBonus.emp.is_(None), ItensParadosPontosBonus.ativo.is_(True))
+                        .order_by(ItensParadosPontosBonus.min_pontos.asc())
+                        .all()
+                    )
+
+                    # Itens ativos por EMP (com janela)
+                    itens_all = (
+                        db.query(ItemParado)
+                        .filter(ItemParado.emp.in_(emps))
+                        .filter(ItemParado.ativo.is_(True))
+                        .filter(or_(ItemParado.data_inicio.is_(None), ItemParado.data_inicio <= df))
+                        .filter(or_(ItemParado.data_fim.is_(None), ItemParado.data_fim >= di))
+                        .all()
+                    )
+                    if not itens_all:
+                        raise ValueError("Nenhum item ativo encontrado no período informado.")
+
+                    # Lista global de códigos
+                    codigos = sorted({(i.codigo or "").strip() for i in itens_all if (i.codigo or "").strip()})
+                    if not codigos:
+                        raise ValueError("Itens cadastrados sem código.")
+
+                    # Query agregada por (emp, vendedor, mestre)
+                    q = (
+                        db.query(Venda.emp, Venda.vendedor, Venda.mestre, func.coalesce(func.sum(Venda.valor_total), 0.0))
+                        .filter(Venda.emp.in_(emps))
+                        .filter(Venda.movimento >= di)
+                        .filter(Venda.movimento <= df)
+                        .filter(Venda.mov_tipo_movto.in_(["OA"]))
+                        .filter(Venda.mestre.in_(codigos))
+                        .group_by(Venda.emp, Venda.vendedor, Venda.mestre)
+                    )
+                    rows = q.all()
+
+                    vendido_emp_vend_cod = {}
+                    for emp_v, vend, mestre, total in rows:
+                        k_emp = str(emp_v).strip() if emp_v is not None else ""
+                        k_v = (vend or "").strip().upper()
+                        k_cod = (mestre or "").strip()
+                        vendido_emp_vend_cod[(k_emp, k_v, k_cod)] = float(total or 0.0)
+
+                    # Index itens por (emp,codigo)
+                    itens_idx = {}
+                    for it in itens_all:
+                        itens_idx.setdefault((str(it.emp).strip(), (it.codigo or "").strip()), []).append(it)
+
+                    # Agrupa por emp/vendedor -> acumula vendido/pontos
+                    acc = {}
+                    for (k_emp, k_v, k_cod), vendido in vendido_emp_vend_cod.items():
+                        # se código não é item dessa EMP, ignora
+                        if (k_emp, k_cod) not in itens_idx:
+                            continue
+                        # multipliers: pode existir mais de 1 cadastro repetido do mesmo código; soma multiplicadores (safe)
+                        mult_sum = sum(float(getattr(it, "multiplicador_pontos", 1.0) or 1.0) for it in itens_idx[(k_emp, k_cod)]) or 1.0
+
+                        # config por emp (fallback global)
+                        cfg_emp = (
+                            db.query(ItensParadosPontosConfig)
+                            .filter(ItensParadosPontosConfig.emp == k_emp, ItensParadosPontosConfig.ativo.is_(True))
+                            .order_by(ItensParadosPontosConfig.id.desc())
+                            .first()
+                        )
+                        base_reais = int(getattr(cfg_emp, "base_reais", None) or getattr(cfg_global, "base_reais", 100) or 100)
+                        valor_por_ponto = float(getattr(cfg_emp, "valor_por_ponto", None) or getattr(cfg_global, "valor_por_ponto", 10.0) or 10.0)
+
+                        key = (k_emp, k_v, base_reais, valor_por_ponto)
+                        acc.setdefault(key, {"valor_vendido": 0.0, "pontos": 0.0})
+                        acc[key]["valor_vendido"] += vendido
+                        acc[key]["pontos"] += (vendido / float(base_reais)) * mult_sum if vendido > 0 else 0.0
+
+                    # Salva resultados
+                    for (k_emp, k_v, base_reais, valor_por_ponto), d in acc.items():
+                        pontos_int = int(math.floor(float(d["pontos"] or 0.0)))
+                        premio_base = float(pontos_int) * float(valor_por_ponto)
+
+                        # bonus por EMP (fallback global)
+                        bonus_emp = (
+                            db.query(ItensParadosPontosBonus)
+                            .filter(ItensParadosPontosBonus.emp == k_emp, ItensParadosPontosBonus.ativo.is_(True))
+                            .order_by(ItensParadosPontosBonus.min_pontos.asc())
+                            .all()
+                        )
+                        bonus_list = bonus_emp if bonus_emp else bonus_global
+
+                        bonus_extra = 0.0
+                        for b in bonus_list:
+                            if pontos_int >= int(b.min_pontos or 0):
+                                bonus_extra = float(b.bonus_valor or 0.0)
+                        total = premio_base + bonus_extra
+
+                        r = ItensParadosPontosResultado(
+                            fechamento_id=fechamento_id,
+                            emp=k_emp,
+                            vendedor=k_v,
+                            valor_vendido=float(d["valor_vendido"] or 0.0),
+                            pontos=pontos_int,
+                            base_reais=base_reais,
+                            valor_por_ponto=float(valor_por_ponto),
+                            bonus_extra=float(bonus_extra),
+                            total=float(total),
+                            status_pagamento="PENDENTE",
+                            criado_em=datetime.utcnow(),
+                            atualizado_em=datetime.utcnow(),
+                        )
+                        db.add(r)
+
+                    db.commit()
+                    ok = f"Fechamento criado (ID {fechamento_id})."
+                    return redirect(url_for("admin_itens_parados", ver_fech=fechamento_id))
+
                 else:
-                    flash('Ação inválida.', 'danger')
-                    return redirect(url_for('admin_itens_parados'))
+                    raise ValueError("Ação inválida.")
 
-            except Exception as e:
-                db.rollback()
-                erro = str(e)
-                app.logger.exception('Erro no cadastro de itens parados')
+        except Exception as e:
+            db.rollback()
+            erro = str(e)
+            app.logger.exception("Erro no admin de itens parados")
 
+        # ===================== CARREGAMENTO DE TELA =====================
         itens = db.query(ItemParado).order_by(ItemParado.emp.asc(), ItemParado.codigo.asc()).all()
 
+        # Configs (separa por emp e global)
+        cfg_by_emp = (
+            db.query(ItensParadosPontosConfig)
+            .filter(ItensParadosPontosConfig.emp.isnot(None))
+            .order_by(ItensParadosPontosConfig.emp.asc(), ItensParadosPontosConfig.id.desc())
+            .all()
+        )
+        cfg_global = (
+            db.query(ItensParadosPontosConfig)
+            .filter(ItensParadosPontosConfig.emp.is_(None))
+            .order_by(ItensParadosPontosConfig.id.desc())
+            .all()
+        )
+
+        # Bônus
+        bonus_by_emp = (
+            db.query(ItensParadosPontosBonus)
+            .filter(ItensParadosPontosBonus.emp.isnot(None))
+            .order_by(ItensParadosPontosBonus.emp.asc(), ItensParadosPontosBonus.min_pontos.asc())
+            .all()
+        )
+        bonus_global = (
+            db.query(ItensParadosPontosBonus)
+            .filter(ItensParadosPontosBonus.emp.is_(None))
+            .order_by(ItensParadosPontosBonus.min_pontos.asc())
+            .all()
+        )
+
+        # Fechamentos
+        fechamentos = (
+            db.query(ItensParadosPontosFechamento)
+            .order_by(ItensParadosPontosFechamento.id.desc())
+            .limit(30)
+            .all()
+        )
+
+        res_fech = []
+        if ver_fech:
+            res_fech = (
+                db.query(ItensParadosPontosResultado)
+                .filter(ItensParadosPontosResultado.fechamento_id == int(ver_fech))
+                .order_by(ItensParadosPontosResultado.emp.asc(), ItensParadosPontosResultado.total.desc())
+                .all()
+            )
+
     return render_template(
-        'admin_itens_parados.html',
+        "admin_itens_parados.html",
         usuario=_usuario_logado(),
         itens=itens,
         erro=erro,
         ok=ok,
+        cfg_by_emp=cfg_by_emp,
+        cfg_global=cfg_global,
+        bonus_by_emp=bonus_by_emp,
+        bonus_global=bonus_global,
+        fechamentos=fechamentos,
+        ver_fech=ver_fech,
+        res_fech=res_fech,
     )
 
 @app.route('/admin/resumos_periodo', methods=['GET', 'POST'])
