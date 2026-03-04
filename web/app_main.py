@@ -100,6 +100,8 @@ from db import (
     Venda,
     DashboardCache,
     ItemParado,
+    ItensParadosPontosConfig,
+    ItensParadosPontosResultado,
     CampanhaQtd,
     CampanhaQtdResultado,
     CampanhaCombo,
