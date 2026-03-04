@@ -101,6 +101,7 @@ from db import (
     DashboardCache,
     ItemParado,
     ItensParadosPontosConfig,
+    ItensParadosPontosBonus,
     ItensParadosPontosResultado,
     CampanhaQtd,
     CampanhaQtdResultado,
