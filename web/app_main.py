@@ -4604,6 +4604,24 @@ def admin_itens_parados():
                 # Se o usuário apertar ENTER em um input, o browser pode submeter o form sem o botão (sem 'acao').
                 # Nesse caso, assumimos a ação padrão de criar.
                 acao = 'criar'
+                # Normaliza aliases vindos do HTML (botões) para ações internas
+                acao_alias = {
+                    'criar_item': 'criar',
+                    'adicionar_item': 'criar',
+                    'cadastrar_item': 'criar',
+                    'toggle_item': 'toggle',
+                    'ativar_item': 'toggle',
+                    'excluir_item': 'excluir',
+                    'deletar_item': 'excluir',
+                    'remover_item': 'excluir',
+                    # ações ainda não implementadas nesta rota (evita crash por 'Ação inválida')
+                    'salvar_config': 'noop',
+                    'criar_bonus': 'noop',
+                    'toggle_bonus': 'noop',
+                    'excluir_bonus': 'noop',
+                    'fechar_periodo': 'noop',
+                }
+                acao = acao_alias.get(acao, acao)
             try:
                 if acao in ('criar','novo','create'):
                     emp = (request.form.get('emp') or '').strip()
@@ -4650,8 +4668,12 @@ def admin_itens_parados():
                     db.commit()
                     ok = 'Item removido.'
 
+                elif acao == 'noop':
+                    flash('Ação ainda não implementada nesta tela.', 'warning')
+                    return redirect(url_for('admin_itens_parados'))
                 else:
-                    raise ValueError('Ação inválida.')
+                    flash('Ação inválida.', 'danger')
+                    return redirect(url_for('admin_itens_parados'))
 
             except Exception as e:
                 db.rollback()
