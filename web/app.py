@@ -2992,60 +2992,6 @@ def _resolver_emp_scope_para_usuario(vendedor: str, role: str, emp_usuario: str 
 
 
 # --------------------------
-# Vendas no período (mês/ano)
-# --------------------------
-def _get_emps_com_vendas_no_periodo(ano, mes):
-    """Retorna lista de EMPs que possuem vendas no mês/ano informado.
-    Observação: tabela `vendas` usa coluna `movimento` (Date) e NÃO possui `ano/mes` no ORM.
-    """
-    try:
-        ano_i = int(ano)
-        mes_i = int(mes)
-    except Exception:
-        return []
-
-    with SessionLocal() as db:
-        rows = (
-            db.query(Venda.emp)
-            .filter(Venda.emp.isnot(None))
-            .filter(extract("year", Venda.movimento) == ano_i)
-            .filter(extract("month", Venda.movimento) == mes_i)
-            .distinct()
-            .order_by(Venda.emp.asc())
-            .all()
-        )
-    return [r[0] for r in rows if r and r[0]]
-
-
-def _get_vendedores_emp_no_periodo(emp, ano, mes):
-    """Retorna lista de vendedores que venderam na EMP no mês/ano informado."""
-    if emp is None:
-        return []
-    emp_s = str(emp).strip()
-    if not emp_s:
-        return []
-
-    try:
-        ano_i = int(ano)
-        mes_i = int(mes)
-    except Exception:
-        return []
-
-    with SessionLocal() as db:
-        rows = (
-            db.query(Venda.vendedor)
-            .filter(Venda.emp == emp_s)
-            .filter(Venda.vendedor.isnot(None))
-            .filter(extract("year", Venda.movimento) == ano_i)
-            .filter(extract("month", Venda.movimento) == mes_i)
-            .distinct()
-            .order_by(Venda.vendedor.asc())
-            .all()
-        )
-    return [r[0] for r in rows if r and r[0]]
-
-
-# --------------------------
 # Services (injeção de deps)
 # --------------------------
 _campanhas_deps = CampanhasDeps(
@@ -4653,9 +4599,13 @@ def admin_itens_parados():
 
     with SessionLocal() as db:
         if request.method == 'POST':
-            acao = (request.form.get('acao') or '').strip().lower()
+            acao = (request.values.get('acao') or request.values.get('action') or '').strip().lower()
+            if not acao:
+                # Se o usuário apertar ENTER em um input, o browser pode submeter o form sem o botão (sem 'acao').
+                # Nesse caso, assumimos a ação padrão de criar.
+                acao = 'criar'
             try:
-                if acao == 'criar':
+                if acao in ('criar','novo','create'):
                     emp = (request.form.get('emp') or '').strip()
                     codigo = (request.form.get('codigo') or '').strip()
                     descricao = (request.form.get('descricao') or '').strip()
@@ -4681,7 +4631,7 @@ def admin_itens_parados():
                     db.commit()
                     ok = 'Item cadastrado com sucesso.'
 
-                elif acao == 'toggle':
+                elif acao in ('toggle','ativar','desativar'):
                     item_id = int(request.form.get('item_id') or 0)
                     it = db.query(ItemParado).filter(ItemParado.id == item_id).first()
                     if not it:
@@ -4691,7 +4641,7 @@ def admin_itens_parados():
                     db.commit()
                     ok = 'Status do item atualizado.'
 
-                elif acao in ('remover', 'excluir_item', 'remover_item', 'excluir'):
+                elif acao in ('remover','excluir','delete','apagar'):
                     item_id = int(request.form.get('item_id') or 0)
                     it = db.query(ItemParado).filter(ItemParado.id == item_id).first()
                     if not it:
