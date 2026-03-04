@@ -4604,6 +4604,19 @@ def admin_itens_parados():
                 # Se o usuário apertar ENTER em um input, o browser pode submeter o form sem o botão (sem 'acao').
                 # Nesse caso, assumimos a ação padrão de criar.
                 acao = 'criar'
+
+            # Normaliza ações vindas do template (algumas telas usam nomes mais específicos)
+            aliases = {
+                "criar_item": "criar",
+                "toggle_item": "toggle",
+                "excluir_item": "excluir",
+                # futuras extensões / compatibilidade (não implementadas aqui)
+                "fechar_periodo": "fechar",
+                "reabrir_periodo": "reabrir",
+            }
+            if acao in aliases:
+                acao = aliases[acao]
+
             try:
                 if acao in ('criar','novo','create'):
                     emp = (request.form.get('emp') or '').strip()

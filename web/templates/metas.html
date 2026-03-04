@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}Metas{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+  <div>
+    <h4 class="m-0">🏁 Metas</h4>
+    <div class="text-muted small">Resultados do mês por Empresa e Vendedor (com CA/DS deduzindo valor; MIX ignora DS e considera CA como negativo).</div>
+  </div>
+
+  <form class="d-flex flex-wrap gap-2" method="get" action="{{ url_for('metas') }}">
+    <input class="form-control form-control-sm" style="width:110px" name="mes" value="{{ '%02d'|format(mes) }}" placeholder="Mês">
+    <input class="form-control form-control-sm" style="width:120px" name="ano" value="{{ ano }}" placeholder="Ano">
+
+    {% if role != 'vendedor' %}
+      <select class="form-select form-select-sm" name="emp" style="min-width:220px;">
+        <option value="">Todas as empresas</option>
+        {% for e in emps_choices %}
+          <option value="{{ e }}" {% if emp_filtro==e %}selected{% endif %}>{{ e }}</option>
+        {% endfor %}
+      </select>
+
+      <select class="form-select form-select-sm" name="vendedor" style="min-width:240px;">
+        <option value="">Todos os vendedores</option>
+        {% for v in vendedores_choices %}
+          <option value="{{ v }}" {% if vendedor_filtro==v %}selected{% endif %}>{{ v }}</option>
+        {% endfor %}
+      </select>
+    {% endif %}
+
+    <button class="btn btn-sm btn-primary">Filtrar</button>
+  </form>
+</div>
+
+{% if metas_list|length == 0 %}
+  <div class="alert alert-info">Nenhuma meta ativa cadastrada para {{ '%02d'|format(mes) }}/{{ ano }}.</div>
+{% else %}
+  <div class="card shadow-sm">
+    <div class="card-body">
+      <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0">
+          <thead>
+            <tr>
+              <th style="min-width:90px;">Empresa</th>
+              <th style="min-width:210px;">Vendedor</th>
+              <th class="text-end" style="min-width:120px;">Valor mês</th>
+              {% for m in metas_list %}
+                <th class="text-end" style="min-width:140px;">
+                  <div class="fw-semibold">{{ m.nome }}</div>
+                  <div class="text-muted small">{{ tipo_label.get(m.tipo, m.tipo) }}</div>
+                </th>
+              {% endfor %}
+              <th class="text-end" style="min-width:140px;">Total metas</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for r in resultados %}
+              <tr>
+                <td class="text-muted">{{ r.emp }}</td>
+                <td class="fw-semibold">{{ r.vendedor }}</td>
+                <td class="text-end">R$ {{ '%.2f'|format(r.valor_mes) }}</td>
+
+                {% for m in metas_list %}
+                  {% set p = r.metas.get(m.id) %}
+                  <td class="text-end">
+                    {% if p is not none %}
+                      <span class="badge text-bg-success-subtle border">R$ {{ '%.2f'|format(p) }}</span>
+                    {% else %}
+                      <span class="text-muted">—</span>
+                    {% endif %}
+                  </td>
+                {% endfor %}
+
+                <td class="text-end fw-semibold">R$ {{ '%.2f'|format(r.total_premios) }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="text-muted small mt-2">
+        Dica: se a meta de <b>Crescimento</b> estiver distorcida por férias/troca de carteira, o ADMIN/SUPERVISOR pode cadastrar uma <b>Base manual</b> para aquele vendedor/empresa no mês.
+      </div>
+    </div>
+  </div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,229 @@
+{% extends "base.html" %}
+{% block title %}Campanhas (Qtd){% endblock %}
+
+{% block extra_head %}
+<style>
+  /* Ajustes finos: esta tela tende a ser "larga" */
+  .sv-page.sv-page--wide{max-width:1460px;padding:12px 10px 40px;}
+  .sv-acc{margin-top:12px}
+  .sv-acc-item{border:1px solid rgba(255,170,60,.14);border-radius:18px;overflow:hidden;background:rgba(255,255,255,.03);box-shadow:0 16px 45px rgba(0,0,0,.35);}
+  .sv-acc-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;cursor:pointer;}
+  .sv-acc-head:hover{background:rgba(255,170,60,.06)}
+  .sv-acc-title{font-weight:800}
+  .sv-acc-sub{color:rgba(255,255,255,.68);font-size:.92rem}
+  .sv-acc-body{display:none;padding:10px 12px 14px;border-top:1px solid rgba(255,170,60,.12);}
+  .sv-acc-item.is-open .sv-acc-body{display:block;}
+  .sv-chip{display:inline-flex;align-items:center;gap:8px;padding:.28rem .6rem;border-radius:999px;border:1px solid rgba(255,170,60,.22);background:rgba(255,170,60,.08);color:#fff;font-size:.86rem}
+  .sv-divider{height:1px;background:rgba(255,170,60,.12);margin:10px 0;}
+  .sv-table td,.sv-table th{vertical-align:middle;}
+  .sv-mini{font-size:.92rem;color:rgba(255,255,255,.72)}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="sv-page sv-page--wide">
+
+  <div class="sv-pagehead sv-glass">
+    <div class="sv-pagehead__left">
+      <div class="sv-kicker">Operação</div>
+      <div class="sv-title">Campanhas (Qtd)</div>
+      <div class="sv-sub">Período: <strong>{{ "%02d"|format(mes|int) }}/{{ ano }}</strong> • Total recompensa: <strong>{{ total_recompensa|brl_rs }}</strong></div>
+    </div>
+
+    <div class="sv-pagehead__right">
+      <a class="sv-btn sv-btn--ghost" href="{{ url_for('dashboard') }}">Voltar</a>
+      <a class="sv-btn sv-btn--soft" href="{{ url_for('campanhas_qtd_pdf', mes=mes, ano=ano) }}">PDF</a>
+    </div>
+  </div>
+
+  <div class="sv-section">
+    <div class="sv-card sv-cardpad">
+      <div class="sv-card__head">
+        <div>
+          <div class="sv-card__title">Filtros</div>
+          <div class="sv-mini">Seleção por EMP e vendedor (multi-seleção sem Ctrl)</div>
+        </div>
+      </div>
+
+      <form method="get" class="sv-grid sv-grid--3" style="margin-top:10px;">
+        <div>
+          <label class="sv-label">Mês</label>
+          <select class="sv-select" name="mes">
+            {% for m in range(1,13) %}
+              <option value="{{ m }}" {% if m == (mes|int) %}selected{% endif %}>{{ "%02d"|format(m) }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div>
+          <label class="sv-label">Ano</label>
+          <input class="sv-input" type="number" name="ano" value="{{ ano }}" min="2000" max="2100">
+        </div>
+
+        <div>
+          <label class="sv-label">Visão</label>
+          <select class="sv-select" name="visao">
+            <option value="detalhado" {% if (visao or "") == "detalhado" %}selected{% endif %}>Detalhado</option>
+            <option value="resumo" {% if (visao or "") == "resumo" %}selected{% endif %}>Resumo</option>
+          </select>
+        </div>
+
+        <div class="sv-card sv-glass" style="grid-column:1/-1;padding:12px;">
+          <div class="sv-grid sv-grid--2" style="gap:12px;">
+            <div>
+              <div class="sv-label">EMP</div>
+              <div class="sv-mini" style="margin-bottom:6px;">Marque uma ou mais EMPs</div>
+              <div class="sv-checklist">
+                {% for e in emps_options %}
+                  {% set checked = (e in (emps_sel or [])) %}
+                  <label class="sv-check">
+                    <input type="checkbox" name="emp" value="{{ e }}" {% if checked %}checked{% endif %}>
+                    <span>{{ e }}</span>
+                  </label>
+                {% endfor %}
+              </div>
+            </div>
+
+            <div>
+              <div class="sv-label">Vendedor</div>
+              <div class="sv-mini" style="margin-bottom:6px;">Marque um ou mais vendedores</div>
+              <div class="sv-checklist">
+                {% for v in vendedores_options %}
+                  {% set checked = (v in (vendedores_sel or [])) %}
+                  <label class="sv-check">
+                    <input type="checkbox" name="vendedor" value="{{ v }}" {% if checked %}checked{% endif %}>
+                    <span>{{ v }}</span>
+                  </label>
+                {% endfor %}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style="grid-column:1/-1;display:flex;gap:10px;justify-content:flex-end;margin-top:6px;">
+          <a class="sv-btn sv-btn--ghost" href="{{ url_for('campanhas_qtd') }}">Limpar</a>
+          <button class="sv-btn" type="submit">Aplicar filtros</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="sv-section">
+    <div class="sv-kpis">
+      <div class="sv-kpi sv-glass">
+        <div class="sv-kpi__k">Empresas exibidas</div>
+        <div class="sv-kpi__v">{{ emps_data|length }}</div>
+      </div>
+      <div class="sv-kpi sv-glass">
+        <div class="sv-kpi__k">Total de campanhas</div>
+        <div class="sv-kpi__v">{{ total_campanhas }}</div>
+      </div>
+      <div class="sv-kpi sv-glass">
+        <div class="sv-kpi__k">Total recompensa</div>
+        <div class="sv-kpi__v">{{ total_recompensa|brl_rs }}</div>
+      </div>
+    </div>
+
+    <div class="sv-mini" style="margin-top:8px;">
+      Clique na <b>empresa</b> para ver vendedores. Clique no <b>vendedor</b> para ver campanhas.
+    </div>
+
+    <div class="sv-acc" id="accRoot">
+      {% if emps_data|length == 0 %}
+        <div class="sv-card sv-cardpad" style="margin-top:12px;">
+          <div class="sv-sub">Nenhum resultado com os filtros atuais.</div>
+        </div>
+      {% else %}
+        {% for emp in emps_data %}
+          {% set emp_idx = loop.index0 %}
+          <div class="sv-acc-item" data-emp="{{ emp_idx }}">
+            <div class="sv-acc-head" data-emp="{{ emp_idx }}">
+              <div>
+                <div class="sv-acc-title">EMP {{ emp.emp }}</div>
+                <div class="sv-acc-sub">{{ emp.nome_emp or "" }}</div>
+              </div>
+
+              <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:flex-end;">
+                <span class="sv-chip">Vendedores: <b>{{ (emp.vendedores or [])|length }}</b></span>
+                <span class="sv-chip">Recompensa: <b>{{ (emp.total_recompensa or 0)|float|brl_rs }}</b></span>
+                <span class="sv-chip">Campanhas: <b>{{ (emp.total_campanhas or 0)|int }}</b></span>
+              </div>
+            </div>
+
+            <div class="sv-acc-body">
+              {% if (emp.vendedores or [])|length == 0 %}
+                <div class="sv-sub">Sem vendedores/campanhas neste período.</div>
+              {% else %}
+                {% for vend in emp.vendedores %}
+                  {% set vend_idx = loop.index0 %}
+                  <div class="sv-card sv-cardpad" style="margin-top:10px;">
+                    <div class="sv-row" style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;">
+                      <div>
+                        <div style="font-weight:900;font-size:1.05rem;">{{ vend.vendedor }}</div>
+                        <div class="sv-mini">Campanhas: <b>{{ (vend.campanhas or [])|length }}</b></div>
+                      </div>
+                      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+                        <span class="sv-chip">Recompensa: <b>{{ (vend.total_recompensa or 0)|float|brl_rs }}</b></span>
+                      </div>
+                    </div>
+
+                    {% if (vend.campanhas or [])|length > 0 %}
+                      <div class="sv-divider"></div>
+                      <div class="table-responsive">
+                        <table class="table sv-table">
+                          <thead>
+                            <tr>
+                              <th>Campanha</th>
+                              <th>Marca</th>
+                              <th class="text-end">Qtd</th>
+                              <th class="text-end">Recompensa</th>
+                              <th>Vigência</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {% for c in vend.campanhas %}
+                              <tr>
+                                <td>
+                                  <div style="font-weight:800;">{{ c.titulo or c.nome or "Campanha" }}</div>
+                                  {% if c.base %}
+                                    <div class="sv-mini">Base: {{ c.base }}</div>
+                                  {% endif %}
+                                </td>
+                                <td>{{ c.marca or "-" }}</td>
+                                <td class="text-end">{{ c.qtd_total or c.qtd or 0 }}</td>
+                                <td class="text-end">{{ (c.valor_recompensa or 0)|float|brl_rs }}</td>
+                                <td>{{ c.inicio or "" }}{% if c.fim %} • {{ c.fim }}{% endif %}</td>
+                              </tr>
+                            {% endfor %}
+                          </tbody>
+                        </table>
+                      </div>
+                    {% endif %}
+                  </div>
+                {% endfor %}
+              {% endif %}
+            </div>
+          </div>
+        {% endfor %}
+      {% endif %}
+    </div>
+  </div>
+
+</div>
+
+<script>
+  // Accordion simples (mantém comportamento leve)
+  (function(){
+    const root = document.getElementById('accRoot');
+    if(!root) return;
+
+    root.addEventListener('click', (ev) => {
+      const head = ev.target.closest('.sv-acc-head');
+      if(!head) return;
+      const item = head.closest('.sv-acc-item');
+      if(!item) return;
+      item.classList.toggle('is-open');
+    });
+  })();
+</script>
+{% endblock %}
