@@ -103,6 +103,7 @@ from db import (
     ItensParadosPontosConfig,
     ItensParadosPontosBonus,
     ItensParadosPontosResultado,
+    ItensParadosPontosFechamento,
     CampanhaQtd,
     CampanhaQtdResultado,
     CampanhaCombo,
