@@ -1,393 +1,122 @@
 {% extends "base.html" %}
 
-{% block title %}Admin - Itens parados (Pontos){% endblock %}
+{% block title %}Admin - Itens parados{% endblock %}
 
 {% block content %}
-<div class="container py-4 sv-itens-parados" style="max-width:1200px;">
+<div class="container py-4" style="max-width:1100px;">
 
-  <div class="d-flex justify-content-between align-items-center mb-3">
-    <div>
-      <h3 class="m-0">📦 Admin — Itens Parados (Pontos)</h3>
-      <div class="text-muted">Cadastre itens por EMP e faça o <b>fechamento manual</b> por período (ex.: semana). Pontos são <b>inteiros</b>.</div>
-    </div>
-    <div class="text-end">
-      <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('itens_parados') }}">Ver visão operacional</a>
-    </div>
-  </div>
-
-  {% if erro %}
-    <div class="alert alert-danger">{{ erro }}</div>
-  {% endif %}
-  {% if ok %}
-    <div class="alert alert-success">{{ ok }}</div>
-  {% endif %}
-
-  <ul class="nav nav-tabs mb-3" role="tablist">
-    <li class="nav-item" role="presentation">
-      <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-itens" type="button" role="tab">Itens (por EMP)</button>
-    </li>
-    <li class="nav-item" role="presentation">
-      <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-regras" type="button" role="tab">Regras & Bônus</button>
-    </li>
-    <li class="nav-item" role="presentation">
-      <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-fechamento" type="button" role="tab">Fechamento Manual</button>
-    </li>
-  </ul>
-
-  <div class="tab-content">
-
-    <!-- ===================== ITENS ===================== -->
-    <div class="tab-pane fade show active" id="tab-itens" role="tabpanel">
-
-      <div class="card mb-3">
-        <div class="card-body">
-          <h5 class="card-title mb-3">Cadastrar / Atualizar Item</h5>
-
-          <form method="post" class="row g-2">
-            <input type="hidden" name="acao" value="criar_item" />
-            <div class="col-md-2">
-              <label class="form-label">EMP</label>
-              <input name="emp" class="form-control form-control-sm" placeholder="Ex: 001" required>
-            </div>
-            <div class="col-md-2">
-              <label class="form-label">Código</label>
-              <input name="codigo" class="form-control form-control-sm" placeholder="mestre" required>
-            </div>
-            <div class="col-md-4">
-              <label class="form-label">Descrição</label>
-              <input name="descricao" class="form-control form-control-sm" placeholder="Descrição do produto">
-            </div>
-            <div class="col-md-2">
-              <label class="form-label">Multiplicador</label>
-              <input name="multiplicador_pontos" class="form-control form-control-sm" value="1.0">
-              <div class="form-text">Ex.: 2.0 = vale o dobro</div>
-            </div>
-            <div class="col-md-2">
-              <label class="form-label">Ativo</label>
-              <select name="ativo" class="form-select form-select-sm">
-                <option value="1" selected>Sim</option>
-                <option value="0">Não</option>
-              </select>
-            </div>
-
-            <div class="col-md-2">
-              <label class="form-label">Início (opcional)</label>
-              <input type="date" name="data_inicio" class="form-control form-control-sm">
-            </div>
-            <div class="col-md-2">
-              <label class="form-label">Fim (opcional)</label>
-              <input type="date" name="data_fim" class="form-control form-control-sm">
-            </div>
-
-            <div class="col-12 mt-2">
-              <button class="btn btn-primary btn-sm">Salvar Item</button>
-            </div>
-          </form>
-        </div>
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <div>
+        <h3 class="m-0">🛠️ Admin — Itens parados / Liquidação</h3>
+        <div class="text-muted">Cadastre por EMP os produtos que devem ser liquidados, com recompensa em %.</div>
       </div>
+      <div class="d-flex gap-2">
+        <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('dashboard') }}">Voltar</a>
+      </div>
+    </div>
 
-      <div class="card">
-        <div class="card-body">
-          <h5 class="card-title mb-3">Itens cadastrados (modo PONTOS)</h5>
+    {% if erro %}
+      <div class="alert alert-danger shadow-sm">{{ erro }}</div>
+    {% endif %}
+    {% if ok %}
+      <div class="alert alert-success shadow-sm">{{ ok }}</div>
+    {% endif %}
 
-          <div class="table-responsive">
-            <table class="table table-sm table-hover align-middle">
-              <thead>
-                <tr>
-                  <th>EMP</th>
-                  <th>Código</th>
-                  <th>Descrição</th>
-                  <th class="text-center">Ativo</th>
-                  <th class="text-center">Multip.</th>
-                  <th>Período</th>
-                  <th class="text-end">Ações</th>
-                </tr>
-              </thead>
-              <tbody>
+    <div class="card shadow-sm mb-3">
+      <div class="card-body">
+        <h5 class="mb-3">Cadastrar novo item</h5>
+        <form method="post" action="/admin/itens_parados" class="row g-2">
+          <input type="hidden" name="acao" value="criar">
+
+          <div class="col-md-2">
+            <label class="form-label">EMP</label>
+            <input class="form-control" name="emp" placeholder="101" required>
+          </div>
+
+          <div class="col-md-2">
+            <label class="form-label">CÓDIGO</label>
+            <input class="form-control" name="codigo" placeholder="385401" required>
+          </div>
+
+          <div class="col-md-5">
+            <label class="form-label">DESCRIÇÃO</label>
+            <input class="form-control" name="descricao" placeholder="LÂMPADA DE FAROL">
+          </div>
+
+          <div class="col-md-1">
+            <label class="form-label">QTD</label>
+            <input class="form-control" name="quantidade" type="number" min="0" placeholder="5">
+          </div>
+
+          <div class="col-md-2">
+            <label class="form-label">RECOMPENSA (%)</label>
+            <input class="form-control" name="recompensa_pct" placeholder="10" required>
+          </div>
+
+          <div class="col-12">
+            <button class="btn btn-primary">Salvar</button>
+            <div class="form-text">
+              O valor para o vendedor é calculado automaticamente: <code>valor_total vendido × recompensa%</code>.
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div class="card shadow-sm">
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-striped table-hover mb-0">
+            <thead class="table-dark">
+              <tr>
+                <th style="width:70px;">ID</th>
+                <th style="width:90px;">EMP</th>
+                <th style="width:140px;">CÓDIGO</th>
+                <th>DESCRIÇÃO</th>
+                <th class="text-end" style="width:120px;">QTD</th>
+                <th class="text-end" style="width:130px;">RECOMPENSA</th>
+                <th style="width:170px;" class="text-end">AÇÕES</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% if itens and (itens|length) > 0 %}
                 {% for it in itens %}
                   <tr>
-                    <td><code>{{ it.emp }}</code></td>
-                    <td><code>{{ it.codigo }}</code></td>
+                    <td class="text-muted">{{ it.id }}</td>
+                    <td><strong>{{ it.emp }}</strong></td>
+                    <td>{{ it.codigo }}</td>
                     <td>{{ it.descricao or '' }}</td>
-                    <td class="text-center">
-                      {% if it.ativo %}<span class="badge bg-success">SIM</span>{% else %}<span class="badge bg-secondary">NÃO</span>{% endif %}
-                    </td>
-                    <td class="text-center">{{ '%.2f'|format(it.multiplicador_pontos or 1.0) }}</td>
-                    <td>
-                      {% if it.data_inicio or it.data_fim %}
-                        {{ it.data_inicio or '—' }} → {{ it.data_fim or '—' }}
-                      {% else %}
-                        —
-                      {% endif %}
-                    </td>
+                    <td class="text-end">{{ it.quantidade if it.quantidade is not none else '-' }}</td>
+                    <td class="text-end">{{ (it.recompensa_pct or 0)|round(2) }}%</td>
                     <td class="text-end">
-                      <form method="post" class="d-inline">
-                        <input type="hidden" name="acao" value="toggle_item">
+                      <form method="post" action="/admin/itens_parados" class="d-inline">
+                        <input type="hidden" name="acao" value="toggle">
                         <input type="hidden" name="item_id" value="{{ it.id }}">
-                        <button class="btn btn-outline-secondary btn-sm">Ativar/Desativar</button>
+                        {% if it.ativo == 1 %}
+                          <button class="btn btn-outline-warning btn-sm" type="submit">Desativar</button>
+                        {% else %}
+                          <button class="btn btn-outline-success btn-sm" type="submit">Ativar</button>
+                        {% endif %}
                       </form>
-                      <form method="post" class="d-inline" onsubmit="return confirm('Excluir item?');">
-                        <input type="hidden" name="acao" value="excluir_item">
+
+                      <form method="post" action="/admin/itens_parados" class="d-inline" onsubmit="return confirm('Remover este item?');">
+                        <input type="hidden" name="acao" value="remover">
                         <input type="hidden" name="item_id" value="{{ it.id }}">
-                        <button class="btn btn-outline-danger btn-sm">Excluir</button>
+                        <button class="btn btn-outline-danger btn-sm" type="submit">Remover</button>
                       </form>
                     </td>
                   </tr>
-                {% else %}
-                  <tr><td colspan="7" class="text-muted">Nenhum item cadastrado.</td></tr>
                 {% endfor %}
-              </tbody>
-            </table>
-          </div>
-
-        </div>
-      </div>
-
-    </div>
-
-    <!-- ===================== REGRAS & BONUS ===================== -->
-    <div class="tab-pane fade" id="tab-regras" role="tabpanel">
-
-      <div class="row g-3">
-        <div class="col-lg-6">
-          <div class="card h-100">
-            <div class="card-body">
-              <h5 class="card-title mb-3">Regra de Pontos (global ou por EMP)</h5>
-
-              <form method="post" class="row g-2">
-                <input type="hidden" name="acao" value="salvar_config">
-                <div class="col-md-4">
-                  <label class="form-label">EMP (opcional)</label>
-                  <input name="emp_cfg" class="form-control form-control-sm" placeholder="vazio = global">
-                </div>
-                <div class="col-md-4">
-                  <label class="form-label">Base (R$ por 1 ponto)</label>
-                  <input name="base_reais" class="form-control form-control-sm" value="{{ (cfg_global.base_reais if cfg_global else 100) }}">
-                </div>
-                <div class="col-md-4">
-                  <label class="form-label">Valor por ponto (R$)</label>
-                  <input name="valor_por_ponto" class="form-control form-control-sm" value="{{ (cfg_global.valor_por_ponto if cfg_global else 10) }}">
-                </div>
-                <div class="col-12 mt-2">
-                  <button class="btn btn-primary btn-sm">Salvar Regra</button>
-                  <div class="form-text">Pontos são <b>inteiros</b>: pontos = floor(valor / base)</div>
-                </div>
-              </form>
-
-              <hr class="my-3">
-
-              <div class="text-muted small">
-                <div><b>Config global ativa:</b> {{ (cfg_global.base_reais if cfg_global else 100) }} → 1 ponto; cada ponto vale R$ {{ (cfg_global.valor_por_ponto if cfg_global else 10) }}</div>
-              </div>
-
-              {% if cfg_by_emp %}
-                <div class="mt-3">
-                  <div class="fw-semibold mb-2">Configs por EMP (ativas)</div>
-                  <div class="table-responsive">
-                    <table class="table table-sm">
-                      <thead><tr><th>EMP</th><th>Base</th><th>Valor ponto</th></tr></thead>
-                      <tbody>
-                        {% for c in cfg_by_emp %}
-                          <tr><td><code>{{ c.emp }}</code></td><td>{{ c.base_reais }}</td><td>{{ c.valor_por_ponto }}</td></tr>
-                        {% endfor %}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              {% endif %}
-
-            </div>
-          </div>
-        </div>
-
-        <div class="col-lg-6">
-          <div class="card h-100">
-            <div class="card-body">
-              <h5 class="card-title mb-3">Bônus extra (configurável)</h5>
-
-              <form method="post" class="row g-2">
-                <input type="hidden" name="acao" value="criar_bonus">
-                <div class="col-md-4">
-                  <label class="form-label">EMP (opcional)</label>
-                  <input name="emp_bonus" class="form-control form-control-sm" placeholder="vazio = global">
-                </div>
-                <div class="col-md-4">
-                  <label class="form-label">A partir de (pontos)</label>
-                  <input name="min_pontos" class="form-control form-control-sm" value="10">
-                </div>
-                <div class="col-md-4">
-                  <label class="form-label">Bônus (R$)</label>
-                  <input name="bonus_valor" class="form-control form-control-sm" value="50">
-                </div>
-                <div class="col-12 mt-2">
-                  <button class="btn btn-primary btn-sm">Adicionar Bônus</button>
-                  <div class="form-text">O bônus aplicado é o maior cujo mínimo foi atingido.</div>
-                </div>
-              </form>
-
-              <hr class="my-3">
-
-              <div class="fw-semibold mb-2">Bônus globais</div>
-              <div class="table-responsive">
-                <table class="table table-sm align-middle">
-                  <thead><tr><th>Mín. pontos</th><th>Bônus</th><th>Status</th><th class="text-end">Ações</th></tr></thead>
-                  <tbody>
-                    {% for b in bonus_global %}
-                      <tr>
-                        <td>{{ b.min_pontos }}</td>
-                        <td>R$ {{ '%.2f'|format(b.bonus_valor or 0) }}</td>
-                        <td>{% if b.ativo %}<span class="badge bg-success">ATIVO</span>{% else %}<span class="badge bg-secondary">OFF</span>{% endif %}</td>
-                        <td class="text-end">
-                          <form method="post" class="d-inline">
-                            <input type="hidden" name="acao" value="toggle_bonus">
-                            <input type="hidden" name="bonus_id" value="{{ b.id }}">
-                            <button class="btn btn-outline-secondary btn-sm">Ativar/Desativar</button>
-                          </form>
-                          <form method="post" class="d-inline" onsubmit="return confirm('Excluir bônus?');">
-                            <input type="hidden" name="acao" value="excluir_bonus">
-                            <input type="hidden" name="bonus_id" value="{{ b.id }}">
-                            <button class="btn btn-outline-danger btn-sm">Excluir</button>
-                          </form>
-                        </td>
-                      </tr>
-                    {% else %}
-                      <tr><td colspan="4" class="text-muted">Nenhum bônus global cadastrado.</td></tr>
-                    {% endfor %}
-                  </tbody>
-                </table>
-              </div>
-
-              {% if bonus_by_emp %}
-                <div class="fw-semibold mt-3 mb-2">Bônus por EMP</div>
-                <div class="table-responsive">
-                  <table class="table table-sm align-middle">
-                    <thead><tr><th>EMP</th><th>Mín. pontos</th><th>Bônus</th><th>Status</th></tr></thead>
-                    <tbody>
-                      {% for b in bonus_by_emp %}
-                        <tr>
-                          <td><code>{{ b.emp }}</code></td>
-                          <td>{{ b.min_pontos }}</td>
-                          <td>R$ {{ '%.2f'|format(b.bonus_valor or 0) }}</td>
-                          <td>{% if b.ativo %}<span class="badge bg-success">ATIVO</span>{% else %}<span class="badge bg-secondary">OFF</span>{% endif %}</td>
-                        </tr>
-                      {% endfor %}
-                    </tbody>
-                  </table>
-                </div>
-              {% endif %}
-
-            </div>
-          </div>
-        </div>
-      </div>
-
-    </div>
-
-    <!-- ===================== FECHAMENTO ===================== -->
-    <div class="tab-pane fade" id="tab-fechamento" role="tabpanel">
-
-      <div class="card mb-3">
-        <div class="card-body">
-          <h5 class="card-title mb-3">Criar fechamento manual</h5>
-
-          <form method="post" class="row g-2">
-            <input type="hidden" name="acao" value="fechar_periodo">
-            <div class="col-md-3">
-              <label class="form-label">EMP (opcional)</label>
-              <input name="emp_fech" class="form-control form-control-sm" placeholder="vazio = todas">
-            </div>
-            <div class="col-md-3">
-              <label class="form-label">Data início</label>
-              <input type="date" name="data_inicio_fech" class="form-control form-control-sm" required>
-            </div>
-            <div class="col-md-3">
-              <label class="form-label">Data fim</label>
-              <input type="date" name="data_fim_fech" class="form-control form-control-sm" required>
-            </div>
-            <div class="col-md-3 d-flex align-items-end">
-              <button class="btn btn-primary btn-sm w-100">Fechar e Gerar Snapshot</button>
-            </div>
-            <div class="col-12">
-              <div class="form-text">Isso cria um registro de fechamento e gera resultados por vendedor (status inicial: <b>PENDENTE</b>).</div>
-            </div>
-          </form>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-body">
-          <h5 class="card-title mb-3">Últimos fechamentos</h5>
-
-          <div class="table-responsive">
-            <table class="table table-sm align-middle">
-              <thead>
+              {% else %}
                 <tr>
-                  <th>#</th>
-                  <th>EMP</th>
-                  <th>Período</th>
-                  <th>Criado em</th>
-                  <th class="text-end">Ações</th>
+                  <td colspan="7" class="text-center text-muted py-4">Nenhum item cadastrado.</td>
                 </tr>
-              </thead>
-              <tbody>
-                {% for f in fechamentos %}
-                  <tr>
-                    <td>{{ f.id }}</td>
-                    <td>{{ f.emp or 'TODAS' }}</td>
-                    <td>{{ f.data_inicio }} → {{ f.data_fim }}</td>
-                    <td>{{ f.criado_em }}</td>
-                    <td class="text-end">
-                      <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin_itens_parados', fech=f.id) }}">Ver resultados</a>
-                    </td>
-                  </tr>
-                {% else %}
-                  <tr><td colspan="5" class="text-muted">Nenhum fechamento criado ainda.</td></tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
-
-          {% if res_fech %}
-            <hr class="my-3">
-            <h6 class="mb-2">Resultados do fechamento #{{ ver_fech }}</h6>
-
-            <div class="table-responsive">
-              <table class="table table-sm table-hover align-middle">
-                <thead>
-                  <tr>
-                    <th>EMP</th>
-                    <th>Vendedor</th>
-                    <th class="text-end">Vendeu (R$)</th>
-                    <th class="text-center">Pontos</th>
-                    <th class="text-end">Bônus base</th>
-                    <th class="text-end">Bônus extra</th>
-                    <th class="text-end">Total</th>
-                    <th class="text-center">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {% for r in res_fech %}
-                    <tr>
-                      <td><code>{{ r.emp }}</code></td>
-                      <td>{{ r.vendedor }}</td>
-                      <td class="text-end">R$ {{ '%.2f'|format(r.valor_vendido or 0) }}</td>
-                      <td class="text-center"><span class="badge bg-primary">{{ r.pontos }}</span></td>
-                      <td class="text-end">R$ {{ '%.2f'|format((r.pontos or 0) * (r.valor_por_ponto or 0)) }}</td>
-                      <td class="text-end">R$ {{ '%.2f'|format(r.bonus_extra or 0) }}</td>
-                      <td class="text-end"><b>R$ {{ '%.2f'|format(r.total or 0) }}</b></td>
-                      <td class="text-center">{{ r.status_pagamento }}</td>
-                    </tr>
-                  {% endfor %}
-                </tbody>
-              </table>
-            </div>
-          {% endif %}
-
+              {% endif %}
+            </tbody>
+          </table>
         </div>
       </div>
-
     </div>
 
   </div>
-</div>
 {% endblock %}

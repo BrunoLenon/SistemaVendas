@@ -4599,26 +4599,20 @@ def admin_itens_parados():
 
     with SessionLocal() as db:
         if request.method == 'POST':
-            acao = (request.values.get('acao') or request.values.get('action') or '').strip().lower()
-            if not acao:
-                # Se o usuário apertar ENTER em um input, o browser pode submeter o form sem o botão (sem 'acao').
-                # Nesse caso, assumimos a ação padrão de criar.
-                acao = 'criar'
-
-            # Normaliza ações vindas do template (algumas telas usam nomes mais específicos)
-            aliases = {
-                "criar_item": "criar",
-                "toggle_item": "toggle",
-                "excluir_item": "excluir",
-                # futuras extensões / compatibilidade (não implementadas aqui)
-                "fechar_periodo": "fechar",
-                "reabrir_periodo": "reabrir",
-            }
-            if acao in aliases:
-                acao = aliases[acao]
-
+			acao = (request.form.get('acao') or '').strip().lower()
+			# Aceita aliases para evitar "Ação inválida" se algum HTML/JS enviar outro valor
+			alias_map = {
+				'create': 'criar',
+				'novo': 'criar',
+				'add': 'criar',
+				'inserir': 'criar',
+				'delete': 'remover',
+				'remove': 'remover',
+				'excluir': 'remover',
+			}
+			acao = alias_map.get(acao, acao)
             try:
-                if acao in ('criar','novo','create'):
+                if acao == 'criar':
                     emp = (request.form.get('emp') or '').strip()
                     codigo = (request.form.get('codigo') or '').strip()
                     descricao = (request.form.get('descricao') or '').strip()
@@ -4633,18 +4627,23 @@ def admin_itens_parados():
                     quantidade = int(quantidade_raw) if quantidade_raw else None
                     recompensa_pct = float(recompensa_raw) if recompensa_raw else 0.0
 
-                    db.add(ItemParado(
-                        emp=str(emp),
-                        codigo=str(codigo),
-                        descricao=descricao or None,
-                        quantidade=quantidade,
-                        recompensa_pct=recompensa_pct,
-                        ativo=1,
-                    ))
+					# Compatibilidade: algumas versões do modelo podem não ter 'recompensa_pct'
+					kwargs = dict(
+						emp=str(emp),
+						codigo=str(codigo),
+						descricao=descricao or None,
+						quantidade=quantidade,
+						ativo=1,
+					)
+					if hasattr(ItemParado, 'recompensa_pct'):
+						kwargs['recompensa_pct'] = recompensa_pct
+					elif hasattr(ItemParado, 'recompensa'):
+						kwargs['recompensa'] = recompensa_pct
+					db.add(ItemParado(**kwargs))
                     db.commit()
                     ok = 'Item cadastrado com sucesso.'
 
-                elif acao in ('toggle','ativar','desativar'):
+                elif acao == 'toggle':
                     item_id = int(request.form.get('item_id') or 0)
                     it = db.query(ItemParado).filter(ItemParado.id == item_id).first()
                     if not it:
@@ -4654,7 +4653,7 @@ def admin_itens_parados():
                     db.commit()
                     ok = 'Status do item atualizado.'
 
-                elif acao in ('remover','excluir','delete','apagar'):
+                elif acao == 'remover':
                     item_id = int(request.form.get('item_id') or 0)
                     it = db.query(ItemParado).filter(ItemParado.id == item_id).first()
                     if not it:
@@ -4663,8 +4662,8 @@ def admin_itens_parados():
                     db.commit()
                     ok = 'Item removido.'
 
-                else:
-                    raise ValueError('Ação inválida.')
+				else:
+					raise ValueError(f"Ação inválida: '{acao}'.")
 
             except Exception as e:
                 db.rollback()
