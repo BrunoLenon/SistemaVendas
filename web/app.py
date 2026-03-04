@@ -21,7 +21,6 @@ import logging
 import json
 from datetime import date, datetime, timedelta
 import calendar
-import math
 from io import BytesIO
 
 from decimal import Decimal, ROUND_HALF_UP
@@ -100,10 +99,6 @@ from db import (
     Venda,
     DashboardCache,
     ItemParado,
-    ItensParadosPontosConfig,
-    ItensParadosPontosBonus,
-    ItensParadosPontosFechamento,
-    ItensParadosPontosResultado,
     CampanhaQtd,
     CampanhaQtdResultado,
     CampanhaCombo,
@@ -2416,212 +2411,135 @@ def devolucoes():
 
 @app.get("/itens_parados")
 def itens_parados():
-    """Itens Parados (PONTOS - visão operacional).
+    """Relatório de itens parados (liquidação) por EMP.
 
-    Exibe progresso (pontos inteiros) no período selecionado (padrão: semana atual).
-    - ADMIN: pode filtrar EMP e/ou vendedor
-    - SUPERVISOR: restrito à sua EMP
-    - VENDEDOR: vê somente seu próprio progresso na EMP
+    Cadastro é feito pelo ADMIN por EMP.
+    - ADMIN: pode visualizar todas as EMPs (e opcionalmente filtrar por EMP e/ou vendedor)
+    - SUPERVISOR: visualiza somente a EMP cadastrada no usuário
+    - VENDEDOR: a(s) EMP(s) é(são) derivada(s) de vendas.emp (pode ser multi-EMP)
+
+    O campo "Valor" só aparece quando houver venda do código no período selecionado.
     """
     red = _login_required()
     if red:
         return red
 
-    role = (_role() or "").lower()
+    mes, ano = _mes_ano_from_request()
+    role = (_role() or '').lower()
 
-    # período (default = semana atual, segunda a domingo)
-    def _parse_date(v):
-        v = (v or "").strip()
-        if not v:
-            return None
-        try:
-            return datetime.strptime(v, "%Y-%m-%d").date()
-        except Exception:
-            return None
-
-    hoje = date.today()
-    inicio_semana = hoje - timedelta(days=hoje.weekday())
-    fim_semana = inicio_semana + timedelta(days=6)
-
-    data_inicio = _parse_date(request.args.get("di")) or inicio_semana
-    data_fim = _parse_date(request.args.get("df")) or fim_semana
-    if data_fim < data_inicio:
-        data_fim = data_inicio
-
-    # escopo EMP
-    emp_filtro = (request.args.get("emp") or "").strip() or None
-    if role == "admin":
-        emp_scope = emp_filtro  # pode ser None = todas
-    elif role == "supervisor":
-        emp_scope = _emp()
-    else:
-        emp_scope = _emp()
-
-    # vendedor alvo
-    vendedor_param = (request.args.get("vendedor") or "").strip()
+    # --- vendedor alvo (para cálculo do VALOR) ---
     vendedor_alvo = None
-    if role == "admin":
-        vendedor_alvo = vendedor_param or None
-    elif role == "supervisor":
-        vendedor_alvo = vendedor_param or None
+    vendedores_lista = []
+
+    if role in {'admin', 'supervisor'}:
+        emp_supervisor = _emp() if role == 'supervisor' else None
+        if role == 'supervisor' and not emp_supervisor:
+            flash('Seu usuário supervisor não possui EMP cadastrada. Solicite ao ADMIN para cadastrar.', 'warning')
+            return redirect(url_for('dashboard'))
+
+        vendedores_lista = _get_vendedores_db(role, emp_supervisor)
+        vendedor_req = (request.args.get('vendedor') or '').strip().upper() or None
+        if vendedor_req and vendedor_req in vendedores_lista:
+            vendedor_alvo = vendedor_req
+        else:
+            vendedor_alvo = None  # admin/supervisor sem seleção = só lista
+
     else:
-        vendedor_alvo = session.get("usuario") or session.get("nome") or vendedor_param or None
+        vendedor_alvo = (_usuario_logado() or '').strip().upper()
 
+    # --- EMP(s) visíveis para o usuário ---
+    emp_param = (request.args.get('emp') or '').strip()
+    emp_scopes = []
+
+    if role == 'admin':
+        if emp_param:
+            emp_scopes = [str(emp_param)]
+        else:
+            # admin sem filtro: mostrar todas as EMPs que possuem itens cadastrados
+            with SessionLocal() as db:
+                # `itens_parados.ativo` is boolean in the database (TRUE/FALSE)
+                emp_scopes = [str(x[0]) for x in db.query(ItemParado.emp).filter(ItemParado.ativo.is_(True)).distinct().all()]
+
+    elif role == 'supervisor':
+        emps = _allowed_emps()
+        emp_scopes = emps if emps else ([str(_emp())] if _emp() else [])
+
+    else:
+        # vendedor: EMP(s) via usuario_emps (recomendado); fallback = derivadas das vendas
+        emps = _allowed_emps()
+        if emps:
+            emp_scopes = emps
+        else:
+            with SessionLocal() as db:
+                emp_scopes = [str(x[0]) for x in db.query(Venda.emp).filter(Venda.vendedor == vendedor_alvo).distinct().all()]
+
+    emp_scopes = sorted({e.strip() for e in emp_scopes if e and str(e).strip()})
+    if not emp_scopes:
+        flash('Não foi possível identificar a EMP para este usuário (sem vendas registradas).', 'warning')
+        return redirect(url_for('dashboard'))
+
+    # --- Buscar itens por EMP e agrupar ---
     with SessionLocal() as db:
-        # config (EMP ou global)
-        cfg = None
-        if emp_scope:
-            cfg = db.query(ItensParadosPontosConfig).filter(ItensParadosPontosConfig.ativo.is_(True), ItensParadosPontosConfig.emp == emp_scope).order_by(ItensParadosPontosConfig.id.desc()).first()
-        if not cfg:
-            cfg = db.query(ItensParadosPontosConfig).filter(ItensParadosPontosConfig.ativo.is_(True), ItensParadosPontosConfig.emp.is_(None)).order_by(ItensParadosPontosConfig.id.desc()).first()
-
-        base_reais = int(cfg.base_reais) if cfg else 100
-        valor_por_ponto = float(cfg.valor_por_ponto) if cfg else 10.0
-
-        # bônus tiers (EMP ou global)
-        tiers = []
-        if emp_scope:
-            tiers = db.query(ItensParadosPontosBonus).filter(ItensParadosPontosBonus.ativo.is_(True), ItensParadosPontosBonus.emp == emp_scope).order_by(ItensParadosPontosBonus.min_pontos.asc()).all()
-        if not tiers:
-            tiers = db.query(ItensParadosPontosBonus).filter(ItensParadosPontosBonus.ativo.is_(True), ItensParadosPontosBonus.emp.is_(None)).order_by(ItensParadosPontosBonus.min_pontos.asc()).all()
-
-        def bonus_for(pontos: int) -> float:
-            bonus = 0.0
-            for t in tiers:
-                if pontos >= int(t.min_pontos):
-                    bonus = float(t.bonus_valor or 0.0)
-            return bonus
-
-        # itens elegíveis (PONTOS)
-        q_items = db.query(ItemParado).filter(ItemParado.ativo.is_(True), ItemParado.modo == "PONTOS")
-        if emp_scope:
-            q_items = q_items.filter(ItemParado.emp == emp_scope)
-
-        # aplica janela do item (se houver)
-        items = q_items.order_by(ItemParado.emp.asc(), ItemParado.codigo.asc()).all()
-
-        # Filtra por período do item (data_inicio/data_fim)
-        items_ok = []
-        for it in items:
-            if it.data_inicio and data_fim < it.data_inicio:
-                continue
-            if it.data_fim and data_inicio > it.data_fim:
-                continue
-            items_ok.append(it)
-
-        # lista de EMPs disponíveis para filtro (admin)
-        emps_disponiveis = []
-        if role == "admin":
-            emps_disponiveis = [r[0] for r in db.query(ItemParado.emp).filter(ItemParado.modo == "PONTOS").distinct().order_by(ItemParado.emp.asc()).all()]
-
-        # se não tem itens, render vazio
-        if not items_ok:
-            return render_template(
-                "itens_parados.html",
-                role=_role(),
-                role_name=role,
-                emp_scope=emp_scope,
-                emps_disponiveis=emps_disponiveis,
-                vendedor=vendedor_alvo or "",
-                data_inicio=data_inicio,
-                data_fim=data_fim,
-                base_reais=base_reais,
-                valor_por_ponto=valor_por_ponto,
-                tiers=tiers,
-                itens=[],
-                resultados=[],
-                resumo=None,
-            )
-
-        # mapa multiplicadores
-        mult_map = {(it.emp, it.codigo): float(it.multiplicador_pontos or 1.0) for it in items_ok}
-        codigos = list({it.codigo for it in items_ok})
-
-        # query vendas
-        qv = (
-            db.query(Venda.emp, Venda.vendedor, Venda.mestre, func.sum(Venda.valor_total))
-            .filter(
-                Venda.movimento >= data_inicio,
-                Venda.movimento <= data_fim,
-                Venda.mestre.in_(codigos),
-            )
+        itens_all = (
+            db.query(ItemParado)
+            .filter(ItemParado.emp.in_(emp_scopes))
+            .filter(ItemParado.ativo.is_(True))
+            .order_by(ItemParado.emp.asc(), ItemParado.codigo.asc())
+            .all()
         )
-        if emp_scope:
-            qv = qv.filter(Venda.emp == emp_scope)
-        if vendedor_alvo:
-            qv = qv.filter(Venda.vendedor == vendedor_alvo)
 
-        rows = qv.group_by(Venda.emp, Venda.vendedor, Venda.mestre).all()
+    itens_por_emp = {}
+    for it in itens_all:
+        e = str(it.emp).strip() if it.emp is not None else ''
+        itens_por_emp.setdefault(e, []).append(it)
 
-        # agrega por vendedor
-        vend_valor = {}  # (emp, vendedor) -> valor
-        for emp, vendedor, mestre, soma in rows:
-            emp = emp or ""
-            vendedor = vendedor or ""
-            soma = float(soma or 0.0)
-            mult = mult_map.get((emp, mestre), 1.0)
-            vend_valor[(emp, vendedor)] = vend_valor.get((emp, vendedor), 0.0) + (soma * mult)
+    # --- Calcular vendido_total por (emp, codigo) e recompensa ---
+    vendido_total_map = {}
+    recomp_map = {}
 
-        resultados = []
-        for (emp, vendedor), valor_vendido in sorted(vend_valor.items(), key=lambda x: (-x[1], x[0][0], x[0][1])):
-            pontos = int(math.floor((valor_vendido or 0.0) / float(base_reais))) if base_reais > 0 else 0
-            premio_base = float(pontos) * float(valor_por_ponto)
-            bonus_extra = float(bonus_for(pontos))
-            total = premio_base + bonus_extra
-            falta_para_prox = None
-            if base_reais > 0:
-                resto = float(valor_vendido) % float(base_reais)
-                falta_para_prox = float(base_reais) - resto if resto > 0 else 0.0
+    if vendedor_alvo and itens_all:
+        # lista de códigos (mestre) cadastrados nos itens
+        codigos = [ (i.codigo or '').strip() for i in itens_all if (i.codigo or '').strip() ]
+        codigos = sorted(set(codigos))
+        if codigos:
+            start, end = _periodo_bounds(ano, mes)
+            with SessionLocal() as db:
+                q = (
+                    db.query(Venda.emp, Venda.mestre, func.coalesce(func.sum(Venda.valor_total), 0.0))
+                    .filter(Venda.emp.in_(emp_scopes))
+                    .filter(Venda.vendedor == vendedor_alvo)
+                    .filter(Venda.movimento >= start)
+                    .filter(Venda.movimento < end)
+                    .filter(Venda.mov_tipo_movto == 'OA')
+                    .filter(Venda.mestre.in_(codigos))
+                    .group_by(Venda.emp, Venda.mestre)
+                )
+                for emp_v, mestre, total in q.all():
+                    k_emp = str(emp_v).strip() if emp_v is not None else ''
+                    k_cod = (mestre or '').strip()
+                    vendido_total_map[(k_emp, k_cod)] = float(total or 0.0)
 
-            resultados.append({
-                "emp": emp,
-                "vendedor": vendedor,
-                "valor_vendido": float(valor_vendido),
-                "pontos": pontos,
-                "premio_base": premio_base,
-                "bonus_extra": bonus_extra,
-                "total": total,
-                "falta_para_prox": falta_para_prox,
-            })
-
-        # resumo para vendedor (ou quando filtra vendedor)
-        resumo = None
-        if vendedor_alvo:
-            # soma em todas emps (quando admin e emp_scope None)
-            tot = sum(r["valor_vendido"] for r in resultados if r["vendedor"] == vendedor_alvo)
-            pontos = int(math.floor((tot or 0.0) / float(base_reais))) if base_reais > 0 else 0
-            premio_base = float(pontos) * float(valor_por_ponto)
-            bonus_extra = float(bonus_for(pontos))
-            total = premio_base + bonus_extra
-            resto = float(tot) % float(base_reais) if base_reais > 0 else 0.0
-            falta = float(base_reais) - resto if resto > 0 else 0.0
-            resumo = {
-                "vendedor": vendedor_alvo,
-                "valor_vendido": float(tot),
-                "pontos": pontos,
-                "premio_base": premio_base,
-                "bonus_extra": bonus_extra,
-                "total": total,
-                "falta_para_prox": falta,
-            }
+            for it in itens_all:
+                emp_it = str(it.emp).strip() if it.emp is not None else ''
+                cod = (it.codigo or '').strip()
+                total = vendido_total_map.get((emp_it, cod), 0.0)
+                pct = float(it.recompensa_pct or 0.0)
+                valor = (total * (pct / 100.0)) if total > 0 and pct > 0 else 0.0
+                recomp_map[(emp_it, cod)] = valor
 
     return render_template(
         "itens_parados.html",
-        role=_role(),
-        role_name=role,
-        emp_scope=emp_scope,
-        emps_disponiveis=emps_disponiveis,
-        vendedor=vendedor_alvo or "",
-        data_inicio=data_inicio,
-        data_fim=data_fim,
-        base_reais=base_reais,
-        valor_por_ponto=valor_por_ponto,
-        tiers=tiers,
-        itens=items_ok,
-        resultados=resultados,
-        resumo=resumo,
+        role=role,
+        mes=mes,
+        ano=ano,
+        emp_param=emp_param,
+        emp_scopes=emp_scopes,
+        itens_por_emp=itens_por_emp,
+        vendedor=vendedor_alvo,
+        vendedores_lista=vendedores_lista,
+        vendido_total_map=vendido_total_map,
+        recomp_map=recomp_map,
     )
-
 
 @app.get("/itens_parados/pdf")
 def itens_parados_pdf():
@@ -3074,12 +2992,11 @@ def _resolver_emp_scope_para_usuario(vendedor: str, role: str, emp_usuario: str 
 
 
 # --------------------------
-# Helpers de consulta (Relatórios / Scope)
+# Vendas no período (mês/ano)
 # --------------------------
 def _get_emps_com_vendas_no_periodo(ano, mes):
-    """Retorna lista de EMPs que possuem vendas no período (ano/mes).
-
-    Usado para montar escopo de relatórios (ex.: /relatorios/campanhas).
+    """Retorna lista de EMPs que possuem vendas no mês/ano informado.
+    Observação: tabela `vendas` usa coluna `movimento` (Date) e NÃO possui `ano/mes` no ORM.
     """
     try:
         ano_i = int(ano)
@@ -3087,44 +3004,45 @@ def _get_emps_com_vendas_no_periodo(ano, mes):
     except Exception:
         return []
 
-    db = SessionLocal()
-    try:
+    with SessionLocal() as db:
         rows = (
             db.query(Venda.emp)
-            .filter(Venda.ano == ano_i, Venda.mes == mes_i)
+            .filter(Venda.emp.isnot(None))
+            .filter(extract("year", Venda.movimento) == ano_i)
+            .filter(extract("month", Venda.movimento) == mes_i)
             .distinct()
             .order_by(Venda.emp.asc())
             .all()
         )
-        emps = [r[0] for r in rows if r and r[0]]
-        return emps
-    finally:
-        db.close()
+    return [r[0] for r in rows if r and r[0]]
 
 
 def _get_vendedores_emp_no_periodo(emp, ano, mes):
-    """Retorna lista de vendedores (nome) que tiveram vendas na EMP no período."""
-    if not emp:
+    """Retorna lista de vendedores que venderam na EMP no mês/ano informado."""
+    if emp is None:
         return []
+    emp_s = str(emp).strip()
+    if not emp_s:
+        return []
+
     try:
         ano_i = int(ano)
         mes_i = int(mes)
     except Exception:
         return []
 
-    db = SessionLocal()
-    try:
+    with SessionLocal() as db:
         rows = (
             db.query(Venda.vendedor)
-            .filter(Venda.emp == emp, Venda.ano == ano_i, Venda.mes == mes_i)
+            .filter(Venda.emp == emp_s)
+            .filter(Venda.vendedor.isnot(None))
+            .filter(extract("year", Venda.movimento) == ano_i)
+            .filter(extract("month", Venda.movimento) == mes_i)
             .distinct()
             .order_by(Venda.vendedor.asc())
             .all()
         )
-        vendedores = [r[0] for r in rows if r and r[0]]
-        return vendedores
-    finally:
-        db.close()
+    return [r[0] for r in rows if r and r[0]]
 
 
 # --------------------------
@@ -4719,12 +4637,9 @@ def admin_importar():
 
 @app.route("/admin/itens_parados", methods=["GET", "POST"])
 def admin_itens_parados():
-    """Módulo Itens Parados (PONTOS - pontos inteiros).
+    """Cadastro de itens parados (liquidação) por EMP.
 
-    - Cadastro de itens por EMP (itens elegíveis).
-    - Configuração global/per-EMP da regra (base_reais / valor_por_ponto).
-    - Configuração de bônus extra por faixa de pontos.
-    - Fechamento manual (semanal ou qualquer intervalo) gerando snapshot em tabela própria.
+    Campos: EMP, Código, Descrição, Quantidade, Recompensa(%).
     """
     red = _login_required()
     if red:
@@ -4736,304 +4651,72 @@ def admin_itens_parados():
     erro = None
     ok = None
 
-    def _parse_date(v):
-        v = (v or "").strip()
-        if not v:
-            return None
-        # aceita YYYY-MM-DD
-        try:
-            return datetime.strptime(v, "%Y-%m-%d").date()
-        except Exception:
-            return None
-
     with SessionLocal() as db:
-        if request.method == "POST":
-            acao = (request.form.get("acao") or "").strip().lower()
-
+        if request.method == 'POST':
+            acao = (request.form.get('acao') or '').strip().lower()
             try:
-                # =========================
-                # 1) Cadastro de itens
-                # =========================
-                if acao in {"criar_item", "atualizar_item"}:
-                    item_id = (request.form.get("item_id") or "").strip()
-                    emp = (request.form.get("emp") or "").strip()
-                    codigo = (request.form.get("codigo") or "").strip()
-                    descricao = (request.form.get("descricao") or "").strip()
-                    ativo = (request.form.get("ativo") or "1").strip() == "1"
-                    data_inicio = _parse_date(request.form.get("data_inicio"))
-                    data_fim = _parse_date(request.form.get("data_fim"))
-                    mult_raw = (request.form.get("multiplicador_pontos") or "1").strip().replace(",", ".")
-                    multiplicador = float(mult_raw) if mult_raw else 1.0
+                if acao == 'criar':
+                    emp = (request.form.get('emp') or '').strip()
+                    codigo = (request.form.get('codigo') or '').strip()
+                    descricao = (request.form.get('descricao') or '').strip()
+                    quantidade_raw = (request.form.get('quantidade') or '').strip()
+                    recompensa_raw = (request.form.get('recompensa_pct') or '').strip().replace(',', '.')
 
                     if not emp:
-                        raise ValueError("Informe a EMP.")
+                        raise ValueError('Informe a EMP.')
                     if not codigo:
-                        raise ValueError("Informe o CÓDIGO do produto.")
+                        raise ValueError('Informe o CÓDIGO.')
 
-                    if item_id:
-                        item = db.query(ItemParado).filter(ItemParado.id == int(item_id)).first()
-                        if not item:
-                            raise ValueError("Item não encontrado para atualizar.")
-                    else:
-                        item = ItemParado(emp=emp, codigo=codigo)
+                    quantidade = int(quantidade_raw) if quantidade_raw else None
+                    recompensa_pct = float(recompensa_raw) if recompensa_raw else 0.0
 
-                    item.emp = emp
-                    item.codigo = codigo
-                    item.descricao = descricao
-                    item.ativo = ativo
-                    item.modo = "PONTOS"
-                    item.data_inicio = data_inicio
-                    item.data_fim = data_fim
-                    item.multiplicador_pontos = multiplicador if multiplicador and multiplicador > 0 else 1.0
-                    item.atualizado_em = datetime.utcnow()
-
-                    db.add(item)
+                    db.add(ItemParado(
+                        emp=str(emp),
+                        codigo=str(codigo),
+                        descricao=descricao or None,
+                        quantidade=quantidade,
+                        recompensa_pct=recompensa_pct,
+                        ativo=1,
+                    ))
                     db.commit()
-                    ok = "Item salvo com sucesso."
+                    ok = 'Item cadastrado com sucesso.'
 
-                elif acao == "toggle_item":
-                    item_id = int(request.form.get("item_id") or "0")
-                    item = db.query(ItemParado).filter(ItemParado.id == item_id).first()
-                    if not item:
-                        raise ValueError("Item não encontrado.")
-                    item.ativo = not bool(item.ativo)
-                    item.atualizado_em = datetime.utcnow()
-                    db.add(item)
+                elif acao == 'toggle':
+                    item_id = int(request.form.get('item_id') or 0)
+                    it = db.query(ItemParado).filter(ItemParado.id == item_id).first()
+                    if not it:
+                        raise ValueError('Item não encontrado.')
+                    it.ativo = 0 if int(it.ativo or 0) == 1 else 1
+                    it.atualizado_em = datetime.utcnow()
                     db.commit()
-                    ok = "Status do item atualizado."
+                    ok = 'Status do item atualizado.'
 
-                elif acao == "excluir_item":
-                    item_id = int(request.form.get("item_id") or "0")
-                    item = db.query(ItemParado).filter(ItemParado.id == item_id).first()
-                    if not item:
-                        raise ValueError("Item não encontrado.")
-                    db.delete(item)
+                elif acao == 'remover':
+                    item_id = int(request.form.get('item_id') or 0)
+                    it = db.query(ItemParado).filter(ItemParado.id == item_id).first()
+                    if not it:
+                        raise ValueError('Item não encontrado.')
+                    db.delete(it)
                     db.commit()
-                    ok = "Item excluído."
-
-                # =========================
-                # 2) Configuração pontos
-                # =========================
-                elif acao == "salvar_config":
-                    emp_cfg = (request.form.get("emp_cfg") or "").strip() or None
-                    base_reais = int((request.form.get("base_reais") or "100").strip() or "100")
-                    valor_por_ponto = float((request.form.get("valor_por_ponto") or "10").strip().replace(",", ".") or "10")
-
-                    if base_reais <= 0:
-                        raise ValueError("Base (R$ por ponto) deve ser > 0.")
-                    if valor_por_ponto < 0:
-                        raise ValueError("Valor por ponto inválido.")
-
-                    # desativa configs anteriores desse escopo
-                    db.query(ItensParadosPontosConfig).filter(ItensParadosPontosConfig.emp == emp_cfg).update(
-                        {"ativo": False, "atualizado_em": datetime.utcnow()},
-                        synchronize_session=False,
-                    )
-                    cfg = ItensParadosPontosConfig(emp=emp_cfg, base_reais=base_reais, valor_por_ponto=valor_por_ponto, ativo=True)
-                    db.add(cfg)
-                    db.commit()
-                    ok = "Configuração salva."
-
-                # =========================
-                # 3) Bônus extra (faixas)
-                # =========================
-                elif acao == "criar_bonus":
-                    emp_bonus = (request.form.get("emp_bonus") or "").strip() or None
-                    min_pontos = int((request.form.get("min_pontos") or "10").strip() or "10")
-                    bonus_valor = float((request.form.get("bonus_valor") or "0").strip().replace(",", ".") or "0")
-
-                    if min_pontos <= 0:
-                        raise ValueError("Mínimo de pontos deve ser > 0.")
-                    if bonus_valor < 0:
-                        raise ValueError("Bônus inválido.")
-
-                    b = ItensParadosPontosBonus(emp=emp_bonus, min_pontos=min_pontos, bonus_valor=bonus_valor, ativo=True)
-                    db.add(b)
-                    db.commit()
-                    ok = "Bônus cadastrado."
-
-                elif acao == "toggle_bonus":
-                    bonus_id = int(request.form.get("bonus_id") or "0")
-                    b = db.query(ItensParadosPontosBonus).filter(ItensParadosPontosBonus.id == bonus_id).first()
-                    if not b:
-                        raise ValueError("Bônus não encontrado.")
-                    b.ativo = not bool(b.ativo)
-                    b.atualizado_em = datetime.utcnow()
-                    db.add(b)
-                    db.commit()
-                    ok = "Bônus atualizado."
-
-                elif acao == "excluir_bonus":
-                    bonus_id = int(request.form.get("bonus_id") or "0")
-                    b = db.query(ItensParadosPontosBonus).filter(ItensParadosPontosBonus.id == bonus_id).first()
-                    if not b:
-                        raise ValueError("Bônus não encontrado.")
-                    db.delete(b)
-                    db.commit()
-                    ok = "Bônus excluído."
-
-                # =========================
-                # 4) Fechamento manual (gera snapshot)
-                # =========================
-                elif acao == "fechar_periodo":
-                    emp_fech = (request.form.get("emp_fech") or "").strip() or None
-                    data_inicio = _parse_date(request.form.get("data_inicio_fech"))
-                    data_fim = _parse_date(request.form.get("data_fim_fech"))
-                    if not data_inicio or not data_fim:
-                        raise ValueError("Informe data início e data fim.")
-                    if data_fim < data_inicio:
-                        raise ValueError("Data fim não pode ser menor que a data início.")
-
-                    # config (prioriza EMP, fallback global)
-                    cfg = db.query(ItensParadosPontosConfig).filter(
-                        ItensParadosPontosConfig.ativo.is_(True),
-                        ItensParadosPontosConfig.emp == emp_fech,
-                    ).order_by(ItensParadosPontosConfig.id.desc()).first()
-                    if not cfg:
-                        cfg = db.query(ItensParadosPontosConfig).filter(
-                            ItensParadosPontosConfig.ativo.is_(True),
-                            ItensParadosPontosConfig.emp.is_(None),
-                        ).order_by(ItensParadosPontosConfig.id.desc()).first()
-                    base_reais = int(cfg.base_reais) if cfg else 100
-                    valor_por_ponto = float(cfg.valor_por_ponto) if cfg else 10.0
-
-                    # bônus tiers (prioriza EMP, senão global)
-                    tiers = db.query(ItensParadosPontosBonus).filter(
-                        ItensParadosPontosBonus.ativo.is_(True),
-                        ItensParadosPontosBonus.emp == emp_fech,
-                    ).order_by(ItensParadosPontosBonus.min_pontos.asc()).all()
-                    if not tiers:
-                        tiers = db.query(ItensParadosPontosBonus).filter(
-                            ItensParadosPontosBonus.ativo.is_(True),
-                            ItensParadosPontosBonus.emp.is_(None),
-                        ).order_by(ItensParadosPontosBonus.min_pontos.asc()).all()
-
-                    def bonus_for(pontos: int) -> float:
-                        bonus = 0.0
-                        for t in tiers:
-                            if pontos >= int(t.min_pontos):
-                                bonus = float(t.bonus_valor or 0.0)
-                        return bonus
-
-                    # itens elegíveis
-                    q_items = db.query(ItemParado).filter(ItemParado.ativo.is_(True), ItemParado.modo == "PONTOS")
-                    if emp_fech:
-                        q_items = q_items.filter(ItemParado.emp == emp_fech)
-                    items = q_items.order_by(ItemParado.emp.asc(), ItemParado.codigo.asc()).all()
-                    if not items:
-                        raise ValueError("Não há itens parados (modo PONTOS) ativos para fechar neste escopo.")
-
-                    # mapa (emp -> códigos) e multiplicadores
-                    cod_map = {}
-                    mult_map = {}  # (emp,codigo) -> multiplicador
-                    for it in items:
-                        cod_map.setdefault(it.emp, set()).add(it.codigo)
-                        mult_map[(it.emp, it.codigo)] = float(it.multiplicador_pontos or 1.0)
-
-                    # cria registro de fechamento
-                    fechamento = ItensParadosPontosFechamento(
-                        emp=emp_fech,
-                        data_inicio=data_inicio,
-                        data_fim=data_fim,
-                        criado_por=session.get("usuario") or session.get("nome") or None,
-                    )
-                    db.add(fechamento)
-                    db.flush()  # pega id sem commit ainda
-
-                    resultados = []
-                    # consulta vendas por emp em lotes
-                    for emp_loop, codigos in cod_map.items():
-                        rows = (
-                            db.query(Venda.vendedor, Venda.mestre, func.sum(Venda.valor_total))
-                            .filter(
-                                Venda.emp == emp_loop,
-                                Venda.movimento >= data_inicio,
-                                Venda.movimento <= data_fim,
-                                Venda.mestre.in_(list(codigos)),
-                            )
-                            .group_by(Venda.vendedor, Venda.mestre)
-                            .all()
-                        )
-                        # agrega por vendedor com multiplicador por item
-                        vend_valor = {}
-                        for vendedor, mestre, soma in rows:
-                            vendedor = vendedor or ""
-                            soma = float(soma or 0.0)
-                            # aplica multiplicador "virtual" no valor base para pontuação
-                            mult = mult_map.get((emp_loop, mestre), 1.0)
-                            vend_valor[vendedor] = vend_valor.get(vendedor, 0.0) + (soma * mult)
-
-                        for vendedor, valor_vendido in vend_valor.items():
-                            pontos = int(math.floor((valor_vendido or 0.0) / float(base_reais))) if base_reais > 0 else 0
-                            premio_base = float(pontos) * float(valor_por_ponto)
-                            bonus_extra = float(bonus_for(pontos))
-                            total = premio_base + bonus_extra
-
-                            r = ItensParadosPontosResultado(
-                                fechamento_id=fechamento.id,
-                                emp=emp_loop,
-                                vendedor=vendedor,
-                                valor_vendido=float(valor_vendido),
-                                pontos=pontos,
-                                base_reais=base_reais,
-                                valor_por_ponto=valor_por_ponto,
-                                bonus_extra=bonus_extra,
-                                total=total,
-                                status_pagamento="PENDENTE",
-                                criado_em=datetime.utcnow(),
-                                atualizado_em=datetime.utcnow(),
-                            )
-                            resultados.append(r)
-
-                    for r in resultados:
-                        db.add(r)
-
-                    db.commit()
-                    ok = f"Fechamento criado com {len(resultados)} linha(s) de resultado."
+                    ok = 'Item removido.'
 
                 else:
-                    raise ValueError("Ação inválida.")
+                    raise ValueError('Ação inválida.')
 
             except Exception as e:
                 db.rollback()
                 erro = str(e)
+                app.logger.exception('Erro no cadastro de itens parados')
 
-        # =========================
-        # GET (carregar dados)
-        # =========================
-        # Itens
-        itens = db.query(ItemParado).filter(ItemParado.modo == "PONTOS").order_by(ItemParado.emp.asc(), ItemParado.codigo.asc()).all()
-
-        # Config ativa (global) + por EMP (mostra as últimas ativas)
-        cfg_global = db.query(ItensParadosPontosConfig).filter(ItensParadosPontosConfig.ativo.is_(True), ItensParadosPontosConfig.emp.is_(None)).order_by(ItensParadosPontosConfig.id.desc()).first()
-        cfg_by_emp = db.query(ItensParadosPontosConfig).filter(ItensParadosPontosConfig.ativo.is_(True), ItensParadosPontosConfig.emp.is_not(None)).order_by(ItensParadosPontosConfig.emp.asc(), ItensParadosPontosConfig.id.desc()).all()
-
-        bonus_global = db.query(ItensParadosPontosBonus).filter(ItensParadosPontosBonus.emp.is_(None)).order_by(ItensParadosPontosBonus.min_pontos.asc()).all()
-        bonus_by_emp = db.query(ItensParadosPontosBonus).filter(ItensParadosPontosBonus.emp.is_not(None)).order_by(ItensParadosPontosBonus.emp.asc(), ItensParadosPontosBonus.min_pontos.asc()).all()
-
-        fechamentos = db.query(ItensParadosPontosFechamento).order_by(ItensParadosPontosFechamento.id.desc()).limit(20).all()
-
-        # Se pedir para ver resultados de um fechamento específico
-        ver_fech = (request.args.get("fech") or "").strip()
-        res_fech = []
-        if ver_fech.isdigit():
-            res_fech = db.query(ItensParadosPontosResultado).filter(ItensParadosPontosResultado.fechamento_id == int(ver_fech)).order_by(ItensParadosPontosResultado.emp.asc(), ItensParadosPontosResultado.total.desc()).all()
+        itens = db.query(ItemParado).order_by(ItemParado.emp.asc(), ItemParado.codigo.asc()).all()
 
     return render_template(
-        "admin_itens_parados.html",
-        role=_role(),
+        'admin_itens_parados.html',
+        usuario=_usuario_logado(),
+        itens=itens,
         erro=erro,
         ok=ok,
-        itens=itens,
-        cfg_global=cfg_global,
-        cfg_by_emp=cfg_by_emp,
-        bonus_global=bonus_global,
-        bonus_by_emp=bonus_by_emp,
-        fechamentos=fechamentos,
-        res_fech=res_fech,
-        ver_fech=ver_fech,
     )
-
 
 @app.route('/admin/resumos_periodo', methods=['GET', 'POST'])
 def admin_resumos_periodo():
