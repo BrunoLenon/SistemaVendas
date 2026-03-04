@@ -2527,9 +2527,38 @@ def itens_parados():
                 valor = (total * (pct / 100.0)) if total > 0 and pct > 0 else 0.0
                 recomp_map[(emp_it, cod)] = valor
 
+    # Configuração de Pontos (para exibição da regra no topo da tela).
+    # Mantém a página resiliente caso ainda não exista configuração cadastrada.
+    base_reais = 100
+    valor_por_ponto = 10.0
+    try:
+        from db import ItensParadosPontosConfig  # import local para não quebrar versões antigas
+        with SessionLocal() as _db:
+            emp_cfg = emp_param if emp_param else None
+            q = _db.query(ItensParadosPontosConfig).filter(ItensParadosPontosConfig.ativo.is_(True))
+            cfg = None
+            if emp_cfg:
+                cfg = (q.filter(ItensParadosPontosConfig.emp == emp_cfg)
+                         .order_by(ItensParadosPontosConfig.id.desc())
+                         .first())
+            if cfg is None:
+                cfg = (q.filter(ItensParadosPontosConfig.emp.is_(None))
+                         .order_by(ItensParadosPontosConfig.id.desc())
+                         .first())
+            if cfg is not None:
+                if getattr(cfg, 'base_reais', None) is not None:
+                    base_reais = int(cfg.base_reais)
+                if getattr(cfg, 'valor_por_ponto', None) is not None:
+                    valor_por_ponto = float(cfg.valor_por_ponto)
+    except Exception:
+        pass
+
     return render_template(
         "itens_parados.html",
         role=role,
+        role_name=role,
+        base_reais=base_reais,
+        valor_por_ponto=valor_por_ponto,
         mes=mes,
         ano=ano,
         emp_param=emp_param,
