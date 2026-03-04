@@ -3074,6 +3074,60 @@ def _resolver_emp_scope_para_usuario(vendedor: str, role: str, emp_usuario: str 
 
 
 # --------------------------
+# Helpers de consulta (Relatórios / Scope)
+# --------------------------
+def _get_emps_com_vendas_no_periodo(ano, mes):
+    """Retorna lista de EMPs que possuem vendas no período (ano/mes).
+
+    Usado para montar escopo de relatórios (ex.: /relatorios/campanhas).
+    """
+    try:
+        ano_i = int(ano)
+        mes_i = int(mes)
+    except Exception:
+        return []
+
+    db = SessionLocal()
+    try:
+        rows = (
+            db.query(Venda.emp)
+            .filter(Venda.ano == ano_i, Venda.mes == mes_i)
+            .distinct()
+            .order_by(Venda.emp.asc())
+            .all()
+        )
+        emps = [r[0] for r in rows if r and r[0]]
+        return emps
+    finally:
+        db.close()
+
+
+def _get_vendedores_emp_no_periodo(emp, ano, mes):
+    """Retorna lista de vendedores (nome) que tiveram vendas na EMP no período."""
+    if not emp:
+        return []
+    try:
+        ano_i = int(ano)
+        mes_i = int(mes)
+    except Exception:
+        return []
+
+    db = SessionLocal()
+    try:
+        rows = (
+            db.query(Venda.vendedor)
+            .filter(Venda.emp == emp, Venda.ano == ano_i, Venda.mes == mes_i)
+            .distinct()
+            .order_by(Venda.vendedor.asc())
+            .all()
+        )
+        vendedores = [r[0] for r in rows if r and r[0]]
+        return vendedores
+    finally:
+        db.close()
+
+
+# --------------------------
 # Services (injeção de deps)
 # --------------------------
 _campanhas_deps = CampanhasDeps(
