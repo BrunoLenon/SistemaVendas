@@ -2661,7 +2661,7 @@ def itens_parados_pdf():
         else:
             with SessionLocal() as db:
                 # `itens_parados.ativo` is boolean in the database (TRUE/FALSE)
-                emp_scopes = [str(x[0]) for x in db.query(ItemParado.emp).filter(ItemParado.ativo.is_(True)).distinct().all()]
+                emp_scopes = [str(x[0]) for x in db.query(ItemParado.emp).filter(ItemParado.modo == "PONTOS").filter(ItemParado.ativo.is_(True)).distinct().all()]
     elif role == 'supervisor':
         emps = _allowed_emps()
         emp_scopes = emps if emps else ([str(_emp())] if _emp() else [])
@@ -2678,10 +2678,15 @@ def itens_parados_pdf():
         itens_all = (
             db.query(ItemParado)
             .filter(ItemParado.emp.in_(emp_scopes))
-            .filter(ItemParado.ativo.is_(True))
+        .filter(ItemParado.modo == "PONTOS")
+        .filter(ItemParado.ativo.is_(True))
             .order_by(ItemParado.emp.asc(), ItemParado.codigo.asc())
             .all()
         )
+
+    resultados_por_emp = {}
+    for r in resultados:
+        resultados_por_emp.setdefault(str(r.get("emp", "")), []).append(r)
 
     itens_por_emp = {}
     for it in itens_all:
