@@ -108,117 +108,20 @@
     </div>
   {% endif %}
 
-{# ===================== Resultado (Ranking + Itens) ===================== #}
-{% if (not emp) or (emp == "todas") %}
-  {# Visão por EMP (hierárquica): 1 bloco por EMP configurada #}
-  {% for emp_k in emps_ordenadas %}
-  <div class="mb-3">
-    <div class="d-flex align-items-center justify-content-between mb-2">
-      <div class="fw-semibold" style="font-size: 1.05rem;">EMP {{ emp_k }}</div>
-      <div class="text-muted small">Itens e ranking calculados apenas para esta EMP</div>
-    </div>
-
-    <div class="row g-3">
-      <div class="col-lg-8">
-        <div class="card shadow-sm">
-          <div class="card-header"><b>Ranking no período</b></div>
-          <div class="card-body p-0">
-            <div class="table-responsive">
-              <table class="table table-sm table-striped mb-0">
-                <thead class="table-dark">
-                  <tr>
-                    <th>Vendedor</th>
-                    <th class="text-end">Vendeu (R$)</th>
-                    <th class="text-end">Pontos</th>
-                    <th class="text-end">Bônus base</th>
-                    <th class="text-end">Bônus extra</th>
-                    <th class="text-end">Total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                {% set rows_emp = resultados_por_emp.get(emp_k, []) %}
-                {% if rows_emp %}
-                  {% for r in rows_emp %}
-                  <tr>
-                    <td>{{ r.vendedor }}</td>
-                    <td class="text-end">R$ {{ '%.2f'|format(r.vendeu) }}</td>
-                    <td class="text-end"><span class="badge bg-primary">{{ r.pontos }}</span></td>
-                    <td class="text-end">R$ {{ '%.2f'|format(r.bonus_base) }}</td>
-                    <td class="text-end">R$ {{ '%.2f'|format(r.bonus_extra) }}</td>
-                    <td class="text-end fw-semibold">R$ {{ '%.2f'|format(r.total) }}</td>
-                  </tr>
-                  {% endfor %}
-                {% else %}
-                  <tr><td colspan="6" class="text-center text-muted p-3">Sem vendas no período para itens desta EMP.</td></tr>
-                {% endif %}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div class="col-lg-4">
-        <div class="card shadow-sm mb-3">
-          <div class="card-header"><b>Itens elegíveis (ativos)</b></div>
-          <div class="card-body p-0">
-            <div class="table-responsive">
-              <table class="table table-sm table-striped mb-0">
-                <thead class="table-dark">
-                  <tr>
-                    <th>Código</th>
-                    <th>Descrição</th>
-                    <th class="text-end">Mult.</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {% for it in itens_por_emp.get(emp_k, []) %}
-                  <tr>
-                    <td><span class="text-danger">{{ it.codigo }}</span></td>
-                    <td>{{ it.descricao }}</td>
-                    <td class="text-end">{{ '%.2f'|format(it.multiplicador or 1.0) }}</td>
-                  </tr>
-                  {% endfor %}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-
-        <div class="card shadow-sm">
-          <div class="card-header"><b>Faixas de bônus extra</b></div>
-          <div class="card-body">
-            {% if faixas %}
-              <ul class="mb-0">
-                {% for f in faixas %}
-                  <li>≥ {{ f.min_pontos }} pts → +R$ {{ '%.2f'|format(f.valor_bonus) }}</li>
-                {% endfor %}
-              </ul>
-            {% else %}
-              <div class="text-muted">Nenhuma faixa configurada.</div>
-            {% endif %}
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-  {% endfor %}
-{% else %}
-  {# Visão por EMP selecionada #}
   <div class="row g-3">
+    <div class="col-lg-7">
+      <div class="card">
+        <div class="card-body">
+          <h5 class="card-title mb-3">Ranking no período</h5>
 
-    <div class="col-lg-8">
-      <div class="card shadow-sm">
-        <div class="card-header"><b>Ranking no período</b></div>
-        <div class="card-body p-0">
           <div class="table-responsive">
-            <table class="table table-sm table-striped mb-0">
-              <thead class="table-dark">
+            <table class="table table-sm table-hover align-middle">
+              <thead>
                 <tr>
                   <th>EMP</th>
                   <th>Vendedor</th>
                   <th class="text-end">Vendeu (R$)</th>
-                  <th class="text-end">Pontos</th>
+                  <th class="text-center">Pontos</th>
                   <th class="text-end">Bônus base</th>
                   <th class="text-end">Bônus extra</th>
                   <th class="text-end">Total</th>
@@ -226,61 +129,68 @@
               </thead>
               <tbody>
                 {% for r in resultados %}
-                <tr>
-                  <td><span class="text-danger">{{ r.emp }}</span></td>
-                  <td>{{ r.vendedor }}</td>
-                  <td class="text-end">R$ {{ '%.2f'|format(r.vendeu) }}</td>
-                  <td class="text-end"><span class="badge bg-primary">{{ r.pontos }}</span></td>
-                  <td class="text-end">R$ {{ '%.2f'|format(r.bonus_base) }}</td>
-                  <td class="text-end">R$ {{ '%.2f'|format(r.bonus_extra) }}</td>
-                  <td class="text-end fw-semibold">R$ {{ '%.2f'|format(r.total) }}</td>
-                </tr>
+                  <tr>
+                    <td><code>{{ r.emp }}</code></td>
+                    <td>{{ r.vendedor }}</td>
+                    <td class="text-end">R$ {{ '%.2f'|format(r.valor_vendido or 0) }}</td>
+                    <td class="text-center"><span class="badge bg-primary">{{ r.pontos }}</span></td>
+                    <td class="text-end">R$ {{ '%.2f'|format(r.premio_base or 0) }}</td>
+                    <td class="text-end">R$ {{ '%.2f'|format(r.bonus_extra or 0) }}</td>
+                    <td class="text-end"><b>R$ {{ '%.2f'|format(r.total or 0) }}</b></td>
+                  </tr>
+                {% else %}
+                  <tr><td colspan="7" class="text-muted">Sem vendas de itens parados no período.</td></tr>
                 {% endfor %}
               </tbody>
             </table>
           </div>
+
+          <div class="text-muted small mt-2">
+            * Pontos são inteiros (floor). Vendas abaixo de R$ {{ base_reais }} não geram ponto.
+          </div>
+
         </div>
       </div>
     </div>
 
-    <div class="col-lg-4">
-
-      <div class="card shadow-sm mb-3">
-        <div class="card-header"><b>Faixas de bônus extra</b></div>
+    <div class="col-lg-5">
+      <div class="card mb-3">
         <div class="card-body">
-          {% if faixas %}
-            <ul class="mb-0">
-              {% for f in faixas %}
-                <li>≥ {{ f.min_pontos }} pts → +R$ {{ '%.2f'|format(f.valor_bonus) }}</li>
-              {% endfor %}
-            </ul>
-          {% else %}
-            <div class="text-muted">Nenhuma faixa configurada.</div>
-          {% endif %}
+          <h5 class="card-title mb-2">Faixas de bônus extra</h5>
+          <div class="text-muted small mb-2">Aplica o maior bônus cujo mínimo foi atingido.</div>
+          <ul class="mb-0">
+            {% for t in tiers %}
+              <li>{{ t.min_pontos }} pontos → <b>R$ {{ '%.2f'|format(t.bonus_valor or 0) }}</b></li>
+            {% else %}
+              <li class="text-muted">Nenhuma faixa configurada.</li>
+            {% endfor %}
+          </ul>
         </div>
       </div>
 
-      <div class="card shadow-sm">
-        <div class="card-header"><b>Itens elegíveis (ativos)</b></div>
-        <div class="card-body p-0">
+      <div class="card">
+        <div class="card-body">
+          <h5 class="card-title mb-3">Itens elegíveis (ativos)</h5>
           <div class="table-responsive">
-            <table class="table table-sm table-striped mb-0">
-              <thead class="table-dark">
+            <table class="table table-sm align-middle">
+              <thead>
                 <tr>
                   <th>EMP</th>
                   <th>Código</th>
                   <th>Descrição</th>
-                  <th class="text-end">Mult.</th>
+                  <th class="text-center">Mult.</th>
                 </tr>
               </thead>
               <tbody>
-                {% for it in itens_ativos %}
-                <tr>
-                  <td><span class="text-danger">{{ it.emp }}</span></td>
-                  <td><span class="text-danger">{{ it.codigo }}</span></td>
-                  <td>{{ it.descricao }}</td>
-                  <td class="text-end">{{ '%.2f'|format(it.multiplicador or 1.0) }}</td>
-                </tr>
+                {% for it in itens %}
+                  <tr>
+                    <td><code>{{ it.emp }}</code></td>
+                    <td><code>{{ it.codigo }}</code></td>
+                    <td>{{ it.descricao or '' }}</td>
+                    <td class="text-center">{{ '%.2f'|format(it.multiplicador_pontos or 1.0) }}</td>
+                  </tr>
+                {% else %}
+                  <tr><td colspan="4" class="text-muted">Nenhum item cadastrado.</td></tr>
                 {% endfor %}
               </tbody>
             </table>
@@ -289,9 +199,6 @@
       </div>
 
     </div>
-
-  </div>
-{% endif %}
   </div>
 
 </div>

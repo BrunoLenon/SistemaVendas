@@ -2661,7 +2661,7 @@ def itens_parados_pdf():
         else:
             with SessionLocal() as db:
                 # `itens_parados.ativo` is boolean in the database (TRUE/FALSE)
-                emp_scopes = [str(x[0]) for x in db.query(ItemParado.emp).filter(ItemParado.modo == "PONTOS").filter(ItemParado.ativo.is_(True)).distinct().all()]
+                emp_scopes = [str(x[0]) for x in db.query(ItemParado.emp).filter(ItemParado.ativo.is_(True)).distinct().all()]
     elif role == 'supervisor':
         emps = _allowed_emps()
         emp_scopes = emps if emps else ([str(_emp())] if _emp() else [])
@@ -2678,15 +2678,10 @@ def itens_parados_pdf():
         itens_all = (
             db.query(ItemParado)
             .filter(ItemParado.emp.in_(emp_scopes))
-        .filter(ItemParado.modo == "PONTOS")
-        .filter(ItemParado.ativo.is_(True))
+            .filter(ItemParado.ativo.is_(True))
             .order_by(ItemParado.emp.asc(), ItemParado.codigo.asc())
             .all()
         )
-
-    resultados_por_emp = {}
-    for r in resultados:
-        resultados_por_emp.setdefault(str(r.get("emp", "")), []).append(r)
 
     itens_por_emp = {}
     for it in itens_all:
@@ -3076,6 +3071,17 @@ def _resolver_emp_scope_para_usuario(vendedor: str, role: str, emp_usuario: str 
         return [str(emp_usuario)] if emp_usuario else []
 
     return _get_emps_vendedor(vendedor)
+
+
+def _get_emps_com_vendas_no_periodo(ano: int, mes: int) -> list[str]:
+    """Wrapper para manter compatibilidade do relatório de campanhas.
+
+    A implementação canônica existe em `app_main.py`.
+    Aqui mantemos um wrapper local para evitar NameError quando `CampanhasDeps`
+    injeta `get_emps_com_vendas_no_periodo`.
+    """
+    from app_main import _get_emps_com_vendas_no_periodo as _impl  # type: ignore
+    return _impl(ano, mes)
 
 
 # --------------------------
