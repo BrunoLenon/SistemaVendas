@@ -325,6 +325,35 @@ def build_unified_rows(
                             )
 
                         combo_atingiu = bool(item_rows) and itens_atingidos == len(item_rows)
+
+                        # Regra de negócio do COMBO:
+                        # - vendedor só recebe premiação se atingir o combo completo
+                        # - enquanto estiver parcial, mostramos a evolução de venda,
+                        #   mas a recompensa permanece zerada
+                        if not combo_atingiu:
+                            total_premio_potencial = 0.0
+                            item_rows = [
+                                UnifiedRow(
+                                    tipo=ir.tipo,
+                                    competencia_ano=ir.competencia_ano,
+                                    competencia_mes=ir.competencia_mes,
+                                    emp=ir.emp,
+                                    vendedor=ir.vendedor,
+                                    titulo=ir.titulo,
+                                    item_codigo=ir.item_codigo,
+                                    qtd_minima=ir.qtd_minima,
+                                    recompensa_unit=ir.recompensa_unit,
+                                    qtd_base=ir.qtd_base,
+                                    valor_vendido=ir.valor_vendido,
+                                    atingiu_gate=ir.atingiu_gate,
+                                    valor_recompensa=0.0,
+                                    status_pagamento=ir.status_pagamento,
+                                    pago_em=ir.pago_em,
+                                    origem_id=ir.origem_id,
+                                )
+                                for ir in item_rows
+                            ]
+
                         snap = snap_map.get((combo_id, vend))
                         st_pag = str(getattr(snap, 'status_pagamento', 'PENDENTE') or 'PENDENTE') if snap else 'PENDENTE'
                         pago_em = getattr(snap, 'pago_em', None) if snap else None
