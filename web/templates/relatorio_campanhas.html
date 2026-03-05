@@ -310,28 +310,11 @@
                       {% set _tot_vendeu = 0 %}
                       {% set _tot_premio = 0 %}
                       {% if g.campanhas and g.campanhas|length > 0 %}
-                        {% set _last_combo_id = none %}
                         {% for c in g.campanhas %}
-                          {# Separador de COMBO: mostra o título do combo 1x e lista itens abaixo #}
-                          {% if (c.tipo|upper) == "COMBO" and (c.combo_id is not none) and (c.combo_id != _last_combo_id) %}
-                            <tr>
-                              <td colspan="7" class="sv-nowrap" style="font-weight:900; color: var(--sv-accent, #ff9a00);">
-                                CAMPANHA COMBO • {{ c.titulo }}
-                              </td>
-                            </tr>
-                            {% set _last_combo_id = c.combo_id %}
-                          {% endif %}
-
                           {% set _tot_vendeu = _tot_vendeu + (c.vendeu_rs or 0) %}
                           {% set _tot_premio = _tot_premio + (c.valor or 0) %}
                           <tr>
-                            <td class="sv-nowrap">
-                              {% if (c.tipo|upper) == "COMBO" %}
-                                Item {{ c.item_codigo or "-" }}
-                              {% else %}
-                                {{ c.titulo }}
-                              {% endif %}
-                            </td>
+                            <td class="sv-nowrap">{{ c.titulo }}</td>
                             <td class="sv-center">{{ (c.qtd_minima or '-') }}</td>
                             <td class="sv-right">{{ (c.recompensa_unit or 0)|brl_rs }}</td>
                             <td class="sv-center">{{ (c.qtd_vendida or 0) }}</td>
@@ -366,7 +349,7 @@
                   </div>
 
                   <div class="sv-note">
-                    Obs.: “Valor (R$)” = Qtd vendida × Recompensa (apenas se atingiu). “Vendeu (R$)” = soma do valor total vendido dos itens da campanha na competência.
+                    Obs.: “Valor (R$)” = Qtd vendida × Recompensa (mostra a evolução; pagamento só após atingir). “Vendeu (R$)” = soma do valor total vendido dos itens da campanha na competência.
                   </div>
                 </div>
               </td>
