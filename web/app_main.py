@@ -20,7 +20,6 @@ import mimetypes
 import logging
 import json
 import math
-from typing import Any
 from datetime import date, datetime, timedelta
 import calendar
 from io import BytesIO
@@ -2496,12 +2495,6 @@ def itens_parados():
                 emp_scopes = [str(x[0]) for x in q.all() if x and x[0]]
 
     emp_scopes = sorted({e.strip() for e in (emp_scopes or []) if e and str(e).strip()})
-    # Se o usuário (vendedor/supervisor) tem múltiplas EMPs e não selecionou filtro,
-    # aplica um default para evitar “geral (todas as EMPs)” e manter visão individual.
-    if role in ("vendedor", "supervisor") and (not emp_scope) and len(emp_scopes) > 1:
-        emp_scope = _emp() or emp_scopes[0]
-        emp_scopes = [e for e in emp_scopes if str(e) == str(emp_scope)] or [emp_scope]
-
 
     if not emp_scopes:
         flash("Não foi possível identificar a EMP para este usuário.", "warning")
@@ -2725,6 +2718,11 @@ def itens_parados_pdf():
             .order_by(ItemParado.emp.asc(), ItemParado.codigo.asc())
             .all()
         )
+
+        # Se EMP = "Todas": restringe o escopo às EMPs que realmente têm itens ativos cadastrados
+        emps_com_itens = sorted({str(getattr(it, "emp", "")).strip() for it in itens_all if str(getattr(it, "emp", "")).strip()})
+        if not emp_scope:
+            emp_scopes = emps_com_itens
 
         # config (preferência: EMP única)
         cfg_emp_target = emp_scope if emp_scope else (emp_scopes[0] if len(emp_scopes) == 1 else None)
