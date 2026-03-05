@@ -20,6 +20,7 @@ import mimetypes
 import logging
 import json
 import math
+from typing import Any
 from datetime import date, datetime, timedelta
 import calendar
 from io import BytesIO
@@ -2500,13 +2501,29 @@ def itens_parados():
         flash("Não foi possível identificar a EMP para este usuário.", "warning")
         return redirect(url_for("dashboard"))
 
-    # Dropdown de EMPs para filtros
-    emps_disponiveis = emp_scopes[:] if role != "admin" else None
-    if role == "admin":
-        with SessionLocal() as db:
-            emps_disponiveis = sorted({str(x[0]) for x in db.query(ItemParado.emp).distinct().all() if x and x[0]})
+    # EMPs com itens parados ativos (e com período sobrepondo o filtro atual)
+    with SessionLocal() as db:
+        configured_emps = sorted({
+            str(x[0]).strip()
+            for x in db.query(ItemParado.emp)
+                .filter(ItemParado.ativo.is_(True))
+                .filter(or_(ItemParado.inicio.is_(None), ItemParado.inicio <= df))
+                .filter(or_(ItemParado.fim.is_(None), ItemParado.fim >= di))
+                .distinct()
+                .all()
+            if x and x[0]
+        })
 
-    # Dropdown de vendedores (somente admin/supervisor)
+    # Se o usuário escolheu uma EMP, ela precisa estar configurada; se não escolheu, limita ao conjunto configurado
+    if emp_scope:
+        emp_scopes = [emp_scope] if emp_scope in configured_emps else []
+    else:
+        emp_scopes = [e for e in emp_scopes if e in configured_emps]
+
+    # Dropdown de EMPs para filtros
+    emps_disponiveis = emp_scopes[:] if role != "admin" else configured_emps
+
+# Dropdown de vendedores (somente admin/supervisor)
     vendedores_lista = []
     if role in {"admin", "supervisor"}:
         emp_sup = _emp() if role == "supervisor" else None
@@ -2523,20 +2540,6 @@ def itens_parados():
             .order_by(ItemParado.emp.asc(), ItemParado.codigo.asc())
             .all()
         )
-        # Quando EMP = 'Todas', restrinja o cálculo somente às EMPs que possuem itens elegíveis
-        # dentro do período selecionado (evita pontuar a mesma peça em outras EMPs sem cadastro no período).
-        if not emp_scope:
-            emp_scopes_periodo = sorted({str(it.emp).strip() for it in itens_all if getattr(it, 'emp', None) not in (None, '')})
-            if emp_scopes_periodo:
-                emp_scopes = emp_scopes_periodo
-
-        # Quando EMP = 'Todas', restrinja o cálculo somente às EMPs que possuem itens elegíveis
-        # dentro do período selecionado (evita pontuar a mesma peça em outras EMPs sem cadastro no período).
-        if not emp_scope:
-            emp_scopes_periodo = sorted({str(it.emp).strip() for it in itens_all if getattr(it, 'emp', None) not in (None, '')})
-            if emp_scopes_periodo:
-                emp_scopes = emp_scopes_periodo
-
 
         # Config de pontos (preferência: EMP selecionada única; fallback: global)
         cfg_emp_target = emp_scope if emp_scope else (emp_scopes[0] if len(emp_scopes) == 1 else None)
