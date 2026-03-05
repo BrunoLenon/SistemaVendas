@@ -171,6 +171,7 @@
       <li><hr class="dropdown-divider"></li>
     {% endif %}
     <li><a class="dropdown-item" href="/itens_parados">🧊 Itens parados</a></li>
+    <li><a class="dropdown-item" href="/campanhas">🎯 Campanhas</a></li>
     <li><a class="dropdown-item" href="/relatorios/campanhas">📊 Relatório Campanhas</a></li>
     <li><a class="dropdown-item" href="/relatorios/cidades-clientes">🏙️ Cidades &amp; Clientes</a></li>
     <li><hr class="dropdown-divider"></li>
@@ -478,6 +479,7 @@
         <div class="sv-card-body">
           <div class="d-flex justify-content-between align-items-center">
             <h5 class="m-0">📊 Top 15 marcas — Valor + % do total (líquido)</h5>
+            <a href="/percentuais?mes={{ mes }}&ano={{ ano }}{% if vendedor_selecionado %}&vendedor={{ vendedor_selecionado }}{% endif %}" class="sv-btn sv-btn-xs sv-btn-ghost">Ver ranking completo</a>
           </div>
           <hr class="my-2">
 
@@ -511,6 +513,7 @@
       </div>
 
       <div class="mt-3 d-flex flex-wrap gap-2">
+        <a href="/percentuais?mes={{ mes }}&ano={{ ano }}{% if vendedor_selecionado %}&vendedor={{ vendedor_selecionado }}{% endif %}" class="sv-btn sv-btn-ghost">Ver ranking completo</a>
         <a href="/devolucoes?mes={{ mes }}&ano={{ ano }}{% if vendedor_selecionado %}&vendedor={{ vendedor_selecionado }}{% endif %}" class="sv-btn sv-btn-ghost">Ver devoluções (DS/CA)</a>
       </div>
 

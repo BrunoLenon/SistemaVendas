@@ -17,11 +17,7 @@
 </head>
 
 <body>
-  {% set r = role|default(none) %}
-  {% if not r %}
-    {% set r = session.get('perfil') or session.get('role') or session.get('usuario_perfil') or '' %}
-  {% endif %}
-  {% set r = r|lower %}
+  {% set r = (role|default('')|lower) %}
   {% set is_logged = (r in ['admin','supervisor','vendedor','financeiro']) %}
 
   {% if is_logged %}
@@ -32,17 +28,7 @@
         <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Fechar"></button>
       </div>
       <div class="offcanvas-body p-0">
-        
-{# --- Sidebar role normalization (fallback to session) --- #}
-{% set role_final = (role if role is defined and role else None) %}
-{% if not role_final %}
-  {% set role_final = session.get('perfil') or session.get('role') or session.get('usuario_perfil') or session.get('user_role') %}
-{% endif %}
-{% if role_final %}
-  {% set role_final = role_final|string|lower %}
-{% endif %}
-
-{% include "partials/sidebar.html" %}
+        {% include "partials/sidebar.html" %}
       </div>
     </div>
   {% endif %}

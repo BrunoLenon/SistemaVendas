@@ -1,16 +1,3 @@
-
-{# --- Sidebar: normalize role for permission checks --- #}
-{% set role_final = (role_final if role_final is defined and role_final else (role if role is defined and role else None)) %}
-{% if not role_final %}
-  {% set role_final = session.get('perfil') or session.get('role') or session.get('usuario_perfil') or session.get('user_role') %}
-{% endif %}
-{% if role_final %}
-  {% set role_final = role_final|string|lower %}
-{% endif %}
-{% set is_admin = role_final in ['admin', 'administrador'] %}
-{% set is_supervisor = role_final in ['supervisor', 'supervisao', 'supervisão'] %}
-{% set is_financeiro = role_final in ['financeiro', 'financas', 'finanças'] %}
-
 {% set r = (role|default('')|lower) %}
 {% set path = request.path %}
 {% set is_admin = (r == 'admin') %}
@@ -126,9 +113,11 @@
 
   <div class="sb-sec">
     <div class="lbl">Operação</div>
+    <a class="sb-link {% if path == '/campanhas' or path.startswith('/campanhas/qtd') %}active{% endif %}" href="{{ url_for('campanhas_qtd') }}">⭐ Campanhas (Qtd)</a>
 
     <a class="sb-link {% if path.startswith('/campanhas/ranking-marca') %}active{% endif %}" href="{{ url_for('campanhas_ranking_marca') }}">🏆 Ranking por Marca</a>
 
+    <a class="sb-link {% if path.startswith('/metas') %}active{% endif %}" href="{{ url_for('metas') }}">🎯 Metas</a>
     <a class="sb-link {% if path.startswith('/itens_parados') %}active{% endif %}" href="{{ url_for('itens_parados') }}">📦 Itens Parados</a>
     <a class="sb-link {% if path.startswith('/operacoes/vendas-produtos') %}active{% endif %}" href="{{ url_for('operacoes_vendas_produto') }}">🔎 Vendas (Produtos)</a>
 
@@ -162,7 +151,6 @@
 
     <a class="sb-link {% if path.startswith('/admin/campanhas') %}active{% endif %}" href="{{ url_for('admin_campanhas_qtd') }}">🧩 Campanhas (Admin)</a>
     <a class="sb-link {% if path.startswith('/admin/combos') %}active{% endif %}" href="{{ url_for('admin_combos') }}">🧾 Combos</a>
-    <a class="sb-link {% if path.startswith('/admin/itens_parados') %}active{% endif %}" href="{{ url_for('admin_itens_parados') }}">📦 Itens Parados (Pontos)</a>
     <a class="sb-link {% if path.startswith('/admin/configuracoes') %}active{% endif %}" href="{{ url_for('admin_configuracoes') }}">⚙️ Configurações</a>
   </div>
   {% endif %}
