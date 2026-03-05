@@ -3229,6 +3229,26 @@ def relatorio_campanhas_export_csv():
     )
 
 
+
+# Deps do relatório unificado de campanhas (usado em /relatorios/campanhas)
+_campanhas_deps = CampanhasDeps(
+    SessionLocal=SessionLocal,
+    parse_multi_args=_parse_multi_args_from,
+    get_emp_options=_get_emp_options,
+    get_vendedores_db=_get_vendedores_db,
+    get_emps_vendedor=_get_emps_vendedor,
+    get_all_emp_codigos=_get_all_emp_codigos,
+    periodo_bounds=_periodo_bounds,
+    resolver_emp_scope_para_usuario=_resolver_emp_scope_para_usuario,
+    campanhas_mes_overlap=_campanhas_mes_overlap,
+    upsert_resultado=_upsert_resultado,
+    calc_resultado_all_vendedores=_calc_resultado_all_vendedores,
+    get_emps_com_vendas_no_periodo=lambda ano, mes: _get_emps_com_vendas_no_periodo(ano, mes),
+    get_vendedores_emp_no_periodo=lambda emp, ano, mes: _get_vendedores_emp_no_periodo(emp, ano, mes),
+    recalcular_resultados_campanhas_para_scope=lambda **kwargs: _recalcular_resultados_campanhas_para_scope(**kwargs),
+    recalcular_resultados_combos_para_scope=lambda **kwargs: _recalcular_resultados_combos_para_scope(**kwargs),
+)
+
 @app.get("/relatorios/cidades-clientes")
 def relatorio_cidades_clientes():
     """Relatórios por EMP (Cidades e Clientes) — mês/ano.
@@ -6851,104 +6871,6 @@ def operacoes_vendas_produto():
                 m = 1
                 y += 1
         return out
-
-
-# ---------------------------------------------------------------------------
-# Dependências do /relatorios/campanhas
-#
-# Em algumas refatorações, o relatório foi migrado para um service que espera
-# um objeto CampanhasDeps. Se o objeto não existir, a rota quebra com NameError.
-# Aqui garantimos a criação desse deps de forma compatível e sem importar app.py.
-# ---------------------------------------------------------------------------
-
-def _resolver_emp_scope_para_usuario(username: str, role: str, emp_usuario: str | None) -> list[str]:
-    """Resolve EMPs permitidas para o usuário (compat: sessão + fallback)."""
-    role_l = (role or "").strip().lower()
-    username = (username or "").strip().upper()
-
-    if role_l == "supervisor":
-        emps = [str(e) for e in (get_session_emps() or []) if str(e).strip()]
-        if emps:
-            return emps
-        return [str(emp_usuario).strip()] if emp_usuario and str(emp_usuario).strip() else []
-
-    if role_l == "vendedor":
-        emps = [str(e) for e in (_get_emps_vendedor(username) or []) if str(e).strip()]
-        if emps:
-            return emps
-        return [str(emp_usuario).strip()] if emp_usuario and str(emp_usuario).strip() else []
-
-    return [str(emp_usuario).strip()] if emp_usuario and str(emp_usuario).strip() else []
-
-
-def _get_emps_com_vendas_no_periodo(ano: int, mes: int) -> list[str]:
-    """Lista EMPs que possuem vendas no período (para dropdown do admin)."""
-    inicio, fim = _periodo_bounds(int(ano), int(mes))
-    with SessionLocal() as db:
-        rows = (
-            db.query(Venda.emp)
-            .filter(Venda.movimento >= inicio)
-            .filter(Venda.movimento <= fim)
-            .filter(~Venda.mov_tipo_movto.in_(["DS", "CA"]))
-            .filter(Venda.emp.isnot(None))
-            .all()
-        )
-    return sorted({str(r[0]).strip() for r in rows if r and r[0] is not None and str(r[0]).strip()})
-
-
-def _get_vendedores_emp_no_periodo(emp: str, ano: int, mes: int) -> list[str]:
-    """Lista vendedores (upper) que tiveram vendas na EMP no período."""
-    emp = str(emp).strip()
-    if not emp:
-        return []
-    inicio, fim = _periodo_bounds(int(ano), int(mes))
-    with SessionLocal() as db:
-        rows = (
-            db.query(Venda.vendedor)
-            .filter(Venda.emp == emp)
-            .filter(Venda.movimento >= inicio)
-            .filter(Venda.movimento <= fim)
-            .filter(~Venda.mov_tipo_movto.in_(["DS", "CA"]))
-            .filter(Venda.vendedor.isnot(None))
-            .all()
-        )
-    return sorted({str(r[0]).strip().upper() for r in rows if r and r[0] is not None and str(r[0]).strip()})
-
-
-def _campanhas_mes_overlap(ano: int, mes: int, emp: str | None) -> list[CampanhaQtd]:
-    """Campanhas QTD ativas que intersectam o mês (e opcionalmente a EMP)."""
-    inicio_mes, fim_mes = _periodo_bounds(int(ano), int(mes))
-    with SessionLocal() as db:
-        q = db.query(CampanhaQtd).filter(CampanhaQtd.ativo == 1)
-        if emp:
-            emp_str = str(emp)
-            q = q.filter(or_(CampanhaQtd.emp == emp_str, CampanhaQtd.emp.in_(["ALL", "*", ""])))
-        q = q.filter(and_(CampanhaQtd.data_inicio <= fim_mes, CampanhaQtd.data_fim >= inicio_mes))
-        return q.order_by(CampanhaQtd.emp.asc(), CampanhaQtd.data_inicio.asc()).all()
-
-
-def _noop_recalc(*args, **kwargs):
-    """No-op para compatibilidade (evita quebrar relatório quando recalculo não é necessário)."""
-    return None
-
-
-_campanhas_deps = CampanhasDeps(
-    SessionLocal=SessionLocal,
-    parse_multi_args=lambda args, name: _parse_multi_args_from(args, name),
-    get_emp_options=_get_emp_options,
-    get_vendedores_db=_get_vendedores_db,
-    get_emps_vendedor=_get_emps_vendedor,
-    get_all_emp_codigos=_get_all_emp_codigos,
-    periodo_bounds=_periodo_bounds,
-    resolver_emp_scope_para_usuario=_resolver_emp_scope_para_usuario,
-    campanhas_mes_overlap=_campanhas_mes_overlap,
-    upsert_resultado=lambda *a, **k: None,
-    calc_resultado_all_vendedores=lambda *a, **k: None,
-    get_emps_com_vendas_no_periodo=_get_emps_com_vendas_no_periodo,
-    get_vendedores_emp_no_periodo=_get_vendedores_emp_no_periodo,
-    recalcular_resultados_campanhas_para_scope=_noop_recalc,
-    recalcular_resultados_combos_para_scope=_noop_recalc,
-)
 
     def _last_day(y: int, m: int):
         if m == 12:
