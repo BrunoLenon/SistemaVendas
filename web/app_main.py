@@ -2496,6 +2496,12 @@ def itens_parados():
                 emp_scopes = [str(x[0]) for x in q.all() if x and x[0]]
 
     emp_scopes = sorted({e.strip() for e in (emp_scopes or []) if e and str(e).strip()})
+    # Se o usuário (vendedor/supervisor) tem múltiplas EMPs e não selecionou filtro,
+    # aplica um default para evitar “geral (todas as EMPs)” e manter visão individual.
+    if role in ("vendedor", "supervisor") and (not emp_scope) and len(emp_scopes) > 1:
+        emp_scope = _emp() or emp_scopes[0]
+        emp_scopes = [e for e in emp_scopes if str(e) == str(emp_scope)] or [emp_scope]
+
 
     if not emp_scopes:
         flash("Não foi possível identificar a EMP para este usuário.", "warning")
