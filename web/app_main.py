@@ -2523,6 +2523,20 @@ def itens_parados():
             .order_by(ItemParado.emp.asc(), ItemParado.codigo.asc())
             .all()
         )
+        # Quando EMP = 'Todas', restrinja o cálculo somente às EMPs que possuem itens elegíveis
+        # dentro do período selecionado (evita pontuar a mesma peça em outras EMPs sem cadastro no período).
+        if not emp_scope:
+            emp_scopes_periodo = sorted({str(it.emp).strip() for it in itens_all if getattr(it, 'emp', None) not in (None, '')})
+            if emp_scopes_periodo:
+                emp_scopes = emp_scopes_periodo
+
+        # Quando EMP = 'Todas', restrinja o cálculo somente às EMPs que possuem itens elegíveis
+        # dentro do período selecionado (evita pontuar a mesma peça em outras EMPs sem cadastro no período).
+        if not emp_scope:
+            emp_scopes_periodo = sorted({str(it.emp).strip() for it in itens_all if getattr(it, 'emp', None) not in (None, '')})
+            if emp_scopes_periodo:
+                emp_scopes = emp_scopes_periodo
+
 
         # Config de pontos (preferência: EMP selecionada única; fallback: global)
         cfg_emp_target = emp_scope if emp_scope else (emp_scopes[0] if len(emp_scopes) == 1 else None)
@@ -2718,11 +2732,6 @@ def itens_parados_pdf():
             .order_by(ItemParado.emp.asc(), ItemParado.codigo.asc())
             .all()
         )
-
-        # Se EMP = "Todas": restringe o escopo às EMPs que realmente têm itens ativos cadastrados
-        emps_com_itens = sorted({str(getattr(it, "emp", "")).strip() for it in itens_all if str(getattr(it, "emp", "")).strip()})
-        if not emp_scope:
-            emp_scopes = emps_com_itens
 
         # config (preferência: EMP única)
         cfg_emp_target = emp_scope if emp_scope else (emp_scopes[0] if len(emp_scopes) == 1 else None)
