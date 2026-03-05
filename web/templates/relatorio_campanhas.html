@@ -42,6 +42,11 @@
 .js-toggle-camps .sv-chev{ display:inline-block; margin-left:6px; transition: transform .15s ease; }
 .js-toggle-camps.is-open .sv-chev{ transform: rotate(180deg); }
 
+
+/* Combo "card" (linha clicável) */
+.sv-combo-toggle{background:none;border:0;color:inherit;padding:0;font:inherit;cursor:pointer;display:inline-flex;align-items:center;gap:.35rem;}
+.sv-combo-head td{font-weight:600;}
+.sv-combo-item td:first-child{padding-left:1.25rem;}
 </style>
 {% endblock %}
 {% block content %}
@@ -311,23 +316,72 @@
                       {% set _tot_premio = 0 %}
                       {% if g.campanhas and g.campanhas|length > 0 %}
                         {% for c in g.campanhas %}
-                          {% set _tot_vendeu = _tot_vendeu + (c.vendeu_rs or 0) %}
-                          {% set _tot_premio = _tot_premio + (c.valor or 0) %}
-                          <tr>
-                            <td class="sv-nowrap">{{ c.titulo }}</td>
-                            <td class="sv-center">{{ (c.qtd_minima or '-') }}</td>
-                            <td class="sv-right">{{ (c.recompensa_unit or 0)|brl_rs }}</td>
-                            <td class="sv-center">{{ (c.qtd_vendida or 0) }}</td>
-                            <td class="sv-right">{{ (c.vendeu_rs or 0)|brl_rs }}</td>
-                            <td class="sv-right">{{ (c.valor or 0)|brl_rs }}</td>
-                            <td class="sv-center">
-                              {% if c.atingiu %}
-                                <span class="sv-pill sv-pill--ok">ATINGIU</span>
-                              {% else %}
-                                <span class="sv-pill sv-pill--warn">NÃO ATINGIU</span>
-                              {% endif %}
-                            </td>
-                          </tr>
+                          {% if (c.tipo or '') == 'COMBO_CARD' %}
+                            {% set combo_dom_id = 'sv-combo-' ~ loop.index0 ~ '-' ~ (c.origem_id or 0) %}
+                            {% set _tot_vendeu = _tot_vendeu + (c.vendeu_rs or 0) %}
+                            {% set _tot_premio = _tot_premio + (c.valor or 0) %}
+                            <tr class="sv-combo-head">
+                              <td class="sv-nowrap">
+                                <button type="button"
+                                        class="sv-combo-toggle js-toggle-combo"
+                                        data-target="{{ combo_dom_id }}"
+                                        aria-expanded="false">
+                                  {{ c.titulo }}
+                                  <span class="sv-muted"> • ver itens</span>
+                                  <span class="sv-chev" aria-hidden="true">▾</span>
+                                </button>
+                              </td>
+                              <td class="sv-center">-</td>
+                              <td class="sv-right">-</td>
+                              <td class="sv-center">-</td>
+                              <td class="sv-right">{{ (c.vendeu_rs or 0)|brl_rs }}</td>
+                              <td class="sv-right">{{ (c.valor or 0)|brl_rs }}</td>
+                              <td class="sv-center">
+                                {% if c.atingiu %}
+                                  <span class="sv-pill sv-pill--ok">ATINGIU</span>
+                                {% else %}
+                                  <span class="sv-pill sv-pill--warn">NÃO ATINGIU</span>
+                                {% endif %}
+                              </td>
+                            </tr>
+                            {% if c.itens and c.itens|length > 0 %}
+                              {% for it in c.itens %}
+                                <tr class="sv-combo-item {{ combo_dom_id }}" style="display:none;">
+                                  <td class="sv-nowrap">{{ it.titulo }}</td>
+                                  <td class="sv-center">{{ (it.qtd_minima or '-') }}</td>
+                                  <td class="sv-right">{{ (it.recompensa_unit or 0)|brl_rs }}</td>
+                                  <td class="sv-center">{{ (it.qtd_vendida or 0) }}</td>
+                                  <td class="sv-right">{{ (it.vendeu_rs or 0)|brl_rs }}</td>
+                                  <td class="sv-right">{{ (it.valor or 0)|brl_rs }}</td>
+                                  <td class="sv-center">
+                                    {% if it.atingiu %}
+                                      <span class="sv-pill sv-pill--ok">ATINGIU</span>
+                                    {% else %}
+                                      <span class="sv-pill sv-pill--warn">NÃO ATINGIU</span>
+                                    {% endif %}
+                                  </td>
+                                </tr>
+                              {% endfor %}
+                            {% endif %}
+                          {% else %}
+                            {% set _tot_vendeu = _tot_vendeu + (c.vendeu_rs or 0) %}
+                            {% set _tot_premio = _tot_premio + (c.valor or 0) %}
+                            <tr>
+                              <td class="sv-nowrap">{{ c.titulo }}</td>
+                              <td class="sv-center">{{ (c.qtd_minima or '-') }}</td>
+                              <td class="sv-right">{{ (c.recompensa_unit or 0)|brl_rs }}</td>
+                              <td class="sv-center">{{ (c.qtd_vendida or 0) }}</td>
+                              <td class="sv-right">{{ (c.vendeu_rs or 0)|brl_rs }}</td>
+                              <td class="sv-right">{{ (c.valor or 0)|brl_rs }}</td>
+                              <td class="sv-center">
+                                {% if c.atingiu %}
+                                  <span class="sv-pill sv-pill--ok">ATINGIU</span>
+                                {% else %}
+                                  <span class="sv-pill sv-pill--warn">NÃO ATINGIU</span>
+                                {% endif %}
+                              </td>
+                            </tr>
+                          {% endif %}
                         {% endfor %}
                       {% else %}
                         <tr>
@@ -349,7 +403,7 @@
                   </div>
 
                   <div class="sv-note">
-                    Obs.: “Valor (R$)” = Qtd vendida × Recompensa (mostra a evolução; pagamento só após atingir). “Vendeu (R$)” = soma do valor total vendido dos itens da campanha na competência.
+                    Obs.: “Valor (R$)” = Qtd vendida × Recompensa (apenas se atingiu). “Vendeu (R$)” = soma do valor total vendido dos itens da campanha na competência.
                   </div>
                 </div>
               </td>
@@ -426,6 +480,29 @@
     });
   })();
 
+
+
+  // Toggle de itens de COMBO (expande/colapsa linhas filhas)
+  (function(){
+    document.addEventListener('click', function(ev){
+      var btn = ev.target.closest('.js-toggle-combo');
+      if(!btn) return;
+
+      var target = btn.getAttribute('data-target');
+      if(!target) return;
+
+      var rows = document.querySelectorAll('tr.' + target);
+      if(!rows || rows.length === 0) return;
+
+      var anyHidden = false;
+      rows.forEach(function(r){ if(r.style.display === 'none' || r.style.display === '') anyHidden = true; });
+
+      rows.forEach(function(r){ r.style.display = anyHidden ? 'table-row' : 'none'; });
+
+      btn.setAttribute('aria-expanded', anyHidden ? 'true' : 'false');
+      btn.classList.toggle('is-open', anyHidden);
+    });
+  })();
 </script>
 
 {% endblock %}
