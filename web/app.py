@@ -3736,73 +3736,80 @@ def relatorio_campanhas():
             g["status_counts"]["OUTROS"] += 1
 
         g["campanhas"].append({
-            "tipo": getattr(r, "tipo", None),
-            "origem_id": getattr(r, "origem_id", None),
-            "is_combo_header": (str(getattr(r, "tipo", "") or "").upper() == "COMBO" and getattr(r, "item_codigo", None) is None),
             "titulo": titulo,
             "item_codigo": getattr(r, "item_codigo", None),
             "qtd_minima": getattr(r, "qtd_minima", None),
             "recompensa_unit": getattr(r, "recompensa_unit", None),
             "qtd_vendida": float(getattr(r, "qtd_base", 0) or 0),
             "vendeu_rs": float(getattr(r, "valor_vendido", 0) or 0),
-            "valor": valor,  # premiação (R$) - evolução/potencial
+            "valor": valor,  # premiação (R$)
             "status": st,
             "atingiu": bool(getattr(r, "atingiu", False)),
-        })# Status agregado por vendedor:
+            "tipo": str(getattr(r, "tipo", "") or "").strip().upper(),
+            "origem_id": int(getattr(r, "origem_id", 0) or 0),
+        })
+
+    # Status agregado por vendedor:
     # - Se tiver qualquer PENDENTE => PENDENTE
     # - Senão se tiver A_PAGAR => A_PAGAR
     # - Senão se só PAGO => PAGO
     def _agg_status(counts):
-        if for g in rows_grouped:
-        # Reorganiza COMBO para aparecer como "card" clicável (1 linha) com itens internos.
-        combo_tmp = {}  # combo_id -> {"header": dict|None, "items": [dict]}
-        outros = []
+        if counts.get("PENDENTE"):
+            return "PENDENTE"
+        if counts.get("A_PAGAR"):
+            return "A_PAGAR"
+        if counts.get("PAGO"):
+            return "PAGO"
+        return "OUTROS"
 
-        for c in (g.get("campanhas") or []):
-            if str(c.get("tipo") or "").upper() == "COMBO":
-                cid = c.get("origem_id") or 0
-                ent = combo_tmp.get(cid)
-                if not ent:
-                    ent = {"header": None, "items": []}
-                    combo_tmp[cid] = ent
-                if c.get("is_combo_header"):
-                    ent["header"] = c
-                else:
-                    ent["items"].append(c)
-            else:
-                outros.append(c)
+    rows_grouped = list(groups_map.values())
 
-        combo_cards = []
-        for cid, ent in combo_tmp.items():
-            header = ent.get("header") or {}
-            itens = ent.get("items") or []
-            # Totais do combo (para exibir na linha do card e somar nos totalizadores)
-            tot_vendeu = sum(float(i.get("vendeu_rs") or 0) for i in itens)
-            tot_valor = sum(float(i.get("valor") or 0) for i in itens)
-            combo_cards.append({
-                "tipo": "COMBO_CARD",
-                "origem_id": cid,
-                "titulo": header.get("titulo") or f"COMBO {g.get('emp','')}".strip(),
-                "status": header.get("status") or "PENDENTE",
-                "atingiu": bool(header.get("atingiu") or False),
-                "itens": sorted(itens, key=lambda x: str(x.get("titulo",""))),
-                "vendeu_rs": tot_vendeu,
-                "valor": tot_valor,
-            })
+    # Reorganiza linhas de COMBO no detalhado:
+    # - Se existirem itens (título começando com "↳"), transforma em um "card" COMBO_CARD clicável com itens internos
+    # - Remove as linhas soltas de itens para não poluir a tabela
+    for g in rows_grouped:
+        camps = g.get("campanhas") or []
+        combo_items = [c for c in camps if str(c.get("titulo") or "").lstrip().startswith("↳")]
+        combo_headers = [c for c in camps if str(c.get("titulo") or "").strip().upper().startswith("COMBO")]
 
-        # Ordenação: campanhas normais por status e valor (maior primeiro)
-        outros.sort(key=lambda c: ({"PENDENTE": 0, "A_PAGAR": 1, "PAGO": 2}.get(c.get("status"), 9), -float(c.get("valor") or 0)))
+        # Remove headers/itens do fluxo normal (vamos recriar como COMBO_CARD)
+        resto = [c for c in camps if (c not in combo_items and c not in combo_headers)]
 
-        # Combos: mantemos ordenação semelhante (status e valor total)
-        combo_cards.sort(key=lambda c: ({"PENDENTE": 0, "A_PAGAR": 1, "PAGO": 2}.get(c.get("status"), 9), -float(c.get("valor") or 0)))
+        if combo_items or combo_headers:
+            header = combo_headers[0] if combo_headers else {
+                "titulo": "COMBO",
+                "item_codigo": None,
+                "qtd_minima": None,
+                "recompensa_unit": None,
+                "qtd_vendida": 0.0,
+                "vendeu_rs": 0.0,
+                "valor": 0.0,
+                "status": "PENDENTE",
+                "atingiu": False,
+                "tipo": "COMBO",
+                "origem_id": 0,
+            }
 
-        # Lista final usada pelo template
-        g["campanhas"] = outros + combo_cards
+            # Totais do combo (acompanhamento)
+            combo_vendeu = sum(float(i.get("vendeu_rs") or 0) for i in combo_items)
+            combo_valor = sum(float(i.get("valor") or 0) for i in combo_items)
 
-        g["status"] = _agg_status(g["status_counts"])
-        # Contagem de "campanhas" na linha (combo conta como 1)
-        g["campanhas_count"] = len(g["campanhas"])
-e depois por valor desc
+            # Atingiu = todos itens atingiram (quando temos itens); fallback para header
+            combo_atingiu = (all(bool(i.get("atingiu")) for i in combo_items) if combo_items else bool(header.get("atingiu")))
+
+            combo_card = dict(header)
+            combo_card["tipo"] = "COMBO_CARD"
+            combo_card["itens"] = combo_items
+            combo_card["vendeu_rs"] = combo_vendeu
+            combo_card["valor"] = combo_valor
+            combo_card["atingiu"] = combo_atingiu
+
+            # Re-monta lista (campanhas normais + card do combo)
+            g["campanhas"] = resto + [combo_card]
+
+        # ordena campanhas por status (pendente primeiro) e depois por valor desc
+
+        # ordena campanhas por status (pendente primeiro) e depois por valor desc
         g["campanhas"].sort(key=lambda c: ({"PENDENTE": 0, "A_PAGAR": 1, "PAGO": 2}.get(c["status"], 9), -c["valor"]))
         g["status"] = _agg_status(g["status_counts"])
         g["campanhas_count"] = len(g["campanhas"])
