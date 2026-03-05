@@ -24,6 +24,8 @@ from db import (
     Venda,
     CampanhaQtdResultado,
     CampanhaComboResultado,
+    CampanhaCombo,
+    CampanhaComboItem,
     ItemParado,
 )
 
@@ -202,7 +204,9 @@ def build_unified_rows(
                     )
                 )
 
-            # -------- COMBO (snapshot) --------
+           # -------- COMBO (snapshot) --------
+            # Importante: para COMBO, queremos exibir também "parciais" (não atingiu),
+            # então NÃO filtramos por valor_recompensa > 0.
             q_combo = (
                 db.query(CampanhaComboResultado)
                 .filter(
@@ -212,27 +216,174 @@ def build_unified_rows(
                     CampanhaComboResultado.vendedor.in_(vendedores),
                 )
             )
-            if not incluir_zerados:
-                q_combo = q_combo.filter(CampanhaComboResultado.valor_recompensa > 0)
 
-            for r in q_combo.all():
-                rows.append(
-                    UnifiedRow(
-                        tipo="COMBO",
-                        competencia_ano=int(getattr(r, "competencia_ano", ano)),
-                        competencia_mes=int(getattr(r, "competencia_mes", mes)),
-                        emp=str(getattr(r, "emp", emp)),
-                        vendedor=str(getattr(r, "vendedor", "")).strip().upper(),
-                        titulo=str(getattr(r, "titulo", "") or "").strip() or f"Combo #{getattr(r,'combo_id','')}",
-                        atingiu_gate=bool(int(getattr(r, "atingiu_gate", 0) or 0)),
-                        qtd_base=None,
-                        qtd_premiada=None,
-                        valor_recompensa=_safe_float(getattr(r, "valor_recompensa", 0.0)),
-                        status_pagamento=str(getattr(r, "status_pagamento", "PENDENTE") or "PENDENTE"),
-                        pago_em=getattr(r, "pago_em", None),
-                        origem_id=int(getattr(r, "combo_id", 0) or 0),
+            # Carrega definições/itens dos combos encontrados (1 batch)
+            combo_rows = q_combo.all()
+            combo_ids = sorted({int(getattr(r, "combo_id", 0) or 0) for r in combo_rows if int(getattr(r, "combo_id", 0) or 0) > 0})
+
+            combos_def_map: dict[int, Any] = {}
+            combos_itens_map: dict[int, list[Any]] = {}
+            if combo_ids:
+                try:
+                    defs = (
+                        db.query(CampanhaCombo)
+                        .filter(CampanhaCombo.id.in_(combo_ids))
+                        .all()
                     )
-                )
+                    combos_def_map = {int(getattr(c, "id", 0) or 0): c for c in defs}
+                except Exception:
+                    combos_def_map = {}
+
+                try:
+                    itens_all = (
+                        db.query(CampanhaComboItem)
+                        .filter(CampanhaComboItem.combo_id.in_(combo_ids))
+                        .order_by(CampanhaComboItem.combo_id.asc(), CampanhaComboItem.ordem.asc(), CampanhaComboItem.id.asc())
+                        .all()
+                    )
+                    for it in itens_all:
+                        combos_itens_map.setdefault(int(getattr(it, "combo_id", 0) or 0), []).append(it)
+                except Exception:
+                    combos_itens_map = {}
+
+            def _combo_item_filters(item: Any, marca: str, vend: str) -> list[Any]:
+                conds: list[Any] = [
+                    Venda.emp == str(emp),
+                    Venda.vendedor == vend,
+                    Venda.data >= periodo_ini,
+                    Venda.data <= periodo_fim,
+                    ~Venda.mov_tipo_movto.in_(["DS", "CA"]),
+                ]
+
+                marca_up = (marca or "").strip().upper()
+                if marca_up:
+                    conds.append(Venda.marca.ilike(marca_up))
+
+                mp = (getattr(item, "mestre_prefixo", None) or "").strip()
+                dc = (getattr(item, "descricao_contains", None) or "").strip()
+
+                if not mp and not dc:
+                    mm = (getattr(item, "match_mestre", None) or "").strip()
+                    if mm:
+                        if " " not in mm and len(mm) <= 40:
+                            mp = mm
+                        else:
+                            dc = mm
+
+                if mp:
+                    conds.append(Venda.mestre.ilike(f"{mp}%"))
+                if dc:
+                    conds.append(or_(Venda.descricao_norm.ilike(f"%{dc}%"), Venda.descricao.ilike(f"%{dc}%")))
+
+                return conds
+
+            for r in combo_rows:
+                combo_id = int(getattr(r, "combo_id", 0) or 0)
+                if combo_id <= 0:
+                    continue
+
+                vendedor = str(getattr(r, "vendedor", "") or "").strip().upper()
+                if not vendedor:
+                    continue
+
+                titulo_combo = str(getattr(r, "titulo", "") or "").strip() or f"Combo #{combo_id}"
+                st_pag = str(getattr(r, "status_pagamento", "PENDENTE") or "PENDENTE")
+                pago_em = getattr(r, "pago_em", None)
+
+                cdef = combos_def_map.get(combo_id)
+                marca = (getattr(cdef, "marca", "") or "").strip() if cdef is not None else ""
+                valor_unit_global = _safe_float(getattr(cdef, "valor_unitario_global", 0.0)) if cdef is not None else 0.0
+
+                itens = combos_itens_map.get(combo_id) or []
+                if not itens:
+                    # Sem itens cadastrados -> mantém uma linha "resumo" (compatibilidade)
+                    atingiu_gate = bool(int(getattr(r, "atingiu_gate", 0) or 0))
+                    val = _safe_float(getattr(r, "valor_recompensa", 0.0)) if atingiu_gate else 0.0
+                    if incluir_zerados or val > 0:
+                        rows.append(
+                            UnifiedRow(
+                                tipo="COMBO",
+                                competencia_ano=int(getattr(r, "competencia_ano", ano)),
+                                competencia_mes=int(getattr(r, "competencia_mes", mes)),
+                                emp=str(getattr(r, "emp", emp)),
+                                vendedor=vendedor,
+                                titulo=titulo_combo,
+                                atingiu_gate=atingiu_gate,
+                                qtd_base=0.0,
+                                qtd_premiada=None,
+                                valor_recompensa=val,
+                                status_pagamento=st_pag,
+                                pago_em=pago_em,
+                                origem_id=combo_id,
+                            )
+                        )
+                    continue
+
+                # Calcula "gate" ao vivo: precisa bater todos os mínimos
+                itens_calc: list[tuple[Any, float, float, float, int]] = []  # (item, qtd, vendeu_rs, recompensa_unit, minimo)
+                atingiu_gate = True
+                for it in itens:
+                    minimo = int(getattr(it, "minimo_qtd", 0) or 0)
+                    recompensa_unit = _safe_float(getattr(it, "valor_unitario", 0.0)) or valor_unit_global
+
+                    conds = _combo_item_filters(it, marca, vendedor)
+                    try:
+                        res = (
+                            db.query(
+                                func.coalesce(func.sum(Venda.qtdade_vendida), 0),
+                                func.coalesce(func.sum(Venda.valor_total), 0),
+                            )
+                            .filter(*conds)
+                            .first()
+                        )
+                        qtd = float((res[0] if res else 0) or 0)
+                        vendeu_rs = float((res[1] if res else 0) or 0)
+                    except Exception:
+                        qtd = 0.0
+                        vendeu_rs = 0.0
+
+                    if minimo > 0 and qtd < float(minimo):
+                        atingiu_gate = False
+
+                    itens_calc.append((it, qtd, vendeu_rs, recompensa_unit, minimo))
+
+                # Gera 1 linha por item (para exibição no relatório detalhado)
+                for it, qtd, vendeu_rs, recompensa_unit, minimo in itens_calc:
+                    # Identificação do item no relatório: prioriza mestre_prefixo (código), senão match_mestre
+                    item_codigo = (getattr(it, "mestre_prefixo", None) or "").strip()
+                    if not item_codigo:
+                        mm = (getattr(it, "match_mestre", None) or "").strip()
+                        item_codigo = mm if mm else (getattr(it, "nome_item", None) or "Item")
+
+                    # Premiação só "liga" quando atingiu o combo
+                    valor_recompensa = float(qtd * recompensa_unit) if (atingiu_gate and recompensa_unit > 0) else 0.0
+
+                    # Se incluir_zerados=False, mantemos linhas com venda (parcial) ou com premiação
+                    if (not incluir_zerados) and (vendeu_rs <= 0 and valor_recompensa <= 0 and qtd <= 0):
+                        continue
+
+                    rows.append(
+                        UnifiedRow(
+                            tipo="COMBO",
+                            competencia_ano=int(getattr(r, "competencia_ano", ano)),
+                            competencia_mes=int(getattr(r, "competencia_mes", mes)),
+                            emp=str(getattr(r, "emp", emp)),
+                            vendedor=vendedor,
+                            titulo=titulo_combo,
+                            item_codigo=str(item_codigo),
+                            qtd_minima=float(minimo) if minimo else 0.0,
+                            recompensa_unit=float(recompensa_unit or 0.0),
+                            valor_vendido=float(vendeu_rs or 0.0),
+                            atingiu_gate=bool(atingiu_gate),
+                            qtd_base=float(qtd or 0.0),
+                            qtd_premiada=float(qtd or 0.0) if atingiu_gate else 0.0,
+                            valor_recompensa=float(valor_recompensa or 0.0),
+                            status_pagamento=st_pag,
+                            pago_em=pago_em,
+                            origem_id=combo_id,
+                        )
+                    )
+
 
             # -------- ITENS PARADOS --------
             # Preferência: snapshot novo

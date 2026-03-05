@@ -3737,6 +3737,8 @@ def relatorio_campanhas():
 
         g["campanhas"].append({
             "titulo": titulo,
+            "tipo": getattr(r, "tipo", None) or "",
+            "combo_id": getattr(r, "origem_id", None),
             "item_codigo": getattr(r, "item_codigo", None),
             "qtd_minima": getattr(r, "qtd_minima", None),
             "recompensa_unit": getattr(r, "recompensa_unit", None),
