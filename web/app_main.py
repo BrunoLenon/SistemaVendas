@@ -2416,249 +2416,208 @@ def devolucoes():
 
 @app.get("/itens_parados")
 def itens_parados():
-    """Painel operacional de Itens Parados (Pontos).
+    """Visão operacional - Itens Parados (Pontos)
 
-    - Admin: pode ver todas EMPs (ou filtrar por uma) e opcionalmente filtrar por vendedor.
-    - Supervisor: vê apenas EMPs vinculadas (usuario_emps) e pode filtrar por vendedor.
-    - Vendedor: vê apenas seus próprios resultados (e EMPs vinculadas; fallback = EMPs derivadas das vendas).
-
-    Regra base (por EMP ou global):
-      pontos = (valor_vendido / base_reais) * multiplicador_pontos
-      valor  = pontos * valor_por_ponto
-
-    Obs: pontos podem ser fracionados (mais justo). Arredondamento só na apresentação.
+    Regras:
+      - Pontos = floor( valor_vendido_ajustado / base_reais )
+      - valor_vendido_ajustado = SUM(v.valor_total * item.multiplicador_pontos) apenas para itens ativos e válidos no período
+      - Bônus base = pontos * valor_por_ponto
+      - Bônus extra = maior faixa (ativa) cujo minimo_pontos foi atingido (por EMP; cai para global se não houver por EMP)
     """
-    red = _login_required()
-    if red:
-        return red
+    db = get_db()
 
-    role = (_role() or "").lower()
-
-    # --------- Filtros de período (di/df) ----------
-    # Se não vier data, usa o mês/ano padrão do sistema.
-    mes, ano = _mes_ano_from_request()
-    di_raw = (request.args.get("di") or "").strip()
-    df_raw = (request.args.get("df") or "").strip()
-
-    if di_raw and df_raw:
-        try:
-            di = date.fromisoformat(di_raw)
-            df = date.fromisoformat(df_raw)
-        except Exception:
-            di = None
-            df = None
-    else:
-        di = None
-        df = None
-
-    if not di or not df:
-        start, end = _periodo_bounds(ano, mes)  # [start, end)
-        di = start
-        df = (end - timedelta(days=1))
-        di_raw = di.isoformat()
-        df_raw = df.isoformat()
-
+    # filtros
+    emp_param = (request.args.get("emp") or "").strip() or None
+    vendedor = (request.args.get("vendedor") or "").strip() or None
+    di = _parse_iso_date(request.args.get("di")) or (date.today() - timedelta(days=6))
+    df = _parse_iso_date(request.args.get("df")) or date.today()
     if df < di:
         di, df = df, di
 
-    # --------- Filtros de escopo (EMP / vendedor) ----------
-    emp_scope = (request.args.get("emp") or "").strip()
-    vendedor_req = (request.args.get("vendedor") or "").strip().upper()
+    # escopo de EMP do usuário (normalizado para string)
+    user_emp_scopes = _resolver_emp_scope_para_usuario(current_user, db)
+    user_emp_scopes = [str(e).strip() for e in (user_emp_scopes or []) if str(e).strip()]
 
-    # Vendedor alvo: vendedor enxerga apenas ele; admin/supervisor podem filtrar ou ver agregado.
-    if role == "vendedor":
-        vendedor_alvo = (_usuario_logado() or "").strip().upper()
-        vendedor_req = vendedor_alvo
-    else:
-        vendedor_alvo = vendedor_req or None
+    # EMPs que possuem pelo menos 1 item ativo e válido no período (dentro do escopo do usuário)
+    q_emp_cfg = (
+        db.query(ItemParado.emp)
+        .filter(ItemParado.ativo.is_(True))
+        .filter(ItemParado.emp.in_(user_emp_scopes) if user_emp_scopes else True)
+        .filter(or_(ItemParado.data_inicio.is_(None), ItemParado.data_inicio <= df))
+        .filter(or_(ItemParado.data_fim.is_(None), ItemParado.data_fim >= di))
+        .distinct()
+    )
+    emps_disponiveis = sorted({str(r[0]).strip() for r in q_emp_cfg.all() if str(r[0]).strip()},
+                              key=lambda x: int(x) if str(x).isdigit() else str(x))
 
-    # EMPs visíveis
-    with SessionLocal() as db:
-        if role == "admin":
-            if emp_scope:
-                emp_scopes = [str(emp_scope)]
-            else:
-                # Apenas EMPs que têm itens ativos cadastrados (evita dropdown gigante)
-                emp_scopes = [str(x[0]) for x in db.query(ItemParado.emp).filter(ItemParado.ativo.is_(True)).distinct().all()]
-        elif role == "supervisor":
-            emps = _allowed_emps()
-            emp_scopes = emps if emps else ([str(_emp())] if _emp() else [])
-            if emp_scope:
-                # permite filtrar dentro do que o supervisor já pode ver
-                emp_scopes = [e for e in emp_scopes if str(e) == str(emp_scope)]
+    # se o usuário selecionou uma EMP específica, respeita (desde que esteja disponível)
+    if emp_param:
+        emp = str(emp_param).strip()
+        if emps_disponiveis and emp not in emps_disponiveis:
+            # EMP não tem campanha/itens ativos no período => mostra vazio
+            emp_scopes = []
         else:
-            emps = _allowed_emps()
-            if emps:
-                emp_scopes = emps if (not emp_scope) else [e for e in emps if str(e) == str(emp_scope)]
-            else:
-                # fallback: EMPs derivadas das vendas do vendedor
-                q = db.query(Venda.emp).filter(Venda.vendedor == vendedor_req).distinct()
-                emp_scopes = [str(x[0]) for x in q.all() if x and x[0]]
-
-    emp_scopes = sorted({e.strip() for e in (emp_scopes or []) if e and str(e).strip()})
-
-    if not emp_scopes:
-        flash("Não foi possível identificar a EMP para este usuário.", "warning")
-        return redirect(url_for("dashboard"))
-
-    # EMPs com itens parados ativos (e com período sobrepondo o filtro atual)
-    with SessionLocal() as db:
-        configured_emps = sorted({
-            str(x[0]).strip()
-            for x in db.query(ItemParado.emp)
-                .filter(ItemParado.ativo.is_(True))
-                .filter(or_(ItemParado.inicio.is_(None), ItemParado.inicio <= df))
-                .filter(or_(ItemParado.fim.is_(None), ItemParado.fim >= di))
-                .distinct()
-                .all()
-            if x and x[0]
-        })
-
-    # Se o usuário escolheu uma EMP, ela precisa estar configurada; se não escolheu, limita ao conjunto configurado
-    if emp_scope:
-        emp_scopes = [emp_scope] if emp_scope in configured_emps else []
+            emp_scopes = [emp]
     else:
-        emp_scopes = [e for e in emp_scopes if e in configured_emps]
+        emp = None
+        emp_scopes = list(emps_disponiveis)
 
-    # Dropdown de EMPs para filtros
-    emps_disponiveis = emp_scopes[:] if role != "admin" else configured_emps
+    # itens ativos no período para as EMPs do escopo
+    itens_q = (
+        db.query(ItemParado)
+        .filter(ItemParado.ativo.is_(True))
+        .filter(ItemParado.emp.in_(emp_scopes) if emp_scopes else False)
+        .filter(or_(ItemParado.data_inicio.is_(None), ItemParado.data_inicio <= df))
+        .filter(or_(ItemParado.data_fim.is_(None), ItemParado.data_fim >= di))
+        .order_by(ItemParado.emp.asc(), ItemParado.codigo.asc())
+    )
+    itens_ativos = itens_q.all()
 
-# Dropdown de vendedores (somente admin/supervisor)
-    vendedores_lista = []
-    if role in {"admin", "supervisor"}:
-        emp_sup = _emp() if role == "supervisor" else None
-        vendedores_lista = _get_vendedores_db(role, emp_sup)
+    itens_por_emp: dict[str, list[ItemParado]] = {}
+    for it in itens_ativos:
+        k = str(it.emp).strip()
+        itens_por_emp.setdefault(k, []).append(it)
 
-    # --------- Itens ativos por EMP (respeitando janela opcional do item) ----------
-    with SessionLocal() as db:
-        itens_all = (
-            db.query(ItemParado)
-            .filter(ItemParado.emp.in_(emp_scopes))
-            .filter(ItemParado.ativo.is_(True))
-            .filter(or_(ItemParado.data_inicio.is_(None), ItemParado.data_inicio <= df))
-            .filter(or_(ItemParado.data_fim.is_(None), ItemParado.data_fim >= di))
-            .order_by(ItemParado.emp.asc(), ItemParado.codigo.asc())
-            .all()
+    # configurações por EMP (fallback global)
+    cfg_cache: dict[str, tuple[float, float]] = {}
+    def _cfg_for(emp_k: str) -> tuple[float, float]:
+        emp_k = str(emp_k).strip()
+        if emp_k in cfg_cache:
+            return cfg_cache[emp_k]
+        cfg = (
+            db.query(ItensParadosPontosConfig)
+            .filter(ItensParadosPontosConfig.ativo.is_(True))
+            .filter(ItensParadosPontosConfig.emp == emp_k)
+            .order_by(ItensParadosPontosConfig.id.desc())
+            .first()
         )
-
-        # Config de pontos (preferência: EMP selecionada única; fallback: global)
-        cfg_emp_target = emp_scope if emp_scope else (emp_scopes[0] if len(emp_scopes) == 1 else None)
-        cfg = None
-        if cfg_emp_target:
-            cfg = (
-                db.query(ItensParadosPontosConfig)
-                .filter(ItensParadosPontosConfig.emp == str(cfg_emp_target))
-                .filter(ItensParadosPontosConfig.ativo.is_(True))
-                .order_by(ItensParadosPontosConfig.id.desc())
-                .first()
-            )
         if not cfg:
             cfg = (
                 db.query(ItensParadosPontosConfig)
-                .filter(ItensParadosPontosConfig.emp.is_(None))
                 .filter(ItensParadosPontosConfig.ativo.is_(True))
+                .filter(ItensParadosPontosConfig.emp.is_(None))
                 .order_by(ItensParadosPontosConfig.id.desc())
                 .first()
             )
+        base_reais = float(getattr(cfg, "base_reais", 100) or 100)
+        valor_por_ponto = float(getattr(cfg, "valor_por_ponto", 10) or 10)
+        cfg_cache[emp_k] = (base_reais, valor_por_ponto)
+        return cfg_cache[emp_k]
 
-        base_reais = int(getattr(cfg, "base_reais", 100) or 100)
-        valor_por_ponto = float(getattr(cfg, "valor_por_ponto", 10.0) or 10.0)
+    # faixas de bônus extra por EMP (fallback global)
+    faixas_cache: dict[str, list[ItensParadosFaixaBonusExtra]] = {}
+    def _faixas_for(emp_k: str) -> list[ItensParadosFaixaBonusExtra]:
+        emp_k = str(emp_k).strip()
+        if emp_k in faixas_cache:
+            return faixas_cache[emp_k]
+        faixas_emp = (
+            db.query(ItensParadosFaixaBonusExtra)
+            .filter(ItensParadosFaixaBonusExtra.ativo.is_(True))
+            .filter(ItensParadosFaixaBonusExtra.emp == emp_k)
+            .order_by(ItensParadosFaixaBonusExtra.minimo_pontos.asc())
+            .all()
+        )
+        if not faixas_emp:
+            faixas_emp = (
+                db.query(ItensParadosFaixaBonusExtra)
+                .filter(ItensParadosFaixaBonusExtra.ativo.is_(True))
+                .filter(ItensParadosFaixaBonusExtra.emp.is_(None))
+                .order_by(ItensParadosFaixaBonusExtra.minimo_pontos.asc())
+                .all()
+            )
+        faixas_cache[emp_k] = faixas_emp
+        return faixas_emp
 
-    # Agrupa itens por EMP (para exibição)
-    itens_por_emp: dict[str, list] = {}
-    for it in itens_all:
-        e = str(it.emp).strip() if it.emp is not None else ""
-        itens_por_emp.setdefault(e, []).append(it)
+    # --- ranking (EMP -> Vendedor) ---
+    resultados: list[dict] = []
+    resultados_por_emp: dict[str, list[dict]] = {}
 
-    # --------- Vendas agregadas (1 query) ----------
-    vendido_map: dict[tuple[str, str], float] = {}  # (emp, codigo) -> total
-    pontos_map: dict[tuple[str, str], float] = {}
-    valor_map: dict[tuple[str, str], float] = {}
+    if emp_scopes:
+        # join vendas x itens (por EMP) garantindo que só conte itens ativos e válidos no período
+        q = (
+            db.query(
+                Venda.emp.label("emp"),
+                Venda.vendedor.label("vendedor"),
+                func.sum(Venda.valor_total).label("vendeu_raw"),
+                func.sum(Venda.valor_total * ItemParado.multiplicador_pontos).label("vendeu_aj"),
+            )
+            .join(
+                ItemParado,
+                and_(
+                    ItemParado.emp == Venda.emp,
+                    ItemParado.codigo == Venda.mestre,
+                    ItemParado.ativo.is_(True),
+                    or_(ItemParado.data_inicio.is_(None), ItemParado.data_inicio <= df),
+                    or_(ItemParado.data_fim.is_(None), ItemParado.data_fim >= di),
+                ),
+            )
+            .filter(Venda.emp.in_(emp_scopes))
+            .filter(Venda.movimento >= di, Venda.movimento <= df)
+            .filter(Venda.mov_tipo_movto.in_(["OA"]))
+        )
+        if vendedor:
+            q = q.filter(Venda.vendedor == vendedor)
 
-    resumo = None
+        q = q.group_by(Venda.emp, Venda.vendedor)
 
-    if itens_all:
-        codigos = sorted({(i.codigo or "").strip() for i in itens_all if (i.codigo or "").strip()})
-        if codigos:
-            with SessionLocal() as db:
-                q = (
-                    db.query(Venda.emp, Venda.mestre, func.coalesce(func.sum(Venda.valor_total), 0.0))
-                    .filter(Venda.emp.in_(emp_scopes))
-                    .filter(Venda.movimento >= di)
-                    .filter(Venda.movimento <= df)
-                    .filter(Venda.mov_tipo_movto.in_(["OA"]))  # vendas (ajuste aqui se você quiser somar DS/CA)
-                    .filter(Venda.mestre.in_(codigos))
-                )
-                if vendedor_alvo:
-                    q = q.filter(Venda.vendedor == vendedor_alvo)
+        for r in q.all():
+            emp_k = str(r.emp).strip()
+            vend = str(r.vendedor).strip()
+            vendeu_raw = float(r.vendeu_raw or 0)
+            vendeu_aj = float(r.vendeu_aj or 0)
 
-                q = q.group_by(Venda.emp, Venda.mestre)
+            base_reais, valor_por_ponto = _cfg_for(emp_k)
+            pontos = int(vendeu_aj // base_reais) if base_reais > 0 else 0
+            bonus_base = pontos * valor_por_ponto
 
-                for emp_v, mestre, total in q.all():
-                    k_emp = str(emp_v).strip() if emp_v is not None else ""
-                    k_cod = (mestre or "").strip()
-                    vendido_map[(k_emp, k_cod)] = float(total or 0.0)
+            # bônus extra: aplica maior faixa atingida
+            bonus_extra = 0.0
+            faixa_aplicada = None
+            for fx in _faixas_for(emp_k):
+                if pontos >= int(fx.minimo_pontos or 0):
+                    bonus_extra = float(fx.valor_bonus or 0)
+                    faixa_aplicada = fx
+            total = float(bonus_base) + float(bonus_extra)
 
-    # --------- Calcula pontos/valor por item (em memória, rápido) ----------
-    total_vendido = 0.0
-    total_pontos = 0.0
-    total_valor = 0.0
+            row = {
+                "emp": emp_k,
+                "vendedor": vend,
+                "vendeu": vendeu_raw,
+                "vendeu_aj": vendeu_aj,
+                "pontos": pontos,
+                "bonus_base": bonus_base,
+                "bonus_extra": bonus_extra,
+                "total": total,
+                "faixa_aplicada": faixa_aplicada,
+            }
+            resultados.append(row)
+            resultados_por_emp.setdefault(emp_k, []).append(row)
 
-    for it in itens_all:
-        emp_it = str(it.emp).strip() if it.emp is not None else ""
-        cod = (it.codigo or "").strip()
-        vendido = float(vendido_map.get((emp_it, cod), 0.0) or 0.0)
-        mult = float(getattr(it, "multiplicador_pontos", 1.0) or 1.0)
-        pontos = (vendido / float(base_reais or 100)) * mult if vendido > 0 else 0.0
-        valor = pontos * float(valor_por_ponto or 0.0)
+        # ordenação por total (desc) dentro de cada emp
+        for k in resultados_por_emp.keys():
+            resultados_por_emp[k].sort(key=lambda x: (x["total"], x["vendeu_aj"], x["vendeu"]), reverse=True)
 
-        vendido_map[(emp_it, cod)] = vendido
-        pontos_map[(emp_it, cod)] = pontos
-        valor_map[(emp_it, cod)] = valor
+        # ordenação global (quando emp específico)
+        resultados.sort(key=lambda x: (x["total"], x["vendeu_aj"], x["vendeu"]), reverse=True)
 
-        total_vendido += vendido
-        total_pontos += pontos
-        total_valor += valor
-
-    if (role == "vendedor") or (vendedor_alvo):
-        # Resumo aparece quando há um vendedor alvo (vendedor logado ou filtro selecionado)
-        falta_para_prox = None
-        if base_reais and base_reais > 0:
-            resto = total_vendido % float(base_reais)
-            falta_para_prox = float(base_reais) - resto if resto > 0 else 0.0
-
-        resumo = {
-            "valor_vendido": total_vendido,
-            "pontos": total_pontos,
-            "premio_base": total_valor,
-            "bonus_extra": 0.0,
-            "total": total_valor,
-            "falta_para_prox": falta_para_prox,
-        }
+    # lista final de EMPs a exibir (só as que têm itens ativos + (opcional) só as que tiveram resultados no período?)
+    # aqui, mantemos a visão baseada em "itens ativos no período" (mesmo que sem venda no período).
+    emps_ordenadas = sorted(itens_por_emp.keys(), key=lambda x: int(x) if str(x).isdigit() else str(x))
 
     return render_template(
         "itens_parados.html",
-        role_name=role,
-        role=role,
-        mes=mes,
-        ano=ano,
-        data_inicio=di_raw,
-        data_fim=df_raw,
-        emp_scope=emp_scope or "",
-        emps_disponiveis=emps_disponiveis or [],
-        vendedor=vendedor_req if vendedor_req else "",
-        vendedores_lista=vendedores_lista or [],
-        base_reais=base_reais,
-        valor_por_ponto=valor_por_ponto,
-        resumo=resumo,
-        itens=itens_all,
+        emp=emp,
+        vendedor=vendedor,
+        di=di.strftime("%d/%m/%Y"),
+        df=df.strftime("%d/%m/%Y"),
+        emps_disponiveis=emps_disponiveis,
+        emps_ordenadas=emps_ordenadas,
+        itens_ativos=itens_ativos,
         itens_por_emp=itens_por_emp,
-        vendido_map=vendido_map,
-        pontos_map=pontos_map,
-        valor_map=valor_map,
+        resultados=resultados,
+        resultados_por_emp=resultados_por_emp,
+        faixas=None,  # template mostra faixas por emp via resultados/faixa_aplicada; mantemos para compat
     )
-
-@app.get("/itens_parados/pdf")
 def itens_parados_pdf():
     """Exporta o painel de Itens Parados (Pontos) em PDF.
 
