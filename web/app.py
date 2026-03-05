@@ -3605,27 +3605,20 @@ def _recalcular_resultados_campanhas_para_scope(ano: int, mes: int, emps: list[s
 
 @app.get("/relatorios/campanhas")
 def relatorio_campanhas():
-    """Relatório gerencial de campanhas por EMP -> vendedores -> campanhas (mês/ano).
-
-    - ADMIN: todas as EMPs (ou filtra por emp)
-    - SUPERVISOR: apenas EMP vinculada ao supervisor
-    - VENDEDOR: apenas ele (suas EMPs)
-    """
+    """Relatório gerencial de campanhas por EMP -> vendedores -> campanhas (mês/ano)."""
     red = _login_required()
     if red:
         return red
 
     role = (_role() or "").strip().lower()
-
-    # Flags de permissão para a UI (templates)
     ctx_is_admin = (role == "admin")
     ctx_is_supervisor = (role == "supervisor")
     ctx_is_vendedor = (role == "vendedor")
     ctx_is_financeiro = (role == "financeiro")
 
     emp_usuario = _emp()
-
     vendedor_logado = (_usuario_logado() or "").strip().upper()
+
     scope = build_relatorio_campanhas_scope(
         _campanhas_deps,
         role=role,
@@ -3641,7 +3634,6 @@ def relatorio_campanhas():
     emps_scope = scope["emps_scope"]
     vendedores_por_emp = scope["vendedores_por_emp"]
 
-
     ctx = build_relatorio_campanhas_unificado_context(
         _campanhas_deps,
         role=role,
@@ -3655,33 +3647,35 @@ def relatorio_campanhas():
         recalc=str(request.args.get("recalc") or "").strip() in ("1", "true", "True", "sim", "SIM"),
         flash=flash,
     )
-    # Permissões para template
+
     ctx["role"] = role
     ctx["is_admin"] = ctx_is_admin
     ctx["is_supervisor"] = ctx_is_supervisor
     ctx["is_vendedor"] = ctx_is_vendedor
     ctx["is_financeiro"] = ctx_is_financeiro
-
-
-
-    # Paginação simples (client-side seria ok, mas server-side evita payloads enormes)
     try:
-        page = int(request.args.get("page") or 1)
-        per_page = int(request.args.get("per_page") or 200)
-        page = max(page, 1)
-        per_page = max(50, min(per_page, 1000))
+        vendedores_scope = sorted({str(v or '').strip().upper() for vs in (vendedores_por_emp or {}).values() for v in (vs or []) if str(v or '').strip()})
     except Exception:
-        page, per_page = 1, 200
+        vendedores_scope = []
+    if role == 'vendedor' and vendedor_logado:
+        vendedores_scope = [vendedor_logado]
+    ctx["vendedores_scope"] = vendedores_scope
+
+    try:
+        default_per_page = 100 if role in ("admin", "supervisor") else 50
+        page = int(request.args.get("page") or 1)
+        per_page = int(request.args.get("per_page") or default_per_page)
+        page = max(page, 1)
+        per_page = max(25, min(per_page, 500))
+    except Exception:
+        page, per_page = 1, (100 if role in ("admin", "supervisor") else 50)
 
     rows = ctx.get("rows") or []
 
     def _pick(obj, *keys):
         for k in keys:
             try:
-                if isinstance(obj, dict):
-                    v = obj.get(k)
-                else:
-                    v = getattr(obj, k, None)
+                v = obj.get(k) if isinstance(obj, dict) else getattr(obj, k, None)
                 if v is None:
                     continue
                 if isinstance(v, str) and not v.strip():
@@ -3701,18 +3695,16 @@ def relatorio_campanhas():
         s = (s or "PENDENTE").strip().upper()
         if s in ("A PAGAR", "A_PAGAR", "APAGAR"):
             return "A_PAGAR"
-        if s in ("PAGO",):
+        if s == "PAGO":
             return "PAGO"
-        if s in ("PENDENTE",):
+        if s == "PENDENTE":
             return "PENDENTE"
         return s
 
-    # Agrupa por EMP+Vendedor (1 linha por vendedor) e lista campanhas dentro
-    groups_map = {}  # (emp, vendedor) -> dict
-    for r in (rows or []):
+    groups_map = {}
+    for r in rows:
         emp_r = str(_pick(r, "emp", "EMP") or "").strip() or "—"
         vend_r = str(_pick(r, "vendedor", "VENDEDOR") or "").strip() or "—"
-
         titulo = str(_pick(r, "titulo", "campanha", "CAMPANHA") or "").strip() or "—"
         valor = _to_float(_pick(r, "valor_recompensa", "valor", "VALOR_RECOMPENSA") or 0)
         st = _norm_status(_pick(r, "status_pagamento", "status", "STATUS_PAGAMENTO") or "PENDENTE")
@@ -3730,11 +3722,7 @@ def relatorio_campanhas():
             groups_map[key] = g
 
         g["total"] += valor
-        if st in g["status_counts"]:
-            g["status_counts"][st] += 1
-        else:
-            g["status_counts"]["OUTROS"] += 1
-
+        g["status_counts"][st if st in g["status_counts"] else "OUTROS"] += 1
         g["campanhas"].append({
             "titulo": titulo,
             "item_codigo": getattr(r, "item_codigo", None),
@@ -3742,17 +3730,13 @@ def relatorio_campanhas():
             "recompensa_unit": getattr(r, "recompensa_unit", None),
             "qtd_vendida": float(getattr(r, "qtd_base", 0) or 0),
             "vendeu_rs": float(getattr(r, "valor_vendido", 0) or 0),
-            "valor": valor,  # premiação (R$)
+            "valor": valor,
             "status": st,
             "atingiu": bool(getattr(r, "atingiu", False)),
             "tipo": str(getattr(r, "tipo", "") or "").strip().upper(),
             "origem_id": int(getattr(r, "origem_id", 0) or 0),
         })
 
-    # Status agregado por vendedor:
-    # - Se tiver qualquer PENDENTE => PENDENTE
-    # - Senão se tiver A_PAGAR => A_PAGAR
-    # - Senão se só PAGO => PAGO
     def _agg_status(counts):
         if counts.get("PENDENTE"):
             return "PENDENTE"
@@ -3763,87 +3747,42 @@ def relatorio_campanhas():
         return "OUTROS"
 
     rows_grouped = list(groups_map.values())
-
-    # Reorganiza linhas de COMBO no detalhado:
-    # - Se existirem itens (título começando com "↳"), transforma em um "card" COMBO_CARD clicável com itens internos
-    # - Remove as linhas soltas de itens para não poluir a tabela
     for g in rows_grouped:
         camps = g.get("campanhas") or []
         combo_items = [c for c in camps if str(c.get("titulo") or "").lstrip().startswith("↳")]
         combo_headers = [c for c in camps if str(c.get("titulo") or "").strip().upper().startswith("COMBO")]
+        resto = [c for c in camps if c not in combo_items and c not in combo_headers]
 
-        # Remove headers/itens do fluxo normal (vamos recriar como COMBO_CARD)
-        resto = [c for c in camps if (c not in combo_items and c not in combo_headers)]
+        combo_cards = []
+        for header in combo_headers:
+            combo_id = int(header.get("origem_id") or 0)
+            itens = [i for i in combo_items if int(i.get("origem_id") or 0) == combo_id]
+            combo_cards.append({
+                **header,
+                "tipo": "COMBO_CARD",
+                "itens": itens,
+                "vendeu_rs": sum(float(i.get("vendeu_rs") or 0) for i in itens) or float(header.get("vendeu_rs") or 0),
+                "valor": sum(float(i.get("valor") or 0) for i in itens) or float(header.get("valor") or 0),
+                "atingiu": bool(header.get("atingiu")),
+            })
 
-        if combo_items or combo_headers:
-            header = combo_headers[0] if combo_headers else {
-                "titulo": "COMBO",
-                "item_codigo": None,
-                "qtd_minima": None,
-                "recompensa_unit": None,
-                "qtd_vendida": 0.0,
-                "vendeu_rs": 0.0,
-                "valor": 0.0,
-                "status": "PENDENTE",
-                "atingiu": False,
-                "tipo": "COMBO",
-                "origem_id": 0,
-            }
-
-            # Totais do combo (acompanhamento)
-            combo_vendeu = sum(float(i.get("vendeu_rs") or 0) for i in combo_items)
-            combo_valor = sum(float(i.get("valor") or 0) for i in combo_items)
-
-            # Atingiu = todos itens atingiram (quando temos itens); fallback para header
-            combo_atingiu = (all(bool(i.get("atingiu")) for i in combo_items) if combo_items else bool(header.get("atingiu")))
-
-            combo_card = dict(header)
-            combo_card["tipo"] = "COMBO_CARD"
-            combo_card["itens"] = combo_items
-            combo_card["vendeu_rs"] = combo_vendeu
-            combo_card["valor"] = combo_valor
-            combo_card["atingiu"] = combo_atingiu
-
-            # Re-monta lista (campanhas normais + card do combo)
-            g["campanhas"] = resto + [combo_card]
-
-        # ordena campanhas por status (pendente primeiro) e depois por valor desc
-
-        # ordena campanhas por status (pendente primeiro) e depois por valor desc
-        g["campanhas"].sort(key=lambda c: ({"PENDENTE": 0, "A_PAGAR": 1, "PAGO": 2}.get(c["status"], 9), -c["valor"]))
+        g["campanhas"] = resto + combo_cards
+        g["campanhas"].sort(key=lambda c: ({"PENDENTE": 0, "A_PAGAR": 1, "PAGO": 2}.get(c["status"], 9), -float(c.get("valor") or 0), str(c.get("titulo") or "")))
         g["status"] = _agg_status(g["status_counts"])
         g["campanhas_count"] = len(g["campanhas"])
 
-    # Ordena vendedores por total desc
-    rows_grouped.sort(key=lambda g: (-g["total"], g["emp"], g["vendedor"]))
+    rows_grouped.sort(key=lambda gg: (-gg["total"], gg["emp"], gg["vendedor"]))
 
     total_rows = len(rows_grouped)
     start = (page - 1) * per_page
     end = start + per_page
     ctx["rows_grouped"] = rows_grouped
     ctx["rows_grouped_page"] = rows_grouped[start:end]
-    ctx["rows_page"] = ctx["rows_grouped_page"]  # compatibilidade
+    ctx["rows_page"] = ctx["rows_grouped_page"]
     ctx["page"] = page
     ctx["per_page"] = per_page
     ctx["total_rows"] = total_rows
     ctx["total_pages"] = (total_rows + per_page - 1) // per_page if per_page else 1
-
-    # Resumo financeiro (topo do relatório) — total geral + por status + por EMP/Vendedor
-    def _to_float(x):
-        try:
-            return float(x or 0)
-        except Exception:
-            return 0.0
-
-    def _norm_status(s: str) -> str:
-        s = (s or "PENDENTE").strip().upper()
-        if s in ("A PAGAR", "A_PAGAR", "APAGAR"):
-            return "A_PAGAR"
-        if s in ("PAGO",):
-            return "PAGO"
-        if s in ("PENDENTE",):
-            return "PENDENTE"
-        return s
 
     def _calc_resumo_financeiro(_rows):
         resumo = {
@@ -3852,70 +3791,29 @@ def relatorio_campanhas():
             "status": {"PENDENTE": 0.0, "A_PAGAR": 0.0, "PAGO": 0.0, "OUTROS": 0.0},
             "por_emp": {},
         }
-        def _pick(obj, *keys):
-            """Lê valor de dict/objeto (ex.: UnifiedRow) de forma compatível."""
-            for k in keys:
-                try:
-                    if isinstance(obj, dict):
-                        v = obj.get(k)
-                    else:
-                        v = getattr(obj, k, None)
-                    if v is None:
-                        continue
-                    # trata strings vazias como None
-                    if isinstance(v, str) and not v.strip():
-                        continue
-                    return v
-                except Exception:
-                    continue
-            return None
-
         for r in (_rows or []):
             emp = str(_pick(r, "emp", "EMP") or "").strip() or "—"
             vendedor = str(_pick(r, "vendedor", "VENDEDOR") or "").strip() or "—"
             valor = _to_float(_pick(r, "valor_recompensa", "valor", "VALOR_RECOMPENSA") or 0)
             st = _norm_status(_pick(r, "status_pagamento", "status", "STATUS_PAGAMENTO") or "PENDENTE")
-            if st not in ("PENDENTE", "A_PAGAR", "PAGO"):
-                st_key = "OUTROS"
-            else:
-                st_key = st
-
+            st_key = st if st in ("PENDENTE", "A_PAGAR", "PAGO") else "OUTROS"
             resumo["linhas"] += 1
             resumo["total_valor"] += valor
-            resumo["status"][st_key] = resumo["status"].get(st_key, 0.0) + valor
-
-            empd = resumo["por_emp"].setdefault(emp, {
-                "total": 0.0,
-                "status": {"PENDENTE": 0.0, "A_PAGAR": 0.0, "PAGO": 0.0, "OUTROS": 0.0},
-                "vendedores": {}
-            })
+            resumo["status"][st_key] += valor
+            empd = resumo["por_emp"].setdefault(emp, {"total": 0.0, "status": {"PENDENTE": 0.0, "A_PAGAR": 0.0, "PAGO": 0.0, "OUTROS": 0.0}, "vendedores": {}})
             empd["total"] += valor
-            empd["status"][st_key] = empd["status"].get(st_key, 0.0) + valor
-
-            vd = empd["vendedores"].setdefault(vendedor, {
-                "total": 0.0,
-                "status": {"PENDENTE": 0.0, "A_PAGAR": 0.0, "PAGO": 0.0, "OUTROS": 0.0},
-                "linhas": 0
-            })
+            empd["status"][st_key] += valor
+            vd = empd["vendedores"].setdefault(vendedor, {"total": 0.0, "status": {"PENDENTE": 0.0, "A_PAGAR": 0.0, "PAGO": 0.0, "OUTROS": 0.0}, "linhas": 0})
             vd["linhas"] += 1
             vd["total"] += valor
-            vd["status"][st_key] = vd["status"].get(st_key, 0.0) + valor
-
-        # ordenar EMPs por total desc (para UI ficar útil)
-        resumo["por_emp_ordenado"] = sorted(
-            resumo["por_emp"].items(),
-            key=lambda kv: kv[1].get("total", 0.0),
-            reverse=True
-        )
+            vd["status"][st_key] += valor
+        resumo["por_emp_ordenado"] = sorted(resumo["por_emp"].items(), key=lambda kv: kv[1].get("total", 0.0), reverse=True)
         return resumo
 
     ctx["resumo"] = _calc_resumo_financeiro(rows)
 
-    # URLs auxiliares (Jinja não suporta **kwargs dinâmico com dict em algumas versões)
     from urllib.parse import urlencode
-
     base_args = request.args.to_dict(flat=False) if request.args else {}
-
     def _make_url(endpoint: str, **updates):
         d = dict(base_args)
         for k, v in updates.items():
@@ -3928,16 +3826,13 @@ def relatorio_campanhas():
 
     ctx["recalc_url"] = _make_url("relatorio_campanhas", recalc=1, page=1)
     ctx["export_url"] = _make_url("relatorio_campanhas_export_csv", page=None, per_page=None)
-
-    per_page_opts = [200, 500, 1000]
+    per_page_opts = [50, 100, 200, 500]
     ctx["per_page_opts"] = per_page_opts
     ctx["per_page_urls"] = {opt: _make_url("relatorio_campanhas", per_page=opt, page=1) for opt in per_page_opts}
-
     ctx["prev_url"] = _make_url("relatorio_campanhas", page=max(1, page - 1))
     ctx["next_url"] = _make_url("relatorio_campanhas", page=min(ctx["total_pages"], page + 1))
 
     return render_template("relatorio_campanhas.html", ctx=ctx, **ctx)
-
 
 @app.get("/relatorios/campanhas/export.csv")
 def relatorio_campanhas_export_csv():
