@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Metas helpers (Crescimento / MIX / Share de Marcas).
 
 Extraído do app.py como **refatoração pura** (sem mudança de comportamento).
@@ -22,8 +23,6 @@ from db import (
     MetaBaseManual,
     MetaResultado,
 )
-
-
 def _periodo_bounds_ym(ano: int, mes: int) -> tuple[date, date]:
     inicio = date(int(ano), int(mes), 1)
     fim = date(int(ano), int(mes), calendar.monthrange(int(ano), int(mes))[1])
@@ -42,6 +41,9 @@ def _as_decimal(v) -> Decimal:
 def _money2(v: Decimal) -> Decimal:
     return v.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
+
+# NOTE: _allowed_emps() is defined once earlier in this file (loads from DB when needed).
+# Do not duplicate it below — duplicated defs silently override the correct version.
 
 def _meta_pick_bonus(escalas: list[MetaEscala], valor_metric: float) -> float:
     """Retorna o bonus_percentual da maior faixa cujo limite_min <= valor_metric."""
@@ -304,28 +306,24 @@ def _calc_and_upsert_meta_result(db, meta: MetaPrograma, emp: str, vendedor: str
         bonus = _meta_pick_bonus(escalas, mix)
         premio = _money2(valor_mes * (Decimal(str(bonus)) / Decimal("100")))
         res.valor_mes = float(valor_mes)
-        res.base_valor = 0.0
-        res.crescimento_pct = mix
+        res.mix_itens_unicos = float(mix)
         res.bonus_percentual = float(bonus)
         res.premio = float(premio)
 
-    elif meta.tipo == "SHARE":
-        # marcas alvo
+    elif meta.tipo == "SHARE_MARCA":
         marcas = [m.marca for m in db.query(MetaMarca).filter(MetaMarca.meta_id == meta.id).all()]
-        share_pct, valor_marcas, valor_mes_total = _query_share_marca(db, meta.ano, meta.mes, emp, vendedor, marcas)
-        valor_mes = _as_decimal(valor_mes_total)
+        share_pct, valor_marcas, valor_mes = _query_share_marca(db, meta.ano, meta.mes, emp, vendedor, marcas)
         bonus = _meta_pick_bonus(escalas, share_pct)
-        premio = _money2(valor_mes * (Decimal(str(bonus)) / Decimal("100")))
-        res.valor_mes = float(valor_mes_total)
-        res.base_valor = float(valor_marcas)
-        res.crescimento_pct = float(share_pct)
+        premio = _money2(_as_decimal(valor_mes) * (Decimal(str(bonus)) / Decimal("100")))
+        res.valor_mes = float(valor_mes)
+        res.valor_marcas = float(valor_marcas)
+        res.share_pct = float(share_pct)
         res.bonus_percentual = float(bonus)
         res.premio = float(premio)
 
-    else:
-        # Crescimento por valor: compara com base manual ou mês do ano passado
+    else:  # CRESCIMENTO
         valor_mes = _as_decimal(_query_valor_mes(db, meta.ano, meta.mes, emp, vendedor))
-
+        # base manual?
         bm = (
             db.query(MetaBaseManual)
             .filter(MetaBaseManual.meta_id == meta.id, MetaBaseManual.emp == emp, MetaBaseManual.vendedor == vendedor)
@@ -356,3 +354,6 @@ def _calc_and_upsert_meta_result(db, meta: MetaPrograma, emp: str, vendedor: str
     db.add(res)
     db.commit()
     return res
+
+
+

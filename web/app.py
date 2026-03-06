@@ -32,44 +32,26 @@ from sqlalchemy import and_, or_, func, case, cast, String, text, extract
 # Helpers de compatibilidade para "rows" que podem vir como dict, SQLAlchemy Row,
 # dataclass (ex.: UnifiedRow), ou objetos simples.
 # ---------------------------------------------------------------------------
-def _obj_get(obj, key, default=None):
-    """Acesso seguro estilo dict: tenta dict, RowMapping, atributos e chaves."""
-    if obj is None:
-        return default
-    try:
-        # dict
-        if isinstance(obj, dict):
-            return obj.get(key, default)
-        # SQLAlchemy Row: possui _mapping
-        mapping = getattr(obj, "_mapping", None)
-        if mapping is not None:
-            return mapping.get(key, default)
-        # dataclass/objeto: atributo
-        if hasattr(obj, key):
-            return getattr(obj, key)
-        # tenta variações de caixa
-        k = str(key)
-        for kk in (k.lower(), k.upper()):
-            if hasattr(obj, kk):
-                return getattr(obj, kk)
-        # fallback: __getitem__
-        try:
-            return obj[key]  # type: ignore[index]
-        except Exception:
-            return default
-    except Exception:
-        return default
+# ---------------------------------------------------------------------------
+# Utilitários extraídos do app.py (refatoração pura; sem mudança de comportamento).
+# ---------------------------------------------------------------------------
+from sv_utils import (
+    _obj_get,
+    _obj_get_any,
+    _normalize_cols,
+    _mes_ano_from_request,
+    _periodo_bounds,
+    _parse_num_ptbr,
+    _emp_norm,
+    _parse_multi_args,
+    _parse_multi_args_from,
+    _emp_to_int_safe,
+)
 
-def _obj_get_any(obj, keys, default=None):
-    for k in keys:
-        v = _obj_get(obj, k, None)
-        if v is None:
-            continue
-        if isinstance(v, str) and not v.strip():
-            continue
-        return v
-    return default
-
+from mensagens_guard import (
+    is_date_in_range as _is_date_in_range,
+    find_pending_blocking_message as _find_pending_blocking_message_impl,
+)
 
 from flask import (
     Flask,
@@ -174,43 +156,6 @@ register_request_hooks(
 from jinja_filters import register_template_filters
 register_template_filters(app)
 
-# --------------------------
-# Auth helpers / decorators (extraídos do app.py)
-# --------------------------
-from auth_helpers import (
-    _normalize_role,
-    _usuario_logado,
-    _role,
-    _emp,
-    _allowed_emps,
-    _filter_emps_cadastradas,
-    login_required,
-    admin_required,
-    financeiro_required,
-    _login_required,
-    _admin_required,
-    _admin_or_supervisor_required,
-)
-
-# --------------------------
-# Metas helpers (extraídos do app.py)
-# --------------------------
-from metas_helpers import (
-    _periodo_bounds_ym,
-    _as_decimal,
-    _money2,
-    _meta_pick_bonus,
-    _sql_valor_mes_signed,
-    _sql_valor_marcas_signed,
-    _query_valor_mes,
-    _query_mix_itens,
-    _query_share_marca,
-    _get_vendedores_no_periodo,
-    _get_emps_no_periodo,
-    _calc_and_upsert_meta_result,
-)
-
-
 # Logs no stdout (Render captura automaticamente)
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 
@@ -252,8 +197,19 @@ except Exception:
 
 
 # ------------- Helpers -------------
+def _normalize_role(r: str | None) -> str:
+    # Compatibilidade: o sistema historicamente usa `_normalize_role`.
+    # A lógica agora vive em `security_utils.normalize_role`.
+    return normalize_role(r)
+
+
 from branding import _get_setting, _set_setting, _current_branding, register_branding
 register_branding(app, SessionLocal)
+
+# Rotas: Mensagens (central e admin) — movidas para módulo dedicado (refatoração pura)
+from mensagens_routes import register_mensagens_routes
+register_mensagens_routes(app)
+
 
 @app.route('/admin/configuracoes', methods=['GET', 'POST'])
 def admin_configuracoes():
@@ -498,130 +454,150 @@ def _supabase_storage_upload(filename: str, content: bytes, content_type: str, f
         raise RuntimeError(f"Falha upload storage: {r.status_code} {r.text[:200]}")
     public_url = f"{supa_url}/storage/v1/object/public/{bucket}/{path}"
     return public_url
-def _is_date_in_range(today: date, inicio: date | None, fim: date | None) -> bool:
-    if inicio and today < inicio:
-        return False
-    if fim and today > fim:
-        return False
-    return True
+def _usuario_logado() -> str | None:
+    return session.get("usuario")
+
+def _role() -> str | None:
+    return _normalize_role(session.get("role"))
+
+def _emp() -> str | None:
+    """Retorna a EMP do usuário logado (quando existir)."""
+    emp = session.get("emp")
+    if emp is not None and emp != "":
+        return str(emp)
+    uid = session.get("user_id")
+    if not uid:
+        return None
+    try:
+        db = SessionLocal()
+        u = db.query(Usuario).filter(Usuario.id == uid).first()
+        if not u:
+            return None
+        emp_val = getattr(u, "emp", None)
+        if emp_val is None or emp_val == "":
+            return None
+        session["emp"] = str(emp_val)
+        return str(emp_val)
+    except Exception:
+        return None
+    finally:
+        try:
+            db.close()
+        except Exception:
+            pass
+
+
+
+def _allowed_emps() -> list[str]:
+    """Lista de EMPs permitidas para o usuário logado via tabela usuario_emps.
+
+    Compat:
+      - session['emps'] (novo / recomendado)
+      - session['allowed_emps'] (legado)
+    """
+    role = (_role() or "").lower()
+    if role == "admin" and session.get("admin_all_emps"):
+        return []
+
+    emps_int = get_session_emps()
+    if emps_int:
+        return _filter_emps_cadastradas([str(e) for e in emps_int], apenas_ativas=True)
+
+    uid = session.get("user_id")
+    if not uid:
+        return []
+
+    try:
+        with SessionLocal() as db:
+            refresh_session_emps(db, usuario_id=int(uid), fallback_emp=_emp())
+            emps_int = get_session_emps()
+            return _filter_emps_cadastradas([str(e) for e in emps_int], apenas_ativas=True)
+    except Exception:
+        return []
+
+
+# -------------------------
+# Mensagens bloqueantes (extraído)
+# -------------------------
 
 
 def _find_pending_blocking_message(db) -> Mensagem | None:
     """Retorna a primeira mensagem bloqueante pendente para o usuário (hoje)."""
-    role = (_role() or "").lower()
-    user_id = session.get("user_id")
-    if not user_id:
-        return None
-
-    today = date.today()
-    allowed_emps = _allowed_emps()  # [] significa "todas" para admin_all_emps
-
-    # Busca candidatas recentes primeiro (id desc) para mostrar a mais nova
-    candidatas = (
-        db.query(Mensagem)
-        .filter(Mensagem.ativo.is_(True))
-        .filter(Mensagem.bloqueante.is_(True))
-        .order_by(Mensagem.id.desc())
-        .limit(50)
-        .all()
+    return _find_pending_blocking_message_impl(
+        db,
+        role_fn=_role,
+        allowed_emps_fn=_allowed_emps,
     )
 
-    for msg in candidatas:
-        if not _is_date_in_range(today, msg.inicio_em, msg.fim_em):
-            continue
 
-        # Destino: usuário específico (admin pode mandar)
-        targeted_user = (
-            db.query(MensagemUsuario)
-            .filter(MensagemUsuario.mensagem_id == msg.id)
-            .filter(MensagemUsuario.usuario_id == int(user_id))
-            .first()
-            is not None
-        )
 
-        # Destino: empresas
-        targeted_emp = False
-        if role == "admin" and session.get("admin_all_emps"):
-            # Admin "todas as EMPs": se a mensagem tiver qualquer empresa destino, conta.
-            targeted_emp = (
-                db.query(MensagemEmpresa)
-                .filter(MensagemEmpresa.mensagem_id == msg.id)
-                .first()
-                is not None
-            )
-        else:
-            if allowed_emps:
-                targeted_emp = (
-                    db.query(MensagemEmpresa)
-                    .filter(MensagemEmpresa.mensagem_id == msg.id)
-                    .filter(MensagemEmpresa.emp.in_(allowed_emps))
-                    .first()
-                    is not None
-                )
+# =========================
+# Auth helpers / decorators
+# =========================
+from functools import wraps
 
-        if not (targeted_user or targeted_emp):
-            continue
+def _role():
+    """Retorna o papel/perfil normalizado do usuário logado (admin/supervisor/vendedor/financeiro)."""
+    try:
+        return normalize_role(session.get("role"))
+    except Exception:
+        # fallback defensivo
+        val = session.get("role") or session.get("perfil") or ""
+        return str(val).strip().lower()
 
-        # Já leu hoje?
-        ja_leu = (
-            db.query(MensagemLidaDiaria)
-            .filter(MensagemLidaDiaria.mensagem_id == msg.id)
-            .filter(MensagemLidaDiaria.usuario_id == int(user_id))
-            .filter(MensagemLidaDiaria.data == today)
-            .first()
-            is not None
-        )
-        if ja_leu:
-            continue
+def login_required(view_func):
+    """Decorator: exige usuário logado."""
+    @wraps(view_func)
+    def _wrapped(*args, **kwargs):
+        red = _login_required()
+        if red:
+            return red
+        return view_func(*args, **kwargs)
+    return _wrapped
 
-        return msg
+def admin_required(view_func):
+    """Decorator: exige ADMIN."""
+    @wraps(view_func)
+    def _wrapped(*args, **kwargs):
+        red = _admin_required()
+        if red:
+            return red
+        return view_func(*args, **kwargs)
+    return _wrapped
 
+def financeiro_required(view_func):
+    """Decorator: exige FINANCEIRO (ou ADMIN)."""
+    @wraps(view_func)
+    def _wrapped(*args, **kwargs):
+        if _role() not in ("financeiro", "admin"):
+            flash("Acesso restrito ao Financeiro.", "warning")
+            return redirect(url_for("dashboard"))
+        return view_func(*args, **kwargs)
+    return _wrapped
+
+def _login_required():
+    if not _usuario_logado():
+        return redirect(url_for("auth.login"))
     return None
 
+def _admin_required():
+    """Garante acesso ADMIN.
 
-
-def _normalize_cols(df: pd.DataFrame) -> pd.DataFrame:
-    """Normaliza nomes/tipos de colunas vindas do banco.
-
-    Regras do app:
-    - VENDEDOR (str, UPPER) e EMP (str)
-    - MOVIMENTO (datetime) é usado para filtrar mês/ano
+    Retorna um redirect quando não for admin; caso contrário retorna None.
     """
-    if df is None or df.empty:
-        return df
+    if _role() != "admin":
+        flash("Acesso restrito ao administrador.", "warning")
+        audit("admin_forbidden")
+        return redirect(url_for("dashboard"))
+    return None
 
-    rename: dict[str, str] = {}
-    for col in df.columns:
-        low = str(col).strip().lower()
-        if low == "vendedor":
-            rename[col] = "VENDEDOR"
-        elif low == "marca":
-            rename[col] = "MARCA"
-        elif low in ("data", "movimento"):
-            # O app usa MOVIMENTO para filtros de período
-            rename[col] = "MOVIMENTO"
-        elif low in ("mov_tipo_movto", "mov_tipo_movimento", "mov_tipo_movto "):
-            rename[col] = "MOV_TIPO_MOVTO"
-        elif low in ("valor_total", "valor", "total"):
-            rename[col] = "VALOR_TOTAL"
-        elif low == "mestre":
-            rename[col] = "MESTRE"
-        elif low == "emp":
-            rename[col] = "EMP"
-
-    if rename:
-        df = df.rename(columns=rename)
-
-    # Tipos esperados
-    if "MOVIMENTO" in df.columns:
-        df["MOVIMENTO"] = pd.to_datetime(df["MOVIMENTO"], errors="coerce")
-    if "VENDEDOR" in df.columns:
-        df["VENDEDOR"] = df["VENDEDOR"].astype(str).str.strip().str.upper()
-    if "EMP" in df.columns:
-        df["EMP"] = df["EMP"].astype(str).str.strip()
-
-    return df
-
+def _admin_or_supervisor_required():
+    """Garante acesso ADMIN ou SUPERVISOR."""
+    if (_role() or "").lower() not in ["admin", "supervisor"]:
+        flash("Acesso restrito.", "warning")
+        audit("forbidden", path=request.path)
+        return redirect(url_for("dashboard"))
+    return None
 
 def _get_vendedores_db(role: str, emp_usuario: str | None) -> list[str]:
     """Lista de vendedores para dropdown sem carregar todas as vendas em memória."""
@@ -927,129 +903,6 @@ def _bootstrap_admin_if_needed():
 
 _bootstrap_admin_if_needed()
 
-def _mes_ano_from_request() -> tuple[int, int]:
-    mes = int(request.args.get("mes") or datetime.now().month)
-    ano = int(request.args.get("ano") or datetime.now().year)
-    mes = max(1, min(12, mes))
-    ano = max(2000, min(2100, ano))
-    return mes, ano
-
-
-
-def _periodo_bounds(ano: int, mes: int):
-    """Retorna (inicio, fim) do mês para filtro por intervalo (usa índice)."""
-    mes = max(1, min(12, int(mes)))
-    ano = int(ano)
-    start = date(ano, mes, 1)
-    if mes == 12:
-        end = date(ano + 1, 1, 1)
-    else:
-        end = date(ano, mes + 1, 1)
-    return start, end
-
-
-
-def _parse_num_ptbr(val: str | None) -> float:
-    """Parseia número em formatos comuns PT-BR:
-    - '118589,72'
-    - '118.589,72'
-    - '118589.72'
-    - 'R$ 118.589,72'
-    """
-    if val is None:
-        return 0.0
-    s = str(val).strip()
-    if not s:
-        return 0.0
-    # remove moeda e espaços
-    s = re.sub(r'[^0-9,\.-]', '', s)
-    if not s:
-        return 0.0
-
-    # Se tiver vírgula e ponto, assume ponto milhar e vírgula decimal (PT-BR)
-    if ',' in s and '.' in s:
-        # remove separador de milhar
-        s = s.replace('.', '')
-        s = s.replace(',', '.')
-    elif ',' in s:
-        s = s.replace(',', '.')
-    # senão: já está em formato com ponto decimal ou inteiro
-    try:
-        return float(s)
-    except Exception:
-        return 0.0
-
-
-def _emp_norm(emp: str | None) -> str:
-    """Normaliza EMP para armazenamento ('' quando nulo)."""
-    return (emp or "").strip()
-
-
-def _parse_multi_args(name: str) -> list[str]:
-    """Lê parâmetros repetidos via querystring (?emp=101&emp=102).
-    Mantém compatibilidade com padrão antigo (?emp=101).
-    """
-    vals = []
-    try:
-        vals = request.args.getlist(name)
-    except Exception:
-        vals = []
-    # Compat: alguns formulários antigos mandam apenas 1 valor em get()
-    if not vals:
-        v = (request.args.get(name) or "").strip()
-        if v:
-            vals = [v]
-    # Aceita CSV (caso alguém copie/cole)
-    out: list[str] = []
-    for v in vals:
-        for part in str(v).split(","):
-            p = part.strip()
-            if p:
-                out.append(p)
-    # unique mantendo ordem
-    seen=set()
-    res=[]
-    for v in out:
-        if v not in seen:
-            seen.add(v); res.append(v)
-    return res
-
-
-def _parse_multi_args_from(args, name: str) -> list[str]:
-    """Versão sem dependência direta de `request`, para uso em services."""
-    vals = []
-    try:
-        if hasattr(args, "getlist"):
-            vals = list(args.getlist(name))
-        else:
-            v = args.get(name) if hasattr(args, "get") else None
-            vals = [v] if v else []
-    except Exception:
-        vals = []
-
-    if not vals:
-        try:
-            v = (args.get(name) or "").strip()
-        except Exception:
-            v = ""
-        if v:
-            vals = [v]
-
-    out: list[str] = []
-    for v in vals:
-        for part in str(v).split(","):
-            p = part.strip()
-            if p:
-                out.append(p)
-
-    seen = set()
-    res = []
-    for v in out:
-        if v not in seen:
-            seen.add(v)
-            res.append(v)
-    return res
-
 def _competencia_fechada(db, emp: str, ano: int, mes: int) -> bool:
     """Retorna True se a competência (EMP+ano+mes) estiver marcada como FECHADA."""
     emp = _emp_norm(emp)
@@ -1071,14 +924,6 @@ def _competencia_fechada(db, emp: str, ano: int, mes: int) -> bool:
         return False
 
 
-
-
-def _emp_to_int_safe(emp: str) -> int | str:
-    """Regra crítica: EMP é numérico na base de vendas.
-    Sempre converte antes de comparar/filtrar para não zerar totais.
-    """
-    s = str(emp).strip()
-    return int(s) if s.isdigit() else s
 
 
 def _get_emp_options(codigos: list[str]) -> list[dict]:
@@ -1110,6 +955,39 @@ def _get_emp_options(codigos: list[str]) -> list[dict]:
     return out
 
 
+def _filter_emps_cadastradas(codigos: list[str], apenas_ativas: bool = True) -> list[str]:
+    """Remove EMPs que não estão cadastradas na tabela `emps` (ou inativas, se `apenas_ativas`).
+    Mantém ordem e faz strip.
+    """
+    codigos = [str(c).strip() for c in (codigos or []) if str(c).strip()]
+    if not codigos:
+        return []
+    # mantém ordem
+    uniq = []
+    seen = set()
+    for c in codigos:
+        if c not in seen:
+            seen.add(c)
+            uniq.append(c)
+
+    try:
+        with SessionLocal() as db:
+            q = db.query(Emp.codigo)
+            q = q.filter(Emp.codigo.in_(uniq))
+            if apenas_ativas:
+                q = q.filter(Emp.ativo.is_(True))
+            rows = q.all()
+            ok = {str(r[0]).strip() for r in rows if r and r[0] is not None and str(r[0]).strip()}
+    except Exception:
+        ok = set()
+
+    if not ok:
+        # Sem cadastro disponível/consultável → não filtra (compatibilidade)
+        return uniq
+
+    return [c for c in uniq if c in ok]
+
+
 def _get_vendedores_cadastrados_por_emp(emp: str) -> set[str]:
     """Retorna conjunto de vendedores cadastrados e vinculados à EMP (via usuario_emps).
     Se não houver vínculo, retorna conjunto global de vendedores cadastrados.
@@ -1139,21 +1017,6 @@ def _get_vendedores_cadastrados_por_emp(emp: str) -> set[str]:
             return glob
     except Exception:
         return set()
-
-
-# Compat: services recebem `args` explicitamente (evita dependência direta do `request` no service).
-def _parse_multi_args_from(args, name: str) -> list[str]:
-    try:
-        if hasattr(args, "getlist"):
-            vals = args.getlist(name)
-        else:
-            vals = args.get(name)
-            vals = vals if isinstance(vals, list) else ([vals] if vals else [])
-        return [str(v).strip() for v in vals if str(v).strip()]
-    except Exception:
-        return []
-
-
 
 def _get_all_emp_codigos(apenas_ativas: bool = True) -> list[str]:
     """Lista todas as EMPs cadastradas (tabela emps).
@@ -5899,774 +5762,12 @@ def admin_apagar_vendas():
 
 
 # =====================
-# Mensagens (Central + Bloqueio diário)
-# =====================
-
-@app.route("/mensagens", methods=["GET"])
-def mensagens_central():
-    red = _login_required()
-    if red:
-        return red
-
-    usuario = _usuario_logado()
-    role = (_role() or "").lower()
-    user_id = session.get("user_id")
-    allowed_emps = _allowed_emps()  # [] => todas (admin_all_emps)
-    today = date.today()
-
-    with SessionLocal() as db:
-        # Mensagens ativas e no período
-        msgs = (
-            db.query(Mensagem)
-            .filter(Mensagem.ativo.is_(True))
-            .order_by(Mensagem.bloqueante.desc(), Mensagem.id.desc())
-            .all()
-        )
-
-        out = []
-        for msg in msgs:
-            if not _is_date_in_range(today, msg.inicio_em, msg.fim_em):
-                continue
-
-            targeted_user = (
-                db.query(MensagemUsuario)
-                .filter(MensagemUsuario.mensagem_id == msg.id)
-                .filter(MensagemUsuario.usuario_id == int(user_id))
-                .first()
-                is not None
-            )
-
-            targeted_emp = False
-            if role == "admin" and session.get("admin_all_emps"):
-                targeted_emp = (
-                    db.query(MensagemEmpresa)
-                    .filter(MensagemEmpresa.mensagem_id == msg.id)
-                    .first()
-                    is not None
-                )
-            else:
-                if allowed_emps:
-                    targeted_emp = (
-                        db.query(MensagemEmpresa)
-                        .filter(MensagemEmpresa.mensagem_id == msg.id)
-                        .filter(MensagemEmpresa.emp.in_(allowed_emps))
-                        .first()
-                        is not None
-                    )
-
-            if not (targeted_user or targeted_emp):
-                continue
-
-            lida_hoje = (
-                db.query(MensagemLidaDiaria)
-                .filter(MensagemLidaDiaria.mensagem_id == msg.id)
-                .filter(MensagemLidaDiaria.usuario_id == int(user_id))
-                .filter(MensagemLidaDiaria.data == today)
-                .first()
-                is not None
-            )
-
-            out.append({
-                "msg": msg,
-                "lida_hoje": lida_hoje,
-            })
-
-        return render_template("mensagens.html", mensagens=out, usuario=usuario, role=role)
-
-
-@app.route("/mensagens/bloqueio/<int:mensagem_id>", methods=["GET"])
-def mensagens_bloqueio(mensagem_id: int):
-    red = _login_required()
-    if red:
-        return red
-
-    usuario = _usuario_logado()
-    role = (_role() or "").lower()
-    user_id = session.get("user_id")
-    allowed_emps = _allowed_emps()
-    today = date.today()
-
-    with SessionLocal() as db:
-        msg = db.query(Mensagem).filter(Mensagem.id == mensagem_id).first()
-        if not msg or not msg.ativo or not msg.bloqueante or not _is_date_in_range(today, msg.inicio_em, msg.fim_em):
-            return redirect(url_for("dashboard"))
-
-        # Confere destino (segurança)
-        targeted_user = (
-            db.query(MensagemUsuario)
-            .filter(MensagemUsuario.mensagem_id == msg.id)
-            .filter(MensagemUsuario.usuario_id == int(user_id))
-            .first()
-            is not None
-        )
-
-        targeted_emp = False
-        if role == "admin" and session.get("admin_all_emps"):
-            targeted_emp = (
-                db.query(MensagemEmpresa)
-                .filter(MensagemEmpresa.mensagem_id == msg.id)
-                .first()
-                is not None
-            )
-        else:
-            if allowed_emps:
-                targeted_emp = (
-                    db.query(MensagemEmpresa)
-                    .filter(MensagemEmpresa.mensagem_id == msg.id)
-                    .filter(MensagemEmpresa.emp.in_(allowed_emps))
-                    .first()
-                    is not None
-                )
-
-        if not (targeted_user or targeted_emp):
-            return redirect(url_for("dashboard"))
-
-        return render_template("mensagem_bloqueio.html", msg=msg, usuario=usuario, role=role)
-
-
-@app.route("/mensagens/lida/<int:mensagem_id>", methods=["POST"])
-def mensagens_marcar_lida(mensagem_id: int):
-    red = _login_required()
-    if red:
-        return red
-
-    user_id = session.get("user_id")
-    today = date.today()
-
-    with SessionLocal() as db:
-        msg = db.query(Mensagem).filter(Mensagem.id == mensagem_id).first()
-        if msg and msg.ativo and msg.bloqueante:
-            # upsert simples (tenta inserir; se já existir, ignora)
-            existe = (
-                db.query(MensagemLidaDiaria)
-                .filter(MensagemLidaDiaria.mensagem_id == mensagem_id)
-                .filter(MensagemLidaDiaria.usuario_id == int(user_id))
-                .filter(MensagemLidaDiaria.data == today)
-                .first()
-            )
-            if not existe:
-                db.add(MensagemLidaDiaria(
-                    mensagem_id=mensagem_id,
-                    usuario_id=int(user_id),
-                    data=today,
-                ))
-                db.commit()
-
-    next_url = session.pop("after_block_redirect", None)
-    if next_url:
-        return redirect(next_url)
-    return redirect(url_for("dashboard"))
-
-
-@app.route("/admin/mensagens", methods=["GET", "POST"])
-def admin_mensagens():
-    red = _login_required()
-    if red:
-        return red
-    red = _admin_or_supervisor_required()
-    if red:
-        return red
-
-    usuario = _usuario_logado()
-    role = (_role() or "").lower()
-    user_id = session.get("user_id")
-    allowed_emps = _allowed_emps()
-    today = date.today()
-
-    with SessionLocal() as db:
-        emps_q = db.query(Emp).filter(Emp.ativo.is_(True)).order_by(Emp.codigo.asc()).all()
-        # Supervisor só pode ver/usar as empresas dele
-        if role == "supervisor":
-            emps_q = [e for e in emps_q if str(e.codigo) in set(allowed_emps or [])]
-
-        users_q = []
-        allowed_user_ids = set()
-        if role == "admin":
-            users_q = db.query(Usuario).order_by(Usuario.username.asc()).all()
-            allowed_user_ids = {u.id for u in users_q}
-        elif role == "supervisor":
-            # Supervisor pode enviar para usuários individuais, mas apenas dentro das empresas dele
-            allowed_set = set(allowed_emps or [])
-            if allowed_set:
-                users_q = (
-                    db.query(Usuario)
-                    .join(UsuarioEmp, UsuarioEmp.usuario_id == Usuario.id)
-                    .filter(UsuarioEmp.emp.in_(list(allowed_set)))
-                    .filter(UsuarioEmp.ativo.is_(True))
-                    .distinct()
-                    .order_by(Usuario.username.asc())
-                    .all()
-                )
-                allowed_user_ids = {u.id for u in users_q}
-
-        if request.method == "POST":
-            titulo = (request.form.get("titulo") or "").strip()
-            conteudo = (request.form.get("conteudo") or "").strip()
-            bloqueante = (request.form.get("bloqueante") == "on")
-            ativo = True if (request.form.get("ativo") != "off") else False
-            inicio_em = (request.form.get("inicio_em") or "").strip()
-            fim_em = (request.form.get("fim_em") or "").strip()
-            empresas_sel = request.form.getlist("empresas")
-            usuario_dest = (request.form.get("usuario_id") or "").strip()  # opcional (admin e supervisor)
-
-            # validações
-            erros = []
-            if not titulo:
-                erros.append("Informe um título.")
-            if not conteudo:
-                erros.append("Informe a mensagem.")
-            if role == "supervisor" and (not empresas_sel and not usuario_dest):
-                erros.append("Selecione ao menos 1 empresa ou 1 usuário.")
-            if role == "admin" and (not empresas_sel and not usuario_dest):
-                erros.append("Selecione ao menos 1 empresa ou 1 usuário.")
-
-            # restringe empresas do supervisor
-            if role == "supervisor":
-                allowed_set = set(allowed_emps or [])
-                empresas_sel = [e for e in empresas_sel if str(e) in allowed_set]
-
-
-            # restringe usuário destino (admin: qualquer; supervisor: apenas usuários das empresas dele)
-            if usuario_dest:
-                try:
-                    uid = int(usuario_dest)
-                    if uid not in allowed_user_ids:
-                        erros.append("Usuário inválido para envio.")
-                        usuario_dest = ""
-                except Exception:
-                    erros.append("Usuário inválido para envio.")
-                    usuario_dest = ""
-
-            if not erros:
-                def _parse_date(s: str):
-                    try:
-                        return datetime.strptime(s, "%Y-%m-%d").date()
-                    except Exception:
-                        return None
-
-                msg = Mensagem(
-                    titulo=titulo,
-                    conteudo=conteudo,
-                    bloqueante=bloqueante,
-                    ativo=ativo,
-                    inicio_em=_parse_date(inicio_em),
-                    fim_em=_parse_date(fim_em),
-                    created_by_user_id=int(user_id) if user_id else None,
-                )
-                db.add(msg)
-                db.flush()
-
-                for emp_code in empresas_sel:
-                    db.add(MensagemEmpresa(mensagem_id=msg.id, emp=str(emp_code).strip()))
-                if usuario_dest:
-                    try:
-                        uid = int(usuario_dest)
-                        db.add(MensagemUsuario(mensagem_id=msg.id, usuario_id=uid))
-                    except Exception:
-                        pass
-
-                db.commit()
-                flash("Mensagem criada com sucesso.", "success")
-                return redirect(url_for("admin_mensagens"))
-            else:
-                for e in erros:
-                    flash(e, "danger")
-
-        # listagem
-        mensagens = (
-            db.query(Mensagem)
-            .order_by(Mensagem.ativo.desc(), Mensagem.id.desc())
-            .limit(300)
-            .all()
-        )
-        # supervisor vê apenas as mensagens que ele criou
-        if role == "supervisor":
-            mensagens = [m for m in mensagens if m.created_by_user_id == int(user_id)]
-
-        # Enriquecer destinos para exibição
-        destinos = {}
-        for m_ in mensagens:
-            emp_codes = [x.emp for x in db.query(MensagemEmpresa).filter(MensagemEmpresa.mensagem_id == m_.id).all()]
-            usr_ids = [x.usuario_id for x in db.query(MensagemUsuario).filter(MensagemUsuario.mensagem_id == m_.id).all()]
-            destinos[m_.id] = {"emps": emp_codes, "users": usr_ids}
-
-        return render_template(
-            "admin_mensagens.html",
-            usuario=usuario,
-            role=role,
-            emps=emps_q,
-            users=users_q,
-            mensagens=mensagens,
-            destinos=destinos,
-            today=today,
-        )
-
-
-@app.route("/admin/mensagens/<int:mensagem_id>/toggle", methods=["POST"])
-def admin_mensagens_toggle(mensagem_id: int):
-    red = _login_required()
-    if red:
-        return red
-    red = _admin_or_supervisor_required()
-    if red:
-        return red
-
-    role = (_role() or "").lower()
-    allowed_emps = _allowed_emps()
-
-    with SessionLocal() as db:
-        msg = db.query(Mensagem).filter(Mensagem.id == mensagem_id).first()
-        if not msg:
-            flash("Mensagem não encontrada.", "warning")
-            return redirect(url_for("admin_mensagens"))
-
-        if role == "supervisor":
-            # supervisor só pode alterar mensagens que ele mesmo criou
-            if msg.created_by_user_id != int(session.get("user_id") or 0):
-                flash("Acesso restrito.", "danger")
-                return redirect(url_for("admin_mensagens"))
-                return redirect(url_for("admin_mensagens"))
-
-        msg.ativo = not bool(msg.ativo)
-        db.commit()
-        flash("Status atualizado.", "success")
-        return redirect(url_for("admin_mensagens"))
-
-# =====================
 # Metas (Crescimento / MIX / Share de Marcas)
-# Helpers extraídos para metas_helpers.py (refatoração pura)
+# Rotas e helpers extraídos para metas_helpers.py e metas_routes.py (refatoração pura)
 # =====================
 
-@app.get("/metas")
-def metas():
-    red = _login_required()
-    if red:
-        return red
-
-    role = _role() or ""
-    hoje = date.today()
-    ano = int(request.args.get("ano") or hoje.year)
-    mes = int(request.args.get("mes") or hoje.month)
-
-    # filtros
-    emp_filtro = (request.args.get("emp") or "").strip()
-    vendedor_filtro = (request.args.get("vendedor") or "").strip().upper()
-
-    with SessionLocal() as db:
-        emps_allowed = _allowed_emps()
-        # Admin pode ver tudo; supervisor/vendedor restringe
-        emps_no_periodo = _get_emps_no_periodo(db, ano, mes, emps_allowed)
-        if emp_filtro:
-            # valida contra allowed
-            if emps_allowed and emp_filtro not in emps_allowed:
-                flash("EMP não permitida para seu usuário.", "danger")
-                emp_filtro = ""
-        emps_scope = [emp_filtro] if emp_filtro else emps_no_periodo
-
-        # metas ativas do período
-        metas_list = (
-            db.query(MetaPrograma)
-            .filter(MetaPrograma.ano == ano, MetaPrograma.mes == mes, MetaPrograma.ativo.is_(True))
-            .order_by(MetaPrograma.tipo.asc(), MetaPrograma.nome.asc())
-            .all()
-        )
-
-        # aplica meta -> emps
-        meta_emps_map = {}
-        for m in metas_list:
-            rows = db.query(MetaProgramaEmp.emp).filter(MetaProgramaEmp.meta_id == m.id).all()
-            meta_emps_map[m.id] = sorted({str(r[0]).strip() for r in rows if r and r[0] is not None and str(r[0]).strip()})
-
-        # vendedores
-        if role == "vendedor":
-            vendedores = [str(session.get("usuario") or "").strip().upper()]
-        else:
-            vendedores = _get_vendedores_no_periodo(db, ano, mes, emps_scope)
-            if vendedor_filtro:
-                vendedores = [v for v in vendedores if v == vendedor_filtro]
-
-        # calcula resultados
-        resultados = []  # cada item: {vendedor, emp, metas: {meta_id: premio}, detalhes...}
-        for emp in emps_scope:
-            for vend in vendedores:
-                # checa se vend tem vendas no período nessa emp (evita linha vazia)
-                valor_mes = _query_valor_mes(db, ano, mes, emp, vend)
-                if (not valor_mes) and role != "vendedor":
-                    continue
-
-                row = {"emp": emp, "vendedor": vend, "valor_mes": float(valor_mes), "metas": {}, "detalhes": {}}
-                total_premios = Decimal("0.00")
-
-                for meta in metas_list:
-                    # meta vale para esta emp?
-                    emps_meta = meta_emps_map.get(meta.id) or []
-                    if emps_meta and emp not in emps_meta:
-                        continue
-
-                    res = _calc_and_upsert_meta_result(db, meta, emp, vend)
-                    row["metas"][meta.id] = float(res.premio or 0.0)
-                    # detalhes principais (pra tooltip/modal futuro)
-                    row["detalhes"][meta.id] = {
-                        "tipo": meta.tipo,
-                        "bonus": float(res.bonus_percentual or 0.0),
-                        "crescimento_pct": float(res.crescimento_pct or 0.0) if res.crescimento_pct is not None else None,
-                        "base_valor": float(res.base_valor or 0.0) if res.base_valor is not None else None,
-                        "mix": float(res.mix_itens_unicos or 0.0) if res.mix_itens_unicos is not None else None,
-                        "share_pct": float(res.share_pct or 0.0) if res.share_pct is not None else None,
-                        "valor_marcas": float(res.valor_marcas or 0.0) if res.valor_marcas is not None else None,
-                    }
-                    total_premios += _as_decimal(res.premio or 0.0)
-
-                row["total_premios"] = float(_money2(total_premios))
-                resultados.append(row)
-
-        # listas para filtros
-        emps_choices = emps_no_periodo
-        vendedores_choices = _get_vendedores_no_periodo(db, ano, mes, emps_scope) if role != "vendedor" else vendedores
-
-        # nomes amigáveis dos tipos
-        tipo_label = {"CRESCIMENTO": "📈 Crescimento", "MIX": "🧩 MIX", "SHARE_MARCA": "🏷️ Share de Marcas"}
-
-        return render_template(
-            "metas.html",
-            role=role,
-            emp=_emp(),
-            ano=ano,
-            mes=mes,
-            metas_list=metas_list,
-            tipo_label=tipo_label,
-            resultados=resultados,
-            emps_choices=emps_choices,
-            vendedores_choices=vendedores_choices,
-            emp_filtro=emp_filtro,
-            vendedor_filtro=vendedor_filtro,
-        )
-
-
-@app.get("/admin/metas")
-def admin_metas():
-    red = _login_required()
-    if red:
-        return red
-
-    role = _role() or ""
-    if role not in ("admin", "supervisor"):
-        flash("Acesso negado.", "danger")
-        return redirect(url_for("dashboard"))
-
-    hoje = date.today()
-    ano = int(request.args.get("ano") or hoje.year)
-    mes = int(request.args.get("mes") or hoje.month)
-
-    with SessionLocal() as db:
-        emps_allowed = _allowed_emps()
-        # lista de EMPs cadastradas (melhor do que inferir por vendas)
-        emps_rows = db.query(Emp).filter(Emp.ativo.is_(True)).order_by(Emp.codigo.asc()).all()
-        # supervisor só pode suas emps
-        if role == "supervisor" and emps_allowed:
-            emps_rows = [e for e in emps_rows if str(e.codigo) in set(emps_allowed)]
-
-        metas_list = (
-            db.query(MetaPrograma)
-            .filter(MetaPrograma.ano == ano, MetaPrograma.mes == mes)
-            .order_by(MetaPrograma.ativo.desc(), MetaPrograma.tipo.asc(), MetaPrograma.nome.asc())
-            .all()
-        )
-
-        # mapa de emps e escalas/marcas
-        meta_emps = {}
-        meta_escalas = {}
-        meta_marcas = {}
-        for m in metas_list:
-            meta_emps[m.id] = [r[0] for r in db.query(MetaProgramaEmp.emp).filter(MetaProgramaEmp.meta_id == m.id).all()]
-            meta_escalas[m.id] = db.query(MetaEscala).filter(MetaEscala.meta_id == m.id).order_by(MetaEscala.ordem.asc()).all()
-            meta_marcas[m.id] = [r[0] for r in db.query(MetaMarca.marca).filter(MetaMarca.meta_id == m.id).all()]
-
-        return render_template(
-            "admin_metas.html",
-            role=role,
-            emp=_emp(),
-            ano=ano,
-            mes=mes,
-            emps_rows=emps_rows,
-            metas_list=metas_list,
-            meta_emps=meta_emps,
-            meta_escalas=meta_escalas,
-            meta_marcas=meta_marcas,
-        )
-
-
-@app.post("/admin/metas/criar")
-def admin_metas_criar():
-    red = _login_required()
-    if red:
-        return red
-
-    role = _role() or ""
-    if role not in ("admin", "supervisor"):
-        flash("Acesso negado.", "danger")
-        return redirect(url_for("dashboard"))
-
-    nome = (request.form.get("nome") or "").strip()
-    tipo = (request.form.get("tipo") or "").strip().upper()
-    ano = int(request.form.get("ano") or date.today().year)
-    mes = int(request.form.get("mes") or date.today().month)
-    bloqueio = request.form.get("ativo")  # checkbox
-
-    emps = request.form.getlist("emps") or []
-
-    escalas_raw = (request.form.get("escalas") or "").strip()
-    marcas_raw = (request.form.get("marcas") or "").strip()
-
-    if not nome or tipo not in ("CRESCIMENTO", "MIX", "SHARE_MARCA"):
-        flash("Preencha Nome e Tipo da meta.", "danger")
-        return redirect(url_for("admin_metas", ano=ano, mes=mes))
-
-    if not emps:
-        flash("Selecione ao menos 1 Empresa.", "danger")
-        return redirect(url_for("admin_metas", ano=ano, mes=mes))
-
-    # parse escalas: linhas "limite=bonus" ou "limite:bonus"
-    escalas = []
-    for ln in escalas_raw.splitlines():
-        ln = ln.strip()
-        if not ln:
-            continue
-        ln = ln.replace(",", ".")
-        if ":" in ln:
-            a, b = ln.split(":", 1)
-        elif "=" in ln:
-            a, b = ln.split("=", 1)
-        else:
-            continue
-        try:
-            lim = float(a.strip())
-            bon = float(b.strip())
-            escalas.append((lim, bon))
-        except Exception:
-            continue
-
-    if not escalas:
-        flash("Informe as faixas (escadas) no formato 'limite:bonus'.", "danger")
-        return redirect(url_for("admin_metas", ano=ano, mes=mes))
-
-    marcas = []
-    if tipo == "SHARE_MARCA":
-        # aceita separador por vírgula, ponto-e-vírgula e quebra de linha
-        parts = re.split(r"[,\n;]+", marcas_raw)
-        marcas = [p.strip().upper() for p in parts if p.strip()]
-        if not marcas:
-            flash("Informe pelo menos 1 marca para Share de Marcas.", "danger")
-            return redirect(url_for("admin_metas", ano=ano, mes=mes))
-
-    with SessionLocal() as db:
-        # supervisor só pode emps dele
-        if role == "supervisor":
-            allowed = set(_allowed_emps())
-            emps = [e for e in emps if e in allowed]
-            if not emps:
-                flash("Você não tem permissão para as Empresas selecionadas.", "danger")
-                return redirect(url_for("admin_metas", ano=ano, mes=mes))
-
-        meta = MetaPrograma(
-            nome=nome,
-            tipo=tipo,
-            ano=ano,
-            mes=mes,
-            ativo=True if (bloqueio is None or str(bloqueio).lower() in ("1", "on", "true", "yes", "")) else False,
-            created_by_user_id=session.get("user_id"),
-        )
-        db.add(meta)
-        db.commit()
-
-        # vincula emps
-        for e in emps:
-            db.add(MetaProgramaEmp(meta_id=meta.id, emp=str(e).strip()))
-        # escalas
-        for idx, (lim, bon) in enumerate(sorted(escalas, key=lambda x: x[0])):
-            db.add(MetaEscala(meta_id=meta.id, ordem=idx + 1, limite_min=lim, bonus_percentual=bon))
-        # marcas
-        for m in marcas:
-            db.add(MetaMarca(meta_id=meta.id, marca=m))
-
-        db.commit()
-
-    flash("Meta criada com sucesso.", "success")
-    return redirect(url_for("admin_metas", ano=ano, mes=mes))
-
-
-@app.post("/admin/metas/toggle/<int:meta_id>")
-def admin_metas_toggle(meta_id: int):
-    red = _login_required()
-    if red:
-        return red
-
-    role = _role() or ""
-    if role not in ("admin", "supervisor"):
-        flash("Acesso negado.", "danger")
-        return redirect(url_for("dashboard"))
-
-    ano = int(request.form.get("ano") or date.today().year)
-    mes = int(request.form.get("mes") or date.today().month)
-
-    with SessionLocal() as db:
-        meta = db.query(MetaPrograma).filter(MetaPrograma.id == meta_id).first()
-        if not meta:
-            flash("Meta não encontrada.", "danger")
-            return redirect(url_for("admin_metas", ano=ano, mes=mes))
-
-        # supervisor só pode mexer em metas que atinjam emps dele (e opcionalmente as que ele criou)
-        if role == "supervisor":
-            allowed = set(_allowed_emps())
-            meta_emps = [r[0] for r in db.query(MetaProgramaEmp.emp).filter(MetaProgramaEmp.meta_id == meta.id).all()]
-            if not any(e in allowed for e in meta_emps):
-                flash("Você não tem permissão para esta meta.", "danger")
-                return redirect(url_for("admin_metas", ano=ano, mes=mes))
-
-        meta.ativo = not bool(meta.ativo)
-        db.commit()
-
-    flash("Status atualizado.", "success")
-    return redirect(url_for("admin_metas", ano=ano, mes=mes))
-
-
-@app.get("/admin/metas/bases/<int:meta_id>")
-def admin_meta_bases(meta_id: int):
-    red = _login_required()
-    if red:
-        return red
-
-    role = _role() or ""
-    if role not in ("admin", "supervisor"):
-        flash("Acesso negado.", "danger")
-        return redirect(url_for("dashboard"))
-
-    with SessionLocal() as db:
-        meta = db.query(MetaPrograma).filter(MetaPrograma.id == meta_id).first()
-        if not meta:
-            flash("Meta não encontrada.", "danger")
-            return redirect(url_for("admin_metas"))
-
-        if meta.tipo != "CRESCIMENTO":
-            flash("Base manual só se aplica a metas de Crescimento.", "warning")
-            return redirect(url_for("admin_metas", ano=meta.ano, mes=meta.mes))
-
-        emps_meta = [r[0] for r in db.query(MetaProgramaEmp.emp).filter(MetaProgramaEmp.meta_id == meta.id).all()]
-
-        # supervisor restringe emps
-        if role == "supervisor":
-            allowed = set(_allowed_emps())
-            emps_meta = [e for e in emps_meta if e in allowed]
-
-        # lista vendedores do período e dessas emps
-        vendedores = _get_vendedores_no_periodo(db, meta.ano, meta.mes, emps_meta)
-
-        # bases existentes
-        bases = db.query(MetaBaseManual).filter(MetaBaseManual.meta_id == meta.id).all()
-        bases_map = {(b.emp, b.vendedor): b for b in bases}
-
-        # prepara linhas
-        linhas = []
-        for emp in emps_meta:
-            for vend in vendedores:
-                # total atual (para referência)
-                total_atual = _query_valor_mes(db, meta.ano, meta.mes, emp, vend)
-                base_auto = _query_valor_mes(db, meta.ano - 1, meta.mes, emp, vend)
-                b = bases_map.get((emp, vend))
-                linhas.append(
-                    {
-                        "emp": emp,
-                        "vendedor": vend,
-                        "total_atual": float(total_atual),
-                        "base_auto": float(base_auto),
-                        "base_manual": float(b.base_valor) if b else None,
-                        "observacao": (b.observacao if b else ""),
-                    }
-                )
-
-        return render_template(
-            "admin_meta_bases.html",
-            role=role,
-            emp=_emp(),
-            meta=meta,
-            linhas=linhas,
-        )
-
-
-@app.post("/admin/metas/bases/<int:meta_id>/salvar")
-def admin_meta_bases_salvar(meta_id: int):
-    red = _login_required()
-    if red:
-        return red
-
-    role = _role() or ""
-    if role not in ("admin", "supervisor"):
-        flash("Acesso negado.", "danger")
-        return redirect(url_for("dashboard"))
-
-    with SessionLocal() as db:
-        meta = db.query(MetaPrograma).filter(MetaPrograma.id == meta_id).first()
-        if not meta or meta.tipo != "CRESCIMENTO":
-            flash("Meta inválida.", "danger")
-            return redirect(url_for("admin_metas"))
-
-        # supervisor restringe emps
-        emps_meta = [r[0] for r in db.query(MetaProgramaEmp.emp).filter(MetaProgramaEmp.meta_id == meta.id).all()]
-        if role == "supervisor":
-            allowed = set(_allowed_emps())
-            emps_meta = [e for e in emps_meta if e in allowed]
-
-        # recebe pares emp|vendedor
-        # campos: base__EMP__VENDEDOR e obs__EMP__VENDEDOR
-        updated = 0
-        for key, val in request.form.items():
-            if not key.startswith("base__"):
-                continue
-            parts = key.split("__", 2)
-            if len(parts) != 3:
-                continue
-            emp, vend = parts[1], parts[2]
-            if emp not in emps_meta:
-                continue
-            vend = (vend or "").strip().upper()
-            base_str = (val or "").strip().replace(".", "").replace(",", ".")
-            obs = (request.form.get(f"obs__{emp}__{vend}") or "").strip()
-
-            if base_str == "":
-                # remove manual se existir
-                b = (
-                    db.query(MetaBaseManual)
-                    .filter(MetaBaseManual.meta_id == meta.id, MetaBaseManual.emp == emp, MetaBaseManual.vendedor == vend)
-                    .first()
-                )
-                if b:
-                    db.delete(b)
-                    updated += 1
-                continue
-
-            try:
-                base_val = float(base_str)
-            except Exception:
-                continue
-
-            b = (
-                db.query(MetaBaseManual)
-                .filter(MetaBaseManual.meta_id == meta.id, MetaBaseManual.emp == emp, MetaBaseManual.vendedor == vend)
-                .first()
-            )
-            if not b:
-                b = MetaBaseManual(meta_id=meta.id, emp=emp, vendedor=vend)
-            b.base_valor = base_val
-            b.observacao = obs
-            db.add(b)
-            updated += 1
-
-        db.commit()
-
-    flash(f"Bases manuais salvas ({updated} alterações).", "success")
-    return redirect(url_for("admin_meta_bases", meta_id=meta_id))
-
-
+from metas_routes import register_metas_routes
+register_metas_routes(app)
 
 # ------------- Erros -------------
 @app.errorhandler(500)
