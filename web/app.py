@@ -53,6 +53,25 @@ from mensagens_guard import (
     find_pending_blocking_message as _find_pending_blocking_message_impl,
 )
 
+# --------------------------
+# Auth helpers / decorators (extraído do app.py - refatoração pura)
+# --------------------------
+from auth_helpers import (
+    _normalize_role,
+    _usuario_logado,
+    _role,
+    _emp,
+    _filter_emps_cadastradas,
+    _allowed_emps,
+    login_required,
+    admin_required,
+    financeiro_required,
+    _login_required,
+    _admin_required,
+    _admin_or_supervisor_required,
+)
+
+
 from flask import (
     Flask,
     flash,
@@ -197,11 +216,6 @@ except Exception:
 
 
 # ------------- Helpers -------------
-def _normalize_role(r: str | None) -> str:
-    # Compatibilidade: o sistema historicamente usa `_normalize_role`.
-    # A lógica agora vive em `security_utils.normalize_role`.
-    return normalize_role(r)
-
 
 from branding import _get_setting, _set_setting, _current_branding, register_branding
 register_branding(app, SessionLocal)
@@ -454,68 +468,6 @@ def _supabase_storage_upload(filename: str, content: bytes, content_type: str, f
         raise RuntimeError(f"Falha upload storage: {r.status_code} {r.text[:200]}")
     public_url = f"{supa_url}/storage/v1/object/public/{bucket}/{path}"
     return public_url
-def _usuario_logado() -> str | None:
-    return session.get("usuario")
-
-def _role() -> str | None:
-    return _normalize_role(session.get("role"))
-
-def _emp() -> str | None:
-    """Retorna a EMP do usuário logado (quando existir)."""
-    emp = session.get("emp")
-    if emp is not None and emp != "":
-        return str(emp)
-    uid = session.get("user_id")
-    if not uid:
-        return None
-    try:
-        db = SessionLocal()
-        u = db.query(Usuario).filter(Usuario.id == uid).first()
-        if not u:
-            return None
-        emp_val = getattr(u, "emp", None)
-        if emp_val is None or emp_val == "":
-            return None
-        session["emp"] = str(emp_val)
-        return str(emp_val)
-    except Exception:
-        return None
-    finally:
-        try:
-            db.close()
-        except Exception:
-            pass
-
-
-
-def _allowed_emps() -> list[str]:
-    """Lista de EMPs permitidas para o usuário logado via tabela usuario_emps.
-
-    Compat:
-      - session['emps'] (novo / recomendado)
-      - session['allowed_emps'] (legado)
-    """
-    role = (_role() or "").lower()
-    if role == "admin" and session.get("admin_all_emps"):
-        return []
-
-    emps_int = get_session_emps()
-    if emps_int:
-        return _filter_emps_cadastradas([str(e) for e in emps_int], apenas_ativas=True)
-
-    uid = session.get("user_id")
-    if not uid:
-        return []
-
-    try:
-        with SessionLocal() as db:
-            refresh_session_emps(db, usuario_id=int(uid), fallback_emp=_emp())
-            emps_int = get_session_emps()
-            return _filter_emps_cadastradas([str(e) for e in emps_int], apenas_ativas=True)
-    except Exception:
-        return []
-
-
 # -------------------------
 # Mensagens bloqueantes (extraído)
 # -------------------------
@@ -530,74 +482,6 @@ def _find_pending_blocking_message(db) -> Mensagem | None:
     )
 
 
-
-# =========================
-# Auth helpers / decorators
-# =========================
-from functools import wraps
-
-def _role():
-    """Retorna o papel/perfil normalizado do usuário logado (admin/supervisor/vendedor/financeiro)."""
-    try:
-        return normalize_role(session.get("role"))
-    except Exception:
-        # fallback defensivo
-        val = session.get("role") or session.get("perfil") or ""
-        return str(val).strip().lower()
-
-def login_required(view_func):
-    """Decorator: exige usuário logado."""
-    @wraps(view_func)
-    def _wrapped(*args, **kwargs):
-        red = _login_required()
-        if red:
-            return red
-        return view_func(*args, **kwargs)
-    return _wrapped
-
-def admin_required(view_func):
-    """Decorator: exige ADMIN."""
-    @wraps(view_func)
-    def _wrapped(*args, **kwargs):
-        red = _admin_required()
-        if red:
-            return red
-        return view_func(*args, **kwargs)
-    return _wrapped
-
-def financeiro_required(view_func):
-    """Decorator: exige FINANCEIRO (ou ADMIN)."""
-    @wraps(view_func)
-    def _wrapped(*args, **kwargs):
-        if _role() not in ("financeiro", "admin"):
-            flash("Acesso restrito ao Financeiro.", "warning")
-            return redirect(url_for("dashboard"))
-        return view_func(*args, **kwargs)
-    return _wrapped
-
-def _login_required():
-    if not _usuario_logado():
-        return redirect(url_for("auth.login"))
-    return None
-
-def _admin_required():
-    """Garante acesso ADMIN.
-
-    Retorna um redirect quando não for admin; caso contrário retorna None.
-    """
-    if _role() != "admin":
-        flash("Acesso restrito ao administrador.", "warning")
-        audit("admin_forbidden")
-        return redirect(url_for("dashboard"))
-    return None
-
-def _admin_or_supervisor_required():
-    """Garante acesso ADMIN ou SUPERVISOR."""
-    if (_role() or "").lower() not in ["admin", "supervisor"]:
-        flash("Acesso restrito.", "warning")
-        audit("forbidden", path=request.path)
-        return redirect(url_for("dashboard"))
-    return None
 
 def _get_vendedores_db(role: str, emp_usuario: str | None) -> list[str]:
     """Lista de vendedores para dropdown sem carregar todas as vendas em memória."""
