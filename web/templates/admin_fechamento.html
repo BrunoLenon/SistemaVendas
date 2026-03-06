@@ -1,42 +1,36 @@
 {% extends "base.html" %}
 {% from "partials/multiselect.html" import multiselect %}
 
-{% block title %}Fechamento Mensal — {{ mes }}/{{ ano }}{% endblock %}
+{% block title %}Fechamento Mensal — {{ '%02d'|format(mes) }}/{{ ano }}{% endblock %}
 
 {% block extra_head %}
 <style>
   .page-title{font-weight:800; letter-spacing:-.3px}
   .subtitle{color:var(--bs-secondary-color)}
-  .kpi{min-height:84px}
-</style>
-
-<style>
-  /* Admin pages: use more width + compact spacing */
   .sv-page.sv-page--wide{max-width: 1480px;}
   .sv-page{padding-top:10px;padding-bottom:10px;}
   .sv-pagehead{padding:12px;}
   .sv-card-pad{padding:12px;}
-  .sv-table td,.sv-table th{padding:.5rem .55rem;}
+  .sv-table td,.sv-table th{padding:.55rem .6rem;}
   .sv-table thead th{font-size:12px; letter-spacing:.02em;}
   .sv-muted{opacity:.78}
+  .status-chip{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;font-weight:700;font-size:.82rem;border:1px solid rgba(255,255,255,.12)}
+  .status-chip--aberto{background:rgba(108,117,125,.14);color:#cfd3d8;border-color:rgba(108,117,125,.35)}
+  .status-chip--fechado{background:rgba(255,193,7,.14);color:#ffd666;border-color:rgba(255,193,7,.35)}
+  .status-chip--pago{background:rgba(25,135,84,.14);color:#6ee7a2;border-color:rgba(25,135,84,.35)}
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="sv-page sv-page--wide">
-
   <div class="sv-pagehead sv-glass mb-3">
-  <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 w-100">
-    <div>
-      <h3 class="m-0 page-title">✅ Fechamento Mensal</h3>
-      <div class="subtitle mt-1">
-        Trava edição de campanhas/resumos no período. Apenas ADMIN.
+    <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 w-100">
+      <div>
+        <h3 class="m-0 page-title">✅ Fechamento Mensal</h3>
+        <div class="subtitle mt-1">
+          Fluxo do período: <b>ABERTO → FECHADO → PAGO</b>. <b>PAGO</b> é definitivo e não pode ser reaberto.
+        </div>
       </div>
-  </div>
-</div>
-
-<div class="d-flex gap-2">
-      <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin_resumos_periodo') }}">Ir para Resumos por Período</a>
     </div>
   </div>
 
@@ -50,7 +44,7 @@
     <div class="row g-2 align-items-end">
       <div class="col-md-6">
         {{ multiselect("emp", emps_options or [], emps_sel or [], label="EMP(s)", placeholder="Selecione EMP(s)") }}
-        <div class="form-text">Você pode selecionar 1 ou várias EMPs para fechar/reabrir em lote.</div>
+        <div class="form-text">Você pode selecionar 1 ou várias EMPs para fechar/reabrir/marcar como pago em lote.</div>
       </div>
 
       <div class="col-6 col-md-2">
@@ -73,11 +67,10 @@
       <div class="d-flex flex-wrap justify-content-between align-items-start gap-2">
         <div>
           <h5 class="m-0">Status do período</h5>
-          <div class="subtitle small mt-1">Competência: <b>{{ mes }}/{{ ano }}</b></div>
+          <div class="subtitle small mt-1">Competência: <b>{{ '%02d'|format(mes) }}/{{ ano }}</b></div>
         </div>
 
-    <form method="post" action="{{ url_for('admin_fechamento') }}" class="d-flex flex-wrap gap-2 align-items-end">
-          {# mantém filtros no POST #}
+        <form method="post" action="{{ url_for('admin_fechamento') }}" class="d-flex flex-wrap gap-2 align-items-end">
           {% for e in (emps_sel or []) %}
             <input class="sv-input" type="hidden" name="emp" value="{{ e }}">
           {% endfor %}
@@ -85,24 +78,16 @@
           <input class="sv-input" type="hidden" name="ano" value="{{ ano }}">
           <input class="sv-input" type="hidden" name="acao" id="acao_fechamento" value="">
 
-<button class="btn btn-outline-primary" type="submit" onclick="document.getElementById('acao_fechamento').value='gerar_fechamento'" {% if not emps_sel %}disabled{% endif %}>
-  Gerar Fechamento (Congelar)
-</button>
-
-<button class="btn btn-outline-dark" type="submit" onclick="document.getElementById('acao_fechamento').value='gerar_snapshot'" {% if not emps_sel %}disabled{% endif %}>
-  Gerar Snapshot (Relatório)
-</button>
-
-<button class="btn btn-primary" type="submit" onclick="document.getElementById('acao_fechamento').value='fechar_a_pagar'" {% if not emps_sel %}disabled{% endif %}>
-  Fechar (A pagar)
-</button>
-<button class="btn btn-success" type="submit" onclick="document.getElementById('acao_fechamento').value='fechar_pago'" {% if not emps_sel %}disabled{% endif %}>
-  Fechar (Pago)
-</button>
-<button class="btn btn-outline-secondary" type="submit" onclick="document.getElementById('acao_fechamento').value='reabrir'" {% if not emps_sel %}disabled{% endif %}>
-  Reabrir (Voltar para Aberto)
-</button>
-</form>
+          <button class="btn btn-primary" type="submit" onclick="document.getElementById('acao_fechamento').value='fechar'" {% if not emps_sel %}disabled{% endif %}>
+            Fechar
+          </button>
+          <button class="btn btn-success" type="submit" onclick="document.getElementById('acao_fechamento').value='pago'" {% if not emps_sel %}disabled{% endif %}>
+            Pago
+          </button>
+          <button class="btn btn-outline-secondary" type="submit" onclick="document.getElementById('acao_fechamento').value='reabrir'" {% if not emps_sel %}disabled{% endif %}>
+            Reabrir
+          </button>
+        </form>
       </div>
 
       <div class="mt-3">
@@ -114,39 +99,48 @@
               <thead>
                 <tr>
                   <th>EMP</th>
+                  <th>Status</th>
                   <th>Trava</th>
-                  <th>Financeiro</th>
                   <th>Fechado em</th>
+                  <th>Regra</th>
                 </tr>
               </thead>
               <tbody>
                 {% for e in emps_sel %}
-                  {% set st = status_por_emp.get(e) %}
+                  {% set st = status_por_emp.get(e) or {} %}
+                  {% set status = st.get('status', 'aberto') %}
                   <tr>
                     <td><b>{{ e }}</b></td>
                     <td>
-                      {% if st and st.fechado %}
-                        <span class="badge text-bg-danger">FECHADO</span>
+                      {% if status == 'pago' %}
+                        <span class="status-chip status-chip--pago">PAGO</span>
+                      {% elif status == 'fechado' %}
+                        <span class="status-chip status-chip--fechado">FECHADO</span>
                       {% else %}
-                        <span class="badge text-bg-success">ABERTO</span>
+                        <span class="status-chip status-chip--aberto">ABERTO</span>
                       {% endif %}
                     </td>
                     <td>
-                      {% if st and st.status == "pago" %}
-                        <span class="badge text-bg-primary">PAGO</span>
-                      {% elif st and st.status == "a_pagar" %}
-                        <span class="badge text-bg-warning">A PAGAR</span>
-                      {% elif st and st.status == "fechado" %}
-                        <span class="badge text-bg-info">FECHADO</span>
+                      {% if st.get('fechado') %}
+                        <span class="badge text-bg-danger">TRAVADO</span>
                       {% else %}
-                        <span class="badge text-bg-secondary">ABERTO</span>
+                        <span class="badge text-bg-success">LIVRE</span>
                       {% endif %}
                     </td>
                     <td class="small text-muted">
-                      {% if st and st.fechado_em %}
-                        {{ st.fechado_em }}
+                      {% if st.get('fechado_em') %}
+                        {{ st.get('fechado_em') }}
                       {% else %}
                         —
+                      {% endif %}
+                    </td>
+                    <td class="small text-muted">
+                      {% if status == 'pago' %}
+                        Estado final. Não permite reabrir.
+                      {% elif status == 'fechado' %}
+                        Travado para edição. Pode marcar como pago ou reabrir.
+                      {% else %}
+                        Período aberto para edição.
                       {% endif %}
                     </td>
                   </tr>
@@ -156,12 +150,11 @@
           </div>
 
           <div class="alert alert-secondary small mb-0">
-            <b>Dica:</b> Se o mês estiver <span class="badge text-bg-danger">FECHADO</span>, telas que respeitam a trava não devem permitir alteração dos cadastros do período.
+            <b>Regras:</b> <b>Fechar</b> trava a competência. <b>Pago</b> finaliza a competência e não permite mais reabertura. <b>Reabrir</b> só funciona para períodos fechados que ainda não foram pagos.
           </div>
         {% endif %}
       </div>
     </div>
   </div>
-
 </div>
 {% endblock %}

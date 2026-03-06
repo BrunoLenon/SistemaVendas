@@ -5830,8 +5830,13 @@ def admin_combos():
 def admin_fechamento():
     """Página dedicada de fechamento mensal (ADMIN).
 
-    Responsável por travar/reativar a competência (EMP + mês/ano), servindo de base
-    para relatórios consolidados e impedindo alterações em campanhas/resumos quando fechado.
+    Regras de negócio:
+    - ABERTO  -> FECHADO ou PAGO
+    - FECHADO -> PAGO ou REABERTO
+    - PAGO    -> estado final (não reabre)
+
+    Observação: FECHADO/PAGO mantêm a competência travada. REABRIR volta para
+    ABERTO e remove a trava do período.
     """
     red = _admin_required()
     if red:
@@ -5841,8 +5846,6 @@ def admin_fechamento():
     ano = int(request.values.get("ano") or hoje.year)
     mes = int(request.values.get("mes") or hoje.month)
 
-    # multi-EMP: fecha em lote quando selecionar mais de uma EMP
-    # multi-EMP: lê tanto querystring (?emp=101&emp=102) quanto POST (inputs hidden name=emp)
     emps_sel = []
     try:
         emps_sel = [str(e).strip() for e in request.values.getlist("emp") if str(e).strip()]
@@ -5851,30 +5854,25 @@ def admin_fechamento():
     if not emps_sel:
         emps_sel = [str(e).strip() for e in _parse_multi_args("emp") if str(e).strip()]
     if not emps_sel:
-        # fallback: tenta usar emp único (mantém compatibilidade com versões antigas)
         emp_single = _emp_norm(request.values.get("emp", ""))
         emps_sel = [emp_single] if emp_single else []
 
     msgs: list[str] = []
     status_por_emp: dict[str, dict] = {}
 
-    # Normaliza a ação vinda do formulário (alguns navegadores/JS podem enviar
-    # variações, ex.: sem underscore, com hífen ou com espaços).
     acao_raw = (request.values.get("acao") or request.values.get("action") or request.form.get("acao") or "").strip().lower()
     acao = {
-        "fechar_a_pagar": "fechar_a_pagar",
-        "fechar_apagar": "fechar_a_pagar",
-        "fechar-a-pagar": "fechar_a_pagar",
-        "a_pagar": "fechar_a_pagar",
-        "fechar_pago": "fechar_pago",
-        "fechar-pago": "fechar_pago",
-        "pago": "fechar_pago",
+        "fechar": "fechar",
+        "close": "fechar",
+        "pago": "pago",
+        "fechar_pago": "pago",
+        "fechar-pago": "pago",
         "reabrir": "reabrir",
         "abrir": "reabrir",
+        "reopen": "reabrir",
     }.get(acao_raw, acao_raw)
 
     with SessionLocal() as db:
-        # Carrega opções de EMP para o filtro (admin: todas cadastradas, fallback: EMPs com vendas no período)
         try:
             emps_all = [str(r.codigo).strip() for r in db.query(Emp).order_by(Emp.codigo.asc()).all()]
         except Exception:
@@ -5885,17 +5883,13 @@ def admin_fechamento():
             except Exception:
                 emps_all = []
 
-        if request.method == "POST" and acao in {"fechar_a_pagar", "fechar_pago", "reabrir"}:
+        if request.method == "POST" and acao in {"fechar", "pago", "reabrir"}:
             app.logger.info("FECHAMENTO POST: form=%s values=%s", dict(request.form), {k: request.values.getlist(k) for k in request.values.keys()})
             if not emps_sel:
-                msgs.append("⚠️ Selecione ao menos 1 EMP para fechar/reabrir.")
+                msgs.append("⚠️ Selecione ao menos 1 EMP para executar a ação.")
             else:
-                alvo_status = None
                 updated_count = 0
-                if acao == "fechar_a_pagar":
-                    alvo_status = "a_pagar"
-                elif acao == "fechar_pago":
-                    alvo_status = "pago"
+                skipped_count = 0
                 for emp in emps_sel:
                     emp = _emp_norm(emp)
                     if not emp:
@@ -5913,37 +5907,64 @@ def admin_fechamento():
                         if not rec:
                             rec = FechamentoMensal(emp=emp, ano=int(ano), mes=int(mes), fechado=False)
                             db.add(rec)
+                            db.flush()
 
-                        if acao in {"fechar_a_pagar", "fechar_pago"}:
+                        status_atual = (getattr(rec, "status", None) or ("fechado" if getattr(rec, "fechado", False) else "aberto") or "aberto").strip().lower()
+                        if status_atual == "a_pagar":
+                            status_atual = "fechado"
+
+                        if status_atual == "pago":
+                            skipped_count += 1
+                            msgs.append(f"ℹ️ EMP {emp}: competência já está como PAGO e não pode ser reaberta/alterada.")
+                            continue
+
+                        if acao == "fechar":
+                            if status_atual == "fechado" and getattr(rec, "fechado", False):
+                                skipped_count += 1
+                                msgs.append(f"ℹ️ EMP {emp}: competência já está FECHADA.")
+                                continue
                             rec.fechado = True
-                            rec.fechado_em = datetime.utcnow()
-                            # status financeiro (controle)
-                            if hasattr(rec, "status") and alvo_status:
-                                rec.status = alvo_status
-                        else:
+                            rec.fechado_em = rec.fechado_em or datetime.utcnow()
+                            if hasattr(rec, "status"):
+                                rec.status = "fechado"
+                            updated_count += 1
+                            continue
+
+                        if acao == "pago":
+                            rec.fechado = True
+                            rec.fechado_em = rec.fechado_em or datetime.utcnow()
+                            if hasattr(rec, "status"):
+                                rec.status = "pago"
+                            updated_count += 1
+                            continue
+
+                        if acao == "reabrir":
                             rec.fechado = False
-                            rec.fechado_em = None  # reabrir zera timestamp
+                            rec.fechado_em = None
                             if hasattr(rec, "status"):
                                 rec.status = "aberto"
-                        updated_count += 1
-                        # commit no final do lote (mais rápido e consistente)
+                            updated_count += 1
+                            continue
                     except Exception:
                         app.logger.exception("Erro ao preparar fechamento mensal")
                         msgs.append(f"❌ Falha ao atualizar fechamento da EMP {emp}.")
                 if updated_count > 0:
                     try:
                         db.commit()
-                        msgs.append(f"✅ Operação concluída ({updated_count} EMPs).")
-                        # PRG: evita reenvio e garante recarregar status
+                        if updated_count > 0:
+                            msgs.append(f"✅ Operação concluída ({updated_count} EMPs atualizadas).")
+                        if skipped_count > 0:
+                            msgs.append(f"ℹ️ {skipped_count} EMP(s) sem alteração por regra de negócio.")
                         return redirect(url_for('admin_fechamento', emp=emps_sel, mes=mes, ano=ano))
                     except Exception:
                         db.rollback()
                         app.logger.exception("Erro ao commitar fechamento mensal")
                         msgs.append("❌ Falha ao salvar alterações no fechamento.")
-                else:
-                    if not msgs:
-                        msgs.append("⚠️ Nenhuma EMP válida para atualizar.")
-        # Status para tela
+                elif skipped_count > 0 and not any(m.startswith("ℹ️") for m in msgs):
+                    msgs.append(f"ℹ️ {skipped_count} EMP(s) sem alteração por regra de negócio.")
+                elif not msgs:
+                    msgs.append("⚠️ Nenhuma EMP válida para atualizar.")
+
         for emp in (emps_sel or []):
             emp = _emp_norm(emp)
             if not emp:
@@ -5963,13 +5984,21 @@ def admin_fechamento():
                 )
                 if rec:
                     if getattr(rec, "status", None):
-                        status_fin = rec.status
+                        status_fin = (rec.status or "aberto").strip().lower()
+                        if status_fin == "a_pagar":
+                            status_fin = "fechado"
                     if rec.fechado:
                         fechado = True
                         fechado_em = rec.fechado_em
             except Exception:
                 fechado = False
-            status_por_emp[emp] = {"fechado": fechado, "fechado_em": fechado_em, "status": status_fin}
+            status_por_emp[emp] = {
+                "fechado": fechado,
+                "fechado_em": fechado_em,
+                "status": status_fin,
+                "pode_reabrir": status_fin != "pago",
+                "pode_marcar_pago": status_fin != "pago",
+            }
 
     emps_options = _get_emp_options(emps_all)
 
@@ -5983,7 +6012,6 @@ def admin_fechamento():
         status_por_emp=status_por_emp,
         msgs=msgs,
     )
-
 
 @app.route("/admin/campanhas", methods=["GET", "POST"])
 def admin_campanhas_qtd():
