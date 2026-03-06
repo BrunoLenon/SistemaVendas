@@ -32,21 +32,44 @@ from sqlalchemy import and_, or_, func, case, cast, String, text, extract
 # Helpers de compatibilidade para "rows" que podem vir como dict, SQLAlchemy Row,
 # dataclass (ex.: UnifiedRow), ou objetos simples.
 # ---------------------------------------------------------------------------
-# ---------------------------------------------------------------------------
-# Utilitários extraídos do app.py (refatoração pura; sem mudança de comportamento).
-# ---------------------------------------------------------------------------
-from sv_utils import (
-    _obj_get,
-    _obj_get_any,
-    _normalize_cols,
-    _mes_ano_from_request,
-    _periodo_bounds,
-    _parse_num_ptbr,
-    _emp_norm,
-    _parse_multi_args,
-    _parse_multi_args_from,
-    _emp_to_int_safe,
-)
+def _obj_get(obj, key, default=None):
+    """Acesso seguro estilo dict: tenta dict, RowMapping, atributos e chaves."""
+    if obj is None:
+        return default
+    try:
+        # dict
+        if isinstance(obj, dict):
+            return obj.get(key, default)
+        # SQLAlchemy Row: possui _mapping
+        mapping = getattr(obj, "_mapping", None)
+        if mapping is not None:
+            return mapping.get(key, default)
+        # dataclass/objeto: atributo
+        if hasattr(obj, key):
+            return getattr(obj, key)
+        # tenta variações de caixa
+        k = str(key)
+        for kk in (k.lower(), k.upper()):
+            if hasattr(obj, kk):
+                return getattr(obj, kk)
+        # fallback: __getitem__
+        try:
+            return obj[key]  # type: ignore[index]
+        except Exception:
+            return default
+    except Exception:
+        return default
+
+def _obj_get_any(obj, keys, default=None):
+    for k in keys:
+        v = _obj_get(obj, k, None)
+        if v is None:
+            continue
+        if isinstance(v, str) and not v.strip():
+            continue
+        return v
+    return default
+
 
 from flask import (
     Flask,
@@ -151,6 +174,25 @@ register_request_hooks(
 from jinja_filters import register_template_filters
 register_template_filters(app)
 
+# --------------------------
+# Auth helpers / decorators (extraídos do app.py)
+# --------------------------
+from auth_helpers import (
+    _normalize_role,
+    _usuario_logado,
+    _role,
+    _emp,
+    _allowed_emps,
+    _filter_emps_cadastradas,
+    login_required,
+    admin_required,
+    financeiro_required,
+    _login_required,
+    _admin_required,
+    _admin_or_supervisor_required,
+)
+
+
 # Logs no stdout (Render captura automaticamente)
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 
@@ -192,12 +234,6 @@ except Exception:
 
 
 # ------------- Helpers -------------
-def _normalize_role(r: str | None) -> str:
-    # Compatibilidade: o sistema historicamente usa `_normalize_role`.
-    # A lógica agora vive em `security_utils.normalize_role`.
-    return normalize_role(r)
-
-
 from branding import _get_setting, _set_setting, _current_branding, register_branding
 register_branding(app, SessionLocal)
 
@@ -444,66 +480,6 @@ def _supabase_storage_upload(filename: str, content: bytes, content_type: str, f
         raise RuntimeError(f"Falha upload storage: {r.status_code} {r.text[:200]}")
     public_url = f"{supa_url}/storage/v1/object/public/{bucket}/{path}"
     return public_url
-def _usuario_logado() -> str | None:
-    return session.get("usuario")
-
-def _role() -> str | None:
-    return _normalize_role(session.get("role"))
-
-def _emp() -> str | None:
-    """Retorna a EMP do usuário logado (quando existir)."""
-    emp = session.get("emp")
-    if emp is not None and emp != "":
-        return str(emp)
-    uid = session.get("user_id")
-    if not uid:
-        return None
-    try:
-        db = SessionLocal()
-        u = db.query(Usuario).filter(Usuario.id == uid).first()
-        if not u:
-            return None
-        emp_val = getattr(u, "emp", None)
-        if emp_val is None or emp_val == "":
-            return None
-        session["emp"] = str(emp_val)
-        return str(emp_val)
-    except Exception:
-        return None
-    finally:
-        try:
-            db.close()
-        except Exception:
-            pass
-
-
-
-def _allowed_emps() -> list[str]:
-    """Lista de EMPs permitidas para o usuário logado via tabela usuario_emps.
-
-    Compat:
-      - session['emps'] (novo / recomendado)
-      - session['allowed_emps'] (legado)
-    """
-    role = (_role() or "").lower()
-    if role == "admin" and session.get("admin_all_emps"):
-        return []
-
-    emps_int = get_session_emps()
-    if emps_int:
-        return _filter_emps_cadastradas([str(e) for e in emps_int], apenas_ativas=True)
-
-    uid = session.get("user_id")
-    if not uid:
-        return []
-
-    try:
-        with SessionLocal() as db:
-            refresh_session_emps(db, usuario_id=int(uid), fallback_emp=_emp())
-            emps_int = get_session_emps()
-            return _filter_emps_cadastradas([str(e) for e in emps_int], apenas_ativas=True)
-    except Exception:
-        return []
 def _is_date_in_range(today: date, inicio: date | None, fim: date | None) -> bool:
     if inicio and today < inicio:
         return False
@@ -586,73 +562,48 @@ def _find_pending_blocking_message(db) -> Mensagem | None:
 
 
 
-# =========================
-# Auth helpers / decorators
-# =========================
-from functools import wraps
+def _normalize_cols(df: pd.DataFrame) -> pd.DataFrame:
+    """Normaliza nomes/tipos de colunas vindas do banco.
 
-def _role():
-    """Retorna o papel/perfil normalizado do usuário logado (admin/supervisor/vendedor/financeiro)."""
-    try:
-        return normalize_role(session.get("role"))
-    except Exception:
-        # fallback defensivo
-        val = session.get("role") or session.get("perfil") or ""
-        return str(val).strip().lower()
-
-def login_required(view_func):
-    """Decorator: exige usuário logado."""
-    @wraps(view_func)
-    def _wrapped(*args, **kwargs):
-        red = _login_required()
-        if red:
-            return red
-        return view_func(*args, **kwargs)
-    return _wrapped
-
-def admin_required(view_func):
-    """Decorator: exige ADMIN."""
-    @wraps(view_func)
-    def _wrapped(*args, **kwargs):
-        red = _admin_required()
-        if red:
-            return red
-        return view_func(*args, **kwargs)
-    return _wrapped
-
-def financeiro_required(view_func):
-    """Decorator: exige FINANCEIRO (ou ADMIN)."""
-    @wraps(view_func)
-    def _wrapped(*args, **kwargs):
-        if _role() not in ("financeiro", "admin"):
-            flash("Acesso restrito ao Financeiro.", "warning")
-            return redirect(url_for("dashboard"))
-        return view_func(*args, **kwargs)
-    return _wrapped
-
-def _login_required():
-    if not _usuario_logado():
-        return redirect(url_for("auth.login"))
-    return None
-
-def _admin_required():
-    """Garante acesso ADMIN.
-
-    Retorna um redirect quando não for admin; caso contrário retorna None.
+    Regras do app:
+    - VENDEDOR (str, UPPER) e EMP (str)
+    - MOVIMENTO (datetime) é usado para filtrar mês/ano
     """
-    if _role() != "admin":
-        flash("Acesso restrito ao administrador.", "warning")
-        audit("admin_forbidden")
-        return redirect(url_for("dashboard"))
-    return None
+    if df is None or df.empty:
+        return df
 
-def _admin_or_supervisor_required():
-    """Garante acesso ADMIN ou SUPERVISOR."""
-    if (_role() or "").lower() not in ["admin", "supervisor"]:
-        flash("Acesso restrito.", "warning")
-        audit("forbidden", path=request.path)
-        return redirect(url_for("dashboard"))
-    return None
+    rename: dict[str, str] = {}
+    for col in df.columns:
+        low = str(col).strip().lower()
+        if low == "vendedor":
+            rename[col] = "VENDEDOR"
+        elif low == "marca":
+            rename[col] = "MARCA"
+        elif low in ("data", "movimento"):
+            # O app usa MOVIMENTO para filtros de período
+            rename[col] = "MOVIMENTO"
+        elif low in ("mov_tipo_movto", "mov_tipo_movimento", "mov_tipo_movto "):
+            rename[col] = "MOV_TIPO_MOVTO"
+        elif low in ("valor_total", "valor", "total"):
+            rename[col] = "VALOR_TOTAL"
+        elif low == "mestre":
+            rename[col] = "MESTRE"
+        elif low == "emp":
+            rename[col] = "EMP"
+
+    if rename:
+        df = df.rename(columns=rename)
+
+    # Tipos esperados
+    if "MOVIMENTO" in df.columns:
+        df["MOVIMENTO"] = pd.to_datetime(df["MOVIMENTO"], errors="coerce")
+    if "VENDEDOR" in df.columns:
+        df["VENDEDOR"] = df["VENDEDOR"].astype(str).str.strip().str.upper()
+    if "EMP" in df.columns:
+        df["EMP"] = df["EMP"].astype(str).str.strip()
+
+    return df
+
 
 def _get_vendedores_db(role: str, emp_usuario: str | None) -> list[str]:
     """Lista de vendedores para dropdown sem carregar todas as vendas em memória."""
@@ -958,6 +909,129 @@ def _bootstrap_admin_if_needed():
 
 _bootstrap_admin_if_needed()
 
+def _mes_ano_from_request() -> tuple[int, int]:
+    mes = int(request.args.get("mes") or datetime.now().month)
+    ano = int(request.args.get("ano") or datetime.now().year)
+    mes = max(1, min(12, mes))
+    ano = max(2000, min(2100, ano))
+    return mes, ano
+
+
+
+def _periodo_bounds(ano: int, mes: int):
+    """Retorna (inicio, fim) do mês para filtro por intervalo (usa índice)."""
+    mes = max(1, min(12, int(mes)))
+    ano = int(ano)
+    start = date(ano, mes, 1)
+    if mes == 12:
+        end = date(ano + 1, 1, 1)
+    else:
+        end = date(ano, mes + 1, 1)
+    return start, end
+
+
+
+def _parse_num_ptbr(val: str | None) -> float:
+    """Parseia número em formatos comuns PT-BR:
+    - '118589,72'
+    - '118.589,72'
+    - '118589.72'
+    - 'R$ 118.589,72'
+    """
+    if val is None:
+        return 0.0
+    s = str(val).strip()
+    if not s:
+        return 0.0
+    # remove moeda e espaços
+    s = re.sub(r'[^0-9,\.-]', '', s)
+    if not s:
+        return 0.0
+
+    # Se tiver vírgula e ponto, assume ponto milhar e vírgula decimal (PT-BR)
+    if ',' in s and '.' in s:
+        # remove separador de milhar
+        s = s.replace('.', '')
+        s = s.replace(',', '.')
+    elif ',' in s:
+        s = s.replace(',', '.')
+    # senão: já está em formato com ponto decimal ou inteiro
+    try:
+        return float(s)
+    except Exception:
+        return 0.0
+
+
+def _emp_norm(emp: str | None) -> str:
+    """Normaliza EMP para armazenamento ('' quando nulo)."""
+    return (emp or "").strip()
+
+
+def _parse_multi_args(name: str) -> list[str]:
+    """Lê parâmetros repetidos via querystring (?emp=101&emp=102).
+    Mantém compatibilidade com padrão antigo (?emp=101).
+    """
+    vals = []
+    try:
+        vals = request.args.getlist(name)
+    except Exception:
+        vals = []
+    # Compat: alguns formulários antigos mandam apenas 1 valor em get()
+    if not vals:
+        v = (request.args.get(name) or "").strip()
+        if v:
+            vals = [v]
+    # Aceita CSV (caso alguém copie/cole)
+    out: list[str] = []
+    for v in vals:
+        for part in str(v).split(","):
+            p = part.strip()
+            if p:
+                out.append(p)
+    # unique mantendo ordem
+    seen=set()
+    res=[]
+    for v in out:
+        if v not in seen:
+            seen.add(v); res.append(v)
+    return res
+
+
+def _parse_multi_args_from(args, name: str) -> list[str]:
+    """Versão sem dependência direta de `request`, para uso em services."""
+    vals = []
+    try:
+        if hasattr(args, "getlist"):
+            vals = list(args.getlist(name))
+        else:
+            v = args.get(name) if hasattr(args, "get") else None
+            vals = [v] if v else []
+    except Exception:
+        vals = []
+
+    if not vals:
+        try:
+            v = (args.get(name) or "").strip()
+        except Exception:
+            v = ""
+        if v:
+            vals = [v]
+
+    out: list[str] = []
+    for v in vals:
+        for part in str(v).split(","):
+            p = part.strip()
+            if p:
+                out.append(p)
+
+    seen = set()
+    res = []
+    for v in out:
+        if v not in seen:
+            seen.add(v)
+            res.append(v)
+    return res
+
 def _competencia_fechada(db, emp: str, ano: int, mes: int) -> bool:
     """Retorna True se a competência (EMP+ano+mes) estiver marcada como FECHADA."""
     emp = _emp_norm(emp)
@@ -979,6 +1053,14 @@ def _competencia_fechada(db, emp: str, ano: int, mes: int) -> bool:
         return False
 
 
+
+
+def _emp_to_int_safe(emp: str) -> int | str:
+    """Regra crítica: EMP é numérico na base de vendas.
+    Sempre converte antes de comparar/filtrar para não zerar totais.
+    """
+    s = str(emp).strip()
+    return int(s) if s.isdigit() else s
 
 
 def _get_emp_options(codigos: list[str]) -> list[dict]:
@@ -1010,39 +1092,6 @@ def _get_emp_options(codigos: list[str]) -> list[dict]:
     return out
 
 
-def _filter_emps_cadastradas(codigos: list[str], apenas_ativas: bool = True) -> list[str]:
-    """Remove EMPs que não estão cadastradas na tabela `emps` (ou inativas, se `apenas_ativas`).
-    Mantém ordem e faz strip.
-    """
-    codigos = [str(c).strip() for c in (codigos or []) if str(c).strip()]
-    if not codigos:
-        return []
-    # mantém ordem
-    uniq = []
-    seen = set()
-    for c in codigos:
-        if c not in seen:
-            seen.add(c)
-            uniq.append(c)
-
-    try:
-        with SessionLocal() as db:
-            q = db.query(Emp.codigo)
-            q = q.filter(Emp.codigo.in_(uniq))
-            if apenas_ativas:
-                q = q.filter(Emp.ativo.is_(True))
-            rows = q.all()
-            ok = {str(r[0]).strip() for r in rows if r and r[0] is not None and str(r[0]).strip()}
-    except Exception:
-        ok = set()
-
-    if not ok:
-        # Sem cadastro disponível/consultável → não filtra (compatibilidade)
-        return uniq
-
-    return [c for c in uniq if c in ok]
-
-
 def _get_vendedores_cadastrados_por_emp(emp: str) -> set[str]:
     """Retorna conjunto de vendedores cadastrados e vinculados à EMP (via usuario_emps).
     Se não houver vínculo, retorna conjunto global de vendedores cadastrados.
@@ -1072,6 +1121,21 @@ def _get_vendedores_cadastrados_por_emp(emp: str) -> set[str]:
             return glob
     except Exception:
         return set()
+
+
+# Compat: services recebem `args` explicitamente (evita dependência direta do `request` no service).
+def _parse_multi_args_from(args, name: str) -> list[str]:
+    try:
+        if hasattr(args, "getlist"):
+            vals = args.getlist(name)
+        else:
+            vals = args.get(name)
+            vals = vals if isinstance(vals, list) else ([vals] if vals else [])
+        return [str(v).strip() for v in vals if str(v).strip()]
+    except Exception:
+        return []
+
+
 
 def _get_all_emp_codigos(apenas_ativas: bool = True) -> list[str]:
     """Lista todas as EMPs cadastradas (tabela emps).
