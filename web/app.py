@@ -32,26 +32,44 @@ from sqlalchemy import and_, or_, func, case, cast, String, text, extract
 # Helpers de compatibilidade para "rows" que podem vir como dict, SQLAlchemy Row,
 # dataclass (ex.: UnifiedRow), ou objetos simples.
 # ---------------------------------------------------------------------------
-# ---------------------------------------------------------------------------
-# Utilitários extraídos do app.py (refatoração pura; sem mudança de comportamento).
-# ---------------------------------------------------------------------------
-from sv_utils import (
-    _obj_get,
-    _obj_get_any,
-    _normalize_cols,
-    _mes_ano_from_request,
-    _periodo_bounds,
-    _parse_num_ptbr,
-    _emp_norm,
-    _parse_multi_args,
-    _parse_multi_args_from,
-    _emp_to_int_safe,
-)
+def _obj_get(obj, key, default=None):
+    """Acesso seguro estilo dict: tenta dict, RowMapping, atributos e chaves."""
+    if obj is None:
+        return default
+    try:
+        # dict
+        if isinstance(obj, dict):
+            return obj.get(key, default)
+        # SQLAlchemy Row: possui _mapping
+        mapping = getattr(obj, "_mapping", None)
+        if mapping is not None:
+            return mapping.get(key, default)
+        # dataclass/objeto: atributo
+        if hasattr(obj, key):
+            return getattr(obj, key)
+        # tenta variações de caixa
+        k = str(key)
+        for kk in (k.lower(), k.upper()):
+            if hasattr(obj, kk):
+                return getattr(obj, kk)
+        # fallback: __getitem__
+        try:
+            return obj[key]  # type: ignore[index]
+        except Exception:
+            return default
+    except Exception:
+        return default
 
-from mensagens_guard import (
-    is_date_in_range as _is_date_in_range,
-    find_pending_blocking_message as _find_pending_blocking_message_impl,
-)
+def _obj_get_any(obj, keys, default=None):
+    for k in keys:
+        v = _obj_get(obj, k, None)
+        if v is None:
+            continue
+        if isinstance(v, str) and not v.strip():
+            continue
+        return v
+    return default
+
 
 from flask import (
     Flask,
@@ -156,6 +174,43 @@ register_request_hooks(
 from jinja_filters import register_template_filters
 register_template_filters(app)
 
+# --------------------------
+# Auth helpers / decorators (extraídos do app.py)
+# --------------------------
+from auth_helpers import (
+    _normalize_role,
+    _usuario_logado,
+    _role,
+    _emp,
+    _allowed_emps,
+    _filter_emps_cadastradas,
+    login_required,
+    admin_required,
+    financeiro_required,
+    _login_required,
+    _admin_required,
+    _admin_or_supervisor_required,
+)
+
+# --------------------------
+# Metas helpers (extraídos do app.py)
+# --------------------------
+from metas_helpers import (
+    _periodo_bounds_ym,
+    _as_decimal,
+    _money2,
+    _meta_pick_bonus,
+    _sql_valor_mes_signed,
+    _sql_valor_marcas_signed,
+    _query_valor_mes,
+    _query_mix_itens,
+    _query_share_marca,
+    _get_vendedores_no_periodo,
+    _get_emps_no_periodo,
+    _calc_and_upsert_meta_result,
+)
+
+
 # Logs no stdout (Render captura automaticamente)
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 
@@ -197,19 +252,8 @@ except Exception:
 
 
 # ------------- Helpers -------------
-def _normalize_role(r: str | None) -> str:
-    # Compatibilidade: o sistema historicamente usa `_normalize_role`.
-    # A lógica agora vive em `security_utils.normalize_role`.
-    return normalize_role(r)
-
-
 from branding import _get_setting, _set_setting, _current_branding, register_branding
 register_branding(app, SessionLocal)
-
-# Rotas: Mensagens (central e admin) — movidas para módulo dedicado (refatoração pura)
-from mensagens_routes import register_mensagens_routes
-register_mensagens_routes(app)
-
 
 @app.route('/admin/configuracoes', methods=['GET', 'POST'])
 def admin_configuracoes():
@@ -454,150 +498,130 @@ def _supabase_storage_upload(filename: str, content: bytes, content_type: str, f
         raise RuntimeError(f"Falha upload storage: {r.status_code} {r.text[:200]}")
     public_url = f"{supa_url}/storage/v1/object/public/{bucket}/{path}"
     return public_url
-def _usuario_logado() -> str | None:
-    return session.get("usuario")
-
-def _role() -> str | None:
-    return _normalize_role(session.get("role"))
-
-def _emp() -> str | None:
-    """Retorna a EMP do usuário logado (quando existir)."""
-    emp = session.get("emp")
-    if emp is not None and emp != "":
-        return str(emp)
-    uid = session.get("user_id")
-    if not uid:
-        return None
-    try:
-        db = SessionLocal()
-        u = db.query(Usuario).filter(Usuario.id == uid).first()
-        if not u:
-            return None
-        emp_val = getattr(u, "emp", None)
-        if emp_val is None or emp_val == "":
-            return None
-        session["emp"] = str(emp_val)
-        return str(emp_val)
-    except Exception:
-        return None
-    finally:
-        try:
-            db.close()
-        except Exception:
-            pass
-
-
-
-def _allowed_emps() -> list[str]:
-    """Lista de EMPs permitidas para o usuário logado via tabela usuario_emps.
-
-    Compat:
-      - session['emps'] (novo / recomendado)
-      - session['allowed_emps'] (legado)
-    """
-    role = (_role() or "").lower()
-    if role == "admin" and session.get("admin_all_emps"):
-        return []
-
-    emps_int = get_session_emps()
-    if emps_int:
-        return _filter_emps_cadastradas([str(e) for e in emps_int], apenas_ativas=True)
-
-    uid = session.get("user_id")
-    if not uid:
-        return []
-
-    try:
-        with SessionLocal() as db:
-            refresh_session_emps(db, usuario_id=int(uid), fallback_emp=_emp())
-            emps_int = get_session_emps()
-            return _filter_emps_cadastradas([str(e) for e in emps_int], apenas_ativas=True)
-    except Exception:
-        return []
-
-
-# -------------------------
-# Mensagens bloqueantes (extraído)
-# -------------------------
+def _is_date_in_range(today: date, inicio: date | None, fim: date | None) -> bool:
+    if inicio and today < inicio:
+        return False
+    if fim and today > fim:
+        return False
+    return True
 
 
 def _find_pending_blocking_message(db) -> Mensagem | None:
     """Retorna a primeira mensagem bloqueante pendente para o usuário (hoje)."""
-    return _find_pending_blocking_message_impl(
-        db,
-        role_fn=_role,
-        allowed_emps_fn=_allowed_emps,
+    role = (_role() or "").lower()
+    user_id = session.get("user_id")
+    if not user_id:
+        return None
+
+    today = date.today()
+    allowed_emps = _allowed_emps()  # [] significa "todas" para admin_all_emps
+
+    # Busca candidatas recentes primeiro (id desc) para mostrar a mais nova
+    candidatas = (
+        db.query(Mensagem)
+        .filter(Mensagem.ativo.is_(True))
+        .filter(Mensagem.bloqueante.is_(True))
+        .order_by(Mensagem.id.desc())
+        .limit(50)
+        .all()
     )
 
+    for msg in candidatas:
+        if not _is_date_in_range(today, msg.inicio_em, msg.fim_em):
+            continue
 
+        # Destino: usuário específico (admin pode mandar)
+        targeted_user = (
+            db.query(MensagemUsuario)
+            .filter(MensagemUsuario.mensagem_id == msg.id)
+            .filter(MensagemUsuario.usuario_id == int(user_id))
+            .first()
+            is not None
+        )
 
-# =========================
-# Auth helpers / decorators
-# =========================
-from functools import wraps
+        # Destino: empresas
+        targeted_emp = False
+        if role == "admin" and session.get("admin_all_emps"):
+            # Admin "todas as EMPs": se a mensagem tiver qualquer empresa destino, conta.
+            targeted_emp = (
+                db.query(MensagemEmpresa)
+                .filter(MensagemEmpresa.mensagem_id == msg.id)
+                .first()
+                is not None
+            )
+        else:
+            if allowed_emps:
+                targeted_emp = (
+                    db.query(MensagemEmpresa)
+                    .filter(MensagemEmpresa.mensagem_id == msg.id)
+                    .filter(MensagemEmpresa.emp.in_(allowed_emps))
+                    .first()
+                    is not None
+                )
 
-def _role():
-    """Retorna o papel/perfil normalizado do usuário logado (admin/supervisor/vendedor/financeiro)."""
-    try:
-        return normalize_role(session.get("role"))
-    except Exception:
-        # fallback defensivo
-        val = session.get("role") or session.get("perfil") or ""
-        return str(val).strip().lower()
+        if not (targeted_user or targeted_emp):
+            continue
 
-def login_required(view_func):
-    """Decorator: exige usuário logado."""
-    @wraps(view_func)
-    def _wrapped(*args, **kwargs):
-        red = _login_required()
-        if red:
-            return red
-        return view_func(*args, **kwargs)
-    return _wrapped
+        # Já leu hoje?
+        ja_leu = (
+            db.query(MensagemLidaDiaria)
+            .filter(MensagemLidaDiaria.mensagem_id == msg.id)
+            .filter(MensagemLidaDiaria.usuario_id == int(user_id))
+            .filter(MensagemLidaDiaria.data == today)
+            .first()
+            is not None
+        )
+        if ja_leu:
+            continue
 
-def admin_required(view_func):
-    """Decorator: exige ADMIN."""
-    @wraps(view_func)
-    def _wrapped(*args, **kwargs):
-        red = _admin_required()
-        if red:
-            return red
-        return view_func(*args, **kwargs)
-    return _wrapped
+        return msg
 
-def financeiro_required(view_func):
-    """Decorator: exige FINANCEIRO (ou ADMIN)."""
-    @wraps(view_func)
-    def _wrapped(*args, **kwargs):
-        if _role() not in ("financeiro", "admin"):
-            flash("Acesso restrito ao Financeiro.", "warning")
-            return redirect(url_for("dashboard"))
-        return view_func(*args, **kwargs)
-    return _wrapped
-
-def _login_required():
-    if not _usuario_logado():
-        return redirect(url_for("auth.login"))
     return None
 
-def _admin_required():
-    """Garante acesso ADMIN.
 
-    Retorna um redirect quando não for admin; caso contrário retorna None.
+
+def _normalize_cols(df: pd.DataFrame) -> pd.DataFrame:
+    """Normaliza nomes/tipos de colunas vindas do banco.
+
+    Regras do app:
+    - VENDEDOR (str, UPPER) e EMP (str)
+    - MOVIMENTO (datetime) é usado para filtrar mês/ano
     """
-    if _role() != "admin":
-        flash("Acesso restrito ao administrador.", "warning")
-        audit("admin_forbidden")
-        return redirect(url_for("dashboard"))
-    return None
+    if df is None or df.empty:
+        return df
 
-def _admin_or_supervisor_required():
-    """Garante acesso ADMIN ou SUPERVISOR."""
-    if (_role() or "").lower() not in ["admin", "supervisor"]:
-        flash("Acesso restrito.", "warning")
-        audit("forbidden", path=request.path)
-        return redirect(url_for("dashboard"))
-    return None
+    rename: dict[str, str] = {}
+    for col in df.columns:
+        low = str(col).strip().lower()
+        if low == "vendedor":
+            rename[col] = "VENDEDOR"
+        elif low == "marca":
+            rename[col] = "MARCA"
+        elif low in ("data", "movimento"):
+            # O app usa MOVIMENTO para filtros de período
+            rename[col] = "MOVIMENTO"
+        elif low in ("mov_tipo_movto", "mov_tipo_movimento", "mov_tipo_movto "):
+            rename[col] = "MOV_TIPO_MOVTO"
+        elif low in ("valor_total", "valor", "total"):
+            rename[col] = "VALOR_TOTAL"
+        elif low == "mestre":
+            rename[col] = "MESTRE"
+        elif low == "emp":
+            rename[col] = "EMP"
+
+    if rename:
+        df = df.rename(columns=rename)
+
+    # Tipos esperados
+    if "MOVIMENTO" in df.columns:
+        df["MOVIMENTO"] = pd.to_datetime(df["MOVIMENTO"], errors="coerce")
+    if "VENDEDOR" in df.columns:
+        df["VENDEDOR"] = df["VENDEDOR"].astype(str).str.strip().str.upper()
+    if "EMP" in df.columns:
+        df["EMP"] = df["EMP"].astype(str).str.strip()
+
+    return df
+
 
 def _get_vendedores_db(role: str, emp_usuario: str | None) -> list[str]:
     """Lista de vendedores para dropdown sem carregar todas as vendas em memória."""
@@ -903,6 +927,129 @@ def _bootstrap_admin_if_needed():
 
 _bootstrap_admin_if_needed()
 
+def _mes_ano_from_request() -> tuple[int, int]:
+    mes = int(request.args.get("mes") or datetime.now().month)
+    ano = int(request.args.get("ano") or datetime.now().year)
+    mes = max(1, min(12, mes))
+    ano = max(2000, min(2100, ano))
+    return mes, ano
+
+
+
+def _periodo_bounds(ano: int, mes: int):
+    """Retorna (inicio, fim) do mês para filtro por intervalo (usa índice)."""
+    mes = max(1, min(12, int(mes)))
+    ano = int(ano)
+    start = date(ano, mes, 1)
+    if mes == 12:
+        end = date(ano + 1, 1, 1)
+    else:
+        end = date(ano, mes + 1, 1)
+    return start, end
+
+
+
+def _parse_num_ptbr(val: str | None) -> float:
+    """Parseia número em formatos comuns PT-BR:
+    - '118589,72'
+    - '118.589,72'
+    - '118589.72'
+    - 'R$ 118.589,72'
+    """
+    if val is None:
+        return 0.0
+    s = str(val).strip()
+    if not s:
+        return 0.0
+    # remove moeda e espaços
+    s = re.sub(r'[^0-9,\.-]', '', s)
+    if not s:
+        return 0.0
+
+    # Se tiver vírgula e ponto, assume ponto milhar e vírgula decimal (PT-BR)
+    if ',' in s and '.' in s:
+        # remove separador de milhar
+        s = s.replace('.', '')
+        s = s.replace(',', '.')
+    elif ',' in s:
+        s = s.replace(',', '.')
+    # senão: já está em formato com ponto decimal ou inteiro
+    try:
+        return float(s)
+    except Exception:
+        return 0.0
+
+
+def _emp_norm(emp: str | None) -> str:
+    """Normaliza EMP para armazenamento ('' quando nulo)."""
+    return (emp or "").strip()
+
+
+def _parse_multi_args(name: str) -> list[str]:
+    """Lê parâmetros repetidos via querystring (?emp=101&emp=102).
+    Mantém compatibilidade com padrão antigo (?emp=101).
+    """
+    vals = []
+    try:
+        vals = request.args.getlist(name)
+    except Exception:
+        vals = []
+    # Compat: alguns formulários antigos mandam apenas 1 valor em get()
+    if not vals:
+        v = (request.args.get(name) or "").strip()
+        if v:
+            vals = [v]
+    # Aceita CSV (caso alguém copie/cole)
+    out: list[str] = []
+    for v in vals:
+        for part in str(v).split(","):
+            p = part.strip()
+            if p:
+                out.append(p)
+    # unique mantendo ordem
+    seen=set()
+    res=[]
+    for v in out:
+        if v not in seen:
+            seen.add(v); res.append(v)
+    return res
+
+
+def _parse_multi_args_from(args, name: str) -> list[str]:
+    """Versão sem dependência direta de `request`, para uso em services."""
+    vals = []
+    try:
+        if hasattr(args, "getlist"):
+            vals = list(args.getlist(name))
+        else:
+            v = args.get(name) if hasattr(args, "get") else None
+            vals = [v] if v else []
+    except Exception:
+        vals = []
+
+    if not vals:
+        try:
+            v = (args.get(name) or "").strip()
+        except Exception:
+            v = ""
+        if v:
+            vals = [v]
+
+    out: list[str] = []
+    for v in vals:
+        for part in str(v).split(","):
+            p = part.strip()
+            if p:
+                out.append(p)
+
+    seen = set()
+    res = []
+    for v in out:
+        if v not in seen:
+            seen.add(v)
+            res.append(v)
+    return res
+
 def _competencia_fechada(db, emp: str, ano: int, mes: int) -> bool:
     """Retorna True se a competência (EMP+ano+mes) estiver marcada como FECHADA."""
     emp = _emp_norm(emp)
@@ -924,6 +1071,14 @@ def _competencia_fechada(db, emp: str, ano: int, mes: int) -> bool:
         return False
 
 
+
+
+def _emp_to_int_safe(emp: str) -> int | str:
+    """Regra crítica: EMP é numérico na base de vendas.
+    Sempre converte antes de comparar/filtrar para não zerar totais.
+    """
+    s = str(emp).strip()
+    return int(s) if s.isdigit() else s
 
 
 def _get_emp_options(codigos: list[str]) -> list[dict]:
@@ -955,39 +1110,6 @@ def _get_emp_options(codigos: list[str]) -> list[dict]:
     return out
 
 
-def _filter_emps_cadastradas(codigos: list[str], apenas_ativas: bool = True) -> list[str]:
-    """Remove EMPs que não estão cadastradas na tabela `emps` (ou inativas, se `apenas_ativas`).
-    Mantém ordem e faz strip.
-    """
-    codigos = [str(c).strip() for c in (codigos or []) if str(c).strip()]
-    if not codigos:
-        return []
-    # mantém ordem
-    uniq = []
-    seen = set()
-    for c in codigos:
-        if c not in seen:
-            seen.add(c)
-            uniq.append(c)
-
-    try:
-        with SessionLocal() as db:
-            q = db.query(Emp.codigo)
-            q = q.filter(Emp.codigo.in_(uniq))
-            if apenas_ativas:
-                q = q.filter(Emp.ativo.is_(True))
-            rows = q.all()
-            ok = {str(r[0]).strip() for r in rows if r and r[0] is not None and str(r[0]).strip()}
-    except Exception:
-        ok = set()
-
-    if not ok:
-        # Sem cadastro disponível/consultável → não filtra (compatibilidade)
-        return uniq
-
-    return [c for c in uniq if c in ok]
-
-
 def _get_vendedores_cadastrados_por_emp(emp: str) -> set[str]:
     """Retorna conjunto de vendedores cadastrados e vinculados à EMP (via usuario_emps).
     Se não houver vínculo, retorna conjunto global de vendedores cadastrados.
@@ -1017,6 +1139,21 @@ def _get_vendedores_cadastrados_por_emp(emp: str) -> set[str]:
             return glob
     except Exception:
         return set()
+
+
+# Compat: services recebem `args` explicitamente (evita dependência direta do `request` no service).
+def _parse_multi_args_from(args, name: str) -> list[str]:
+    try:
+        if hasattr(args, "getlist"):
+            vals = args.getlist(name)
+        else:
+            vals = args.get(name)
+            vals = vals if isinstance(vals, list) else ([vals] if vals else [])
+        return [str(v).strip() for v in vals if str(v).strip()]
+    except Exception:
+        return []
+
+
 
 def _get_all_emp_codigos(apenas_ativas: bool = True) -> list[str]:
     """Lista todas as EMPs cadastradas (tabela emps).
@@ -5762,341 +5899,343 @@ def admin_apagar_vendas():
 
 
 # =====================
-# Metas (Crescimento / MIX / Share de Marcas)
+# Mensagens (Central + Bloqueio diário)
 # =====================
 
-def _periodo_bounds_ym(ano: int, mes: int) -> tuple[date, date]:
-    inicio = date(int(ano), int(mes), 1)
-    fim = date(int(ano), int(mes), calendar.monthrange(int(ano), int(mes))[1])
-    return inicio, fim
+@app.route("/mensagens", methods=["GET"])
+def mensagens_central():
+    red = _login_required()
+    if red:
+        return red
 
+    usuario = _usuario_logado()
+    role = (_role() or "").lower()
+    user_id = session.get("user_id")
+    allowed_emps = _allowed_emps()  # [] => todas (admin_all_emps)
+    today = date.today()
 
-def _as_decimal(v) -> Decimal:
-    try:
-        if v is None:
-            return Decimal("0")
-        return Decimal(str(v))
-    except Exception:
-        return Decimal("0")
+    with SessionLocal() as db:
+        # Mensagens ativas e no período
+        msgs = (
+            db.query(Mensagem)
+            .filter(Mensagem.ativo.is_(True))
+            .order_by(Mensagem.bloqueante.desc(), Mensagem.id.desc())
+            .all()
+        )
 
+        out = []
+        for msg in msgs:
+            if not _is_date_in_range(today, msg.inicio_em, msg.fim_em):
+                continue
 
-def _money2(v: Decimal) -> Decimal:
-    return v.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-
-
-# NOTE: _allowed_emps() is defined once earlier in this file (loads from DB when needed).
-# Do not duplicate it below — duplicated defs silently override the correct version.
-
-def _meta_pick_bonus(escalas: list[MetaEscala], valor_metric: float) -> float:
-    """Retorna o bonus_percentual da maior faixa cujo limite_min <= valor_metric."""
-    try:
-        v = float(valor_metric or 0.0)
-    except Exception:
-        v = 0.0
-    best = 0.0
-    for esc in sorted(escalas, key=lambda x: (x.limite_min, x.ordem)):
-        try:
-            lim = float(esc.limite_min or 0.0)
-        except Exception:
-            lim = 0.0
-        if v >= lim:
-            best = float(esc.bonus_percentual or 0.0)
-    return float(best or 0.0)
-
-
-def _sql_valor_mes_signed():
-    # CA e DS deduzem do valor. Outros somam.
-    return """
-        SUM(
-          CASE
-            WHEN mov_tipo_movto IN ('CA','DS') THEN -COALESCE(valor_total,0)
-            ELSE COALESCE(valor_total,0)
-          END
-        )::double precision
-    """
-
-
-def _sql_valor_marcas_signed(marcas: list[str]):
-    # marcas: lista já normalizada para UPPER
-    # Faz match exato em vendas.marca (que no seu banco costuma estar em maiúsculo)
-    if not marcas:
-        return "0::double precision"
-    # usa ANY(:marcas) para evitar string concat insegura
-    return f"""
-        SUM(
-          CASE
-            WHEN UPPER(COALESCE(marca,'')) = ANY(:marcas)
-              THEN CASE WHEN mov_tipo_movto IN ('CA','DS') THEN -COALESCE(valor_total,0) ELSE COALESCE(valor_total,0) END
-            ELSE 0
-          END
-        )::double precision
-    """
-
-
-def _query_valor_mes(db, ano: int, mes: int, emp: str, vendedor: str) -> float:
-    """Retorna o valor líquido do mês para (EMP, vendedor).
-    Prioridade:
-      1) Base manual/importada em vendas_resumo_periodo (ano/mes do registro)
-      2) Fallback: cálculo direto na tabela vendas (signed OA/DS/CA)
-    Observação: versões antigas gravaram emp como ''/EMPTY; fazemos fallback seguro.
-    """
-    vend = (vendedor or '').strip().upper()
-    emp_n = _emp_norm(emp)
-
-    # 1) tenta base manual (resumo)
-    try:
-        q = (
-            db.query(VendasResumoPeriodo.valor_venda)
-            .filter(
-                VendasResumoPeriodo.vendedor == vend,
-                VendasResumoPeriodo.ano == ano,
-                VendasResumoPeriodo.mes == mes,
+            targeted_user = (
+                db.query(MensagemUsuario)
+                .filter(MensagemUsuario.mensagem_id == msg.id)
+                .filter(MensagemUsuario.usuario_id == int(user_id))
+                .first()
+                is not None
             )
-        )
-        if emp_n:
-            q_emp = q.filter(VendasResumoPeriodo.emp == emp_n).one_or_none()
-            if q_emp is not None:
-                return float(q_emp[0] or 0.0)
-            # fallback compat: registros antigos sem emp
-            q_fallback = q.filter(VendasResumoPeriodo.emp.in_(['', 'EMPTY'])).one_or_none()
-            if q_fallback is not None:
-                return float(q_fallback[0] or 0.0)
-        else:
-            # se emp vier vazio, tenta pegar qualquer um (mas preferimos ''/EMPTY)
-            q_fallback = q.filter(VendasResumoPeriodo.emp.in_(['', 'EMPTY'])).one_or_none()
-            if q_fallback is not None:
-                return float(q_fallback[0] or 0.0)
-    except Exception:
-        pass
 
-    # 2) fallback: cálculo na tabela vendas
-    inicio, fim = _periodo_bounds_ym(ano, mes)
-    sql = f"""
-      SELECT {_sql_valor_mes_signed()} AS valor_mes
-      FROM vendas
-      WHERE emp = :emp
-        AND vendedor = :vendedor
-        AND movimento BETWEEN :ini AND :fim
-    """
-    row = db.execute(text(sql), {"emp": emp_n, "vendedor": vend, "ini": inicio, "fim": fim}).fetchone()
-    return float(row[0] or 0.0) if row else 0.0
+            targeted_emp = False
+            if role == "admin" and session.get("admin_all_emps"):
+                targeted_emp = (
+                    db.query(MensagemEmpresa)
+                    .filter(MensagemEmpresa.mensagem_id == msg.id)
+                    .first()
+                    is not None
+                )
+            else:
+                if allowed_emps:
+                    targeted_emp = (
+                        db.query(MensagemEmpresa)
+                        .filter(MensagemEmpresa.mensagem_id == msg.id)
+                        .filter(MensagemEmpresa.emp.in_(allowed_emps))
+                        .first()
+                        is not None
+                    )
 
+            if not (targeted_user or targeted_emp):
+                continue
 
-def _query_mix_itens(db, ano: int, mes: int, emp: str, vendedor: str) -> float:
-    """Retorna MIX (qtd de itens/produtos) do mês para (EMP, vendedor).
-    Prioridade:
-      1) Base manual/importada em vendas_resumo_periodo.mix_produtos
-      2) Fallback: cálculo na tabela vendas (qtd_liquida > 0 por mestre)
-    Compat: emp antigo ''/EMPTY.
-    """
-    vend = (vendedor or '').strip().upper()
-    emp_n = _emp_norm(emp)
-
-    # 1) tenta base manual (resumo)
-    try:
-        q = (
-            db.query(VendasResumoPeriodo.mix_produtos)
-            .filter(
-                VendasResumoPeriodo.vendedor == vend,
-                VendasResumoPeriodo.ano == ano,
-                VendasResumoPeriodo.mes == mes,
+            lida_hoje = (
+                db.query(MensagemLidaDiaria)
+                .filter(MensagemLidaDiaria.mensagem_id == msg.id)
+                .filter(MensagemLidaDiaria.usuario_id == int(user_id))
+                .filter(MensagemLidaDiaria.data == today)
+                .first()
+                is not None
             )
-        )
-        if emp_n:
-            q_emp = q.filter(VendasResumoPeriodo.emp == emp_n).one_or_none()
-            if q_emp is not None:
-                return float(q_emp[0] or 0.0)
-            q_fallback = q.filter(VendasResumoPeriodo.emp.in_(['', 'EMPTY'])).one_or_none()
-            if q_fallback is not None:
-                return float(q_fallback[0] or 0.0)
-        else:
-            q_fallback = q.filter(VendasResumoPeriodo.emp.in_(['', 'EMPTY'])).one_or_none()
-            if q_fallback is not None:
-                return float(q_fallback[0] or 0.0)
-    except Exception:
-        pass
 
-    # 2) fallback: calcula no detalhe em vendas
-    inicio, fim = _periodo_bounds_ym(ano, mes)
-    sql = """
-      WITH por_produto AS (
-        SELECT
-          mestre,
-          SUM(
-            CASE
-              WHEN mov_tipo_movto = 'CA' THEN -COALESCE(qtdade_vendida,0)
-              WHEN mov_tipo_movto = 'DS' THEN 0
-              ELSE COALESCE(qtdade_vendida,0)
-            END
-          ) AS qtd_liquida
-        FROM vendas
-        WHERE emp = :emp
-          AND vendedor = :vendedor
-          AND movimento BETWEEN :ini AND :fim
-          AND mestre IS NOT NULL AND mestre <> ''
-        GROUP BY mestre
-      )
-      SELECT COUNT(*)::double precision
-      FROM por_produto
-      WHERE qtd_liquida > 0
-    """
-    row = db.execute(text(sql), {"emp": emp_n, "vendedor": vend, "ini": inicio, "fim": fim}).fetchone()
-    return float(row[0] or 0.0) if row else 0.0
+            out.append({
+                "msg": msg,
+                "lida_hoje": lida_hoje,
+            })
+
+        return render_template("mensagens.html", mensagens=out, usuario=usuario, role=role)
 
 
-def _query_share_marca(db, ano: int, mes: int, emp: str, vendedor: str, marcas: list[str]) -> tuple[float, float, float]:
-    """Retorna (share_pct, valor_marcas, valor_total_mes)."""
-    inicio, fim = _periodo_bounds_ym(ano, mes)
-    marcas_norm = [str(m).strip().upper() for m in (marcas or []) if str(m).strip()]
-    sql = f"""
-      SELECT
-        ({_sql_valor_marcas_signed(marcas_norm)}) AS valor_marcas,
-        ({_sql_valor_mes_signed()}) AS valor_mes
-      FROM vendas
-      WHERE emp = :emp
-        AND vendedor = :vendedor
-        AND movimento BETWEEN :ini AND :fim
-    """
-    params = {"emp": emp, "vendedor": vendedor, "ini": inicio, "fim": fim, "marcas": marcas_norm}
-    row = db.execute(text(sql), params).fetchone()
-    valor_marcas = float((row[0] or 0.0)) if row else 0.0
-    valor_mes = float((row[1] or 0.0)) if row else 0.0
-    share = (valor_marcas / valor_mes * 100.0) if valor_mes else 0.0
-    return float(share), float(valor_marcas), float(valor_mes)
+@app.route("/mensagens/bloqueio/<int:mensagem_id>", methods=["GET"])
+def mensagens_bloqueio(mensagem_id: int):
+    red = _login_required()
+    if red:
+        return red
 
+    usuario = _usuario_logado()
+    role = (_role() or "").lower()
+    user_id = session.get("user_id")
+    allowed_emps = _allowed_emps()
+    today = date.today()
 
-def _get_vendedores_no_periodo(db, ano: int, mes: int, emps: list[str]) -> list[str]:
-    inicio, fim = _periodo_bounds_ym(ano, mes)
-    if emps:
-        rows = db.execute(
-            text("""
-                SELECT DISTINCT vendedor
-                FROM vendas
-                WHERE emp = ANY(:emps)
-                  AND movimento BETWEEN :ini AND :fim
-                ORDER BY vendedor
-            """),
-            {"emps": emps, "ini": inicio, "fim": fim},
-        ).fetchall()
-    else:
-        rows = db.execute(
-            text("""
-                SELECT DISTINCT vendedor
-                FROM vendas
-                WHERE movimento BETWEEN :ini AND :fim
-                ORDER BY vendedor
-            """),
-            {"ini": inicio, "fim": fim},
-        ).fetchall()
-    return [str(r[0]).strip() for r in rows if r and r[0] is not None and str(r[0]).strip()]
+    with SessionLocal() as db:
+        msg = db.query(Mensagem).filter(Mensagem.id == mensagem_id).first()
+        if not msg or not msg.ativo or not msg.bloqueante or not _is_date_in_range(today, msg.inicio_em, msg.fim_em):
+            return redirect(url_for("dashboard"))
 
-
-def _get_emps_no_periodo(db, ano: int, mes: int, emps_allowed: list[str]) -> list[str]:
-    inicio, fim = _periodo_bounds_ym(ano, mes)
-    if emps_allowed:
-        rows = db.execute(
-            text("""
-                SELECT DISTINCT emp
-                FROM vendas
-                WHERE emp = ANY(:emps)
-                  AND movimento BETWEEN :ini AND :fim
-                ORDER BY emp
-            """),
-            {"emps": emps_allowed, "ini": inicio, "fim": fim},
-        ).fetchall()
-    else:
-        rows = db.execute(
-            text("""
-                SELECT DISTINCT emp
-                FROM vendas
-                WHERE movimento BETWEEN :ini AND :fim
-                ORDER BY emp
-            """),
-            {"ini": inicio, "fim": fim},
-        ).fetchall()
-    return [str(r[0]).strip() for r in rows if r and r[0] is not None and str(r[0]).strip()]
-
-
-def _calc_and_upsert_meta_result(db, meta: MetaPrograma, emp: str, vendedor: str) -> MetaResultado:
-    # Carrega escalas e configurações
-    escalas = db.query(MetaEscala).filter(MetaEscala.meta_id == meta.id).order_by(MetaEscala.ordem.asc()).all()
-    if not escalas:
-        escalas = []
-
-    # Resultado existente
-    res = (
-        db.query(MetaResultado)
-        .filter(
-            MetaResultado.meta_id == meta.id,
-            MetaResultado.emp == emp,
-            MetaResultado.vendedor == vendedor,
-            MetaResultado.ano == meta.ano,
-            MetaResultado.mes == meta.mes,
-        )
-        .first()
-    )
-    if not res:
-        res = MetaResultado(meta_id=meta.id, emp=emp, vendedor=vendedor, ano=meta.ano, mes=meta.mes)
-
-    # calcula conforme tipo
-    bonus = 0.0
-    premio = Decimal("0.00")
-
-    if meta.tipo == "MIX":
-        valor_mes = _as_decimal(_query_valor_mes(db, meta.ano, meta.mes, emp, vendedor))
-        mix = float(_query_mix_itens(db, meta.ano, meta.mes, emp, vendedor))
-        bonus = _meta_pick_bonus(escalas, mix)
-        premio = _money2(valor_mes * (Decimal(str(bonus)) / Decimal("100")))
-        res.valor_mes = float(valor_mes)
-        res.mix_itens_unicos = float(mix)
-        res.bonus_percentual = float(bonus)
-        res.premio = float(premio)
-
-    elif meta.tipo == "SHARE_MARCA":
-        marcas = [m.marca for m in db.query(MetaMarca).filter(MetaMarca.meta_id == meta.id).all()]
-        share_pct, valor_marcas, valor_mes = _query_share_marca(db, meta.ano, meta.mes, emp, vendedor, marcas)
-        bonus = _meta_pick_bonus(escalas, share_pct)
-        premio = _money2(_as_decimal(valor_mes) * (Decimal(str(bonus)) / Decimal("100")))
-        res.valor_mes = float(valor_mes)
-        res.valor_marcas = float(valor_marcas)
-        res.share_pct = float(share_pct)
-        res.bonus_percentual = float(bonus)
-        res.premio = float(premio)
-
-    else:  # CRESCIMENTO
-        valor_mes = _as_decimal(_query_valor_mes(db, meta.ano, meta.mes, emp, vendedor))
-        # base manual?
-        bm = (
-            db.query(MetaBaseManual)
-            .filter(MetaBaseManual.meta_id == meta.id, MetaBaseManual.emp == emp, MetaBaseManual.vendedor == vendedor)
+        # Confere destino (segurança)
+        targeted_user = (
+            db.query(MensagemUsuario)
+            .filter(MensagemUsuario.mensagem_id == msg.id)
+            .filter(MensagemUsuario.usuario_id == int(user_id))
             .first()
+            is not None
         )
-        if bm and bm.base_valor is not None:
-            base_val = _as_decimal(bm.base_valor)
+
+        targeted_emp = False
+        if role == "admin" and session.get("admin_all_emps"):
+            targeted_emp = (
+                db.query(MensagemEmpresa)
+                .filter(MensagemEmpresa.mensagem_id == msg.id)
+                .first()
+                is not None
+            )
         else:
-            # base automática: mesmo mês do ano passado
-            base_val = _as_decimal(_query_valor_mes(db, meta.ano - 1, meta.mes, emp, vendedor))
+            if allowed_emps:
+                targeted_emp = (
+                    db.query(MensagemEmpresa)
+                    .filter(MensagemEmpresa.mensagem_id == msg.id)
+                    .filter(MensagemEmpresa.emp.in_(allowed_emps))
+                    .first()
+                    is not None
+                )
 
-        base_f = float(base_val)
-        if base_val != 0:
-            crescimento_pct = float((valor_mes - base_val) / base_val * Decimal("100"))
-        else:
-            crescimento_pct = 0.0
+        if not (targeted_user or targeted_emp):
+            return redirect(url_for("dashboard"))
 
-        bonus = _meta_pick_bonus(escalas, crescimento_pct)
-        premio = _money2(valor_mes * (Decimal(str(bonus)) / Decimal("100")))
+        return render_template("mensagem_bloqueio.html", msg=msg, usuario=usuario, role=role)
 
-        res.valor_mes = float(valor_mes)
-        res.base_valor = float(base_val)
-        res.crescimento_pct = float(crescimento_pct)
-        res.bonus_percentual = float(bonus)
-        res.premio = float(premio)
 
-    res.calculado_em = datetime.utcnow()
-    db.add(res)
-    db.commit()
-    return res
+@app.route("/mensagens/lida/<int:mensagem_id>", methods=["POST"])
+def mensagens_marcar_lida(mensagem_id: int):
+    red = _login_required()
+    if red:
+        return red
 
+    user_id = session.get("user_id")
+    today = date.today()
+
+    with SessionLocal() as db:
+        msg = db.query(Mensagem).filter(Mensagem.id == mensagem_id).first()
+        if msg and msg.ativo and msg.bloqueante:
+            # upsert simples (tenta inserir; se já existir, ignora)
+            existe = (
+                db.query(MensagemLidaDiaria)
+                .filter(MensagemLidaDiaria.mensagem_id == mensagem_id)
+                .filter(MensagemLidaDiaria.usuario_id == int(user_id))
+                .filter(MensagemLidaDiaria.data == today)
+                .first()
+            )
+            if not existe:
+                db.add(MensagemLidaDiaria(
+                    mensagem_id=mensagem_id,
+                    usuario_id=int(user_id),
+                    data=today,
+                ))
+                db.commit()
+
+    next_url = session.pop("after_block_redirect", None)
+    if next_url:
+        return redirect(next_url)
+    return redirect(url_for("dashboard"))
+
+
+@app.route("/admin/mensagens", methods=["GET", "POST"])
+def admin_mensagens():
+    red = _login_required()
+    if red:
+        return red
+    red = _admin_or_supervisor_required()
+    if red:
+        return red
+
+    usuario = _usuario_logado()
+    role = (_role() or "").lower()
+    user_id = session.get("user_id")
+    allowed_emps = _allowed_emps()
+    today = date.today()
+
+    with SessionLocal() as db:
+        emps_q = db.query(Emp).filter(Emp.ativo.is_(True)).order_by(Emp.codigo.asc()).all()
+        # Supervisor só pode ver/usar as empresas dele
+        if role == "supervisor":
+            emps_q = [e for e in emps_q if str(e.codigo) in set(allowed_emps or [])]
+
+        users_q = []
+        allowed_user_ids = set()
+        if role == "admin":
+            users_q = db.query(Usuario).order_by(Usuario.username.asc()).all()
+            allowed_user_ids = {u.id for u in users_q}
+        elif role == "supervisor":
+            # Supervisor pode enviar para usuários individuais, mas apenas dentro das empresas dele
+            allowed_set = set(allowed_emps or [])
+            if allowed_set:
+                users_q = (
+                    db.query(Usuario)
+                    .join(UsuarioEmp, UsuarioEmp.usuario_id == Usuario.id)
+                    .filter(UsuarioEmp.emp.in_(list(allowed_set)))
+                    .filter(UsuarioEmp.ativo.is_(True))
+                    .distinct()
+                    .order_by(Usuario.username.asc())
+                    .all()
+                )
+                allowed_user_ids = {u.id for u in users_q}
+
+        if request.method == "POST":
+            titulo = (request.form.get("titulo") or "").strip()
+            conteudo = (request.form.get("conteudo") or "").strip()
+            bloqueante = (request.form.get("bloqueante") == "on")
+            ativo = True if (request.form.get("ativo") != "off") else False
+            inicio_em = (request.form.get("inicio_em") or "").strip()
+            fim_em = (request.form.get("fim_em") or "").strip()
+            empresas_sel = request.form.getlist("empresas")
+            usuario_dest = (request.form.get("usuario_id") or "").strip()  # opcional (admin e supervisor)
+
+            # validações
+            erros = []
+            if not titulo:
+                erros.append("Informe um título.")
+            if not conteudo:
+                erros.append("Informe a mensagem.")
+            if role == "supervisor" and (not empresas_sel and not usuario_dest):
+                erros.append("Selecione ao menos 1 empresa ou 1 usuário.")
+            if role == "admin" and (not empresas_sel and not usuario_dest):
+                erros.append("Selecione ao menos 1 empresa ou 1 usuário.")
+
+            # restringe empresas do supervisor
+            if role == "supervisor":
+                allowed_set = set(allowed_emps or [])
+                empresas_sel = [e for e in empresas_sel if str(e) in allowed_set]
+
+
+            # restringe usuário destino (admin: qualquer; supervisor: apenas usuários das empresas dele)
+            if usuario_dest:
+                try:
+                    uid = int(usuario_dest)
+                    if uid not in allowed_user_ids:
+                        erros.append("Usuário inválido para envio.")
+                        usuario_dest = ""
+                except Exception:
+                    erros.append("Usuário inválido para envio.")
+                    usuario_dest = ""
+
+            if not erros:
+                def _parse_date(s: str):
+                    try:
+                        return datetime.strptime(s, "%Y-%m-%d").date()
+                    except Exception:
+                        return None
+
+                msg = Mensagem(
+                    titulo=titulo,
+                    conteudo=conteudo,
+                    bloqueante=bloqueante,
+                    ativo=ativo,
+                    inicio_em=_parse_date(inicio_em),
+                    fim_em=_parse_date(fim_em),
+                    created_by_user_id=int(user_id) if user_id else None,
+                )
+                db.add(msg)
+                db.flush()
+
+                for emp_code in empresas_sel:
+                    db.add(MensagemEmpresa(mensagem_id=msg.id, emp=str(emp_code).strip()))
+                if usuario_dest:
+                    try:
+                        uid = int(usuario_dest)
+                        db.add(MensagemUsuario(mensagem_id=msg.id, usuario_id=uid))
+                    except Exception:
+                        pass
+
+                db.commit()
+                flash("Mensagem criada com sucesso.", "success")
+                return redirect(url_for("admin_mensagens"))
+            else:
+                for e in erros:
+                    flash(e, "danger")
+
+        # listagem
+        mensagens = (
+            db.query(Mensagem)
+            .order_by(Mensagem.ativo.desc(), Mensagem.id.desc())
+            .limit(300)
+            .all()
+        )
+        # supervisor vê apenas as mensagens que ele criou
+        if role == "supervisor":
+            mensagens = [m for m in mensagens if m.created_by_user_id == int(user_id)]
+
+        # Enriquecer destinos para exibição
+        destinos = {}
+        for m_ in mensagens:
+            emp_codes = [x.emp for x in db.query(MensagemEmpresa).filter(MensagemEmpresa.mensagem_id == m_.id).all()]
+            usr_ids = [x.usuario_id for x in db.query(MensagemUsuario).filter(MensagemUsuario.mensagem_id == m_.id).all()]
+            destinos[m_.id] = {"emps": emp_codes, "users": usr_ids}
+
+        return render_template(
+            "admin_mensagens.html",
+            usuario=usuario,
+            role=role,
+            emps=emps_q,
+            users=users_q,
+            mensagens=mensagens,
+            destinos=destinos,
+            today=today,
+        )
+
+
+@app.route("/admin/mensagens/<int:mensagem_id>/toggle", methods=["POST"])
+def admin_mensagens_toggle(mensagem_id: int):
+    red = _login_required()
+    if red:
+        return red
+    red = _admin_or_supervisor_required()
+    if red:
+        return red
+
+    role = (_role() or "").lower()
+    allowed_emps = _allowed_emps()
+
+    with SessionLocal() as db:
+        msg = db.query(Mensagem).filter(Mensagem.id == mensagem_id).first()
+        if not msg:
+            flash("Mensagem não encontrada.", "warning")
+            return redirect(url_for("admin_mensagens"))
+
+        if role == "supervisor":
+            # supervisor só pode alterar mensagens que ele mesmo criou
+            if msg.created_by_user_id != int(session.get("user_id") or 0):
+                flash("Acesso restrito.", "danger")
+                return redirect(url_for("admin_mensagens"))
+                return redirect(url_for("admin_mensagens"))
+
+        msg.ativo = not bool(msg.ativo)
+        db.commit()
+        flash("Status atualizado.", "success")
+        return redirect(url_for("admin_mensagens"))
+
+# =====================
+# Metas (Crescimento / MIX / Share de Marcas)
+# Helpers extraídos para metas_helpers.py (refatoração pura)
+# =====================
 
 @app.get("/metas")
 def metas():
