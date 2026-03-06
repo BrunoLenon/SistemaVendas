@@ -192,97 +192,10 @@ def _security_headers(resp):
     return resp
 
 # --------------------------
-# Filtro Jinja: formato brasileiro
+# Filtros Jinja (formatação BR)
 # --------------------------
-@app.template_filter("brl")
-def brl(value):
-    """Formata números no padrão brasileiro (ex: 21.555.384,00).
-
-    Retorna "0,00" para None/valores inválidos.
-    """
-    if value is None:
-        return "0,00"
-    try:
-        num = float(value)
-    except Exception:
-        return "0,00"
-    return f"{num:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-@app.template_filter("brl")
-def brl(value):
-    """Formata números no padrão brasileiro (ex: 21.555.384,00).
-
-    Retorna "0,00" para None/valores inválidos.
-    """
-    if value is None:
-        return "0,00"
-    try:
-        num = float(value)
-    except Exception:
-        return "0,00"
-    return f"{num:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-
-# --------------------------
-# Filtro Jinja: moeda brasileira (com R$)
-# --------------------------
-@app.template_filter("brl_rs")
-def brl_rs(value):
-    """Formata valores monetários no padrão brasileiro com prefixo 'R$' (ex: R$12.345,67)."""
-    s = brl(value)
-    # brl() já devolve '0,00' em erro
-    if s.startswith("-"):
-        return "R$-" + s[1:]
-    return "R$" + s
-
-# --------------------------
-# Filtros Jinja: datas (ISO <-> BR)
-# --------------------------
-@app.template_filter("date_iso")
-def date_iso(value):
-    """Converte date/datetime/str para YYYY-MM-DD (compatível com <input type=\"date\">)."""
-    if value is None:
-        return ""
-    try:
-        if isinstance(value, datetime):
-            return value.date().strftime("%Y-%m-%d")
-        if isinstance(value, date):
-            return value.strftime("%Y-%m-%d")
-        if isinstance(value, str):
-            s = value.strip()
-            # aceita "YYYY-MM-DD", "YYYY-MM-DDTHH:MM:SS", "YYYY-MM-DD HH:MM:SS"
-            if len(s) >= 10 and s[4] == "-" and s[7] == "-":
-                return s[:10]
-            # aceita "DD/MM/YYYY"
-            if len(s) >= 10 and s[2] == "/" and s[5] == "/":
-                dd, mm, yyyy = s[:2], s[3:5], s[6:10]
-                return f"{yyyy}-{mm}-{dd}"
-        return ""
-    except Exception:
-        return ""
-
-@app.template_filter("date_br")
-def date_br(value):
-    """Converte date/datetime/str para DD/MM/AAAA (exibição)."""
-    if value is None:
-        return ""
-    try:
-        if isinstance(value, datetime):
-            d = value.date()
-            return d.strftime("%d/%m/%Y")
-        if isinstance(value, date):
-            return value.strftime("%d/%m/%Y")
-        if isinstance(value, str):
-            s = value.strip()
-            # ISO
-            if len(s) >= 10 and s[4] == "-" and s[7] == "-":
-                yyyy, mm, dd = s[:4], s[5:7], s[8:10]
-                return f"{dd}/{mm}/{yyyy}"
-            # já BR
-            if len(s) >= 10 and s[2] == "/" and s[5] == "/":
-                return s[:10]
-        return ""
-    except Exception:
-        return ""
-
+from jinja_filters import register_template_filters
+register_template_filters(app)
 
 # Logs no stdout (Render captura automaticamente)
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
