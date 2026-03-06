@@ -3701,13 +3701,43 @@ def relatorio_campanhas():
             return "PENDENTE"
         return s
 
+    fechamento_status_map = {}
+    try:
+        emps_rows = sorted({str(_pick(r, "emp", "EMP") or "").strip() for r in (rows or []) if str(_pick(r, "emp", "EMP") or "").strip()})
+        if emps_rows:
+            with SessionLocal() as db:
+                fech_rows = (
+                    db.query(FechamentoMensal)
+                    .filter(
+                        FechamentoMensal.ano == int(ano),
+                        FechamentoMensal.mes == int(mes),
+                        FechamentoMensal.emp.in_(emps_rows),
+                    )
+                    .all()
+                )
+                for fr in fech_rows:
+                    stf = str(getattr(fr, "status", None) or ("fechado" if getattr(fr, "fechado", False) else "aberto") or "aberto").strip().lower()
+                    if stf == "a_pagar":
+                        stf = "fechado"
+                    if stf == "pago":
+                        fechamento_status_map[str(getattr(fr, "emp", "") or "").strip()] = "PAGO"
+                    elif stf == "fechado":
+                        fechamento_status_map[str(getattr(fr, "emp", "") or "").strip()] = "A_PAGAR"
+                    else:
+                        fechamento_status_map[str(getattr(fr, "emp", "") or "").strip()] = "PENDENTE"
+    except Exception:
+        app.logger.exception("Falha ao carregar status de fechamento para /relatorios/campanhas")
+        fechamento_status_map = {}
+
     groups_map = {}
     for r in rows:
         emp_r = str(_pick(r, "emp", "EMP") or "").strip() or "—"
         vend_r = str(_pick(r, "vendedor", "VENDEDOR") or "").strip() or "—"
         titulo = str(_pick(r, "titulo", "campanha", "CAMPANHA") or "").strip() or "—"
         valor = _to_float(_pick(r, "valor_recompensa", "valor", "VALOR_RECOMPENSA") or 0)
-        st = _norm_status(_pick(r, "status_pagamento", "status", "STATUS_PAGAMENTO") or "PENDENTE")
+        st_row = _norm_status(_pick(r, "status_pagamento", "status", "STATUS_PAGAMENTO") or "PENDENTE")
+        st = fechamento_status_map.get(emp_r, st_row)
+        vendeu_rs = float(getattr(r, "valor_vendido", 0) or 0)
 
         key = (emp_r, vend_r)
         g = groups_map.get(key)
@@ -3716,12 +3746,15 @@ def relatorio_campanhas():
                 "emp": emp_r,
                 "vendedor": vend_r,
                 "total": 0.0,
+                "total_vendido": 0.0,
+                "total_premiacao": 0.0,
                 "status_counts": {"PENDENTE": 0, "A_PAGAR": 0, "PAGO": 0, "OUTROS": 0},
                 "campanhas": [],
             }
             groups_map[key] = g
 
         g["total"] += valor
+        g["total_premiacao"] += valor
         g["status_counts"][st if st in g["status_counts"] else "OUTROS"] += 1
         g["campanhas"].append({
             "titulo": titulo,
@@ -3729,7 +3762,7 @@ def relatorio_campanhas():
             "qtd_minima": getattr(r, "qtd_minima", None),
             "recompensa_unit": getattr(r, "recompensa_unit", None),
             "qtd_vendida": float(getattr(r, "qtd_base", 0) or 0),
-            "vendeu_rs": float(getattr(r, "valor_vendido", 0) or 0),
+            "vendeu_rs": vendeu_rs,
             "valor": valor,
             "status": st,
             "atingiu": bool(getattr(r, "atingiu", False)),
@@ -3757,12 +3790,14 @@ def relatorio_campanhas():
         for header in combo_headers:
             combo_id = int(header.get("origem_id") or 0)
             itens = [i for i in combo_items if int(i.get("origem_id") or 0) == combo_id]
+            vendeu_combo = sum(float(i.get("vendeu_rs") or 0) for i in itens) or float(header.get("vendeu_rs") or 0)
+            valor_combo = float(header.get("valor") or 0)
             combo_cards.append({
                 **header,
                 "tipo": "COMBO_CARD",
                 "itens": itens,
-                "vendeu_rs": sum(float(i.get("vendeu_rs") or 0) for i in itens) or float(header.get("vendeu_rs") or 0),
-                "valor": sum(float(i.get("valor") or 0) for i in itens) or float(header.get("valor") or 0),
+                "vendeu_rs": vendeu_combo,
+                "valor": valor_combo,
                 "atingiu": bool(header.get("atingiu")),
             })
 
@@ -3770,6 +3805,9 @@ def relatorio_campanhas():
         g["campanhas"].sort(key=lambda c: ({"PENDENTE": 0, "A_PAGAR": 1, "PAGO": 2}.get(c["status"], 9), -float(c.get("valor") or 0), str(c.get("titulo") or "")))
         g["status"] = _agg_status(g["status_counts"])
         g["campanhas_count"] = len(g["campanhas"])
+        g["total_vendido"] = sum(float(c.get("vendeu_rs") or 0) for c in g["campanhas"])
+        g["total_premiacao"] = sum(float(c.get("valor") or 0) for c in g["campanhas"])
+        g["total"] = g["total_premiacao"]
 
     rows_grouped.sort(key=lambda gg: (-gg["total"], gg["emp"], gg["vendedor"]))
 
@@ -3795,7 +3833,8 @@ def relatorio_campanhas():
             emp = str(_pick(r, "emp", "EMP") or "").strip() or "—"
             vendedor = str(_pick(r, "vendedor", "VENDEDOR") or "").strip() or "—"
             valor = _to_float(_pick(r, "valor_recompensa", "valor", "VALOR_RECOMPENSA") or 0)
-            st = _norm_status(_pick(r, "status_pagamento", "status", "STATUS_PAGAMENTO") or "PENDENTE")
+            st_row = _norm_status(_pick(r, "status_pagamento", "status", "STATUS_PAGAMENTO") or "PENDENTE")
+            st = fechamento_status_map.get(emp, st_row)
             st_key = st if st in ("PENDENTE", "A_PAGAR", "PAGO") else "OUTROS"
             resumo["linhas"] += 1
             resumo["total_valor"] += valor
