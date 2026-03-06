@@ -4543,88 +4543,17 @@ def admin_importar():
 
 
 
-@app.route("/admin/itens_parados", methods=["GET", "POST"])
-def admin_itens_parados():
-    """Cadastro de itens parados (liquidação) por EMP.
 
-    Campos: EMP, Código, Descrição, Quantidade, Recompensa(%).
-    """
-    red = _login_required()
-    if red:
-        return red
-    red = _admin_required()
-    if red:
-        return red
+from admin_itens_parados_routes import register_admin_itens_parados_routes
 
-    erro = None
-    ok = None
-
-    with SessionLocal() as db:
-        if request.method == 'POST':
-            acao = (request.form.get('acao') or '').strip().lower()
-            try:
-                if acao == 'criar':
-                    emp = (request.form.get('emp') or '').strip()
-                    codigo = (request.form.get('codigo') or '').strip()
-                    descricao = (request.form.get('descricao') or '').strip()
-                    quantidade_raw = (request.form.get('quantidade') or '').strip()
-                    recompensa_raw = (request.form.get('recompensa_pct') or '').strip().replace(',', '.')
-
-                    if not emp:
-                        raise ValueError('Informe a EMP.')
-                    if not codigo:
-                        raise ValueError('Informe o CÓDIGO.')
-
-                    quantidade = int(quantidade_raw) if quantidade_raw else None
-                    recompensa_pct = float(recompensa_raw) if recompensa_raw else 0.0
-
-                    db.add(ItemParado(
-                        emp=str(emp),
-                        codigo=str(codigo),
-                        descricao=descricao or None,
-                        quantidade=quantidade,
-                        recompensa_pct=recompensa_pct,
-                        ativo=1,
-                    ))
-                    db.commit()
-                    ok = 'Item cadastrado com sucesso.'
-
-                elif acao == 'toggle':
-                    item_id = int(request.form.get('item_id') or 0)
-                    it = db.query(ItemParado).filter(ItemParado.id == item_id).first()
-                    if not it:
-                        raise ValueError('Item não encontrado.')
-                    it.ativo = 0 if int(it.ativo or 0) == 1 else 1
-                    it.atualizado_em = datetime.utcnow()
-                    db.commit()
-                    ok = 'Status do item atualizado.'
-
-                elif acao == 'remover':
-                    item_id = int(request.form.get('item_id') or 0)
-                    it = db.query(ItemParado).filter(ItemParado.id == item_id).first()
-                    if not it:
-                        raise ValueError('Item não encontrado.')
-                    db.delete(it)
-                    db.commit()
-                    ok = 'Item removido.'
-
-                else:
-                    raise ValueError('Ação inválida.')
-
-            except Exception as e:
-                db.rollback()
-                erro = str(e)
-                app.logger.exception('Erro no cadastro de itens parados')
-
-        itens = db.query(ItemParado).order_by(ItemParado.emp.asc(), ItemParado.codigo.asc()).all()
-
-    return render_template(
-        'admin_itens_parados.html',
-        usuario=_usuario_logado(),
-        itens=itens,
-        erro=erro,
-        ok=ok,
-    )
+register_admin_itens_parados_routes(
+    app,
+    SessionLocal=SessionLocal,
+    ItemParado=ItemParado,
+    login_required_fn=_login_required,
+    admin_required_fn=_admin_required,
+    usuario_logado_fn=_usuario_logado,
+)
 
 @app.route('/admin/resumos_periodo', methods=['GET', 'POST'])
 def admin_resumos_periodo():
