@@ -1743,46 +1743,151 @@ _campanhas_deps = CampanhasDeps(
     recalcular_resultados_combos_para_scope=lambda **kwargs: _recalcular_resultados_combos_para_scope(**kwargs),
 )
 
+@app.get("/campanhas")
+def campanhas_qtd():
+    """Relatório de campanhas de recompensa por quantidade.
 
-from campanhas_qtd_routes import register_campanhas_qtd_routes
+    - Vendedor: vê por EMPs inferidas de vendas (multi-EMP)
+    - Supervisor: vê apenas EMP dele
+    - Admin: pode escolher vendedor/EMP
+    """
+    red = _login_required()
+    if red:
+        return red
 
-register_campanhas_qtd_routes(
-    app,
-    deps=_campanhas_deps,
-    SessionLocal=SessionLocal,
-    CampanhaQtdResultado=CampanhaQtdResultado,
-    login_required_fn=_login_required,
-    role_fn=_role,
-    emp_fn=_emp,
-    usuario_logado_fn=_usuario_logado,
-    get_vendedores_db_fn=_get_vendedores_db,
-    get_emps_vendedor_fn=_get_emps_vendedor,
-    resolver_emp_scope_fn=_resolver_emp_scope_para_usuario,
-)
+    role = _role() or ""
+    emp_usuario = _emp()
+    vendedor_logado = (_usuario_logado() or "").strip().upper()
 
-from relatorio_campanhas_routes import register_relatorio_campanhas_routes
-
-register_relatorio_campanhas_routes(
-    app,
-    deps=_campanhas_deps,
-    login_required_fn=_login_required,
-    role_fn=_role,
-    emp_fn=_emp,
-    usuario_logado_fn=_usuario_logado,
-)
+    # Flags de permissão para a UI (templates)
+    ctx_role = role
+    ctx_is_admin = (ctx_role == "admin")
+    ctx_is_supervisor = (ctx_role == "supervisor")
+    ctx_is_vendedor = (ctx_role == "vendedor")
+    ctx_is_financeiro = (ctx_role == "financeiro")
 
 
+    ctx = build_campanhas_page_context(
+        _campanhas_deps,
+        role=role,
+        emp_usuario=emp_usuario,
+        vendedor_logado=vendedor_logado,
+        args=request.args,
+    )
+    return render_template("campanhas_qtd.html", **ctx)
 
-from relatorio_cidades_clientes_routes import register_relatorio_cidades_clientes_routes
 
-register_relatorio_cidades_clientes_routes(
-    app,
-    login_required_fn=_login_required,
-    role_fn=_role,
-    emp_fn=_emp,
-    allowed_emps_fn=_allowed_emps,
-    usuario_logado_fn=_usuario_logado,
-)
+@app.get("/campanhas/pdf")
+def campanhas_qtd_pdf():
+    red = _login_required()
+    if red:
+        return red
+
+    role = _role() or ""
+    emp_usuario = _emp()
+    hoje = date.today()
+    mes = int(request.args.get("mes") or hoje.month)
+    ano = int(request.args.get("ano") or hoje.year)
+
+    vendedor_logado = (_usuario_logado() or "").strip().upper()
+    if (role or "").lower() == "supervisor":
+        vendedor_sel = (request.args.get("vendedor") or "__ALL__").strip().upper()
+        if vendedor_sel == "__ALL__":
+            try:
+                vs = _get_vendedores_db(role, emp_usuario)
+                vendedor_sel = (vs[0] if vs else vendedor_logado).strip().upper()
+            except Exception:
+                vendedor_sel = vendedor_logado
+    else:
+        vendedor_sel = (request.args.get("vendedor") or vendedor_logado).strip().upper()
+        if (role or "").lower() != "admin" and vendedor_sel != vendedor_logado:
+            vendedor_sel = vendedor_logado
+
+    emp_param = (request.args.get("emp") or "").strip()
+    if (role or "").lower() == "admin":
+        emps_scope = [emp_param] if emp_param else _get_emps_vendedor(vendedor_sel)
+    else:
+        emps_scope = _resolver_emp_scope_para_usuario(vendedor_sel, role, emp_usuario)
+
+    from reportlab.lib.pagesizes import A4
+    from reportlab.pdfgen import canvas
+    from reportlab.lib.units import mm
+
+    buf = BytesIO()
+    c = canvas.Canvas(buf, pagesize=A4)
+    width, height = A4
+
+    def _money(v: float) -> str:
+        return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+    y = height - 18 * mm
+    c.setFont("Helvetica-Bold", 14)
+    c.drawString(18 * mm, y, "Campanhas - Recompensa por Quantidade")
+    y -= 7 * mm
+    c.setFont("Helvetica", 10)
+    c.drawString(18 * mm, y, f"Vendedor: {vendedor_sel}   Período: {mes:02d}/{ano}")
+    y -= 10 * mm
+
+    with SessionLocal() as db:
+        for emp in emps_scope:
+            emp = str(emp)
+            resultados = (
+                db.query(CampanhaQtdResultado)
+                .filter(
+                    CampanhaQtdResultado.emp == emp,
+                    CampanhaQtdResultado.vendedor == vendedor_sel,
+                    CampanhaQtdResultado.competencia_ano == int(ano),
+                    CampanhaQtdResultado.competencia_mes == int(mes),
+                )
+                .order_by(CampanhaQtdResultado.valor_recompensa.desc())
+                .all()
+            )
+
+            if y < 40 * mm:
+                c.showPage()
+                y = height - 18 * mm
+
+            c.setFont("Helvetica-Bold", 12)
+            c.drawString(18 * mm, y, f"EMP {emp}")
+            y -= 6 * mm
+            c.setFont("Helvetica-Bold", 9)
+            c.drawString(18 * mm, y, "PRODUTO")
+            c.drawString(65 * mm, y, "MARCA")
+            c.drawRightString(width - 70 * mm, y, "QTD")
+            c.drawRightString(width - 50 * mm, y, "MÍN")
+            c.drawRightString(width - 18 * mm, y, "VALOR")
+            y -= 4 * mm
+            c.setLineWidth(0.5)
+            c.line(18 * mm, y, width - 18 * mm, y)
+            y -= 5 * mm
+            c.setFont("Helvetica", 9)
+
+            total_emp = 0.0
+            for r in resultados:
+                if y < 25 * mm:
+                    c.showPage()
+                    y = height - 18 * mm
+                    c.setFont("Helvetica", 9)
+                minimo_txt = "" if r.qtd_minima is None else f"{float(r.qtd_minima):.0f}"
+                valor_txt = _money(float(r.valor_recompensa or 0.0)) if float(r.valor_recompensa or 0.0) > 0 else "-"
+                c.drawString(18 * mm, y, (r.produto_prefixo or "")[:22])
+                c.drawString(65 * mm, y, (r.marca or "")[:14])
+                c.drawRightString(width - 70 * mm, y, f"{float(r.qtd_vendida or 0):.0f}")
+                c.drawRightString(width - 50 * mm, y, minimo_txt)
+                c.drawRightString(width - 18 * mm, y, valor_txt)
+                y -= 5 * mm
+                total_emp += float(r.valor_recompensa or 0.0)
+
+            y -= 2 * mm
+            c.setFont("Helvetica-Bold", 10)
+            c.drawRightString(width - 18 * mm, y, f"Total EMP {emp}: {_money(total_emp)}")
+            y -= 10 * mm
+
+    c.showPage()
+    c.save()
+    buf.seek(0)
+    filename = f"campanhas_{mes:02d}_{ano}.pdf"
+    return send_file(buf, mimetype="application/pdf", as_attachment=True, download_name=filename)
 
 # ---------------------------------------------------------------------
 # Relatórios (Campanhas) - visão por EMP -> vendedores -> campanhas
@@ -2094,6 +2199,976 @@ def _recalcular_resultados_campanhas_para_scope(ano: int, mes: int, emps: list[s
             if novos:
                 db.bulk_save_objects(novos)
             db.commit()
+
+@app.get("/relatorios/campanhas")
+def relatorio_campanhas():
+    """Relatório gerencial de campanhas por EMP -> vendedores -> campanhas (mês/ano)."""
+    red = _login_required()
+    if red:
+        return red
+
+    role = (_role() or "").strip().lower()
+    ctx_is_admin = (role == "admin")
+    ctx_is_supervisor = (role == "supervisor")
+    ctx_is_vendedor = (role == "vendedor")
+    ctx_is_financeiro = (role == "financeiro")
+
+    emp_usuario = _emp()
+    vendedor_logado = (_usuario_logado() or "").strip().upper()
+
+    scope = build_relatorio_campanhas_scope(
+        _campanhas_deps,
+        role=role,
+        emp_usuario=emp_usuario,
+        vendedor_logado=vendedor_logado,
+        args=request.args,
+        flash=flash,
+    )
+    ano = int(scope["ano"])
+    mes = int(scope["mes"])
+    emps_sel = scope["emps_sel"]
+    vendedores_sel = scope["vendedores_sel"]
+    emps_scope = scope["emps_scope"]
+    vendedores_por_emp = scope["vendedores_por_emp"]
+
+    ctx = build_relatorio_campanhas_unificado_context(
+        _campanhas_deps,
+        role=role,
+        vendedor_logado=vendedor_logado,
+        ano=ano,
+        mes=mes,
+        emps_scope=emps_scope,
+        emps_sel=emps_sel,
+        vendedores_sel=vendedores_sel,
+        vendedores_por_emp=vendedores_por_emp,
+        recalc=str(request.args.get("recalc") or "").strip() in ("1", "true", "True", "sim", "SIM"),
+        flash=flash,
+    )
+
+    ctx["role"] = role
+    ctx["is_admin"] = ctx_is_admin
+    ctx["is_supervisor"] = ctx_is_supervisor
+    ctx["is_vendedor"] = ctx_is_vendedor
+    ctx["is_financeiro"] = ctx_is_financeiro
+    try:
+        vendedores_scope = sorted({str(v or '').strip().upper() for vs in (vendedores_por_emp or {}).values() for v in (vs or []) if str(v or '').strip()})
+    except Exception:
+        vendedores_scope = []
+    if role == 'vendedor' and vendedor_logado:
+        vendedores_scope = [vendedor_logado]
+    ctx["vendedores_scope"] = vendedores_scope
+
+    try:
+        default_per_page = 100 if role in ("admin", "supervisor") else 50
+        page = int(request.args.get("page") or 1)
+        per_page = int(request.args.get("per_page") or default_per_page)
+        page = max(page, 1)
+        per_page = max(25, min(per_page, 500))
+    except Exception:
+        page, per_page = 1, (100 if role in ("admin", "supervisor") else 50)
+
+    rows = ctx.get("rows") or []
+
+    def _pick(obj, *keys):
+        for k in keys:
+            try:
+                v = obj.get(k) if isinstance(obj, dict) else getattr(obj, k, None)
+                if v is None:
+                    continue
+                if isinstance(v, str) and not v.strip():
+                    continue
+                return v
+            except Exception:
+                continue
+        return None
+
+    def _to_float(x):
+        try:
+            return float(x or 0)
+        except Exception:
+            return 0.0
+
+    def _norm_status(s: str) -> str:
+        s = (s or "PENDENTE").strip().upper()
+        if s in ("A PAGAR", "A_PAGAR", "APAGAR"):
+            return "A_PAGAR"
+        if s == "PAGO":
+            return "PAGO"
+        if s == "PENDENTE":
+            return "PENDENTE"
+        return s
+
+    groups_map = {}
+    for r in rows:
+        emp_r = str(_pick(r, "emp", "EMP") or "").strip() or "—"
+        vend_r = str(_pick(r, "vendedor", "VENDEDOR") or "").strip() or "—"
+        titulo = str(_pick(r, "titulo", "campanha", "CAMPANHA") or "").strip() or "—"
+        valor = _to_float(_pick(r, "valor_recompensa", "valor", "VALOR_RECOMPENSA") or 0)
+        st = _norm_status(_pick(r, "status_pagamento", "status", "STATUS_PAGAMENTO") or "PENDENTE")
+
+        key = (emp_r, vend_r)
+        g = groups_map.get(key)
+        if not g:
+            g = {
+                "emp": emp_r,
+                "vendedor": vend_r,
+                "total": 0.0,
+                "status_counts": {"PENDENTE": 0, "A_PAGAR": 0, "PAGO": 0, "OUTROS": 0},
+                "campanhas": [],
+            }
+            groups_map[key] = g
+
+        g["total"] += valor
+        g["status_counts"][st if st in g["status_counts"] else "OUTROS"] += 1
+        g["campanhas"].append({
+            "titulo": titulo,
+            "item_codigo": getattr(r, "item_codigo", None),
+            "qtd_minima": getattr(r, "qtd_minima", None),
+            "recompensa_unit": getattr(r, "recompensa_unit", None),
+            "qtd_vendida": float(getattr(r, "qtd_base", 0) or 0),
+            "vendeu_rs": float(getattr(r, "valor_vendido", 0) or 0),
+            "valor": valor,
+            "status": st,
+            "atingiu": bool(getattr(r, "atingiu", False)),
+            "tipo": str(getattr(r, "tipo", "") or "").strip().upper(),
+            "origem_id": int(getattr(r, "origem_id", 0) or 0),
+        })
+
+    def _agg_status(counts):
+        if counts.get("PENDENTE"):
+            return "PENDENTE"
+        if counts.get("A_PAGAR"):
+            return "A_PAGAR"
+        if counts.get("PAGO"):
+            return "PAGO"
+        return "OUTROS"
+
+    rows_grouped = list(groups_map.values())
+    for g in rows_grouped:
+        camps = g.get("campanhas") or []
+        combo_items = [c for c in camps if str(c.get("titulo") or "").lstrip().startswith("↳")]
+        combo_headers = [c for c in camps if str(c.get("titulo") or "").strip().upper().startswith("COMBO")]
+        resto = [c for c in camps if c not in combo_items and c not in combo_headers]
+
+        combo_cards = []
+        for header in combo_headers:
+            combo_id = int(header.get("origem_id") or 0)
+            itens = [i for i in combo_items if int(i.get("origem_id") or 0) == combo_id]
+            combo_cards.append({
+                **header,
+                "tipo": "COMBO_CARD",
+                "itens": itens,
+                "vendeu_rs": sum(float(i.get("vendeu_rs") or 0) for i in itens) or float(header.get("vendeu_rs") or 0),
+                "valor": sum(float(i.get("valor") or 0) for i in itens) or float(header.get("valor") or 0),
+                "atingiu": bool(header.get("atingiu")),
+            })
+
+        g["campanhas"] = resto + combo_cards
+        g["campanhas"].sort(key=lambda c: ({"PENDENTE": 0, "A_PAGAR": 1, "PAGO": 2}.get(c["status"], 9), -float(c.get("valor") or 0), str(c.get("titulo") or "")))
+        g["status"] = _agg_status(g["status_counts"])
+        g["campanhas_count"] = len(g["campanhas"])
+
+    rows_grouped.sort(key=lambda gg: (-gg["total"], gg["emp"], gg["vendedor"]))
+
+    total_rows = len(rows_grouped)
+    start = (page - 1) * per_page
+    end = start + per_page
+    ctx["rows_grouped"] = rows_grouped
+    ctx["rows_grouped_page"] = rows_grouped[start:end]
+    ctx["rows_page"] = ctx["rows_grouped_page"]
+    ctx["page"] = page
+    ctx["per_page"] = per_page
+    ctx["total_rows"] = total_rows
+    ctx["total_pages"] = (total_rows + per_page - 1) // per_page if per_page else 1
+
+    def _calc_resumo_financeiro(_rows):
+        resumo = {
+            "linhas": 0,
+            "total_valor": 0.0,
+            "status": {"PENDENTE": 0.0, "A_PAGAR": 0.0, "PAGO": 0.0, "OUTROS": 0.0},
+            "por_emp": {},
+        }
+        for r in (_rows or []):
+            emp = str(_pick(r, "emp", "EMP") or "").strip() or "—"
+            vendedor = str(_pick(r, "vendedor", "VENDEDOR") or "").strip() or "—"
+            valor = _to_float(_pick(r, "valor_recompensa", "valor", "VALOR_RECOMPENSA") or 0)
+            st = _norm_status(_pick(r, "status_pagamento", "status", "STATUS_PAGAMENTO") or "PENDENTE")
+            st_key = st if st in ("PENDENTE", "A_PAGAR", "PAGO") else "OUTROS"
+            resumo["linhas"] += 1
+            resumo["total_valor"] += valor
+            resumo["status"][st_key] += valor
+            empd = resumo["por_emp"].setdefault(emp, {"total": 0.0, "status": {"PENDENTE": 0.0, "A_PAGAR": 0.0, "PAGO": 0.0, "OUTROS": 0.0}, "vendedores": {}})
+            empd["total"] += valor
+            empd["status"][st_key] += valor
+            vd = empd["vendedores"].setdefault(vendedor, {"total": 0.0, "status": {"PENDENTE": 0.0, "A_PAGAR": 0.0, "PAGO": 0.0, "OUTROS": 0.0}, "linhas": 0})
+            vd["linhas"] += 1
+            vd["total"] += valor
+            vd["status"][st_key] += valor
+        resumo["por_emp_ordenado"] = sorted(resumo["por_emp"].items(), key=lambda kv: kv[1].get("total", 0.0), reverse=True)
+        return resumo
+
+    ctx["resumo"] = _calc_resumo_financeiro(rows)
+
+    from urllib.parse import urlencode
+    base_args = request.args.to_dict(flat=False) if request.args else {}
+    def _make_url(endpoint: str, **updates):
+        d = dict(base_args)
+        for k, v in updates.items():
+            if v is None:
+                d.pop(k, None)
+            else:
+                d[k] = str(v)
+        qs = urlencode(d, doseq=True)
+        return url_for(endpoint) + (("?" + qs) if qs else "")
+
+    ctx["recalc_url"] = _make_url("relatorio_campanhas", recalc=1, page=1)
+    ctx["export_url"] = _make_url("relatorio_campanhas_export_csv", page=None, per_page=None)
+    per_page_opts = [50, 100, 200, 500]
+    ctx["per_page_opts"] = per_page_opts
+    ctx["per_page_urls"] = {opt: _make_url("relatorio_campanhas", per_page=opt, page=1) for opt in per_page_opts}
+    ctx["prev_url"] = _make_url("relatorio_campanhas", page=max(1, page - 1))
+    ctx["next_url"] = _make_url("relatorio_campanhas", page=min(ctx["total_pages"], page + 1))
+
+    return render_template("relatorio_campanhas.html", ctx=ctx, **ctx)
+
+@app.get("/relatorios/campanhas/export.csv")
+def relatorio_campanhas_export_csv():
+    """Exporta o relatório unificado (mes/ano/filtros) em CSV."""
+    red = _login_required()
+    if red:
+        return red
+
+    role = (_role() or "").strip().lower()
+    emp_usuario = _emp()
+    vendedor_logado = (_usuario_logado() or "").strip().upper()
+
+    scope = build_relatorio_campanhas_scope(
+        _campanhas_deps,
+        role=role,
+        emp_usuario=emp_usuario,
+        vendedor_logado=vendedor_logado,
+        args=request.args,
+        flash=flash,
+    )
+    ano = int(scope["ano"])
+    mes = int(scope["mes"])
+    emps_sel = scope["emps_sel"]
+    vendedores_sel = scope["vendedores_sel"]
+    emps_scope = scope["emps_scope"]
+    vendedores_por_emp = scope["vendedores_por_emp"]
+
+    ctx = build_relatorio_campanhas_unificado_context(
+        _campanhas_deps,
+        role=role,
+        vendedor_logado=vendedor_logado,
+        ano=ano,
+        mes=mes,
+        emps_scope=emps_scope,
+        emps_sel=emps_sel,
+        vendedores_sel=vendedores_sel,
+        vendedores_por_emp=vendedores_por_emp,
+        recalc=False,
+        flash=flash,
+    )
+
+    import csv
+    from io import StringIO
+    sio = StringIO()
+    w = csv.writer(sio, delimiter=";")
+    w.writerow(["tipo","competencia","emp","vendedor","titulo","atingiu_gate","qtd_base","qtd_premiada","valor_recompensa","status_pagamento","pago_em"])
+    for r in (ctx.get("rows") or []):
+        comp = f"{getattr(r,'competencia_mes',mes):02d}/{getattr(r,'competencia_ano',ano)}"
+        w.writerow([
+            getattr(r,"tipo",""),
+            comp,
+            getattr(r,"emp",""),
+            getattr(r,"vendedor",""),
+            getattr(r,"titulo",""),
+            "SIM" if getattr(r,"atingiu_gate",None) else "NÃO" if getattr(r,"atingiu_gate",None) is not None else "",
+            getattr(r,"qtd_base", "") if getattr(r,"qtd_base",None) is not None else "",
+            getattr(r,"qtd_premiada","") if getattr(r,"qtd_premiada",None) is not None else "",
+            getattr(r,"valor_recompensa",0.0),
+            getattr(r,"status_pagamento","PENDENTE"),
+            getattr(r,"pago_em","") or "",
+        ])
+
+    out = sio.getvalue().encode("utf-8")
+    filename = f"relatorio_campanhas_{ano}_{mes:02d}.csv"
+    return send_file(
+        BytesIO(out),
+        mimetype="text/csv",
+        as_attachment=True,
+        download_name=filename,
+    )
+
+
+@app.get("/relatorios/cidades-clientes")
+def relatorio_cidades_clientes():
+    """Relatórios por EMP (Cidades e Clientes) — mês/ano.
+
+    Permissões:
+    - ADMIN: todas as EMPs (pode filtrar por EMP e vendedor)
+    - SUPERVISOR: apenas EMP vinculada (pode filtrar por vendedor)
+    - VENDEDOR: apenas o próprio vendedor (agrupado por EMP)
+    """
+    red = _login_required()
+    if red:
+        return red
+
+    role = (_role() or "").strip().lower()
+    emp_usuario = _emp()
+    vendedor_logado = (_usuario_logado() or "").strip().upper()
+
+    hoje = date.today()
+    mes = int(request.args.get("mes") or hoje.month)
+    ano = int(request.args.get("ano") or hoje.year)
+
+    emp_filtro = (request.args.get("emp") or "").strip()
+    vendedor_filtro = (request.args.get("vendedor") or "").strip().upper()
+
+    # janela do período
+    inicio = date(ano, mes, 1)
+    fim = date(ano + 1, 1, 1) if mes == 12 else date(ano, mes + 1, 1)
+
+    db = SessionLocal()
+    try:
+        base = db.query(Venda).filter(Venda.movimento >= inicio, Venda.movimento < fim)
+        base_hist = db.query(Venda).filter(Venda.movimento.isnot(None))
+
+        escopo_label = None
+        pode_filtrar_emp = False
+        pode_filtrar_vendedor = False
+
+        if role == "admin":
+            pode_filtrar_emp = True
+            pode_filtrar_vendedor = True
+            if emp_filtro:
+                base = base.filter(Venda.emp == emp_filtro)
+                base_hist = base_hist.filter(Venda.emp == emp_filtro)
+                escopo_label = f"EMP {emp_filtro}"
+            if vendedor_filtro:
+                base = base.filter(func.upper(Venda.vendedor) == vendedor_filtro)
+                base_hist = base_hist.filter(func.upper(Venda.vendedor) == vendedor_filtro)
+                escopo_label = (escopo_label + " • " if escopo_label else "") + f"Vendedor {vendedor_filtro}"
+
+        elif role == "supervisor":
+            # Supervisor: acesso às Empresas vinculadas via usuario_emps (pode ser 1 ou várias)
+            allowed_emps = _allowed_emps()
+            if allowed_emps:
+                base = base.filter(Venda.emp.in_(allowed_emps))
+                base_hist = base_hist.filter(Venda.emp.in_(allowed_emps))
+                # permite filtrar por uma Empresa específica dentro do escopo
+                if emp_filtro and emp_filtro in allowed_emps:
+                    base = base.filter(Venda.emp == emp_filtro)
+                    base_hist = base_hist.filter(Venda.emp == emp_filtro)
+                    escopo_label = f"Empresa {emp_filtro}"
+                else:
+                    escopo_label = "Empresas vinculadas"
+            else:
+                # sem Empresas vinculadas -> sem dados
+                base = base.filter(text("1=0"))
+                base_hist = base_hist.filter(text("1=0"))
+                escopo_label = "Sem empresas vinculadas"
+            pode_filtrar_vendedor = True
+            if vendedor_filtro:
+                base = base.filter(func.upper(Venda.vendedor) == vendedor_filtro)
+                base_hist = base_hist.filter(func.upper(Venda.vendedor) == vendedor_filtro)
+                escopo_label += f" • Vendedor {vendedor_filtro}"
+
+        else:
+            base = base.filter(func.upper(Venda.vendedor) == vendedor_logado)
+            base_hist = base_hist.filter(func.upper(Venda.vendedor) == vendedor_logado)
+            escopo_label = f"Vendedor {vendedor_logado}"
+
+        # EMPs no período
+        emps = [str(e[0]) for e in base.with_entities(Venda.emp).distinct().order_by(Venda.emp).all() if e[0] is not None]
+
+        # Totais por EMP
+        totais_rows = (
+            base.with_entities(
+                Venda.emp.label("emp"),
+                func.coalesce(func.sum(Venda.valor_total), 0.0).label("valor_total"),
+                func.coalesce(func.sum(Venda.qtdade_vendida), 0.0).label("qtd_total"),
+                func.coalesce(func.count(func.distinct(Venda.mestre)), 0).label("mix_itens"),
+                func.count(func.distinct(func.upper(Venda.vendedor))).label("vendedores"),
+                func.count(func.distinct(Venda.cliente_id_norm)).label("clientes_unicos"),
+                func.count(func.distinct(Venda.cidade_norm)).label("cidades"),
+            )
+            .group_by(Venda.emp)
+            .all()
+        )
+        totais_map = {str(r.emp): {
+            "valor_total": float(r.valor_total or 0.0),
+            "qtd_total": float(r.qtd_total or 0.0),
+                "mix_itens": int(getattr(r, "mix_itens", 0) or 0),
+            "vendedores": int(r.vendedores or 0),
+            "clientes_unicos": int(r.clientes_unicos or 0),
+            "cidades": int(r.cidades or 0),
+        } for r in totais_rows}
+
+        # Ranking de cidades por EMP
+        city_rows = (
+            base.with_entities(
+                Venda.emp.label("emp"),
+                func.coalesce(Venda.cidade_norm, "sem_cidade").label("cidade_norm"),
+                func.coalesce(func.sum(Venda.valor_total), 0.0).label("valor_total"),
+                func.coalesce(func.sum(Venda.qtdade_vendida), 0.0).label("qtd_total"),
+                func.coalesce(func.count(func.distinct(Venda.mestre)), 0).label("mix_itens"),
+                func.count(func.distinct(Venda.cliente_id_norm)).label("clientes_unicos"),
+            )
+            .group_by(Venda.emp, func.coalesce(Venda.cidade_norm, "sem_cidade"))
+            .order_by(Venda.emp, func.sum(Venda.valor_total).desc())
+            .all()
+        )
+
+        cidades_por_emp = {}
+        for r in city_rows:
+            emp = str(r.emp)
+            total_emp = (totais_map.get(emp, {}) or {}).get("valor_total", 0.0) or 0.0
+            cidade_norm = r.cidade_norm
+            label = "SEM CIDADE" if (cidade_norm in (None, "", "sem_cidade")) else str(cidade_norm).upper()
+            valor = float(r.valor_total or 0.0)
+            pct = (valor / total_emp * 100.0) if total_emp > 0 else 0.0
+            cidades_por_emp.setdefault(emp, []).append({
+                "cidade_norm": cidade_norm,
+                "cidade_label": label,
+                "valor_total": valor,
+                "pct": pct,
+                "qtd_total": float(r.qtd_total or 0.0),
+                "mix_itens": int(getattr(r, "mix_itens", 0) or 0),
+                "clientes_unicos": int(r.clientes_unicos or 0),
+            })
+
+        # Top clientes por EMP (por valor no período)
+        signed_val = case(
+            (Venda.mov_tipo_movto.in_(["DS", "CA"]), -Venda.valor_total),
+            else_=Venda.valor_total,
+        )
+
+        cliente_rows = (
+            base.with_entities(
+                Venda.emp.label("emp"),
+                Venda.cliente_id_norm.label("cliente_id"),
+                func.coalesce(func.max(Venda.razao), "").label("cliente_label"),
+                func.coalesce(func.max(Venda.razao_norm), "").label("razao_norm"),
+                func.coalesce(func.sum(signed_val), 0.0).label("valor_total"),
+                func.coalesce(func.sum(Venda.qtdade_vendida), 0.0).label("qtd_total"),
+                func.coalesce(func.count(func.distinct(Venda.mestre)), 0).label("mix_itens"),
+            )
+            .filter(Venda.cliente_id_norm.isnot(None))
+            .group_by(Venda.emp, Venda.cliente_id_norm)
+            .order_by(Venda.emp, func.coalesce(func.sum(signed_val), 0.0).desc())
+            .all()
+        )
+
+        clientes_por_emp = {}
+        for r in cliente_rows:
+            emp = str(r.emp)
+            cliente_id = str(getattr(r, "cliente_id", "") or "").strip()
+            label = (getattr(r, "cliente_label", "") or "").strip() or cliente_id or "SEM CLIENTE"
+            clientes_por_emp.setdefault(emp, []).append({
+                "cliente_id": cliente_id,
+                "cliente_label": label,
+                "razao_norm": (getattr(r, "razao_norm", "") or "").strip(),
+                "valor_total": float(r.valor_total or 0.0),
+                "qtd_total": float(r.qtd_total or 0.0),
+                "mix_itens": int(getattr(r, "mix_itens", 0) or 0),
+            })
+
+        # Clientes novos vs recorrentes por EMP
+        clientes_periodo = (
+            base.with_entities(
+                Venda.emp.label("emp"),
+                Venda.cliente_id_norm.label("cid"),
+            )
+            .filter(Venda.cliente_id_norm.isnot(None))
+            .distinct()
+            .subquery()
+        )
+
+        min_datas = (
+            base_hist.with_entities(
+                Venda.emp.label("emp"),
+                Venda.cliente_id_norm.label("cid"),
+                func.min(Venda.movimento).label("min_data"),
+            )
+            .filter(Venda.cliente_id_norm.isnot(None))
+            .group_by(Venda.emp, Venda.cliente_id_norm)
+            .subquery()
+        )
+
+        novos_rows = (
+            db.query(clientes_periodo.c.emp.label("emp"), func.count().label("qtd"))
+            .select_from(clientes_periodo.join(min_datas, (clientes_periodo.c.emp == min_datas.c.emp) & (clientes_periodo.c.cid == min_datas.c.cid)))
+            .filter(min_datas.c.min_data >= inicio)
+            .group_by(clientes_periodo.c.emp)
+            .all()
+        )
+        recorr_rows = (
+            db.query(clientes_periodo.c.emp.label("emp"), func.count().label("qtd"))
+            .select_from(clientes_periodo.join(min_datas, (clientes_periodo.c.emp == min_datas.c.emp) & (clientes_periodo.c.cid == min_datas.c.cid)))
+            .filter(min_datas.c.min_data < inicio)
+            .group_by(clientes_periodo.c.emp)
+            .all()
+        )
+        novos_map = {str(r.emp): int(r.qtd or 0) for r in novos_rows}
+        recorr_map = {str(r.emp): int(r.qtd or 0) for r in recorr_rows}
+
+        # Cards por EMP (preview + detalhe)
+        emp_cards = []
+        for emp in emps:
+            t = totais_map.get(emp) or {"valor_total": 0.0, "qtd_total": 0.0, "vendedores": 0, "clientes_unicos": 0, "cidades": 0}
+            cities_full = cidades_por_emp.get(emp, [])
+            clients_full = clientes_por_emp.get(emp, [])
+
+            emp_cards.append({
+                "emp": emp,
+                "image_url": None,  # preparado para imagem da loja futuramente
+                "totais": {
+                    **t,
+                    "clientes_novos": novos_map.get(emp, 0),
+                    "clientes_recorrentes": recorr_map.get(emp, 0),
+                },
+                "cidades_preview": cities_full[:5],
+                "cidades_full": cities_full,
+                "clientes_preview": clients_full[:5],
+                "clientes_full": clients_full,
+            })
+
+        return render_template(
+            "relatorio_cidades_clientes.html",
+            mes=mes,
+            ano=ano,
+            escopo_label=escopo_label,
+            pode_filtrar_emp=pode_filtrar_emp,
+            pode_filtrar_vendedor=pode_filtrar_vendedor,
+            emp_filtro=emp_filtro,
+            vendedor_filtro=vendedor_filtro,
+            emp_cards=emp_cards,
+        )
+    finally:
+        db.close()
+
+
+
+
+
+## Relatório (AJAX): cidade -> clientes (modal)
+@app.get("/relatorios/cidade-clientes")
+def relatorio_cidade_clientes_api():
+    """Retorna JSON com ranking de clientes dentro de uma cidade no período.
+
+    Parâmetros:
+      - emp (obrigatório)
+      - cidade_norm (obrigatório; use 'sem_cidade' para vazio)
+      - mes, ano (obrigatórios)
+      - vendedor (opcional, ADMIN/SUPERVISOR)
+    """
+    red = _login_required()
+    if red:
+        return red
+
+    role = (_role() or "").strip().lower()
+    emp_usuario = _emp()
+    vendedor_logado = (_usuario_logado() or "").strip().upper()
+
+    emp = (request.args.get("emp") or "").strip()
+    cidade_norm = (request.args.get("cidade_norm") or "").strip()
+    mes = int(request.args.get("mes") or 0)
+    ano = int(request.args.get("ano") or 0)
+    vendedor = (request.args.get("vendedor") or "").strip().upper()
+
+    if not emp or not cidade_norm or not mes or not ano:
+        return jsonify({"error": "Parâmetros inválidos"}), 400
+
+    # Permissões
+    if role == "supervisor":
+        allowed_emps = _allowed_emps()
+        if allowed_emps and str(emp) not in set(allowed_emps):
+            return jsonify({"error": "Acesso negado"}), 403
+    elif role == "vendedor":
+        vendedor = vendedor_logado
+
+    inicio = date(int(ano), int(mes), 1)
+    fim = date(int(ano) + 1, 1, 1) if int(mes) == 12 else date(int(ano), int(mes) + 1, 1)
+
+    signed_val = case(
+        (Venda.mov_tipo_movto.in_(["DS", "CA"]), -Venda.valor_total),
+        else_=Venda.valor_total,
+    )
+
+    with SessionLocal() as db:
+        base = db.query(Venda).filter(
+            Venda.emp == str(emp),
+            Venda.movimento >= inicio,
+            Venda.movimento < fim,
+        )
+
+        if cidade_norm == "sem_cidade":
+            base = base.filter(or_(Venda.cidade_norm.is_(None), Venda.cidade_norm == "", Venda.cidade_norm == "sem_cidade"))
+        else:
+            base = base.filter(Venda.cidade_norm == cidade_norm)
+
+        if vendedor:
+            base = base.filter(func.upper(Venda.vendedor) == vendedor)
+
+        rows = (
+            base.with_entities(
+                Venda.cliente_id_norm.label("cliente_id"),
+                func.coalesce(func.max(Venda.razao), "").label("cliente"),
+                func.coalesce(func.sum(signed_val), 0.0).label("valor_total"),
+                func.coalesce(func.sum(Venda.qtdade_vendida), 0.0).label("qtd_total"),
+                func.count(func.distinct(Venda.mestre)).label("mix_itens"),
+            )
+            .filter(Venda.cliente_id_norm.isnot(None))
+            .group_by(Venda.cliente_id_norm)
+            .order_by(func.coalesce(func.sum(signed_val), 0.0).desc())
+            .all()
+        )
+
+    out = []
+    for r in rows:
+        label = (r.cliente or "").strip() or str(r.cliente_id)
+        out.append({
+            "cliente_id": str(r.cliente_id),
+            "cliente": label,
+            "valor_total": float(r.valor_total or 0.0),
+            "qtd_total": float(r.qtd_total or 0.0),
+            "mix_itens": int(r.mix_itens or 0),
+        })
+
+    return jsonify({"emp": emp, "cidade_norm": cidade_norm, "ano": ano, "mes": mes, "clientes": out})
+
+
+
+## Relatório (AJAX): cliente -> marcas (modal)
+@app.get("/relatorios/cliente-marcas")
+def relatorio_cliente_marcas_api():
+    """Retorna JSON com participação por marca para um cliente (RAZAO_NORM) no período."""
+    red = _login_required()
+    if red:
+        return red
+
+    role = (_role() or "").strip().lower()
+    allowed_emps = _allowed_emps()
+    vendedor_logado = (_usuario_logado() or "").strip().upper()
+
+    emp = (request.args.get("emp") or "").strip()
+    # compat: o front antigo mandava razao_norm; o novo usa cliente_id (cliente_id_norm)
+    razao_norm = (request.args.get("razao_norm") or "").strip()
+    cliente_id = (request.args.get("cliente_id") or request.args.get("cliente") or "").strip()
+    cidade_norm = (request.args.get("cidade_norm") or "").strip()
+    mes = int(request.args.get("mes") or 0)
+    ano = int(request.args.get("ano") or 0)
+    vendedor = (request.args.get("vendedor") or "").strip().upper()
+
+    # Requer emp + (razao_norm ou cliente_id) + período
+    if not emp or (not razao_norm and not cliente_id) or not mes or not ano:
+        return jsonify({"error": "Parâmetros inválidos"}), 400
+
+    # Permissões
+    if role == "supervisor":
+        if allowed_emps and str(emp) not in [str(e) for e in allowed_emps]:
+            return jsonify({"error": "Acesso negado"}), 403
+    elif role == "vendedor":
+        vendedor = vendedor_logado  # vendedor não pode consultar outro vendedor
+
+    with SessionLocal() as db:
+        base = db.query(Venda).filter(
+            Venda.emp == str(emp),
+            extract("month", Venda.movimento) == mes,
+            extract("year", Venda.movimento) == ano,
+        )
+
+        # Identificação do cliente (compat)
+        if razao_norm:
+            base = base.filter(Venda.razao_norm == razao_norm)
+        elif cliente_id:
+            base = base.filter(Venda.cliente_id_norm == cliente_id)
+        else:
+            return jsonify({"error": "Parâmetros inválidos"}), 400
+
+        if cidade_norm:
+            if cidade_norm == "sem_cidade":
+                base = base.filter(or_(Venda.cidade_norm.is_(None), Venda.cidade_norm == "", Venda.cidade_norm == "sem_cidade"))
+            else:
+                base = base.filter(Venda.cidade_norm == cidade_norm)
+        if vendedor:
+            base = base.filter(func.upper(Venda.vendedor) == vendedor)
+
+        signed_val = case(
+            (Venda.mov_tipo_movto.in_(["DS", "CA"]), -Venda.valor_total),
+            else_=Venda.valor_total,
+        )
+
+        total = float(base.with_entities(func.coalesce(func.sum(signed_val), 0)).scalar() or 0.0)
+
+        mix_itens = int(base.with_entities(func.count(func.distinct(Venda.mestre))).scalar() or 0)
+
+        marcas_rows = (
+            base.with_entities(
+                Venda.marca.label("marca"),
+                func.coalesce(func.sum(signed_val), 0).label("valor_total"),
+                func.count(func.distinct(Venda.mestre)).label("mix_itens"),
+            )
+            .group_by(Venda.marca)
+            .order_by(func.coalesce(func.sum(signed_val), 0).desc())
+            .all()
+        )
+
+    marcas = []
+    for r in marcas_rows:
+        v = float(r.valor_total or 0.0)
+        marcas.append(
+            {
+                "marca": r.marca or "SEM MARCA",
+                "valor_total": v,
+                "mix_itens": int(r.mix_itens or 0),
+                "percent": (v / total * 100.0) if total else 0.0,
+            }
+        )
+
+    return jsonify(
+        {
+            "emp": str(emp),
+            "razao_norm": razao_norm,
+            "ano": ano,
+            "mes": mes,
+            "total": total,
+            "mix_itens": mix_itens,
+            "marcas": marcas,
+        }
+    )
+
+
+
+
+
+## Relatório (AJAX): cliente + marca -> itens (modal)
+@app.get("/relatorios/cliente-marca-itens")
+def relatorio_cliente_marca_itens_api():
+    """Retorna JSON com itens comprados por um cliente filtrado por marca no período.
+
+    Parâmetros:
+      - emp (obrigatório)
+      - marca (obrigatório; use 'SEM MARCA' para marca vazia)
+      - mes, ano (obrigatórios)
+      - cliente_id (cliente_id_norm) OU razao_norm (compat)
+      - cidade_norm (opcional)
+      - vendedor (opcional, mas restringido por perfil)
+
+    Retorna:
+      - itens: lista de {mestre, descricao, qtd_total, valor_total}
+    """
+    red = _login_required()
+    if red:
+        return red
+
+    role = (_role() or "").strip().lower()
+    allowed_emps = _allowed_emps()
+    vendedor_logado = (_usuario_logado() or "").strip().upper()
+
+    emp = (request.args.get("emp") or "").strip()
+    marca = (request.args.get("marca") or "").strip()
+    razao_norm = (request.args.get("razao_norm") or "").strip()
+    cliente_id = (request.args.get("cliente_id") or request.args.get("cliente") or "").strip()
+    cidade_norm = (request.args.get("cidade_norm") or "").strip()
+    mes = int(request.args.get("mes") or 0)
+    ano = int(request.args.get("ano") or 0)
+    vendedor = (request.args.get("vendedor") or "").strip().upper()
+
+    if not emp or not marca or (not razao_norm and not cliente_id) or not mes or not ano:
+        return jsonify({"error": "Parâmetros inválidos"}), 400
+
+    # Permissões
+    if role == "supervisor":
+        if allowed_emps and str(emp) not in [str(e) for e in allowed_emps]:
+            return jsonify({"error": "Acesso negado"}), 403
+    elif role == "vendedor":
+        vendedor = vendedor_logado  # vendedor não pode consultar outro vendedor
+
+    with SessionLocal() as db:
+        base = db.query(Venda).filter(
+            Venda.emp == str(emp),
+            extract("month", Venda.movimento) == mes,
+            extract("year", Venda.movimento) == ano,
+        )
+
+        # Identificação do cliente (compat)
+        if cliente_id and razao_norm:
+            base = base.filter(or_(Venda.cliente_id_norm == cliente_id, Venda.razao_norm == razao_norm))
+        elif cliente_id:
+            base = base.filter(Venda.cliente_id_norm == cliente_id)
+        elif razao_norm:
+            base = base.filter(Venda.razao_norm == razao_norm)
+        else:
+            return jsonify({"error": "Parâmetros inválidos"}), 400
+
+        # Cidade (opcional)
+        if cidade_norm:
+            if cidade_norm == "sem_cidade":
+                base = base.filter(or_(Venda.cidade_norm.is_(None), Venda.cidade_norm == "", Venda.cidade_norm == "sem_cidade"))
+            else:
+                base = base.filter(Venda.cidade_norm == cidade_norm)
+
+        if vendedor:
+            base = base.filter(func.upper(Venda.vendedor) == vendedor)
+
+        # Marca
+        if marca.upper() in ("SEM MARCA", "SEM_MARCA"):
+            base = base.filter(or_(Venda.marca.is_(None), Venda.marca == "", Venda.marca == "SEM MARCA"))
+        else:
+            base = base.filter(Venda.marca == marca)
+
+        signed_val = case(
+            (Venda.mov_tipo_movto.in_(["DS", "CA"]), -Venda.valor_total),
+            else_=Venda.valor_total,
+        )
+        signed_qtd = case(
+            (Venda.mov_tipo_movto.in_(["DS", "CA"]), -Venda.qtdade_vendida),
+            else_=Venda.qtdade_vendida,
+        )
+
+        itens_rows = (
+            base.with_entities(
+                Venda.mestre.label("mestre"),
+                Venda.descricao.label("descricao"),
+                func.coalesce(func.sum(signed_qtd), 0.0).label("qtd_total"),
+                func.coalesce(func.sum(signed_val), 0.0).label("valor_total"),
+            )
+            .group_by(Venda.mestre, Venda.descricao)
+            .order_by(func.coalesce(func.sum(signed_val), 0.0).desc())
+            .all()
+        )
+
+    itens = []
+    for r in itens_rows:
+        itens.append({
+            "mestre": (r.mestre or "").strip(),
+            "descricao": (r.descricao or "").strip(),
+            "qtd_total": float(r.qtd_total or 0.0),
+            "valor_total": float(r.valor_total or 0.0),
+        })
+
+    return jsonify({
+        "emp": emp,
+        "marca": marca,
+        "cliente_id": cliente_id,
+        "razao_norm": razao_norm,
+        "ano": ano,
+        "mes": mes,
+        "itens": itens,
+    })
+
+
+
+## Relatório (AJAX): cliente -> itens (modal)
+@app.get("/relatorios/cliente-itens")
+def relatorio_cliente_itens_api():
+    """Retorna JSON com itens únicos comprados por um cliente (RAZAO_NORM) no período.
+
+    Retorna:
+    - total: soma (com sinal) do valor_total no período
+    - itens_unicos: quantidade de itens únicos (distinct mestre)
+    - itens: lista de {mestre, descricao, valor_total}
+    """
+    red = _login_required()
+    if red:
+        return red
+
+    role = (_role() or "").strip().lower()
+    emp_usuario = _emp()
+    vendedor_logado = (_usuario_logado() or "").strip().upper()
+
+    emp = (request.args.get("emp") or "").strip()
+    # compat: front antigo mandava razao_norm; novo prefere cliente_id (cliente_id_norm)
+    razao_norm = (request.args.get("razao_norm") or "").strip()
+    cliente_id = (request.args.get("cliente_id") or request.args.get("cliente") or "").strip()
+    mes = int(request.args.get("mes") or 0)
+    ano = int(request.args.get("ano") or 0)
+    vendedor = (request.args.get("vendedor") or "").strip().upper()
+    cliente_label = (request.args.get("cliente_label") or request.args.get("label") or "").strip()
+
+    if not emp or (not razao_norm and not cliente_id and not cliente_label) or not mes or not ano:
+        return jsonify({"error": "Parâmetros inválidos"}), 400
+
+    # Permissões por perfil
+    if role == "supervisor":
+        allowed_emps = _allowed_emps()
+        if allowed_emps and str(emp) not in set(allowed_emps):
+            return jsonify({"error": "Acesso negado"}), 403
+    elif role == "vendedor":
+        # vendedor só pode ver os próprios dados (e não pode trocar vendedor via query)
+        vendedor = vendedor_logado
+
+    # Query base
+    with SessionLocal() as db:
+        base = db.query(Venda).filter(
+            Venda.emp == str(emp),
+            extract("month", Venda.movimento) == mes,
+            extract("year", Venda.movimento) == ano,
+        )
+
+        # Identificação do cliente (compat / robusto)
+        # Alguns bancos podem ter cliente_id_norm ou razao_norm inconsistentes; se vierem ambos, usamos OR.
+        if cliente_id and razao_norm:
+            base = base.filter(or_(Venda.cliente_id_norm == cliente_id, Venda.razao_norm == razao_norm))
+        elif cliente_id:
+            base = base.filter(Venda.cliente_id_norm == cliente_id)
+        elif razao_norm:
+            base = base.filter(Venda.razao_norm == razao_norm)
+        elif cliente_label:
+            # fallback: tenta pelo nome do cliente (normalizado)
+            lbl_norm = _norm_txt(cliente_label)
+            base = base.filter(or_(func.upper(Venda.cliente) == cliente_label.upper(), Venda.razao_norm == lbl_norm))
+        else:
+            return jsonify({"error": "Parâmetros inválidos"}), 400
+
+        if vendedor:
+            base = base.filter(func.upper(Venda.vendedor) == vendedor)
+
+        signed_val = case(
+            (Venda.mov_tipo_movto.in_(["DS", "CA"]), -Venda.valor_total),
+            else_=Venda.valor_total,
+        )
+
+        total = base.with_entities(func.coalesce(func.sum(signed_val), 0)).scalar() or 0
+        total = float(total)
+
+        itens_unicos = base.with_entities(func.count(func.distinct(Venda.mestre))).scalar() or 0
+        itens_unicos = int(itens_unicos)
+
+        itens_rows = (
+            base.with_entities(
+                Venda.mestre.label("mestre"),
+                Venda.descricao.label("descricao"),
+                func.coalesce(func.sum(signed_val), 0).label("valor_total"),
+            )
+            .group_by(Venda.mestre, Venda.descricao)
+            .order_by(func.coalesce(func.sum(signed_val), 0).desc())
+            .all()
+        )
+
+    itens = []
+    for r in itens_rows:
+        itens.append({
+            "mestre": (r.mestre or "").strip(),
+            "descricao": (r.descricao or "").strip(),
+            "valor_total": float(r.valor_total or 0.0),
+        })
+
+    return jsonify({
+        "emp": emp,
+        "cliente_id": cliente_id,
+        "razao_norm": razao_norm,
+        "cliente_label": cliente_label,
+
+        "ano": ano,
+        "mes": mes,
+        "total": total,
+        "itens_unicos": itens_unicos,
+        "itens": itens,
+    })
 
 @app.route("/senha", methods=["GET", "POST"])
 def senha():
@@ -3819,69 +4894,14 @@ def err_500(e):
 # (rotas admin migradas para o blueprint blueprints/campanhas_v2_admin.py)
 
 
-@app.route("/financeiro/campanhas_v2", methods=["GET"])
-@financeiro_required
-def financeiro_campanhas_v2():
-    # por enquanto, redireciona para o fechamento (mesma visão)
-    return redirect(url_for("financeiro_fechamento_v2"))
 
+# =====================
+# Financeiro (Campanhas / Fechamento V2)
+# Rotas extraídas para financeiro_campanhas_routes.py (refatoração pura)
+# =====================
 
-@app.route("/financeiro/fechamento_v2", methods=["GET"])
-@financeiro_required
-def financeiro_fechamento_v2():
-    from datetime import date
-    ano = int(request.args.get("ano") or date.today().year)
-    mes = int(request.args.get("mes") or date.today().month)
-    db = SessionLocal()
-    try:
-        rows = (
-            db.query(CampanhaV2Resultado, CampanhaV2Master.titulo)
-            .join(CampanhaV2Master, CampanhaV2Master.id==CampanhaV2Resultado.campanha_id)
-            .filter(CampanhaV2Resultado.ano==ano, CampanhaV2Resultado.mes==mes)
-            .order_by(CampanhaV2Resultado.status_financeiro.asc(), CampanhaV2Resultado.recompensa.desc())
-            .all()
-        )
-        resultados=[]
-        for r, titulo in rows:
-            resultados.append({
-                "id": r.id,
-                "campanha_titulo": titulo,
-                "emp": r.emp,
-                "vendedor": r.vendedor,
-                "valor_base": r.valor_base,
-                "recompensa": r.recompensa,
-                "status_financeiro": r.status_financeiro,
-            })
-        return render_template("financeiro_fechamento_v2.html", resultados=resultados, ano=ano, mes=mes)
-    finally:
-        db.close()
-
-
-@app.route("/financeiro/fechamento_v2/status", methods=["POST"])
-@financeiro_required
-def financeiro_fechamento_v2_status():
-    rid = int(request.form.get("resultado_id") or 0)
-    status = (request.form.get("status_financeiro") or "PENDENTE").strip().upper()
-    if status not in ("PENDENTE", "A_PAGAR", "PAGO"):
-        status = "PENDENTE"
-    db = SessionLocal()
-    try:
-        r = db.query(CampanhaV2Resultado).filter(CampanhaV2Resultado.id==rid).first()
-        if not r:
-            flash("Resultado não encontrado.", "danger")
-            return redirect(url_for("financeiro_fechamento_v2"))
-        r.status_financeiro = status
-        db.commit()
-        flash("Status atualizado.", "success")
-    except Exception as e:
-        db.rollback()
-        flash(f"Erro ao atualizar status: {e}", "danger")
-    finally:
-        db.close()
-    return redirect(url_for("financeiro_fechamento_v2"))
-
-
-
+from financeiro_campanhas_routes import register_financeiro_campanhas_routes
+register_financeiro_campanhas_routes(app)
 
 
 
@@ -4170,20 +5190,6 @@ def campanhas_ranking_marca():
             db.close()
         except Exception:
             pass
-
-
-@app.route("/financeiro/campanhas")
-@login_required
-def financeiro_campanhas():
-    """
-    Endpoint compatível com o menu lateral (sidebar).
-    Caso a implementação atual esteja em /financeiro/campanhas_v2, redireciona para lá.
-    """
-    try:
-        return redirect(url_for("financeiro_campanhas_v2"))
-    except Exception:
-        # fallback: se não existir v2, renderiza página simples informativa
-        return redirect("/financeiro/campanhas_v2")
 
 
 
