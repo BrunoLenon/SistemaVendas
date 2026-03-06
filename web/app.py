@@ -3238,27 +3238,28 @@ def campanhas_qtd_pdf():
 # Relatórios (Campanhas) - visão por EMP -> vendedores -> campanhas
 # ---------------------------------------------------------------------
 def _get_emps_com_vendas_no_periodo(ano: int, mes: int) -> list[str]:
-    """Wrapper fino para helper centralizado de campanhas/relatórios."""
-    return runtime_get_emps_com_vendas_no_periodo(
-        SessionLocal=SessionLocal,
-        Venda=Venda,
-        periodo_bounds=_periodo_bounds,
-        filter_emps_cadastradas=_filter_emps_cadastradas,
-        ano=ano,
-        mes=mes,
-    )
+    inicio_mes, fim_mes = _periodo_bounds(int(ano), int(mes))
+    with SessionLocal() as db:
+        rows = (
+            db.query(func.distinct(Venda.emp))
+            .filter(Venda.movimento >= inicio_mes, Venda.movimento <= fim_mes)
+            .all()
+        )
+    emps = sorted({str(r[0]).strip() for r in rows if r and r[0] is not None and str(r[0]).strip() != ""})
+    return _filter_emps_cadastradas(emps, apenas_ativas=True)
 
 def _get_vendedores_emp_no_periodo(emp: str, ano: int, mes: int) -> list[str]:
-    """Wrapper fino para helper centralizado de campanhas/relatórios."""
-    vendedores = runtime_get_vendedores_emp_no_periodo(
-        SessionLocal=SessionLocal,
-        Venda=Venda,
-        periodo_bounds=_periodo_bounds,
-        emp=emp,
-        ano=ano,
-        mes=mes,
-    )
-    cad = _get_vendedores_cadastrados_por_emp(str(emp))
+    inicio_mes, fim_mes = _periodo_bounds(int(ano), int(mes))
+    emp = str(emp)
+    with SessionLocal() as db:
+        rows = (
+            db.query(func.distinct(Venda.vendedor))
+            .filter(Venda.emp == emp, Venda.movimento >= inicio_mes, Venda.movimento <= fim_mes)
+            .all()
+        )
+    vendedores = sorted({(r[0] or '').strip().upper() for r in rows if r and (r[0] or '').strip()})
+    # Remove vendedores não cadastrados (usuários inexistentes)
+    cad = _get_vendedores_cadastrados_por_emp(emp)
     if cad:
         vendedores = [v for v in vendedores if v in cad]
     return vendedores
