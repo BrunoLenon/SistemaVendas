@@ -1743,151 +1743,22 @@ _campanhas_deps = CampanhasDeps(
     recalcular_resultados_combos_para_scope=lambda **kwargs: _recalcular_resultados_combos_para_scope(**kwargs),
 )
 
-@app.get("/campanhas")
-def campanhas_qtd():
-    """Relatório de campanhas de recompensa por quantidade.
 
-    - Vendedor: vê por EMPs inferidas de vendas (multi-EMP)
-    - Supervisor: vê apenas EMP dele
-    - Admin: pode escolher vendedor/EMP
-    """
-    red = _login_required()
-    if red:
-        return red
+from campanhas_qtd_routes import register_campanhas_qtd_routes
 
-    role = _role() or ""
-    emp_usuario = _emp()
-    vendedor_logado = (_usuario_logado() or "").strip().upper()
-
-    # Flags de permissão para a UI (templates)
-    ctx_role = role
-    ctx_is_admin = (ctx_role == "admin")
-    ctx_is_supervisor = (ctx_role == "supervisor")
-    ctx_is_vendedor = (ctx_role == "vendedor")
-    ctx_is_financeiro = (ctx_role == "financeiro")
-
-
-    ctx = build_campanhas_page_context(
-        _campanhas_deps,
-        role=role,
-        emp_usuario=emp_usuario,
-        vendedor_logado=vendedor_logado,
-        args=request.args,
-    )
-    return render_template("campanhas_qtd.html", **ctx)
-
-
-@app.get("/campanhas/pdf")
-def campanhas_qtd_pdf():
-    red = _login_required()
-    if red:
-        return red
-
-    role = _role() or ""
-    emp_usuario = _emp()
-    hoje = date.today()
-    mes = int(request.args.get("mes") or hoje.month)
-    ano = int(request.args.get("ano") or hoje.year)
-
-    vendedor_logado = (_usuario_logado() or "").strip().upper()
-    if (role or "").lower() == "supervisor":
-        vendedor_sel = (request.args.get("vendedor") or "__ALL__").strip().upper()
-        if vendedor_sel == "__ALL__":
-            try:
-                vs = _get_vendedores_db(role, emp_usuario)
-                vendedor_sel = (vs[0] if vs else vendedor_logado).strip().upper()
-            except Exception:
-                vendedor_sel = vendedor_logado
-    else:
-        vendedor_sel = (request.args.get("vendedor") or vendedor_logado).strip().upper()
-        if (role or "").lower() != "admin" and vendedor_sel != vendedor_logado:
-            vendedor_sel = vendedor_logado
-
-    emp_param = (request.args.get("emp") or "").strip()
-    if (role or "").lower() == "admin":
-        emps_scope = [emp_param] if emp_param else _get_emps_vendedor(vendedor_sel)
-    else:
-        emps_scope = _resolver_emp_scope_para_usuario(vendedor_sel, role, emp_usuario)
-
-    from reportlab.lib.pagesizes import A4
-    from reportlab.pdfgen import canvas
-    from reportlab.lib.units import mm
-
-    buf = BytesIO()
-    c = canvas.Canvas(buf, pagesize=A4)
-    width, height = A4
-
-    def _money(v: float) -> str:
-        return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-
-    y = height - 18 * mm
-    c.setFont("Helvetica-Bold", 14)
-    c.drawString(18 * mm, y, "Campanhas - Recompensa por Quantidade")
-    y -= 7 * mm
-    c.setFont("Helvetica", 10)
-    c.drawString(18 * mm, y, f"Vendedor: {vendedor_sel}   Período: {mes:02d}/{ano}")
-    y -= 10 * mm
-
-    with SessionLocal() as db:
-        for emp in emps_scope:
-            emp = str(emp)
-            resultados = (
-                db.query(CampanhaQtdResultado)
-                .filter(
-                    CampanhaQtdResultado.emp == emp,
-                    CampanhaQtdResultado.vendedor == vendedor_sel,
-                    CampanhaQtdResultado.competencia_ano == int(ano),
-                    CampanhaQtdResultado.competencia_mes == int(mes),
-                )
-                .order_by(CampanhaQtdResultado.valor_recompensa.desc())
-                .all()
-            )
-
-            if y < 40 * mm:
-                c.showPage()
-                y = height - 18 * mm
-
-            c.setFont("Helvetica-Bold", 12)
-            c.drawString(18 * mm, y, f"EMP {emp}")
-            y -= 6 * mm
-            c.setFont("Helvetica-Bold", 9)
-            c.drawString(18 * mm, y, "PRODUTO")
-            c.drawString(65 * mm, y, "MARCA")
-            c.drawRightString(width - 70 * mm, y, "QTD")
-            c.drawRightString(width - 50 * mm, y, "MÍN")
-            c.drawRightString(width - 18 * mm, y, "VALOR")
-            y -= 4 * mm
-            c.setLineWidth(0.5)
-            c.line(18 * mm, y, width - 18 * mm, y)
-            y -= 5 * mm
-            c.setFont("Helvetica", 9)
-
-            total_emp = 0.0
-            for r in resultados:
-                if y < 25 * mm:
-                    c.showPage()
-                    y = height - 18 * mm
-                    c.setFont("Helvetica", 9)
-                minimo_txt = "" if r.qtd_minima is None else f"{float(r.qtd_minima):.0f}"
-                valor_txt = _money(float(r.valor_recompensa or 0.0)) if float(r.valor_recompensa or 0.0) > 0 else "-"
-                c.drawString(18 * mm, y, (r.produto_prefixo or "")[:22])
-                c.drawString(65 * mm, y, (r.marca or "")[:14])
-                c.drawRightString(width - 70 * mm, y, f"{float(r.qtd_vendida or 0):.0f}")
-                c.drawRightString(width - 50 * mm, y, minimo_txt)
-                c.drawRightString(width - 18 * mm, y, valor_txt)
-                y -= 5 * mm
-                total_emp += float(r.valor_recompensa or 0.0)
-
-            y -= 2 * mm
-            c.setFont("Helvetica-Bold", 10)
-            c.drawRightString(width - 18 * mm, y, f"Total EMP {emp}: {_money(total_emp)}")
-            y -= 10 * mm
-
-    c.showPage()
-    c.save()
-    buf.seek(0)
-    filename = f"campanhas_{mes:02d}_{ano}.pdf"
-    return send_file(buf, mimetype="application/pdf", as_attachment=True, download_name=filename)
+register_campanhas_qtd_routes(
+    app,
+    deps=_campanhas_deps,
+    SessionLocal=SessionLocal,
+    CampanhaQtdResultado=CampanhaQtdResultado,
+    login_required_fn=_login_required,
+    role_fn=_role,
+    emp_fn=_emp,
+    usuario_logado_fn=_usuario_logado,
+    get_vendedores_db_fn=_get_vendedores_db,
+    get_emps_vendedor_fn=_get_emps_vendedor,
+    resolver_emp_scope_fn=_resolver_emp_scope_para_usuario,
+)
 
 # ---------------------------------------------------------------------
 # Relatórios (Campanhas) - visão por EMP -> vendedores -> campanhas
