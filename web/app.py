@@ -3090,29 +3090,518 @@ _campanhas_deps = CampanhasDeps(
 
 @app.get("/campanhas")
 def campanhas_qtd():
-    """Rota legada descontinuada.
+    """Relatório de campanhas de recompensa por quantidade.
 
-    A funcionalidade foi consolidada em /relatorios/campanhas.
-    Mantemos apenas redirecionamento para evitar quebra de links antigos.
+    - Vendedor: vê por EMPs inferidas de vendas (multi-EMP)
+    - Supervisor: vê apenas EMP dele
+    - Admin: pode escolher vendedor/EMP
     """
     red = _login_required()
     if red:
         return red
-    return redirect(url_for("relatorio_campanhas", **request.args.to_dict(flat=False)))
+
+    role = _role() or ""
+    emp_usuario = _emp()
+    vendedor_logado = (_usuario_logado() or "").strip().upper()
+
+    # Flags de permissão para a UI (templates)
+    ctx_role = role
+    ctx_is_admin = (ctx_role == "admin")
+    ctx_is_supervisor = (ctx_role == "supervisor")
+    ctx_is_vendedor = (ctx_role == "vendedor")
+    ctx_is_financeiro = (ctx_role == "financeiro")
+
+
+    ctx = build_campanhas_page_context(
+        _campanhas_deps,
+        role=role,
+        emp_usuario=emp_usuario,
+        vendedor_logado=vendedor_logado,
+        args=request.args,
+    )
+    return render_template("campanhas_qtd.html", **ctx)
 
 
 @app.get("/campanhas/pdf")
 def campanhas_qtd_pdf():
-    """Rota legada descontinuada.
-
-    PDF antigo removido junto com a página /campanhas.
-    """
     red = _login_required()
     if red:
         return red
-    flash("A página /campanhas foi descontinuada. Use /relatorios/campanhas.", "info")
-    return redirect(url_for("relatorio_campanhas", **request.args.to_dict(flat=False)))
 
+    role = _role() or ""
+    emp_usuario = _emp()
+    hoje = date.today()
+    mes = int(request.args.get("mes") or hoje.month)
+    ano = int(request.args.get("ano") or hoje.year)
+
+    vendedor_logado = (_usuario_logado() or "").strip().upper()
+    if (role or "").lower() == "supervisor":
+        vendedor_sel = (request.args.get("vendedor") or "__ALL__").strip().upper()
+        if vendedor_sel == "__ALL__":
+            try:
+                vs = _get_vendedores_db(role, emp_usuario)
+                vendedor_sel = (vs[0] if vs else vendedor_logado).strip().upper()
+            except Exception:
+                vendedor_sel = vendedor_logado
+    else:
+        vendedor_sel = (request.args.get("vendedor") or vendedor_logado).strip().upper()
+        if (role or "").lower() != "admin" and vendedor_sel != vendedor_logado:
+            vendedor_sel = vendedor_logado
+
+    emp_param = (request.args.get("emp") or "").strip()
+    if (role or "").lower() == "admin":
+        emps_scope = [emp_param] if emp_param else _get_emps_vendedor(vendedor_sel)
+    else:
+        emps_scope = _resolver_emp_scope_para_usuario(vendedor_sel, role, emp_usuario)
+
+    from reportlab.lib.pagesizes import A4
+    from reportlab.pdfgen import canvas
+    from reportlab.lib.units import mm
+
+    buf = BytesIO()
+    c = canvas.Canvas(buf, pagesize=A4)
+    width, height = A4
+
+    def _money(v: float) -> str:
+        return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+    y = height - 18 * mm
+    c.setFont("Helvetica-Bold", 14)
+    c.drawString(18 * mm, y, "Campanhas - Recompensa por Quantidade")
+    y -= 7 * mm
+    c.setFont("Helvetica", 10)
+    c.drawString(18 * mm, y, f"Vendedor: {vendedor_sel}   Período: {mes:02d}/{ano}")
+    y -= 10 * mm
+
+    with SessionLocal() as db:
+        for emp in emps_scope:
+            emp = str(emp)
+            resultados = (
+                db.query(CampanhaQtdResultado)
+                .filter(
+                    CampanhaQtdResultado.emp == emp,
+                    CampanhaQtdResultado.vendedor == vendedor_sel,
+                    CampanhaQtdResultado.competencia_ano == int(ano),
+                    CampanhaQtdResultado.competencia_mes == int(mes),
+                )
+                .order_by(CampanhaQtdResultado.valor_recompensa.desc())
+                .all()
+            )
+
+            if y < 40 * mm:
+                c.showPage()
+                y = height - 18 * mm
+
+            c.setFont("Helvetica-Bold", 12)
+            c.drawString(18 * mm, y, f"EMP {emp}")
+            y -= 6 * mm
+            c.setFont("Helvetica-Bold", 9)
+            c.drawString(18 * mm, y, "PRODUTO")
+            c.drawString(65 * mm, y, "MARCA")
+            c.drawRightString(width - 70 * mm, y, "QTD")
+            c.drawRightString(width - 50 * mm, y, "MÍN")
+            c.drawRightString(width - 18 * mm, y, "VALOR")
+            y -= 4 * mm
+            c.setLineWidth(0.5)
+            c.line(18 * mm, y, width - 18 * mm, y)
+            y -= 5 * mm
+            c.setFont("Helvetica", 9)
+
+            total_emp = 0.0
+            for r in resultados:
+                if y < 25 * mm:
+                    c.showPage()
+                    y = height - 18 * mm
+                    c.setFont("Helvetica", 9)
+                minimo_txt = "" if r.qtd_minima is None else f"{float(r.qtd_minima):.0f}"
+                valor_txt = _money(float(r.valor_recompensa or 0.0)) if float(r.valor_recompensa or 0.0) > 0 else "-"
+                c.drawString(18 * mm, y, (r.produto_prefixo or "")[:22])
+                c.drawString(65 * mm, y, (r.marca or "")[:14])
+                c.drawRightString(width - 70 * mm, y, f"{float(r.qtd_vendida or 0):.0f}")
+                c.drawRightString(width - 50 * mm, y, minimo_txt)
+                c.drawRightString(width - 18 * mm, y, valor_txt)
+                y -= 5 * mm
+                total_emp += float(r.valor_recompensa or 0.0)
+
+            y -= 2 * mm
+            c.setFont("Helvetica-Bold", 10)
+            c.drawRightString(width - 18 * mm, y, f"Total EMP {emp}: {_money(total_emp)}")
+            y -= 10 * mm
+
+    c.showPage()
+    c.save()
+    buf.seek(0)
+    filename = f"campanhas_{mes:02d}_{ano}.pdf"
+    return send_file(buf, mimetype="application/pdf", as_attachment=True, download_name=filename)
+
+# ---------------------------------------------------------------------
+# Relatórios (Campanhas) - visão por EMP -> vendedores -> campanhas
+# ---------------------------------------------------------------------
+def _get_emps_com_vendas_no_periodo(ano: int, mes: int) -> list[str]:
+    inicio_mes, fim_mes = _periodo_bounds(int(ano), int(mes))
+    with SessionLocal() as db:
+        rows = (
+            db.query(func.distinct(Venda.emp))
+            .filter(Venda.movimento >= inicio_mes, Venda.movimento <= fim_mes)
+            .all()
+        )
+    emps = sorted({str(r[0]).strip() for r in rows if r and r[0] is not None and str(r[0]).strip() != ""})
+    return _filter_emps_cadastradas(emps, apenas_ativas=True)
+
+def _get_vendedores_emp_no_periodo(emp: str, ano: int, mes: int) -> list[str]:
+    inicio_mes, fim_mes = _periodo_bounds(int(ano), int(mes))
+    emp = str(emp)
+    with SessionLocal() as db:
+        rows = (
+            db.query(func.distinct(Venda.vendedor))
+            .filter(Venda.emp == emp, Venda.movimento >= inicio_mes, Venda.movimento <= fim_mes)
+            .all()
+        )
+    vendedores = sorted({(r[0] or '').strip().upper() for r in rows if r and (r[0] or '').strip()})
+    # Remove vendedores não cadastrados (usuários inexistentes)
+    cad = _get_vendedores_cadastrados_por_emp(emp)
+    if cad:
+        vendedores = [v for v in vendedores if v in cad]
+    return vendedores
+
+def _calc_vendas_por_vendedor_para_campanha(db, emp: str, campanha: CampanhaQtd, periodo_ini: date, periodo_fim: date) -> dict[str, tuple[float, float]]:
+    """Retorna dict vendedor -> (qtd_vendida, valor_vendido) para uma campanha no período.
+
+    IMPORTANTE: usa a MESMA regra de match de itens do _upsert_resultado:
+      - campo_match='codigo'    -> prefixo em Venda.mestre
+      - campo_match='descricao' -> prefixo em Venda.descricao_norm (normalizada)
+    """
+    emp = str(emp)
+
+    # Campo usado para match do item
+    campo_match = (getattr(campanha, "campo_match", None) or "codigo").strip().lower()
+
+    def _norm_prefix(s: str) -> str:
+        import unicodedata, re as _re
+        s = (s or "").strip()
+        s = "".join(c for c in unicodedata.normalize("NFKD", s) if not unicodedata.combining(c))
+        s = _re.sub(r"\s+", " ", s).strip().lower()
+        return s
+
+    if campo_match == "descricao":
+        prefix_raw = (getattr(campanha, "descricao_prefixo", "") or "").strip()
+        if not prefix_raw:
+            prefix_raw = (campanha.produto_prefixo or "").strip()
+        prefix = _norm_prefix(prefix_raw)
+        campo_item = func.lower(func.trim(func.coalesce(Venda.descricao_norm, "")))
+        cond_prefix = campo_item.like(prefix + "%")
+    else:
+        prefix = (campanha.produto_prefixo or "").strip()
+        prefix_up = prefix.upper()
+        campo_item = func.upper(func.trim(cast(Venda.mestre, String)))
+        cond_prefix = campo_item.like(prefix_up + "%")
+
+    cond_marca = func.upper(func.trim(cast(Venda.marca, String))) == (campanha.marca or "").strip().upper()
+
+    q = (
+        db.query(
+            func.upper(func.trim(cast(Venda.vendedor, String))).label("vendedor"),
+            func.coalesce(func.sum(Venda.qtdade_vendida), 0.0).label("qtd"),
+            func.coalesce(func.sum(Venda.valor_total), 0.0).label("valor"),
+        )
+        .filter(
+            Venda.emp == emp,
+            Venda.movimento >= periodo_ini,
+            Venda.movimento <= periodo_fim,
+            ~Venda.mov_tipo_movto.in_(["DS", "CA"]),
+            cond_prefix,
+            cond_marca,
+        )
+        .group_by(func.upper(func.trim(cast(Venda.vendedor, String))))
+    )
+    rows = q.all()
+    out: dict[str, tuple[float, float]] = {}
+    for r in rows:
+        v = (r.vendedor or '').strip().upper()
+        if not v:
+            continue
+        out[v] = (float(r.qtd or 0.0), float(r.valor or 0.0))
+    return out
+
+
+def _combos_mes_overlap(ano: int, mes: int, emp: str) -> list[CampanhaCombo]:
+    """Combos ativos cuja vigência intersecta a competência (mês/ano).
+    Considera combos globais (emp null/''), e combos específicos da EMP.
+    """
+    inicio_mes, fim_mes = _periodo_bounds(int(ano), int(mes))
+    emp = str(emp)
+    with SessionLocal() as db:
+        q = (
+            db.query(CampanhaCombo)
+            .filter(
+                CampanhaCombo.ativo.is_(True),
+                # Emp específico OU global
+                or_(CampanhaCombo.emp.is_(None), CampanhaCombo.emp == "", CampanhaCombo.emp == emp),
+                # Interseção de datas
+                CampanhaCombo.data_inicio <= fim_mes,
+                CampanhaCombo.data_fim >= inicio_mes,
+            )
+            .order_by(CampanhaCombo.data_inicio.asc(), CampanhaCombo.id.asc())
+        )
+        return q.all()
+
+
+def _norm_text(s: str) -> str:
+    import unicodedata, re as _re
+    s = (s or "").strip()
+    s = "".join(c for c in unicodedata.normalize("NFKD", s) if not unicodedata.combining(c))
+    s = _re.sub(r"\s+", " ", s).strip().lower()
+    return s
+
+
+def _calc_qtd_por_vendedor_para_combo_item(db, emp: str, item: CampanhaComboItem, marca: str, periodo_ini: date, periodo_fim: date) -> dict[str, float]:
+    """Retorna dict vendedor -> qtd para um item do combo no período.
+
+    Regras de match (compatível com banco antigo):
+      - Se item.mestre_prefixo existir: prefix match em Venda.mestre
+      - Se item.descricao_contains existir: contains case-insensitive em descricao_norm/descricao
+      - Se ambos vazios: usa item.match_mestre como fallback (prefixo se parecer código; senão contains)
+    """
+    emp = str(emp)
+    marca_up = (marca or "").strip().upper()
+
+    conds = [
+        Venda.emp == emp,
+        Venda.movimento >= periodo_ini,
+        Venda.movimento <= periodo_fim,
+        ~Venda.mov_tipo_movto.in_(["DS", "CA"]),
+        ]
+
+    mp = (item.mestre_prefixo or "").strip()
+    dc = (item.descricao_contains or "").strip()
+
+    # Fallback para bases antigas: match_mestre é obrigatório e pode ser a única regra persistida
+    if not mp and not dc:
+        mm = (getattr(item, "match_mestre", None) or "").strip()
+        if mm:
+            # Se não tem espaços e é alfanumérico/símbolos comuns, tratamos como código (prefixo).
+            # Caso contrário, tratamos como trecho de descrição (contains).
+            import re as _re
+            if _re.fullmatch(r"[A-Za-z0-9._\-/]+", mm):
+                mp = mm
+            else:
+                dc = mm
+
+    if mp:
+        conds.append(func.upper(func.trim(cast(Venda.mestre, String))) == mp.strip().upper())
+    if dc:
+        needle = _norm_text(dc)
+        campo = func.lower(func.trim(func.coalesce(Venda.descricao_norm, Venda.descricao, "")))
+        conds.append(campo.like("%" + needle + "%"))
+
+    # Se nenhum match foi definido, não retorna nada (evita pagar "tudo")
+    if not mp and not dc:
+        return {}
+
+    q = (
+        db.query(
+            func.upper(func.trim(cast(Venda.vendedor, String))).label("vendedor"),
+            func.coalesce(func.sum(Venda.qtdade_vendida), 0.0).label("qtd"),
+        )
+        .filter(*conds)
+        .group_by(func.upper(func.trim(cast(Venda.vendedor, String))))
+    )
+    rows = q.all()
+    out: dict[str, float] = {}
+    for r in rows:
+        v = (r.vendedor or "").strip().upper()
+        if not v:
+            continue
+        out[v] = float(r.qtd or 0.0)
+    return out
+
+
+def _recalcular_resultados_combos_para_scope(ano: int, mes: int, emps: list[str], vendedores_por_emp: dict[str, list[str]]) -> None:
+    """Recalcula (upsert) snapshots em campanhas_combo_resultados para o escopo informado."""
+    inicio_mes, fim_mes = _periodo_bounds(int(ano), int(mes))
+    with SessionLocal() as db:
+        for emp in emps:
+            emp = str(emp)
+            vendedores_emp = [v.strip().upper() for v in (vendedores_por_emp.get(emp) or []) if (v or "").strip()]
+            if not vendedores_emp:
+                continue
+
+            combos = _combos_mes_overlap(int(ano), int(mes), emp)
+            if not combos:
+                # limpa resultados do período para evitar lixo antigo
+                db.query(CampanhaComboResultado).filter(
+                    CampanhaComboResultado.emp == emp,
+                    CampanhaComboResultado.competencia_ano == int(ano),
+                    CampanhaComboResultado.competencia_mes == int(mes),
+                ).delete(synchronize_session=False)
+                db.commit()
+                continue
+
+            # apaga resultados antigos do escopo (EMP+competência)
+            db.query(CampanhaComboResultado).filter(
+                CampanhaComboResultado.emp == emp,
+                CampanhaComboResultado.competencia_ano == int(ano),
+                CampanhaComboResultado.competencia_mes == int(mes),
+            ).delete(synchronize_session=False)
+
+            novos = []
+            for combo in combos:
+                periodo_ini = max(combo.data_inicio, inicio_mes)
+                periodo_fim = min(combo.data_fim, fim_mes)
+
+                itens = (
+                    db.query(CampanhaComboItem)
+                    .filter(CampanhaComboItem.combo_id == combo.id)
+                    .order_by(CampanhaComboItem.ordem.asc(), CampanhaComboItem.id.asc())
+                    .all()
+                )
+                if not itens:
+                    continue
+
+                # qtd por vendedor por item
+                qtd_por_item: list[dict[str, float]] = []
+                for it in itens:
+                    qtd_por_item.append(_calc_qtd_por_vendedor_para_combo_item(db, emp, it, combo.marca, periodo_ini, periodo_fim))
+
+                for vend in vendedores_emp:
+                    # Gate: precisa bater mínimo em todos os itens
+                    atingiu = 1
+                    total = 0.0
+                    for it, qtd_map in zip(itens, qtd_por_item):
+                        qtd = float(qtd_map.get(vend, 0.0))
+                        minimo = float(it.minimo_qtd or 0.0)
+                        if minimo <= 0:
+                            atingiu = 0
+                            break
+                        if qtd < minimo:
+                            atingiu = 0
+                            break
+                        total += float(it.valor_unitario or 0.0)
+                    if not atingiu:
+                        total = 0.0
+
+                    novos.append(CampanhaComboResultado(
+                        combo_id=combo.id,
+                        competencia_ano=int(ano),
+                        competencia_mes=int(mes),
+                        emp=emp,
+                        vendedor=vend,
+                        titulo=combo.titulo,
+                        marca=combo.marca,
+                        data_inicio=combo.data_inicio,
+                        data_fim=combo.data_fim,
+                        atingiu_gate=int(atingiu),
+                        valor_recompensa=float(total),
+                        status_pagamento="PENDENTE",
+                        atualizado_em=datetime.utcnow(),
+                    ))
+
+            if novos:
+                db.bulk_save_objects(novos)
+            db.commit()
+
+
+def _build_campanhas_escolhidas_por_vendedor(campanhas: list[CampanhaQtd], vendedores: list[str]) -> dict[str, list[CampanhaQtd]]:
+    """Aplica a regra de prioridade por chave (prefixo+marca): campanha do vendedor substitui campanha geral."""
+    # geral: vendedor NULL
+    geral_by_key: dict[tuple[str, str, str], CampanhaQtd] = {}
+    especificas: dict[str, dict[tuple[str, str], CampanhaQtd]] = {}
+    for c in campanhas:
+        campo_match = (getattr(c, "campo_match", None) or "codigo").strip().lower()
+        if campo_match == "descricao":
+            pref = (getattr(c, "descricao_prefixo", "") or "").strip() or (c.produto_prefixo or "").strip()
+            key = ("descricao", pref.lower().strip(), (c.marca or "").strip().upper())
+        else:
+            key = ("codigo", (c.produto_prefixo or "").strip().upper(), (c.marca or "").strip().upper())
+
+        if c.vendedor and c.vendedor.strip():
+            vend = c.vendedor.strip().upper()
+            especificas.setdefault(vend, {})[key] = c
+        else:
+            geral_by_key.setdefault(key, c)
+
+    escolhidas: dict[str, list[CampanhaQtd]] = {}
+    for v in vendedores:
+        base = dict(geral_by_key)
+        if v in especificas:
+            base.update(especificas[v])
+        escolhidas[v] = list(base.values())
+    return escolhidas
+
+def _recalcular_resultados_campanhas_para_scope(ano: int, mes: int, emps: list[str], vendedores_por_emp: dict[str, list[str]]) -> None:
+    """Recalcula (upsert) snapshots em campanhas_qtd_resultados para o escopo informado.
+    Focado em desempenho: faz agregação por campanha com group_by vendedor e só grava para vendedores no escopo.
+    """
+    inicio_mes, fim_mes = _periodo_bounds(int(ano), int(mes))
+    with SessionLocal() as db:
+        for emp in emps:
+            emp = str(emp)
+
+            vendedores_emp = [v.strip().upper() for v in (vendedores_por_emp.get(emp) or []) if (v or '').strip()]
+            if not vendedores_emp:
+                continue
+
+            # campanhas que intersectam o mês (inclui globais se houver)
+            campanhas = _campanhas_mes_overlap(int(ano), int(mes), emp)
+
+            # campanhas escolhidas por vendedor (aplica override)
+            escolhidas_por_vendedor = _build_campanhas_escolhidas_por_vendedor(campanhas, vendedores_emp)
+
+            # União de campanhas realmente usadas
+            campanhas_usadas: dict[int, CampanhaQtd] = {}
+            for v, lst in escolhidas_por_vendedor.items():
+                for c in lst:
+                    campanhas_usadas[c.id] = c
+
+            # Pré-calcula vendas por vendedor para cada campanha
+            vendas_por_campanha: dict[int, dict[str, tuple[float, float]]] = {}
+            for cid, c in campanhas_usadas.items():
+                periodo_ini = max(c.data_inicio, inicio_mes)
+                periodo_fim = min(c.data_fim, fim_mes)
+                vendas_por_campanha[cid] = _calc_vendas_por_vendedor_para_campanha(db, emp, c, periodo_ini, periodo_fim)
+
+            # Apaga resultados existentes do escopo (para evitar conflito e garantir consistência)
+            # (apenas para a EMP e competência; é rápido pois tem índice)
+            db.query(CampanhaQtdResultado).filter(
+                CampanhaQtdResultado.emp == emp,
+                CampanhaQtdResultado.competencia_ano == int(ano),
+                CampanhaQtdResultado.competencia_mes == int(mes),
+            ).delete(synchronize_session=False)
+
+            # Insere novos snapshots
+            novos = []
+            for v in vendedores_emp:
+                for c in escolhidas_por_vendedor.get(v, []):
+                    qtd, valor = vendas_por_campanha.get(c.id, {}).get(v, (0.0, 0.0))
+                    minimo = c.qtd_minima
+                    atingiu = 1
+                    if minimo is not None and float(minimo) > 0:
+                        atingiu = 1 if float(qtd) >= float(minimo) else 0
+                    valor_recomp = (float(qtd) * float(c.recompensa_unit or 0.0)) if atingiu else 0.0
+
+                    novos.append(CampanhaQtdResultado(
+                        campanha_id=c.id,
+                        competencia_ano=int(ano),
+                        competencia_mes=int(mes),
+                        emp=emp,
+                        vendedor=v,
+                        titulo=c.titulo,
+                        produto_prefixo=(c.produto_prefixo or "").strip(),
+                        marca=(c.marca or "").strip(),
+                        recompensa_unit=float(c.recompensa_unit or 0.0),
+                        qtd_minima=float(minimo) if minimo is not None else None,
+                        data_inicio=c.data_inicio,
+                        data_fim=c.data_fim,
+                        qtd_vendida=float(qtd),
+                        valor_vendido=float(valor),
+                        atingiu_minimo=int(atingiu),
+                        valor_recompensa=float(valor_recomp),
+                        status_pagamento="PENDENTE",
+                        atualizado_em=datetime.utcnow(),
+                    ))
+            if novos:
+                db.bulk_save_objects(novos)
+            db.commit()
 
 @app.get("/relatorios/campanhas")
 def relatorio_campanhas():
@@ -3212,43 +3701,13 @@ def relatorio_campanhas():
             return "PENDENTE"
         return s
 
-    fechamento_status_map = {}
-    try:
-        emps_rows = sorted({str(_pick(r, "emp", "EMP") or "").strip() for r in (rows or []) if str(_pick(r, "emp", "EMP") or "").strip()})
-        if emps_rows:
-            with SessionLocal() as db:
-                fech_rows = (
-                    db.query(FechamentoMensal)
-                    .filter(
-                        FechamentoMensal.ano == int(ano),
-                        FechamentoMensal.mes == int(mes),
-                        FechamentoMensal.emp.in_(emps_rows),
-                    )
-                    .all()
-                )
-                for fr in fech_rows:
-                    stf = str(getattr(fr, "status", None) or ("fechado" if getattr(fr, "fechado", False) else "aberto") or "aberto").strip().lower()
-                    if stf == "a_pagar":
-                        stf = "fechado"
-                    if stf == "pago":
-                        fechamento_status_map[str(getattr(fr, "emp", "") or "").strip()] = "PAGO"
-                    elif stf == "fechado":
-                        fechamento_status_map[str(getattr(fr, "emp", "") or "").strip()] = "A_PAGAR"
-                    else:
-                        fechamento_status_map[str(getattr(fr, "emp", "") or "").strip()] = "PENDENTE"
-    except Exception:
-        app.logger.exception("Falha ao carregar status de fechamento para /relatorios/campanhas")
-        fechamento_status_map = {}
-
     groups_map = {}
     for r in rows:
         emp_r = str(_pick(r, "emp", "EMP") or "").strip() or "—"
         vend_r = str(_pick(r, "vendedor", "VENDEDOR") or "").strip() or "—"
         titulo = str(_pick(r, "titulo", "campanha", "CAMPANHA") or "").strip() or "—"
         valor = _to_float(_pick(r, "valor_recompensa", "valor", "VALOR_RECOMPENSA") or 0)
-        st_row = _norm_status(_pick(r, "status_pagamento", "status", "STATUS_PAGAMENTO") or "PENDENTE")
-        st = fechamento_status_map.get(emp_r, st_row)
-        vendeu_rs = float(getattr(r, "valor_vendido", 0) or 0)
+        st = _norm_status(_pick(r, "status_pagamento", "status", "STATUS_PAGAMENTO") or "PENDENTE")
 
         key = (emp_r, vend_r)
         g = groups_map.get(key)
@@ -3257,15 +3716,12 @@ def relatorio_campanhas():
                 "emp": emp_r,
                 "vendedor": vend_r,
                 "total": 0.0,
-                "total_vendido": 0.0,
-                "total_premiacao": 0.0,
                 "status_counts": {"PENDENTE": 0, "A_PAGAR": 0, "PAGO": 0, "OUTROS": 0},
                 "campanhas": [],
             }
             groups_map[key] = g
 
         g["total"] += valor
-        g["total_premiacao"] += valor
         g["status_counts"][st if st in g["status_counts"] else "OUTROS"] += 1
         g["campanhas"].append({
             "titulo": titulo,
@@ -3273,7 +3729,7 @@ def relatorio_campanhas():
             "qtd_minima": getattr(r, "qtd_minima", None),
             "recompensa_unit": getattr(r, "recompensa_unit", None),
             "qtd_vendida": float(getattr(r, "qtd_base", 0) or 0),
-            "vendeu_rs": vendeu_rs,
+            "vendeu_rs": float(getattr(r, "valor_vendido", 0) or 0),
             "valor": valor,
             "status": st,
             "atingiu": bool(getattr(r, "atingiu", False)),
@@ -3301,14 +3757,12 @@ def relatorio_campanhas():
         for header in combo_headers:
             combo_id = int(header.get("origem_id") or 0)
             itens = [i for i in combo_items if int(i.get("origem_id") or 0) == combo_id]
-            vendeu_combo = sum(float(i.get("vendeu_rs") or 0) for i in itens) or float(header.get("vendeu_rs") or 0)
-            valor_combo = float(header.get("valor") or 0)
             combo_cards.append({
                 **header,
                 "tipo": "COMBO_CARD",
                 "itens": itens,
-                "vendeu_rs": vendeu_combo,
-                "valor": valor_combo,
+                "vendeu_rs": sum(float(i.get("vendeu_rs") or 0) for i in itens) or float(header.get("vendeu_rs") or 0),
+                "valor": sum(float(i.get("valor") or 0) for i in itens) or float(header.get("valor") or 0),
                 "atingiu": bool(header.get("atingiu")),
             })
 
@@ -3316,9 +3770,6 @@ def relatorio_campanhas():
         g["campanhas"].sort(key=lambda c: ({"PENDENTE": 0, "A_PAGAR": 1, "PAGO": 2}.get(c["status"], 9), -float(c.get("valor") or 0), str(c.get("titulo") or "")))
         g["status"] = _agg_status(g["status_counts"])
         g["campanhas_count"] = len(g["campanhas"])
-        g["total_vendido"] = sum(float(c.get("vendeu_rs") or 0) for c in g["campanhas"])
-        g["total_premiacao"] = sum(float(c.get("valor") or 0) for c in g["campanhas"])
-        g["total"] = g["total_premiacao"]
 
     rows_grouped.sort(key=lambda gg: (-gg["total"], gg["emp"], gg["vendedor"]))
 
@@ -3344,8 +3795,7 @@ def relatorio_campanhas():
             emp = str(_pick(r, "emp", "EMP") or "").strip() or "—"
             vendedor = str(_pick(r, "vendedor", "VENDEDOR") or "").strip() or "—"
             valor = _to_float(_pick(r, "valor_recompensa", "valor", "VALOR_RECOMPENSA") or 0)
-            st_row = _norm_status(_pick(r, "status_pagamento", "status", "STATUS_PAGAMENTO") or "PENDENTE")
-            st = fechamento_status_map.get(emp, st_row)
+            st = _norm_status(_pick(r, "status_pagamento", "status", "STATUS_PAGAMENTO") or "PENDENTE")
             st_key = st if st in ("PENDENTE", "A_PAGAR", "PAGO") else "OUTROS"
             resumo["linhas"] += 1
             resumo["total_valor"] += valor
@@ -5380,13 +5830,8 @@ def admin_combos():
 def admin_fechamento():
     """Página dedicada de fechamento mensal (ADMIN).
 
-    Regras de negócio:
-    - ABERTO  -> FECHADO ou PAGO
-    - FECHADO -> PAGO ou REABERTO
-    - PAGO    -> estado final (não reabre)
-
-    Observação: FECHADO/PAGO mantêm a competência travada. REABRIR volta para
-    ABERTO e remove a trava do período.
+    Responsável por travar/reativar a competência (EMP + mês/ano), servindo de base
+    para relatórios consolidados e impedindo alterações em campanhas/resumos quando fechado.
     """
     red = _admin_required()
     if red:
@@ -5396,6 +5841,8 @@ def admin_fechamento():
     ano = int(request.values.get("ano") or hoje.year)
     mes = int(request.values.get("mes") or hoje.month)
 
+    # multi-EMP: fecha em lote quando selecionar mais de uma EMP
+    # multi-EMP: lê tanto querystring (?emp=101&emp=102) quanto POST (inputs hidden name=emp)
     emps_sel = []
     try:
         emps_sel = [str(e).strip() for e in request.values.getlist("emp") if str(e).strip()]
@@ -5404,25 +5851,30 @@ def admin_fechamento():
     if not emps_sel:
         emps_sel = [str(e).strip() for e in _parse_multi_args("emp") if str(e).strip()]
     if not emps_sel:
+        # fallback: tenta usar emp único (mantém compatibilidade com versões antigas)
         emp_single = _emp_norm(request.values.get("emp", ""))
         emps_sel = [emp_single] if emp_single else []
 
     msgs: list[str] = []
     status_por_emp: dict[str, dict] = {}
 
+    # Normaliza a ação vinda do formulário (alguns navegadores/JS podem enviar
+    # variações, ex.: sem underscore, com hífen ou com espaços).
     acao_raw = (request.values.get("acao") or request.values.get("action") or request.form.get("acao") or "").strip().lower()
     acao = {
-        "fechar": "fechar",
-        "close": "fechar",
-        "pago": "pago",
-        "fechar_pago": "pago",
-        "fechar-pago": "pago",
+        "fechar_a_pagar": "fechar_a_pagar",
+        "fechar_apagar": "fechar_a_pagar",
+        "fechar-a-pagar": "fechar_a_pagar",
+        "a_pagar": "fechar_a_pagar",
+        "fechar_pago": "fechar_pago",
+        "fechar-pago": "fechar_pago",
+        "pago": "fechar_pago",
         "reabrir": "reabrir",
         "abrir": "reabrir",
-        "reopen": "reabrir",
     }.get(acao_raw, acao_raw)
 
     with SessionLocal() as db:
+        # Carrega opções de EMP para o filtro (admin: todas cadastradas, fallback: EMPs com vendas no período)
         try:
             emps_all = [str(r.codigo).strip() for r in db.query(Emp).order_by(Emp.codigo.asc()).all()]
         except Exception:
@@ -5433,13 +5885,17 @@ def admin_fechamento():
             except Exception:
                 emps_all = []
 
-        if request.method == "POST" and acao in {"fechar", "pago", "reabrir"}:
+        if request.method == "POST" and acao in {"fechar_a_pagar", "fechar_pago", "reabrir"}:
             app.logger.info("FECHAMENTO POST: form=%s values=%s", dict(request.form), {k: request.values.getlist(k) for k in request.values.keys()})
             if not emps_sel:
-                msgs.append("⚠️ Selecione ao menos 1 EMP para executar a ação.")
+                msgs.append("⚠️ Selecione ao menos 1 EMP para fechar/reabrir.")
             else:
+                alvo_status = None
                 updated_count = 0
-                skipped_count = 0
+                if acao == "fechar_a_pagar":
+                    alvo_status = "a_pagar"
+                elif acao == "fechar_pago":
+                    alvo_status = "pago"
                 for emp in emps_sel:
                     emp = _emp_norm(emp)
                     if not emp:
@@ -5457,64 +5913,37 @@ def admin_fechamento():
                         if not rec:
                             rec = FechamentoMensal(emp=emp, ano=int(ano), mes=int(mes), fechado=False)
                             db.add(rec)
-                            db.flush()
 
-                        status_atual = (getattr(rec, "status", None) or ("fechado" if getattr(rec, "fechado", False) else "aberto") or "aberto").strip().lower()
-                        if status_atual == "a_pagar":
-                            status_atual = "fechado"
-
-                        if status_atual == "pago":
-                            skipped_count += 1
-                            msgs.append(f"ℹ️ EMP {emp}: competência já está como PAGO e não pode ser reaberta/alterada.")
-                            continue
-
-                        if acao == "fechar":
-                            if status_atual == "fechado" and getattr(rec, "fechado", False):
-                                skipped_count += 1
-                                msgs.append(f"ℹ️ EMP {emp}: competência já está FECHADA.")
-                                continue
+                        if acao in {"fechar_a_pagar", "fechar_pago"}:
                             rec.fechado = True
-                            rec.fechado_em = rec.fechado_em or datetime.utcnow()
-                            if hasattr(rec, "status"):
-                                rec.status = "fechado"
-                            updated_count += 1
-                            continue
-
-                        if acao == "pago":
-                            rec.fechado = True
-                            rec.fechado_em = rec.fechado_em or datetime.utcnow()
-                            if hasattr(rec, "status"):
-                                rec.status = "pago"
-                            updated_count += 1
-                            continue
-
-                        if acao == "reabrir":
+                            rec.fechado_em = datetime.utcnow()
+                            # status financeiro (controle)
+                            if hasattr(rec, "status") and alvo_status:
+                                rec.status = alvo_status
+                        else:
                             rec.fechado = False
-                            rec.fechado_em = None
+                            rec.fechado_em = None  # reabrir zera timestamp
                             if hasattr(rec, "status"):
                                 rec.status = "aberto"
-                            updated_count += 1
-                            continue
+                        updated_count += 1
+                        # commit no final do lote (mais rápido e consistente)
                     except Exception:
                         app.logger.exception("Erro ao preparar fechamento mensal")
                         msgs.append(f"❌ Falha ao atualizar fechamento da EMP {emp}.")
                 if updated_count > 0:
                     try:
                         db.commit()
-                        if updated_count > 0:
-                            msgs.append(f"✅ Operação concluída ({updated_count} EMPs atualizadas).")
-                        if skipped_count > 0:
-                            msgs.append(f"ℹ️ {skipped_count} EMP(s) sem alteração por regra de negócio.")
+                        msgs.append(f"✅ Operação concluída ({updated_count} EMPs).")
+                        # PRG: evita reenvio e garante recarregar status
                         return redirect(url_for('admin_fechamento', emp=emps_sel, mes=mes, ano=ano))
                     except Exception:
                         db.rollback()
                         app.logger.exception("Erro ao commitar fechamento mensal")
                         msgs.append("❌ Falha ao salvar alterações no fechamento.")
-                elif skipped_count > 0 and not any(m.startswith("ℹ️") for m in msgs):
-                    msgs.append(f"ℹ️ {skipped_count} EMP(s) sem alteração por regra de negócio.")
-                elif not msgs:
-                    msgs.append("⚠️ Nenhuma EMP válida para atualizar.")
-
+                else:
+                    if not msgs:
+                        msgs.append("⚠️ Nenhuma EMP válida para atualizar.")
+        # Status para tela
         for emp in (emps_sel or []):
             emp = _emp_norm(emp)
             if not emp:
@@ -5534,21 +5963,13 @@ def admin_fechamento():
                 )
                 if rec:
                     if getattr(rec, "status", None):
-                        status_fin = (rec.status or "aberto").strip().lower()
-                        if status_fin == "a_pagar":
-                            status_fin = "fechado"
+                        status_fin = rec.status
                     if rec.fechado:
                         fechado = True
                         fechado_em = rec.fechado_em
             except Exception:
                 fechado = False
-            status_por_emp[emp] = {
-                "fechado": fechado,
-                "fechado_em": fechado_em,
-                "status": status_fin,
-                "pode_reabrir": status_fin != "pago",
-                "pode_marcar_pago": status_fin != "pago",
-            }
+            status_por_emp[emp] = {"fechado": fechado, "fechado_em": fechado_em, "status": status_fin}
 
     emps_options = _get_emp_options(emps_all)
 
@@ -5562,6 +5983,7 @@ def admin_fechamento():
         status_por_emp=status_por_emp,
         msgs=msgs,
     )
+
 
 @app.route("/admin/campanhas", methods=["GET", "POST"])
 def admin_campanhas_qtd():
@@ -6972,30 +7394,63 @@ def err_500(e):
 @app.route("/financeiro/campanhas_v2", methods=["GET"])
 @financeiro_required
 def financeiro_campanhas_v2():
-    """Rota legada descontinuada.
-
-    Funcionalidade consolidada em /admin/fechamento e /relatorios/campanhas.
-    """
-    flash("A página /financeiro/campanhas_v2 foi descontinuada. Use /admin/fechamento.", "info")
-    return redirect(url_for("admin_fechamento", **request.args.to_dict(flat=False)))
+    # por enquanto, redireciona para o fechamento (mesma visão)
+    return redirect(url_for("financeiro_fechamento_v2"))
 
 
 @app.route("/financeiro/fechamento_v2", methods=["GET"])
 @financeiro_required
 def financeiro_fechamento_v2():
-    """Rota legada descontinuada.
-
-    O fechamento financeiro foi consolidado em /admin/fechamento.
-    """
-    flash("A página /financeiro/fechamento_v2 foi descontinuada. Use /admin/fechamento.", "info")
-    return redirect(url_for("admin_fechamento", **request.args.to_dict(flat=False)))
+    from datetime import date
+    ano = int(request.args.get("ano") or date.today().year)
+    mes = int(request.args.get("mes") or date.today().month)
+    db = SessionLocal()
+    try:
+        rows = (
+            db.query(CampanhaV2Resultado, CampanhaV2Master.titulo)
+            .join(CampanhaV2Master, CampanhaV2Master.id==CampanhaV2Resultado.campanha_id)
+            .filter(CampanhaV2Resultado.ano==ano, CampanhaV2Resultado.mes==mes)
+            .order_by(CampanhaV2Resultado.status_financeiro.asc(), CampanhaV2Resultado.recompensa.desc())
+            .all()
+        )
+        resultados=[]
+        for r, titulo in rows:
+            resultados.append({
+                "id": r.id,
+                "campanha_titulo": titulo,
+                "emp": r.emp,
+                "vendedor": r.vendedor,
+                "valor_base": r.valor_base,
+                "recompensa": r.recompensa,
+                "status_financeiro": r.status_financeiro,
+            })
+        return render_template("financeiro_fechamento_v2.html", resultados=resultados, ano=ano, mes=mes)
+    finally:
+        db.close()
 
 
 @app.route("/financeiro/fechamento_v2/status", methods=["POST"])
 @financeiro_required
 def financeiro_fechamento_v2_status():
-    flash("A página /financeiro/fechamento_v2 foi descontinuada. Use /admin/fechamento.", "warning")
-    return redirect(url_for("admin_fechamento", **request.args.to_dict(flat=False)))
+    rid = int(request.form.get("resultado_id") or 0)
+    status = (request.form.get("status_financeiro") or "PENDENTE").strip().upper()
+    if status not in ("PENDENTE", "A_PAGAR", "PAGO"):
+        status = "PENDENTE"
+    db = SessionLocal()
+    try:
+        r = db.query(CampanhaV2Resultado).filter(CampanhaV2Resultado.id==rid).first()
+        if not r:
+            flash("Resultado não encontrado.", "danger")
+            return redirect(url_for("financeiro_fechamento_v2"))
+        r.status_financeiro = status
+        db.commit()
+        flash("Status atualizado.", "success")
+    except Exception as e:
+        db.rollback()
+        flash(f"Erro ao atualizar status: {e}", "danger")
+    finally:
+        db.close()
+    return redirect(url_for("financeiro_fechamento_v2"))
 
 
 
@@ -7292,12 +7747,15 @@ def campanhas_ranking_marca():
 @app.route("/financeiro/campanhas")
 @login_required
 def financeiro_campanhas():
-    """Rota legada descontinuada.
-
-    Funcionalidade consolidada em /admin/fechamento.
     """
-    flash("A página /financeiro/campanhas foi descontinuada. Use /admin/fechamento.", "info")
-    return redirect(url_for("admin_fechamento", **request.args.to_dict(flat=False)))
+    Endpoint compatível com o menu lateral (sidebar).
+    Caso a implementação atual esteja em /financeiro/campanhas_v2, redireciona para lá.
+    """
+    try:
+        return redirect(url_for("financeiro_campanhas_v2"))
+    except Exception:
+        # fallback: se não existir v2, renderiza página simples informativa
+        return redirect("/financeiro/campanhas_v2")
 
 
 

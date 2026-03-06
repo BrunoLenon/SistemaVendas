@@ -312,10 +312,14 @@
                       </tr>
                     </thead>
                     <tbody>
-                                            {% if g.campanhas and g.campanhas|length > 0 %}
+                      {% set _tot_vendeu = 0 %}
+                      {% set _tot_premio = 0 %}
+                      {% if g.campanhas and g.campanhas|length > 0 %}
                         {% for c in g.campanhas %}
                           {% if (c.tipo or '') == 'COMBO_CARD' %}
                             {% set combo_dom_id = 'sv-combo-' ~ loop.index0 ~ '-' ~ (c.origem_id or 0) %}
+                            {% set _tot_vendeu = _tot_vendeu + (c.vendeu_rs or 0) %}
+                            {% set _tot_premio = _tot_premio + (c.valor or 0) %}
                             <tr class="sv-combo-head">
                               <td class="sv-nowrap">
                                 <button type="button"
@@ -360,6 +364,8 @@
                               {% endfor %}
                             {% endif %}
                           {% else %}
+                            {% set _tot_vendeu = _tot_vendeu + (c.vendeu_rs or 0) %}
+                            {% set _tot_premio = _tot_premio + (c.valor or 0) %}
                             <tr>
                               <td class="sv-nowrap">{{ c.titulo }}</td>
                               <td class="sv-center">{{ (c.qtd_minima or '-') }}</td>
@@ -388,11 +394,11 @@
                   <div class="sv-subtotals">
                     <div class="sv-subtotals__line">
                       <span>Total vendido em campanhas:</span>
-                      <strong>{{ (g.total_vendido or 0)|brl_rs }}</strong>
+                      <strong>{{ _tot_vendeu|brl_rs }}</strong>
                     </div>
                     <div class="sv-subtotals__line">
                       <span>Total premiação:</span>
-                      <strong>{{ (g.total_premiacao or 0)|brl_rs }}</strong>
+                      <strong>{{ _tot_premio|brl_rs }}</strong>
                     </div>
                   </div>
 

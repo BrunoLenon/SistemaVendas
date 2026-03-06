@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Financeiro · Fechamento V2{% endblock %}
+{% block content %}
+<div class="card">
+  <h2>Fechamento de Campanhas V2</h2>
+  <p class="muted">Você pode marcar como <b>A_PAGAR</b> e <b>PAGO</b>. Admin também tem acesso.</p>
+
+  <form method="get" style="display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap; margin-bottom:14px;">
+    <div>
+      <label>Ano</label>
+      <input name="ano" value="{{ ano }}" style="width:120px;">
+    </div>
+    <div>
+      <label>Mês</label>
+      <input name="mes" value="{{ mes }}" style="width:120px;">
+    </div>
+    <button class="btn" type="submit">Aplicar</button>
+  </form>
+
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Campanha</th><th>EMP</th><th>Vendedor</th><th>Base</th><th>Recompensa</th><th>Status</th><th>Ação</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in resultados %}
+      <tr>
+        <td>{{ r.campanha_titulo }}</td>
+        <td>{{ r.emp or "-" }}</td>
+        <td>{{ r.vendedor }}</td>
+        <td>{{ "%.2f"|format(r.valor_base or 0) }}</td>
+        <td><b>{{ "%.2f"|format(r.recompensa or 0) }}</b></td>
+        <td><code>{{ r.status_financeiro }}</code></td>
+        <td>
+          <form method="post" action="/financeiro/fechamento_v2/status" style="display:flex; gap:6px;">
+            <input type="hidden" name="resultado_id" value="{{ r.id }}">
+            <select name="status_financeiro">
+              <option value="PENDENTE" {% if r.status_financeiro=="PENDENTE" %}selected{% endif %}>PENDENTE</option>
+              <option value="A_PAGAR" {% if r.status_financeiro=="A_PAGAR" %}selected{% endif %}>A_PAGAR</option>
+              <option value="PAGO" {% if r.status_financeiro=="PAGO" %}selected{% endif %}>PAGO</option>
+            </select>
+            <button class="btn btn-secondary" type="submit">Salvar</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

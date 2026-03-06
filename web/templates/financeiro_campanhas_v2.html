@@ -1,0 +1,105 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="container-fluid py-3">
+  <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+    <div>
+      <h3 class="mb-0">Financeiro • Campanhas V2</h3>
+      <div class="text-muted">Marcar status (PENDENTE → A_PAGAR → PAGO) e exportar para contabilidade.</div>
+    </div>
+    <div class="d-flex gap-2">
+      <a class="btn btn-outline-secondary" href="{{ url_for('admin_campanhas_v2') }}">Admin Campanhas V2</a>
+      <a class="btn btn-outline-success" href="{{ url_for('financeiro_campanhas_v2_export', ano=ano, mes=mes) }}">Exportar Excel</a>
+    </div>
+  </div>
+
+  <hr/>
+
+  <form class="row g-2 align-items-end" method="get">
+    <div class="col-6 col-md-2">
+      <label class="form-label">Ano</label>
+      <input class="form-control" name="ano" value="{{ ano }}" />
+    </div>
+    <div class="col-6 col-md-2">
+      <label class="form-label">Mês</label>
+      <input class="form-control" name="mes" value="{{ '%02d'|format(mes) }}" />
+    </div>
+    <div class="col-12 col-md-2">
+      <button class="btn btn-primary w-100" type="submit">Filtrar</button>
+    </div>
+  </form>
+
+  <div class="card shadow-sm mt-3">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <strong>Resultados V2 • {{ mes }}/{{ ano }}</strong>
+      <span class="text-muted">Role: {{ role }}</span>
+    </div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-sm table-striped mb-0">
+          <thead>
+            <tr>
+              <th>EMP</th>
+              <th>Vendedor</th>
+              <th>Campanha</th>
+              <th>Tipo</th>
+              <th class="text-end">Base</th>
+              <th class="text-end">Recompensa</th>
+              <th>Status</th>
+              <th class="text-end">Ação</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for r in resultados %}
+            {% set c = campanhas_map.get(r.campanha_id) %}
+            <tr>
+              <td>
+                {% if r.emp == 0 %}
+                  <span class="badge bg-dark">GLOBAL</span>
+                {% else %}
+                  {{ r.emp }}
+                {% endif %}
+              </td>
+              <td>{{ r.vendedor }}</td>
+              <td style="max-width: 420px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                {{ c.titulo if c else ('#'+(r.campanha_id|string)) }}
+              </td>
+              <td><code>{{ r.tipo }}</code></td>
+              <td class="text-end">{{ '%.2f'|format(r.base_num or 0) }}</td>
+              <td class="text-end"><strong>{{ '%.2f'|format(r.valor_recompensa or 0) }}</strong></td>
+              <td>
+                {% if r.status_pagamento == 'PAGO' %}
+                  <span class="badge bg-success">PAGO</span>
+                {% elif r.status_pagamento == 'A_PAGAR' %}
+                  <span class="badge bg-warning text-dark">A_PAGAR</span>
+                {% else %}
+                  <span class="badge bg-secondary">PENDENTE</span>
+                {% endif %}
+              </td>
+              <td class="text-end">
+                <form method="post" class="d-inline">
+                  <input type="hidden" name="action" value="set_status" />
+                  <input type="hidden" name="ano" value="{{ ano }}" />
+                  <input type="hidden" name="mes" value="{{ mes }}" />
+                  <input type="hidden" name="campanha_id" value="{{ r.campanha_id }}" />
+                  <input type="hidden" name="emp" value="{{ r.emp }}" />
+                  <input type="hidden" name="vendedor" value="{{ r.vendedor }}" />
+                  <select name="status" class="form-select form-select-sm d-inline" style="width: 130px;">
+                    <option value="PENDENTE" {{ 'selected' if r.status_pagamento=='PENDENTE' else '' }}>PENDENTE</option>
+                    <option value="A_PAGAR" {{ 'selected' if r.status_pagamento=='A_PAGAR' else '' }}>A_PAGAR</option>
+                    <option value="PAGO" {{ 'selected' if r.status_pagamento=='PAGO' else '' }}>PAGO</option>
+                  </select>
+                  <button class="btn btn-sm btn-outline-primary" type="submit">Salvar</button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+            {% if resultados|length == 0 %}
+              <tr><td colspan="8" class="text-center text-muted py-4">Nenhum resultado V2 para esta competência. Se necessário, rode o Recalcular no Admin.</td></tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
