@@ -2334,6 +2334,7 @@ from admin_apagar_vendas_routes import register_admin_apagar_vendas_routes
 from mensagens_routes import register_mensagens_routes
 from metas_routes import register_metas_routes
 from ranking_marca_routes import register_ranking_marca_routes
+from admin_cache_routes import register_admin_cache_routes
 from financeiro_campanhas_routes import register_financeiro_campanhas_routes
 from operacoes_vendas_produtos_routes import register_operacoes_vendas_produtos_routes
 
@@ -2433,6 +2434,13 @@ register_ranking_marca_routes(
     login_required_fn=login_required,
     role_fn=_role,
     allowed_emps_fn=_allowed_emps,
+)
+
+# Admin / Cache
+register_admin_cache_routes(
+    app,
+    login_required_fn=_login_required,
+    admin_required_fn=_admin_required,
 )
 
 # Financeiro + Operações
@@ -2865,44 +2873,6 @@ def senha():
         db.commit()
 
     return render_template("senha.html", vendedor=vendedor, erro=None, ok="Senha atualizada com sucesso!")
-
-
-
-
-
-@app.get("/admin/cache/refresh")
-def admin_cache_refresh():
-    """Recalcula o cache do dashboard para um EMP/mês/ano (ADMIN).
-
-    Exemplo:
-      /admin/cache/refresh?emp=101&ano=2026&mes=1
-    """
-    red = _login_required()
-    if red:
-        return red
-    red2 = _admin_required()
-    if red2:
-        return red2
-
-    emp = (request.args.get("emp") or "").strip()
-    ano = int(request.args.get("ano") or datetime.now().year)
-    mes = int(request.args.get("mes") or datetime.now().month)
-
-    if not emp:
-        return jsonify({"ok": False, "error": "Parâmetro 'emp' é obrigatório."}), 400
-
-    try:
-        from dashboard_cache import refresh_dashboard_cache
-        info = refresh_dashboard_cache(emp, ano, mes)
-        return jsonify({"ok": True, "emp": emp, "ano": ano, "mes": mes, **info})
-    except Exception as e:
-        app.logger.exception("Falha ao atualizar cache")
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-
-
-
-
 
 from admin_itens_parados_routes import register_admin_itens_parados_routes
 
