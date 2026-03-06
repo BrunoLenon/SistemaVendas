@@ -2194,208 +2194,24 @@ def _dashboard_insights(vendedor: str, ano: int, mes: int, emp_scope: str | list
 
 
 
-@app.get("/dashboard")
-def dashboard():
-    red = _login_required()
-    if red:
-        return red
+# --- Dashboard (rotas extraídas) ------------------------------------------------
 
-    mes, ano = _mes_ano_from_request()
+from dashboard_routes import register_dashboard_routes
 
-    role = _role() or ""
-    emp_usuario = _emp()
-    allowed_emps = _allowed_emps()
-
-    # Resolve vendedor alvo + lista para dropdown sem carregar toda a tabela em memória
-    if role == "vendedor":
-        vendedor_alvo = (_usuario_logado() or "").strip().upper()
-        vendedores_lista = []
-        msg = None
-    else:
-        vendedores_lista = _get_vendedores_db(role, emp_usuario)
-        vendedor_req = (request.args.get("vendedor") or "").strip().upper() or None
-        vendedor_alvo = vendedor_req if (vendedor_req and vendedor_req in vendedores_lista) else None
-        msg = None
-        if role == "supervisor" and not allowed_emps:
-            msg = "Supervisor sem EMP vinculada. Cadastre EMPs do supervisor em usuario_emps."
-
-    dados = None
-    if vendedor_alvo:
-        try:
-            emp_scope = (allowed_emps if (role or '').lower() in ['supervisor','vendedor'] else None)
-            dados = _dados_from_cache(vendedor_alvo, mes, ano, emp_scope)
-        except Exception:
-            app.logger.exception("Erro ao carregar dashboard do cache")
-            dados = None
-
-        # Fallback: calcula ao vivo (sem pandas) se cache ainda não existe
-        if dados is None:
-            try:
-                emp_scope = (allowed_emps if (role or '').lower() in ['supervisor','vendedor'] else None)
-                dados = _dados_ao_vivo(vendedor_alvo, mes, ano, emp_scope)
-            except Exception:
-                app.logger.exception("Erro ao calcular dashboard ao vivo")
-                dados = None
-
-    insights = None
-    if vendedor_alvo:
-        try:
-            emp_scope = (allowed_emps if (role or '').lower() in ['supervisor','vendedor'] else None)
-            insights = _dashboard_insights(vendedor_alvo, ano=ano, mes=mes, emp_scope=emp_scope)
-        except Exception:
-            app.logger.exception("Erro ao calcular insights do dashboard")
-            insights = None
-
-    
-    dados_admin = None
-    if (role or '').lower() == "admin" and not vendedor_alvo:
-        try:
-            dados_admin = _dados_admin_geral(mes=mes, ano=ano)
-        except Exception:
-            app.logger.exception("Erro ao carregar dashboard geral do admin")
-            dados_admin = None
-
-    return render_template(
-        "dashboard.html",
-        insights=insights,
-        vendedor=vendedor_alvo or "",
-        usuario=_usuario_logado(),
-        role=_role(),
-        emp=(" / ".join(allowed_emps) if (role or '').lower()=="supervisor" and allowed_emps else emp_usuario),
-        vendedores=vendedores_lista,
-        vendedor_selecionado=vendedor_alvo or "",
-        mensagem_role=msg,
-        mes=mes,
-        ano=ano,
-        dados=dados,
-        dados_admin=dados_admin,
-        admin_geral=(bool(dados_admin) and not (vendedor_alvo or '').strip()),
-    )
-
-
-@app.get("/percentuais")
-def percentuais():
-    red = _login_required()
-    if red:
-        return red
-
-    mes, ano = _mes_ano_from_request()
-    role = (_role() or '').lower()
-    emp_scope = _emp() if role == 'supervisor' else None
-
-    # resolve vendedor
-    if role in {'admin', 'supervisor'}:
-        vendedores = _get_vendedores_db(role, emp_scope)
-        vendedor_req = (request.args.get('vendedor') or '').strip().upper() or None
-        vendedor_alvo = vendedor_req if (vendedor_req and vendedor_req in vendedores) else None
-    else:
-        vendedor_alvo = (_usuario_logado() or '').strip().upper()
-
-    dados = None
-    if vendedor_alvo:
-        dados = _dados_from_cache(vendedor_alvo, mes, ano, emp_scope)
-        if dados is None:
-            dados = _dados_ao_vivo(vendedor_alvo, mes, ano, emp_scope)
-    dados = dados or {}
-
-    ranking_list = dados.get('ranking_list', [])
-    total = float(dados.get('total_liquido_periodo', 0.0))
-
-    return render_template(
-        'percentuais.html',
-        vendedor=vendedor_alvo or '',
-        role=_role(),
-        emp=emp_scope,
-        mes=mes,
-        ano=ano,
-        total=total,
-        ranking_list=ranking_list,
-    )
-
-
-@app.get("/marcas")
-def marcas():
-    red = _login_required()
-    if red:
-        return red
-
-    mes, ano = _mes_ano_from_request()
-    role = (_role() or '').lower()
-    emp_scope = _emp() if role == 'supervisor' else None
-
-    if role in {'admin','supervisor'}:
-        vendedores = _get_vendedores_db(role, emp_scope)
-        vendedor_req = (request.args.get('vendedor') or '').strip().upper() or None
-        vendedor_alvo = vendedor_req if (vendedor_req and vendedor_req in vendedores) else None
-    else:
-        vendedor_alvo = (_usuario_logado() or '').strip().upper()
-
-    dados = None
-    if vendedor_alvo:
-        dados = _dados_from_cache(vendedor_alvo, mes, ano, emp_scope)
-        if dados is None:
-            dados = _dados_ao_vivo(vendedor_alvo, mes, ano, emp_scope)
-    dados = dados or {}
-
-    marcas_map = {row.get('marca'): row.get('valor') for row in (dados.get('ranking_list') or [])}
-
-    return render_template(
-        'marcas.html',
-        vendedor=vendedor_alvo or '',
-        role=_role(),
-        emp=emp_scope,
-        mes=mes,
-        ano=ano,
-        marcas=marcas_map,
-    )
-
-
-@app.get("/devolucoes")
-def devolucoes():
-    red = _login_required()
-    if red:
-        return red
-
-    mes, ano = _mes_ano_from_request()
-    role = (_role() or '').lower()
-    emp_scope = _emp() if role == 'supervisor' else None
-
-    # resolve vendedor
-    if role in {'admin','supervisor'}:
-        vendedores = _get_vendedores_db(role, emp_scope)
-        vendedor_req = (request.args.get('vendedor') or '').strip().upper() or None
-        vendedor_alvo = vendedor_req if (vendedor_req and vendedor_req in vendedores) else None
-    else:
-        vendedor_alvo = (_usuario_logado() or '').strip().upper()
-
-    if not vendedor_alvo:
-        devol = {}
-    else:
-        # Usa o helper padrão do sistema (intervalo [start, end))
-        start, end = _periodo_bounds(ano, mes)
-        with SessionLocal() as db:
-            q = (
-                db.query(Venda.marca, func.coalesce(func.sum(Venda.valor_total), 0.0))
-                .filter(Venda.vendedor == vendedor_alvo)
-                .filter(Venda.movimento >= start)
-                .filter(Venda.movimento < end)
-                .filter(Venda.mov_tipo_movto.in_(['DS','CA']))
-            )
-            if emp_scope:
-                q = q.filter(Venda.emp == str(emp_scope))
-            q = q.group_by(Venda.marca).order_by(func.sum(Venda.valor_total).desc())
-            devol = {str(m or ''): float(v or 0.0) for m, v in q.all() if m}
-
-    return render_template(
-        'devolucoes.html',
-        vendedor=vendedor_alvo or '',
-        role=_role(),
-        emp=emp_scope,
-        mes=mes,
-        ano=ano,
-        devolucoes=devol,
-    )
-
+register_dashboard_routes(
+    app,
+    login_required_fn=_login_required,
+    mes_ano_from_request_fn=_mes_ano_from_request,
+    role_fn=_role,
+    emp_fn=_emp,
+    allowed_emps_fn=_allowed_emps,
+    usuario_logado_fn=_usuario_logado,
+    get_vendedores_db_fn=_get_vendedores_db,
+    dados_from_cache_fn=_dados_from_cache,
+    dados_ao_vivo_fn=_dados_ao_vivo,
+    dashboard_insights_fn=_dashboard_insights,
+    dados_admin_geral_fn=_dados_admin_geral,
+)
 
 @app.get("/itens_parados")
 def itens_parados():
