@@ -4878,80 +4878,16 @@ def admin_cache_refresh():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
-@app.route("/admin/importar", methods=["GET", "POST"])
-def admin_importar():
-    red = _login_required()
-    if red:
-        return red
-    red = _admin_required()
-    if red:
-        return red
 
-    if request.method == "GET":
-        return render_template("admin_importar.html")
-
-    arquivo = request.files.get("arquivo")
-    if not arquivo or not arquivo.filename:
-        flash("Selecione um arquivo .xlsx para importar.", "warning")
-        return redirect(url_for("admin_importar"))
-
-    if not arquivo.filename.lower().endswith(".xlsx"):
-        flash("Formato inválido. Envie um arquivo .xlsx.", "danger")
-        return redirect(url_for("admin_importar"))
-
-    modo = request.form.get("modo", "ignorar_duplicados")
-    # IMPORTANTISSIMO:
-    # A chave de deduplicidade precisa bater com o indice/constraint UNIQUE do banco.
-    # Seu banco foi padronizado com:
-    #   (mestre, marca, vendedor, movimento, mov_tipo_movto, nota, emp)
-    # Se a chave nao incluir MOVIMENTO e MOV_TIPO_MOVTO (DS/CA/OA), o Postgres
-    # pode retornar erro de ON CONFLICT e/ou DS/CA pode ser ignorado.
-    chave = request.form.get("chave", "mestre_movimento_vendedor_nota_tipo_emp")
-
-    # Salva temporariamente
-    import tempfile
-
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
-        arquivo.save(tmp.name)
-        tmp_path = tmp.name
-
-    try:
-        resumo = importar_planilha(tmp_path, modo=modo, chave=chave)
-        if not resumo.get("ok"):
-            faltando = resumo.get("faltando")
-            if faltando:
-                flash("Colunas faltando: " + ", ".join(faltando), "danger")
-            else:
-                flash(resumo.get("msg", "Falha ao importar."), "danger")
-            return redirect(url_for("admin_importar"))
-
-        flash(
-            (
-                f"Importação concluída. Válidas: {resumo['validas']} | "
-                f"Inseridas: {resumo['inseridas']} | "
-                f"Ignoradas: {resumo['ignoradas']} | "
-                f"Erros: {resumo['erros_linha']}"
-            ),
-            "success",
-        )
-        # Limpa cache do DataFrame para refletir novos dados imediatamente
-        try:
-            limpar_cache_df()
-        except Exception:
-            pass
-        return redirect(url_for("admin_importar"))
-
-    except Exception:
-        app.logger.exception("Erro ao importar planilha")
-        flash("Erro ao importar. Veja os logs no Render.", "danger")
-        return redirect(url_for("admin_importar"))
-    finally:
-        try:
-            os.remove(tmp_path)
-        except Exception:
-            pass
-
-
+# Rotas: Admin Importar — movidas para módulo dedicado (refatoração pura)
+from admin_importar_routes import register_admin_importar_routes
+register_admin_importar_routes(
+    app,
+    importar_planilha=importar_planilha,
+    limpar_cache_df=limpar_cache_df,
+    login_required_fn=_login_required,
+    admin_required_fn=_admin_required,
+)
 
 @app.route("/admin/itens_parados", methods=["GET", "POST"])
 def admin_itens_parados():
