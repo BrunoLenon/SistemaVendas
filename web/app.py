@@ -4835,17 +4835,89 @@ def admin_usuarios():
     )
 
 
+@app.route("/admin/emps", methods=["GET", "POST"])
+def admin_emps():
+    """Cadastro de EMPs (ADMIN).
 
-# Rotas: Admin EMPs — movidas para módulo dedicado (refatoração pura)
-from admin_emps_routes import register_admin_emps_routes
-register_admin_emps_routes(
-    app,
-    SessionLocal=SessionLocal,
-    Emp=Emp,
-    login_required_fn=_login_required,
-    admin_required_fn=_admin_required,
-    usuario_logado_fn=_usuario_logado,
-)
+    Permite cadastrar nome/cidade/UF para cada código EMP (loja/filial).
+    """
+    red = _login_required()
+    if red:
+        return red
+    red = _admin_required()
+    if red:
+        return red
+
+    usuario = _usuario_logado()
+    erro = None
+    ok = None
+
+    with SessionLocal() as db:
+        if request.method == "POST":
+            acao = (request.form.get("acao") or "").strip()
+            try:
+                codigo = (request.form.get("codigo") or "").strip()
+                nome = (request.form.get("nome") or "").strip()
+                cidade = (request.form.get("cidade") or "").strip()
+                uf = (request.form.get("uf") or "").strip().upper()
+                ativo_raw = (request.form.get("ativo") or "1").strip()
+                ativo = ativo_raw in {"1", "true", "True", "on", "SIM", "sim"}
+
+                if acao in {"criar", "atualizar"}:
+                    if not codigo:
+                        raise ValueError("Informe o código EMP (ex.: 101).")
+                    if not nome:
+                        raise ValueError("Informe o nome da EMP.")
+                    if uf and len(uf) != 2:
+                        raise ValueError("UF inválida (use 2 letras, ex.: SP).")
+
+                    emp = db.query(Emp).filter(Emp.codigo == codigo).first()
+                    if emp:
+                        emp.nome = nome
+                        emp.cidade = cidade or None
+                        emp.uf = uf or None
+                        emp.ativo = ativo
+                        emp.updated_at = datetime.utcnow()
+                        ok = f"EMP {codigo} atualizada."
+                    else:
+                        db.add(
+                            Emp(
+                                codigo=codigo,
+                                nome=nome,
+                                cidade=cidade or None,
+                                uf=uf or None,
+                                ativo=ativo,
+                            )
+                        )
+                        ok = f"EMP {codigo} criada."
+                    db.commit()
+
+                elif acao == "toggle":
+                    if not codigo:
+                        raise ValueError("Informe o código EMP.")
+                    emp = db.query(Emp).filter(Emp.codigo == codigo).first()
+                    if not emp:
+                        raise ValueError("EMP não encontrada.")
+                    emp.ativo = not bool(emp.ativo)
+                    emp.updated_at = datetime.utcnow()
+                    db.commit()
+                    ok = f"EMP {codigo} agora está {'ATIVA' if emp.ativo else 'INATIVA'}."
+                else:
+                    raise ValueError("Ação inválida.")
+            except Exception as e:
+                db.rollback()
+                erro = str(e)
+                app.logger.exception("Erro na admin/emps")
+
+        emps = db.query(Emp).order_by(Emp.ativo.desc(), Emp.codigo.asc()).all()
+
+    return render_template(
+        "admin_emps.html",
+        usuario=usuario,
+        erro=erro,
+        ok=ok,
+        emps=emps,
+    )
 
 
 @app.get("/admin/cache/refresh")
@@ -4878,219 +4950,809 @@ def admin_cache_refresh():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
-
-# Rotas: Admin Importar — movidas para módulo dedicado (refatoração pura)
-from admin_importar_routes import register_admin_importar_routes
-register_admin_importar_routes(
-    app,
-    importar_planilha=importar_planilha,
-    limpar_cache_df=limpar_cache_df,
-    login_required_fn=_login_required,
-    admin_required_fn=_admin_required,
-)
-
-# Rotas: Admin Itens Parados (cadastro) — movidas para módulo dedicado (refatoração pura)
-from admin_itens_parados_routes import register_admin_itens_parados_routes
-register_admin_itens_parados_routes(
-    app,
-    SessionLocal=SessionLocal,
-    ItemParado=ItemParado,
-    login_required_fn=_login_required,
-    admin_required_fn=_admin_required,
-    usuario_logado_fn=_usuario_logado,
-)
-
-# Rotas: Admin Resumos por Período — movidas para módulo dedicado (refatoração pura)
-from admin_resumos_periodo_routes import register_admin_resumos_periodo_routes
-register_admin_resumos_periodo_routes(
-    app,
-    SessionLocal=SessionLocal,
-    Venda=Venda,
-    VendasResumoPeriodo=VendasResumoPeriodo,
-    FechamentoMensal=FechamentoMensal,
-    admin_required_fn=_admin_required,
-    allowed_emps_fn=_allowed_emps,
-    emp_norm_fn=_emp_norm,
-    parse_num_ptbr_fn=_parse_num_ptbr,
-    periodo_bounds_fn=_periodo_bounds,
-    mes_fechado_fn=_mes_fechado,
-)
-
-# Compatibilidade: algumas telas/atalhos antigos apontavam para /admin/fechamento.
-# O fechamento mensal hoje é feito dentro da tela de resumos por período.
-
-# --- Admin: Combos ---
-from admin_combos_routes import register_admin_combos_routes
-
-register_admin_combos_routes(
-    app,
-    SessionLocal=SessionLocal,
-    Emp=Emp,
-    CampanhaCombo=CampanhaCombo,
-    CampanhaComboItem=CampanhaComboItem,
-    login_required_fn=_login_required,
-    admin_required_fn=_admin_required,
-    periodo_bounds_fn=_periodo_bounds,
-)
-
-
-@app.route("/admin/fechamento", methods=["GET", "POST"])
-def admin_fechamento():
-    """Página dedicada de fechamento mensal (ADMIN).
-
-    Responsável por travar/reativar a competência (EMP + mês/ano), servindo de base
-    para relatórios consolidados e impedindo alterações em campanhas/resumos quando fechado.
-    """
+@app.route("/admin/importar", methods=["GET", "POST"])
+def admin_importar():
+    red = _login_required()
+    if red:
+        return red
     red = _admin_required()
     if red:
         return red
 
-    hoje = datetime.now()
-    ano = int(request.values.get("ano") or hoje.year)
-    mes = int(request.values.get("mes") or hoje.month)
+    if request.method == "GET":
+        return render_template("admin_importar.html")
 
-    # multi-EMP: fecha em lote quando selecionar mais de uma EMP
-    # multi-EMP: lê tanto querystring (?emp=101&emp=102) quanto POST (inputs hidden name=emp)
-    emps_sel = []
+    arquivo = request.files.get("arquivo")
+    if not arquivo or not arquivo.filename:
+        flash("Selecione um arquivo .xlsx para importar.", "warning")
+        return redirect(url_for("admin_importar"))
+
+    if not arquivo.filename.lower().endswith(".xlsx"):
+        flash("Formato inválido. Envie um arquivo .xlsx.", "danger")
+        return redirect(url_for("admin_importar"))
+
+    modo = request.form.get("modo", "ignorar_duplicados")
+    # IMPORTANTISSIMO:
+    # A chave de deduplicidade precisa bater com o indice/constraint UNIQUE do banco.
+    # Seu banco foi padronizado com:
+    #   (mestre, marca, vendedor, movimento, mov_tipo_movto, nota, emp)
+    # Se a chave nao incluir MOVIMENTO e MOV_TIPO_MOVTO (DS/CA/OA), o Postgres
+    # pode retornar erro de ON CONFLICT e/ou DS/CA pode ser ignorado.
+    chave = request.form.get("chave", "mestre_movimento_vendedor_nota_tipo_emp")
+
+    # Salva temporariamente
+    import tempfile
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
+        arquivo.save(tmp.name)
+        tmp_path = tmp.name
+
     try:
-        emps_sel = [str(e).strip() for e in request.values.getlist("emp") if str(e).strip()]
+        resumo = importar_planilha(tmp_path, modo=modo, chave=chave)
+        if not resumo.get("ok"):
+            faltando = resumo.get("faltando")
+            if faltando:
+                flash("Colunas faltando: " + ", ".join(faltando), "danger")
+            else:
+                flash(resumo.get("msg", "Falha ao importar."), "danger")
+            return redirect(url_for("admin_importar"))
+
+        flash(
+            (
+                f"Importação concluída. Válidas: {resumo['validas']} | "
+                f"Inseridas: {resumo['inseridas']} | "
+                f"Ignoradas: {resumo['ignoradas']} | "
+                f"Erros: {resumo['erros_linha']}"
+            ),
+            "success",
+        )
+        # Limpa cache do DataFrame para refletir novos dados imediatamente
+        try:
+            limpar_cache_df()
+        except Exception:
+            pass
+        return redirect(url_for("admin_importar"))
+
     except Exception:
-        emps_sel = []
-    if not emps_sel:
-        emps_sel = [str(e).strip() for e in _parse_multi_args("emp") if str(e).strip()]
-    if not emps_sel:
-        # fallback: tenta usar emp único (mantém compatibilidade com versões antigas)
-        emp_single = _emp_norm(request.values.get("emp", ""))
-        emps_sel = [emp_single] if emp_single else []
+        app.logger.exception("Erro ao importar planilha")
+        flash("Erro ao importar. Veja os logs no Render.", "danger")
+        return redirect(url_for("admin_importar"))
+    finally:
+        try:
+            os.remove(tmp_path)
+        except Exception:
+            pass
 
-    msgs: list[str] = []
-    status_por_emp: dict[str, dict] = {}
 
-    # Normaliza a ação vinda do formulário (alguns navegadores/JS podem enviar
-    # variações, ex.: sem underscore, com hífen ou com espaços).
-    acao_raw = (request.values.get("acao") or request.values.get("action") or request.form.get("acao") or "").strip().lower()
-    acao = {
-        "fechar_a_pagar": "fechar_a_pagar",
-        "fechar_apagar": "fechar_a_pagar",
-        "fechar-a-pagar": "fechar_a_pagar",
-        "a_pagar": "fechar_a_pagar",
-        "fechar_pago": "fechar_pago",
-        "fechar-pago": "fechar_pago",
-        "pago": "fechar_pago",
-        "reabrir": "reabrir",
-        "abrir": "reabrir",
-    }.get(acao_raw, acao_raw)
+
+@app.route("/admin/itens_parados", methods=["GET", "POST"])
+def admin_itens_parados():
+    """Cadastro de itens parados (liquidação) por EMP.
+
+    Campos: EMP, Código, Descrição, Quantidade, Recompensa(%).
+    """
+    red = _login_required()
+    if red:
+        return red
+    red = _admin_required()
+    if red:
+        return red
+
+    erro = None
+    ok = None
 
     with SessionLocal() as db:
-        # Carrega opções de EMP para o filtro (admin: todas cadastradas, fallback: EMPs com vendas no período)
-        try:
-            emps_all = [str(r.codigo).strip() for r in db.query(Emp).order_by(Emp.codigo.asc()).all()]
-        except Exception:
-            emps_all = []
-        if not emps_all:
+        if request.method == 'POST':
+            acao = (request.form.get('acao') or '').strip().lower()
             try:
-                emps_all = _get_emps_com_vendas_no_periodo(ano, mes)
-            except Exception:
-                emps_all = []
+                if acao == 'criar':
+                    emp = (request.form.get('emp') or '').strip()
+                    codigo = (request.form.get('codigo') or '').strip()
+                    descricao = (request.form.get('descricao') or '').strip()
+                    quantidade_raw = (request.form.get('quantidade') or '').strip()
+                    recompensa_raw = (request.form.get('recompensa_pct') or '').strip().replace(',', '.')
 
-        if request.method == "POST" and acao in {"fechar_a_pagar", "fechar_pago", "reabrir"}:
-            app.logger.info("FECHAMENTO POST: form=%s values=%s", dict(request.form), {k: request.values.getlist(k) for k in request.values.keys()})
-            if not emps_sel:
-                msgs.append("⚠️ Selecione ao menos 1 EMP para fechar/reabrir.")
-            else:
-                alvo_status = None
-                updated_count = 0
-                if acao == "fechar_a_pagar":
-                    alvo_status = "a_pagar"
-                elif acao == "fechar_pago":
-                    alvo_status = "pago"
-                for emp in emps_sel:
-                    emp = _emp_norm(emp)
                     if not emp:
-                        continue
-                    try:
-                        rec = (
-                            db.query(FechamentoMensal)
-                            .filter(
-                                FechamentoMensal.emp == emp,
-                                FechamentoMensal.ano == int(ano),
-                                FechamentoMensal.mes == int(mes),
-                            )
-                            .first()
-                        )
-                        if not rec:
-                            rec = FechamentoMensal(emp=emp, ano=int(ano), mes=int(mes), fechado=False)
-                            db.add(rec)
+                        raise ValueError('Informe a EMP.')
+                    if not codigo:
+                        raise ValueError('Informe o CÓDIGO.')
 
-                        if acao in {"fechar_a_pagar", "fechar_pago"}:
-                            rec.fechado = True
-                            rec.fechado_em = datetime.utcnow()
-                            # status financeiro (controle)
-                            if hasattr(rec, "status") and alvo_status:
-                                rec.status = alvo_status
-                        else:
-                            rec.fechado = False
-                            rec.fechado_em = None  # reabrir zera timestamp
-                            if hasattr(rec, "status"):
-                                rec.status = "aberto"
-                        updated_count += 1
-                        # commit no final do lote (mais rápido e consistente)
-                    except Exception:
-                        app.logger.exception("Erro ao preparar fechamento mensal")
-                        msgs.append(f"❌ Falha ao atualizar fechamento da EMP {emp}.")
-                if updated_count > 0:
-                    try:
-                        db.commit()
-                        msgs.append(f"✅ Operação concluída ({updated_count} EMPs).")
-                        # PRG: evita reenvio e garante recarregar status
-                        return redirect(url_for('admin_fechamento', emp=emps_sel, mes=mes, ano=ano))
-                    except Exception:
-                        db.rollback()
-                        app.logger.exception("Erro ao commitar fechamento mensal")
-                        msgs.append("❌ Falha ao salvar alterações no fechamento.")
+                    quantidade = int(quantidade_raw) if quantidade_raw else None
+                    recompensa_pct = float(recompensa_raw) if recompensa_raw else 0.0
+
+                    db.add(ItemParado(
+                        emp=str(emp),
+                        codigo=str(codigo),
+                        descricao=descricao or None,
+                        quantidade=quantidade,
+                        recompensa_pct=recompensa_pct,
+                        ativo=1,
+                    ))
+                    db.commit()
+                    ok = 'Item cadastrado com sucesso.'
+
+                elif acao == 'toggle':
+                    item_id = int(request.form.get('item_id') or 0)
+                    it = db.query(ItemParado).filter(ItemParado.id == item_id).first()
+                    if not it:
+                        raise ValueError('Item não encontrado.')
+                    it.ativo = 0 if int(it.ativo or 0) == 1 else 1
+                    it.atualizado_em = datetime.utcnow()
+                    db.commit()
+                    ok = 'Status do item atualizado.'
+
+                elif acao == 'remover':
+                    item_id = int(request.form.get('item_id') or 0)
+                    it = db.query(ItemParado).filter(ItemParado.id == item_id).first()
+                    if not it:
+                        raise ValueError('Item não encontrado.')
+                    db.delete(it)
+                    db.commit()
+                    ok = 'Item removido.'
+
                 else:
-                    if not msgs:
-                        msgs.append("⚠️ Nenhuma EMP válida para atualizar.")
-        # Status para tela
-        for emp in (emps_sel or []):
-            emp = _emp_norm(emp)
-            if not emp:
-                continue
-            fechado = False
-            fechado_em = None
-            status_fin = "aberto"
-            try:
-                rec = (
-                    db.query(FechamentoMensal)
-                    .filter(
-                        FechamentoMensal.emp == emp,
-                        FechamentoMensal.ano == int(ano),
-                        FechamentoMensal.mes == int(mes),
-                    )
-                    .first()
-                )
-                if rec:
-                    if getattr(rec, "status", None):
-                        status_fin = rec.status
-                    if rec.fechado:
-                        fechado = True
-                        fechado_em = rec.fechado_em
-            except Exception:
-                fechado = False
-            status_por_emp[emp] = {"fechado": fechado, "fechado_em": fechado_em, "status": status_fin}
+                    raise ValueError('Ação inválida.')
 
-    emps_options = _get_emp_options(emps_all)
+            except Exception as e:
+                db.rollback()
+                erro = str(e)
+                app.logger.exception('Erro no cadastro de itens parados')
+
+        itens = db.query(ItemParado).order_by(ItemParado.emp.asc(), ItemParado.codigo.asc()).all()
 
     return render_template(
-        "admin_fechamento.html",
-        role=_role() or "",
+        'admin_itens_parados.html',
+        usuario=_usuario_logado(),
+        itens=itens,
+        erro=erro,
+        ok=ok,
+    )
+
+@app.route('/admin/resumos_periodo', methods=['GET', 'POST'])
+def admin_resumos_periodo():
+    red = _admin_required()
+    if red:
+        return red
+
+    # filtros
+    emp = _emp_norm(request.values.get('emp', ''))
+    vendedor = (request.values.get('vendedor') or '').strip().upper()
+    ano = int(request.values.get('ano') or datetime.now().year)
+    mes = int(request.values.get('mes') or datetime.now().month)
+
+    msgs: list[str] = []
+
+    acao = (request.form.get('acao') or '').strip().lower()
+    if request.method == 'POST' and acao:
+        # alvo do POST (permite editar/cadastrar resumos em um período diferente do filtro)
+        emp_alvo = _emp_norm(request.form.get('emp_edit') or emp)
+
+        # Se a EMP não vier no POST (alguns modais não enviam), tenta inferir pelo escopo do usuário.
+        # Importante para que Dashboard/Metas encontrem a base do ano passado corretamente.
+        if not emp_alvo:
+            try:
+                allowed_tmp = session.get('allowed_emps') or _allowed_emps()
+            except Exception:
+                allowed_tmp = []
+            if isinstance(allowed_tmp, (list, tuple)) and len(allowed_tmp) == 1:
+                emp_alvo = _emp_norm(allowed_tmp[0])
+
+        try:
+            ano_alvo = int(request.form.get('ano_edit') or ano)
+        except Exception:
+            ano_alvo = ano
+        try:
+            mes_alvo = int(request.form.get('mes_edit') or mes)
+        except Exception:
+            mes_alvo = mes
+
+        ano_passado = ano - 1
+        # Regra: permitir edição/importação manual apenas para anos anteriores ao ano filtrado.
+        if acao in {'salvar', 'excluir', 'salvar_lote', 'importar_xlsx'} and ano_alvo >= ano:
+            msgs.append('⚠️ Edição/importação manual permitida apenas para anos anteriores ao ano filtrado.')
+            acao = ''
+
+        if acao in {'salvar', 'excluir'} and _mes_fechado(emp_alvo, ano_alvo, mes_alvo):
+            msgs.append('⚠️ Mês fechado. Reabra o mês para editar os resumos.')
+        else:
+            with SessionLocal() as db:
+                if acao == 'fechar':
+                    rec = (
+                        db.query(FechamentoMensal)
+                        .filter(
+                            FechamentoMensal.emp == emp,
+                            FechamentoMensal.ano == ano,
+                            FechamentoMensal.mes == mes,
+                        )
+                        .one_or_none()
+                    )
+                    if rec is None:
+                        rec = FechamentoMensal(emp=emp, ano=ano, mes=mes, fechado=True, fechado_em=datetime.utcnow())
+                        db.add(rec)
+                    else:
+                        rec.fechado = True
+                        rec.fechado_em = datetime.utcnow()
+                    db.commit()
+                    msgs.append('✅ Mês fechado. Edição travada.')
+
+                elif acao == 'reabrir':
+                    rec = (
+                        db.query(FechamentoMensal)
+                        .filter(
+                            FechamentoMensal.emp == emp,
+                            FechamentoMensal.ano == ano,
+                            FechamentoMensal.mes == mes,
+                        )
+                        .one_or_none()
+                    )
+                    if rec is None:
+                        rec = FechamentoMensal(emp=emp, ano=ano, mes=mes, fechado=False)
+                        db.add(rec)
+                    else:
+                        rec.fechado = False
+                    db.commit()
+                    msgs.append('✅ Mês reaberto. Edição liberada.')
+
+                elif acao == 'salvar':
+                    vend = (request.form.get('vendedor_edit') or '').strip().upper()
+                    if not vend:
+                        msgs.append('⚠️ Informe o vendedor.')
+                    else:
+                        try:
+                            valor_venda = _parse_num_ptbr(request.form.get('valor_venda'))
+                        except Exception:
+                            valor_venda = 0.0
+                        try:
+                            mix_produtos = int(request.form.get('mix_produtos') or 0)
+                        except Exception:
+                            mix_produtos = 0
+
+                        rec = (
+                            db.query(VendasResumoPeriodo)
+                            .filter(
+                                VendasResumoPeriodo.emp == emp_alvo,
+                                VendasResumoPeriodo.vendedor == vend,
+                                VendasResumoPeriodo.ano == ano_alvo,
+                                VendasResumoPeriodo.mes == mes_alvo,
+                            )
+                            .one_or_none()
+                        )
+                        if rec is None:
+                            rec = VendasResumoPeriodo(
+                                emp=emp_alvo,
+                                vendedor=vend,
+                                ano=ano_alvo,
+                                mes=mes_alvo,
+                                valor_venda=valor_venda,
+                                mix_produtos=mix_produtos,
+                                created_at=datetime.utcnow(),
+                                updated_at=datetime.utcnow(),
+                            )
+                            db.add(rec)
+                        else:
+                            rec.valor_venda = valor_venda
+                            rec.mix_produtos = mix_produtos
+                            rec.updated_at = datetime.utcnow()
+                        db.commit()
+                        msgs.append('✅ Resumo salvo.')
+
+
+                elif acao == 'salvar_lote':
+                    # Cadastro em lote destinado ao ano passado (ano-1), permitindo informar MÊS por linha.
+                    # Campos esperados: vendedor_lote, mes_ref, valor_venda_lote, mix_produtos_lote (listas)
+                    emp_lote = _emp_norm(request.form.get('emp_edit') or emp)
+                    ano_lote = ano_alvo
+
+                    vendedores_l = [ (v or '').strip().upper() for v in request.form.getlist('vendedor_lote') ]
+                    meses_l = request.form.getlist('mes_ref')
+                    valores_l = request.form.getlist('valor_venda_lote')
+                    mix_l = request.form.getlist('mix_produtos_lote')
+
+                    total_linhas = max(len(vendedores_l), len(meses_l), len(valores_l), len(mix_l))
+                    # Normaliza tamanhos
+                    def _get(lst, i, default=''):
+                        try:
+                            return lst[i]
+                        except Exception:
+                            return default
+
+                    salvos = 0
+                    pulados = 0
+                    fechados = 0
+
+                    for i in range(total_linhas):
+                        vend = _get(vendedores_l, i, '').strip().upper()
+                        if not vend:
+                            pulados += 1
+                            continue
+                        try:
+                            mes_ref = int(str(_get(meses_l, i, mes)).strip() or mes)
+                        except Exception:
+                            mes_ref = mes
+                        if mes_ref < 1 or mes_ref > 12:
+                            msgs.append(f'⚠️ Linha {i+1}: mês inválido ({_get(meses_l, i, "")}).')
+                            pulados += 1
+                            continue
+
+                        # Mês fechado? trava edição para aquele mês
+                        if _mes_fechado(emp_lote, ano_lote, mes_ref):
+                            fechados += 1
+                            continue
+
+                        try:
+                            valor_venda = _parse_num_ptbr(str(_get(valores_l, i, '0')))
+                        except Exception:
+                            valor_venda = 0.0
+                        try:
+                            mix_produtos = int(str(_get(mix_l, i, '0')).strip() or 0)
+                        except Exception:
+                            mix_produtos = 0
+
+                        rec = (
+                            db.query(VendasResumoPeriodo)
+                            .filter(
+                                VendasResumoPeriodo.emp == emp_lote,
+                                VendasResumoPeriodo.vendedor == vend,
+                                VendasResumoPeriodo.ano == ano_lote,
+                                VendasResumoPeriodo.mes == mes_ref,
+                            )
+                            .one_or_none()
+                        )
+                        if rec is None:
+                            rec = VendasResumoPeriodo(
+                                emp=emp_lote,
+                                vendedor=vend,
+                                ano=ano_lote,
+                                mes=mes_ref,
+                                valor_venda=valor_venda,
+                                mix_produtos=mix_produtos,
+                                created_at=datetime.utcnow(),
+                                updated_at=datetime.utcnow(),
+                            )
+                            db.add(rec)
+                        else:
+                            rec.valor_venda = valor_venda
+                            rec.mix_produtos = mix_produtos
+                            rec.updated_at = datetime.utcnow()
+                        salvos += 1
+
+                    db.commit()
+                    if fechados:
+                        msgs.append(f'⚠️ {fechados} linha(s) não foram salvas porque o mês está fechado.')
+                    msgs.append(f'✅ Lote concluído: {salvos} salvo(s), {pulados} linha(s) em branco/ inválida(s).')
+                
+                elif acao == 'importar_xlsx':
+                    # Importação de resumos por Excel (.xlsx) / CSV
+                    # Colunas aceitas (case-insensitive):
+                    # ANO, MES, EMP(opcional), VENDEDOR, VALOR_VENDA/VALOR, MIX
+                    file = request.files.get('arquivo')
+                    if not file or not getattr(file, 'filename', ''):
+                        msgs.append('⚠️ Selecione um arquivo .xlsx ou .csv para importar.')
+                    else:
+                        filename = (file.filename or '').lower()
+                        try:
+                            if filename.endswith('.csv'):
+                                df = pd.read_csv(file, dtype=str)
+                            else:
+                                df = pd.read_excel(file, dtype=str)
+                        except Exception as e:
+                            msgs.append('❌ Não consegui ler o arquivo. Verifique se é um .xlsx válido.')
+                            df = None
+
+                        if df is not None:
+                            # normaliza colunas
+                            cols = {c.strip().upper(): c for c in df.columns}
+                            def _col(*names):
+                                for n in names:
+                                    if n in cols:
+                                        return cols[n]
+                                return None
+
+                            c_ano = _col('ANO')
+                            c_mes = _col('MES', 'MÊS')
+                            c_emp = _col('EMP')
+                            c_vend = _col('VENDEDOR', 'VEND', 'VENDEDOR_NOME')
+                            c_val = _col('VALOR_VENDA', 'VALOR', 'VALORVENDA')
+                            c_mix = _col('MIX')
+
+                            if not c_ano or not c_mes or not c_vend or not c_val:
+                                msgs.append('❌ Colunas obrigatórias: ANO, MES, VENDEDOR, VALOR_VENDA (ou VALOR).')
+                            else:
+                                total = 0
+                                salvos = 0
+                                pulados = 0
+                                fechados = 0
+                                erros = 0
+
+                                for _, row in df.iterrows():
+                                    total += 1
+                                    try:
+                                        ano_ref = int(str(row.get(c_ano, '')).strip())
+                                        mes_ref = int(str(row.get(c_mes, '')).strip())
+                                    except Exception:
+                                        pulados += 1
+                                        continue
+                                    if mes_ref < 1 or mes_ref > 12:
+                                        pulados += 1
+                                        continue
+
+                                    vend = str(row.get(c_vend, '')).strip().upper()
+                                    if not vend:
+                                        pulados += 1
+                                        continue
+
+                                    emp_ref = emp  # padrão do filtro, se vier em branco
+                                    if c_emp:
+                                        raw_emp = str(row.get(c_emp, '')).strip()
+                                        if raw_emp.lower() in {'nan', 'none', 'null'}:
+                                            raw_emp = ''
+                                        emp_ref = _emp_norm(raw_emp) or emp
+
+                                    # regra: não permite importar para ano atual/futuro
+                                    if ano_ref >= ano:
+                                        pulados += 1
+                                        continue
+
+                                    if _mes_fechado(emp_ref, ano_ref, mes_ref):
+                                        fechados += 1
+                                        continue
+
+                                    valor_venda = _parse_num_ptbr(str(row.get(c_val, '0')))
+                                    try:
+                                        if c_mix:
+                                            raw_mix = str(row.get(c_mix, '')).strip()
+                                            if raw_mix.lower() in {'', 'nan', 'none', 'null'}:
+                                                mix_produtos = 0
+                                            else:
+                                                try:
+                                                    mix_produtos = int(float(raw_mix.replace(',', '.')))
+                                                except Exception:
+                                                    mix_produtos = 0
+                                        else:
+                                            mix_produtos = 0
+
+                                    except Exception:
+                                        mix_produtos = 0
+
+                                    rec = (
+                                        db.query(VendasResumoPeriodo)
+                                        .filter(
+                                            VendasResumoPeriodo.emp == emp_ref,
+                                            VendasResumoPeriodo.vendedor == vend,
+                                            VendasResumoPeriodo.ano == ano_ref,
+                                            VendasResumoPeriodo.mes == mes_ref,
+                                        )
+                                        .one_or_none()
+                                    )
+                                    if rec is None:
+                                        rec = VendasResumoPeriodo(
+                                            emp=emp_ref,
+                                            vendedor=vend,
+                                            ano=ano_ref,
+                                            mes=mes_ref,
+                                            valor_venda=valor_venda,
+                                            mix_produtos=mix_produtos,
+                                            created_at=datetime.utcnow(),
+                                            updated_at=datetime.utcnow(),
+                                        )
+                                        db.add(rec)
+                                    else:
+                                        rec.valor_venda = valor_venda
+                                        rec.mix_produtos = mix_produtos
+                                        rec.updated_at = datetime.utcnow()
+                                    salvos += 1
+
+                                db.commit()
+                                if fechados:
+                                    msgs.append(f'⚠️ {fechados} linha(s) não importadas: mês fechado.')
+                                msgs.append(f'✅ Importação concluída: {salvos} salvo(s) de {total} linha(s). {pulados} pulada(s).')
+
+                elif acao == 'excluir':
+                    vend = (request.form.get('vendedor_edit') or '').strip().upper()
+                    if not vend:
+                        msgs.append('⚠️ Informe o vendedor para excluir.')
+                    else:
+                        rec = (
+                            db.query(VendasResumoPeriodo)
+                            .filter(
+                                VendasResumoPeriodo.emp == emp_alvo,
+                                VendasResumoPeriodo.vendedor == vend,
+                                VendasResumoPeriodo.ano == ano_alvo,
+                                VendasResumoPeriodo.mes == mes_alvo,
+                            )
+                            .one_or_none()
+                        )
+                        if rec is None:
+                            msgs.append('⚠️ Não encontrei esse resumo para excluir.')
+                        else:
+                            db.delete(rec)
+                            db.commit()
+                            msgs.append('✅ Resumo excluído.')
+
+    # carregar lista e status de fechamento
+    fechado = _mes_fechado(emp, ano, mes)
+    with SessionLocal() as db:
+        # EMP e vendedor são opcionais: quando vierem em branco, listamos TODOS.
+        q = db.query(VendasResumoPeriodo).filter(
+            VendasResumoPeriodo.ano == ano,
+            VendasResumoPeriodo.mes == mes,
+        )
+        if emp:
+            q = q.filter(or_(VendasResumoPeriodo.emp == emp, VendasResumoPeriodo.emp.in_(['', 'EMPTY'])))
+        if vendedor:
+            q = q.filter(VendasResumoPeriodo.vendedor == vendedor)
+        registros = q.order_by(VendasResumoPeriodo.vendedor.asc()).all()
+
+        # Resumos do mesmo período no ano passado (ano-1) para conferência/edição rápida
+        ano_passado = ano - 1
+        q2 = db.query(VendasResumoPeriodo).filter(
+            VendasResumoPeriodo.ano == ano_passado,
+        )
+        if emp:
+            q2 = q2.filter(or_(VendasResumoPeriodo.emp == emp, VendasResumoPeriodo.emp.in_(['', 'EMPTY'])))
+        if vendedor:
+            q2 = q2.filter(VendasResumoPeriodo.vendedor == vendedor)
+
+        # Carrega TODOS os meses do ano passado (ano-1) para permitir cadastro/edição independente do mês atual.
+        _res_all = q2.order_by(VendasResumoPeriodo.mes.asc(), VendasResumoPeriodo.vendedor.asc()).all()
+
+        resumos_ano_passado_por_mes = {m: [] for m in range(1, 13)}
+        for r in _res_all:
+            try:
+                resumos_ano_passado_por_mes[int(r.mes)].append(r)
+            except Exception:
+                pass
+
+        # contagem por mês (para renderizar os "chips")
+        counts_ano_passado = {m: len(resumos_ano_passado_por_mes.get(m, [])) for m in range(1, 13)}
+
+        # Sugestão rápida de vendedores (com base em vendas do período)
+        # Ajuda o admin a não digitar errado
+        start, end = _periodo_bounds(ano, mes)
+        vs_q = db.query(Venda.vendedor).filter(Venda.movimento >= start, Venda.movimento < end)
+        if emp:
+            vs_q = vs_q.filter(Venda.emp == emp)
+        vendedores_sugeridos = (
+            vs_q.distinct().order_by(Venda.vendedor.asc()).all()
+        )
+        vendedores_sugeridos = [v[0] for v in vendedores_sugeridos if v and v[0]]
+
+    return render_template(
+        'admin_resumos_periodo.html',
+        emp=emp,
         ano=ano,
         mes=mes,
-        emps_sel=emps_sel,
-        emps_options=emps_options,
-        status_por_emp=status_por_emp,
+        vendedor_filtro=vendedor,
+        registros=registros,
+        rows=registros,
+        vendedor=vendedor,
+        ano_passado=ano_passado,
+        resumos_ano_passado_por_mes=resumos_ano_passado_por_mes,
+        counts_ano_passado=counts_ano_passado,
+        
+        fechado=fechado,
+        vendedores_sugeridos=vendedores_sugeridos,
         msgs=msgs,
     )
+
+# Compatibilidade: algumas telas/atalhos antigos apontavam para /admin/fechamento.
+# O fechamento mensal hoje é feito dentro da tela de resumos por período.
+@app.route("/admin/combos", methods=["GET", "POST"])
+def admin_combos():
+    """Cadastro de Campanhas Combo (SIMPLES).
+    Regra (venda casada):
+      - Cada requisito define um MESTRE (match em vendas.mestre), uma quantidade mínima e um Valor R$ (recompensa).
+      - O vendedor só ganha se bater o mínimo em TODOS os requisitos do combo (gate).
+      - Ao bater o gate, a recompensa do combo é a SOMA dos valores R$ cadastrados nos requisitos (recompensa fixa por requisito atingido).
+    Observação: mantemos campos extras do modelo (marca/modelo/etc) com defaults para compatibilidade do banco.
+    """
+    red = _login_required()
+    if red:
+        return red
+    red = _admin_required()
+    if red:
+        return red
+
+    erro = None
+    ok = None
+
+    hoje = date.today()
+    mes = int(request.values.get("mes") or hoje.month)
+    ano = int(request.values.get("ano") or hoje.year)
+
+    inicio_mes, fim_mes = _periodo_bounds(ano, mes)
+    default_data_inicio = request.values.get("data_inicio") or inicio_mes.isoformat()
+    default_data_fim = request.values.get("data_fim") or fim_mes.isoformat()
+
+    with SessionLocal() as db:
+        # Carrega EMPs (tabela emps)
+        try:
+            emps = db.query(Emp).order_by(Emp.codigo.asc()).all()
+        except Exception:
+            emps = []
+
+        if request.method == "POST":
+            acao = (request.form.get("acao") or "").strip().lower()
+
+            # Remover combo (e seus itens/resultados)
+            if acao == "remover":
+                try:
+                    combo_id = int(request.form.get("combo_id") or 0)
+                    if not combo_id:
+                        raise ValueError("combo_id inválido.")
+                    # remove itens + resultados + combo
+                    db.execute(text("DELETE FROM campanhas_combo_itens WHERE combo_id = :cid"), {"cid": combo_id})
+                    db.execute(text("DELETE FROM campanhas_combo_resultados WHERE combo_id = :cid"), {"cid": combo_id})
+                    db.execute(text("DELETE FROM campanhas_combo WHERE id = :cid"), {"cid": combo_id})
+                    db.commit()
+                    ok = "Combo removido."
+                except Exception as e:
+                    db.rollback()
+                    erro = str(e)
+
+            # Criar combo simples
+            elif acao == "criar":
+                try:
+                    titulo = (request.form.get("titulo") or "").strip()
+                    emp = (request.form.get("emp") or "").strip()
+                    vig_ini = request.form.get("data_inicio") or inicio_mes.isoformat()
+                    vig_fim = request.form.get("data_fim") or fim_mes.isoformat()
+
+                    if not titulo:
+                        raise ValueError("Título é obrigatório.")
+
+                    # Parse datas
+                    try:
+                        d_ini = datetime.fromisoformat(vig_ini).date()
+                        d_fim = datetime.fromisoformat(vig_fim).date()
+                    except Exception:
+                        raise ValueError("Datas inválidas. Use o seletor de datas.")
+
+                    if d_fim < d_ini:
+                        raise ValueError("Data fim não pode ser menor que data início.")
+
+                    # Campos obrigatórios no banco/modelo (mantemos defaults)
+                    combo = CampanhaCombo(
+                        titulo=titulo,
+                        nome=titulo,
+                        emp=emp if emp else None,
+                        marca="COMBO",  # NOT NULL no banco
+                        data_inicio=d_ini,
+                        data_fim=d_fim,
+                        ano=int(d_ini.year),
+                        mes=int(d_ini.month),
+                        valor_unitario_global=None,
+                        modelo_pagamento="TODOS_ITENS",  # mantém compat
+                        filtro_marca=None,
+                        filtro_descricao_prefixo=None,
+                        valor_unitario_modelo2=None,
+                        ativo=True,
+                        created_at=datetime.utcnow(),
+                        updated_at=datetime.utcnow(),
+                    )
+                    db.add(combo)
+                    db.flush()  # obtém combo.id
+
+                    mestres = request.form.getlist("mestre_prefixo[]")
+                    minimos = request.form.getlist("minimo_qtd[]")
+                    vals = request.form.getlist("valor_unitario[]")
+
+                    itens = []
+                    n = max(len(mestres), len(minimos), len(vals))
+                    for i in range(n):
+                        mp = (mestres[i] if i < len(mestres) else "") or ""
+                        mi = (minimos[i] if i < len(minimos) else "") or ""
+                        vu = (vals[i] if i < len(vals) else "") or ""
+
+                        mp = str(mp).strip()
+                        if not mp:
+                            continue
+
+                        # mínimo (int)
+                        try:
+                            minimo_qtd = int(float(str(mi).replace(",", ".") or 0))
+                        except Exception:
+                            minimo_qtd = 0
+
+                        vu_raw = str(vu).strip().replace(",", ".")
+                        if not vu_raw:
+                            raise ValueError("Valor R$ é obrigatório em cada requisito do combo simples.")
+                        try:
+                            valor_unit = float(vu_raw)
+                        except Exception:
+                            raise ValueError("Valor R$ inválido.")
+
+                        itens.append({
+                            "combo_id": combo.id,
+                            "mestre_prefixo": mp,
+                            "descricao_contains": None,
+                            "match_mestre": mp,
+                            "minimo_qtd": int(minimo_qtd or 0),
+                            "valor_unitario": float(valor_unit),
+                            "ordem": i + 1,
+                            "criado_em": datetime.utcnow(),
+                        })
+
+                    if not itens:
+                        raise ValueError("Adicione pelo menos 1 requisito (MESTRE, mínimo e Valor R$).")
+
+                    sql = text(
+                        "INSERT INTO campanhas_combo_itens (combo_id, mestre_prefixo, descricao_contains, match_mestre, minimo_qtd, valor_unitario, ordem, criado_em) "
+                        "VALUES (:combo_id, :mestre_prefixo, :descricao_contains, :match_mestre, :minimo_qtd, :valor_unitario, :ordem, :criado_em)"
+                    )
+                    db.execute(sql, itens)
+                    db.commit()
+                    ok = "Combo criado com sucesso."
+                except Exception as e:
+                    db.rollback()
+                    erro = str(e)
+
+        # lista combos que intersectam o mês/ano (inclui globais)
+        combos = (
+            db.query(CampanhaCombo)
+            .filter(
+                CampanhaCombo.ativo.is_(True),
+                or_(CampanhaCombo.emp.is_(None), CampanhaCombo.emp == ""),
+            )
+            .all()
+        )
+
+        # Também inclui combos da EMP específica quando filtrada na criação (para admin ver tudo)
+        # (Na tela simples, o admin quer ver todos no período filtrado)
+        combos = (
+            db.query(CampanhaCombo)
+            .filter(
+                CampanhaCombo.ativo.is_(True),
+                or_(
+                    and_(CampanhaCombo.data_inicio <= fim_mes, CampanhaCombo.data_fim >= inicio_mes),
+                    and_(CampanhaCombo.ano == ano, CampanhaCombo.mes == mes),
+                ),
+            )
+            .order_by(CampanhaCombo.data_inicio.desc(), CampanhaCombo.id.desc())
+            .all()
+        )
+
+        combo_ids = [c.id for c in combos]
+        combos_itens_map = {}
+        if combo_ids:
+            itens_rows = (
+                db.query(CampanhaComboItem)
+                .filter(CampanhaComboItem.combo_id.in_(combo_ids))
+                .order_by(CampanhaComboItem.combo_id.asc(), CampanhaComboItem.ordem.asc(), CampanhaComboItem.id.asc())
+                .all()
+            )
+            for it in itens_rows:
+                combos_itens_map.setdefault(it.combo_id, []).append(it)
+
+    return render_template(
+        "admin_combos.html",
+        mes=mes,
+        ano=ano,
+        emps=emps,
+        combos=combos,
+        combos_itens_map=combos_itens_map,
+        default_data_inicio=default_data_inicio,
+        default_data_fim=default_data_fim,
+        erro=erro,
+        ok=ok,
+    )
+
+
+
+from admin_fechamento_routes import register_admin_fechamento_routes
+
+register_admin_fechamento_routes(
+    app,
+    SessionLocal=SessionLocal,
+    Emp=Emp,
+    FechamentoMensal=FechamentoMensal,
+    admin_required_fn=_admin_required,
+    parse_multi_args_fn=_parse_multi_args,
+    emp_norm_fn=_emp_norm,
+    get_emps_com_vendas_no_periodo_fn=_get_emps_com_vendas_no_periodo,
+    get_emp_options_fn=_get_emp_options,
+    role_fn=_role,
+)
 
 
 @app.route("/admin/campanhas", methods=["GET", "POST"])
