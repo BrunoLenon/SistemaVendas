@@ -113,8 +113,6 @@
 
   <div class="sb-sec">
     <div class="lbl">Operação</div>
-    <a class="sb-link {% if path == '/campanhas' or path.startswith('/campanhas/qtd') %}active{% endif %}" href="{{ url_for('campanhas_qtd') }}">⭐ Campanhas (Qtd)</a>
-
     <a class="sb-link {% if path.startswith('/campanhas/ranking-marca') %}active{% endif %}" href="{{ url_for('campanhas_ranking_marca') }}">🏆 Ranking por Marca</a>
 
     <a class="sb-link {% if path.startswith('/metas') %}active{% endif %}" href="{{ url_for('metas') }}">🎯 Metas</a>
@@ -133,8 +131,6 @@
   {% if is_financeiro or is_admin %}
   <div class="sb-sec">
     <div class="lbl">Financeiro</div>
-    <a class="sb-link {% if path.startswith('/financeiro/campanhas_v2') %}active{% endif %}" href="{{ url_for('financeiro_campanhas_v2') }}">💰 Campanhas (Fin.)</a>
-    <a class="sb-link {% if path.startswith('/financeiro/fechamento_v2') %}active{% endif %}" href="{{ url_for('financeiro_fechamento_v2') }}">✅ Fechamento (V2)</a>
     <a class="sb-link {% if path.startswith('/admin/fechamento') %}active{% endif %}" href="{{ url_for('admin_fechamento') }}">🗓️ Fechamento (Mês)</a>
   </div>
   {% endif %}

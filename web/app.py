@@ -2299,7 +2299,6 @@ _campanhas_deps = CampanhasDeps(
 # -----------------------------------------------------------------------------
 
 from admin_config_routes import register_admin_config_routes
-from campanhas_qtd_routes import register_campanhas_qtd_routes
 from relatorio_campanhas_routes import register_relatorio_campanhas_routes
 from relatorio_cidades_clientes_routes import register_relatorio_cidades_clientes_routes
 from admin_usuarios_routes import register_admin_usuarios_routes
@@ -2314,26 +2313,12 @@ from ranking_marca_routes import register_ranking_marca_routes
 from admin_cache_routes import register_admin_cache_routes
 from core_routes import register_core_routes
 from errors import register_error_handlers
-from financeiro_campanhas_routes import register_financeiro_campanhas_routes
 from operacoes_vendas_produtos_routes import register_operacoes_vendas_produtos_routes
 
 # Admin / Configurações
 register_admin_config_routes(app)
 
-# Campanhas QTD + Relatórios
-register_campanhas_qtd_routes(
-    app,
-    deps=_campanhas_deps,
-    SessionLocal=SessionLocal,
-    CampanhaQtdResultado=CampanhaQtdResultado,
-    login_required_fn=_login_required,
-    role_fn=_role,
-    emp_fn=_emp,
-    usuario_logado_fn=_usuario_logado,
-    get_vendedores_db_fn=_get_vendedores_db,
-    get_emps_vendedor_fn=_get_emps_vendedor,
-    resolver_emp_scope_fn=_resolver_emp_scope_para_usuario,
-)
+# Relatórios
 register_relatorio_campanhas_routes(
     app,
     deps=_campanhas_deps,
@@ -2435,8 +2420,7 @@ register_core_routes(
 )
 register_error_handlers(app)
 
-# Financeiro + Operações
-register_financeiro_campanhas_routes(app)
+# Operações
 register_operacoes_vendas_produtos_routes(
     app,
     login_required_fn=login_required,
