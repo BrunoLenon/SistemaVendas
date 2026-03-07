@@ -1687,29 +1687,6 @@ def _resolver_vendedor_e_lista(df: pd.DataFrame | None) -> tuple[str | None, lis
     return vendedor_alvo, vendedores, emp_usuario, None
 
 # ------------- Rotas -------------
-@app.route("/healthz", methods=["GET", "HEAD"])
-def healthz():
-    # Health check must be ultra-light and never require auth/DB
-    return ("OK", 200)
-
-@app.route("/", methods=["GET", "HEAD"])
-def home():
-    # Render/health-check friendly: return 200 for HEAD (and for Go-http-client probes)
-    ua = (request.headers.get("User-Agent") or "").lower()
-    if request.method == "HEAD" or "go-http-client" in ua:
-        return ("OK", 200)
-
-    # Browser/users: redirect to the right place
-    if session.get("vendedor") and session.get("role"):
-        return redirect(url_for("dashboard"))
-    return redirect(url_for("auth.login"))
-
-@app.get("/favicon.ico")
-def favicon():
-    # Avoid noisy 404s in logs
-    return ("", 204)
-
-
 def _dados_admin_geral(mes: int, ano: int, emp_scope: list[str] | None = None):
     """Visão geral do ADMIN quando nenhum vendedor é selecionado.
 
@@ -2335,6 +2312,8 @@ from mensagens_routes import register_mensagens_routes
 from metas_routes import register_metas_routes
 from ranking_marca_routes import register_ranking_marca_routes
 from admin_cache_routes import register_admin_cache_routes
+from core_routes import register_core_routes
+from errors import register_error_handlers
 from financeiro_campanhas_routes import register_financeiro_campanhas_routes
 from operacoes_vendas_produtos_routes import register_operacoes_vendas_produtos_routes
 
@@ -2442,6 +2421,19 @@ register_admin_cache_routes(
     login_required_fn=_login_required,
     admin_required_fn=_admin_required,
 )
+
+# Core / Handlers
+register_core_routes(
+    app,
+    login_required_fn=_login_required,
+    usuario_logado_fn=_usuario_logado,
+    session_local_factory=SessionLocal,
+    usuario_model=Usuario,
+    render_template_fn=render_template,
+    check_password_hash_fn=check_password_hash,
+    generate_password_hash_fn=generate_password_hash,
+)
+register_error_handlers(app)
 
 # Financeiro + Operações
 register_financeiro_campanhas_routes(app)
@@ -2844,35 +2836,6 @@ def _recalcular_resultados_campanhas_para_scope(ano: int, mes: int, emps: list[s
 
 
 ## Relatório (AJAX): cliente -> itens (modal)
-
-@app.route("/senha", methods=["GET", "POST"])
-def senha():
-    red = _login_required()
-    if red:
-        return red
-
-    vendedor = _usuario_logado()
-    if request.method == "GET":
-        return render_template("senha.html", vendedor=vendedor, erro=None, ok=None)
-
-    senha_atual = request.form.get("senha_atual") or ""
-    nova_senha = request.form.get("nova_senha") or ""
-    confirmar = request.form.get("confirmar") or ""
-
-    if len(nova_senha) < 4:
-        return render_template("senha.html", vendedor=vendedor, erro="Nova senha muito curta.", ok=None)
-    if nova_senha != confirmar:
-        return render_template("senha.html", vendedor=vendedor, erro="As senhas não conferem.", ok=None)
-
-    with SessionLocal() as db:
-        u = db.query(Usuario).filter(Usuario.username == vendedor).first()
-        if not u or not check_password_hash(u.senha_hash, senha_atual):
-            return render_template("senha.html", vendedor=vendedor, erro="Senha atual incorreta.", ok=None)
-
-        u.senha_hash = generate_password_hash(nova_senha)
-        db.commit()
-
-    return render_template("senha.html", vendedor=vendedor, erro=None, ok="Senha atualizada com sucesso!")
 
 from admin_itens_parados_routes import register_admin_itens_parados_routes
 
@@ -3288,11 +3251,6 @@ def _calc_and_upsert_meta_result(db, meta: MetaPrograma, emp: str, vendedor: str
 
 
 # ------------- Erros -------------
-@app.errorhandler(500)
-def err_500(e):
-    app.logger.exception("Erro 500: %s", e)
-    return ("Erro interno. Verifique os logs no Render (ou fale com o admin).", 500)
-
 # Campanhas V2 (Enterprise)
 # ==========================
 # (rotas admin migradas para o blueprint blueprints/campanhas_v2_admin.py)
@@ -3312,25 +3270,4 @@ def err_500(e):
 
 # Ranking por Marca (rotas movidas para ranking_marca_routes.py)
 
-# ---------------------------------------------------------------------------
-# Fallback de compatibilidade: garante que endpoints críticos do sidebar existam
-#
-# Motivação: durante a refatoração por passos, algumas rotas podem ter sido
-# extraídas para módulos *_routes.py e o registro pode ter ficado pendente em
-# algum deploy. Isso não deve derrubar o sistema (BuildError em url_for).
-#
-# Regra: só registra se o endpoint ainda NÃO existir, evitando duplicidade.
-# ---------------------------------------------------------------------------
 
-try:
-    if "metas" not in app.view_functions:
-        from metas_routes import register_metas_routes
-
-        register_metas_routes(app)
-except Exception:
-    # Não derruba o app se o módulo não estiver presente/compatível;
-    # deixa log para diagnóstico.
-    try:
-        app.logger.exception("Falha ao registrar rotas de Metas (fallback)")
-    except Exception:
-        pass
