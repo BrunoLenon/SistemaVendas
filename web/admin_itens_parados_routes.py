@@ -7,9 +7,10 @@ from decimal import Decimal, ROUND_HALF_UP
 from typing import Callable, Type
 
 from flask import current_app, redirect, render_template, request, url_for
-from sqlalchemy import func, or_
+from sqlalchemy import func, inspect, or_, text
 
 from db import (
+    engine,
     ItensParadosPontosBonus,
     ItensParadosPontosConfig,
     ItensParadosPontosFechamento,
@@ -18,6 +19,116 @@ from db import (
 )
 
 TWOPLACES = Decimal("0.01")
+
+
+SCHEMA_SQL = """
+ALTER TABLE IF EXISTS itens_parados
+  ADD COLUMN IF NOT EXISTS modo varchar(20) NOT NULL DEFAULT 'PONTOS',
+  ADD COLUMN IF NOT EXISTS data_inicio date NULL,
+  ADD COLUMN IF NOT EXISTS data_fim date NULL,
+  ADD COLUMN IF NOT EXISTS multiplicador_pontos double precision NOT NULL DEFAULT 1.0;
+
+CREATE TABLE IF NOT EXISTS itens_parados_pontos_config (
+  id bigserial PRIMARY KEY,
+  emp varchar(30) NULL,
+  base_reais double precision NOT NULL DEFAULT 100.0,
+  valor_por_ponto double precision NOT NULL DEFAULT 10.0,
+  ativo boolean NOT NULL DEFAULT true,
+  criado_em timestamptz NOT NULL DEFAULT now(),
+  atualizado_em timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS itens_parados_pontos_bonus (
+  id bigserial PRIMARY KEY,
+  emp varchar(30) NULL,
+  min_pontos double precision NOT NULL DEFAULT 10.0,
+  bonus_valor double precision NOT NULL DEFAULT 50.0,
+  ativo boolean NOT NULL DEFAULT true,
+  criado_em timestamptz NOT NULL DEFAULT now(),
+  atualizado_em timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS itens_parados_pontos_fechamentos (
+  id bigserial PRIMARY KEY,
+  emp varchar(30) NULL,
+  data_inicio date NOT NULL,
+  data_fim date NOT NULL,
+  criado_por varchar(80) NULL,
+  criado_em timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS itens_parados_pontos_resultados (
+  id bigserial PRIMARY KEY,
+  fechamento_id bigint NOT NULL,
+  emp varchar(30) NOT NULL,
+  vendedor varchar(80) NOT NULL,
+  valor_vendido double precision NOT NULL DEFAULT 0.0,
+  pontos double precision NOT NULL DEFAULT 0.0,
+  base_reais double precision NOT NULL DEFAULT 100.0,
+  valor_por_ponto double precision NOT NULL DEFAULT 10.0,
+  bonus_extra double precision NOT NULL DEFAULT 0.0,
+  total double precision NOT NULL DEFAULT 0.0,
+  status_pagamento varchar(20) NOT NULL DEFAULT 'PENDENTE',
+  pago_em timestamptz NULL,
+  criado_em timestamptz NOT NULL DEFAULT now(),
+  atualizado_em timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS ix_itens_parados_pontos_cfg_emp ON itens_parados_pontos_config(emp);
+CREATE INDEX IF NOT EXISTS ix_itens_parados_pontos_bonus_emp ON itens_parados_pontos_bonus(emp);
+CREATE INDEX IF NOT EXISTS ix_itens_parados_pontos_bonus_min ON itens_parados_pontos_bonus(min_pontos);
+CREATE INDEX IF NOT EXISTS ix_itens_parados_pontos_fech_emp ON itens_parados_pontos_fechamentos(emp);
+CREATE INDEX IF NOT EXISTS ix_itens_parados_pontos_fech_ini ON itens_parados_pontos_fechamentos(data_inicio);
+CREATE INDEX IF NOT EXISTS ix_itens_parados_pontos_fech_fim ON itens_parados_pontos_fechamentos(data_fim);
+CREATE INDEX IF NOT EXISTS ix_itens_parados_pontos_res_emp ON itens_parados_pontos_resultados(emp);
+CREATE INDEX IF NOT EXISTS ix_itens_parados_pontos_res_vend ON itens_parados_pontos_resultados(vendedor);
+CREATE INDEX IF NOT EXISTS ix_itens_parados_pontos_res_fech ON itens_parados_pontos_resultados(fechamento_id);
+"""
+
+
+def _table_exists(table_name: str) -> bool:
+    try:
+        return inspect(engine).has_table(table_name)
+    except Exception:
+        return False
+
+
+def _column_exists(table_name: str, column_name: str) -> bool:
+    try:
+        insp = inspect(engine)
+        return any(col.get("name") == column_name for col in insp.get_columns(table_name))
+    except Exception:
+        return False
+
+
+def _ensure_itens_parados_schema() -> None:
+    with engine.begin() as conn:
+        for stmt in [s.strip() for s in SCHEMA_SQL.split(';') if s.strip()]:
+            conn.execute(text(stmt))
+
+        if _table_exists('itens_parados_pontos_bonus') and _column_exists('itens_parados_pontos_bonus', 'min_pontos'):
+            conn.execute(text("ALTER TABLE itens_parados_pontos_bonus ALTER COLUMN min_pontos TYPE double precision USING min_pontos::double precision"))
+        if _table_exists('itens_parados_pontos_resultados'):
+            if _column_exists('itens_parados_pontos_resultados', 'pontos'):
+                conn.execute(text("ALTER TABLE itens_parados_pontos_resultados ALTER COLUMN pontos TYPE double precision USING pontos::double precision"))
+            if _column_exists('itens_parados_pontos_resultados', 'base_reais'):
+                conn.execute(text("ALTER TABLE itens_parados_pontos_resultados ALTER COLUMN base_reais TYPE double precision USING base_reais::double precision"))
+
+        conn.execute(text("""
+            INSERT INTO itens_parados_pontos_config(emp, base_reais, valor_por_ponto, ativo)
+            SELECT NULL, 100, 10.0, true
+            WHERE NOT EXISTS (SELECT 1 FROM itens_parados_pontos_config WHERE emp IS NULL AND ativo = true)
+        """))
+        conn.execute(text("""
+            INSERT INTO itens_parados_pontos_bonus(emp, min_pontos, bonus_valor, ativo)
+            SELECT NULL, v.min_pontos, v.bonus_valor, true
+            FROM (VALUES (10.0, 50.0), (20.0, 120.0), (30.0, 200.0)) AS v(min_pontos, bonus_valor)
+            WHERE NOT EXISTS (
+                SELECT 1 FROM itens_parados_pontos_bonus b
+                WHERE b.emp IS NULL AND b.min_pontos = v.min_pontos
+            )
+        """))
+
 
 
 def _d(value) -> Decimal:
@@ -52,6 +163,7 @@ def register_admin_itens_parados_routes(
 
         erro = None
         ok = None
+        _ensure_itens_parados_schema()
         ver_fech = (request.args.get("ver_fech") or "").strip()
 
         with SessionLocal() as db:

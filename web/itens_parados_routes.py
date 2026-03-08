@@ -7,9 +7,10 @@ from io import BytesIO
 from typing import Callable
 
 from flask import flash, redirect, render_template, request, send_file, url_for
-from sqlalchemy import func, or_
+from sqlalchemy import func, inspect, or_, text
 
 from db import (
+    engine,
     ItemParado,
     ItensParadosPontosBonus,
     ItensParadosPontosConfig,
@@ -32,6 +33,68 @@ _periodo_bounds: Callable[[int, int], tuple[object, object]] | None = None
 
 
 TWOPLACES = Decimal("0.01")
+
+
+SCHEMA_SQL = """
+ALTER TABLE IF EXISTS itens_parados
+  ADD COLUMN IF NOT EXISTS modo varchar(20) NOT NULL DEFAULT 'PONTOS',
+  ADD COLUMN IF NOT EXISTS data_inicio date NULL,
+  ADD COLUMN IF NOT EXISTS data_fim date NULL,
+  ADD COLUMN IF NOT EXISTS multiplicador_pontos double precision NOT NULL DEFAULT 1.0;
+
+CREATE TABLE IF NOT EXISTS itens_parados_pontos_config (
+  id bigserial PRIMARY KEY,
+  emp varchar(30) NULL,
+  base_reais double precision NOT NULL DEFAULT 100.0,
+  valor_por_ponto double precision NOT NULL DEFAULT 10.0,
+  ativo boolean NOT NULL DEFAULT true,
+  criado_em timestamptz NOT NULL DEFAULT now(),
+  atualizado_em timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS itens_parados_pontos_bonus (
+  id bigserial PRIMARY KEY,
+  emp varchar(30) NULL,
+  min_pontos double precision NOT NULL DEFAULT 10.0,
+  bonus_valor double precision NOT NULL DEFAULT 50.0,
+  ativo boolean NOT NULL DEFAULT true,
+  criado_em timestamptz NOT NULL DEFAULT now(),
+  atualizado_em timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS ix_itens_parados_pontos_cfg_emp ON itens_parados_pontos_config(emp);
+CREATE INDEX IF NOT EXISTS ix_itens_parados_pontos_bonus_emp ON itens_parados_pontos_bonus(emp);
+CREATE INDEX IF NOT EXISTS ix_itens_parados_pontos_bonus_min ON itens_parados_pontos_bonus(min_pontos);
+"""
+
+
+def _table_exists(table_name: str) -> bool:
+    try:
+        return inspect(engine).has_table(table_name)
+    except Exception:
+        return False
+
+
+def _column_exists(table_name: str, column_name: str) -> bool:
+    try:
+        insp = inspect(engine)
+        return any(col.get("name") == column_name for col in insp.get_columns(table_name))
+    except Exception:
+        return False
+
+
+def _ensure_itens_parados_schema() -> None:
+    with engine.begin() as conn:
+        for stmt in [s.strip() for s in SCHEMA_SQL.split(';') if s.strip()]:
+            conn.execute(text(stmt))
+        if _table_exists('itens_parados_pontos_bonus') and _column_exists('itens_parados_pontos_bonus', 'min_pontos'):
+            conn.execute(text("ALTER TABLE itens_parados_pontos_bonus ALTER COLUMN min_pontos TYPE double precision USING min_pontos::double precision"))
+        conn.execute(text("""
+            INSERT INTO itens_parados_pontos_config(emp, base_reais, valor_por_ponto, ativo)
+            SELECT NULL, 100, 10.0, true
+            WHERE NOT EXISTS (SELECT 1 FROM itens_parados_pontos_config WHERE emp IS NULL AND ativo = true)
+        """))
+
 
 
 def _d(value) -> Decimal:
@@ -112,6 +175,7 @@ def _emp_scope_for_role(role: str, vendedor_alvo: str | None) -> list[str]:
 
 
 def _load_campaign_view():
+    _ensure_itens_parados_schema()
     red = _login_required() if _login_required else None
     if red:
         return {"redirect": red}
@@ -125,11 +189,20 @@ def _load_campaign_view():
         emp_supervisor = (_emp() if _emp else None) if role == "supervisor" else None
         if role == "supervisor" and not emp_supervisor:
             return {
-                "redirect": redirect(url_for("dashboard")),
-                "flash": (
-                    "Seu usuário supervisor não possui EMP cadastrada. Solicite ao ADMIN para cadastrar.",
-                    "warning",
-                ),
+                "mes": mes,
+                "ano": ano,
+                "role": role,
+                "vendedor": vendedor_alvo,
+                "vendedores_lista": vendedores_lista,
+                "emp_param": (request.args.get("emp") or "").strip(),
+                "emp_scopes": [],
+                "emp_cards": [],
+                "periodo_inicio": date(int(ano), int(mes), 1),
+                "periodo_fim": date(int(ano), int(mes), monthrange(int(ano), int(mes))[1]),
+                "data_inicio_param": "",
+                "data_fim_param": "",
+                "periodo_label": f"{date(int(ano), int(mes), 1).strftime('%d/%m/%Y')} até {date(int(ano), int(mes), monthrange(int(ano), int(mes))[1]).strftime('%d/%m/%Y')}",
+                "flash": ("Seu usuário supervisor não possui EMP cadastrada. Solicite ao ADMIN para cadastrar.", "warning"),
             }
 
         vendedores_lista = _get_vendedores_db(role, emp_supervisor) if _get_vendedores_db else []
@@ -143,11 +216,20 @@ def _load_campaign_view():
 
     if not emp_scopes:
         return {
-            "redirect": redirect(url_for("dashboard")),
-            "flash": (
-                "Não foi possível identificar a EMP para este usuário (sem vendas registradas).",
-                "warning",
-            ),
+            "mes": mes,
+            "ano": ano,
+            "role": role,
+            "vendedor": vendedor_alvo,
+            "vendedores_lista": vendedores_lista,
+            "emp_param": (request.args.get("emp") or "").strip(),
+            "emp_scopes": [],
+            "emp_cards": [],
+            "periodo_inicio": periodo_inicio,
+            "periodo_fim": periodo_fim,
+            "data_inicio_param": data_inicio_param,
+            "data_fim_param": data_fim_param,
+            "periodo_label": f"{periodo_inicio.strftime('%d/%m/%Y')} até {periodo_fim.strftime('%d/%m/%Y')}",
+            "flash": ("Nenhuma EMP com campanha ativa foi encontrada para o seu escopo atual.", "warning"),
         }
 
     with SessionLocal() as db:
