@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Any
 
-from sqlalchemy import String, cast, func, or_
+from sqlalchemy import String, and_, cast, func, or_
 
 from db import (
     SessionLocal,
@@ -25,6 +25,10 @@ from db import (
     CampanhaCombo,
     CampanhaComboItem,
     ItemParado,
+    ItensParadosPontosBonus,
+    ItensParadosPontosConfig,
+    ItensParadosPontosFechamento,
+    ItensParadosPontosResultado,
 )
 
 try:
@@ -96,6 +100,348 @@ def _periodo_bounds(ano: int, mes: int) -> tuple[date, date]:
 
 def _upper(v: Any) -> str:
     return str(v or "").strip().upper()
+
+
+def _status_precedence(statuses: list[str]) -> str:
+    vals = [str(s or '').strip().upper() for s in statuses if str(s or '').strip()]
+    if any(s == 'PENDENTE' for s in vals):
+        return 'PENDENTE'
+    if any(s in ('A PAGAR', 'A_PAGAR', 'APAGAR') for s in vals):
+        return 'A_PAGAR'
+    if any(s == 'PAGO' for s in vals):
+        return 'PAGO'
+    return vals[0] if vals else 'PENDENTE'
+
+
+def _build_itens_parados_rows(
+    db,
+    *,
+    ano: int,
+    mes: int,
+    emp: str,
+    vendedores: list[str],
+    incluir_zerados: bool = False,
+) -> list[UnifiedRow]:
+    periodo_ini, periodo_fim = _periodo_bounds(ano, mes)
+    rows: list[UnifiedRow] = []
+
+    # 1) Prioriza snapshots do modelo novo (fechamentos por pontos), quando existirem no mês.
+    try:
+        fechs = (
+            db.query(ItensParadosPontosFechamento)
+            .filter(
+                and_(ItensParadosPontosFechamento.data_inicio <= periodo_fim, ItensParadosPontosFechamento.data_fim >= periodo_ini),
+                or_(
+                    ItensParadosPontosFechamento.emp == str(emp),
+                    ItensParadosPontosFechamento.emp.is_(None),
+                    ItensParadosPontosFechamento.emp == '',
+                ),
+            )
+            .order_by(ItensParadosPontosFechamento.id.desc())
+            .all()
+        )
+    except Exception:
+        fechs = []
+
+    fech_ids = [int(getattr(f, 'id', 0) or 0) for f in fechs if int(getattr(f, 'id', 0) or 0) > 0]
+    if fech_ids:
+        try:
+            snap_rows = (
+                db.query(ItensParadosPontosResultado)
+                .filter(
+                    ItensParadosPontosResultado.fechamento_id.in_(fech_ids),
+                    ItensParadosPontosResultado.emp == str(emp),
+                    ItensParadosPontosResultado.vendedor.in_(vendedores),
+                )
+                .all()
+            )
+        except Exception:
+            snap_rows = []
+
+        if snap_rows:
+            acc: dict[str, dict[str, float | str | None]] = {}
+            for r in snap_rows:
+                vend = _upper(getattr(r, 'vendedor', ''))
+                if not vend:
+                    continue
+                a = acc.setdefault(vend, {
+                    'valor_vendido': 0.0,
+                    'pontos': 0.0,
+                    'valor_por_ponto': 0.0,
+                    'bonus_extra': 0.0,
+                    'valor_recompensa': 0.0,
+                    'statuses': [],
+                    'pago_em': None,
+                })
+                a['valor_vendido'] += _safe_float(getattr(r, 'valor_vendido', 0.0))
+                a['pontos'] += _safe_float(getattr(r, 'pontos', 0.0))
+                a['bonus_extra'] += _safe_float(getattr(r, 'bonus_extra', 0.0))
+                a['valor_recompensa'] += _safe_float(getattr(r, 'total', 0.0))
+                vpp = _safe_float(getattr(r, 'valor_por_ponto', 0.0))
+                if vpp > 0:
+                    a['valor_por_ponto'] = vpp
+                a['statuses'].append(str(getattr(r, 'status_pagamento', 'PENDENTE') or 'PENDENTE'))
+                if getattr(r, 'pago_em', None):
+                    a['pago_em'] = getattr(r, 'pago_em', None)
+
+            for vend, a in acc.items():
+                total = _safe_float(a.get('valor_recompensa'))
+                if (not incluir_zerados) and total <= 0:
+                    continue
+                bonus_extra = _safe_float(a.get('bonus_extra'))
+                titulo = 'ITENS PARADOS'
+                if bonus_extra > 0:
+                    titulo = f'ITENS PARADOS • bônus extra {bonus_extra:,.2f}'.replace(',', 'X').replace('.', ',').replace('X', '.')
+                rows.append(
+                    UnifiedRow(
+                        tipo='PARADO',
+                        competencia_ano=int(ano),
+                        competencia_mes=int(mes),
+                        emp=str(emp),
+                        vendedor=vend,
+                        titulo=titulo,
+                        recompensa_unit=_safe_float(a.get('valor_por_ponto')),
+                        valor_vendido=_safe_float(a.get('valor_vendido')),
+                        atingiu_gate=_safe_float(a.get('pontos')) > 0,
+                        qtd_base=_safe_float(a.get('pontos')),
+                        qtd_premiada=None,
+                        valor_recompensa=total,
+                        status_pagamento=_status_precedence(a.get('statuses') or []),
+                        pago_em=a.get('pago_em'),
+                        origem_id=None,
+                    )
+                )
+            if rows:
+                return rows
+
+    # 2) Modelo novo sem fechamento: cálculo ao vivo por pontos no mês.
+    try:
+        itens_all = (
+            db.query(ItemParado)
+            .filter(
+                ItemParado.ativo.is_(True),
+                ItemParado.emp == str(emp),
+                or_(ItemParado.data_inicio.is_(None), ItemParado.data_inicio <= periodo_fim),
+                or_(ItemParado.data_fim.is_(None), ItemParado.data_fim >= periodo_ini),
+            )
+            .all()
+        )
+    except Exception:
+        itens_all = []
+
+    itens_pontos = [it for it in itens_all if str(getattr(it, 'modo', 'PONTOS') or 'PONTOS').strip().upper() == 'PONTOS']
+    if itens_pontos:
+        try:
+            cfg_rows = (
+                db.query(ItensParadosPontosConfig)
+                .filter(ItensParadosPontosConfig.ativo.is_(True))
+                .order_by(ItensParadosPontosConfig.id.desc())
+                .all()
+            )
+        except Exception:
+            cfg_rows = []
+        try:
+            bonus_rows = (
+                db.query(ItensParadosPontosBonus)
+                .filter(ItensParadosPontosBonus.ativo.is_(True))
+                .order_by(ItensParadosPontosBonus.emp.asc().nullsfirst(), ItensParadosPontosBonus.min_pontos.asc())
+                .all()
+            )
+        except Exception:
+            bonus_rows = []
+
+        cfg_global = next((c for c in cfg_rows if getattr(c, 'emp', None) in (None, '', 'NULL')), None)
+        cfg_emp = next((c for c in cfg_rows if str(getattr(c, 'emp', '') or '').strip() == str(emp)), None)
+        base_reais = _safe_float(getattr(cfg_emp or cfg_global, 'base_reais', 100.0)) or 100.0
+        valor_por_ponto = _safe_float(getattr(cfg_emp or cfg_global, 'valor_por_ponto', 10.0)) or 10.0
+        bonus_list = [b for b in bonus_rows if str(getattr(b, 'emp', '') or '').strip() == str(emp)]
+        if not bonus_list:
+            bonus_list = [b for b in bonus_rows if getattr(b, 'emp', None) in (None, '', 'NULL')]
+
+        codigos = sorted({str(getattr(it, 'codigo', '') or '').strip() for it in itens_pontos if str(getattr(it, 'codigo', '') or '').strip()})
+        if codigos:
+            try:
+                vendas_rows = (
+                    db.query(
+                        Venda.vendedor,
+                        Venda.mestre,
+                        Venda.movimento,
+                        func.coalesce(func.sum(Venda.valor_total), 0.0),
+                    )
+                    .filter(
+                        Venda.emp == str(emp),
+                        Venda.vendedor.in_(vendedores),
+                        Venda.movimento >= periodo_ini,
+                        Venda.movimento <= periodo_fim,
+                        Venda.mov_tipo_movto == 'OA',
+                        Venda.mestre.in_(codigos),
+                    )
+                    .group_by(Venda.vendedor, Venda.mestre, Venda.movimento)
+                    .all()
+                )
+            except Exception:
+                vendas_rows = []
+
+            itens_idx: dict[str, list[Any]] = {}
+            for it in itens_pontos:
+                codigo = str(getattr(it, 'codigo', '') or '').strip()
+                if codigo:
+                    itens_idx.setdefault(codigo, []).append(it)
+
+            acc: dict[str, dict[str, float]] = {}
+            for vend, mestre, movimento, total in vendas_rows:
+                vend_u = _upper(vend)
+                codigo = str(mestre or '').strip()
+                if not vend_u or not codigo:
+                    continue
+                itens_match = itens_idx.get(codigo) or []
+                if not itens_match:
+                    continue
+                total_f = _safe_float(total)
+                if total_f <= 0:
+                    continue
+                pontos_sale = 0.0
+                for it in itens_match:
+                    di = getattr(it, 'data_inicio', None)
+                    df = getattr(it, 'data_fim', None)
+                    if di and movimento < di:
+                        continue
+                    if df and movimento > df:
+                        continue
+                    mult = _safe_float(getattr(it, 'multiplicador_pontos', 1.0)) or 1.0
+                    pontos_sale += (total_f / base_reais) * mult
+                if pontos_sale <= 0:
+                    continue
+                a = acc.setdefault(vend_u, {'valor_vendido': 0.0, 'pontos': 0.0})
+                a['valor_vendido'] += total_f
+                a['pontos'] += pontos_sale
+
+            for vend_u, a in acc.items():
+                pontos = _safe_float(a.get('pontos'))
+                bonus_extra = 0.0
+                for faixa in bonus_list:
+                    min_p = _safe_float(getattr(faixa, 'min_pontos', 0.0))
+                    bonus_v = _safe_float(getattr(faixa, 'bonus_valor', 0.0))
+                    if pontos >= min_p:
+                        bonus_extra = bonus_v
+                total = (pontos * valor_por_ponto) + bonus_extra
+                if (not incluir_zerados) and total <= 0:
+                    continue
+                titulo = 'ITENS PARADOS'
+                if bonus_extra > 0:
+                    titulo = f'ITENS PARADOS • bônus extra {bonus_extra:,.2f}'.replace(',', 'X').replace('.', ',').replace('X', '.')
+                rows.append(
+                    UnifiedRow(
+                        tipo='PARADO',
+                        competencia_ano=int(ano),
+                        competencia_mes=int(mes),
+                        emp=str(emp),
+                        vendedor=vend_u,
+                        titulo=titulo,
+                        recompensa_unit=valor_por_ponto,
+                        valor_vendido=_safe_float(a.get('valor_vendido')),
+                        atingiu_gate=pontos > 0,
+                        qtd_base=pontos,
+                        qtd_premiada=None,
+                        valor_recompensa=total,
+                        status_pagamento='PENDENTE',
+                        pago_em=None,
+                        origem_id=None,
+                    )
+                )
+            if rows:
+                return rows
+
+    # 3) Fallback legado: snapshot percentual antigo.
+    if ItemParadoResultado is not None:
+        try:
+            q_par = (
+                db.query(ItemParadoResultado)
+                .filter(
+                    ItemParadoResultado.competencia_ano == int(ano),
+                    ItemParadoResultado.competencia_mes == int(mes),
+                    ItemParadoResultado.emp == str(emp),
+                    ItemParadoResultado.vendedor.in_(vendedores),
+                )
+            )
+            if not incluir_zerados:
+                q_par = q_par.filter(ItemParadoResultado.valor_recompensa > 0)
+            par_all = q_par.all()
+        except Exception:
+            par_all = []
+        for r in par_all:
+            rows.append(
+                UnifiedRow(
+                    tipo='PARADO',
+                    competencia_ano=int(getattr(r, 'competencia_ano', ano)),
+                    competencia_mes=int(getattr(r, 'competencia_mes', mes)),
+                    emp=str(getattr(r, 'emp', emp)),
+                    vendedor=_upper(getattr(r, 'vendedor', '')),
+                    titulo=str(getattr(r, 'titulo', '') or '').strip() or 'Item Parado',
+                    atingiu_gate=True if _safe_float(getattr(r, 'base_valor_vendido', 0.0)) > 0 else False,
+                    qtd_base=_safe_float(getattr(r, 'base_valor_vendido', 0.0)),
+                    qtd_premiada=None,
+                    valor_recompensa=_safe_float(getattr(r, 'valor_recompensa', 0.0)),
+                    status_pagamento=str(getattr(r, 'status_pagamento', 'PENDENTE') or 'PENDENTE'),
+                    pago_em=getattr(r, 'pago_em', None),
+                    origem_id=int(getattr(r, 'item_parado_id', 0) or 0),
+                )
+            )
+        if rows:
+            return rows
+
+    # 4) Último fallback: cálculo percentual antigo ao vivo.
+    parados_defs = [it for it in itens_all if str(getattr(it, 'modo', 'PONTOS') or 'PONTOS').strip().upper() != 'PONTOS']
+    for ip in parados_defs:
+        codigo = (getattr(ip, 'codigo', '') or '').strip()
+        if not codigo:
+            continue
+        pct = _safe_float(getattr(ip, 'recompensa_pct', 0.0))
+        if pct <= 0:
+            continue
+
+        try:
+            base_rows = (
+                db.query(Venda.vendedor, func.sum(Venda.valor_total))
+                .filter(
+                    Venda.emp == str(emp),
+                    Venda.movimento >= periodo_ini,
+                    Venda.movimento <= periodo_fim,
+                    ~Venda.mov_tipo_movto.in_(['DS', 'CA']),
+                    Venda.mestre == codigo,
+                    Venda.vendedor.in_(vendedores),
+                )
+                .group_by(Venda.vendedor)
+                .all()
+            )
+        except Exception:
+            base_rows = []
+
+        for vend, base_val in base_rows:
+            vend_u = _upper(vend)
+            base_val_f = _safe_float(base_val)
+            valor = base_val_f * (pct / 100.0)
+            if (not incluir_zerados) and valor <= 0:
+                continue
+            rows.append(
+                UnifiedRow(
+                    tipo='PARADO',
+                    competencia_ano=int(ano),
+                    competencia_mes=int(mes),
+                    emp=str(emp),
+                    vendedor=vend_u,
+                    titulo=str(getattr(ip, 'descricao', '') or '').strip() or f'Item {codigo}',
+                    atingiu_gate=True if base_val_f > 0 else False,
+                    qtd_base=base_val_f,
+                    qtd_premiada=None,
+                    valor_recompensa=valor,
+                    status_pagamento='PENDENTE',
+                    pago_em=None,
+                    origem_id=int(getattr(ip, 'id', 0) or 0),
+                )
+            )
+
+    return rows
 
 
 def build_unified_rows(
@@ -381,95 +727,16 @@ def build_unified_rows(
                         rows.extend(item_rows)
 
             # -------- ITENS PARADOS --------
-            if usar_snapshot_itens_parados and ItemParadoResultado is not None:
-                try:
-                    q_par = (
-                        db.query(ItemParadoResultado)
-                        .filter(
-                            ItemParadoResultado.competencia_ano == int(ano),
-                            ItemParadoResultado.competencia_mes == int(mes),
-                            ItemParadoResultado.emp == str(emp),
-                            ItemParadoResultado.vendedor.in_(vendedores),
-                        )
-                    )
-                    if not incluir_zerados:
-                        q_par = q_par.filter(ItemParadoResultado.valor_recompensa > 0)
-                    par_all = q_par.all()
-                except Exception:
-                    par_all = []
-                for r in par_all:
-                    rows.append(
-                        UnifiedRow(
-                            tipo='PARADO',
-                            competencia_ano=int(getattr(r, 'competencia_ano', ano)),
-                            competencia_mes=int(getattr(r, 'competencia_mes', mes)),
-                            emp=str(getattr(r, 'emp', emp)),
-                            vendedor=_upper(getattr(r, 'vendedor', '')),
-                            titulo=str(getattr(r, 'titulo', '') or '').strip() or 'Item Parado',
-                            atingiu_gate=True if _safe_float(getattr(r, 'base_valor_vendido', 0.0)) > 0 else False,
-                            qtd_base=_safe_float(getattr(r, 'base_valor_vendido', 0.0)),
-                            qtd_premiada=None,
-                            valor_recompensa=_safe_float(getattr(r, 'valor_recompensa', 0.0)),
-                            status_pagamento=str(getattr(r, 'status_pagamento', 'PENDENTE') or 'PENDENTE'),
-                            pago_em=getattr(r, 'pago_em', None),
-                            origem_id=int(getattr(r, 'item_parado_id', 0) or 0),
-                        )
-                    )
-            else:
-                parados_defs = (
-                    db.query(ItemParado)
-                    .filter(ItemParado.ativo.is_(True), ItemParado.emp == str(emp))
-                    .order_by(ItemParado.descricao.asc())
-                    .all()
+            rows.extend(
+                _build_itens_parados_rows(
+                    db,
+                    ano=int(ano),
+                    mes=int(mes),
+                    emp=str(emp),
+                    vendedores=vendedores,
+                    incluir_zerados=incluir_zerados,
                 )
-                for ip in parados_defs:
-                    codigo = (getattr(ip, 'codigo', '') or '').strip()
-                    if not codigo:
-                        continue
-                    pct = _safe_float(getattr(ip, 'recompensa_pct', 0.0))
-                    if pct <= 0:
-                        continue
-
-                    base_rows = (
-                        db.query(Venda.vendedor, func.sum(Venda.valor_total))
-                        .filter(
-                            Venda.emp == str(emp),
-                            Venda.movimento >= periodo_ini,
-                            Venda.movimento <= periodo_fim,
-                            ~Venda.mov_tipo_movto.in_(['DS', 'CA']),
-                            Venda.mestre == codigo,
-                            Venda.vendedor.in_(vendedores),
-                        )
-                        .group_by(Venda.vendedor)
-                        .all()
-                    )
-
-                    for vend, base_val in base_rows:
-                        vend_u = _upper(vend)
-                        base_val_f = _safe_float(base_val)
-                        valor = base_val_f * (pct / 100.0)
-                        if (not incluir_zerados) and valor <= 0:
-                            continue
-                        rows.append(
-                            UnifiedRow(
-                                tipo='PARADO',
-                                competencia_ano=int(ano),
-                                competencia_mes=int(mes),
-                                emp=str(emp),
-                                vendedor=vend_u,
-                                titulo=str(getattr(ip, 'descricao', '') or '').strip() or f'Item {codigo}',
-                                atingiu_gate=True if base_val_f > 0 else False,
-                                qtd_base=base_val_f,
-                                qtd_premiada=None,
-                                valor_recompensa=valor,
-                                status_pagamento='PENDENTE',
-                                pago_em=None,
-                                origem_id=int(getattr(ip, 'id', 0) or 0),
-                            )
-                        )
-
-    rows.sort(key=lambda r: (r.emp, r.vendedor, r.tipo, r.titulo))
-    return rows
+            )
 
 
 def aggregate_for_charts(rows: list[UnifiedRow]) -> dict[str, Any]:
