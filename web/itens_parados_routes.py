@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from calendar import monthrange
 from datetime import date, datetime, timedelta
+import threading
+import time
 from decimal import Decimal, ROUND_HALF_UP
 from io import BytesIO
 from typing import Callable
@@ -33,6 +35,10 @@ _periodo_bounds: Callable[[int, int], tuple[object, object]] | None = None
 
 
 TWOPLACES = Decimal("0.01")
+_SCHEMA_LOCK = threading.Lock()
+_SCHEMA_READY = False
+_SCHEMA_READY_AT = 0.0
+_SCHEMA_TTL_SECONDS = 1800
 
 
 SCHEMA_SQL = """
@@ -83,18 +89,30 @@ def _column_exists(table_name: str, column_name: str) -> bool:
         return False
 
 
-def _ensure_itens_parados_schema() -> None:
-    with engine.begin() as conn:
-        for stmt in [s.strip() for s in SCHEMA_SQL.split(';') if s.strip()]:
-            conn.execute(text(stmt))
-        if _table_exists('itens_parados_pontos_bonus') and _column_exists('itens_parados_pontos_bonus', 'min_pontos'):
-            conn.execute(text("ALTER TABLE itens_parados_pontos_bonus ALTER COLUMN min_pontos TYPE double precision USING min_pontos::double precision"))
-        conn.execute(text("""
-            INSERT INTO itens_parados_pontos_config(emp, base_reais, valor_por_ponto, ativo)
-            SELECT NULL, 100, 10.0, true
-            WHERE NOT EXISTS (SELECT 1 FROM itens_parados_pontos_config WHERE emp IS NULL AND ativo = true)
-        """))
+def _ensure_itens_parados_schema(force: bool = False) -> None:
+    global _SCHEMA_READY, _SCHEMA_READY_AT
+    now = time.time()
+    if not force and _SCHEMA_READY and (now - _SCHEMA_READY_AT) < _SCHEMA_TTL_SECONDS:
+        return
 
+    with _SCHEMA_LOCK:
+        now = time.time()
+        if not force and _SCHEMA_READY and (now - _SCHEMA_READY_AT) < _SCHEMA_TTL_SECONDS:
+            return
+
+        with engine.begin() as conn:
+            for stmt in [s.strip() for s in SCHEMA_SQL.split(';') if s.strip()]:
+                conn.execute(text(stmt))
+            if _table_exists('itens_parados_pontos_bonus') and _column_exists('itens_parados_pontos_bonus', 'min_pontos'):
+                conn.execute(text("ALTER TABLE itens_parados_pontos_bonus ALTER COLUMN min_pontos TYPE double precision USING min_pontos::double precision"))
+            conn.execute(text("""
+                INSERT INTO itens_parados_pontos_config(emp, base_reais, valor_por_ponto, ativo)
+                SELECT NULL, 100, 10.0, true
+                WHERE NOT EXISTS (SELECT 1 FROM itens_parados_pontos_config WHERE emp IS NULL AND ativo = true)
+            """))
+
+        _SCHEMA_READY = True
+        _SCHEMA_READY_AT = time.time()
 
 
 def _d(value) -> Decimal:

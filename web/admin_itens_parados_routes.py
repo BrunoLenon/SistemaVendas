@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+import threading
+import time
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Callable, Type
 
@@ -19,6 +21,10 @@ from db import (
 )
 
 TWOPLACES = Decimal("0.01")
+_SCHEMA_LOCK = threading.Lock()
+_SCHEMA_READY = False
+_SCHEMA_READY_AT = 0.0
+_SCHEMA_TTL_SECONDS = 1800
 
 
 SCHEMA_SQL = """
@@ -101,33 +107,46 @@ def _column_exists(table_name: str, column_name: str) -> bool:
         return False
 
 
-def _ensure_itens_parados_schema() -> None:
-    with engine.begin() as conn:
-        for stmt in [s.strip() for s in SCHEMA_SQL.split(';') if s.strip()]:
-            conn.execute(text(stmt))
+def _ensure_itens_parados_schema(force: bool = False) -> None:
+    global _SCHEMA_READY, _SCHEMA_READY_AT
+    now = time.time()
+    if not force and _SCHEMA_READY and (now - _SCHEMA_READY_AT) < _SCHEMA_TTL_SECONDS:
+        return
 
-        if _table_exists('itens_parados_pontos_bonus') and _column_exists('itens_parados_pontos_bonus', 'min_pontos'):
-            conn.execute(text("ALTER TABLE itens_parados_pontos_bonus ALTER COLUMN min_pontos TYPE double precision USING min_pontos::double precision"))
-        if _table_exists('itens_parados_pontos_resultados'):
-            if _column_exists('itens_parados_pontos_resultados', 'pontos'):
-                conn.execute(text("ALTER TABLE itens_parados_pontos_resultados ALTER COLUMN pontos TYPE double precision USING pontos::double precision"))
-            if _column_exists('itens_parados_pontos_resultados', 'base_reais'):
-                conn.execute(text("ALTER TABLE itens_parados_pontos_resultados ALTER COLUMN base_reais TYPE double precision USING base_reais::double precision"))
+    with _SCHEMA_LOCK:
+        now = time.time()
+        if not force and _SCHEMA_READY and (now - _SCHEMA_READY_AT) < _SCHEMA_TTL_SECONDS:
+            return
 
-        conn.execute(text("""
-            INSERT INTO itens_parados_pontos_config(emp, base_reais, valor_por_ponto, ativo)
-            SELECT NULL, 100, 10.0, true
-            WHERE NOT EXISTS (SELECT 1 FROM itens_parados_pontos_config WHERE emp IS NULL AND ativo = true)
-        """))
-        conn.execute(text("""
-            INSERT INTO itens_parados_pontos_bonus(emp, min_pontos, bonus_valor, ativo)
-            SELECT NULL, v.min_pontos, v.bonus_valor, true
-            FROM (VALUES (10.0, 50.0), (20.0, 120.0), (30.0, 200.0)) AS v(min_pontos, bonus_valor)
-            WHERE NOT EXISTS (
-                SELECT 1 FROM itens_parados_pontos_bonus b
-                WHERE b.emp IS NULL AND b.min_pontos = v.min_pontos
-            )
-        """))
+        with engine.begin() as conn:
+            for stmt in [s.strip() for s in SCHEMA_SQL.split(';') if s.strip()]:
+                conn.execute(text(stmt))
+
+            if _table_exists('itens_parados_pontos_bonus') and _column_exists('itens_parados_pontos_bonus', 'min_pontos'):
+                conn.execute(text("ALTER TABLE itens_parados_pontos_bonus ALTER COLUMN min_pontos TYPE double precision USING min_pontos::double precision"))
+            if _table_exists('itens_parados_pontos_resultados'):
+                if _column_exists('itens_parados_pontos_resultados', 'pontos'):
+                    conn.execute(text("ALTER TABLE itens_parados_pontos_resultados ALTER COLUMN pontos TYPE double precision USING pontos::double precision"))
+                if _column_exists('itens_parados_pontos_resultados', 'base_reais'):
+                    conn.execute(text("ALTER TABLE itens_parados_pontos_resultados ALTER COLUMN base_reais TYPE double precision USING base_reais::double precision"))
+
+            conn.execute(text("""
+                INSERT INTO itens_parados_pontos_config(emp, base_reais, valor_por_ponto, ativo)
+                SELECT NULL, 100, 10.0, true
+                WHERE NOT EXISTS (SELECT 1 FROM itens_parados_pontos_config WHERE emp IS NULL AND ativo = true)
+            """))
+            conn.execute(text("""
+                INSERT INTO itens_parados_pontos_bonus(emp, min_pontos, bonus_valor, ativo)
+                SELECT NULL, v.min_pontos, v.bonus_valor, true
+                FROM (VALUES (10.0, 50.0), (20.0, 120.0), (30.0, 200.0)) AS v(min_pontos, bonus_valor)
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM itens_parados_pontos_bonus b
+                    WHERE b.emp IS NULL AND b.min_pontos = v.min_pontos
+                )
+            """))
+
+        _SCHEMA_READY = True
+        _SCHEMA_READY_AT = time.time()
 
 
 
@@ -426,6 +445,8 @@ def register_admin_itens_parados_routes(
                             acc[(emp_key, vend_key)]["valor_vendido"] += total_dec
                             acc[(emp_key, vend_key)]["pontos"] += pontos_sale
 
+                        resultados_bulk = []
+                        utc_now = datetime.utcnow()
                         for (emp_key, vend_key), data in acc.items():
                             bonus_list = bonus_by_emp.get(emp_key) or bonus_global
                             pontos = data["pontos"]
@@ -436,7 +457,7 @@ def register_admin_itens_parados_routes(
                                     bonus_extra = _d(getattr(faixa, "bonus_valor", 0) or 0)
                             total_final = bonus_base + bonus_extra
 
-                            db.add(
+                            resultados_bulk.append(
                                 ItensParadosPontosResultado(
                                     fechamento_id=int(fechamento.id),
                                     emp=emp_key,
@@ -448,11 +469,13 @@ def register_admin_itens_parados_routes(
                                     bonus_extra=float(_round2(bonus_extra)),
                                     total=float(_round2(total_final)),
                                     status_pagamento="PENDENTE",
-                                    criado_em=datetime.utcnow(),
-                                    atualizado_em=datetime.utcnow(),
+                                    criado_em=utc_now,
+                                    atualizado_em=utc_now,
                                 )
                             )
 
+                        if resultados_bulk:
+                            db.bulk_save_objects(resultados_bulk)
                         db.commit()
                         return redirect(url_for("admin_itens_parados", ver_fech=int(fechamento.id), ok="1"))
 
@@ -467,7 +490,31 @@ def register_admin_itens_parados_routes(
             if request.args.get("ok") == "1" and not erro:
                 ok = "Fechamento criado com sucesso."
 
-            itens = db.query(ItemParado).order_by(ItemParado.emp.asc(), ItemParado.codigo.asc(), ItemParado.id.desc()).all()
+            filtro_emp = (request.args.get("f_emp") or "").strip()
+            filtro_codigo = (request.args.get("f_codigo") or "").strip()
+            filtro_status = (request.args.get("f_status") or "").strip().lower()
+            pagina = max(int(request.args.get("page") or 1), 1)
+            limite = 150
+
+            itens_q = db.query(ItemParado)
+            if filtro_emp:
+                itens_q = itens_q.filter(ItemParado.emp == filtro_emp)
+            if filtro_codigo:
+                itens_q = itens_q.filter(ItemParado.codigo.ilike(f"%{filtro_codigo}%"))
+            if filtro_status == "ativos":
+                itens_q = itens_q.filter(ItemParado.ativo.is_(True))
+            elif filtro_status == "inativos":
+                itens_q = itens_q.filter(ItemParado.ativo.is_(False))
+
+            total_itens = itens_q.count()
+            itens = (
+                itens_q
+                .order_by(ItemParado.emp.asc(), ItemParado.codigo.asc(), ItemParado.id.desc())
+                .offset((pagina - 1) * limite)
+                .limit(limite)
+                .all()
+            )
+
             cfg_by_emp = (
                 db.query(ItensParadosPontosConfig)
                 .filter(ItensParadosPontosConfig.emp.isnot(None))
@@ -478,6 +525,7 @@ def register_admin_itens_parados_routes(
                 db.query(ItensParadosPontosConfig)
                 .filter(ItensParadosPontosConfig.emp.is_(None))
                 .order_by(ItensParadosPontosConfig.id.desc())
+                .limit(5)
                 .all()
             )
             bonus_by_emp = (
@@ -495,7 +543,7 @@ def register_admin_itens_parados_routes(
             fechamentos = (
                 db.query(ItensParadosPontosFechamento)
                 .order_by(ItensParadosPontosFechamento.id.desc())
-                .limit(30)
+                .limit(20)
                 .all()
             )
             res_fech = []
@@ -504,8 +552,11 @@ def register_admin_itens_parados_routes(
                     db.query(ItensParadosPontosResultado)
                     .filter(ItensParadosPontosResultado.fechamento_id == int(ver_fech))
                     .order_by(ItensParadosPontosResultado.emp.asc(), ItensParadosPontosResultado.total.desc())
+                    .limit(500)
                     .all()
                 )
+
+        total_paginas = max((total_itens + limite - 1) // limite, 1)
 
         return render_template(
             "admin_itens_parados.html",
@@ -520,6 +571,13 @@ def register_admin_itens_parados_routes(
             fechamentos=fechamentos,
             ver_fech=ver_fech,
             res_fech=res_fech,
+            filtro_emp=filtro_emp,
+            filtro_codigo=filtro_codigo,
+            filtro_status=filtro_status,
+            pagina=pagina,
+            limite=limite,
+            total_itens=total_itens,
+            total_paginas=total_paginas,
         )
 
     app.add_url_rule(

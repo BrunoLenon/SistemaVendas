@@ -139,6 +139,27 @@
     </div>
   </div>
 
+
+  <div class="card shadow-sm mb-3">
+    <div class="card-body">
+      <form method="get" class="row g-2 align-items-end">
+        <div class="col-md-3"><label class="form-label">Filtrar EMP</label><input class="form-control" name="f_emp" value="{{ filtro_emp or '' }}"></div>
+        <div class="col-md-3"><label class="form-label">Filtrar código</label><input class="form-control" name="f_codigo" value="{{ filtro_codigo or '' }}"></div>
+        <div class="col-md-3"><label class="form-label">Status</label>
+          <select class="form-select" name="f_status">
+            <option value="" {% if not filtro_status %}selected{% endif %}>Todos</option>
+            <option value="ativos" {% if filtro_status == 'ativos' %}selected{% endif %}>Ativos</option>
+            <option value="inativos" {% if filtro_status == 'inativos' %}selected{% endif %}>Inativos</option>
+          </select>
+        </div>
+        <div class="col-md-3 d-flex gap-2">
+          <button class="btn btn-outline-primary w-100">Filtrar</button>
+          <a class="btn btn-outline-secondary" href="{{ url_for('admin_itens_parados') }}">Limpar</a>
+        </div>
+      </form>
+      <div class="small text-muted mt-2">Mostrando até {{ limite }} registros por página • total encontrado: {{ total_itens }}</div>
+    </div>
+  </div>
   <div class="card shadow-sm mb-3">
     <div class="card-body p-0">
       <div class="table-responsive">
@@ -177,6 +198,20 @@
       </div>
     </div>
   </div>
+
+  {% if total_paginas > 1 %}
+  <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <div class="text-muted small">Página {{ pagina }} de {{ total_paginas }}</div>
+    <div class="btn-group">
+      {% if pagina > 1 %}
+        <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin_itens_parados', f_emp=filtro_emp, f_codigo=filtro_codigo, f_status=filtro_status, page=pagina-1) }}">Anterior</a>
+      {% endif %}
+      {% if pagina < total_paginas %}
+        <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin_itens_parados', f_emp=filtro_emp, f_codigo=filtro_codigo, f_status=filtro_status, page=pagina+1) }}">Próxima</a>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
 
   <div class="row g-3">
     <div class="col-12 col-xl-6">
