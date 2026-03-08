@@ -599,6 +599,8 @@ def build_relatorio_campanhas_unificado_context(
             incluir_zerados=False,
             usar_snapshot_itens_parados=True,
         )
+        if rows is None:
+            rows = []
     except Exception as e:
         try:
             deps.SessionLocal().rollback()
@@ -607,10 +609,10 @@ def build_relatorio_campanhas_unificado_context(
         print(f"[RELATORIO_UNIFICADO] erro ao montar rows: {e}")
         rows = []
 
-    charts = aggregate_for_charts(rows)
+    charts = aggregate_for_charts(rows or [])
 
     # Stats básicos
-    total_linhas = len(rows)
+    total_linhas = len(rows or [])
     total_recompensa = charts.get("total_recompensa", 0.0)
 
     return {
