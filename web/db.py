@@ -283,17 +283,23 @@ class ItemParado(Base):
 
     id = Column(Integer, primary_key=True)
 
-    # Empresa/loja (EMP) a que o relatório pertence
+    # Empresa/loja (EMP) a que o item/campanha pertence
     emp = Column(String(30), nullable=False, index=True)
 
-    # Código do produto (vamos comparar com Venda.mestre)
+    # Código do produto (cruza com Venda.mestre)
     codigo = Column(String(120), nullable=False, index=True)
 
     descricao = Column(String(255), nullable=True)
     quantidade = Column(Integer, nullable=True)
 
-    # Percentual de recompensa (ex: 10 para 10%)
+    # Campo legado (modo percentual). Mantido por compatibilidade.
     recompensa_pct = Column(Float, nullable=False, default=0.0)
+
+    # Novo modo oficial: campanha por pontos.
+    modo = Column(String(20), nullable=False, default="PONTOS")
+    multiplicador_pontos = Column(Float, nullable=False, default=1.0)
+    data_inicio = Column(Date, nullable=True)
+    data_fim = Column(Date, nullable=True)
 
     ativo = Column(Boolean, nullable=False, default=True)
 
@@ -305,6 +311,79 @@ class ItemParado(Base):
     )
 
 
+class ItensParadosPontosConfig(Base):
+    __tablename__ = "itens_parados_pontos_config"
+
+    id = Column(Integer, primary_key=True)
+    emp = Column(String(30), nullable=True, index=True)  # NULL = global
+    base_reais = Column(Float, nullable=False, default=100.0)
+    valor_por_ponto = Column(Float, nullable=False, default=10.0)
+    ativo = Column(Boolean, nullable=False, default=True)
+    criado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
+    atualizado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        Index("ix_itens_parados_pontos_cfg_emp", "emp"),
+    )
+
+
+class ItensParadosPontosBonus(Base):
+    __tablename__ = "itens_parados_pontos_bonus"
+
+    id = Column(Integer, primary_key=True)
+    emp = Column(String(30), nullable=True, index=True)  # NULL = global
+    min_pontos = Column(Float, nullable=False, default=10.0)
+    bonus_valor = Column(Float, nullable=False, default=50.0)
+    ativo = Column(Boolean, nullable=False, default=True)
+    criado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
+    atualizado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        Index("ix_itens_parados_pontos_bonus_emp", "emp"),
+        Index("ix_itens_parados_pontos_bonus_min", "min_pontos"),
+    )
+
+
+class ItensParadosPontosFechamento(Base):
+    __tablename__ = "itens_parados_pontos_fechamentos"
+
+    id = Column(Integer, primary_key=True)
+    emp = Column(String(30), nullable=True, index=True)  # NULL = fechamento multi-EMP
+    data_inicio = Column(Date, nullable=False)
+    data_fim = Column(Date, nullable=False)
+    criado_por = Column(String(80), nullable=True)
+    criado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        Index("ix_itens_parados_pontos_fech_emp", "emp"),
+        Index("ix_itens_parados_pontos_fech_ini", "data_inicio"),
+        Index("ix_itens_parados_pontos_fech_fim", "data_fim"),
+    )
+
+
+class ItensParadosPontosResultado(Base):
+    __tablename__ = "itens_parados_pontos_resultados"
+
+    id = Column(Integer, primary_key=True)
+    fechamento_id = Column(Integer, nullable=False, index=True)
+    emp = Column(String(30), nullable=False, index=True)
+    vendedor = Column(String(80), nullable=False, index=True)
+    valor_vendido = Column(Float, nullable=False, default=0.0)
+    pontos = Column(Float, nullable=False, default=0.0)
+    base_reais = Column(Float, nullable=False, default=100.0)
+    valor_por_ponto = Column(Float, nullable=False, default=10.0)
+    bonus_extra = Column(Float, nullable=False, default=0.0)
+    total = Column(Float, nullable=False, default=0.0)
+    status_pagamento = Column(String(20), nullable=False, default="PENDENTE")
+    pago_em = Column(DateTime, nullable=True)
+    criado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
+    atualizado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        Index("ix_itens_parados_pontos_res_emp", "emp"),
+        Index("ix_itens_parados_pontos_res_vend", "vendedor"),
+        Index("ix_itens_parados_pontos_res_fech", "fechamento_id"),
+    )
 
 
 class ItemParadoResultado(Base):
