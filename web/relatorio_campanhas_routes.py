@@ -195,7 +195,12 @@ def register_relatorio_campanhas_routes(
                 })
 
             g["campanhas"] = resto + combo_cards
-            g["campanhas"].sort(key=lambda c: ({"PENDENTE": 0, "A_PAGAR": 1, "PAGO": 2}.get(c["status"], 9), -float(c.get("valor") or 0), str(c.get("titulo") or "")))
+            def _camp_sort_key(c):
+                tipo = str(c.get("tipo") or "").strip().upper()
+                tipo_ord = 9 if tipo == 'PARADO' else (5 if tipo == 'COMBO_CARD' else 1)
+                status_ord = {"PENDENTE": 0, "A_PAGAR": 1, "PAGO": 2}.get(c.get("status"), 9)
+                return (tipo_ord, status_ord, -float(c.get("valor") or 0), str(c.get("titulo") or ""))
+            g["campanhas"].sort(key=_camp_sort_key)
             g["status"] = _agg_status(g["status_counts"])
             g["campanhas_count"] = len(g["campanhas"])
 
