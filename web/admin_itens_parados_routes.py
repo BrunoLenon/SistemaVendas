@@ -450,11 +450,13 @@ def register_admin_itens_parados_routes(
                         for (emp_key, vend_key), data in acc.items():
                             bonus_list = bonus_by_emp.get(emp_key) or bonus_global
                             pontos = data["pontos"]
-                            bonus_base = pontos * data["valor_por_ponto"]
+                            elegivel_pagamento = pontos >= MIN_PONTOS_PAGAMENTO_ITENS_PARADOS
+                            bonus_base = (pontos * data["valor_por_ponto"]) if elegivel_pagamento else Decimal("0")
                             bonus_extra = Decimal("0")
-                            for faixa in bonus_list:
-                                if pontos >= _d(getattr(faixa, "min_pontos", 0) or 0):
-                                    bonus_extra = _d(getattr(faixa, "bonus_valor", 0) or 0)
+                            if elegivel_pagamento:
+                                for faixa in bonus_list:
+                                    if pontos >= _d(getattr(faixa, "min_pontos", 0) or 0):
+                                        bonus_extra = _d(getattr(faixa, "bonus_valor", 0) or 0)
                             total_final = bonus_base + bonus_extra
 
                             resultados_bulk.append(

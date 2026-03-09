@@ -418,12 +418,14 @@ def _load_campaign_view():
                 continue
 
             pontos = data["pontos"]
-            bonus_base = pontos * valor_por_ponto
+            elegivel_pagamento = pontos >= MIN_PONTOS_PAGAMENTO_ITENS_PARADOS
+            bonus_base = (pontos * valor_por_ponto) if elegivel_pagamento else Decimal("0")
             bonus_extra = Decimal("0")
-            for faixa in bonus_list:
-                min_pontos = _d(getattr(faixa, "min_pontos", 0) or 0)
-                if pontos >= min_pontos:
-                    bonus_extra = _d(getattr(faixa, "bonus_valor", 0) or 0)
+            if elegivel_pagamento:
+                for faixa in bonus_list:
+                    min_pontos = _d(getattr(faixa, "min_pontos", 0) or 0)
+                    if pontos >= min_pontos:
+                        bonus_extra = _d(getattr(faixa, "bonus_valor", 0) or 0)
             total_final = bonus_base + bonus_extra
 
             vendido = data["valor_vendido"]
@@ -484,7 +486,7 @@ def _load_campaign_view():
                 "total_total": float(_round2(total_total_emp)),
                 "total_vendedores": len(ranking_rows),
                 "total_itens": len(itens_card),
-                "regra_descricao": f"1 ponto a cada {_fmt_brl(base_reais)} vendidos • {_fmt_brl(valor_por_ponto)} por ponto",
+                "regra_descricao": f"1 ponto a cada {_fmt_brl(base_reais)} vendidos • {_fmt_brl(valor_por_ponto)} por ponto • pagamento só a partir de 10,00 pontos",
             }
         )
 
