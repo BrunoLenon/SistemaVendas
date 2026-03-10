@@ -1,4 +1,0 @@
-Substitua o arquivo web/app.py pelo deste ZIP.
-
-Mudança: filtros de vendedores agora consideram apenas usuarios.role='vendedor' e, quando aplicável, vínculo em usuario_emps (ativo=True) ou fallback usuarios.emp.
-Impacto: remove vendedores 'fantasmas' (presentes em vendas mas sem usuário) dos dropdowns e relatórios.
