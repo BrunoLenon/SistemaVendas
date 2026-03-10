@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-from flask import request, render_template
+from flask import request, render_template, session
 from sqlalchemy import text, and_, or_
 
 
@@ -223,6 +223,8 @@ def register_admin_combos_routes(
             default_data_fim=default_data_fim,
             erro=erro,
             ok=ok,
+            role=(session.get("role") or ""),
+            emp=(session.get("emp") or ""),
         )
 
     app.add_url_rule("/admin/combos", endpoint="admin_combos", view_func=admin_combos, methods=["GET", "POST"])
