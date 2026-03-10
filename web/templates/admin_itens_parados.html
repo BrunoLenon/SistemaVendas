@@ -157,7 +157,7 @@
           <a class="btn btn-outline-secondary" href="{{ url_for('admin_itens_parados') }}">Limpar</a>
         </div>
       </form>
-      <div class="small text-muted mt-2">Mostrando até {{ limite }} registros por página • total encontrado: {{ total_itens }}</div>
+      <div class="small text-muted mt-2">Mostrando até {{ limite }} registros por página • total encontrado: {{ total_itens_label }}</div>
     </div>
   </div>
   <div class="card shadow-sm mb-3">
@@ -199,14 +199,14 @@
     </div>
   </div>
 
-  {% if total_paginas > 1 %}
+  {% if pagina > 1 or has_next %}
   <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
     <div class="text-muted small">Página {{ pagina }} de {{ total_paginas }}</div>
     <div class="btn-group">
       {% if pagina > 1 %}
         <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin_itens_parados', f_emp=filtro_emp, f_codigo=filtro_codigo, f_status=filtro_status, page=pagina-1) }}">Anterior</a>
       {% endif %}
-      {% if pagina < total_paginas %}
+      {% if has_next %}
         <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin_itens_parados', f_emp=filtro_emp, f_codigo=filtro_codigo, f_status=filtro_status, page=pagina+1) }}">Próxima</a>
       {% endif %}
     </div>

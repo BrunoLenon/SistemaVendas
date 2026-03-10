@@ -639,14 +639,17 @@ def register_admin_itens_parados_routes(
             elif filtro_status == "inativos":
                 itens_q = itens_q.filter(ItemParado.ativo.is_(False))
 
-            total_itens = itens_q.count()
-            itens = (
+            offset = (pagina - 1) * limite
+            itens_page = (
                 itens_q
                 .order_by(ItemParado.emp.asc(), ItemParado.codigo.asc(), ItemParado.id.desc())
-                .offset((pagina - 1) * limite)
-                .limit(limite)
+                .offset(offset)
+                .limit(limite + 1)
                 .all()
             )
+            has_next = len(itens_page) > limite
+            itens = itens_page[:limite]
+            total_itens = None if has_next else (offset + len(itens))
 
             aux_data = _load_admin_itens_parados_aux(db)
             cfg_by_emp = aux_data["cfg_by_emp"]
@@ -664,7 +667,7 @@ def register_admin_itens_parados_routes(
                     .all()
                 )
 
-        total_paginas = max((total_itens + limite - 1) // limite, 1)
+        total_paginas = max((total_itens + limite - 1) // limite, 1) if total_itens is not None else max(pagina + (1 if has_next else 0), 1)
 
         return render_template(
             "admin_itens_parados.html",
@@ -686,6 +689,8 @@ def register_admin_itens_parados_routes(
             limite=limite,
             total_itens=total_itens,
             total_paginas=total_paginas,
+            has_next=has_next,
+            total_itens_label=(str(total_itens) if total_itens is not None else f"mais de {offset + len(itens)}"),
         )
 
     app.add_url_rule(
