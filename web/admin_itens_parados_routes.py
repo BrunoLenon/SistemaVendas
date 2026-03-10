@@ -220,6 +220,209 @@ def _round2(value: Decimal) -> Decimal:
     return value.quantize(TWOPLACES, rounding=ROUND_HALF_UP)
 
 
+def _norm_emp(value) -> str | None:
+    if value in (None, "", "NULL"):
+        return None
+    txt = str(value).strip()
+    return txt or None
+
+
+def _load_fechamento_rules(db):
+    cfg_rows = (
+        db.query(ItensParadosPontosConfig)
+        .filter(ItensParadosPontosConfig.ativo.is_(True))
+        .order_by(ItensParadosPontosConfig.id.desc())
+        .all()
+    )
+    bonus_rows = (
+        db.query(ItensParadosPontosBonus)
+        .filter(ItensParadosPontosBonus.ativo.is_(True))
+        .order_by(ItensParadosPontosBonus.emp.asc().nullsfirst(), ItensParadosPontosBonus.min_pontos.asc())
+        .all()
+    )
+
+    cfg_global = {"base_reais": Decimal("100"), "valor_por_ponto": Decimal("10")}
+    cfg_by_emp: dict[str, dict[str, Decimal]] = {}
+
+    for cfg in cfg_rows:
+        key = _norm_emp(getattr(cfg, "emp", None))
+        base_reais = _d(getattr(cfg, "base_reais", None) or 100)
+        valor_por_ponto = _d(getattr(cfg, "valor_por_ponto", None) or 10)
+        if base_reais <= 0:
+            base_reais = Decimal("100")
+        data = {"base_reais": base_reais, "valor_por_ponto": valor_por_ponto}
+        if key is None:
+            cfg_global = data
+        elif key not in cfg_by_emp:
+            cfg_by_emp[key] = data
+
+    bonus_global: list[tuple[Decimal, Decimal]] = []
+    bonus_by_emp: dict[str, list[tuple[Decimal, Decimal]]] = {}
+    for bonus in bonus_rows:
+        item = (
+            _d(getattr(bonus, "min_pontos", None) or 0),
+            _d(getattr(bonus, "bonus_valor", None) or 0),
+        )
+        key = _norm_emp(getattr(bonus, "emp", None))
+        if key is None:
+            bonus_global.append(item)
+        else:
+            bonus_by_emp.setdefault(key, []).append(item)
+
+    return cfg_global, cfg_by_emp, bonus_global, bonus_by_emp
+
+
+def _build_itens_factor_index(itens_rows, cfg_global, cfg_by_emp):
+    itens_idx: dict[tuple[str, str], list[tuple[date | None, date | None, Decimal]]] = {}
+    for emp_v, codigo_v, data_inicio_v, data_fim_v, multiplicador_v in itens_rows:
+        emp_key = _norm_emp(emp_v)
+        codigo_key = (codigo_v or "").strip()
+        if not emp_key or not codigo_key:
+            continue
+        cfg = cfg_by_emp.get(emp_key) or cfg_global
+        base_reais = cfg.get("base_reais") or Decimal("100")
+        if base_reais <= 0:
+            base_reais = Decimal("100")
+        mult = _d(multiplicador_v or 1.0)
+        if mult <= 0:
+            mult = Decimal("1")
+        pontos_por_real = mult / base_reais
+        itens_idx.setdefault((emp_key, codigo_key), []).append((data_inicio_v, data_fim_v, pontos_por_real))
+    return itens_idx
+
+
+def _iter_vendas_agrupadas(db, emps, di, df, codigos):
+    query = (
+        db.query(
+            Venda.emp,
+            Venda.vendedor,
+            Venda.mestre,
+            Venda.movimento,
+            func.coalesce(func.sum(Venda.valor_total), 0.0),
+        )
+        .filter(Venda.emp.in_(emps))
+        .filter(Venda.movimento >= di)
+        .filter(Venda.movimento <= df)
+        .filter(Venda.mov_tipo_movto == "OA")
+        .filter(Venda.mestre.in_(codigos))
+        .group_by(Venda.emp, Venda.vendedor, Venda.mestre, Venda.movimento)
+    )
+    return query.yield_per(2000)
+
+
+def _processar_fechamento_itens_parados(db, *, ItemParado, emps, di, df, usuario_logado_fn):
+    cfg_global, cfg_by_emp, bonus_global, bonus_by_emp = _load_fechamento_rules(db)
+
+    itens_rows = (
+        db.query(
+            ItemParado.emp,
+            ItemParado.codigo,
+            ItemParado.data_inicio,
+            ItemParado.data_fim,
+            ItemParado.multiplicador_pontos,
+        )
+        .filter(ItemParado.emp.in_(emps))
+        .filter(ItemParado.ativo.is_(True))
+        .filter(or_(ItemParado.data_inicio.is_(None), ItemParado.data_inicio <= df))
+        .filter(or_(ItemParado.data_fim.is_(None), ItemParado.data_fim >= di))
+        .all()
+    )
+    if not itens_rows:
+        raise ValueError("Nenhum item ativo foi encontrado no período informado.")
+
+    codigos = sorted({(codigo or "").strip() for _, codigo, _, _, _ in itens_rows if (codigo or "").strip()})
+    if not codigos:
+        raise ValueError("Nenhum código de item válido foi encontrado para o período informado.")
+
+    itens_idx = _build_itens_factor_index(itens_rows, cfg_global, cfg_by_emp)
+
+    fechamento = ItensParadosPontosFechamento(
+        emp=emps[0] if len(emps) == 1 else None,
+        data_inicio=di,
+        data_fim=df,
+        criado_por=str(usuario_logado_fn() or ""),
+        criado_em=datetime.utcnow(),
+    )
+    db.add(fechamento)
+    db.flush()
+
+    acc: dict[tuple[str, str], dict[str, Decimal]] = {}
+    for emp_v, vend, mestre, movimento, total in _iter_vendas_agrupadas(db, emps, di, df, codigos):
+        emp_key = _norm_emp(emp_v) or ""
+        vend_key = (vend or "").strip().upper()
+        cod_key = (mestre or "").strip()
+        if not emp_key or not vend_key or not cod_key:
+            continue
+
+        ranges = itens_idx.get((emp_key, cod_key), [])
+        if not ranges:
+            continue
+
+        total_dec = _d(total)
+        if total_dec <= 0:
+            continue
+
+        pontos_factor = Decimal("0")
+        for data_inicio_v, data_fim_v, pontos_por_real in ranges:
+            if data_inicio_v and movimento < data_inicio_v:
+                continue
+            if data_fim_v and movimento > data_fim_v:
+                continue
+            pontos_factor += pontos_por_real
+
+        if pontos_factor <= 0:
+            continue
+
+        cfg = cfg_by_emp.get(emp_key) or cfg_global
+        bucket = acc.setdefault(
+            (emp_key, vend_key),
+            {
+                "valor_vendido": Decimal("0"),
+                "pontos": Decimal("0"),
+                "base_reais": cfg["base_reais"],
+                "valor_por_ponto": cfg["valor_por_ponto"],
+            },
+        )
+        bucket["valor_vendido"] += total_dec
+        bucket["pontos"] += total_dec * pontos_factor
+
+    resultados_bulk = []
+    utc_now = datetime.utcnow()
+    for (emp_key, vend_key), data in acc.items():
+        bonus_list = bonus_by_emp.get(emp_key) or bonus_global
+        pontos = data["pontos"]
+        elegivel_pagamento = pontos >= MIN_PONTOS_PAGAMENTO_ITENS_PARADOS
+        bonus_base = (pontos * data["valor_por_ponto"]) if elegivel_pagamento else Decimal("0")
+        bonus_extra = Decimal("0")
+        if elegivel_pagamento:
+            for min_pontos, bonus_valor in bonus_list:
+                if pontos >= min_pontos:
+                    bonus_extra = bonus_valor
+        total_final = bonus_base + bonus_extra
+
+        resultados_bulk.append(
+            ItensParadosPontosResultado(
+                fechamento_id=int(fechamento.id),
+                emp=emp_key,
+                vendedor=vend_key,
+                valor_vendido=float(_round2(data["valor_vendido"])),
+                pontos=float(_round2(pontos)),
+                base_reais=float(_round2(data["base_reais"])),
+                valor_por_ponto=float(_round2(data["valor_por_ponto"])),
+                bonus_extra=float(_round2(bonus_extra)),
+                total=float(_round2(total_final)),
+                status_pagamento="PENDENTE",
+                criado_em=utc_now,
+                atualizado_em=utc_now,
+            )
+        )
+
+    if resultados_bulk:
+        db.bulk_save_objects(resultados_bulk)
+
+    return fechamento
+
+
 
 def register_admin_itens_parados_routes(
     app,
@@ -397,153 +600,14 @@ def register_admin_itens_parados_routes(
                         if not emps:
                             raise ValueError("Não existem EMPs com itens parados ativos.")
 
-                        fechamento = ItensParadosPontosFechamento(
-                            emp=emp,
-                            data_inicio=di,
-                            data_fim=df,
-                            criado_por=str(usuario_logado_fn() or ""),
-                            criado_em=datetime.utcnow(),
+                        fechamento = _processar_fechamento_itens_parados(
+                            db,
+                            ItemParado=ItemParado,
+                            emps=emps,
+                            di=di,
+                            df=df,
+                            usuario_logado_fn=usuario_logado_fn,
                         )
-                        db.add(fechamento)
-                        db.commit()
-
-                        cfg_rows = (
-                            db.query(ItensParadosPontosConfig)
-                            .filter(ItensParadosPontosConfig.ativo.is_(True))
-                            .order_by(ItensParadosPontosConfig.id.desc())
-                            .all()
-                        )
-                        bonus_rows = (
-                            db.query(ItensParadosPontosBonus)
-                            .filter(ItensParadosPontosBonus.ativo.is_(True))
-                            .order_by(ItensParadosPontosBonus.emp.asc().nullsfirst(), ItensParadosPontosBonus.min_pontos.asc())
-                            .all()
-                        )
-                        cfg_global = next((c for c in cfg_rows if c.emp in (None, "", "NULL")), None)
-                        cfg_by_emp = {}
-                        for cfg in cfg_rows:
-                            key = str(cfg.emp).strip() if cfg.emp not in (None, "") else None
-                            if key is not None and key not in cfg_by_emp:
-                                cfg_by_emp[key] = cfg
-                        bonus_global = [b for b in bonus_rows if b.emp in (None, "", "NULL")]
-                        bonus_by_emp = {}
-                        for b in bonus_rows:
-                            if b.emp in (None, "", "NULL"):
-                                continue
-                            bonus_by_emp.setdefault(str(b.emp).strip(), []).append(b)
-
-                        itens_all = (
-                            db.query(ItemParado)
-                            .filter(ItemParado.emp.in_(emps))
-                            .filter(ItemParado.ativo.is_(True))
-                            .filter(or_(ItemParado.data_inicio.is_(None), ItemParado.data_inicio <= df))
-                            .filter(or_(ItemParado.data_fim.is_(None), ItemParado.data_fim >= di))
-                            .all()
-                        )
-                        if not itens_all:
-                            raise ValueError("Nenhum item ativo foi encontrado no período informado.")
-
-                        codigos = sorted({(it.codigo or "").strip() for it in itens_all if (it.codigo or "").strip()})
-                        vendas_rows = (
-                            db.query(
-                                Venda.emp,
-                                Venda.vendedor,
-                                Venda.mestre,
-                                Venda.movimento,
-                                func.coalesce(func.sum(Venda.valor_total), 0.0),
-                            )
-                            .filter(Venda.emp.in_(emps))
-                            .filter(Venda.movimento >= di)
-                            .filter(Venda.movimento <= df)
-                            .filter(Venda.mov_tipo_movto == "OA")
-                            .filter(Venda.mestre.in_(codigos))
-                            .group_by(Venda.emp, Venda.vendedor, Venda.mestre, Venda.movimento)
-                            .all()
-                        )
-
-                        itens_idx = {}
-                        for it in itens_all:
-                            itens_idx.setdefault((str(it.emp).strip(), (it.codigo or "").strip()), []).append(it)
-
-                        acc = {}
-                        for emp_v, vend, mestre, movimento, total in vendas_rows:
-                            emp_key = str(emp_v).strip() if emp_v is not None else ""
-                            vend_key = (vend or "").strip().upper()
-                            cod_key = (mestre or "").strip()
-                            if not emp_key or not vend_key or not cod_key:
-                                continue
-                            itens_match = itens_idx.get((emp_key, cod_key), [])
-                            if not itens_match:
-                                continue
-
-                            total_dec = _d(total)
-                            pontos_sale = Decimal("0")
-                            for it in itens_match:
-                                mov = movimento
-                                if it.data_inicio and mov < it.data_inicio:
-                                    continue
-                                if it.data_fim and mov > it.data_fim:
-                                    continue
-                                cfg_emp = cfg_by_emp.get(emp_key)
-                                base_reais = _d(getattr(cfg_emp, "base_reais", None) or getattr(cfg_global, "base_reais", 100) or 100)
-                                if base_reais <= 0:
-                                    base_reais = Decimal("100")
-                                mult = _d(getattr(it, "multiplicador_pontos", 1.0) or 1.0)
-                                if mult <= 0:
-                                    mult = Decimal("1")
-                                pontos_sale += (total_dec / base_reais) * mult
-
-                            if pontos_sale <= 0:
-                                continue
-
-                            cfg_emp = cfg_by_emp.get(emp_key)
-                            base_reais = _d(getattr(cfg_emp, "base_reais", None) or getattr(cfg_global, "base_reais", 100) or 100)
-                            valor_por_ponto = _d(getattr(cfg_emp, "valor_por_ponto", None) or getattr(cfg_global, "valor_por_ponto", 10.0) or 10.0)
-                            acc.setdefault(
-                                (emp_key, vend_key),
-                                {
-                                    "valor_vendido": Decimal("0"),
-                                    "pontos": Decimal("0"),
-                                    "base_reais": base_reais,
-                                    "valor_por_ponto": valor_por_ponto,
-                                },
-                            )
-                            acc[(emp_key, vend_key)]["valor_vendido"] += total_dec
-                            acc[(emp_key, vend_key)]["pontos"] += pontos_sale
-
-                        resultados_bulk = []
-                        utc_now = datetime.utcnow()
-                        for (emp_key, vend_key), data in acc.items():
-                            bonus_list = bonus_by_emp.get(emp_key) or bonus_global
-                            pontos = data["pontos"]
-                            elegivel_pagamento = pontos >= MIN_PONTOS_PAGAMENTO_ITENS_PARADOS
-                            bonus_base = (pontos * data["valor_por_ponto"]) if elegivel_pagamento else Decimal("0")
-                            bonus_extra = Decimal("0")
-                            if elegivel_pagamento:
-                                for faixa in bonus_list:
-                                    if pontos >= _d(getattr(faixa, "min_pontos", 0) or 0):
-                                        bonus_extra = _d(getattr(faixa, "bonus_valor", 0) or 0)
-                            total_final = bonus_base + bonus_extra
-
-                            resultados_bulk.append(
-                                ItensParadosPontosResultado(
-                                    fechamento_id=int(fechamento.id),
-                                    emp=emp_key,
-                                    vendedor=vend_key,
-                                    valor_vendido=float(_round2(data["valor_vendido"])),
-                                    pontos=float(_round2(pontos)),
-                                    base_reais=float(_round2(data["base_reais"])),
-                                    valor_por_ponto=float(_round2(data["valor_por_ponto"])),
-                                    bonus_extra=float(_round2(bonus_extra)),
-                                    total=float(_round2(total_final)),
-                                    status_pagamento="PENDENTE",
-                                    criado_em=utc_now,
-                                    atualizado_em=utc_now,
-                                )
-                            )
-
-                        if resultados_bulk:
-                            db.bulk_save_objects(resultados_bulk)
                         db.commit()
                         _invalidate_admin_itens_parados_aux_cache()
                         return redirect(url_for("admin_itens_parados", ver_fech=int(fechamento.id), ok="1"))
