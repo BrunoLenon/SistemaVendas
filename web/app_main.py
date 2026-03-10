@@ -412,17 +412,30 @@ def _current_branding(db) -> dict:
     )
     if theme:
         ver = theme.updated_at.isoformat() if theme.updated_at else ""
+        login_logo_left = _get_setting(db, "branding.login_logo_left_url", theme.logo_url)
+        login_logo_right = _get_setting(db, "branding.login_logo_right_url", theme.logo_url)
         return {
             "logo_url": theme.logo_url,
             "favicon_url": theme.favicon_url,
             "theme_name": theme.name,
             "version": ver,
+            "login_logo_left_url": login_logo_left,
+            "login_logo_right_url": login_logo_right,
         }
     # Padrão
     logo = _get_setting(db, "branding.default_logo_url")
     favicon = _get_setting(db, "branding.default_favicon_url")
     ver = _get_setting(db, "branding.default_version", "")
-    return {"logo_url": logo, "favicon_url": favicon, "theme_name": "default", "version": ver}
+    login_logo_left = _get_setting(db, "branding.login_logo_left_url", logo)
+    login_logo_right = _get_setting(db, "branding.login_logo_right_url", logo)
+    return {
+        "logo_url": logo,
+        "favicon_url": favicon,
+        "theme_name": "default",
+        "version": ver,
+        "login_logo_left_url": login_logo_left,
+        "login_logo_right_url": login_logo_right,
+    }
 
 @app.context_processor
 def inject_branding():
