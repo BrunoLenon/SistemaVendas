@@ -171,6 +171,7 @@
       <li><hr class="dropdown-divider"></li>
     {% endif %}
     <li><a class="dropdown-item" href="/itens_parados">🧊 Itens parados</a></li>
+    <li><a class="dropdown-item" href="/campanhas">🎯 Campanhas</a></li>
     <li><a class="dropdown-item" href="/relatorios/campanhas">📊 Relatório Campanhas</a></li>
     <li><a class="dropdown-item" href="/relatorios/cidades-clientes">🏙️ Cidades &amp; Clientes</a></li>
     <li><hr class="dropdown-divider"></li>
@@ -231,7 +232,7 @@
         <div class="sv-card-body">
           <div class="d-flex justify-content-between align-items-center mb-2">
             <h5 class="m-0">Ranking por EMP</h5>
-            <span class="text-muted small">Clique para abrir o relatório no período</span>
+            <span class="text-muted small">Clique para abrir Campanhas no período</span>
           </div>
           <div class="sv-tablewrap">
             <table class="sv-table align-middle">
@@ -245,7 +246,7 @@
               </thead>
               <tbody>
                 {% for row in (dados_admin.ranking_emp_list or []) %}
-                  <tr class="sv-row-click" onclick="window.location='/relatorios/campanhas?emp={{ row.emp }}&mes={{ mes }}&ano={{ ano }}'">
+                  <tr class="sv-row-click" onclick="window.location='/campanhas?emp={{ row.emp }}&mes={{ mes }}&ano={{ ano }}'">
                     <td class="fw-semibold">{{ row.emp or "—" }}</td>
                     <td class="text-end fw-semibold">R$ {{ row.valor_atual|brl_rs }}</td>
                     <td class="text-end text-muted">R$ {{ row.valor_bruto|brl_rs }}</td>
