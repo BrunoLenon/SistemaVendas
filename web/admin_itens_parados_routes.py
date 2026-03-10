@@ -25,6 +25,9 @@ _SCHEMA_LOCK = threading.Lock()
 _SCHEMA_READY = False
 _SCHEMA_READY_AT = 0.0
 _SCHEMA_TTL_SECONDS = 1800
+_AUX_CACHE_LOCK = threading.Lock()
+_AUX_CACHE = {"payload": None, "ready_at": 0.0}
+_AUX_CACHE_TTL_SECONDS = 60
 
 
 SCHEMA_SQL = """
@@ -150,6 +153,61 @@ def _ensure_itens_parados_schema(force: bool = False) -> None:
 
 
 
+def _invalidate_admin_itens_parados_aux_cache() -> None:
+    with _AUX_CACHE_LOCK:
+        _AUX_CACHE["payload"] = None
+        _AUX_CACHE["ready_at"] = 0.0
+
+
+def _load_admin_itens_parados_aux(db, *, force: bool = False) -> dict:
+    now = time.time()
+    if not force:
+        with _AUX_CACHE_LOCK:
+            payload = _AUX_CACHE.get("payload")
+            ready_at = float(_AUX_CACHE.get("ready_at") or 0.0)
+            if payload is not None and (now - ready_at) < _AUX_CACHE_TTL_SECONDS:
+                return payload
+
+    payload = {
+        "cfg_by_emp": (
+            db.query(ItensParadosPontosConfig)
+            .filter(ItensParadosPontosConfig.emp.isnot(None))
+            .order_by(ItensParadosPontosConfig.emp.asc(), ItensParadosPontosConfig.id.desc())
+            .all()
+        ),
+        "cfg_global": (
+            db.query(ItensParadosPontosConfig)
+            .filter(ItensParadosPontosConfig.emp.is_(None))
+            .order_by(ItensParadosPontosConfig.id.desc())
+            .limit(5)
+            .all()
+        ),
+        "bonus_by_emp": (
+            db.query(ItensParadosPontosBonus)
+            .filter(ItensParadosPontosBonus.emp.isnot(None))
+            .order_by(ItensParadosPontosBonus.emp.asc(), ItensParadosPontosBonus.min_pontos.asc())
+            .all()
+        ),
+        "bonus_global": (
+            db.query(ItensParadosPontosBonus)
+            .filter(ItensParadosPontosBonus.emp.is_(None))
+            .order_by(ItensParadosPontosBonus.min_pontos.asc())
+            .all()
+        ),
+        "fechamentos": (
+            db.query(ItensParadosPontosFechamento)
+            .order_by(ItensParadosPontosFechamento.id.desc())
+            .limit(20)
+            .all()
+        ),
+    }
+
+    with _AUX_CACHE_LOCK:
+        _AUX_CACHE["payload"] = payload
+        _AUX_CACHE["ready_at"] = time.time()
+    return payload
+
+
 def _d(value) -> Decimal:
     try:
         return Decimal(str(value or 0))
@@ -172,6 +230,8 @@ def register_admin_itens_parados_routes(
     admin_required_fn: Callable[[], object | None],
     usuario_logado_fn: Callable[[], object],
 ):
+    _ensure_itens_parados_schema()
+
     def admin_itens_parados():
         red = login_required_fn()
         if red:
@@ -182,7 +242,6 @@ def register_admin_itens_parados_routes(
 
         erro = None
         ok = None
-        _ensure_itens_parados_schema()
         ver_fech = (request.args.get("ver_fech") or "").strip()
 
         with SessionLocal() as db:
@@ -228,6 +287,7 @@ def register_admin_itens_parados_routes(
                             )
                         )
                         db.commit()
+                        _invalidate_admin_itens_parados_aux_cache()
                         ok = "Item parado cadastrado com sucesso."
 
                     elif acao == "toggle_item":
@@ -238,6 +298,7 @@ def register_admin_itens_parados_routes(
                         it.ativo = not bool(it.ativo)
                         it.atualizado_em = datetime.utcnow()
                         db.commit()
+                        _invalidate_admin_itens_parados_aux_cache()
                         ok = "Status do item atualizado."
 
                     elif acao == "excluir_item":
@@ -247,6 +308,7 @@ def register_admin_itens_parados_routes(
                             raise ValueError("Item não encontrado.")
                         db.delete(it)
                         db.commit()
+                        _invalidate_admin_itens_parados_aux_cache()
                         ok = "Item removido."
 
                     elif acao == "salvar_config":
@@ -271,6 +333,7 @@ def register_admin_itens_parados_routes(
                             )
                         )
                         db.commit()
+                        _invalidate_admin_itens_parados_aux_cache()
                         ok = "Configuração salva."
 
                     elif acao == "criar_bonus":
@@ -291,6 +354,7 @@ def register_admin_itens_parados_routes(
                             )
                         )
                         db.commit()
+                        _invalidate_admin_itens_parados_aux_cache()
                         ok = "Faixa de bônus cadastrada."
 
                     elif acao == "toggle_bonus":
@@ -301,6 +365,7 @@ def register_admin_itens_parados_routes(
                         bonus.ativo = not bool(bonus.ativo)
                         bonus.atualizado_em = datetime.utcnow()
                         db.commit()
+                        _invalidate_admin_itens_parados_aux_cache()
                         ok = "Status da faixa atualizado."
 
                     elif acao == "excluir_bonus":
@@ -310,6 +375,7 @@ def register_admin_itens_parados_routes(
                             raise ValueError("Faixa de bônus não encontrada.")
                         db.delete(bonus)
                         db.commit()
+                        _invalidate_admin_itens_parados_aux_cache()
                         ok = "Faixa de bônus removida."
 
                     elif acao == "fechar_periodo":
@@ -479,6 +545,7 @@ def register_admin_itens_parados_routes(
                         if resultados_bulk:
                             db.bulk_save_objects(resultados_bulk)
                         db.commit()
+                        _invalidate_admin_itens_parados_aux_cache()
                         return redirect(url_for("admin_itens_parados", ver_fech=int(fechamento.id), ok="1"))
 
                     else:
@@ -517,37 +584,12 @@ def register_admin_itens_parados_routes(
                 .all()
             )
 
-            cfg_by_emp = (
-                db.query(ItensParadosPontosConfig)
-                .filter(ItensParadosPontosConfig.emp.isnot(None))
-                .order_by(ItensParadosPontosConfig.emp.asc(), ItensParadosPontosConfig.id.desc())
-                .all()
-            )
-            cfg_global = (
-                db.query(ItensParadosPontosConfig)
-                .filter(ItensParadosPontosConfig.emp.is_(None))
-                .order_by(ItensParadosPontosConfig.id.desc())
-                .limit(5)
-                .all()
-            )
-            bonus_by_emp = (
-                db.query(ItensParadosPontosBonus)
-                .filter(ItensParadosPontosBonus.emp.isnot(None))
-                .order_by(ItensParadosPontosBonus.emp.asc(), ItensParadosPontosBonus.min_pontos.asc())
-                .all()
-            )
-            bonus_global = (
-                db.query(ItensParadosPontosBonus)
-                .filter(ItensParadosPontosBonus.emp.is_(None))
-                .order_by(ItensParadosPontosBonus.min_pontos.asc())
-                .all()
-            )
-            fechamentos = (
-                db.query(ItensParadosPontosFechamento)
-                .order_by(ItensParadosPontosFechamento.id.desc())
-                .limit(20)
-                .all()
-            )
+            aux_data = _load_admin_itens_parados_aux(db)
+            cfg_by_emp = aux_data["cfg_by_emp"]
+            cfg_global = aux_data["cfg_global"]
+            bonus_by_emp = aux_data["bonus_by_emp"]
+            bonus_global = aux_data["bonus_global"]
+            fechamentos = aux_data["fechamentos"]
             res_fech = []
             if ver_fech.isdigit():
                 res_fech = (
