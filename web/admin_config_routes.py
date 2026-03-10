@@ -6,7 +6,7 @@ import mimetypes
 from datetime import date, datetime
 
 import requests
-from flask import request, render_template
+from flask import request, render_template, session
 
 from auth_helpers import _admin_required
 from branding import _get_setting, _set_setting, _current_branding
