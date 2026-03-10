@@ -11,7 +11,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Callable, Any
 
-from flask import jsonify, render_template, request
+from flask import jsonify, render_template, request, session
 from sqlalchemy import case, extract, func, or_, text
 
 from db import SessionLocal, Venda
@@ -297,6 +297,8 @@ def register_relatorio_cidades_clientes_routes(
                 emp_filtro=emp_filtro,
                 vendedor_filtro=vendedor_filtro,
                 emp_cards=emp_cards,
+                role=role,
+                emp=(" / ".join(allowed_emps_fn()) if role == "supervisor" and allowed_emps_fn() else emp_usuario),
             )
         finally:
             db.close()

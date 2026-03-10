@@ -8,7 +8,7 @@ import time
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Callable, Type
 
-from flask import current_app, redirect, render_template, request, url_for
+from flask import current_app, redirect, render_template, request, session, url_for
 from sqlalchemy import func, inspect, or_, text
 
 from db import (
@@ -692,6 +692,8 @@ def register_admin_itens_parados_routes(
             total_paginas=total_paginas,
             has_next=has_next,
             total_itens_label=(str(total_itens) if total_itens is not None else f"mais de {offset + len(itens)}"),
+            role=(session.get("role") or ""),
+            emp=session.get("emp"),
         )
 
     app.add_url_rule(

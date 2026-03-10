@@ -263,6 +263,8 @@ def register_admin_config_routes(app):
             default_favicon=default_favicon,
             themes=themes,
             today=today.isoformat(),
+            role=(session.get("role") or ""),
+            emp=session.get("emp"),
         )
 
     app.add_url_rule(

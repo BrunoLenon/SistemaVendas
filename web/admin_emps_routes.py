@@ -99,6 +99,8 @@ def register_admin_emps_routes(
             erro=erro,
             ok=ok,
             emps=emps,
+            role=(session.get("role") or ""),
+            emp=session.get("emp"),
         )
 
     # Mantém endpoint = "admin_emps" (backward compatible com url_for)

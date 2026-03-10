@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 
-from flask import flash, redirect, render_template, request, url_for
+from flask import flash, redirect, render_template, request, session, url_for
 
 
 def register_admin_importar_routes(
@@ -27,7 +27,7 @@ def register_admin_importar_routes(
             return red
 
         if request.method == "GET":
-            return render_template("admin_importar.html")
+            return render_template("admin_importar.html", role=(session.get("role") or ""), emp=session.get("emp"))
 
         arquivo = request.files.get("arquivo")
         if not arquivo or not arquivo.filename:

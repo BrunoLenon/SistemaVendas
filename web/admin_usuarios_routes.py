@@ -361,6 +361,8 @@ def admin_usuarios():
         emps_cadastradas=emps_cadastradas,
         emp_labels=emp_labels,
         emps_disponiveis=emps_disponiveis,
+        role=(session.get("role") or ""),
+        emp=session.get("emp"),
     )
 
 
