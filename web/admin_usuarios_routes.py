@@ -10,7 +10,7 @@ Extraído do app.py como refatoração pura (sem alterar comportamento externo).
 import re
 from typing import Callable, Any
 
-from flask import render_template, request
+from flask import render_template, request, session
 from werkzeug.security import generate_password_hash
 
 from db import SessionLocal, Usuario, UsuarioEmp, Emp, Venda
@@ -362,7 +362,7 @@ def admin_usuarios():
         emp_labels=emp_labels,
         emps_disponiveis=emps_disponiveis,
         role=(session.get("role") or ""),
-        emp=session.get("emp"),
+        emp=(session.get("emp") or ""),
     )
 
 
