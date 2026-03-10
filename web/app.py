@@ -2314,6 +2314,7 @@ _campanhas_deps = CampanhasDeps(
 from admin_config_routes import register_admin_config_routes
 from relatorio_campanhas_routes import register_relatorio_campanhas_routes
 from relatorio_cidades_clientes_routes import register_relatorio_cidades_clientes_routes
+from campanhas_qtd_routes import register_campanhas_qtd_routes
 from admin_usuarios_routes import register_admin_usuarios_routes
 from admin_emps_routes import register_admin_emps_routes
 from admin_importar_routes import register_admin_importar_routes
@@ -2347,6 +2348,19 @@ register_relatorio_cidades_clientes_routes(
     emp_fn=_emp,
     allowed_emps_fn=_allowed_emps,
     usuario_logado_fn=_usuario_logado,
+)
+register_campanhas_qtd_routes(
+    app,
+    deps=_campanhas_deps,
+    SessionLocal=SessionLocal,
+    CampanhaQtdResultado=CampanhaQtdResultado,
+    login_required_fn=_login_required,
+    role_fn=_role,
+    emp_fn=_emp,
+    usuario_logado_fn=_usuario_logado,
+    get_vendedores_db_fn=_get_vendedores_db,
+    get_emps_vendedor_fn=_get_emps_vendedor,
+    resolver_emp_scope_fn=_resolver_emp_scope_para_usuario,
 )
 
 # Admin / Cadastros
