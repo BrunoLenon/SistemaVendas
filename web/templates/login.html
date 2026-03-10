@@ -7,8 +7,9 @@
   <div class="sv-auth-grid">
     <!-- Logo esquerda -->
     <div class="sv-auth-logo sv-glass">
-      {% if branding and branding.logo_url %}
-        <img class="sv-auth-logo-img" src="{{ branding.logo_url }}{% if branding.version %}?v={{ branding.version }}{% endif %}" alt="Logo">
+      {% set login_left_logo = branding.login_logo_left_url if branding and branding.login_logo_left_url else (branding.logo_url if branding else None) %}
+      {% if login_left_logo %}
+        <img class="sv-auth-logo-img" src="{{ login_left_logo }}{% if branding and branding.version %}?v={{ branding.version }}{% endif %}" alt="Logo esquerda">
       {% else %}
         <div class="sv-logo-fallback">SV</div>
       {% endif %}
@@ -39,8 +40,9 @@
 
     <!-- Logo direita -->
     <div class="sv-auth-logo sv-glass">
-      {% if branding and branding.logo_url %}
-        <img class="sv-auth-logo-img" src="{{ branding.logo_url }}{% if branding.version %}?v={{ branding.version }}{% endif %}" alt="Logo">
+      {% set login_right_logo = branding.login_logo_right_url if branding and branding.login_logo_right_url else (branding.logo_url if branding else None) %}
+      {% if login_right_logo %}
+        <img class="sv-auth-logo-img" src="{{ login_right_logo }}{% if branding and branding.version %}?v={{ branding.version }}{% endif %}" alt="Logo direita">
       {% else %}
         <div class="sv-logo-fallback">SV</div>
       {% endif %}
