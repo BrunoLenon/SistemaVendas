@@ -35,6 +35,7 @@ _periodo_bounds: Callable[[int, int], tuple[object, object]] | None = None
 
 
 TWOPLACES = Decimal("0.01")
+MIN_PONTOS_PAGAMENTO_ITENS_PARADOS = Decimal("10")
 _SCHEMA_LOCK = threading.Lock()
 _SCHEMA_READY = False
 _SCHEMA_READY_AT = 0.0

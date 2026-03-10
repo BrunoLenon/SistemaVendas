@@ -21,6 +21,7 @@ from db import (
 )
 
 TWOPLACES = Decimal("0.01")
+MIN_PONTOS_PAGAMENTO_ITENS_PARADOS = Decimal("10")
 _SCHEMA_LOCK = threading.Lock()
 _SCHEMA_READY = False
 _SCHEMA_READY_AT = 0.0
@@ -274,7 +275,6 @@ def _load_fechamento_rules(db):
 
 def _build_itens_factor_index(itens_rows, cfg_global, cfg_by_emp):
     itens_idx: dict[tuple[str, str], list[tuple[date | None, date | None, Decimal]]] = {}
-    codigos_by_emp: dict[str, set[str]] = {}
     for emp_v, codigo_v, data_inicio_v, data_fim_v, multiplicador_v in itens_rows:
         emp_key = _norm_emp(emp_v)
         codigo_key = (codigo_v or "").strip()
@@ -289,26 +289,24 @@ def _build_itens_factor_index(itens_rows, cfg_global, cfg_by_emp):
             mult = Decimal("1")
         pontos_por_real = mult / base_reais
         itens_idx.setdefault((emp_key, codigo_key), []).append((data_inicio_v, data_fim_v, pontos_por_real))
-        codigos_by_emp.setdefault(emp_key, set()).add(codigo_key)
-    return itens_idx, codigos_by_emp
+    return itens_idx
 
 
-def _iter_vendas_agrupadas_emp(db, emp, di, df, codigos_emp):
-    if not emp or not codigos_emp:
-        return ()
+def _iter_vendas_agrupadas(db, emps, di, df, codigos):
     query = (
         db.query(
+            Venda.emp,
             Venda.vendedor,
             Venda.mestre,
             Venda.movimento,
             func.coalesce(func.sum(Venda.valor_total), 0.0),
         )
-        .filter(Venda.emp == emp)
+        .filter(Venda.emp.in_(emps))
         .filter(Venda.movimento >= di)
         .filter(Venda.movimento <= df)
         .filter(Venda.mov_tipo_movto == "OA")
-        .filter(Venda.mestre.in_(codigos_emp))
-        .group_by(Venda.vendedor, Venda.mestre, Venda.movimento)
+        .filter(Venda.mestre.in_(codigos))
+        .group_by(Venda.emp, Venda.vendedor, Venda.mestre, Venda.movimento)
     )
     return query.yield_per(2000)
 
@@ -337,7 +335,7 @@ def _processar_fechamento_itens_parados(db, *, ItemParado, emps, di, df, usuario
     if not codigos:
         raise ValueError("Nenhum código de item válido foi encontrado para o período informado.")
 
-    itens_idx, codigos_by_emp = _build_itens_factor_index(itens_rows, cfg_global, cfg_by_emp)
+    itens_idx = _build_itens_factor_index(itens_rows, cfg_global, cfg_by_emp)
 
     fechamento = ItensParadosPontosFechamento(
         emp=emps[0] if len(emps) == 1 else None,
@@ -350,51 +348,44 @@ def _processar_fechamento_itens_parados(db, *, ItemParado, emps, di, df, usuario
     db.flush()
 
     acc: dict[tuple[str, str], dict[str, Decimal]] = {}
-    for emp_key in emps:
-        emp_norm = _norm_emp(emp_key) or ""
-        if not emp_norm:
+    for emp_v, vend, mestre, movimento, total in _iter_vendas_agrupadas(db, emps, di, df, codigos):
+        emp_key = _norm_emp(emp_v) or ""
+        vend_key = (vend or "").strip().upper()
+        cod_key = (mestre or "").strip()
+        if not emp_key or not vend_key or not cod_key:
             continue
-        codigos_emp = sorted(codigos_by_emp.get(emp_norm) or ())
-        if not codigos_emp:
+
+        ranges = itens_idx.get((emp_key, cod_key), [])
+        if not ranges:
             continue
 
-        cfg = cfg_by_emp.get(emp_norm) or cfg_global
-        for vend, mestre, movimento, total in _iter_vendas_agrupadas_emp(db, emp_norm, di, df, codigos_emp):
-            vend_key = (vend or "").strip().upper()
-            cod_key = (mestre or "").strip()
-            if not vend_key or not cod_key:
+        total_dec = _d(total)
+        if total_dec <= 0:
+            continue
+
+        pontos_factor = Decimal("0")
+        for data_inicio_v, data_fim_v, pontos_por_real in ranges:
+            if data_inicio_v and movimento < data_inicio_v:
                 continue
-
-            ranges = itens_idx.get((emp_norm, cod_key), [])
-            if not ranges:
+            if data_fim_v and movimento > data_fim_v:
                 continue
+            pontos_factor += pontos_por_real
 
-            total_dec = _d(total)
-            if total_dec <= 0:
-                continue
+        if pontos_factor <= 0:
+            continue
 
-            pontos_factor = Decimal("0")
-            for data_inicio_v, data_fim_v, pontos_por_real in ranges:
-                if data_inicio_v and movimento < data_inicio_v:
-                    continue
-                if data_fim_v and movimento > data_fim_v:
-                    continue
-                pontos_factor += pontos_por_real
-
-            if pontos_factor <= 0:
-                continue
-
-            bucket = acc.setdefault(
-                (emp_norm, vend_key),
-                {
-                    "valor_vendido": Decimal("0"),
-                    "pontos": Decimal("0"),
-                    "base_reais": cfg["base_reais"],
-                    "valor_por_ponto": cfg["valor_por_ponto"],
-                },
-            )
-            bucket["valor_vendido"] += total_dec
-            bucket["pontos"] += total_dec * pontos_factor
+        cfg = cfg_by_emp.get(emp_key) or cfg_global
+        bucket = acc.setdefault(
+            (emp_key, vend_key),
+            {
+                "valor_vendido": Decimal("0"),
+                "pontos": Decimal("0"),
+                "base_reais": cfg["base_reais"],
+                "valor_por_ponto": cfg["valor_por_ponto"],
+            },
+        )
+        bucket["valor_vendido"] += total_dec
+        bucket["pontos"] += total_dec * pontos_factor
 
     resultados_bulk = []
     utc_now = datetime.utcnow()
