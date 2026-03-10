@@ -6,7 +6,7 @@ import mimetypes
 from datetime import date, datetime
 
 import requests
-from flask import request, render_template, session
+from flask import request, render_template
 
 from auth_helpers import _admin_required
 from branding import _get_setting, _set_setting, _current_branding
@@ -91,9 +91,9 @@ def register_admin_config_routes(app):
             if request.method == "POST" and (request.form.get("acao") or "") == "upload_default":
                 try:
                     logo_file = request.files.get("default_logo")
+                    fav_file = request.files.get("default_favicon")
                     login_logo_left_file = request.files.get("login_logo_left")
                     login_logo_right_file = request.files.get("login_logo_right")
-                    fav_file = request.files.get("default_favicon")
 
                     def _read_file(f, max_bytes: int, allowed_ext: set[str]):
                         if not f or not getattr(f, "filename", ""):
@@ -109,25 +109,25 @@ def register_admin_config_routes(app):
                         return filename, data, ctype
 
                     logo = _read_file(logo_file, max_bytes=2_000_000, allowed_ext={".png", ".jpg", ".jpeg", ".webp", ".svg"})
-                    login_left = _read_file(login_logo_left_file, max_bytes=2_000_000, allowed_ext={".png", ".jpg", ".jpeg", ".webp", ".svg"})
-                    login_right = _read_file(login_logo_right_file, max_bytes=2_000_000, allowed_ext={".png", ".jpg", ".jpeg", ".webp", ".svg"})
                     fav = _read_file(fav_file, max_bytes=400_000, allowed_ext={".png", ".ico", ".jpg", ".jpeg", ".webp", ".svg"})
+                    login_logo_left = _read_file(login_logo_left_file, max_bytes=2_000_000, allowed_ext={".png", ".jpg", ".jpeg", ".webp", ".svg"})
+                    login_logo_right = _read_file(login_logo_right_file, max_bytes=2_000_000, allowed_ext={".png", ".jpg", ".jpeg", ".webp", ".svg"})
 
-                    if not logo and not login_left and not login_right and not fav:
-                        raise ValueError("Envie uma logo padrão, logo esquerda, logo direita e/ou um favicon.")
+                    if not logo and not fav and not login_logo_left and not login_logo_right:
+                        raise ValueError("Envie ao menos uma logo e/ou um favicon.")
 
                     if logo:
                         url = _supabase_storage_upload(logo[0], logo[1], logo[2], folder="default")
                         _set_setting(db, "branding.default_logo_url", url)
-                    if login_left:
-                        url = _supabase_storage_upload(login_left[0], login_left[1], login_left[2], folder="login")
-                        _set_setting(db, "branding.login_logo_left_url", url)
-                    if login_right:
-                        url = _supabase_storage_upload(login_right[0], login_right[1], login_right[2], folder="login")
-                        _set_setting(db, "branding.login_logo_right_url", url)
                     if fav:
                         url = _supabase_storage_upload(fav[0], fav[1], fav[2], folder="default")
                         _set_setting(db, "branding.default_favicon_url", url)
+                    if login_logo_left:
+                        url = _supabase_storage_upload(login_logo_left[0], login_logo_left[1], login_logo_left[2], folder="login-left")
+                        _set_setting(db, "branding.login_logo_left_url", url)
+                    if login_logo_right:
+                        url = _supabase_storage_upload(login_logo_right[0], login_logo_right[1], login_logo_right[2], folder="login-right")
+                        _set_setting(db, "branding.login_logo_right_url", url)
 
                     # bump version para cache bust
                     _set_setting(db, "branding.default_version", datetime.utcnow().isoformat())
@@ -262,9 +262,9 @@ def register_admin_config_routes(app):
             # Dados para tela
             branding = _current_branding(db)
             default_logo = _get_setting(db, "branding.default_logo_url")
-            login_logo_left = _get_setting(db, "branding.login_logo_left_url") or default_logo
-            login_logo_right = _get_setting(db, "branding.login_logo_right_url") or default_logo
             default_favicon = _get_setting(db, "branding.default_favicon_url")
+            login_logo_left = _get_setting(db, "branding.login_logo_left_url", default_logo)
+            login_logo_right = _get_setting(db, "branding.login_logo_right_url", default_logo)
             themes = db.query(BrandingTheme).order_by(BrandingTheme.start_date.desc(), BrandingTheme.id.desc()).all()
 
         return render_template(
@@ -272,13 +272,11 @@ def register_admin_config_routes(app):
             msgs=msgs,
             branding=branding,
             default_logo=default_logo,
+            default_favicon=default_favicon,
             login_logo_left=login_logo_left,
             login_logo_right=login_logo_right,
-            default_favicon=default_favicon,
             themes=themes,
             today=today.isoformat(),
-            role=(session.get("role") or ""),
-            emp=session.get("emp"),
         )
 
     app.add_url_rule(

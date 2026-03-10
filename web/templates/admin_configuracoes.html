@@ -124,6 +124,22 @@
                     <div class="text-muted">—</div>
                   {% endif %}
                 </div>
+                <div class="col-12 col-md-6">
+                  <div class="hint">Logo atual do login — lado esquerdo</div>
+                  {% if login_logo_left %}
+                    <img class="preview-img" src="{{ login_logo_left }}" alt="Logo login esquerda">
+                  {% else %}
+                    <div class="text-muted">—</div>
+                  {% endif %}
+                </div>
+                <div class="col-12 col-md-6">
+                  <div class="hint">Logo atual do login — lado direito</div>
+                  {% if login_logo_right %}
+                    <img class="preview-img" src="{{ login_logo_right }}" alt="Logo login direita">
+                  {% else %}
+                    <div class="text-muted">—</div>
+                  {% endif %}
+                </div>
               </div>
             </div>
 
@@ -139,24 +155,6 @@
 
               </div>
               <div class="col-12">
-                <label class="form-label">Logo do login — lado esquerdo (opcional)</label>
-                <input class="form-control" type="file" name="login_logo_left" accept=".png,.jpg,.jpeg,.webp,.svg" id="login_logo_left_file">
-              <div class="brand-preview" id="preview_login_logo_left_box" style="display:none;">
-                <img id="preview_login_logo_left_img" alt="Prévia da logo esquerda do login">
-                <div class="hint">Prévia da logo do lado esquerdo do login.</div>
-              </div>
-
-              </div>
-              <div class="col-12">
-                <label class="form-label">Logo do login — lado direito (opcional)</label>
-                <input class="form-control" type="file" name="login_logo_right" accept=".png,.jpg,.jpeg,.webp,.svg" id="login_logo_right_file">
-              <div class="brand-preview" id="preview_login_logo_right_box" style="display:none;">
-                <img id="preview_login_logo_right_img" alt="Prévia da logo direita do login">
-                <div class="hint">Prévia da logo do lado direito do login.</div>
-              </div>
-
-              </div>
-              <div class="col-12">
                 <label class="form-label">Favicon (ICO/PNG/JPG/WEBP/SVG, até 400KB)</label>
                 <input class="form-control" type="file" name="default_favicon" accept=".ico,.png,.jpg,.jpeg,.webp,.svg" id="default_favicon_file">
               <div class="brand-preview" id="preview_default_favicon_box" style="display:none;">
@@ -164,6 +162,22 @@
                 <div class="hint">Prévia do favicon selecionado (antes de salvar).</div>
               </div>
 
+              </div>
+              <div class="col-12">
+                <label class="form-label">Logo do login — lado esquerdo (PNG/JPG/WEBP/SVG, até 2MB)</label>
+                <input class="form-control" type="file" name="login_logo_left" accept=".png,.jpg,.jpeg,.webp,.svg" id="login_logo_left_file">
+                <div class="brand-preview" id="preview_login_logo_left_box" style="display:none;">
+                  <img id="preview_login_logo_left_img" alt="Prévia da logo esquerda do login">
+                  <div class="hint">Prévia da logo esquerda do login (antes de salvar).</div>
+                </div>
+              </div>
+              <div class="col-12">
+                <label class="form-label">Logo do login — lado direito (PNG/JPG/WEBP/SVG, até 2MB)</label>
+                <input class="form-control" type="file" name="login_logo_right" accept=".png,.jpg,.jpeg,.webp,.svg" id="login_logo_right_file">
+                <div class="brand-preview" id="preview_login_logo_right_box" style="display:none;">
+                  <img id="preview_login_logo_right_img" alt="Prévia da logo direita do login">
+                  <div class="hint">Prévia da logo direita do login (antes de salvar).</div>
+                </div>
               </div>
               <div class="col-12 d-flex justify-content-end">
                 <button class="btn btn-primary">Salvar</button>

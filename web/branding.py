@@ -34,17 +34,17 @@ def _current_branding(db) -> dict:
         ver = theme.updated_at.isoformat() if theme.updated_at else ""
         return {
             "logo_url": theme.logo_url,
-            "login_logo_left_url": theme.logo_url,
-            "login_logo_right_url": theme.logo_url,
+            "login_logo_left_url": _get_setting(db, "branding.login_logo_left_url", theme.logo_url),
+            "login_logo_right_url": _get_setting(db, "branding.login_logo_right_url", theme.logo_url),
             "favicon_url": theme.favicon_url,
             "theme_name": theme.name,
             "version": ver,
         }
     # Padrão
     logo = _get_setting(db, "branding.default_logo_url")
-    login_logo_left = _get_setting(db, "branding.login_logo_left_url") or logo
-    login_logo_right = _get_setting(db, "branding.login_logo_right_url") or logo
     favicon = _get_setting(db, "branding.default_favicon_url")
+    login_logo_left = _get_setting(db, "branding.login_logo_left_url", logo)
+    login_logo_right = _get_setting(db, "branding.login_logo_right_url", logo)
     ver = _get_setting(db, "branding.default_version", "")
     return {
         "logo_url": logo,
@@ -70,14 +70,7 @@ def register_branding(app, SessionLocal):
             with SessionLocal() as db:
                 b = _current_branding(db)
         except Exception:
-            b = {
-                "logo_url": None,
-                "login_logo_left_url": None,
-                "login_logo_right_url": None,
-                "favicon_url": None,
-                "theme_name": "default",
-                "version": "",
-            }
+            b = {"logo_url": None, "favicon_url": None, "theme_name": "default", "version": ""}
         return {"branding": b}
 
     @app.context_processor
