@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from flask import request, render_template
+from flask import request, render_template, session
 
 
 def register_admin_emps_routes(
@@ -100,7 +100,7 @@ def register_admin_emps_routes(
             ok=ok,
             emps=emps,
             role=(session.get("role") or ""),
-            emp=session.get("emp"),
+            emp=(session.get("emp") or ""),
         )
 
     # Mantém endpoint = "admin_emps" (backward compatible com url_for)
