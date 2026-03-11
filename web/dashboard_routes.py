@@ -16,9 +16,9 @@ from flask import (
     url_for,
 )
 
-from sqlalchemy import func
+from sqlalchemy import func, case
 
-from db import SessionLocal, Venda
+from db import SessionLocal, Venda, Usuario, UsuarioEmp, Emp
 from sv_utils import _periodo_bounds
 
 
@@ -46,6 +46,70 @@ def _signed_qtd_expr():
     return case((Venda.mov_tipo_movto.in_(["DS", "CA"]), -qtd), else_=qtd)
 
 
+
+
+def _query_periodo(db, ano: int, mes: int, emp: str | None = None):
+    start, end = _periodo_bounds(int(ano), int(mes))
+    q = db.query(Venda).filter(Venda.movimento >= start, Venda.movimento < end)
+    if emp:
+        q = q.filter(Venda.emp == str(emp))
+    return q
+
+
+def _build_global_sales_analysis(ano: int, mes: int) -> dict:
+    signed_valor = _signed_valor_expr()
+    signed_qtd = _signed_qtd_expr()
+    with SessionLocal() as db:
+        base = _query_periodo(db, ano, mes)
+
+        top_produtos_rows = (
+            base.with_entities(
+                Venda.mestre.label("codigo"),
+                func.coalesce(func.max(func.nullif(Venda.descricao, "")), func.max(func.nullif(Venda.descricao_norm, "")), Venda.mestre).label("descricao"),
+                func.coalesce(func.sum(signed_valor), 0.0).label("valor"),
+                func.coalesce(func.sum(signed_qtd), 0.0).label("qtd"),
+                func.count(func.distinct(Venda.emp)).label("emps"),
+            )
+            .group_by(Venda.mestre)
+            .order_by(func.sum(signed_valor).desc())
+            .limit(12)
+            .all()
+        )
+        top_produtos = [{
+            "codigo": (r.codigo or "").strip(),
+            "descricao": (r.descricao or r.codigo or "—").strip(),
+            "valor": float(r.valor or 0.0),
+            "qtd": float(r.qtd or 0.0),
+            "emps": int(r.emps or 0),
+        } for r in top_produtos_rows]
+
+        top_marcas_rows = (
+            base.with_entities(
+                func.coalesce(func.nullif(Venda.marca, ""), "SEM MARCA").label("marca"),
+                func.coalesce(func.sum(signed_valor), 0.0).label("valor"),
+                func.coalesce(func.sum(signed_qtd), 0.0).label("qtd"),
+            )
+            .group_by(func.coalesce(func.nullif(Venda.marca, ""), "SEM MARCA"))
+            .order_by(func.sum(signed_valor).desc())
+            .limit(8)
+            .all()
+        )
+        total_marcas = sum(float(r.valor or 0.0) for r in top_marcas_rows) or 0.0
+        top_marcas = [{
+            "marca": (r.marca or "SEM MARCA").strip(),
+            "valor": float(r.valor or 0.0),
+            "qtd": float(r.qtd or 0.0),
+            "pct": ((float(r.valor or 0.0) / total_marcas) * 100.0) if total_marcas else 0.0,
+        } for r in top_marcas_rows]
+
+        clientes_total = int(base.with_entities(func.coalesce(func.count(func.distinct(Venda.cliente_id_norm)), 0)).scalar() or 0)
+
+    return {
+        "top_produtos": top_produtos,
+        "top_marcas": top_marcas,
+        "clientes_total": clientes_total,
+    }
+
 def _build_emp_dashboard(ano: int, mes: int, emp: str | None) -> Optional[dict]:
     emp = (emp or "").strip()
     if not emp:
@@ -57,6 +121,8 @@ def _build_emp_dashboard(ano: int, mes: int, emp: str | None) -> Optional[dict]:
     meses: list[dict] = []
 
     with SessionLocal() as db:
+        emp_nome = db.query(Emp.nome).filter(Emp.codigo == emp).scalar()
+
         for a, m in refs:
             start, end = _periodo_bounds(int(a), int(m))
             base = db.query(Venda).filter(
@@ -89,12 +155,7 @@ def _build_emp_dashboard(ano: int, mes: int, emp: str | None) -> Optional[dict]:
                 "ticket_medio": ticket,
             })
 
-        start, end = _periodo_bounds(int(ano), int(mes))
-        base_atual = db.query(Venda).filter(
-            Venda.movimento >= start,
-            Venda.movimento < end,
-            Venda.emp == emp,
-        )
+        base_atual = _query_periodo(db, ano, mes, emp)
 
         top_produtos_rows = (
             base_atual.with_entities(
@@ -105,7 +166,7 @@ def _build_emp_dashboard(ano: int, mes: int, emp: str | None) -> Optional[dict]:
             )
             .group_by(Venda.mestre)
             .order_by(func.sum(signed_valor).desc())
-            .limit(10)
+            .limit(12)
             .all()
         )
         top_produtos = [
@@ -140,7 +201,7 @@ def _build_emp_dashboard(ano: int, mes: int, emp: str | None) -> Optional[dict]:
             for r in top_linhas_rows
         ]
 
-        top_vendedores_rows = (
+        vendedores_venda_rows = (
             base_atual.with_entities(
                 func.coalesce(func.nullif(Venda.vendedor, ""), "SEM VENDEDOR").label("vendedor"),
                 func.coalesce(func.sum(signed_valor), 0.0).label("valor"),
@@ -149,18 +210,50 @@ def _build_emp_dashboard(ano: int, mes: int, emp: str | None) -> Optional[dict]:
             )
             .group_by(func.coalesce(func.nullif(Venda.vendedor, ""), "SEM VENDEDOR"))
             .order_by(func.sum(signed_valor).desc())
-            .limit(10)
             .all()
         )
-        top_vendedores = [
+        vendedores_com_venda = [
             {
                 "vendedor": (r.vendedor or "SEM VENDEDOR").strip().upper(),
                 "valor": float(r.valor or 0.0),
                 "qtd": float(r.qtd or 0.0),
                 "clientes": int(r.clientes or 0),
             }
-            for r in top_vendedores_rows
+            for r in vendedores_venda_rows if float(r.valor or 0.0) > 0
         ]
+        top_vendedores = vendedores_com_venda[:10]
+
+        vendedores_cadastrados_rows = (
+            db.query(Usuario.username)
+            .join(UsuarioEmp, Usuario.id == UsuarioEmp.usuario_id)
+            .filter(func.lower(Usuario.role) == "vendedor", UsuarioEmp.emp == emp, UsuarioEmp.ativo.is_(True))
+            .all()
+        )
+        vendedores_cadastrados = sorted({(r[0] or "").strip().upper() for r in vendedores_cadastrados_rows if (r[0] or "").strip()})
+        if not vendedores_cadastrados:
+            vendedores_cadastrados = sorted({(r.get("vendedor") or "").strip().upper() for r in vendedores_com_venda if (r.get("vendedor") or "").strip()})
+
+        venderam_set = {r["vendedor"] for r in vendedores_com_venda}
+        vendedores_sem_venda = [v for v in vendedores_cadastrados if v not in venderam_set]
+
+        top_clientes_rows = (
+            base_atual.with_entities(
+                func.coalesce(func.nullif(Venda.razao, ""), func.nullif(Venda.razao_norm, ""), "SEM CLIENTE").label("cliente"),
+                func.coalesce(func.sum(signed_valor), 0.0).label("valor"),
+                func.coalesce(func.sum(signed_qtd), 0.0).label("qtd"),
+            )
+            .group_by(func.coalesce(func.nullif(Venda.razao, ""), func.nullif(Venda.razao_norm, ""), "SEM CLIENTE"))
+            .order_by(func.sum(signed_valor).desc())
+            .limit(8)
+            .all()
+        )
+        top_clientes = [{
+            "cliente": (r.cliente or "SEM CLIENTE").strip(),
+            "valor": float(r.valor or 0.0),
+            "qtd": float(r.qtd or 0.0),
+        } for r in top_clientes_rows]
+
+        clientes_total = int(base_atual.with_entities(func.coalesce(func.count(func.distinct(Venda.cliente_id_norm)), 0)).scalar() or 0)
 
     atual = meses[-1] if meses else None
     anterior = meses[-2] if len(meses) >= 2 else None
@@ -171,6 +264,7 @@ def _build_emp_dashboard(ano: int, mes: int, emp: str | None) -> Optional[dict]:
 
     return {
         "emp": emp,
+        "emp_nome": (emp_nome or "").strip(),
         "meses": meses,
         "atual": atual,
         "anterior": anterior,
@@ -179,6 +273,11 @@ def _build_emp_dashboard(ano: int, mes: int, emp: str | None) -> Optional[dict]:
         "top_produtos": top_produtos,
         "top_linhas": top_linhas,
         "top_vendedores": top_vendedores,
+        "vendedores_sem_venda": vendedores_sem_venda[:15],
+        "total_vendedores_sem_venda": len(vendedores_sem_venda),
+        "total_vendedores_com_venda": len(vendedores_com_venda),
+        "clientes_total": clientes_total,
+        "top_clientes": top_clientes,
     }
 
 
@@ -256,15 +355,18 @@ def register_dashboard_routes(
 
         dados_admin = None
         dashboard_emp = None
+        global_analysis = None
         emp_selecionada = None
         emp_options = []
         if (role or "").lower() == "admin" and not vendedor_alvo:
             emp_selecionada = (request.args.get("emp") or "").strip() or None
             try:
                 dados_admin = dados_admin_geral_fn(mes=mes, ano=ano)
+                global_analysis = _build_global_sales_analysis(ano=ano, mes=mes)
             except Exception:
                 app.logger.exception("Erro ao carregar dashboard geral do admin")
                 dados_admin = None
+                global_analysis = None
             emp_options = [str((row or {}).get("emp") or "").strip() for row in (dados_admin or {}).get("ranking_emp_list", []) if str((row or {}).get("emp") or "").strip()]
             if emp_selecionada:
                 try:
@@ -297,6 +399,7 @@ def register_dashboard_routes(
             ano=ano,
             dados=dados,
             dados_admin=dados_admin,
+            global_analysis=global_analysis,
             dashboard_emp=dashboard_emp,
             emp_options=emp_options,
             emp_selecionada=emp_selecionada or "",
