@@ -51,7 +51,7 @@
         <div class="small text-muted">🏆 Cidade destaque</div>
         <div class="fw-bold fs-5">{{ insights.cidade_destaque.cidade_norm|default('—') }}</div>
         <div class="text-success fw-semibold">
-          R$ {{ insights.cidade_destaque.total_vendido|default(0)|brl_rs }}
+          {{ insights.cidade_destaque.total_vendido|default(0)|brl_rs }}
         </div>
       </div>
     </div>
@@ -64,7 +64,7 @@
         {% if insights.cidade_queda %}
           <div class="fw-bold fs-5">{{ insights.cidade_queda.cidade_norm }}</div>
           <div class="text-danger fw-semibold">
-            R$ {{ insights.cidade_queda.variacao|brl_rs }}
+            {{ insights.cidade_queda.variacao|brl_rs }}
           </div>
         {% else %}
           <div class="fw-bold fs-5">—</div>
@@ -103,9 +103,9 @@
         {% if c %}
           <div class="fw-bold fs-5">{{ c.cliente }}</div>
           <div class="text-success fw-semibold">
-            + R$ {{ c.delta|brl_rs }}{% if c.pct is not none %} ({{ c.pct|round(1) }}%) {% endif %}
+            + {{ c.delta|brl_rs }}{% if c.pct is not none %} ({{ c.pct|round(1) }}%) {% endif %}
           </div>
-          <div class="text-muted small">Atual: R$ {{ c.atual|brl_rs }} • Anterior: R$ {{ c.anterior|brl_rs }}</div>
+          <div class="text-muted small">Atual: {{ c.atual|brl_rs }} • Anterior: {{ c.anterior|brl_rs }}</div>
         {% else %}
           <div class="fw-bold fs-5">—</div>
           <div class="text-muted">Sem base comparativa</div>
@@ -122,9 +122,9 @@
         {% if q %}
           <div class="fw-bold fs-5">{{ q.cliente }}</div>
           <div class="text-danger fw-semibold">
-            R$ {{ q.delta|brl_rs }}{% if q.pct is not none %} ({{ q.pct|round(1) }}%) {% endif %}
+            {{ q.delta|brl_rs }}{% if q.pct is not none %} ({{ q.pct|round(1) }}%) {% endif %}
           </div>
-          <div class="text-muted small">Atual: R$ {{ q.atual|brl_rs }} • Anterior: R$ {{ q.anterior|brl_rs }}</div>
+          <div class="text-muted small">Atual: {{ q.atual|brl_rs }} • Anterior: {{ q.anterior|brl_rs }}</div>
         {% else %}
           <div class="fw-bold fs-5">—</div>
           <div class="text-muted">Sem base comparativa</div>
@@ -188,7 +188,7 @@
 {% if admin_geral and dados_admin %}
 
   <div class="alert alert-info d-flex align-items-center gap-2 mb-3">
-    <div><strong>Visão Geral</strong> — todos os vendedores do período. Use a tabela por EMP para comparar e abrir detalhes.</div>
+    <div><strong>Visão Geral</strong> — todos os vendedores do período. Use a tabela por EMP para comparar e abrir o drill-down comercial.</div>
   </div>
 
   <div class="row g-3 mb-3">
@@ -196,7 +196,7 @@
       <div class="card shadow-sm kpi">
         <div class="sv-card-body">
           <div class="text-muted small">Total líquido (mês)</div>
-          <div class="fs-4 fw-bold">R$ {{ dados_admin.valor_atual|brl_rs }}</div>
+          <div class="fs-4 fw-bold">{{ dados_admin.valor_atual|brl_rs }}</div>
         </div>
       </div>
     </div>
@@ -204,7 +204,7 @@
       <div class="card shadow-sm kpi">
         <div class="sv-card-body">
           <div class="text-muted small">Bruto (sem devolução)</div>
-          <div class="fs-4 fw-bold">R$ {{ dados_admin.valor_bruto|brl_rs }}</div>
+          <div class="fs-4 fw-bold">{{ dados_admin.valor_bruto|brl_rs }}</div>
         </div>
       </div>
     </div>
@@ -212,7 +212,7 @@
       <div class="card shadow-sm kpi">
         <div class="sv-card-body">
           <div class="text-muted small">Devolvido</div>
-          <div class="fs-4 fw-bold">R$ {{ dados_admin.valor_devolvido|brl_rs }}</div>
+          <div class="fs-4 fw-bold">{{ dados_admin.valor_devolvido|brl_rs }}</div>
         </div>
       </div>
     </div>
@@ -232,7 +232,7 @@
         <div class="sv-card-body">
           <div class="d-flex justify-content-between align-items-center mb-2">
             <h5 class="m-0">Ranking por EMP</h5>
-            <span class="text-muted small">Clique para abrir Campanhas no período</span>
+            <span class="text-muted small">Clique para abrir cidades e clientes no período</span>
           </div>
           <div class="sv-tablewrap">
             <table class="sv-table align-middle">
@@ -248,9 +248,9 @@
                 {% for row in (dados_admin.ranking_emp_list or []) %}
                   <tr class="sv-row-click" onclick="window.location='/relatorios/cidades-clientes?emp={{ row.emp }}&mes={{ mes }}&ano={{ ano }}'">
                     <td class="fw-semibold">{{ row.emp or "—" }}</td>
-                    <td class="text-end fw-semibold">R$ {{ row.valor_atual|brl_rs }}</td>
-                    <td class="text-end text-muted">R$ {{ row.valor_bruto|brl_rs }}</td>
-                    <td class="text-end text-muted">R$ {{ row.valor_devolvido|brl_rs }}</td>
+                    <td class="text-end fw-semibold">{{ row.valor_atual|brl_rs }}</td>
+                    <td class="text-end text-muted">{{ row.valor_bruto|brl_rs }}</td>
+                    <td class="text-end text-muted">{{ row.valor_devolvido|brl_rs }}</td>
                   </tr>
                 {% endfor %}
                 {% if not (dados_admin.ranking_emp_list or []) %}
@@ -282,7 +282,7 @@
                 {% for row in (dados_admin.ranking_vendedores_list or []) %}
                   <tr class="sv-row-click" onclick="window.location='/dashboard?vendedor={{ row.vendedor }}&mes={{ mes }}&ano={{ ano }}'">
                     <td class="fw-semibold">{{ row.vendedor }}</td>
-                    <td class="text-end fw-semibold">R$ {{ row.valor|brl_rs }}</td>
+                    <td class="text-end fw-semibold">{{ row.valor|brl_rs }}</td>
                   </tr>
                 {% endfor %}
                 {% if not (dados_admin.ranking_vendedores_list or []) %}
@@ -302,8 +302,8 @@
       <div class="sv-card h-100">
         <div class="sv-card-body">
           <div class="text-muted small">💰 Valor líquido</div>
-          <div class="fs-4 fw-bold">R$ {{ dados.valor_atual|brl_rs }}</div>
-          <div class="text-muted small mt-1">Mês anterior: R$ {{ dados.valor_mes_anterior|brl_rs }}</div>
+          <div class="fs-4 fw-bold">{{ dados.valor_atual|brl_rs }}</div>
+          <div class="text-muted small mt-1">Mês anterior: {{ dados.valor_mes_anterior|brl_rs }}</div>
         </div>
       </div>
     </div>
@@ -318,7 +318,7 @@
               —
             {% endif %}
           </div>
-          <div class="text-muted small mt-1">Ano passado: R$ {{ dados.valor_ano_passado|brl_rs }}</div>
+          <div class="text-muted small mt-1">Ano passado: {{ dados.valor_ano_passado|brl_rs }}</div>
         </div>
       </div>
     </div>
@@ -336,7 +336,7 @@
         <div class="sv-card-body">
           <div class="text-muted small">↩️ Devolução</div>
           <div class="fs-4 fw-bold">{{ (dados.pct_devolucao or 0)|round(2) }}%</div>
-          <div class="text-muted small mt-1">Devolvido: R$ {{ dados.valor_devolvido|brl_rs }}</div>
+          <div class="text-muted small mt-1">Devolvido: {{ dados.valor_devolvido|brl_rs }}</div>
         </div>
       </div>
     </div>
@@ -401,8 +401,8 @@
           <div class="card shadow-sm">
             <div class="sv-card-body">
               <div class="text-muted">💰 Valor líquido (com DS/CA)</div>
-              <div class="display-6">R$ {{ dados.valor_atual|brl_rs }}</div>
-              <div class="text-muted mt-1">Ano passado: R$ {{ dados.valor_ano_passado|brl_rs }}</div>
+              <div class="display-6">{{ dados.valor_atual|brl_rs }}</div>
+              <div class="text-muted mt-1">Ano passado: {{ dados.valor_ano_passado|brl_rs }}</div>
             </div>
           </div>
         </div>
@@ -423,7 +423,7 @@
           <div class="card shadow-sm">
             <div class="sv-card-body">
               <div class="text-muted">🧾 Valor bruto (sem DS/CA)</div>
-              <div class="h3 m-0">R$ {{ dados.valor_bruto|brl_rs }}</div>
+              <div class="h3 m-0">{{ dados.valor_bruto|brl_rs }}</div>
               <div class="text-muted">Somente vendas</div>
             </div>
           </div>
@@ -433,7 +433,7 @@
           <div class="card shadow-sm">
             <div class="sv-card-body">
               <div class="text-muted">↩️ Devoluções/Cancelamentos (DS/CA)</div>
-              <div class="h3 m-0">R$ {{ dados.valor_devolvido|brl_rs }}</div>
+              <div class="h3 m-0">{{ dados.valor_devolvido|brl_rs }}</div>
               <div class="text-muted">Total abatido</div>
             </div>
           </div>
@@ -499,7 +499,7 @@
                     <tr>
                       <td class="text-muted">{{ loop.index }}</td>
                       <td>{{ row.marca }}</td>
-                      <td class="text-end">R$ {{ row.valor|brl_rs }}</td>
+                      <td class="text-end">{{ row.valor|brl_rs }}</td>
                       <td class="text-end">{{ "%.2f"|format(row.pct) }}%</td>
                     </tr>
                   {% endfor %}
