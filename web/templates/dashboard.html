@@ -171,8 +171,7 @@
       <li><hr class="dropdown-divider"></li>
     {% endif %}
     <li><a class="dropdown-item" href="/itens_parados">🧊 Itens parados</a></li>
-    <li><a class="dropdown-item" href="/relatorios/cidades-clientes">🎯 Campanhas</a></li>
-    <li><a class="dropdown-item" href="/relatorios/campanhas">📊 Relatório Campanhas</a></li>
+        <li><a class="dropdown-item" href="/relatorios/campanhas">📊 Relatório Campanhas</a></li>
     <li><a class="dropdown-item" href="/relatorios/cidades-clientes">🏙️ Cidades &amp; Clientes</a></li>
     <li><hr class="dropdown-divider"></li>
     <li><a class="dropdown-item" href="/senha">🔑 Trocar senha</a></li>
@@ -188,7 +187,7 @@
 {% if admin_geral and dados_admin %}
 
   <div class="alert alert-info d-flex align-items-center gap-2 mb-3">
-    <div><strong>Visão Geral</strong> — todos os vendedores do período. Use a tabela por EMP para comparar e abrir o drill-down comercial.</div>
+    <div><strong>Visão Geral</strong> — use o ranking por EMP para comparar desempenho e selecione uma empresa para ver a análise comercial dos últimos 3 meses.</div>
   </div>
 
   <div class="row g-3 mb-3">
@@ -226,9 +225,9 @@
     </div>
   </div>
 
-  <div class="row g-3">
+  <div class="row g-3 mb-3">
     <div class="col-lg-7">
-      <div class="card shadow-sm">
+      <div class="card shadow-sm h-100">
         <div class="sv-card-body">
           <div class="d-flex justify-content-between align-items-center mb-2">
             <h5 class="m-0">Ranking por EMP</h5>
@@ -264,15 +263,15 @@
     </div>
 
     <div class="col-lg-5">
-      <div class="card shadow-sm">
+      <div class="card shadow-sm h-100">
         <div class="sv-card-body">
           <div class="d-flex justify-content-between align-items-center mb-2">
             <h5 class="m-0">Top vendedores (líquido)</h5>
-            <span class="text-muted small">Clique para abrir Dashboard do vendedor</span>
+            <span class="text-muted small">Drill-down rápido do período</span>
           </div>
           <div class="sv-tablewrap">
             <table class="sv-table align-middle">
-              <thead class="table-light">
+              <thead>
                 <tr>
                   <th>Vendedor</th>
                   <th class="text-end">Líquido</th>
@@ -295,6 +294,207 @@
       </div>
     </div>
   </div>
+
+  {% if dashboard_emp %}
+  <div class="sv-card mb-3">
+    <div class="sv-card-body">
+      <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
+        <div>
+          <div class="small text-muted">Análise comercial por EMP</div>
+          <div class="sv-h2 mb-1">EMP {{ dashboard_emp.emp }}</div>
+          <div class="text-muted small">Painel gerencial dos últimos 3 meses com foco em faturamento, mix, clientes, produtos e linhas.</div>
+        </div>
+        <a class="sv-btn sv-btn-ghost sv-btn-sm" href="/relatorios/cidades-clientes?emp={{ dashboard_emp.emp }}&mes={{ mes }}&ano={{ ano }}">Abrir Cidades &amp; Clientes</a>
+      </div>
+
+      <div class="row g-3 mb-3">
+        <div class="col-12 col-md-6 col-xl-3">
+          <div class="card shadow-sm h-100"><div class="sv-card-body">
+            <div class="text-muted small">Líquido mês atual</div>
+            <div class="fs-4 fw-bold">{{ dashboard_emp.atual.liquido|default(0)|brl_rs }}</div>
+            <div class="text-muted small mt-1">{{ dashboard_emp.atual.label if dashboard_emp.atual else '%02d/%04d'|format(mes, ano) }}</div>
+          </div></div>
+        </div>
+        <div class="col-12 col-md-6 col-xl-3">
+          <div class="card shadow-sm h-100"><div class="sv-card-body">
+            <div class="text-muted small">Acumulado 3 meses</div>
+            <div class="fs-4 fw-bold">{{ dashboard_emp.acumulado_3m|default(0)|brl_rs }}</div>
+            <div class="text-muted small mt-1">Soma líquida dos 3 meses</div>
+          </div></div>
+        </div>
+        <div class="col-12 col-md-6 col-xl-3">
+          <div class="card shadow-sm h-100"><div class="sv-card-body">
+            <div class="text-muted small">Crescimento vs mês anterior</div>
+            <div class="fs-4 fw-bold">
+              {% if dashboard_emp.crescimento_pct is not none %}
+                {{ '%+.2f'|format(dashboard_emp.crescimento_pct) }}%
+              {% else %}
+                —
+              {% endif %}
+            </div>
+            <div class="text-muted small mt-1">Comparação do líquido</div>
+          </div></div>
+        </div>
+        <div class="col-12 col-md-6 col-xl-3">
+          <div class="card shadow-sm h-100"><div class="sv-card-body">
+            <div class="text-muted small">Clientes atendidos</div>
+            <div class="fs-4 fw-bold">{{ dashboard_emp.atual.clientes|default(0) if dashboard_emp.atual else 0 }}</div>
+            <div class="text-muted small mt-1">Ticket médio: {{ dashboard_emp.atual.ticket_medio|default(0)|brl_rs if dashboard_emp.atual else 0|brl_rs }}</div>
+          </div></div>
+        </div>
+      </div>
+
+      <div class="row g-3 mb-3">
+        <div class="col-lg-7">
+          <div class="card shadow-sm h-100">
+            <div class="sv-card-body">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <h5 class="m-0">Últimos 3 meses</h5>
+                <span class="text-muted small">Líquido, mix, clientes e ticket médio</span>
+              </div>
+              <div class="sv-tablewrap">
+                <table class="sv-table align-middle">
+                  <thead>
+                    <tr>
+                      <th>Período</th>
+                      <th class="text-end">Líquido</th>
+                      <th class="text-end">Bruto</th>
+                      <th class="text-end">Devolvido</th>
+                      <th class="text-end">Mix</th>
+                      <th class="text-end">Clientes</th>
+                      <th class="text-end">Ticket médio</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for row in dashboard_emp.meses %}
+                    <tr>
+                      <td class="fw-semibold">{{ row.label }}</td>
+                      <td class="text-end fw-semibold">{{ row.liquido|brl_rs }}</td>
+                      <td class="text-end text-muted">{{ row.bruto|brl_rs }}</td>
+                      <td class="text-end text-muted">{{ row.devolvido|brl_rs }}</td>
+                      <td class="text-end">{{ row.mix|round(0)|int }}</td>
+                      <td class="text-end">{{ row.clientes }}</td>
+                      <td class="text-end">{{ row.ticket_medio|brl_rs }}</td>
+                    </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="col-lg-5">
+          <div class="card shadow-sm h-100">
+            <div class="sv-card-body">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <h5 class="m-0">Top linhas / marcas</h5>
+                <span class="text-muted small">Participação no mês atual</span>
+              </div>
+              <div class="sv-tablewrap">
+                <table class="sv-table align-middle">
+                  <thead>
+                    <tr>
+                      <th>Linha</th>
+                      <th class="text-end">Valor</th>
+                      <th class="text-end">Mix</th>
+                      <th class="text-end">%</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for row in dashboard_emp.top_linhas %}
+                    <tr>
+                      <td class="fw-semibold">{{ row.linha }}</td>
+                      <td class="text-end fw-semibold">{{ row.valor|brl_rs }}</td>
+                      <td class="text-end">{{ row.qtd|round(0)|int }}</td>
+                      <td class="text-end">{{ '%.1f'|format(row.pct) }}%</td>
+                    </tr>
+                    {% endfor %}
+                    {% if not dashboard_emp.top_linhas %}
+                    <tr><td colspan="4" class="text-muted">Sem dados de linhas para o período.</td></tr>
+                    {% endif %}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="row g-3">
+        <div class="col-lg-7">
+          <div class="card shadow-sm h-100">
+            <div class="sv-card-body">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <h5 class="m-0">Produtos que mais vendem</h5>
+                <span class="text-muted small">Mês atual da EMP</span>
+              </div>
+              <div class="sv-tablewrap">
+                <table class="sv-table align-middle">
+                  <thead>
+                    <tr>
+                      <th>Cód.</th>
+                      <th>Produto</th>
+                      <th class="text-end">Valor</th>
+                      <th class="text-end">Mix</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for row in dashboard_emp.top_produtos %}
+                    <tr>
+                      <td class="text-muted">{{ row.codigo }}</td>
+                      <td class="fw-semibold">{{ row.descricao }}</td>
+                      <td class="text-end fw-semibold">{{ row.valor|brl_rs }}</td>
+                      <td class="text-end">{{ row.qtd|round(0)|int }}</td>
+                    </tr>
+                    {% endfor %}
+                    {% if not dashboard_emp.top_produtos %}
+                    <tr><td colspan="4" class="text-muted">Sem produtos para o período.</td></tr>
+                    {% endif %}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="col-lg-5">
+          <div class="card shadow-sm h-100">
+            <div class="sv-card-body">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <h5 class="m-0">Top vendedores da EMP</h5>
+                <span class="text-muted small">Mês atual</span>
+              </div>
+              <div class="sv-tablewrap">
+                <table class="sv-table align-middle">
+                  <thead>
+                    <tr>
+                      <th>Vendedor</th>
+                      <th class="text-end">Líquido</th>
+                      <th class="text-end">Mix</th>
+                      <th class="text-end">Clientes</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for row in dashboard_emp.top_vendedores %}
+                    <tr class="sv-row-click" onclick="window.location='/dashboard?vendedor={{ row.vendedor }}&mes={{ mes }}&ano={{ ano }}'">
+                      <td class="fw-semibold">{{ row.vendedor }}</td>
+                      <td class="text-end fw-semibold">{{ row.valor|brl_rs }}</td>
+                      <td class="text-end">{{ row.qtd|round(0)|int }}</td>
+                      <td class="text-end">{{ row.clientes }}</td>
+                    </tr>
+                    {% endfor %}
+                    {% if not dashboard_emp.top_vendedores %}
+                    <tr><td colspan="4" class="text-muted">Sem vendedores para o período.</td></tr>
+                    {% endif %}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
 
 {% elif dados %}
   <div class="row g-3 mb-4">
@@ -347,11 +547,11 @@
 
     {% if role and role|lower == "admin" %}
       <div class="alert alert-info shadow-sm">
-        Você está logado como <strong>ADMIN</strong>. Selecione um vendedor abaixo para visualizar exatamente o mesmo painel que ele vê.
+        Você está logado como <strong>ADMIN</strong>. Use os filtros para alternar entre visão geral, análise por EMP e dashboard detalhado do vendedor.
       </div>
     {% elif role and role|lower == "supervisor" %}
       <div class="alert alert-info shadow-sm">
-        Você está logado como <strong>SUPERVISOR</strong>{% if emp %} da EMP <strong>{{ emp }}</strong>{% endif %}. Selecione um vendedor para ver exatamente o mesmo painel que ele vê.
+        Você está logado como <strong>SUPERVISOR</strong>{% if emp %} da EMP <strong>{{ emp }}</strong>{% endif %}. Você pode analisar a EMP no painel comercial ou abrir o dashboard detalhado de um vendedor.
       </div>
     {% endif %}
 
@@ -369,6 +569,15 @@
                 <option value="" disabled>{% if vendedores and (vendedores|length) > 0 %}Selecione um vendedor específico{% else %}Nenhum vendedor encontrado{% endif %}</option>
                 {% for v in vendedores %}
                   <option value="{{ v }}" {% if vendedor_selecionado == v %}selected{% endif %}>{{ v }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">EMP</label>
+              <select class="sv-select" name="emp">
+                <option value="" {% if not emp_selecionada %}selected{% endif %}>Todas / visão geral</option>
+                {% for code in emp_options %}
+                  <option value="{{ code }}" {% if emp_selecionada == code %}selected{% endif %}>EMP {{ code }}</option>
                 {% endfor %}
               </select>
             </div>

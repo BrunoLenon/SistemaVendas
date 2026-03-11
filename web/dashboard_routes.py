@@ -6,6 +6,7 @@ Refatoração pura: mantém endpoints, templates e comportamento externo.
 from __future__ import annotations
 
 from typing import Callable, Optional, Any
+from datetime import date
 
 from flask import (
     flash,
@@ -19,6 +20,166 @@ from sqlalchemy import func
 
 from db import SessionLocal, Venda
 from sv_utils import _periodo_bounds
+
+
+def _meses_referencia(ano: int, mes: int, quantidade: int = 3) -> list[tuple[int, int]]:
+    refs: list[tuple[int, int]] = []
+    a = int(ano)
+    m = int(mes)
+    for _ in range(max(1, int(quantidade))):
+        refs.append((a, m))
+        if m == 1:
+            a -= 1
+            m = 12
+        else:
+            m -= 1
+    refs.reverse()
+    return refs
+
+
+def _signed_valor_expr():
+    return case((Venda.mov_tipo_movto.in_(["DS", "CA"]), -Venda.valor_total), else_=Venda.valor_total)
+
+
+def _signed_qtd_expr():
+    qtd = func.coalesce(Venda.qtdade_vendida, 0.0)
+    return case((Venda.mov_tipo_movto.in_(["DS", "CA"]), -qtd), else_=qtd)
+
+
+def _build_emp_dashboard(ano: int, mes: int, emp: str | None) -> Optional[dict]:
+    emp = (emp or "").strip()
+    if not emp:
+        return None
+
+    signed_valor = _signed_valor_expr()
+    signed_qtd = _signed_qtd_expr()
+    refs = _meses_referencia(ano, mes, 3)
+    meses: list[dict] = []
+
+    with SessionLocal() as db:
+        for a, m in refs:
+            start, end = _periodo_bounds(int(a), int(m))
+            base = db.query(Venda).filter(
+                Venda.movimento >= start,
+                Venda.movimento < end,
+                Venda.emp == emp,
+            )
+            row = base.with_entities(
+                func.coalesce(func.sum(case((~Venda.mov_tipo_movto.in_(["DS", "CA"]), Venda.valor_total), else_=0.0)), 0.0),
+                func.coalesce(func.sum(case((Venda.mov_tipo_movto.in_(["DS", "CA"]), Venda.valor_total), else_=0.0)), 0.0),
+                func.coalesce(func.sum(signed_valor), 0.0),
+                func.coalesce(func.sum(case((~Venda.mov_tipo_movto.in_(["DS", "CA"]), func.coalesce(Venda.qtdade_vendida, 0.0)), else_=0.0)), 0.0),
+                func.coalesce(func.count(func.distinct(Venda.cliente_id_norm)), 0),
+            ).first()
+            bruto = float(row[0] or 0.0)
+            devol = float(row[1] or 0.0)
+            liquido = float(row[2] or 0.0)
+            itens = float(row[3] or 0.0)
+            clientes = int(row[4] or 0)
+            ticket = (liquido / clientes) if clientes else 0.0
+            meses.append({
+                "ano": int(a),
+                "mes": int(m),
+                "label": f"{int(m):02d}/{int(a)}",
+                "bruto": bruto,
+                "devolvido": devol,
+                "liquido": liquido,
+                "mix": itens,
+                "clientes": clientes,
+                "ticket_medio": ticket,
+            })
+
+        start, end = _periodo_bounds(int(ano), int(mes))
+        base_atual = db.query(Venda).filter(
+            Venda.movimento >= start,
+            Venda.movimento < end,
+            Venda.emp == emp,
+        )
+
+        top_produtos_rows = (
+            base_atual.with_entities(
+                Venda.mestre.label("codigo"),
+                func.coalesce(func.max(func.nullif(Venda.descricao, "")), func.max(func.nullif(Venda.descricao_norm, "")), Venda.mestre).label("descricao"),
+                func.coalesce(func.sum(signed_valor), 0.0).label("valor"),
+                func.coalesce(func.sum(signed_qtd), 0.0).label("qtd"),
+            )
+            .group_by(Venda.mestre)
+            .order_by(func.sum(signed_valor).desc())
+            .limit(10)
+            .all()
+        )
+        top_produtos = [
+            {
+                "codigo": (r.codigo or "").strip(),
+                "descricao": (r.descricao or r.codigo or "—").strip(),
+                "valor": float(r.valor or 0.0),
+                "qtd": float(r.qtd or 0.0),
+            }
+            for r in top_produtos_rows
+        ]
+
+        top_linhas_rows = (
+            base_atual.with_entities(
+                func.coalesce(func.nullif(Venda.marca, ""), "SEM MARCA").label("linha"),
+                func.coalesce(func.sum(signed_valor), 0.0).label("valor"),
+                func.coalesce(func.sum(signed_qtd), 0.0).label("qtd"),
+            )
+            .group_by(func.coalesce(func.nullif(Venda.marca, ""), "SEM MARCA"))
+            .order_by(func.sum(signed_valor).desc())
+            .limit(8)
+            .all()
+        )
+        total_linhas = sum(float(r.valor or 0.0) for r in top_linhas_rows) or 0.0
+        top_linhas = [
+            {
+                "linha": (r.linha or "SEM MARCA").strip(),
+                "valor": float(r.valor or 0.0),
+                "qtd": float(r.qtd or 0.0),
+                "pct": ((float(r.valor or 0.0) / total_linhas) * 100.0) if total_linhas else 0.0,
+            }
+            for r in top_linhas_rows
+        ]
+
+        top_vendedores_rows = (
+            base_atual.with_entities(
+                func.coalesce(func.nullif(Venda.vendedor, ""), "SEM VENDEDOR").label("vendedor"),
+                func.coalesce(func.sum(signed_valor), 0.0).label("valor"),
+                func.coalesce(func.sum(signed_qtd), 0.0).label("qtd"),
+                func.coalesce(func.count(func.distinct(Venda.cliente_id_norm)), 0).label("clientes"),
+            )
+            .group_by(func.coalesce(func.nullif(Venda.vendedor, ""), "SEM VENDEDOR"))
+            .order_by(func.sum(signed_valor).desc())
+            .limit(10)
+            .all()
+        )
+        top_vendedores = [
+            {
+                "vendedor": (r.vendedor or "SEM VENDEDOR").strip().upper(),
+                "valor": float(r.valor or 0.0),
+                "qtd": float(r.qtd or 0.0),
+                "clientes": int(r.clientes or 0),
+            }
+            for r in top_vendedores_rows
+        ]
+
+    atual = meses[-1] if meses else None
+    anterior = meses[-2] if len(meses) >= 2 else None
+    acumulado_3m = sum(float(m["liquido"] or 0.0) for m in meses)
+    crescimento_pct = None
+    if atual and anterior and float(anterior["liquido"] or 0.0) != 0.0:
+        crescimento_pct = ((float(atual["liquido"] or 0.0) - float(anterior["liquido"] or 0.0)) / float(anterior["liquido"] or 0.0)) * 100.0
+
+    return {
+        "emp": emp,
+        "meses": meses,
+        "atual": atual,
+        "anterior": anterior,
+        "acumulado_3m": acumulado_3m,
+        "crescimento_pct": crescimento_pct,
+        "top_produtos": top_produtos,
+        "top_linhas": top_linhas,
+        "top_vendedores": top_vendedores,
+    }
 
 
 def register_dashboard_routes(
@@ -94,12 +255,33 @@ def register_dashboard_routes(
                 insights = None
 
         dados_admin = None
+        dashboard_emp = None
+        emp_selecionada = None
+        emp_options = []
         if (role or "").lower() == "admin" and not vendedor_alvo:
+            emp_selecionada = (request.args.get("emp") or "").strip() or None
             try:
                 dados_admin = dados_admin_geral_fn(mes=mes, ano=ano)
             except Exception:
                 app.logger.exception("Erro ao carregar dashboard geral do admin")
                 dados_admin = None
+            emp_options = [str((row or {}).get("emp") or "").strip() for row in (dados_admin or {}).get("ranking_emp_list", []) if str((row or {}).get("emp") or "").strip()]
+            if emp_selecionada:
+                try:
+                    dashboard_emp = _build_emp_dashboard(ano=ano, mes=mes, emp=emp_selecionada)
+                except Exception:
+                    app.logger.exception("Erro ao carregar dashboard detalhado por EMP")
+                    dashboard_emp = None
+        elif (role or "").lower() == "supervisor" and not vendedor_alvo and allowed_emps:
+            emp_selecionada = ((request.args.get("emp") or "").strip() or allowed_emps[0])
+            if emp_selecionada not in allowed_emps:
+                emp_selecionada = allowed_emps[0]
+            emp_options = list(allowed_emps)
+            try:
+                dashboard_emp = _build_emp_dashboard(ano=ano, mes=mes, emp=emp_selecionada)
+            except Exception:
+                app.logger.exception("Erro ao carregar dashboard detalhado por EMP do supervisor")
+                dashboard_emp = None
 
         return render_template(
             "dashboard.html",
@@ -115,6 +297,9 @@ def register_dashboard_routes(
             ano=ano,
             dados=dados,
             dados_admin=dados_admin,
+            dashboard_emp=dashboard_emp,
+            emp_options=emp_options,
+            emp_selecionada=emp_selecionada or "",
             admin_geral=(bool(dados_admin) and not (vendedor_alvo or "").strip()),
         )
 
