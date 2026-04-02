@@ -17,6 +17,7 @@ from db import (
     MetaPrograma,
     MetaProgramaEmp,
     SessionLocal,
+    ensure_metas_lojas_schema,
 )
 
 from metas_helpers import (
@@ -66,6 +67,7 @@ def _meta_tipo_label(tipo: str) -> str:
 
 
 def metas():
+    ensure_metas_lojas_schema()
     red = _login_required()
     if red:
         return red
@@ -188,6 +190,7 @@ def metas():
 
 
 def admin_metas():
+    ensure_metas_lojas_schema()
     red = _login_required()
     if red:
         return red
@@ -238,6 +241,7 @@ def admin_metas():
 
 
 def admin_metas_criar():
+    ensure_metas_lojas_schema()
     red = _login_required()
     if red:
         return red
@@ -340,6 +344,7 @@ def admin_metas_criar():
 
 
 def admin_metas_toggle(meta_id: int):
+    ensure_metas_lojas_schema()
     red = _login_required()
     if red:
         return red
@@ -373,6 +378,7 @@ def admin_metas_toggle(meta_id: int):
 
 
 def admin_meta_bases(meta_id: int):
+    ensure_metas_lojas_schema()
     red = _login_required()
     if red:
         return red
@@ -450,6 +456,7 @@ def admin_meta_bases(meta_id: int):
 
 
 def admin_meta_bases_salvar(meta_id: int):
+    ensure_metas_lojas_schema()
     red = _login_required()
     if red:
         return red

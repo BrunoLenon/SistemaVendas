@@ -1204,6 +1204,27 @@ class FinanceiroAudit(Base):
         Index("ix_fin_audit_criado_em", "criado_em"),
     )
 
+def ensure_metas_lojas_schema():
+    """Garante o schema mínimo das metas de lojas/gerente em tempo de execução.
+
+    Hotfix idempotente para ambientes onde AUTO_MIGRATE está desligado no boot.
+    Seguro para chamar antes das rotas de /metas e /admin/metas.
+    """
+    try:
+        with engine.connect() as conn:
+            conn = conn.execution_options(isolation_level="AUTOCOMMIT")
+            conn.execute(text("ALTER TABLE metas_programas ADD COLUMN IF NOT EXISTS escopo varchar(20) NOT NULL DEFAULT 'VENDEDOR';"))
+            conn.execute(text("ALTER TABLE metas_programas ADD COLUMN IF NOT EXISTS faturamento_minimo double precision;"))
+            conn.execute(text("ALTER TABLE metas_programas ADD COLUMN IF NOT EXISTS margem_minima double precision;"))
+            conn.execute(text("ALTER TABLE metas_programas ADD COLUMN IF NOT EXISTS teto_faturamento double precision;"))
+            conn.execute(text("ALTER TABLE metas_programas ADD COLUMN IF NOT EXISTS teto_bonus_percentual double precision;"))
+            conn.execute(text("ALTER TABLE metas_bases_manuais ADD COLUMN IF NOT EXISTS margem_percentual double precision;"))
+            conn.execute(text("ALTER TABLE metas_bases_manuais ADD COLUMN IF NOT EXISTS bonus_extra_percentual double precision;"))
+    except Exception:
+        # Não derruba o request aqui; a falha real vai aparecer na rota e no log.
+        pass
+
+
 def criar_tabelas():
     """Cria tabelas e aplica ajustes leves de schema (compatibilidade).
 
