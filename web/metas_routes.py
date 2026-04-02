@@ -1,18 +1,10 @@
 # -*- coding: utf-8 -*-
-"""Rotas de Metas (Crescimento / MIX / Share de Marcas).
-
-Extraído do app.py como refatoração pura (sem alterar comportamento externo).
-- Mantém os mesmos paths e os mesmos nomes de endpoint usados em url_for(...)
-
-Observação:
-- Registramos explicitamente o 'endpoint' para garantir backward compatibility.
-"""
+"""Rotas de Metas (Crescimento / MIX / Share de Marcas)."""
 
 from __future__ import annotations
 
 import re
 from datetime import date
-from decimal import Decimal
 
 from flask import flash, redirect, render_template, request, session, url_for
 
@@ -28,54 +20,49 @@ from db import (
 )
 
 from metas_helpers import (
-    _as_decimal,
+    META_GERENTE_ALIAS,
+    META_GERENTE_LABEL,
     _calc_and_upsert_meta_result,
     _get_emps_no_periodo,
     _get_vendedores_no_periodo,
-    _money2,
-    _meta_pick_bonus,
+    _query_valor_emp_mes,
     _query_valor_mes,
 )
 
 
 def register_metas_routes(app) -> None:
-    """Registra rotas de Metas no app Flask."""
-    app.add_url_rule(
-        "/metas",
-        endpoint="metas",
-        view_func=metas,
-        methods=["GET"],
-    )
-    app.add_url_rule(
-        "/admin/metas",
-        endpoint="admin_metas",
-        view_func=admin_metas,
-        methods=["GET"],
-    )
-    app.add_url_rule(
-        "/admin/metas/criar",
-        endpoint="admin_metas_criar",
-        view_func=admin_metas_criar,
-        methods=["POST"],
-    )
-    app.add_url_rule(
-        "/admin/metas/toggle/<int:meta_id>",
-        endpoint="admin_metas_toggle",
-        view_func=admin_metas_toggle,
-        methods=["POST"],
-    )
-    app.add_url_rule(
-        "/admin/metas/bases/<int:meta_id>",
-        endpoint="admin_meta_bases",
-        view_func=admin_meta_bases,
-        methods=["GET"],
-    )
-    app.add_url_rule(
-        "/admin/metas/bases/<int:meta_id>/salvar",
-        endpoint="admin_meta_bases_salvar",
-        view_func=admin_meta_bases_salvar,
-        methods=["POST"],
-    )
+    app.add_url_rule("/metas", endpoint="metas", view_func=metas, methods=["GET"])
+    app.add_url_rule("/admin/metas", endpoint="admin_metas", view_func=admin_metas, methods=["GET"])
+    app.add_url_rule("/admin/metas/criar", endpoint="admin_metas_criar", view_func=admin_metas_criar, methods=["POST"])
+    app.add_url_rule("/admin/metas/toggle/<int:meta_id>", endpoint="admin_metas_toggle", view_func=admin_metas_toggle, methods=["POST"])
+    app.add_url_rule("/admin/metas/bases/<int:meta_id>", endpoint="admin_meta_bases", view_func=admin_meta_bases, methods=["GET"])
+    app.add_url_rule("/admin/metas/bases/<int:meta_id>/salvar", endpoint="admin_meta_bases_salvar", view_func=admin_meta_bases_salvar, methods=["POST"])
+
+
+def _safe_int(v, default):
+    try:
+        return int(v)
+    except Exception:
+        return default
+
+
+def _safe_float(v, default=0.0):
+    if v in (None, ""):
+        return default
+    try:
+        return float(str(v).strip().replace(".", "").replace(",", "."))
+    except Exception:
+        return default
+
+
+def _meta_tipo_label(tipo: str) -> str:
+    if tipo == "CRESCIMENTO":
+        return "📈 Crescimento"
+    if tipo == "MIX":
+        return "🧩 MIX"
+    if tipo == "SHARE_MARCA":
+        return "🏷️ Share"
+    return tipo or "-"
 
 
 def metas():
@@ -83,89 +70,102 @@ def metas():
     if red:
         return red
 
-    role = _role() or ""
+    role = (_role() or "").lower()
     hoje = date.today()
-    ano = int(request.args.get("ano") or hoje.year)
-    mes = int(request.args.get("mes") or hoje.month)
-
-    # filtros
+    ano = _safe_int(request.args.get("ano"), hoje.year)
+    mes = _safe_int(request.args.get("mes"), hoje.month)
     emp_filtro = (request.args.get("emp") or "").strip()
     vendedor_filtro = (request.args.get("vendedor") or "").strip().upper()
 
     with SessionLocal() as db:
         emps_allowed = _allowed_emps()
-        # Admin pode ver tudo; supervisor/vendedor restringe
         emps_no_periodo = _get_emps_no_periodo(db, ano, mes, emps_allowed)
         if emp_filtro:
-            # valida contra allowed
             if emps_allowed and emp_filtro not in emps_allowed:
                 flash("EMP não permitida para seu usuário.", "danger")
                 emp_filtro = ""
         emps_scope = [emp_filtro] if emp_filtro else emps_no_periodo
 
-        # metas ativas do período
         metas_list = (
             db.query(MetaPrograma)
             .filter(MetaPrograma.ano == ano, MetaPrograma.mes == mes, MetaPrograma.ativo.is_(True))
-            .order_by(MetaPrograma.tipo.asc(), MetaPrograma.nome.asc())
+            .order_by(MetaPrograma.escopo.asc(), MetaPrograma.tipo.asc(), MetaPrograma.nome.asc())
             .all()
         )
 
-        # aplica meta -> emps
         meta_emps_map = {}
         for m in metas_list:
             rows = db.query(MetaProgramaEmp.emp).filter(MetaProgramaEmp.meta_id == m.id).all()
             meta_emps_map[m.id] = sorted({str(r[0]).strip() for r in rows if r and r[0] is not None and str(r[0]).strip()})
 
-        # vendedores
         if role == "vendedor":
-            vendedores = [str(session.get("usuario") or "").strip().upper()]
+            vendedores_choices = [str(session.get("usuario") or "").strip().upper()]
         else:
-            vendedores = _get_vendedores_no_periodo(db, ano, mes, emps_scope)
-            if vendedor_filtro:
-                vendedores = [v for v in vendedores if v == vendedor_filtro]
+            vendedores_choices = _get_vendedores_no_periodo(db, ano, mes, emps_scope)
 
-        # calcula resultados
-        resultados = []  # cada item: {vendedor, emp, metas: {meta_id: premio}, detalhes...}
+        resultados = []
+        has_manager_meta = any((getattr(m, "escopo", "VENDEDOR") or "VENDEDOR").upper() == "GERENTE" for m in metas_list)
+
         for emp in emps_scope:
-            for vend in vendedores:
-                # checa se vend tem vendas no período nessa emp (evita linha vazia)
-                valor_mes = _query_valor_mes(db, ano, mes, emp, vend)
-                if (not valor_mes) and role != "vendedor":
+            vendedores_linha = []
+            if role == "vendedor":
+                vendedor_logado = str(session.get("usuario") or "").strip().upper()
+                vendedores_linha = [vendedor_logado] if vendedor_logado else []
+            else:
+                vendedores_linha = _get_vendedores_no_periodo(db, ano, mes, [emp])
+                if vendedor_filtro:
+                    vendedores_linha = [v for v in vendedores_linha if v == vendedor_filtro]
+
+            # Linhas por vendedor
+            for vend in vendedores_linha:
+                valor_mes = float(_query_valor_mes(db, ano, mes, emp, vend) or 0.0)
+                if not valor_mes:
                     continue
-
-                row = {"emp": emp, "vendedor": vend, "valor_mes": float(valor_mes), "metas": {}, "detalhes": {}}
-                total_premios = Decimal("0.00")
-
+                row = {"emp": emp, "vendedor": vend, "valor_mes": valor_mes, "metas": {}, "detalhes": {}}
                 for meta in metas_list:
-                    # meta vale para esta emp?
                     emps_meta = meta_emps_map.get(meta.id) or []
                     if emps_meta and emp not in emps_meta:
                         continue
-
+                    if (getattr(meta, "escopo", "VENDEDOR") or "VENDEDOR").upper() == "GERENTE":
+                        row["metas"][meta.id] = None
+                        continue
                     res = _calc_and_upsert_meta_result(db, meta, emp, vend)
                     row["metas"][meta.id] = float(res.premio or 0.0)
-                    # detalhes principais (pra tooltip/modal futuro)
                     row["detalhes"][meta.id] = {
-                        "tipo": meta.tipo,
-                        "bonus": float(res.bonus_percentual or 0.0),
-                        "crescimento_pct": float(res.crescimento_pct or 0.0) if res.crescimento_pct is not None else None,
-                        "base_valor": float(res.base_valor or 0.0) if res.base_valor is not None else None,
-                        "mix": float(res.mix_itens_unicos or 0.0) if res.mix_itens_unicos is not None else None,
-                        "share_pct": float(res.share_pct or 0.0) if res.share_pct is not None else None,
-                        "valor_marcas": float(res.valor_marcas or 0.0) if res.valor_marcas is not None else None,
+                        "bonus_percentual": float(res.bonus_percentual or 0.0),
+                        "crescimento_pct": float(res.crescimento_pct) if res.crescimento_pct is not None else None,
+                        "share_pct": float(res.share_pct) if res.share_pct is not None else None,
+                        "valor_marcas": float(res.valor_marcas) if res.valor_marcas is not None else None,
+                        "base_valor": float(res.base_valor) if res.base_valor is not None else None,
                     }
-                    total_premios += _as_decimal(res.premio or 0.0)
-
-                row["total_premios"] = float(_money2(total_premios))
+                row["total_premios"] = round(sum(float(v or 0.0) for v in row["metas"].values()), 2)
                 resultados.append(row)
 
-        # listas para filtros
-        emps_choices = emps_no_periodo
-        vendedores_choices = _get_vendedores_no_periodo(db, ano, mes, emps_scope) if role != "vendedor" else vendedores
+            # Linha gerente/loja
+            if has_manager_meta and role in {"admin", "supervisor"} and not vendedor_filtro:
+                valor_loja = float(_query_valor_emp_mes(db, ano, mes, emp) or 0.0)
+                if valor_loja:
+                    row = {"emp": emp, "vendedor": META_GERENTE_LABEL, "valor_mes": valor_loja, "metas": {}, "detalhes": {}}
+                    for meta in metas_list:
+                        emps_meta = meta_emps_map.get(meta.id) or []
+                        if emps_meta and emp not in emps_meta:
+                            continue
+                        if (getattr(meta, "escopo", "VENDEDOR") or "VENDEDOR").upper() != "GERENTE":
+                            row["metas"][meta.id] = None
+                            continue
+                        res = _calc_and_upsert_meta_result(db, meta, emp, META_GERENTE_ALIAS)
+                        row["metas"][meta.id] = float(res.premio or 0.0)
+                        row["detalhes"][meta.id] = {
+                            "bonus_percentual": float(res.bonus_percentual or 0.0),
+                            "crescimento_pct": float(res.crescimento_pct) if res.crescimento_pct is not None else None,
+                            "share_pct": float(res.share_pct) if res.share_pct is not None else None,
+                            "valor_marcas": float(res.valor_marcas) if res.valor_marcas is not None else None,
+                            "base_valor": float(res.base_valor) if res.base_valor is not None else None,
+                        }
+                    row["total_premios"] = round(sum(float(v or 0.0) for v in row["metas"].values()), 2)
+                    resultados.append(row)
 
-        # nomes amigáveis dos tipos
-        tipo_label = {"CRESCIMENTO": "📈 Crescimento", "MIX": "🧩 MIX", "SHARE_MARCA": "🏷️ Share de Marcas"}
+        resultados.sort(key=lambda r: (r["emp"], 1 if r["vendedor"] == META_GERENTE_LABEL else 0, r["vendedor"]))
 
         return render_template(
             "metas.html",
@@ -173,13 +173,17 @@ def metas():
             emp=_emp(),
             ano=ano,
             mes=mes,
-            metas_list=metas_list,
-            tipo_label=tipo_label,
-            resultados=resultados,
-            emps_choices=emps_choices,
-            vendedores_choices=vendedores_choices,
             emp_filtro=emp_filtro,
             vendedor_filtro=vendedor_filtro,
+            metas_list=metas_list,
+            resultados=resultados,
+            emps_choices=emps_no_periodo,
+            vendedores_choices=vendedores_choices,
+            tipo_label={
+                "CRESCIMENTO": "Crescimento",
+                "MIX": "MIX",
+                "SHARE_MARCA": "Share de Marcas",
+            },
         )
 
 
@@ -188,31 +192,28 @@ def admin_metas():
     if red:
         return red
 
-    role = _role() or ""
+    role = (_role() or "").lower()
     if role not in ("admin", "supervisor"):
         flash("Acesso negado.", "danger")
         return redirect(url_for("dashboard"))
 
     hoje = date.today()
-    ano = int(request.args.get("ano") or hoje.year)
-    mes = int(request.args.get("mes") or hoje.month)
+    ano = _safe_int(request.args.get("ano"), hoje.year)
+    mes = _safe_int(request.args.get("mes"), hoje.month)
 
     with SessionLocal() as db:
+        q_emps = db.query(Emp).filter(Emp.ativo.is_(True))
         emps_allowed = _allowed_emps()
-        # lista de EMPs cadastradas (melhor do que inferir por vendas)
-        emps_rows = db.query(Emp).filter(Emp.ativo.is_(True)).order_by(Emp.codigo.asc()).all()
-        # supervisor só pode suas emps
         if role == "supervisor" and emps_allowed:
-            emps_rows = [e for e in emps_rows if str(e.codigo) in set(emps_allowed)]
+            q_emps = q_emps.filter(Emp.codigo.in_(emps_allowed))
+        emps_rows = q_emps.order_by(Emp.codigo.asc()).all()
 
         metas_list = (
             db.query(MetaPrograma)
             .filter(MetaPrograma.ano == ano, MetaPrograma.mes == mes)
-            .order_by(MetaPrograma.ativo.desc(), MetaPrograma.tipo.asc(), MetaPrograma.nome.asc())
+            .order_by(MetaPrograma.escopo.asc(), MetaPrograma.tipo.asc(), MetaPrograma.nome.asc())
             .all()
         )
-
-        # mapa de emps e escalas/marcas
         meta_emps = {}
         meta_escalas = {}
         meta_marcas = {}
@@ -232,6 +233,7 @@ def admin_metas():
             meta_emps=meta_emps,
             meta_escalas=meta_escalas,
             meta_marcas=meta_marcas,
+            tipo_label=_meta_tipo_label,
         )
 
 
@@ -240,31 +242,36 @@ def admin_metas_criar():
     if red:
         return red
 
-    role = _role() or ""
+    role = (_role() or "").lower()
     if role not in ("admin", "supervisor"):
         flash("Acesso negado.", "danger")
         return redirect(url_for("dashboard"))
 
     nome = (request.form.get("nome") or "").strip()
     tipo = (request.form.get("tipo") or "").strip().upper()
-    ano = int(request.form.get("ano") or date.today().year)
-    mes = int(request.form.get("mes") or date.today().month)
-    bloqueio = request.form.get("ativo")  # checkbox
-
+    escopo = (request.form.get("escopo") or "VENDEDOR").strip().upper()
+    ano = _safe_int(request.form.get("ano"), date.today().year)
+    mes = _safe_int(request.form.get("mes"), date.today().month)
     emps = request.form.getlist("emps") or []
-
     escalas_raw = (request.form.get("escalas") or "").strip()
     marcas_raw = (request.form.get("marcas") or "").strip()
+    faturamento_minimo = _safe_float(request.form.get("faturamento_minimo"), 0.0)
+    margem_minima = _safe_float(request.form.get("margem_minima"), 0.0)
+    teto_faturamento = _safe_float(request.form.get("teto_faturamento"), 0.0)
+    teto_bonus_percentual = _safe_float(request.form.get("teto_bonus_percentual"), 0.0)
 
     if not nome or tipo not in ("CRESCIMENTO", "MIX", "SHARE_MARCA"):
         flash("Preencha Nome e Tipo da meta.", "danger")
+        return redirect(url_for("admin_metas", ano=ano, mes=mes))
+
+    if escopo not in ("VENDEDOR", "GERENTE"):
+        flash("Escopo inválido.", "danger")
         return redirect(url_for("admin_metas", ano=ano, mes=mes))
 
     if not emps:
         flash("Selecione ao menos 1 Empresa.", "danger")
         return redirect(url_for("admin_metas", ano=ano, mes=mes))
 
-    # parse escalas: linhas "limite=bonus" ou "limite:bonus"
     escalas = []
     for ln in escalas_raw.splitlines():
         ln = ln.strip()
@@ -285,12 +292,11 @@ def admin_metas_criar():
             continue
 
     if not escalas:
-        flash("Informe as faixas (escadas) no formato 'limite:bonus'.", "danger")
+        flash("Informe as faixas no formato 'limite:bonus'.", "danger")
         return redirect(url_for("admin_metas", ano=ano, mes=mes))
 
     marcas = []
     if tipo == "SHARE_MARCA":
-        # aceita separador por vírgula, ponto-e-vírgula e quebra de linha
         parts = re.split(r"[,\n;]+", marcas_raw)
         marcas = [p.strip().upper() for p in parts if p.strip()]
         if not marcas:
@@ -298,7 +304,6 @@ def admin_metas_criar():
             return redirect(url_for("admin_metas", ano=ano, mes=mes))
 
     with SessionLocal() as db:
-        # supervisor só pode emps dele
         if role == "supervisor":
             allowed = set(_allowed_emps())
             emps = [e for e in emps if e in allowed]
@@ -309,24 +314,25 @@ def admin_metas_criar():
         meta = MetaPrograma(
             nome=nome,
             tipo=tipo,
+            escopo=escopo,
             ano=ano,
             mes=mes,
-            ativo=True if (bloqueio is None or str(bloqueio).lower() in ("1", "on", "true", "yes", "")) else False,
+            ativo=True,
+            faturamento_minimo=faturamento_minimo or 0.0,
+            margem_minima=margem_minima or 0.0,
+            teto_faturamento=teto_faturamento or None,
+            teto_bonus_percentual=teto_bonus_percentual or None,
             created_by_user_id=session.get("user_id"),
         )
         db.add(meta)
         db.commit()
 
-        # vincula emps
         for e in emps:
             db.add(MetaProgramaEmp(meta_id=meta.id, emp=str(e).strip()))
-        # escalas
         for idx, (lim, bon) in enumerate(sorted(escalas, key=lambda x: x[0])):
             db.add(MetaEscala(meta_id=meta.id, ordem=idx + 1, limite_min=lim, bonus_percentual=bon))
-        # marcas
         for m in marcas:
             db.add(MetaMarca(meta_id=meta.id, marca=m))
-
         db.commit()
 
     flash("Meta criada com sucesso.", "success")
@@ -338,13 +344,13 @@ def admin_metas_toggle(meta_id: int):
     if red:
         return red
 
-    role = _role() or ""
+    role = (_role() or "").lower()
     if role not in ("admin", "supervisor"):
         flash("Acesso negado.", "danger")
         return redirect(url_for("dashboard"))
 
-    ano = int(request.form.get("ano") or date.today().year)
-    mes = int(request.form.get("mes") or date.today().month)
+    ano = _safe_int(request.form.get("ano"), date.today().year)
+    mes = _safe_int(request.form.get("mes"), date.today().month)
 
     with SessionLocal() as db:
         meta = db.query(MetaPrograma).filter(MetaPrograma.id == meta_id).first()
@@ -352,7 +358,6 @@ def admin_metas_toggle(meta_id: int):
             flash("Meta não encontrada.", "danger")
             return redirect(url_for("admin_metas", ano=ano, mes=mes))
 
-        # supervisor só pode mexer em metas que atinjam emps dele (e opcionalmente as que ele criou)
         if role == "supervisor":
             allowed = set(_allowed_emps())
             meta_emps = [r[0] for r in db.query(MetaProgramaEmp.emp).filter(MetaProgramaEmp.meta_id == meta.id).all()]
@@ -372,7 +377,7 @@ def admin_meta_bases(meta_id: int):
     if red:
         return red
 
-    role = _role() or ""
+    role = (_role() or "").lower()
     if role not in ("admin", "supervisor"):
         flash("Acesso negado.", "danger")
         return redirect(url_for("dashboard"))
@@ -383,42 +388,56 @@ def admin_meta_bases(meta_id: int):
             flash("Meta não encontrada.", "danger")
             return redirect(url_for("admin_metas"))
 
-        if meta.tipo != "CRESCIMENTO":
-            flash("Base manual só se aplica a metas de Crescimento.", "warning")
-            return redirect(url_for("admin_metas", ano=meta.ano, mes=meta.mes))
-
         emps_meta = [r[0] for r in db.query(MetaProgramaEmp.emp).filter(MetaProgramaEmp.meta_id == meta.id).all()]
-
-        # supervisor restringe emps
         if role == "supervisor":
             allowed = set(_allowed_emps())
             emps_meta = [e for e in emps_meta if e in allowed]
 
-        # lista vendedores do período e dessas emps
-        vendedores = _get_vendedores_no_periodo(db, meta.ano, meta.mes, emps_meta)
-
-        # bases existentes
         bases = db.query(MetaBaseManual).filter(MetaBaseManual.meta_id == meta.id).all()
         bases_map = {(b.emp, b.vendedor): b for b in bases}
-
-        # prepara linhas
+        scope = (meta.escopo or "VENDEDOR").upper()
         linhas = []
-        for emp in emps_meta:
-            for vend in vendedores:
-                # total atual (para referência)
-                total_atual = _query_valor_mes(db, meta.ano, meta.mes, emp, vend)
-                base_auto = _query_valor_mes(db, meta.ano - 1, meta.mes, emp, vend)
-                b = bases_map.get((emp, vend))
+
+        if scope == "GERENTE":
+            for emp in emps_meta:
+                total_atual = _query_valor_emp_mes(db, meta.ano, meta.mes, emp)
+                base_auto = _query_valor_emp_mes(db, meta.ano - 1, meta.mes, emp)
+                b = bases_map.get((emp, META_GERENTE_ALIAS))
                 linhas.append(
                     {
                         "emp": emp,
-                        "vendedor": vend,
-                        "total_atual": float(total_atual),
-                        "base_auto": float(base_auto),
-                        "base_manual": float(b.base_valor) if b else None,
+                        "vendedor": META_GERENTE_LABEL,
+                        "vendedor_key": META_GERENTE_ALIAS,
+                        "total_atual": float(total_atual or 0.0),
+                        "base_auto": float(base_auto or 0.0),
+                        "base_manual": float(b.base_valor) if b and b.base_valor is not None else None,
+                        "margem_percentual": float(b.margem_percentual) if b and b.margem_percentual is not None else None,
+                        "bonus_extra_percentual": float(b.bonus_extra_percentual) if b and b.bonus_extra_percentual is not None else None,
                         "observacao": (b.observacao if b else ""),
                     }
                 )
+        else:
+            vendedores = _get_vendedores_no_periodo(db, meta.ano, meta.mes, emps_meta)
+            for emp in emps_meta:
+                for vend in vendedores:
+                    total_atual = _query_valor_mes(db, meta.ano, meta.mes, emp, vend)
+                    if float(total_atual or 0.0) == 0.0:
+                        continue
+                    base_auto = _query_valor_mes(db, meta.ano - 1, meta.mes, emp, vend)
+                    b = bases_map.get((emp, vend))
+                    linhas.append(
+                        {
+                            "emp": emp,
+                            "vendedor": vend,
+                            "vendedor_key": vend,
+                            "total_atual": float(total_atual or 0.0),
+                            "base_auto": float(base_auto or 0.0),
+                            "base_manual": float(b.base_valor) if b and b.base_valor is not None else None,
+                            "margem_percentual": float(b.margem_percentual) if b and b.margem_percentual is not None else None,
+                            "bonus_extra_percentual": float(b.bonus_extra_percentual) if b and b.bonus_extra_percentual is not None else None,
+                            "observacao": (b.observacao if b else ""),
+                        }
+                    )
 
         return render_template(
             "admin_meta_bases.html",
@@ -426,6 +445,7 @@ def admin_meta_bases(meta_id: int):
             emp=_emp(),
             meta=meta,
             linhas=linhas,
+            show_base=(meta.tipo == "CRESCIMENTO"),
         )
 
 
@@ -434,25 +454,22 @@ def admin_meta_bases_salvar(meta_id: int):
     if red:
         return red
 
-    role = _role() or ""
+    role = (_role() or "").lower()
     if role not in ("admin", "supervisor"):
         flash("Acesso negado.", "danger")
         return redirect(url_for("dashboard"))
 
     with SessionLocal() as db:
         meta = db.query(MetaPrograma).filter(MetaPrograma.id == meta_id).first()
-        if not meta or meta.tipo != "CRESCIMENTO":
+        if not meta:
             flash("Meta inválida.", "danger")
             return redirect(url_for("admin_metas"))
 
-        # supervisor restringe emps
         emps_meta = [r[0] for r in db.query(MetaProgramaEmp.emp).filter(MetaProgramaEmp.meta_id == meta.id).all()]
         if role == "supervisor":
             allowed = set(_allowed_emps())
             emps_meta = [e for e in emps_meta if e in allowed]
 
-        # recebe pares emp|vendedor
-        # campos: base__EMP__VENDEDOR e obs__EMP__VENDEDOR
         updated = 0
         for key, val in request.form.items():
             if not key.startswith("base__"):
@@ -463,40 +480,46 @@ def admin_meta_bases_salvar(meta_id: int):
             emp, vend = parts[1], parts[2]
             if emp not in emps_meta:
                 continue
+
             vend = (vend or "").strip().upper()
-            base_str = (val or "").strip().replace(".", "").replace(",", ".")
+            base_raw = (val or "").strip()
+            margem_raw = (request.form.get(f"margem__{emp}__{vend}") or "").strip()
+            bonus_raw = (request.form.get(f"extra__{emp}__{vend}") or "").strip()
             obs = (request.form.get(f"obs__{emp}__{vend}") or "").strip()
 
-            if base_str == "":
-                # remove manual se existir
-                b = (
-                    db.query(MetaBaseManual)
-                    .filter(MetaBaseManual.meta_id == meta.id, MetaBaseManual.emp == emp, MetaBaseManual.vendedor == vend)
-                    .first()
-                )
-                if b:
-                    db.delete(b)
-                    updated += 1
-                continue
+            base_val = _safe_float(base_raw, None)
+            margem_val = _safe_float(margem_raw, None)
+            bonus_val = _safe_float(bonus_raw, None)
 
-            try:
-                base_val = float(base_str)
-            except Exception:
-                continue
-
-            b = (
+            item = (
                 db.query(MetaBaseManual)
                 .filter(MetaBaseManual.meta_id == meta.id, MetaBaseManual.emp == emp, MetaBaseManual.vendedor == vend)
                 .first()
             )
-            if not b:
-                b = MetaBaseManual(meta_id=meta.id, emp=emp, vendedor=vend)
-            b.base_valor = base_val
-            b.observacao = obs
-            db.add(b)
+
+            should_delete = (
+                (meta.tipo != "CRESCIMENTO" or base_raw == "") and margem_raw == "" and bonus_raw == "" and not obs
+            )
+            if should_delete:
+                if item:
+                    db.delete(item)
+                    updated += 1
+                continue
+
+            if not item:
+                item = MetaBaseManual(meta_id=meta.id, emp=emp, vendedor=vend, base_valor=0.0)
+
+            if meta.tipo == "CRESCIMENTO":
+                item.base_valor = float(base_val or 0.0)
+            else:
+                item.base_valor = float(item.base_valor or 0.0)
+            item.margem_percentual = margem_val
+            item.bonus_extra_percentual = bonus_val
+            item.observacao = obs
+            db.add(item)
             updated += 1
 
         db.commit()
 
-    flash(f"Bases manuais salvas ({updated} alterações).", "success")
+    flash(f"Insumos salvos ({updated} alterações).", "success")
     return redirect(url_for("admin_meta_bases", meta_id=meta_id))

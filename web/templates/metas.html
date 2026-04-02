@@ -5,7 +5,7 @@
 <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
   <div>
     <h4 class="m-0">🏁 Metas</h4>
-    <div class="text-muted small">Resultados do mês por Empresa e Vendedor (com CA/DS deduzindo valor; MIX ignora DS e considera CA como negativo).</div>
+    <div class="text-muted small">Resultados do mês por Empresa e Vendedor / Gerente. Crescimento e share usam as vendas do período; margem e bônus extra podem ser informados manualmente.</div>
   </div>
 
   <form class="d-flex flex-wrap gap-2" method="get" action="{{ url_for('metas') }}">
@@ -42,12 +42,12 @@
           <thead>
             <tr>
               <th style="min-width:90px;">Empresa</th>
-              <th style="min-width:210px;">Vendedor</th>
-              <th class="text-end" style="min-width:120px;">Valor mês</th>
+              <th style="min-width:220px;">Pessoa</th>
+              <th class="text-end" style="min-width:120px;">Faturamento</th>
               {% for m in metas_list %}
-                <th class="text-end" style="min-width:140px;">
+                <th class="text-end" style="min-width:170px;">
                   <div class="fw-semibold">{{ m.nome }}</div>
-                  <div class="text-muted small">{{ tipo_label.get(m.tipo, m.tipo) }}</div>
+                  <div class="text-muted small">{{ tipo_label.get(m.tipo, m.tipo) }} · {{ (m.escopo or 'VENDEDOR')|upper }}</div>
                 </th>
               {% endfor %}
               <th class="text-end" style="min-width:140px;">Total metas</th>
@@ -55,31 +55,37 @@
           </thead>
           <tbody>
             {% for r in resultados %}
-              <tr>
+              <tr {% if r.vendedor == 'GERENTE' %}class="table-warning-subtle"{% endif %}>
                 <td class="text-muted">{{ r.emp }}</td>
                 <td class="fw-semibold">{{ r.vendedor }}</td>
-                <td class="text-end">R$ {{ '%.2f'|format(r.valor_mes) }}</td>
+                <td class="text-end">R$ {{ '%.2f'|format(r.valor_mes or 0) }}</td>
 
                 {% for m in metas_list %}
                   {% set p = r.metas.get(m.id) %}
+                  {% set d = r.detalhes.get(m.id, {}) %}
                   <td class="text-end">
                     {% if p is not none %}
-                      <span class="badge text-bg-success-subtle border">R$ {{ '%.2f'|format(p) }}</span>
+                      <div><span class="badge text-bg-success-subtle border">R$ {{ '%.2f'|format(p or 0) }}</span></div>
+                      {% if d.get('crescimento_pct') is not none %}
+                        <div class="small text-muted">Cresc.: {{ '%.2f'|format(d.get('crescimento_pct') or 0) }}%</div>
+                      {% endif %}
+                      {% if d.get('share_pct') is not none %}
+                        <div class="small text-muted">Share: {{ '%.2f'|format(d.get('share_pct') or 0) }}%</div>
+                      {% endif %}
+                      {% if d.get('bonus_percentual') is not none %}
+                        <div class="small text-muted">Prêmio: {{ '%.2f'|format(d.get('bonus_percentual') or 0) }}%</div>
+                      {% endif %}
                     {% else %}
                       <span class="text-muted">—</span>
                     {% endif %}
                   </td>
                 {% endfor %}
 
-                <td class="text-end fw-semibold">R$ {{ '%.2f'|format(r.total_premios) }}</td>
+                <td class="text-end fw-semibold">R$ {{ '%.2f'|format(r.total_premios or 0) }}</td>
               </tr>
             {% endfor %}
           </tbody>
         </table>
-      </div>
-
-      <div class="text-muted small mt-2">
-        Dica: se a meta de <b>Crescimento</b> estiver distorcida por férias/troca de carteira, o ADMIN/SUPERVISOR pode cadastrar uma <b>Base manual</b> para aquele vendedor/empresa no mês.
       </div>
     </div>
   </div>

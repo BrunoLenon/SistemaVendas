@@ -5,7 +5,7 @@
 <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
   <div>
     <h4 class="m-0">🏁 Administração de Metas</h4>
-    <div class="text-muted small">Cadastre metas mensais (Crescimento, MIX e Share de Marcas) com escadas e empresas alvo.</div>
+    <div class="text-muted small">Cadastre metas mensais por vendedor ou gerente/loja, usando as vendas como base de faturamento.</div>
   </div>
 
   <form class="d-flex gap-2" method="get" action="{{ url_for('admin_metas') }}">
@@ -16,7 +16,7 @@
 </div>
 
 <div class="row g-3">
-  <div class="col-12 col-lg-5">
+  <div class="col-12 col-xl-5">
     <div class="card shadow-sm">
       <div class="card-body">
         <h6 class="mb-3">➕ Nova meta</h6>
@@ -25,7 +25,7 @@
           <div class="row g-2">
             <div class="col-12">
               <label class="form-label small">Nome</label>
-              <input class="form-control" name="nome" placeholder="Ex.: Meta Crescimento (Jan)" required>
+              <input class="form-control" name="nome" placeholder="Ex.: Crescimento Vendedor Loja 201" required>
             </div>
 
             <div class="col-12 col-md-6">
@@ -37,6 +37,14 @@
               </select>
             </div>
 
+            <div class="col-12 col-md-6">
+              <label class="form-label small">Escopo</label>
+              <select class="form-select" name="escopo" required>
+                <option value="VENDEDOR">Vendedor</option>
+                <option value="GERENTE">Gerente / Total da loja</option>
+              </select>
+            </div>
+
             <div class="col-6 col-md-3">
               <label class="form-label small">Mês</label>
               <input class="form-control" name="mes" value="{{ '%02d'|format(mes) }}" required>
@@ -44,6 +52,23 @@
             <div class="col-6 col-md-3">
               <label class="form-label small">Ano</label>
               <input class="form-control" name="ano" value="{{ ano }}" required>
+            </div>
+            <div class="col-6 col-md-3">
+              <label class="form-label small">Fat. mínimo</label>
+              <input class="form-control" name="faturamento_minimo" placeholder="Ex.: 70000">
+            </div>
+            <div class="col-6 col-md-3">
+              <label class="form-label small">Margem mínima (%)</label>
+              <input class="form-control" name="margem_minima" placeholder="Ex.: 8">
+            </div>
+
+            <div class="col-6">
+              <label class="form-label small">Teto a partir do faturamento</label>
+              <input class="form-control" name="teto_faturamento" placeholder="Ex.: 100000">
+            </div>
+            <div class="col-6">
+              <label class="form-label small">Teto bônus (%)</label>
+              <input class="form-control" name="teto_bonus_percentual" placeholder="Ex.: 0,40">
             </div>
 
             <div class="col-12">
@@ -58,22 +83,16 @@
                   </div>
                 {% endfor %}
               </div>
-              <div class="text-muted small mt-1">Supervisor só enxerga as empresas dele.</div>
             </div>
 
             <div class="col-12">
               <label class="form-label small">Escada (faixas)</label>
-              {#
-                UI "pro" para escada: tabela com adicionar/remover e um textarea oculto como fonte de verdade.
-                O backend continua recebendo o campo "escalas" no formato linha-a-linha "limite:bonus".
-              #}
               <textarea class="form-control d-none" name="escalas" id="escalas_text" rows="5"></textarea>
 
               <div class="border rounded p-2 bg-light">
                 <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
                   <div class="text-muted small">
                     <span class="fw-semibold">Limite</span> → <span class="fw-semibold">Bônus</span>
-                    <span class="ms-1">(bônus é % sobre o valor do mês, ex.: <code>0,10%</code>)</span>
                   </div>
                   <div class="d-flex gap-2">
                     <button type="button" class="btn btn-sm btn-outline-secondary" id="escada_exemplo">Inserir exemplo</button>
@@ -96,19 +115,12 @@
 
                 <div class="text-muted small mt-2">
                   <ul class="mb-0 ps-3">
-                    <li><b>Crescimento</b> e <b>Share</b>: limite em <b>% atingido</b> (ex.: 5, 10, 20).</li>
-                    <li><b>MIX</b>: limite é a <b>qtde de itens únicos</b> (ex.: 1500, 1700).</li>
-                    <li>Use bônus como <b>0,10</b> para 0,10% (pode digitar com vírgula).</li>
+                    <li><b>Crescimento</b> e <b>Share</b>: pode usar <b>5</b> ou <b>0,05</b> para 5%.</li>
+                    <li><b>Bônus</b>: pode usar <b>0,10</b> para 0,10% ou o estilo da planilha (<b>0,001</b> = 0,10%).</li>
+                    <li><b>MIX</b>: o limite é quantidade de itens únicos.</li>
                   </ul>
                 </div>
               </div>
-
-              <noscript>
-                <div class="alert alert-warning mt-2 mb-0">
-                  Seu navegador está sem JavaScript. Preencha a escada manualmente (uma linha por faixa): <code>limite:bonus</code>
-                </div>
-                <textarea class="form-control mt-2" name="escalas" rows="5" placeholder="Ex.:\n5:0.10\n10:0.20\n20:0.30" required></textarea>
-              </noscript>
             </div>
 
             <div class="col-12">
@@ -126,16 +138,14 @@
     </div>
 
     <div class="alert alert-info mt-3">
-      <b>Importante (Crescimento):</b> se houver férias/troca de carteira, ajuste a <b>Base manual</b> por vendedor/empresa no mês.
+      <b>Dica:</b> a página de <b>Insumos</b> serve para informar manualmente base anterior, margem do mês e bônus extra de avaliação.
     </div>
   </div>
 
-  <div class="col-12 col-lg-7">
+  <div class="col-12 col-xl-7">
     <div class="card shadow-sm">
       <div class="card-body">
-        <div class="d-flex justify-content-between align-items-center mb-2">
-          <h6 class="m-0">📋 Metas cadastradas ({{ '%02d'|format(mes) }}/{{ ano }})</h6>
-        </div>
+        <h6 class="mb-2">📋 Metas cadastradas ({{ '%02d'|format(mes) }}/{{ ano }})</h6>
 
         {% if metas_list|length == 0 %}
           <div class="text-muted">Nenhuma meta cadastrada para este período.</div>
@@ -146,8 +156,9 @@
                 <tr>
                   <th>Nome</th>
                   <th>Tipo</th>
+                  <th>Escopo</th>
+                  <th>Regras</th>
                   <th>Empresas</th>
-                  <th>Escada</th>
                   <th>Marcas</th>
                   <th class="text-end">Ações</th>
                 </tr>
@@ -161,22 +172,25 @@
                         <span class="badge text-bg-secondary ms-1">inativa</span>
                       {% endif %}
                     </td>
-                    <td class="text-muted">
-                      {% if m.tipo == 'CRESCIMENTO' %}📈 Crescimento{% elif m.tipo == 'MIX' %}🧩 MIX{% elif m.tipo == 'SHARE_MARCA' %}🏷️ Share{% else %}{{ m.tipo }}{% endif %}
+                    <td class="text-muted">{{ tipo_label(m.tipo) }}</td>
+                    <td>
+                      <span class="badge text-bg-light border">{{ (m.escopo or 'VENDEDOR')|upper }}</span>
+                    </td>
+                    <td class="small">
+                      <div>Fat. mín.: <b>R$ {{ '%.2f'|format(m.faturamento_minimo or 0) }}</b></div>
+                      <div>Margem mín.: <b>{{ '%.2f'|format(m.margem_minima or 0) }}%</b></div>
+                      {% if m.teto_faturamento or m.teto_bonus_percentual %}
+                        <div>Teto: <b>R$ {{ '%.2f'|format(m.teto_faturamento or 0) }}</b> → <b>{{ '%.2f'|format(m.teto_bonus_percentual or 0) }}%</b></div>
+                      {% endif %}
+                      <div class="mt-1">
+                        {% for esc in (meta_escalas.get(m.id) or []) %}
+                          <span class="badge text-bg-light border me-1 mb-1">≥ {{ esc.limite_min }} → {{ esc.bonus_percentual }}</span>
+                        {% endfor %}
+                      </div>
                     </td>
                     <td class="small">
                       {% for e in (meta_emps.get(m.id) or []) %}
                         <span class="badge text-bg-light border">{{ e }}</span>
-                      {% endfor %}
-                    </td>
-                    <td class="small">
-                      {% for esc in (meta_escalas.get(m.id) or []) %}
-                        {% set bonus = ('%.2f' % (esc.bonus_percentual or 0))|replace('.',',') %}
-                        {% if m.tipo == 'MIX' %}
-                          <span class="badge text-bg-light border me-1 mb-1">≥ {{ esc.limite_min }} → {{ bonus }}%</span>
-                        {% else %}
-                          <span class="badge text-bg-light border me-1 mb-1">≥ {{ esc.limite_min }}% → {{ bonus }}%</span>
-                        {% endif %}
                       {% endfor %}
                     </td>
                     <td class="small">
@@ -189,15 +203,11 @@
                       {% endif %}
                     </td>
                     <td class="text-end">
-                      {% if m.tipo == 'CRESCIMENTO' %}
-                        <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin_meta_bases', meta_id=m.id) }}">Bases</a>
-                      {% endif %}
+                      <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin_meta_bases', meta_id=m.id) }}">Insumos</a>
                       <form class="d-inline" method="post" action="{{ url_for('admin_metas_toggle', meta_id=m.id) }}">
                         <input type="hidden" name="ano" value="{{ ano }}">
                         <input type="hidden" name="mes" value="{{ mes }}">
-                        <button class="btn btn-sm btn-outline-secondary">
-                          {% if m.ativo %}Desativar{% else %}Ativar{% endif %}
-                        </button>
+                        <button class="btn btn-sm btn-outline-secondary">{% if m.ativo %}Desativar{% else %}Ativar{% endif %}</button>
                       </form>
                     </td>
                   </tr>
@@ -212,7 +222,6 @@
 </div>
 
 <script>
-  // Builder da escada: mantém um textarea oculto (escalas_text) como fonte de verdade.
   (function () {
     const table = document.getElementById('escadas_table');
     const tbody = table ? table.querySelector('tbody') : null;
@@ -242,59 +251,33 @@
     function addRow(lim = '', bon = '') {
       const tr = document.createElement('tr');
       tr.innerHTML = `
-        <td>
-          <input class="form-control form-control-sm" data-kind="lim" inputmode="decimal" placeholder="Ex.: 5" value="${lim}">
-        </td>
+        <td><input class="form-control form-control-sm" data-kind="lim" inputmode="decimal" placeholder="Ex.: 5" value="${lim}"></td>
         <td>
           <div class="input-group input-group-sm">
             <input class="form-control" data-kind="bon" inputmode="decimal" placeholder="Ex.: 0,10" value="${bon}">
             <span class="input-group-text">%</span>
           </div>
         </td>
-        <td class="text-end">
-          <button type="button" class="btn btn-sm btn-outline-danger" title="Remover">✕</button>
-        </td>
+        <td class="text-end"><button type="button" class="btn btn-sm btn-outline-danger">✕</button></td>
       `;
-
-      tr.querySelector('button').addEventListener('click', () => {
-        tr.remove();
-        serialize();
-      });
-
-      tr.querySelectorAll('input').forEach(inp => {
-        inp.addEventListener('input', serialize);
-        inp.addEventListener('change', serialize);
-      });
-
+      tr.querySelector('button').addEventListener('click', () => { tr.remove(); serialize(); });
+      tr.querySelectorAll('input').forEach(el => el.addEventListener('input', serialize));
       tbody.appendChild(tr);
       serialize();
     }
 
-    // Começa com 1 linha vazia para guiar.
-    addRow();
-
-    btnAdd.addEventListener('click', () => addRow());
-
+    btnAdd.addEventListener('click', () => addRow('', ''));
     if (btnEx) {
       btnEx.addEventListener('click', () => {
         tbody.innerHTML = '';
-        addRow('5', '0,10');
-        addRow('10', '0,20');
-        addRow('20', '0,30');
+        addRow('2.5', '0.10');
+        addRow('5', '0.20');
+        addRow('7.5', '0.25');
+        addRow('10', '0.30');
       });
     }
 
-    // Garante que antes de enviar o form o textarea oculto esteja preenchido.
-    const form = hidden.closest('form');
-    if (form) {
-      form.addEventListener('submit', (ev) => {
-        serialize();
-        if (!hidden.value || hidden.value.trim().length === 0) {
-          ev.preventDefault();
-          alert('Preencha ao menos uma faixa na escada (Limite e Bônus).');
-        }
-      });
-    }
+    addRow('', '');
   })();
 </script>
 {% endblock %}

@@ -556,6 +556,20 @@ class MetaPrograma(Base):
 
     ativo = Column(Boolean, nullable=False, default=True)
 
+    # Escopo da meta:
+    # - VENDEDOR: calcula por vendedor/EMP
+    # - GERENTE: calcula pelo total da EMP (linha especial GERENTE)
+    escopo = Column(String(20), nullable=False, default="VENDEDOR")
+
+    # Gates / travas opcionais
+    faturamento_minimo = Column(Float, nullable=True, default=0.0)
+    margem_minima = Column(Float, nullable=True, default=0.0)
+
+    # Teto opcional de % de premiação quando o faturamento atingir um valor específico.
+    # Ex.: acima de 100.000,00 pagar no máximo 0,40%.
+    teto_faturamento = Column(Float, nullable=True)
+    teto_bonus_percentual = Column(Float, nullable=True)
+
     created_by_user_id = Column(Integer, nullable=True, index=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
@@ -627,6 +641,8 @@ class MetaBaseManual(Base):
     vendedor = Column(String(80), nullable=False, index=True)
 
     base_valor = Column(Float, nullable=False, default=0.0)
+    margem_percentual = Column(Float, nullable=True)
+    bonus_extra_percentual = Column(Float, nullable=True, default=0.0)
     observacao = Column(String(200), nullable=True)
 
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
@@ -1244,6 +1260,16 @@ def criar_tabelas():
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_usuario_emps_usuario_id ON usuario_emps (usuario_id);"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_usuario_emps_emp ON usuario_emps (emp);"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_usuario_emps_ativo ON usuario_emps (ativo);"))
+
+            # Metas - evolução compatível para metas de lojas / gerente
+            conn.execute(text("ALTER TABLE metas_programas ADD COLUMN IF NOT EXISTS escopo varchar(20) NOT NULL DEFAULT 'VENDEDOR';"))
+            conn.execute(text("ALTER TABLE metas_programas ADD COLUMN IF NOT EXISTS faturamento_minimo double precision;"))
+            conn.execute(text("ALTER TABLE metas_programas ADD COLUMN IF NOT EXISTS margem_minima double precision;"))
+            conn.execute(text("ALTER TABLE metas_programas ADD COLUMN IF NOT EXISTS teto_faturamento double precision;"))
+            conn.execute(text("ALTER TABLE metas_programas ADD COLUMN IF NOT EXISTS teto_bonus_percentual double precision;"))
+            conn.execute(text("ALTER TABLE metas_bases_manuais ADD COLUMN IF NOT EXISTS margem_percentual double precision;"))
+            conn.execute(text("ALTER TABLE metas_bases_manuais ADD COLUMN IF NOT EXISTS bonus_extra_percentual double precision;"))
+
             # Compatibilidade: se existir tabela antiga usuario_emp, copia vínculos (não derruba se falhar)
             conn.execute(text("""
                 DO $$
