@@ -1,87 +1,107 @@
 {% extends "base.html" %}
 {% block title %}Insumos - {{ meta.nome }}{% endblock %}
 
+{% block extra_head %}
+<style>
+  .sv-page.sv-page--wide{max-width:1500px;padding-top:10px;padding-bottom:10px;}
+  .sv-pagehead{padding:12px;}
+  .sv-card-pad{padding:14px;}
+  .meta-table td,.meta-table th{padding:.52rem .55rem; vertical-align:middle;}
+  .meta-table thead th{font-size:12px; color:#bcbcbc; letter-spacing:.02em;}
+  .meta-table tbody td{background: rgba(5,5,5,.38) !important;}
+  .meta-table tbody tr:nth-child(even) td{background: rgba(255,255,255,.03) !important;}
+  .meta-table tbody tr:hover td{background: rgba(255,140,0,.08) !important;}
+  .meta-mini{font-size:12px;color:#b9b9b9;}
+</style>
+{% endblock %}
+
 {% block content %}
-<div class="d-flex justify-content-between align-items-start gap-2 mb-3">
-  <div>
-    <h4 class="m-0">🧮 Insumos da meta</h4>
-    <div class="text-muted small">
-      Meta: <b>{{ meta.nome }}</b> — {{ '%02d'|format(meta.mes) }}/{{ meta.ano }}.
-      Aqui você informa manualmente a base anterior, margem do mês e bônus extra de avaliação.
+<div class="sv-page sv-page--wide">
+  <div class="sv-pagehead sv-glass mb-3">
+    <div class="sv-pagehead__left">
+      <h3 class="m-0">🧮 Insumos da Meta</h3>
+      <div class="meta-mini">
+        <strong>{{ meta.nome }}</strong> — {{ tipo_label(meta.tipo) }} — {{ '%02d'|format(meta.mes) }}/{{ meta.ano }}.
+        {% if (meta.escopo or 'VENDEDOR') == 'GERENTE' %}
+          Meta calculada pelo total da loja.
+        {% else %}
+          Meta calculada por vendedor.
+        {% endif %}
+      </div>
+    </div>
+    <div class="sv-pagehead__right">
+      <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin_metas', ano=meta.ano, mes=meta.mes) }}">Voltar</a>
     </div>
   </div>
-  <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('admin_metas', ano=meta.ano, mes=meta.mes) }}">Voltar</a>
-</div>
 
-<form method="post" action="{{ url_for('admin_meta_bases_salvar', meta_id=meta.id) }}">
-  <div class="card shadow-sm">
-    <div class="card-body">
-      <div class="table-responsive">
-        <table class="table table-sm align-middle mb-0">
-          <thead>
-            <tr>
-              <th style="min-width:90px;">Empresa</th>
-              <th style="min-width:220px;">{{ 'Gerente' if (meta.escopo or 'VENDEDOR') == 'GERENTE' else 'Vendedor' }}</th>
-              <th class="text-end" style="min-width:140px;">Total mês</th>
-              {% if show_base %}
-                <th class="text-end" style="min-width:140px;">Base automática</th>
-                <th style="min-width:160px;">Base manual (R$)</th>
-              {% endif %}
-              <th style="min-width:140px;">Margem (%)</th>
-              <th style="min-width:150px;">Bônus extra (%)</th>
-              <th style="min-width:220px;">Obs.</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for l in linhas %}
+  <form method="post" action="{{ url_for('admin_meta_bases_salvar', meta_id=meta.id) }}">
+    <div class="sv-card sv-glass card shadow-sm">
+      <div class="card-body sv-card-pad">
+        <div class="table-responsive">
+          <table class="table table-sm align-middle meta-table mb-0">
+            <thead>
               <tr>
-                <td class="text-muted">{{ l.emp }}</td>
-                <td class="fw-semibold">{{ l.vendedor }}</td>
-                <td class="text-end">R$ {{ '%.2f'|format(l.total_atual or 0) }}</td>
+                <th style="min-width:90px;">Loja</th>
+                <th style="min-width:220px;">Vendedor</th>
+                <th class="text-end" style="min-width:130px;">Fat. atual</th>
+                <th class="text-end" style="min-width:130px;">Base auto</th>
                 {% if show_base %}
-                  <td class="text-end">R$ {{ '%.2f'|format(l.base_auto or 0) }}</td>
+                  <th style="min-width:160px;">Valor base (R$)</th>
+                {% endif %}
+                <th style="min-width:130px;">Margem (%)</th>
+                <th style="min-width:140px;">Bônus extra (%)</th>
+                <th style="min-width:220px;">Obs.</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for l in linhas %}
+                <tr>
+                  <td class="text-muted">{{ l.emp }}</td>
+                  <td class="fw-semibold">{{ l.vendedor }}</td>
+                  <td class="text-end">R$ {{ '%.2f'|format(l.total_atual) }}</td>
+                  <td class="text-end">R$ {{ '%.2f'|format(l.base_auto) }}</td>
+                  {% if show_base %}
+                    <td>
+                      <input class="form-control form-control-sm"
+                             name="base__{{ l.emp }}__{{ l.vendedor_key }}"
+                             value="{{ '' if l.base_manual is none else ('%.2f'|format(l.base_manual)) }}"
+                             placeholder="vazio = usar auto">
+                    </td>
+                  {% else %}
+                    <input type="hidden" name="base__{{ l.emp }}__{{ l.vendedor_key }}" value="">
+                  {% endif %}
                   <td>
                     <input class="form-control form-control-sm"
-                           name="base__{{ l.emp }}__{{ l.vendedor_key }}"
-                           value="{{ '' if l.base_manual is none else ('%.2f'|format(l.base_manual)) }}"
-                           placeholder="vazio = usar auto">
+                           name="margem__{{ l.emp }}__{{ l.vendedor_key }}"
+                           value="{{ '' if l.margem_percentual is none else ('%.2f'|format(l.margem_percentual)) }}"
+                           placeholder="8,00">
                   </td>
-                {% else %}
-                  <input type="hidden" name="base__{{ l.emp }}__{{ l.vendedor_key }}" value="">
-                {% endif %}
-                <td>
-                  <input class="form-control form-control-sm"
-                         name="margem__{{ l.emp }}__{{ l.vendedor_key }}"
-                         value="{{ '' if l.margem_percentual is none else ('%.2f'|format(l.margem_percentual)) }}"
-                         placeholder="Ex.: 8">
-                </td>
-                <td>
-                  <input class="form-control form-control-sm"
-                         name="extra__{{ l.emp }}__{{ l.vendedor_key }}"
-                         value="{{ '' if l.bonus_extra_percentual is none else ('%.2f'|format(l.bonus_extra_percentual)) }}"
-                         placeholder="Ex.: 20">
-                </td>
-                <td>
-                  <input class="form-control form-control-sm"
-                         name="obs__{{ l.emp }}__{{ l.vendedor_key }}"
-                         value="{{ l.observacao }}"
-                         placeholder="Férias / checklist / ajuste manual...">
-                </td>
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
+                  <td>
+                    <input class="form-control form-control-sm"
+                           name="extra__{{ l.emp }}__{{ l.vendedor_key }}"
+                           value="{{ '' if l.bonus_extra_percentual is none else ('%.2f'|format(l.bonus_extra_percentual)) }}"
+                           placeholder="0,00">
+                  </td>
+                  <td>
+                    <input class="form-control form-control-sm"
+                           name="obs__{{ l.emp }}__{{ l.vendedor_key }}"
+                           value="{{ l.observacao }}"
+                           placeholder="Férias, troca de carteira, checklist...">
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
 
-      <div class="d-flex justify-content-end mt-3">
-        <button class="btn btn-primary">Salvar insumos</button>
-      </div>
-
-      <div class="text-muted small mt-2">
-        <div><b>Margem (%)</b>: trava opcional usada para liberar a premiação.</div>
-        <div><b>Bônus extra (%)</b>: soma um percentual manual sobre o prêmio calculado, útil para organização/atendimento/assiduidade.</div>
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mt-3">
+          <div class="meta-mini">
+            Dica: se quiser voltar para a base automática, deixe o campo de valor base em branco e salve novamente.
+          </div>
+          <button class="btn btn-primary">Salvar insumos</button>
+        </div>
       </div>
     </div>
-  </div>
-</form>
+  </form>
+</div>
 {% endblock %}

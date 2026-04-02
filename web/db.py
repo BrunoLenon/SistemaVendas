@@ -566,7 +566,6 @@ class MetaPrograma(Base):
     margem_minima = Column(Float, nullable=True, default=0.0)
 
     # Teto opcional de % de premiação quando o faturamento atingir um valor específico.
-    # Ex.: acima de 100.000,00 pagar no máximo 0,40%.
     teto_faturamento = Column(Float, nullable=True)
     teto_bonus_percentual = Column(Float, nullable=True)
 
@@ -1204,27 +1203,6 @@ class FinanceiroAudit(Base):
         Index("ix_fin_audit_criado_em", "criado_em"),
     )
 
-def ensure_metas_lojas_schema():
-    """Garante o schema mínimo das metas de lojas/gerente em tempo de execução.
-
-    Hotfix idempotente para ambientes onde AUTO_MIGRATE está desligado no boot.
-    Seguro para chamar antes das rotas de /metas e /admin/metas.
-    """
-    try:
-        with engine.connect() as conn:
-            conn = conn.execution_options(isolation_level="AUTOCOMMIT")
-            conn.execute(text("ALTER TABLE metas_programas ADD COLUMN IF NOT EXISTS escopo varchar(20) NOT NULL DEFAULT 'VENDEDOR';"))
-            conn.execute(text("ALTER TABLE metas_programas ADD COLUMN IF NOT EXISTS faturamento_minimo double precision;"))
-            conn.execute(text("ALTER TABLE metas_programas ADD COLUMN IF NOT EXISTS margem_minima double precision;"))
-            conn.execute(text("ALTER TABLE metas_programas ADD COLUMN IF NOT EXISTS teto_faturamento double precision;"))
-            conn.execute(text("ALTER TABLE metas_programas ADD COLUMN IF NOT EXISTS teto_bonus_percentual double precision;"))
-            conn.execute(text("ALTER TABLE metas_bases_manuais ADD COLUMN IF NOT EXISTS margem_percentual double precision;"))
-            conn.execute(text("ALTER TABLE metas_bases_manuais ADD COLUMN IF NOT EXISTS bonus_extra_percentual double precision;"))
-    except Exception:
-        # Não derruba o request aqui; a falha real vai aparecer na rota e no log.
-        pass
-
-
 def criar_tabelas():
     """Cria tabelas e aplica ajustes leves de schema (compatibilidade).
 
@@ -1290,7 +1268,6 @@ def criar_tabelas():
             conn.execute(text("ALTER TABLE metas_programas ADD COLUMN IF NOT EXISTS teto_bonus_percentual double precision;"))
             conn.execute(text("ALTER TABLE metas_bases_manuais ADD COLUMN IF NOT EXISTS margem_percentual double precision;"))
             conn.execute(text("ALTER TABLE metas_bases_manuais ADD COLUMN IF NOT EXISTS bonus_extra_percentual double precision;"))
-
             # Compatibilidade: se existir tabela antiga usuario_emp, copia vínculos (não derruba se falhar)
             conn.execute(text("""
                 DO $$
@@ -1486,3 +1463,19 @@ class FinanceiroPagamentoAudit(Base):
     alterado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
 
     motivo = Column(Text, nullable=True)
+
+
+
+def ensure_metas_lojas_schema():
+    """Garante colunas extras do módulo de metas sem depender do AUTO_MIGRATE."""
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE metas_programas ADD COLUMN IF NOT EXISTS escopo varchar(20) NOT NULL DEFAULT 'VENDEDOR';"))
+            conn.execute(text("ALTER TABLE metas_programas ADD COLUMN IF NOT EXISTS faturamento_minimo double precision;"))
+            conn.execute(text("ALTER TABLE metas_programas ADD COLUMN IF NOT EXISTS margem_minima double precision;"))
+            conn.execute(text("ALTER TABLE metas_programas ADD COLUMN IF NOT EXISTS teto_faturamento double precision;"))
+            conn.execute(text("ALTER TABLE metas_programas ADD COLUMN IF NOT EXISTS teto_bonus_percentual double precision;"))
+            conn.execute(text("ALTER TABLE metas_bases_manuais ADD COLUMN IF NOT EXISTS margem_percentual double precision;"))
+            conn.execute(text("ALTER TABLE metas_bases_manuais ADD COLUMN IF NOT EXISTS bonus_extra_percentual double precision;"))
+    except Exception:
+        pass

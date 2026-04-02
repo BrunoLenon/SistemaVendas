@@ -1,206 +1,370 @@
 {% extends "base.html" %}
 {% block title %}Admin - Metas{% endblock %}
 
+{% block extra_head %}
+<style>
+  .sv-page.sv-page--wide{max-width:1500px;padding-top:10px;padding-bottom:10px;}
+  .sv-pagehead{padding:12px;}
+  .sv-card-pad{padding:14px;}
+  .sv-muted-soft{color:#b7b7b7;}
+  .meta-note{
+    border:1px dashed rgba(255,170,60,.25);
+    background:rgba(255,170,60,.08);
+    border-radius:14px;
+    padding:10px 12px;
+    color:#f4d2a1;
+    font-size:13px;
+  }
+  .meta-chip{
+    display:inline-flex; align-items:center; gap:6px;
+    padding:4px 8px; border-radius:999px;
+    border:1px solid rgba(255,255,255,.10);
+    background:rgba(255,255,255,.04);
+    font-size:12px; font-weight:700;
+    margin:2px 4px 2px 0;
+  }
+  .meta-chip.is-active{border-color:rgba(59,198,118,.28); color:#8de0a8; background:rgba(59,198,118,.10);}
+  .meta-chip.is-inactive{border-color:rgba(255,255,255,.10); color:#bdbdbd;}
+  .meta-grid{display:grid; gap:12px; grid-template-columns: 1.2fr .95fr;}
+  .meta-subgrid{display:grid; gap:12px; grid-template-columns: repeat(4, minmax(0, 1fr));}
+  .meta-table td,.meta-table th{padding:.52rem .55rem; vertical-align:middle;}
+  .meta-table thead th{font-size:12px; color:#bcbcbc; letter-spacing:.02em;}
+  .meta-table tbody td{background: rgba(5,5,5,.38) !important;}
+  .meta-table tbody tr:nth-child(even) td{background: rgba(255,255,255,.03) !important;}
+  .meta-table tbody tr:hover td{background: rgba(255,140,0,.08) !important;}
+  .meta-stack{display:flex; flex-direction:column; gap:4px;}
+  .meta-empty{
+    border:1px dashed rgba(255,255,255,.12);
+    border-radius:14px; padding:20px; text-align:center; color:#b9b9b9;
+    background:rgba(255,255,255,.02);
+  }
+  .meta-mini{font-size:12px;color:#b9b9b9;}
+  .meta-preview-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;}
+  .meta-section-title{font-size:15px;font-weight:700;margin:0;}
+  .meta-fixas th{white-space:nowrap;}
+  .meta-fixas input{text-align:center;}
+  .js-brand-block{display:none;}
+  @media (max-width: 1100px){
+    .meta-grid{grid-template-columns:1fr;}
+    .meta-subgrid{grid-template-columns:repeat(2, minmax(0, 1fr));}
+  }
+  @media (max-width: 640px){
+    .meta-subgrid{grid-template-columns:1fr;}
+  }
+</style>
+{% endblock %}
+
 {% block content %}
-<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
-  <div>
-    <h4 class="m-0">🏁 Administração de Metas</h4>
-    <div class="text-muted small">Cadastre metas mensais por vendedor ou gerente/loja, usando as vendas como base de faturamento.</div>
+<div class="sv-page sv-page--wide">
+  <div class="sv-pagehead sv-glass mb-3">
+    <div class="sv-pagehead__left">
+      <h3 class="m-0">🎯 Administração de Metas</h3>
+      <div class="sv-muted-soft">Cadastro simplificado por loja, com vendedores relacionados e insumos iniciais no mesmo fluxo.</div>
+    </div>
+    <div class="sv-pagehead__right">
+      <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('metas', ano=ano, mes=mes) }}">Ver operação</a>
+      <a class="btn btn-outline-primary btn-sm" href="{{ url_for('dashboard') }}">Dashboard</a>
+    </div>
   </div>
 
-  <form class="d-flex gap-2" method="get" action="{{ url_for('admin_metas') }}">
-    <input class="form-control form-control-sm" style="width:110px" name="mes" value="{{ '%02d'|format(mes) }}" placeholder="Mês">
-    <input class="form-control form-control-sm" style="width:120px" name="ano" value="{{ ano }}" placeholder="Ano">
-    <button class="btn btn-sm btn-outline-primary">Ir</button>
-  </form>
-</div>
+  <div class="sv-card sv-glass card shadow-sm mb-3">
+    <div class="card-body sv-card-pad">
+      <div class="meta-preview-head mb-2">
+        <div>
+          <h5 class="meta-section-title">Filtro de contexto</h5>
+          <div class="meta-mini">Ao selecionar a loja, aparecem os vendedores relacionados abaixo das configurações de metas.</div>
+        </div>
+      </div>
 
-<div class="row g-3">
-  <div class="col-12 col-xl-5">
-    <div class="card shadow-sm">
-      <div class="card-body">
-        <h6 class="mb-3">➕ Nova meta</h6>
+      <form class="row g-2 align-items-end" method="get" action="{{ url_for('admin_metas') }}">
+        <div class="col-12 col-md-2">
+          <label class="form-label small">Mês</label>
+          <input class="form-control" name="mes" value="{{ '%02d'|format(mes) }}">
+        </div>
+        <div class="col-12 col-md-2">
+          <label class="form-label small">Ano</label>
+          <input class="form-control" name="ano" value="{{ ano }}">
+        </div>
+        <div class="col-12 col-md-3">
+          <label class="form-label small">Loja</label>
+          <select class="form-select" name="emp_sel">
+            <option value="">Selecione uma loja...</option>
+            {% for e in emps_rows %}
+              <option value="{{ e.codigo }}" {% if emp_selected == e.codigo %}selected{% endif %}>{{ e.codigo }} — {{ e.nome }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-12 col-md-2">
+          <label class="form-label small">Escopo</label>
+          <select class="form-select" name="escopo_preview">
+            <option value="VENDEDOR" {% if escopo_preview == 'VENDEDOR' %}selected{% endif %}>Vendedor</option>
+            <option value="GERENTE" {% if escopo_preview == 'GERENTE' %}selected{% endif %}>Gerente / Loja</option>
+          </select>
+        </div>
+        <div class="col-12 col-md-2">
+          <label class="form-label small">Tipo</label>
+          <select class="form-select" name="tipo_preview">
+            <option value="CRESCIMENTO" {% if tipo_preview == 'CRESCIMENTO' %}selected{% endif %}>Crescimento</option>
+            <option value="SHARE_MARCA" {% if tipo_preview == 'SHARE_MARCA' %}selected{% endif %}>Share de Marcas</option>
+            <option value="MIX" {% if tipo_preview == 'MIX' %}selected{% endif %}>Mix</option>
+          </select>
+        </div>
+        <div class="col-12 col-md-1 d-grid">
+          <button class="btn btn-primary">Carregar</button>
+        </div>
+      </form>
 
-        <form method="post" action="{{ url_for('admin_metas_criar') }}">
-          <div class="row g-2">
-            <div class="col-12">
-              <label class="form-label small">Nome</label>
-              <input class="form-control" name="nome" placeholder="Ex.: Crescimento Vendedor Loja 201" required>
+      <div class="meta-note mt-3">
+        A lógica desta tela segue o modelo da planilha: a meta é configurada por <strong>loja</strong>, as faixas ficam iguais para todos da loja e o que diferencia cada vendedor é o <strong>valor base</strong> e os insumos manuais.
+      </div>
+    </div>
+  </div>
+
+  <div class="meta-grid">
+    <div class="sv-card sv-glass card shadow-sm">
+      <div class="card-body sv-card-pad">
+        <div class="meta-preview-head mb-3">
+          <div>
+            <h5 class="meta-section-title">Cadastro da meta</h5>
+            <div class="meta-mini">Fluxo simplificado para cadastrar a meta e já lançar os insumos iniciais da loja.</div>
+          </div>
+          {% if emp_selected %}
+            <span class="meta-chip is-active">Loja selecionada: {{ emp_selected }}</span>
+          {% else %}
+            <span class="meta-chip is-inactive">Selecione uma loja acima</span>
+          {% endif %}
+        </div>
+
+        <form method="post" action="{{ url_for('admin_metas_criar') }}" id="meta-create-form">
+          <input type="hidden" name="ano" value="{{ ano }}">
+          <input type="hidden" name="mes" value="{{ mes }}">
+          <textarea class="d-none" name="escalas" id="escalas_text"></textarea>
+
+          <div class="row g-3">
+            <div class="col-12 col-lg-6">
+              <label class="form-label small">Nome da meta</label>
+              <input class="form-control" name="nome" value="{% if emp_selected %}Meta {{ tipo_label(tipo_preview) }} {{ emp_selected }} - {{ '%02d'|format(mes) }}/{{ ano }}{% endif %}" placeholder="Ex.: Meta Crescimento Loja 102" required>
             </div>
-
-            <div class="col-12 col-md-6">
+            <div class="col-12 col-md-4 col-lg-3">
               <label class="form-label small">Tipo</label>
-              <select class="form-select" name="tipo" required>
-                <option value="CRESCIMENTO">📈 Crescimento</option>
-                <option value="MIX">🧩 MIX (itens únicos)</option>
-                <option value="SHARE_MARCA">🏷️ Share de Marcas</option>
+              <select class="form-select" name="tipo" id="meta_tipo_select" required>
+                <option value="CRESCIMENTO" {% if tipo_preview == 'CRESCIMENTO' %}selected{% endif %}>📈 Crescimento</option>
+                <option value="SHARE_MARCA" {% if tipo_preview == 'SHARE_MARCA' %}selected{% endif %}>🏷️ Share de Marcas</option>
+                <option value="MIX" {% if tipo_preview == 'MIX' %}selected{% endif %}>🧩 Mix</option>
               </select>
             </div>
-
-            <div class="col-12 col-md-6">
+            <div class="col-12 col-md-4 col-lg-3">
               <label class="form-label small">Escopo</label>
-              <select class="form-select" name="escopo" required>
-                <option value="VENDEDOR">Vendedor</option>
-                <option value="GERENTE">Gerente / Total da loja</option>
+              <select class="form-select" name="escopo" id="meta_escopo_select" required>
+                <option value="VENDEDOR" {% if escopo_preview == 'VENDEDOR' %}selected{% endif %}>Vendedor</option>
+                <option value="GERENTE" {% if escopo_preview == 'GERENTE' %}selected{% endif %}>Gerente / Loja</option>
               </select>
             </div>
 
-            <div class="col-6 col-md-3">
-              <label class="form-label small">Mês</label>
-              <input class="form-control" name="mes" value="{{ '%02d'|format(mes) }}" required>
-            </div>
-            <div class="col-6 col-md-3">
-              <label class="form-label small">Ano</label>
-              <input class="form-control" name="ano" value="{{ ano }}" required>
-            </div>
-            <div class="col-6 col-md-3">
-              <label class="form-label small">Fat. mínimo</label>
-              <input class="form-control" name="faturamento_minimo" placeholder="Ex.: 70000">
-            </div>
-            <div class="col-6 col-md-3">
-              <label class="form-label small">Margem mínima (%)</label>
-              <input class="form-control" name="margem_minima" placeholder="Ex.: 8">
-            </div>
-
-            <div class="col-6">
-              <label class="form-label small">Teto a partir do faturamento</label>
-              <input class="form-control" name="teto_faturamento" placeholder="Ex.: 100000">
-            </div>
-            <div class="col-6">
-              <label class="form-label small">Teto bônus (%)</label>
-              <input class="form-control" name="teto_bonus_percentual" placeholder="Ex.: 0,40">
-            </div>
-
-            <div class="col-12">
-              <label class="form-label small">Empresas (obrigatório)</label>
-              <div class="border rounded p-2" style="max-height:180px; overflow:auto;">
+            <div class="col-12 col-md-4">
+              <label class="form-label small">Loja</label>
+              <select class="form-select" name="emp_single" required>
+                <option value="">Selecione...</option>
                 {% for e in emps_rows %}
-                  <div class="form-check">
-                    <input class="form-check-input" type="checkbox" name="emps" value="{{ e.codigo }}" id="emp_{{ e.codigo }}">
-                    <label class="form-check-label" for="emp_{{ e.codigo }}">
-                      {{ e.codigo }} — {{ e.nome }}{% if e.cidade %} ({{ e.cidade }}{% if e.uf %}/{{ e.uf }}{% endif %}){% endif %}
-                    </label>
-                  </div>
+                  <option value="{{ e.codigo }}" {% if emp_selected == e.codigo %}selected{% endif %}>{{ e.codigo }} — {{ e.nome }}</option>
                 {% endfor %}
-              </div>
+              </select>
+            </div>
+            <div class="col-6 col-md-2">
+              <label class="form-label small">Mês</label>
+              <input class="form-control" value="{{ '%02d'|format(mes) }}" disabled>
+            </div>
+            <div class="col-6 col-md-2">
+              <label class="form-label small">Ano</label>
+              <input class="form-control" value="{{ ano }}" disabled>
+            </div>
+            <div class="col-6 col-md-2">
+              <label class="form-label small">Margem mínima (%)</label>
+              <input class="form-control" name="margem_minima" placeholder="8,00">
+            </div>
+            <div class="col-6 col-md-2">
+              <label class="form-label small">Fat. mínimo (R$)</label>
+              <input class="form-control" name="faturamento_minimo" placeholder="0,00">
+            </div>
+            <div class="col-6 col-md-2">
+              <label class="form-label small">Teto a partir de (R$)</label>
+              <input class="form-control" name="teto_faturamento" placeholder="100.000,00">
+            </div>
+            <div class="col-6 col-md-2">
+              <label class="form-label small">Teto bônus (%)</label>
+              <input class="form-control" name="teto_bonus_percentual" placeholder="0,40">
+            </div>
+
+            <div class="col-12 js-brand-block" id="brand_block">
+              <label class="form-label small">Marcas da meta</label>
+              <textarea class="form-control" name="marcas" rows="2" placeholder="EVOL, VEI, CREVON"></textarea>
+              <div class="meta-mini mt-1">Use vírgula, ponto e vírgula ou uma marca por linha.</div>
             </div>
 
             <div class="col-12">
-              <label class="form-label small">Escada (faixas)</label>
-              <textarea class="form-control d-none" name="escalas" id="escalas_text" rows="5"></textarea>
-
-              <div class="border rounded p-2 bg-light">
-                <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
-                  <div class="text-muted small">
-                    <span class="fw-semibold">Limite</span> → <span class="fw-semibold">Bônus</span>
-                  </div>
-                  <div class="d-flex gap-2">
-                    <button type="button" class="btn btn-sm btn-outline-secondary" id="escada_exemplo">Inserir exemplo</button>
-                    <button type="button" class="btn btn-sm btn-outline-primary" id="escada_add">+ Adicionar faixa</button>
-                  </div>
+              <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+                <div>
+                  <label class="form-label small mb-0">Faixas da meta</label>
+                  <div class="meta-mini">No crescimento/share, o limite é em %. No mix, o limite é quantidade.</div>
                 </div>
+                <button class="btn btn-outline-secondary btn-sm" type="button" id="btn_fill_examples">Usar exemplo 5 / 10 / 15 / 20 / 25</button>
+              </div>
 
-                <div class="table-responsive">
-                  <table class="table table-sm align-middle mb-0" id="escadas_table">
-                    <thead>
+              <div class="table-responsive">
+                <table class="table table-sm align-middle meta-table meta-fixas mb-0">
+                  <thead>
+                    <tr>
+                      <th>Faixa</th>
+                      <th>Limite</th>
+                      <th>Recompensa (%)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for idx in range(1, 6) %}
+                    <tr>
+                      <td class="fw-semibold">Faixa {{ idx }}</td>
+                      <td><input class="form-control form-control-sm js-limite" placeholder="{{ 5 * idx if idx < 6 else '' }}"></td>
+                      <td><input class="form-control form-control-sm js-bonus" placeholder="0,{{ '%02d'|format(5 + idx * 5) }}"></td>
+                    </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <div class="mt-4">
+            <div class="meta-preview-head mb-2">
+              <div>
+                <h6 class="m-0">Insumos iniciais da loja</h6>
+                <div class="meta-mini">Você já pode lançar o valor base, margem e bônus extra dos vendedores da loja antes de salvar a meta.</div>
+              </div>
+            </div>
+
+            {% if preview_rows %}
+              <div class="table-responsive">
+                <table class="table table-sm align-middle meta-table mb-0">
+                  <thead>
+                    <tr>
+                      <th style="min-width:90px;">Loja</th>
+                      <th style="min-width:220px;">Vendedor</th>
+                      <th class="text-end" style="min-width:130px;">Fat. atual</th>
+                      <th class="text-end js-base-col" style="min-width:130px;{% if not show_base_preview %}display:none;{% endif %}">Base auto</th>
+                      <th class="js-base-col" style="min-width:160px;{% if not show_base_preview %}display:none;{% endif %}">Valor base</th>
+                      <th style="min-width:130px;">Margem (%)</th>
+                      <th style="min-width:130px;">Bônus extra (%)</th>
+                      <th style="min-width:200px;">Obs.</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for l in preview_rows %}
                       <tr>
-                        <th style="width: 40%">Limite</th>
-                        <th style="width: 40%">Bônus (%)</th>
-                        <th class="text-end" style="width: 20%">&nbsp;</th>
+                        <td class="text-muted">{{ l.emp }}</td>
+                        <td class="fw-semibold">{{ l.vendedor }}</td>
+                        <td class="text-end">R$ {{ '%.2f'|format(l.total_atual) }}</td>
+                        <td class="text-end js-base-col" {% if not show_base_preview %}style="display:none;"{% endif %}>R$ {{ '%.2f'|format(l.base_auto) }}</td>
+                        <td class="js-base-col" {% if not show_base_preview %}style="display:none;"{% endif %}>
+                          <input class="form-control form-control-sm" name="base__{{ l.emp }}__{{ l.vendedor_key }}" placeholder="{{ '%.2f'|format(l.base_auto) if l.base_auto else '0,00' }}">
+                        </td>
+                        <td>
+                          <input class="form-control form-control-sm" name="margem__{{ l.emp }}__{{ l.vendedor_key }}" placeholder="8,00">
+                        </td>
+                        <td>
+                          <input class="form-control form-control-sm" name="extra__{{ l.emp }}__{{ l.vendedor_key }}" placeholder="0,00">
+                        </td>
+                        <td>
+                          <input class="form-control form-control-sm" name="obs__{{ l.emp }}__{{ l.vendedor_key }}" placeholder="Férias, ajuste, observação...">
+                        </td>
                       </tr>
-                    </thead>
-                    <tbody></tbody>
-                  </table>
-                </div>
-
-                <div class="text-muted small mt-2">
-                  <ul class="mb-0 ps-3">
-                    <li><b>Crescimento</b> e <b>Share</b>: pode usar <b>5</b> ou <b>0,05</b> para 5%.</li>
-                    <li><b>Bônus</b>: pode usar <b>0,10</b> para 0,10% ou o estilo da planilha (<b>0,001</b> = 0,10%).</li>
-                    <li><b>MIX</b>: o limite é quantidade de itens únicos.</li>
-                  </ul>
-                </div>
+                    {% endfor %}
+                  </tbody>
+                </table>
               </div>
-            </div>
+            {% else %}
+              <div class="meta-empty">
+                Selecione uma <strong>loja</strong> no filtro de contexto para carregar os vendedores e facilitar o cadastro dos insumos iniciais.
+              </div>
+            {% endif %}
+          </div>
 
-            <div class="col-12">
-              <label class="form-label small">Marcas (apenas Share de Marcas)</label>
-              <textarea class="form-control" name="marcas" rows="3" placeholder="EVOL, CREVON, VEI"></textarea>
-              <div class="text-muted small mt-1">Pode separar por vírgula, ponto-e-vírgula ou quebra de linha.</div>
-            </div>
-
-            <div class="col-12 d-grid">
-              <button class="btn btn-primary">Criar meta</button>
-            </div>
+          <div class="d-flex justify-content-end mt-4">
+            <button class="btn btn-primary">Salvar meta</button>
           </div>
         </form>
       </div>
     </div>
 
-    <div class="alert alert-info mt-3">
-      <b>Dica:</b> a página de <b>Insumos</b> serve para informar manualmente base anterior, margem do mês e bônus extra de avaliação.
-    </div>
-  </div>
+    <div class="sv-card sv-glass card shadow-sm">
+      <div class="card-body sv-card-pad">
+        <div class="meta-preview-head mb-3">
+          <div>
+            <h5 class="meta-section-title">Metas cadastradas</h5>
+            <div class="meta-mini">
+              {% if emp_selected %}
+                Exibindo metas de {{ '%02d'|format(mes) }}/{{ ano }} para a loja <strong>{{ emp_selected }}</strong>.
+              {% else %}
+                Exibindo metas de {{ '%02d'|format(mes) }}/{{ ano }}.
+              {% endif %}
+            </div>
+          </div>
+        </div>
 
-  <div class="col-12 col-xl-7">
-    <div class="card shadow-sm">
-      <div class="card-body">
-        <h6 class="mb-2">📋 Metas cadastradas ({{ '%02d'|format(mes) }}/{{ ano }})</h6>
-
-        {% if metas_list|length == 0 %}
-          <div class="text-muted">Nenhuma meta cadastrada para este período.</div>
-        {% else %}
+        {% if metas_list %}
           <div class="table-responsive">
-            <table class="table table-sm align-middle mb-0">
+            <table class="table table-sm align-middle meta-table mb-0">
               <thead>
                 <tr>
-                  <th>Nome</th>
-                  <th>Tipo</th>
-                  <th>Escopo</th>
-                  <th>Regras</th>
-                  <th>Empresas</th>
-                  <th>Marcas</th>
-                  <th class="text-end">Ações</th>
+                  <th style="min-width:220px;">Meta</th>
+                  <th style="min-width:110px;">Escopo</th>
+                  <th style="min-width:120px;">Tipo</th>
+                  <th style="min-width:160px;">Loja(s)</th>
+                  <th style="min-width:200px;">Faixas</th>
+                  <th style="min-width:160px;">Marcas</th>
+                  <th style="min-width:160px;">Travas</th>
+                  <th class="text-end" style="min-width:170px;">Ações</th>
                 </tr>
               </thead>
               <tbody>
                 {% for m in metas_list %}
                   <tr>
-                    <td class="fw-semibold">
-                      {{ m.nome }}
-                      {% if not m.ativo %}
-                        <span class="badge text-bg-secondary ms-1">inativa</span>
-                      {% endif %}
-                    </td>
-                    <td class="text-muted">{{ tipo_label(m.tipo) }}</td>
                     <td>
-                      <span class="badge text-bg-light border">{{ (m.escopo or 'VENDEDOR')|upper }}</span>
+                      <div class="fw-semibold">{{ m.nome }}</div>
+                      <div class="meta-mini">{{ '%02d'|format(m.mes) }}/{{ m.ano }}</div>
                     </td>
-                    <td class="small">
-                      <div>Fat. mín.: <b>R$ {{ '%.2f'|format(m.faturamento_minimo or 0) }}</b></div>
-                      <div>Margem mín.: <b>{{ '%.2f'|format(m.margem_minima or 0) }}%</b></div>
-                      {% if m.teto_faturamento or m.teto_bonus_percentual %}
-                        <div>Teto: <b>R$ {{ '%.2f'|format(m.teto_faturamento or 0) }}</b> → <b>{{ '%.2f'|format(m.teto_bonus_percentual or 0) }}%</b></div>
-                      {% endif %}
-                      <div class="mt-1">
+                    <td>
+                      <span class="meta-chip {% if m.ativo %}is-active{% else %}is-inactive{% endif %}">{{ 'Gerente / Loja' if (m.escopo or 'VENDEDOR') == 'GERENTE' else 'Vendedor' }}</span>
+                      <div class="meta-mini">{% if m.ativo %}Ativa{% else %}Inativa{% endif %}</div>
+                    </td>
+                    <td>{{ tipo_label(m.tipo) }}</td>
+                    <td>
+                      {% for e in (meta_emps.get(m.id) or []) %}
+                        <span class="meta-chip">{{ e }}</span>
+                      {% endfor %}
+                    </td>
+                    <td>
+                      <div class="meta-stack">
                         {% for esc in (meta_escalas.get(m.id) or []) %}
-                          <span class="badge text-bg-light border me-1 mb-1">≥ {{ esc.limite_min }} → {{ esc.bonus_percentual }}</span>
+                          <span class="meta-mini">≥ {{ esc.limite_min }} → {{ ('%.2f'|format(esc.bonus_percentual or 0))|replace('.', ',') }}%</span>
                         {% endfor %}
                       </div>
                     </td>
-                    <td class="small">
-                      {% for e in (meta_emps.get(m.id) or []) %}
-                        <span class="badge text-bg-light border">{{ e }}</span>
-                      {% endfor %}
-                    </td>
-                    <td class="small">
+                    <td>
                       {% if m.tipo == 'SHARE_MARCA' %}
                         {% for mk in (meta_marcas.get(m.id) or []) %}
-                          <span class="badge text-bg-light border">{{ mk }}</span>
+                          <span class="meta-chip">{{ mk }}</span>
                         {% endfor %}
                       {% else %}
-                        <span class="text-muted">—</span>
+                        <span class="meta-mini">—</span>
                       {% endif %}
+                    </td>
+                    <td>
+                      <div class="meta-stack">
+                        <span class="meta-mini">Margem mín.: {{ ('%.2f'|format(m.margem_minima or 0))|replace('.', ',') }}%</span>
+                        <span class="meta-mini">Fat. mín.: R$ {{ '%.2f'|format(m.faturamento_minimo or 0) }}</span>
+                        {% if m.teto_faturamento %}
+                          <span class="meta-mini">Teto: R$ {{ '%.2f'|format(m.teto_faturamento or 0) }} / {{ ('%.2f'|format(m.teto_bonus_percentual or 0))|replace('.', ',') }}%</span>
+                        {% endif %}
+                      </div>
                     </td>
                     <td class="text-end">
                       <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin_meta_bases', meta_id=m.id) }}">Insumos</a>
@@ -215,6 +379,8 @@
               </tbody>
             </table>
           </div>
+        {% else %}
+          <div class="meta-empty">Nenhuma meta cadastrada para este contexto.</div>
         {% endif %}
       </div>
     </div>
@@ -222,62 +388,69 @@
 </div>
 
 <script>
-  (function () {
-    const table = document.getElementById('escadas_table');
-    const tbody = table ? table.querySelector('tbody') : null;
-    const hidden = document.getElementById('escalas_text');
-    const btnAdd = document.getElementById('escada_add');
-    const btnEx = document.getElementById('escada_exemplo');
+(function(){
+  const form = document.getElementById('meta-create-form');
+  const hiddenEscalas = document.getElementById('escalas_text');
+  const btnExample = document.getElementById('btn_fill_examples');
+  const tipoSelect = document.getElementById('meta_tipo_select');
+  const brandBlock = document.getElementById('brand_block');
 
-    if (!tbody || !hidden || !btnAdd) return;
-
-    function normalizeNumber(v) {
-      if (v == null) return '';
-      return String(v).trim().replace(',', '.');
-    }
-
-    function serialize() {
-      const rows = Array.from(tbody.querySelectorAll('tr'));
-      const lines = [];
-      for (const r of rows) {
-        const lim = normalizeNumber(r.querySelector('input[data-kind="lim"]')?.value || '');
-        const bon = normalizeNumber(r.querySelector('input[data-kind="bon"]')?.value || '');
-        if (!lim || !bon) continue;
+  function syncEscalas(){
+    const limits = Array.from(document.querySelectorAll('.js-limite'));
+    const bonuses = Array.from(document.querySelectorAll('.js-bonus'));
+    const lines = [];
+    limits.forEach((input, idx) => {
+      const lim = (input.value || '').trim();
+      const bon = (bonuses[idx]?.value || '').trim();
+      if (lim && bon) {
         lines.push(`${lim}:${bon}`);
       }
-      hidden.value = lines.join('\n');
-    }
+    });
+    hiddenEscalas.value = lines.join('\n');
+  }
 
-    function addRow(lim = '', bon = '') {
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td><input class="form-control form-control-sm" data-kind="lim" inputmode="decimal" placeholder="Ex.: 5" value="${lim}"></td>
-        <td>
-          <div class="input-group input-group-sm">
-            <input class="form-control" data-kind="bon" inputmode="decimal" placeholder="Ex.: 0,10" value="${bon}">
-            <span class="input-group-text">%</span>
-          </div>
-        </td>
-        <td class="text-end"><button type="button" class="btn btn-sm btn-outline-danger">✕</button></td>
-      `;
-      tr.querySelector('button').addEventListener('click', () => { tr.remove(); serialize(); });
-      tr.querySelectorAll('input').forEach(el => el.addEventListener('input', serialize));
-      tbody.appendChild(tr);
-      serialize();
-    }
+  function toggleBrandBlock(){
+    const isBrand = (tipoSelect?.value || '') === 'SHARE_MARCA';
+    if (brandBlock) brandBlock.style.display = isBrand ? 'block' : 'none';
+  }
 
-    btnAdd.addEventListener('click', () => addRow('', ''));
-    if (btnEx) {
-      btnEx.addEventListener('click', () => {
-        tbody.innerHTML = '';
-        addRow('2.5', '0.10');
-        addRow('5', '0.20');
-        addRow('7.5', '0.25');
-        addRow('10', '0.30');
-      });
-    }
+  function toggleBaseCols(){
+    const showBase = (tipoSelect?.value || '') === 'CRESCIMENTO';
+    document.querySelectorAll('.js-base-col').forEach((el) => {
+      el.style.display = showBase ? '' : 'none';
+    });
+  }
 
-    addRow('', '');
-  })();
+  if (btnExample) {
+    btnExample.addEventListener('click', function(){
+      const limites = ['5','10','15','20','25'];
+      const bonus = ['0,10','0,15','0,20','0,25','0,30'];
+      document.querySelectorAll('.js-limite').forEach((el, idx) => { el.value = limites[idx] || ''; });
+      document.querySelectorAll('.js-bonus').forEach((el, idx) => { el.value = bonus[idx] || ''; });
+      syncEscalas();
+    });
+  }
+
+  document.querySelectorAll('.js-limite, .js-bonus').forEach((el) => {
+    el.addEventListener('input', syncEscalas);
+  });
+
+  if (tipoSelect) {
+    tipoSelect.addEventListener('change', function(){
+      toggleBrandBlock();
+      toggleBaseCols();
+    });
+  }
+
+  if (form) {
+    form.addEventListener('submit', function(){
+      syncEscalas();
+    });
+  }
+
+  toggleBrandBlock();
+  toggleBaseCols();
+  syncEscalas();
+})();
 </script>
 {% endblock %}
