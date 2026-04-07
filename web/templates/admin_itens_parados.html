@@ -24,10 +24,51 @@
     color: var(--ip-text);
   }
 
+  .app-page{
+    max-width: min(1720px, calc(100vw - 320px));
+  }
+
   .ip-admin-page .ip-shell{
-    max-width: 1500px;
+    max-width: none;
     margin: 0 auto;
-    padding: 8px 10px 28px;
+    padding: 10px 6px 34px;
+  }
+
+  @media (min-width: 1400px){
+    .app-main > .container-fluid{
+      padding-left: 18px !important;
+      padding-right: 18px !important;
+    }
+
+    .ip-admin-page .ip-layout{
+      grid-template-columns: minmax(0, 1.55fr) minmax(380px, 1fr);
+      gap: 20px;
+    }
+
+    .ip-admin-page .ip-main-stack,
+    .ip-admin-page .ip-side-stack,
+    .ip-admin-page .ip-grid-2,
+    .ip-admin-page .ip-stat-grid{
+      gap: 20px;
+    }
+
+    .ip-admin-page .ip-card-head{
+      padding: 20px 24px 0;
+    }
+
+    .ip-admin-page .ip-card-body{
+      padding: 20px 24px 24px;
+    }
+  }
+
+  @media (min-width: 1700px){
+    .app-page{
+      max-width: min(1860px, calc(100vw - 300px));
+    }
+
+    .ip-admin-page .ip-layout{
+      grid-template-columns: minmax(0, 1.7fr) minmax(420px, 1fr);
+    }
   }
 
   .ip-admin-page .ip-hero{
@@ -472,6 +513,10 @@
   }
 
   @media (max-width: 640px){
+    .app-page{
+      max-width: 100%;
+    }
+
     .ip-admin-page .ip-shell{
       padding-inline: 0;
     }
