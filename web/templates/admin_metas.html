@@ -3,277 +3,663 @@
 
 {% block extra_head %}
 <style>
-  .sv-page.sv-page--wide{max-width:1500px;padding-top:10px;padding-bottom:10px;}
-  .sv-pagehead{padding:12px;}
-  .sv-card-pad{padding:14px;}
+  .sv-page.sv-page--wide{max-width:1640px;padding-top:12px;padding-bottom:18px;}
+
+  .meta-shell{display:flex;flex-direction:column;gap:14px;}
+  .sv-card-pad{padding:18px;}
   .sv-muted-soft{color:#b7b7b7;}
+
+  .meta-hero{
+    position:relative;
+    overflow:hidden;
+    padding:18px 18px 16px;
+    border-radius:22px;
+    border:1px solid rgba(255,255,255,.08);
+    background:
+      radial-gradient(circle at top right, rgba(255,160,64,.22), transparent 28%),
+      linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02));
+    box-shadow:0 16px 40px rgba(0,0,0,.22);
+  }
+  .meta-hero::after{
+    content:"";
+    position:absolute;
+    inset:auto -50px -50px auto;
+    width:180px;height:180px;border-radius:50%;
+    background:radial-gradient(circle, rgba(255,165,0,.16), rgba(255,165,0,0));
+    pointer-events:none;
+  }
+  .meta-hero__top{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap;}
+  .meta-hero__title{font-size:28px;line-height:1.05;font-weight:800;margin:0;letter-spacing:-.02em;}
+  .meta-hero__subtitle{max-width:880px;color:#cfcfcf;margin-top:8px;font-size:14px;}
+  .meta-hero__actions{display:flex;gap:8px;flex-wrap:wrap;}
+
+  .meta-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-top:16px;}
+  .meta-stat{
+    border:1px solid rgba(255,255,255,.08);
+    border-radius:18px;
+    background:rgba(8,8,8,.34);
+    padding:14px 15px;
+    min-height:94px;
+  }
+  .meta-stat__label{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#9f9f9f;margin-bottom:8px;}
+  .meta-stat__value{font-size:26px;font-weight:800;line-height:1;color:#fff;}
+  .meta-stat__sub{font-size:12px;color:#bcbcbc;margin-top:8px;}
+
   .meta-note{
     border:1px dashed rgba(255,170,60,.25);
     background:rgba(255,170,60,.08);
-    border-radius:14px;
-    padding:10px 12px;
+    border-radius:16px;
+    padding:12px 14px;
     color:#f4d2a1;
     font-size:13px;
   }
+
   .meta-chip{
-    display:inline-flex; align-items:center; gap:6px;
-    padding:4px 8px; border-radius:999px;
+    display:inline-flex;align-items:center;gap:6px;
+    padding:5px 10px;border-radius:999px;
     border:1px solid rgba(255,255,255,.10);
     background:rgba(255,255,255,.04);
-    font-size:12px; font-weight:700;
+    font-size:12px;font-weight:700;
     margin:2px 4px 2px 0;
+    white-space:nowrap;
   }
-  .meta-chip.is-active{border-color:rgba(59,198,118,.28); color:#8de0a8; background:rgba(59,198,118,.10);}
-  .meta-chip.is-inactive{border-color:rgba(255,255,255,.10); color:#bdbdbd;}
-  .meta-grid{display:grid; gap:12px; grid-template-columns: 1.2fr .95fr;}
-  .meta-subgrid{display:grid; gap:12px; grid-template-columns: repeat(4, minmax(0, 1fr));}
-  .meta-table td,.meta-table th{padding:.52rem .55rem; vertical-align:middle;}
-  .meta-table thead th{font-size:12px; color:#bcbcbc; letter-spacing:.02em;}
-  .meta-table tbody td{background: rgba(5,5,5,.38) !important;}
-  .meta-table tbody tr:nth-child(even) td{background: rgba(255,255,255,.03) !important;}
-  .meta-table tbody tr:hover td{background: rgba(255,140,0,.08) !important;}
-  .meta-stack{display:flex; flex-direction:column; gap:4px;}
-  .meta-empty{
-    border:1px dashed rgba(255,255,255,.12);
-    border-radius:14px; padding:20px; text-align:center; color:#b9b9b9;
-    background:rgba(255,255,255,.02);
+  .meta-chip.is-active{border-color:rgba(59,198,118,.28);color:#8de0a8;background:rgba(59,198,118,.10);}
+  .meta-chip.is-inactive{border-color:rgba(255,255,255,.10);color:#bdbdbd;}
+  .meta-chip.is-soft{color:#ffd19a;border-color:rgba(255,170,60,.20);background:rgba(255,170,60,.08);}
+
+  .meta-grid{display:grid;gap:14px;grid-template-columns:minmax(0,1.32fr) minmax(360px,.92fr);align-items:start;}
+  .meta-column{display:flex;flex-direction:column;gap:14px;min-width:0;}
+
+  .meta-panel{
+    border:1px solid rgba(255,255,255,.08);
+    border-radius:22px;
+    background:linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.025));
+    box-shadow:0 16px 36px rgba(0,0,0,.18);
+    overflow:hidden;
   }
+  .meta-panel--sticky{position:sticky;top:84px;}
+  .meta-panel__head{
+    display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;
+    padding:18px 18px 0;
+  }
+  .meta-panel__title{font-size:17px;font-weight:800;margin:0;line-height:1.1;}
+  .meta-panel__desc{font-size:13px;color:#b8b8b8;margin-top:5px;max-width:760px;}
+  .meta-panel__body{padding:18px;}
+
+  .meta-context-grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:12px;}
+  .meta-context-item{grid-column:span 2;}
+  .meta-context-item--emp{grid-column:span 3;}
+  .meta-context-item--wide{grid-column:span 2;}
+  .meta-context-item--action{grid-column:span 1;display:flex;align-items:flex-end;}
+
+  .meta-field-shell{
+    height:100%;
+    border:1px solid rgba(255,255,255,.07);
+    border-radius:16px;
+    background:rgba(255,255,255,.025);
+    padding:11px 12px 12px;
+  }
+  .meta-field-shell .form-label{
+    font-size:11px;
+    text-transform:uppercase;
+    letter-spacing:.08em;
+    color:#a9a9a9;
+    margin-bottom:7px;
+    font-weight:700;
+  }
+  .meta-field-shell .form-control,
+  .meta-field-shell .form-select{
+    min-height:42px;
+    border-radius:12px;
+    border-color:rgba(255,255,255,.08);
+    background:rgba(18,18,18,.72);
+    color:#fff;
+  }
+  .meta-field-shell .form-control:disabled{opacity:.82;}
+
+  .meta-form-grid{display:grid;gap:14px;}
+  .meta-block{
+    border:1px solid rgba(255,255,255,.07);
+    border-radius:18px;
+    background:rgba(255,255,255,.025);
+    padding:15px;
+  }
+  .meta-block__head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:12px;}
+  .meta-block__title{font-size:13px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#f5f5f5;margin:0;}
+  .meta-block__desc{font-size:12px;color:#aeb0b3;max-width:760px;margin-top:4px;}
+
   .meta-mini{font-size:12px;color:#b9b9b9;}
   .meta-preview-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;}
-  .meta-section-title{font-size:15px;font-weight:700;margin:0;}
-  .meta-fixas th{white-space:nowrap;}
-  .meta-fixas input{text-align:center;}
-  .js-brand-block{display:none;}
-  @media (max-width: 1100px){
-    .meta-grid{grid-template-columns:1fr;}
-    .meta-subgrid{grid-template-columns:repeat(2, minmax(0, 1fr));}
+  .meta-section-title{font-size:15px;font-weight:800;margin:0;}
+  .meta-stack{display:flex;flex-direction:column;gap:5px;}
+
+  .meta-table-wrap{
+    border:1px solid rgba(255,255,255,.07);
+    border-radius:18px;
+    overflow:auto;
+    background:rgba(0,0,0,.10);
   }
-  @media (max-width: 640px){
-    .meta-subgrid{grid-template-columns:1fr;}
+  .meta-table{margin:0;}
+  .meta-table td,.meta-table th{padding:.68rem .72rem;vertical-align:middle;border-color:rgba(255,255,255,.06);}
+  .meta-table thead th{
+    position:sticky;top:0;z-index:2;
+    font-size:11px;color:#bcbcbc;letter-spacing:.08em;text-transform:uppercase;
+    background:rgba(18,18,18,.95) !important;
+    backdrop-filter:blur(8px);
+    white-space:nowrap;
+  }
+  .meta-table tbody td{background:rgba(5,5,5,.38) !important;}
+  .meta-table tbody tr:nth-child(even) td{background:rgba(255,255,255,.03) !important;}
+  .meta-table tbody tr:hover td{background:rgba(255,140,0,.08) !important;}
+  .meta-fixas input{text-align:center;}
+  .meta-fixas th{white-space:nowrap;}
+
+  .meta-list-summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;}
+  .meta-list-card{
+    border:1px solid rgba(255,255,255,.07);
+    border-radius:16px;
+    padding:12px 13px;
+    background:rgba(255,255,255,.02);
+  }
+  .meta-list-card__k{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#9d9d9d;margin-bottom:8px;}
+  .meta-list-card__v{font-size:19px;font-weight:800;line-height:1.1;}
+  .meta-list-card__s{font-size:12px;color:#b7b7b7;margin-top:6px;}
+
+  .meta-checklist{display:flex;flex-direction:column;gap:9px;}
+  .meta-checklist__item{
+    border:1px solid rgba(255,255,255,.06);
+    border-radius:14px;
+    background:rgba(255,255,255,.02);
+    padding:10px 12px;
+    font-size:13px;
+    color:#cfcfcf;
+  }
+  .meta-checklist__item strong{display:block;color:#fff;margin-bottom:3px;}
+
+  .meta-empty{
+    border:1px dashed rgba(255,255,255,.12);
+    border-radius:16px;padding:22px;text-align:center;color:#b9b9b9;
+    background:rgba(255,255,255,.02);
+  }
+
+  .meta-actions-row{display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap;}
+  .meta-submit{min-width:180px;}
+  .js-brand-block{display:none;}
+
+  @media (max-width: 1380px){
+    .meta-grid{grid-template-columns:1fr;}
+    .meta-panel--sticky{position:relative;top:auto;}
+  }
+  @media (max-width: 1180px){
+    .meta-stats{grid-template-columns:repeat(2,minmax(0,1fr));}
+    .meta-context-item{grid-column:span 3;}
+    .meta-context-item--emp{grid-column:span 6;}
+    .meta-context-item--wide{grid-column:span 3;}
+    .meta-context-item--action{grid-column:span 3;}
+  }
+  @media (max-width: 760px){
+    .meta-hero{padding:16px;}
+    .meta-hero__title{font-size:24px;}
+    .meta-stats{grid-template-columns:1fr;}
+    .meta-context-grid{grid-template-columns:1fr;}
+    .meta-context-item,
+    .meta-context-item--emp,
+    .meta-context-item--wide,
+    .meta-context-item--action{grid-column:span 1;}
+    .meta-list-summary{grid-template-columns:1fr;}
+    .sv-card-pad,
+    .meta-panel__body{padding:15px;}
+    .meta-panel__head{padding:15px 15px 0;}
   }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="sv-page sv-page--wide">
-  <div class="sv-pagehead sv-glass mb-3">
-    <div class="sv-pagehead__left">
-      <h3 class="m-0">🎯 Administração de Metas</h3>
-      <div class="sv-muted-soft">Cadastro simplificado por loja, com vendedores relacionados e insumos iniciais no mesmo fluxo.</div>
-    </div>
-    <div class="sv-pagehead__right">
-      <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('metas', ano=ano, mes=mes) }}">Ver operação</a>
-      <a class="btn btn-outline-primary btn-sm" href="{{ url_for('dashboard') }}">Dashboard</a>
-    </div>
-  </div>
+  {% set metas_count = metas_list|length %}
+  {% set vendedores_count = preview_rows|length %}
 
-  <div class="sv-card sv-glass card shadow-sm mb-3">
-    <div class="card-body sv-card-pad">
-      <div class="meta-preview-head mb-2">
+  <div class="meta-shell">
+    <section class="meta-hero sv-glass">
+      <div class="meta-hero__top">
         <div>
-          <h5 class="meta-section-title">Filtro de contexto</h5>
-          <div class="meta-mini">Ao selecionar a loja, aparecem os vendedores relacionados abaixo das configurações de metas.</div>
-        </div>
-      </div>
-
-      <form class="row g-2 align-items-end" method="get" action="{{ url_for('admin_metas') }}">
-        <div class="col-12 col-md-2">
-          <label class="form-label small">Mês</label>
-          <input class="form-control" name="mes" value="{{ '%02d'|format(mes) }}">
-        </div>
-        <div class="col-12 col-md-2">
-          <label class="form-label small">Ano</label>
-          <input class="form-control" name="ano" value="{{ ano }}">
-        </div>
-        <div class="col-12 col-md-3">
-          <label class="form-label small">Loja</label>
-          <select class="form-select" name="emp_sel">
-            <option value="">Selecione uma loja...</option>
-            {% for e in emps_rows %}
-              <option value="{{ e.codigo }}" {% if emp_selected == e.codigo %}selected{% endif %}>{{ e.codigo }} — {{ e.nome }}</option>
-            {% endfor %}
-          </select>
-        </div>
-        <div class="col-12 col-md-2">
-          <label class="form-label small">Escopo</label>
-          <select class="form-select" name="escopo_preview">
-            <option value="VENDEDOR" {% if escopo_preview == 'VENDEDOR' %}selected{% endif %}>Vendedor</option>
-            <option value="GERENTE" {% if escopo_preview == 'GERENTE' %}selected{% endif %}>Gerente / Loja</option>
-          </select>
-        </div>
-        <div class="col-12 col-md-2">
-          <label class="form-label small">Tipo</label>
-          <select class="form-select" name="tipo_preview">
-            <option value="CRESCIMENTO" {% if tipo_preview == 'CRESCIMENTO' %}selected{% endif %}>Crescimento</option>
-            <option value="SHARE_MARCA" {% if tipo_preview == 'SHARE_MARCA' %}selected{% endif %}>Share de Marcas</option>
-            <option value="MIX" {% if tipo_preview == 'MIX' %}selected{% endif %}>Mix</option>
-          </select>
-        </div>
-        <div class="col-12 col-md-1 d-grid">
-          <button class="btn btn-primary">Carregar</button>
-        </div>
-      </form>
-
-      <div class="meta-note mt-3">
-        A lógica desta tela segue o modelo da planilha: a meta é configurada por <strong>loja</strong>, as faixas ficam iguais para todos da loja e o que diferencia cada vendedor é o <strong>valor base</strong> e os insumos manuais.
-      </div>
-    </div>
-  </div>
-
-  <div class="meta-grid">
-    <div class="sv-card sv-glass card shadow-sm">
-      <div class="card-body sv-card-pad">
-        <div class="meta-preview-head mb-3">
-          <div>
-            <h5 class="meta-section-title">Cadastro da meta</h5>
-            <div class="meta-mini">Fluxo simplificado para cadastrar a meta e já lançar os insumos iniciais da loja.</div>
+          <h3 class="meta-hero__title">🎯 Administração de Metas</h3>
+          <div class="meta-hero__subtitle">
+            Fluxo concentrado para configurar metas por loja, lançar os insumos iniciais dos vendedores e acompanhar rapidamente o que já está cadastrado no período.
           </div>
+        </div>
+        <div class="meta-hero__actions">
+          <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('metas', ano=ano, mes=mes) }}">Ver operação</a>
+          <a class="btn btn-outline-primary btn-sm" href="{{ url_for('dashboard') }}">Dashboard</a>
+        </div>
+      </div>
+
+      <div class="meta-stats">
+        <div class="meta-stat">
+          <div class="meta-stat__label">Período</div>
+          <div class="meta-stat__value">{{ '%02d'|format(mes) }}/{{ ano }}</div>
+          <div class="meta-stat__sub">Base principal de cadastro em edição.</div>
+        </div>
+        <div class="meta-stat">
+          <div class="meta-stat__label">Loja em foco</div>
+          <div class="meta-stat__value">{{ emp_selected if emp_selected else 'Todas' }}</div>
+          <div class="meta-stat__sub">{% if emp_selected %}Contexto filtrado para uma loja específica.{% else %}Selecione uma loja para carregar os vendedores.{% endif %}</div>
+        </div>
+        <div class="meta-stat">
+          <div class="meta-stat__label">Metas cadastradas</div>
+          <div class="meta-stat__value">{{ metas_count }}</div>
+          <div class="meta-stat__sub">Programas exibidos conforme o período e o filtro atual.</div>
+        </div>
+        <div class="meta-stat">
+          <div class="meta-stat__label">Vendedores em prévia</div>
+          <div class="meta-stat__value">{{ vendedores_count }}</div>
+          <div class="meta-stat__sub">Linhas prontas para lançar base, margem e observações.</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="meta-panel sv-glass">
+      <div class="meta-panel__head">
+        <div>
+          <h5 class="meta-panel__title">Filtro de contexto</h5>
+          <div class="meta-panel__desc">Use o filtro abaixo para definir o mês, a loja e o tipo que será usado como base visual do cadastro.</div>
+        </div>
+        <div>
           {% if emp_selected %}
             <span class="meta-chip is-active">Loja selecionada: {{ emp_selected }}</span>
           {% else %}
-            <span class="meta-chip is-inactive">Selecione uma loja acima</span>
+            <span class="meta-chip is-inactive">Sem loja definida</span>
           {% endif %}
+          <span class="meta-chip is-soft">{{ tipo_label(tipo_preview) }}</span>
         </div>
-
-        <form method="post" action="{{ url_for('admin_metas_criar') }}" id="meta-create-form">
-          <input type="hidden" name="ano" value="{{ ano }}">
-          <input type="hidden" name="mes" value="{{ mes }}">
-          <textarea class="d-none" name="escalas" id="escalas_text"></textarea>
-
-          <div class="row g-3">
-            <div class="col-12 col-lg-6">
-              <label class="form-label small">Nome da meta</label>
-              <input class="form-control" name="nome" value="{% if emp_selected %}Meta {{ tipo_label(tipo_preview) }} {{ emp_selected }} - {{ '%02d'|format(mes) }}/{{ ano }}{% endif %}" placeholder="Ex.: Meta Crescimento Loja 102" required>
-            </div>
-            <div class="col-12 col-md-4 col-lg-3">
-              <label class="form-label small">Tipo</label>
-              <select class="form-select" name="tipo" id="meta_tipo_select" required>
-                <option value="CRESCIMENTO" {% if tipo_preview == 'CRESCIMENTO' %}selected{% endif %}>📈 Crescimento</option>
-                <option value="SHARE_MARCA" {% if tipo_preview == 'SHARE_MARCA' %}selected{% endif %}>🏷️ Share de Marcas</option>
-                <option value="MIX" {% if tipo_preview == 'MIX' %}selected{% endif %}>🧩 Mix</option>
-              </select>
-            </div>
-            <div class="col-12 col-md-4 col-lg-3">
-              <label class="form-label small">Escopo</label>
-              <select class="form-select" name="escopo" id="meta_escopo_select" required>
-                <option value="VENDEDOR" {% if escopo_preview == 'VENDEDOR' %}selected{% endif %}>Vendedor</option>
-                <option value="GERENTE" {% if escopo_preview == 'GERENTE' %}selected{% endif %}>Gerente / Loja</option>
-              </select>
-            </div>
-
-            <div class="col-12 col-md-4">
-              <label class="form-label small">Loja</label>
-              <select class="form-select" name="emp_single" required>
-                <option value="">Selecione...</option>
-                {% for e in emps_rows %}
-                  <option value="{{ e.codigo }}" {% if emp_selected == e.codigo %}selected{% endif %}>{{ e.codigo }} — {{ e.nome }}</option>
-                {% endfor %}
-              </select>
-            </div>
-            <div class="col-6 col-md-2">
-              <label class="form-label small">Mês</label>
-              <input class="form-control" value="{{ '%02d'|format(mes) }}" disabled>
-            </div>
-            <div class="col-6 col-md-2">
-              <label class="form-label small">Ano</label>
-              <input class="form-control" value="{{ ano }}" disabled>
-            </div>
-            <div class="col-6 col-md-2">
-              <label class="form-label small">Margem mínima (%)</label>
-              <input class="form-control" name="margem_minima" placeholder="8,00">
-            </div>
-            <div class="col-6 col-md-2">
-              <label class="form-label small">Fat. mínimo (R$)</label>
-              <input class="form-control" name="faturamento_minimo" placeholder="0,00">
-            </div>
-            <div class="col-6 col-md-2">
-              <label class="form-label small">Teto a partir de (R$)</label>
-              <input class="form-control" name="teto_faturamento" placeholder="100.000,00">
-            </div>
-            <div class="col-6 col-md-2">
-              <label class="form-label small">Teto bônus (%)</label>
-              <input class="form-control" name="teto_bonus_percentual" placeholder="0,40">
-            </div>
-
-            <div class="col-12 js-brand-block" id="brand_block">
-              <label class="form-label small">Marcas da meta</label>
-              <textarea class="form-control" name="marcas" rows="2" placeholder="EVOL, VEI, CREVON"></textarea>
-              <div class="meta-mini mt-1">Use vírgula, ponto e vírgula ou uma marca por linha.</div>
-            </div>
-
-            <div class="col-12">
-              <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
-                <div>
-                  <label class="form-label small mb-0">Faixas da meta</label>
-                  <div class="meta-mini">No crescimento/share, o limite é em %. No mix, o limite é quantidade.</div>
-                </div>
-                <button class="btn btn-outline-secondary btn-sm" type="button" id="btn_fill_examples">Usar exemplo 5 / 10 / 15 / 20 / 25</button>
+      </div>
+      <div class="meta-panel__body">
+        <form method="get" action="{{ url_for('admin_metas') }}">
+          <div class="meta-context-grid">
+            <div class="meta-context-item">
+              <div class="meta-field-shell">
+                <label class="form-label">Mês</label>
+                <input class="form-control" name="mes" value="{{ '%02d'|format(mes) }}">
               </div>
-
-              <div class="table-responsive">
-                <table class="table table-sm align-middle meta-table meta-fixas mb-0">
-                  <thead>
-                    <tr>
-                      <th>Faixa</th>
-                      <th>Limite</th>
-                      <th>Recompensa (%)</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {% for idx in range(1, 6) %}
-                    <tr>
-                      <td class="fw-semibold">Faixa {{ idx }}</td>
-                      <td><input class="form-control form-control-sm js-limite" placeholder="{{ 5 * idx if idx < 6 else '' }}"></td>
-                      <td><input class="form-control form-control-sm js-bonus" placeholder="0,{{ '%02d'|format(5 + idx * 5) }}"></td>
-                    </tr>
-                    {% endfor %}
-                  </tbody>
-                </table>
+            </div>
+            <div class="meta-context-item">
+              <div class="meta-field-shell">
+                <label class="form-label">Ano</label>
+                <input class="form-control" name="ano" value="{{ ano }}">
               </div>
+            </div>
+            <div class="meta-context-item meta-context-item--emp">
+              <div class="meta-field-shell">
+                <label class="form-label">Loja</label>
+                <select class="form-select" name="emp_sel">
+                  <option value="">Selecione uma loja...</option>
+                  {% for e in emps_rows %}
+                    <option value="{{ e.codigo }}" {% if emp_selected == e.codigo %}selected{% endif %}>{{ e.codigo }} — {{ e.nome }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+            </div>
+            <div class="meta-context-item meta-context-item--wide">
+              <div class="meta-field-shell">
+                <label class="form-label">Escopo</label>
+                <select class="form-select" name="escopo_preview">
+                  <option value="VENDEDOR" {% if escopo_preview == 'VENDEDOR' %}selected{% endif %}>Vendedor</option>
+                  <option value="GERENTE" {% if escopo_preview == 'GERENTE' %}selected{% endif %}>Gerente / Loja</option>
+                </select>
+              </div>
+            </div>
+            <div class="meta-context-item meta-context-item--wide">
+              <div class="meta-field-shell">
+                <label class="form-label">Tipo</label>
+                <select class="form-select" name="tipo_preview">
+                  <option value="CRESCIMENTO" {% if tipo_preview == 'CRESCIMENTO' %}selected{% endif %}>Crescimento</option>
+                  <option value="SHARE_MARCA" {% if tipo_preview == 'SHARE_MARCA' %}selected{% endif %}>Share de Marcas</option>
+                  <option value="MIX" {% if tipo_preview == 'MIX' %}selected{% endif %}>Mix</option>
+                </select>
+              </div>
+            </div>
+            <div class="meta-context-item meta-context-item--action">
+              <button class="btn btn-primary w-100">Carregar</button>
             </div>
           </div>
+        </form>
 
-          <div class="mt-4">
-            <div class="meta-preview-head mb-2">
-              <div>
-                <h6 class="m-0">Insumos iniciais da loja</h6>
-                <div class="meta-mini">Você já pode lançar o valor base, margem e bônus extra dos vendedores da loja antes de salvar a meta.</div>
+        <div class="meta-note mt-3">
+          A lógica desta tela segue o modelo da planilha: a meta é configurada por <strong>loja</strong>, as faixas são compartilhadas e o que varia por vendedor são os <strong>insumos iniciais</strong> como base, margem e bônus extra.
+        </div>
+      </div>
+    </section>
+
+    <div class="meta-grid">
+      <div class="meta-column">
+        <section class="meta-panel sv-glass">
+          <div class="meta-panel__head">
+            <div>
+              <h5 class="meta-panel__title">Cadastro da meta</h5>
+              <div class="meta-panel__desc">Organizado em blocos para reduzir rolagem mental e deixar o preenchimento mais claro sem alterar o funcionamento atual.</div>
+            </div>
+            {% if emp_selected %}
+              <span class="meta-chip is-active">Loja selecionada: {{ emp_selected }}</span>
+            {% else %}
+              <span class="meta-chip is-inactive">Selecione uma loja acima</span>
+            {% endif %}
+          </div>
+
+          <div class="meta-panel__body">
+            <form method="post" action="{{ url_for('admin_metas_criar') }}" id="meta-create-form">
+              <input type="hidden" name="ano" value="{{ ano }}">
+              <input type="hidden" name="mes" value="{{ mes }}">
+              <textarea class="d-none" name="escalas" id="escalas_text"></textarea>
+
+              <div class="meta-form-grid">
+                <div class="meta-block">
+                  <div class="meta-block__head">
+                    <div>
+                      <h6 class="meta-block__title">Identificação</h6>
+                      <div class="meta-block__desc">Defina o nome, tipo e escopo principal da meta antes de configurar as regras.</div>
+                    </div>
+                  </div>
+                  <div class="row g-3">
+                    <div class="col-12 col-lg-6">
+                      <div class="meta-field-shell">
+                        <label class="form-label">Nome da meta</label>
+                        <input class="form-control" name="nome" value="{% if emp_selected %}Meta {{ tipo_label(tipo_preview) }} {{ emp_selected }} - {{ '%02d'|format(mes) }}/{{ ano }}{% endif %}" placeholder="Ex.: Meta Crescimento Loja 102" required>
+                      </div>
+                    </div>
+                    <div class="col-12 col-md-4 col-lg-3">
+                      <div class="meta-field-shell">
+                        <label class="form-label">Tipo</label>
+                        <select class="form-select" name="tipo" id="meta_tipo_select" required>
+                          <option value="CRESCIMENTO" {% if tipo_preview == 'CRESCIMENTO' %}selected{% endif %}>📈 Crescimento</option>
+                          <option value="SHARE_MARCA" {% if tipo_preview == 'SHARE_MARCA' %}selected{% endif %}>🏷️ Share de Marcas</option>
+                          <option value="MIX" {% if tipo_preview == 'MIX' %}selected{% endif %}>🧩 Mix</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div class="col-12 col-md-4 col-lg-3">
+                      <div class="meta-field-shell">
+                        <label class="form-label">Escopo</label>
+                        <select class="form-select" name="escopo" id="meta_escopo_select" required>
+                          <option value="VENDEDOR" {% if escopo_preview == 'VENDEDOR' %}selected{% endif %}>Vendedor</option>
+                          <option value="GERENTE" {% if escopo_preview == 'GERENTE' %}selected{% endif %}>Gerente / Loja</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="meta-block">
+                  <div class="meta-block__head">
+                    <div>
+                      <h6 class="meta-block__title">Regras e travas</h6>
+                      <div class="meta-block__desc">Aqui ficam a loja alvo, referência de período e limites operacionais da campanha.</div>
+                    </div>
+                  </div>
+                  <div class="row g-3">
+                    <div class="col-12 col-md-4">
+                      <div class="meta-field-shell">
+                        <label class="form-label">Loja</label>
+                        <select class="form-select" name="emp_single" required>
+                          <option value="">Selecione...</option>
+                          {% for e in emps_rows %}
+                            <option value="{{ e.codigo }}" {% if emp_selected == e.codigo %}selected{% endif %}>{{ e.codigo }} — {{ e.nome }}</option>
+                          {% endfor %}
+                        </select>
+                      </div>
+                    </div>
+                    <div class="col-6 col-md-2">
+                      <div class="meta-field-shell">
+                        <label class="form-label">Mês</label>
+                        <input class="form-control" value="{{ '%02d'|format(mes) }}" disabled>
+                      </div>
+                    </div>
+                    <div class="col-6 col-md-2">
+                      <div class="meta-field-shell">
+                        <label class="form-label">Ano</label>
+                        <input class="form-control" value="{{ ano }}" disabled>
+                      </div>
+                    </div>
+                    <div class="col-6 col-md-2">
+                      <div class="meta-field-shell">
+                        <label class="form-label">Margem mínima (%)</label>
+                        <input class="form-control" name="margem_minima" placeholder="8,00">
+                      </div>
+                    </div>
+                    <div class="col-6 col-md-2">
+                      <div class="meta-field-shell">
+                        <label class="form-label">Fat. mínimo (R$)</label>
+                        <input class="form-control" name="faturamento_minimo" placeholder="0,00">
+                      </div>
+                    </div>
+                    <div class="col-6 col-md-2">
+                      <div class="meta-field-shell">
+                        <label class="form-label">Teto a partir de (R$)</label>
+                        <input class="form-control" name="teto_faturamento" placeholder="100.000,00">
+                      </div>
+                    </div>
+                    <div class="col-6 col-md-2">
+                      <div class="meta-field-shell">
+                        <label class="form-label">Teto bônus (%)</label>
+                        <input class="form-control" name="teto_bonus_percentual" placeholder="0,40">
+                      </div>
+                    </div>
+
+                    <div class="col-12 js-brand-block" id="brand_block">
+                      <div class="meta-field-shell">
+                        <label class="form-label">Marcas da meta</label>
+                        <textarea class="form-control" name="marcas" rows="2" placeholder="EVOL, VEI, CREVON"></textarea>
+                        <div class="meta-mini mt-2">Use vírgula, ponto e vírgula ou uma marca por linha.</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="meta-block">
+                  <div class="meta-block__head">
+                    <div>
+                      <h6 class="meta-block__title">Faixas da meta</h6>
+                      <div class="meta-block__desc">No crescimento e share, o limite é percentual. No mix, o limite representa quantidade.</div>
+                    </div>
+                    <button class="btn btn-outline-secondary btn-sm" type="button" id="btn_fill_examples">Usar exemplo 5 / 10 / 15 / 20 / 25</button>
+                  </div>
+
+                  <div class="meta-table-wrap">
+                    <table class="table table-sm align-middle meta-table meta-fixas mb-0">
+                      <thead>
+                        <tr>
+                          <th>Faixa</th>
+                          <th>Limite</th>
+                          <th>Recompensa (%)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {% for idx in range(1, 6) %}
+                        <tr>
+                          <td class="fw-semibold">Faixa {{ idx }}</td>
+                          <td><input class="form-control form-control-sm js-limite" placeholder="{{ 5 * idx if idx < 6 else '' }}"></td>
+                          <td><input class="form-control form-control-sm js-bonus" placeholder="0,{{ '%02d'|format(5 + idx * 5) }}"></td>
+                        </tr>
+                        {% endfor %}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <div class="meta-block">
+                  <div class="meta-block__head">
+                    <div>
+                      <h6 class="meta-block__title">Insumos iniciais da loja</h6>
+                      <div class="meta-block__desc">Pré-lançamento do valor base, margem e ajustes por vendedor da loja selecionada.</div>
+                    </div>
+                    {% if preview_rows %}
+                      <span class="meta-chip is-soft">{{ preview_rows|length }} linha(s) carregada(s)</span>
+                    {% endif %}
+                  </div>
+
+                  {% if preview_rows %}
+                    <div class="meta-table-wrap">
+                      <table class="table table-sm align-middle meta-table mb-0">
+                        <thead>
+                          <tr>
+                            <th style="min-width:90px;">Loja</th>
+                            <th style="min-width:220px;">Vendedor</th>
+                            <th class="text-end" style="min-width:130px;">Fat. atual</th>
+                            <th class="text-end js-base-col" style="min-width:130px;{% if not show_base_preview %}display:none;{% endif %}">Base auto</th>
+                            <th class="js-base-col" style="min-width:160px;{% if not show_base_preview %}display:none;{% endif %}">Valor base</th>
+                            <th style="min-width:130px;">Margem (%)</th>
+                            <th style="min-width:130px;">Bônus extra (%)</th>
+                            <th style="min-width:220px;">Obs.</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {% for l in preview_rows %}
+                            <tr>
+                              <td class="text-muted">{{ l.emp }}</td>
+                              <td class="fw-semibold">{{ l.vendedor }}</td>
+                              <td class="text-end">R$ {{ '%.2f'|format(l.total_atual) }}</td>
+                              <td class="text-end js-base-col" {% if not show_base_preview %}style="display:none;"{% endif %}>R$ {{ '%.2f'|format(l.base_auto) }}</td>
+                              <td class="js-base-col" {% if not show_base_preview %}style="display:none;"{% endif %}>
+                                <input class="form-control form-control-sm" name="base__{{ l.emp }}__{{ l.vendedor_key }}" placeholder="{{ '%.2f'|format(l.base_auto) if l.base_auto else '0,00' }}">
+                              </td>
+                              <td>
+                                <input class="form-control form-control-sm" name="margem__{{ l.emp }}__{{ l.vendedor_key }}" placeholder="8,00">
+                              </td>
+                              <td>
+                                <input class="form-control form-control-sm" name="extra__{{ l.emp }}__{{ l.vendedor_key }}" placeholder="0,00">
+                              </td>
+                              <td>
+                                <input class="form-control form-control-sm" name="obs__{{ l.emp }}__{{ l.vendedor_key }}" placeholder="Férias, ajuste, observação...">
+                              </td>
+                            </tr>
+                          {% endfor %}
+                        </tbody>
+                      </table>
+                    </div>
+                  {% else %}
+                    <div class="meta-empty">
+                      Selecione uma <strong>loja</strong> no filtro de contexto para carregar os vendedores e facilitar o cadastro dos insumos iniciais.
+                    </div>
+                  {% endif %}
+                </div>
+
+                <div class="meta-actions-row">
+                  <button class="btn btn-primary meta-submit">Salvar meta</button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </section>
+      </div>
+
+      <div class="meta-column">
+        <section class="meta-panel meta-panel--sticky sv-glass">
+          <div class="meta-panel__head">
+            <div>
+              <h5 class="meta-panel__title">Metas cadastradas</h5>
+              <div class="meta-panel__desc">
+                {% if emp_selected %}
+                  Exibindo metas de {{ '%02d'|format(mes) }}/{{ ano }} para a loja <strong>{{ emp_selected }}</strong>.
+                {% else %}
+                  Exibindo metas de {{ '%02d'|format(mes) }}/{{ ano }}.
+                {% endif %}
+              </div>
+            </div>
+            <span class="meta-chip {% if metas_list %}is-active{% else %}is-inactive{% endif %}">{{ metas_count }} registro(s)</span>
+          </div>
+
+          <div class="meta-panel__body">
+            <div class="meta-list-summary mb-3">
+              <div class="meta-list-card">
+                <div class="meta-list-card__k">Contexto</div>
+                <div class="meta-list-card__v">{{ emp_selected if emp_selected else 'Geral' }}</div>
+                <div class="meta-list-card__s">Filtro atual de loja aplicado na listagem.</div>
+              </div>
+              <div class="meta-list-card">
+                <div class="meta-list-card__k">Tipo base</div>
+                <div class="meta-list-card__v">{{ tipo_label(tipo_preview) }}</div>
+                <div class="meta-list-card__s">Usado como referência visual do cadastro.</div>
               </div>
             </div>
 
-            {% if preview_rows %}
-              <div class="table-responsive">
+            <div class="meta-checklist mb-3">
+              <div class="meta-checklist__item">
+                <strong>1. Filtre o contexto</strong>
+                Defina mês, ano e loja para reduzir ruído no cadastro.
+              </div>
+              <div class="meta-checklist__item">
+                <strong>2. Monte a regra</strong>
+                Preencha identificação, travas e faixas antes de salvar.
+              </div>
+              <div class="meta-checklist__item">
+                <strong>3. Lance os insumos</strong>
+                Aproveite a prévia dos vendedores para adiantar ajustes finos.
+              </div>
+            </div>
+
+            {% if metas_list %}
+              <div class="meta-table-wrap">
                 <table class="table table-sm align-middle meta-table mb-0">
                   <thead>
                     <tr>
-                      <th style="min-width:90px;">Loja</th>
-                      <th style="min-width:220px;">Vendedor</th>
-                      <th class="text-end" style="min-width:130px;">Fat. atual</th>
-                      <th class="text-end js-base-col" style="min-width:130px;{% if not show_base_preview %}display:none;{% endif %}">Base auto</th>
-                      <th class="js-base-col" style="min-width:160px;{% if not show_base_preview %}display:none;{% endif %}">Valor base</th>
-                      <th style="min-width:130px;">Margem (%)</th>
-                      <th style="min-width:130px;">Bônus extra (%)</th>
-                      <th style="min-width:200px;">Obs.</th>
+                      <th style="min-width:220px;">Meta</th>
+                      <th style="min-width:110px;">Escopo</th>
+                      <th style="min-width:120px;">Tipo</th>
+                      <th style="min-width:160px;">Loja(s)</th>
+                      <th style="min-width:200px;">Faixas</th>
+                      <th style="min-width:160px;">Marcas</th>
+                      <th style="min-width:160px;">Travas</th>
+                      <th class="text-end" style="min-width:170px;">Ações</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {% for l in preview_rows %}
+                    {% for m in metas_list %}
                       <tr>
-                        <td class="text-muted">{{ l.emp }}</td>
-                        <td class="fw-semibold">{{ l.vendedor }}</td>
-                        <td class="text-end">R$ {{ '%.2f'|format(l.total_atual) }}</td>
-                        <td class="text-end js-base-col" {% if not show_base_preview %}style="display:none;"{% endif %}>R$ {{ '%.2f'|format(l.base_auto) }}</td>
-                        <td class="js-base-col" {% if not show_base_preview %}style="display:none;"{% endif %}>
-                          <input class="form-control form-control-sm" name="base__{{ l.emp }}__{{ l.vendedor_key }}" placeholder="{{ '%.2f'|format(l.base_auto) if l.base_auto else '0,00' }}">
+                        <td>
+                          <div class="fw-semibold">{{ m.nome }}</div>
+                          <div class="meta-mini">{{ '%02d'|format(m.mes) }}/{{ m.ano }}</div>
                         </td>
                         <td>
-                          <input class="form-control form-control-sm" name="margem__{{ l.emp }}__{{ l.vendedor_key }}" placeholder="8,00">
+                          <span class="meta-chip {% if m.ativo %}is-active{% else %}is-inactive{% endif %}">{{ 'Gerente / Loja' if (m.escopo or 'VENDEDOR') == 'GERENTE' else 'Vendedor' }}</span>
+                          <div class="meta-mini">{% if m.ativo %}Ativa{% else %}Inativa{% endif %}</div>
+                        </td>
+                        <td>{{ tipo_label(m.tipo) }}</td>
+                        <td>
+                          {% for e in (meta_emps.get(m.id) or []) %}
+                            <span class="meta-chip">{{ e }}</span>
+                          {% endfor %}
                         </td>
                         <td>
-                          <input class="form-control form-control-sm" name="extra__{{ l.emp }}__{{ l.vendedor_key }}" placeholder="0,00">
+                          <div class="meta-stack">
+                            {% for esc in (meta_escalas.get(m.id) or []) %}
+                              <span class="meta-mini">≥ {{ esc.limite_min }} → {{ ('%.2f'|format(esc.bonus_percentual or 0))|replace('.', ',') }}%</span>
+                            {% endfor %}
+                          </div>
                         </td>
                         <td>
-                          <input class="form-control form-control-sm" name="obs__{{ l.emp }}__{{ l.vendedor_key }}" placeholder="Férias, ajuste, observação...">
+                          {% if m.tipo == 'SHARE_MARCA' %}
+                            {% for mk in (meta_marcas.get(m.id) or []) %}
+                              <span class="meta-chip">{{ mk }}</span>
+                            {% endfor %}
+                          {% else %}
+                            <span class="meta-mini">—</span>
+                          {% endif %}
+                        </td>
+                        <td>
+                          <div class="meta-stack">
+                            <span class="meta-mini">Margem mín.: {{ ('%.2f'|format(m.margem_minima or 0))|replace('.', ',') }}%</span>
+                            <span class="meta-mini">Fat. mín.: R$ {{ '%.2f'|format(m.faturamento_minimo or 0) }}</span>
+                            {% if m.teto_faturamento %}
+                              <span class="meta-mini">Teto: R$ {{ '%.2f'|format(m.teto_faturamento or 0) }} / {{ ('%.2f'|format(m.teto_bonus_percentual or 0))|replace('.', ',') }}%</span>
+                            {% endif %}
+                          </div>
+                        </td>
+                        <td class="text-end">
+                          <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin_meta_bases', meta_id=m.id) }}">Insumos</a>
+                          <form class="d-inline" method="post" action="{{ url_for('admin_metas_toggle', meta_id=m.id) }}">
+                            <input type="hidden" name="ano" value="{{ ano }}">
+                            <input type="hidden" name="mes" value="{{ mes }}">
+                            <button class="btn btn-sm btn-outline-secondary">{% if m.ativo %}Desativar{% else %}Ativar{% endif %}</button>
+                          </form>
                         </td>
                       </tr>
                     {% endfor %}
@@ -281,107 +667,10 @@
                 </table>
               </div>
             {% else %}
-              <div class="meta-empty">
-                Selecione uma <strong>loja</strong> no filtro de contexto para carregar os vendedores e facilitar o cadastro dos insumos iniciais.
-              </div>
+              <div class="meta-empty">Nenhuma meta cadastrada para este contexto.</div>
             {% endif %}
           </div>
-
-          <div class="d-flex justify-content-end mt-4">
-            <button class="btn btn-primary">Salvar meta</button>
-          </div>
-        </form>
-      </div>
-    </div>
-
-    <div class="sv-card sv-glass card shadow-sm">
-      <div class="card-body sv-card-pad">
-        <div class="meta-preview-head mb-3">
-          <div>
-            <h5 class="meta-section-title">Metas cadastradas</h5>
-            <div class="meta-mini">
-              {% if emp_selected %}
-                Exibindo metas de {{ '%02d'|format(mes) }}/{{ ano }} para a loja <strong>{{ emp_selected }}</strong>.
-              {% else %}
-                Exibindo metas de {{ '%02d'|format(mes) }}/{{ ano }}.
-              {% endif %}
-            </div>
-          </div>
-        </div>
-
-        {% if metas_list %}
-          <div class="table-responsive">
-            <table class="table table-sm align-middle meta-table mb-0">
-              <thead>
-                <tr>
-                  <th style="min-width:220px;">Meta</th>
-                  <th style="min-width:110px;">Escopo</th>
-                  <th style="min-width:120px;">Tipo</th>
-                  <th style="min-width:160px;">Loja(s)</th>
-                  <th style="min-width:200px;">Faixas</th>
-                  <th style="min-width:160px;">Marcas</th>
-                  <th style="min-width:160px;">Travas</th>
-                  <th class="text-end" style="min-width:170px;">Ações</th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for m in metas_list %}
-                  <tr>
-                    <td>
-                      <div class="fw-semibold">{{ m.nome }}</div>
-                      <div class="meta-mini">{{ '%02d'|format(m.mes) }}/{{ m.ano }}</div>
-                    </td>
-                    <td>
-                      <span class="meta-chip {% if m.ativo %}is-active{% else %}is-inactive{% endif %}">{{ 'Gerente / Loja' if (m.escopo or 'VENDEDOR') == 'GERENTE' else 'Vendedor' }}</span>
-                      <div class="meta-mini">{% if m.ativo %}Ativa{% else %}Inativa{% endif %}</div>
-                    </td>
-                    <td>{{ tipo_label(m.tipo) }}</td>
-                    <td>
-                      {% for e in (meta_emps.get(m.id) or []) %}
-                        <span class="meta-chip">{{ e }}</span>
-                      {% endfor %}
-                    </td>
-                    <td>
-                      <div class="meta-stack">
-                        {% for esc in (meta_escalas.get(m.id) or []) %}
-                          <span class="meta-mini">≥ {{ esc.limite_min }} → {{ ('%.2f'|format(esc.bonus_percentual or 0))|replace('.', ',') }}%</span>
-                        {% endfor %}
-                      </div>
-                    </td>
-                    <td>
-                      {% if m.tipo == 'SHARE_MARCA' %}
-                        {% for mk in (meta_marcas.get(m.id) or []) %}
-                          <span class="meta-chip">{{ mk }}</span>
-                        {% endfor %}
-                      {% else %}
-                        <span class="meta-mini">—</span>
-                      {% endif %}
-                    </td>
-                    <td>
-                      <div class="meta-stack">
-                        <span class="meta-mini">Margem mín.: {{ ('%.2f'|format(m.margem_minima or 0))|replace('.', ',') }}%</span>
-                        <span class="meta-mini">Fat. mín.: R$ {{ '%.2f'|format(m.faturamento_minimo or 0) }}</span>
-                        {% if m.teto_faturamento %}
-                          <span class="meta-mini">Teto: R$ {{ '%.2f'|format(m.teto_faturamento or 0) }} / {{ ('%.2f'|format(m.teto_bonus_percentual or 0))|replace('.', ',') }}%</span>
-                        {% endif %}
-                      </div>
-                    </td>
-                    <td class="text-end">
-                      <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin_meta_bases', meta_id=m.id) }}">Insumos</a>
-                      <form class="d-inline" method="post" action="{{ url_for('admin_metas_toggle', meta_id=m.id) }}">
-                        <input type="hidden" name="ano" value="{{ ano }}">
-                        <input type="hidden" name="mes" value="{{ mes }}">
-                        <button class="btn btn-sm btn-outline-secondary">{% if m.ativo %}Desativar{% else %}Ativar{% endif %}</button>
-                      </form>
-                    </td>
-                  </tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
-        {% else %}
-          <div class="meta-empty">Nenhuma meta cadastrada para este contexto.</div>
-        {% endif %}
+        </section>
       </div>
     </div>
   </div>
