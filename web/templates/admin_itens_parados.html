@@ -6,259 +6,966 @@
   R$ {{ "{:,.2f}".format(v or 0).replace(",", "X").replace(".", ",").replace("X", ".") }}
 {%- endmacro %}
 
+{% block extra_head %}
+<style>
+  .ip-admin-page{
+    --ip-bg: rgba(16, 19, 24, 0.88);
+    --ip-bg-soft: rgba(23, 28, 35, 0.92);
+    --ip-bg-elev: rgba(29, 35, 43, 0.95);
+    --ip-border: rgba(255, 255, 255, 0.08);
+    --ip-border-strong: rgba(198, 164, 111, 0.22);
+    --ip-text: #f3f4f6;
+    --ip-muted: #9aa4b2;
+    --ip-accent: #c6a46f;
+    --ip-accent-2: #8d6b3f;
+    --ip-hover: rgba(198, 164, 111, 0.08);
+    --ip-danger: #e78383;
+    --ip-warning: #e0b96a;
+    color: var(--ip-text);
+  }
+
+  .ip-admin-page .ip-shell{
+    max-width: 1500px;
+    margin: 0 auto;
+    padding: 8px 10px 28px;
+  }
+
+  .ip-admin-page .ip-hero{
+    position: relative;
+    overflow: hidden;
+    background:
+      radial-gradient(circle at top right, rgba(198, 164, 111, 0.12), transparent 32%),
+      linear-gradient(135deg, rgba(23, 28, 35, 0.96), rgba(17, 21, 27, 0.98));
+    border: 1px solid var(--ip-border);
+    border-radius: 24px;
+    padding: 24px 24px 20px;
+    box-shadow: 0 14px 36px rgba(0, 0, 0, 0.22);
+    margin-bottom: 18px;
+  }
+
+  .ip-admin-page .ip-hero::after{
+    content: "";
+    position: absolute;
+    inset: auto -80px -80px auto;
+    width: 220px;
+    height: 220px;
+    border-radius: 999px;
+    background: radial-gradient(circle, rgba(198, 164, 111, 0.12), transparent 68%);
+    pointer-events: none;
+  }
+
+  .ip-admin-page .ip-hero-top{
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .ip-admin-page .ip-eyebrow{
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    background: rgba(198, 164, 111, 0.10);
+    border: 1px solid var(--ip-border-strong);
+    color: #ead8ba;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+  }
+
+  .ip-admin-page .ip-title{
+    margin: 12px 0 6px;
+    font-size: clamp(1.8rem, 2.1vw, 2.5rem);
+    line-height: 1.05;
+    font-weight: 800;
+  }
+
+  .ip-admin-page .ip-subtitle{
+    margin: 0;
+    color: var(--ip-muted);
+    max-width: 760px;
+    font-size: .98rem;
+  }
+
+  .ip-admin-page .ip-hero-actions{
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .ip-admin-page .ip-stat-grid{
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+    margin-top: 18px;
+  }
+
+  .ip-admin-page .ip-stat{
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 18px;
+    padding: 14px 16px;
+    min-height: 92px;
+  }
+
+  .ip-admin-page .ip-stat-label{
+    color: var(--ip-muted);
+    font-size: .78rem;
+    text-transform: uppercase;
+    letter-spacing: .03em;
+  }
+
+  .ip-admin-page .ip-stat-value{
+    margin-top: 8px;
+    font-size: 1.55rem;
+    font-weight: 800;
+    color: #fff;
+    line-height: 1.05;
+  }
+
+  .ip-admin-page .ip-stat-meta{
+    margin-top: 6px;
+    font-size: .82rem;
+    color: #c8d0da;
+  }
+
+  .ip-admin-page .ip-layout{
+    display: grid;
+    grid-template-columns: minmax(0, 1.35fr) minmax(320px, .95fr);
+    gap: 16px;
+  }
+
+  .ip-admin-page .ip-main-stack,
+  .ip-admin-page .ip-side-stack{
+    display: grid;
+    gap: 16px;
+  }
+
+  .ip-admin-page .ip-grid-2{
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+  }
+
+  .ip-admin-page .ip-card{
+    background: linear-gradient(180deg, rgba(24, 29, 36, 0.98), rgba(17, 21, 27, 0.98));
+    border: 1px solid var(--ip-border);
+    border-radius: 20px;
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.18);
+    overflow: hidden;
+  }
+
+  .ip-admin-page .ip-card-head{
+    padding: 18px 20px 0;
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .ip-admin-page .ip-card-title{
+    margin: 0;
+    font-size: 1.14rem;
+    font-weight: 700;
+  }
+
+  .ip-admin-page .ip-card-subtitle{
+    margin: 6px 0 0;
+    color: var(--ip-muted);
+    font-size: .88rem;
+  }
+
+  .ip-admin-page .ip-card-body{
+    padding: 18px 20px 20px;
+  }
+
+  .ip-admin-page .ip-card-body + .ip-card-body{
+    border-top: 1px solid rgba(255,255,255,.06);
+  }
+
+  .ip-admin-page .ip-section-label{
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: rgba(255,255,255,.04);
+    color: #dbe3ea;
+    font-size: .76rem;
+    font-weight: 700;
+    margin-bottom: 12px;
+  }
+
+  .ip-admin-page .ip-form-grid{
+    display: grid;
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .ip-admin-page .ip-col-2{ grid-column: span 2; }
+  .ip-admin-page .ip-col-3{ grid-column: span 3; }
+  .ip-admin-page .ip-col-4{ grid-column: span 4; }
+  .ip-admin-page .ip-col-5{ grid-column: span 5; }
+  .ip-admin-page .ip-col-6{ grid-column: span 6; }
+  .ip-admin-page .ip-col-7{ grid-column: span 7; }
+  .ip-admin-page .ip-col-8{ grid-column: span 8; }
+  .ip-admin-page .ip-col-12{ grid-column: 1 / -1; }
+
+  .ip-admin-page .ip-label{
+    display: block;
+    margin-bottom: 7px;
+    color: #d7dde5;
+    font-size: .84rem;
+    font-weight: 600;
+  }
+
+  .ip-admin-page .form-control,
+  .ip-admin-page .form-select{
+    min-height: 44px;
+    background: rgba(255,255,255,.03);
+    border: 1px solid rgba(255,255,255,.08);
+    color: #f8fafc;
+    border-radius: 14px;
+    box-shadow: none;
+  }
+
+  .ip-admin-page .form-control::placeholder{ color: #768395; }
+
+  .ip-admin-page .form-control:focus,
+  .ip-admin-page .form-select:focus{
+    background: rgba(255,255,255,.045);
+    border-color: rgba(198, 164, 111, 0.48);
+    box-shadow: 0 0 0 .2rem rgba(198, 164, 111, 0.12);
+    color: #fff;
+  }
+
+  .ip-admin-page .ip-inline-note{
+    font-size: .8rem;
+    color: var(--ip-muted);
+  }
+
+  .ip-admin-page .ip-btn-primary,
+  .ip-admin-page .ip-btn-secondary,
+  .ip-admin-page .ip-btn-danger,
+  .ip-admin-page .ip-btn-warning{
+    border-radius: 12px;
+    min-height: 42px;
+    padding: .62rem .95rem;
+    font-weight: 700;
+    box-shadow: none !important;
+  }
+
+  .ip-admin-page .ip-btn-primary{
+    background: linear-gradient(180deg, #c6a46f, #b28b54);
+    border-color: #b28b54;
+    color: #1d1407;
+  }
+
+  .ip-admin-page .ip-btn-primary:hover{
+    background: linear-gradient(180deg, #d0b07c, #b9935f);
+    border-color: #b9935f;
+    color: #161007;
+  }
+
+  .ip-admin-page .ip-btn-secondary{
+    background: rgba(255,255,255,.04);
+    border-color: rgba(255,255,255,.10);
+    color: #e5ebf3;
+  }
+
+  .ip-admin-page .ip-btn-secondary:hover{
+    background: rgba(255,255,255,.08);
+    border-color: rgba(255,255,255,.14);
+    color: #fff;
+  }
+
+  .ip-admin-page .ip-btn-warning{
+    background: rgba(224, 185, 106, 0.08);
+    border-color: rgba(224, 185, 106, 0.28);
+    color: #f2d18d;
+  }
+
+  .ip-admin-page .ip-btn-warning:hover{
+    background: rgba(224, 185, 106, 0.14);
+    border-color: rgba(224, 185, 106, 0.34);
+    color: #f8db9d;
+  }
+
+  .ip-admin-page .ip-btn-danger{
+    background: rgba(231, 131, 131, 0.07);
+    border-color: rgba(231, 131, 131, 0.25);
+    color: #f0aaaa;
+  }
+
+  .ip-admin-page .ip-btn-danger:hover{
+    background: rgba(231, 131, 131, 0.14);
+    border-color: rgba(231, 131, 131, 0.34);
+    color: #ffd1d1;
+  }
+
+  .ip-admin-page .btn-group{ gap: 8px; }
+
+  .ip-admin-page .ip-chip{
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-radius: 999px;
+    background: rgba(255,255,255,.04);
+    border: 1px solid rgba(255,255,255,.06);
+    color: #dbe5ef;
+    font-size: .82rem;
+    font-weight: 600;
+  }
+
+  .ip-admin-page .ip-chip strong{ color: #fff; }
+
+  .ip-admin-page .ip-toolbar{
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+  }
+
+  .ip-admin-page .ip-toolbar-meta{
+    color: var(--ip-muted);
+    font-size: .85rem;
+  }
+
+  .ip-admin-page .table-responsive{
+    border: 1px solid rgba(255,255,255,.06);
+    border-radius: 16px;
+    overflow: hidden;
+  }
+
+  .ip-admin-page .table{
+    margin-bottom: 0;
+    color: #f1f5f9;
+    --bs-table-bg: transparent;
+    --bs-table-color: #f1f5f9;
+    --bs-table-striped-bg: rgba(255,255,255,.02);
+    --bs-table-hover-bg: rgba(198, 164, 111, 0.06);
+    --bs-table-border-color: rgba(255,255,255,.06);
+  }
+
+  .ip-admin-page .table thead th{
+    background: rgba(255,255,255,.035) !important;
+    color: #dbe2ea;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    font-size: .74rem;
+    font-weight: 700;
+    padding-top: 13px;
+    padding-bottom: 13px;
+    border-bottom-width: 1px;
+  }
+
+  .ip-admin-page .table td,
+  .ip-admin-page .table th{
+    vertical-align: middle;
+    border-color: rgba(255,255,255,.06);
+  }
+
+  .ip-admin-page code{
+    color: #f8d8a2;
+    background: rgba(198, 164, 111, 0.08);
+    padding: .2rem .45rem;
+    border-radius: 8px;
+  }
+
+  .ip-admin-page .badge.text-bg-secondary{
+    background: rgba(198, 164, 111, 0.14) !important;
+    color: #f6e4c4 !important;
+    border: 1px solid rgba(198, 164, 111, 0.22);
+  }
+
+  .ip-admin-page .ip-status{
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    font-size: .78rem;
+    font-weight: 700;
+  }
+
+  .ip-admin-page .ip-status.is-active{
+    background: rgba(93, 188, 124, 0.10);
+    color: #95dfaa;
+    border: 1px solid rgba(93, 188, 124, 0.18);
+  }
+
+  .ip-admin-page .ip-status.is-inactive{
+    background: rgba(255,255,255,.05);
+    color: #c5cfdb;
+    border: 1px solid rgba(255,255,255,.08);
+  }
+
+  .ip-admin-page .alert{
+    border-radius: 16px;
+    border: 1px solid rgba(255,255,255,.08);
+    margin-bottom: 16px;
+  }
+
+  .ip-admin-page .alert-danger{
+    background: rgba(163, 48, 48, 0.18);
+    color: #ffd4d4;
+  }
+
+  .ip-admin-page .alert-success{
+    background: rgba(44, 99, 68, 0.24);
+    color: #d7f6e2;
+  }
+
+  .ip-admin-page .ip-muted{ color: var(--ip-muted); }
+
+  .ip-admin-page .ip-empty{
+    text-align: center;
+    color: var(--ip-muted);
+    padding: 24px 12px !important;
+  }
+
+  .ip-admin-page .ip-actions-cell{
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .ip-admin-page .ip-result-total{
+    color: #fff4df;
+    font-weight: 800;
+  }
+
+  @media (max-width: 1280px){
+    .ip-admin-page .ip-layout,
+    .ip-admin-page .ip-grid-2{
+      grid-template-columns: 1fr;
+    }
+  }
+
+  @media (max-width: 920px){
+    .ip-admin-page .ip-stat-grid{
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .ip-admin-page .ip-form-grid{
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+    }
+
+    .ip-admin-page .ip-col-2,
+    .ip-admin-page .ip-col-3,
+    .ip-admin-page .ip-col-4,
+    .ip-admin-page .ip-col-5,
+    .ip-admin-page .ip-col-6,
+    .ip-admin-page .ip-col-7,
+    .ip-admin-page .ip-col-8{
+      grid-column: span 6;
+    }
+  }
+
+  @media (max-width: 640px){
+    .ip-admin-page .ip-shell{
+      padding-inline: 0;
+    }
+
+    .ip-admin-page .ip-hero,
+    .ip-admin-page .ip-card-body,
+    .ip-admin-page .ip-card-head{
+      padding-left: 16px;
+      padding-right: 16px;
+    }
+
+    .ip-admin-page .ip-stat-grid{
+      grid-template-columns: 1fr;
+    }
+
+    .ip-admin-page .ip-form-grid{
+      grid-template-columns: 1fr;
+    }
+
+    .ip-admin-page .ip-col-2,
+    .ip-admin-page .ip-col-3,
+    .ip-admin-page .ip-col-4,
+    .ip-admin-page .ip-col-5,
+    .ip-admin-page .ip-col-6,
+    .ip-admin-page .ip-col-7,
+    .ip-admin-page .ip-col-8,
+    .ip-admin-page .ip-col-12{
+      grid-column: auto;
+    }
+
+    .ip-admin-page .ip-actions-cell{
+      justify-content: flex-start;
+    }
+  }
+</style>
+{% endblock %}
+
 {% block content %}
-<div class="container py-4" style="max-width: 1400px;">
-  <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-    <div>
-      <h3 class="m-0">🛠️ Admin — Itens Parados</h3>
-      <div class="text-muted">Cadastro por EMP, regra de pontos, faixas de bônus e fechamento manual.</div>
-    </div>
-    <a class="btn btn-outline-secondary" href="{{ url_for('dashboard') }}">Voltar</a>
-  </div>
+<div class="ip-admin-page">
+  <div class="ip-shell">
+    <section class="ip-hero">
+      <div class="ip-hero-top">
+        <div>
+          <span class="ip-eyebrow">Administração · Itens parados</span>
+          <h1 class="ip-title">Gestão visual mais limpa e menos agressiva</h1>
+          <p class="ip-subtitle">Cadastro de itens elegíveis, regras de pontuação, bônus e fechamento manual organizados em blocos mais claros, com paleta neutra e leitura mais confortável.</p>
+        </div>
+        <div class="ip-hero-actions">
+          <a class="btn ip-btn-secondary" href="{{ url_for('dashboard') }}">Voltar ao dashboard</a>
+        </div>
+      </div>
 
-  {% if erro %}<div class="alert alert-danger shadow-sm">{{ erro }}</div>{% endif %}
-  {% if ok %}<div class="alert alert-success shadow-sm">{{ ok }}</div>{% endif %}
+      <div class="ip-stat-grid">
+        <div class="ip-stat">
+          <div class="ip-stat-label">Itens monitorados</div>
+          <div class="ip-stat-value">{{ total_itens_label }}</div>
+          <div class="ip-stat-meta">Base total encontrada com os filtros atuais.</div>
+        </div>
+        <div class="ip-stat">
+          <div class="ip-stat-label">Configurações ativas</div>
+          <div class="ip-stat-value">{{ (cfg_global|length) + (cfg_by_emp|length) }}</div>
+          <div class="ip-stat-meta">Regras globais e por EMP cadastradas.</div>
+        </div>
+        <div class="ip-stat">
+          <div class="ip-stat-label">Faixas de bônus</div>
+          <div class="ip-stat-value">{{ (bonus_global|length) + (bonus_by_emp|length) }}</div>
+          <div class="ip-stat-meta">Faixas extras disponíveis para fechamento.</div>
+        </div>
+        <div class="ip-stat">
+          <div class="ip-stat-label">Fechamentos recentes</div>
+          <div class="ip-stat-value">{{ fechamentos|length }}</div>
+          <div class="ip-stat-meta">Últimos snapshots gerados manualmente.</div>
+        </div>
+      </div>
+    </section>
 
-  <div class="row g-3 mb-3">
-    <div class="col-12 col-xl-7">
-      <div class="card shadow-sm h-100">
-        <div class="card-body">
-          <h5 class="mb-3">Cadastrar item elegível</h5>
-          <form method="post" class="row g-2">
-            <input type="hidden" name="acao" value="criar_item">
-            <div class="col-md-2"><label class="form-label">EMP</label><input class="form-control" name="emp" required></div>
-            <div class="col-md-2"><label class="form-label">Código</label><input class="form-control" name="codigo" required></div>
-            <div class="col-md-4"><label class="form-label">Descrição</label><input class="form-control" name="descricao"></div>
-            <div class="col-md-2"><label class="form-label">Multiplicador</label><input class="form-control" name="multiplicador_pontos" value="1,00"></div>
-            <div class="col-md-2"><label class="form-label">Início</label><input class="form-control" type="date" name="data_inicio"></div>
-            <div class="col-md-2"><label class="form-label">Fim</label><input class="form-control" type="date" name="data_fim"></div>
-            <div class="col-12">
-              <button class="btn btn-primary">Salvar item</button>
+    {% if erro %}<div class="alert alert-danger">{{ erro }}</div>{% endif %}
+    {% if ok %}<div class="alert alert-success">{{ ok }}</div>{% endif %}
+
+    <div class="ip-layout">
+      <div class="ip-main-stack">
+        <div class="ip-grid-2">
+          <section class="ip-card">
+            <div class="ip-card-head">
+              <div>
+                <div class="ip-section-label">Cadastro</div>
+                <h2 class="ip-card-title">Cadastrar item elegível</h2>
+                <p class="ip-card-subtitle">Defina EMP, código, descrição, multiplicador e vigência sem alterar a regra de cálculo já existente.</p>
+              </div>
             </div>
-          </form>
+            <div class="ip-card-body">
+              <form method="post" class="ip-form-grid">
+                <input type="hidden" name="acao" value="criar_item">
+
+                <div class="ip-col-2">
+                  <label class="ip-label">EMP</label>
+                  <input class="form-control" name="emp" required>
+                </div>
+                <div class="ip-col-2">
+                  <label class="ip-label">Código</label>
+                  <input class="form-control" name="codigo" required>
+                </div>
+                <div class="ip-col-4">
+                  <label class="ip-label">Descrição</label>
+                  <input class="form-control" name="descricao" placeholder="Opcional para facilitar identificação">
+                </div>
+                <div class="ip-col-2">
+                  <label class="ip-label">Multiplicador</label>
+                  <input class="form-control" name="multiplicador_pontos" value="1,00">
+                </div>
+                <div class="ip-col-2">
+                  <label class="ip-label">Início</label>
+                  <input class="form-control" type="date" name="data_inicio">
+                </div>
+                <div class="ip-col-2">
+                  <label class="ip-label">Fim</label>
+                  <input class="form-control" type="date" name="data_fim">
+                </div>
+
+                <div class="ip-col-12 d-flex justify-content-between align-items-center flex-wrap gap-2 pt-1">
+                  <span class="ip-inline-note">O cadastro continua com a mesma funcionalidade. A mudança aqui é apenas visual.</span>
+                  <button class="btn ip-btn-primary">Salvar item</button>
+                </div>
+              </form>
+            </div>
+          </section>
+
+          <section class="ip-card">
+            <div class="ip-card-head">
+              <div>
+                <div class="ip-section-label">Pontuação</div>
+                <h2 class="ip-card-title">Regra de pontos</h2>
+                <p class="ip-card-subtitle">Configure base em R$ e valor por ponto com escopo global ou específico por EMP.</p>
+              </div>
+            </div>
+            <div class="ip-card-body">
+              <form method="post" class="ip-form-grid">
+                <input type="hidden" name="acao" value="salvar_config">
+
+                <div class="ip-col-4">
+                  <label class="ip-label">EMP</label>
+                  <input class="form-control" name="cfg_emp" placeholder="Vazio = regra global">
+                </div>
+                <div class="ip-col-4">
+                  <label class="ip-label">Base em R$</label>
+                  <input class="form-control" name="base_reais" value="100" required>
+                </div>
+                <div class="ip-col-4">
+                  <label class="ip-label">Valor por ponto</label>
+                  <input class="form-control" name="valor_por_ponto" value="10,00" required>
+                </div>
+
+                <div class="ip-col-12 d-flex justify-content-end pt-1">
+                  <button class="btn ip-btn-primary">Salvar configuração</button>
+                </div>
+              </form>
+            </div>
+          </section>
         </div>
-      </div>
-    </div>
 
-    <div class="col-12 col-xl-5">
-      <div class="card shadow-sm h-100">
-        <div class="card-body">
-          <h5 class="mb-3">Regra de pontos</h5>
-          <form method="post" class="row g-2">
-            <input type="hidden" name="acao" value="salvar_config">
-            <div class="col-md-4"><label class="form-label">EMP</label><input class="form-control" name="cfg_emp" placeholder="vazio = global"></div>
-            <div class="col-md-4"><label class="form-label">Base em R$</label><input class="form-control" name="base_reais" value="100" required></div>
-            <div class="col-md-4"><label class="form-label">Valor por ponto</label><input class="form-control" name="valor_por_ponto" value="10,00" required></div>
-            <div class="col-12"><button class="btn btn-primary">Salvar configuração</button></div>
-          </form>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <div class="row g-3 mb-3">
-    <div class="col-12 col-xl-6">
-      <div class="card shadow-sm h-100">
-        <div class="card-body">
-          <h5 class="mb-3">Faixa de bônus extra</h5>
-          <form method="post" class="row g-2 mb-3">
-            <input type="hidden" name="acao" value="criar_bonus">
-            <div class="col-md-4"><label class="form-label">EMP</label><input class="form-control" name="bonus_emp" placeholder="vazio = global"></div>
-            <div class="col-md-4"><label class="form-label">Pontos mínimos</label><input class="form-control" name="min_pontos" value="10" required></div>
-            <div class="col-md-4"><label class="form-label">Bônus extra (R$)</label><input class="form-control" name="bonus_valor" value="50,00" required></div>
-            <div class="col-12"><button class="btn btn-primary">Salvar faixa</button></div>
-          </form>
-
-          <div class="table-responsive">
-            <table class="table table-sm table-striped mb-0">
-              <thead class="table-light"><tr><th>EMP</th><th>Pontos mín.</th><th class="text-end">Bônus</th><th class="text-end">Ações</th></tr></thead>
-              <tbody>
-                {% for b in bonus_global %}
-                  <tr>
-                    <td><span class="badge text-bg-secondary">GLOBAL</span></td>
-                    <td>{{ '%.2f'|format(b.min_pontos or 0) }}</td>
-                    <td class="text-end">{{ brl(b.bonus_valor) }}</td>
-                    <td class="text-end">
-                      <form method="post" class="d-inline"><input type="hidden" name="acao" value="toggle_bonus"><input type="hidden" name="bonus_id" value="{{ b.id }}"><button class="btn btn-outline-warning btn-sm">{{ 'Desativar' if b.ativo else 'Ativar' }}</button></form>
-                      <form method="post" class="d-inline" onsubmit="return confirm('Excluir faixa?');"><input type="hidden" name="acao" value="excluir_bonus"><input type="hidden" name="bonus_id" value="{{ b.id }}"><button class="btn btn-outline-danger btn-sm">Excluir</button></form>
-                    </td>
-                  </tr>
-                {% endfor %}
-                {% for b in bonus_by_emp %}
-                  <tr>
-                    <td>{{ b.emp }}</td>
-                    <td>{{ '%.2f'|format(b.min_pontos or 0) }}</td>
-                    <td class="text-end">{{ brl(b.bonus_valor) }}</td>
-                    <td class="text-end">
-                      <form method="post" class="d-inline"><input type="hidden" name="acao" value="toggle_bonus"><input type="hidden" name="bonus_id" value="{{ b.id }}"><button class="btn btn-outline-warning btn-sm">{{ 'Desativar' if b.ativo else 'Ativar' }}</button></form>
-                      <form method="post" class="d-inline" onsubmit="return confirm('Excluir faixa?');"><input type="hidden" name="acao" value="excluir_bonus"><input type="hidden" name="bonus_id" value="{{ b.id }}"><button class="btn btn-outline-danger btn-sm">Excluir</button></form>
-                    </td>
-                  </tr>
-                {% endfor %}
-              </tbody>
-            </table>
+        <section class="ip-card">
+          <div class="ip-card-head">
+            <div>
+              <div class="ip-section-label">Consulta</div>
+              <h2 class="ip-card-title">Itens cadastrados</h2>
+              <p class="ip-card-subtitle">Filtros mais limpos, tabela mais escura e com contraste equilibrado para reduzir o impacto visual da página.</p>
+            </div>
+            <div class="ip-toolbar-meta">Página {{ pagina }} de {{ total_paginas }}</div>
           </div>
-        </div>
-      </div>
-    </div>
+          <div class="ip-card-body">
+            <form method="get" class="ip-form-grid">
+              <div class="ip-col-3">
+                <label class="ip-label">Filtrar EMP</label>
+                <input class="form-control" name="f_emp" value="{{ filtro_emp or '' }}">
+              </div>
+              <div class="ip-col-3">
+                <label class="ip-label">Filtrar código</label>
+                <input class="form-control" name="f_codigo" value="{{ filtro_codigo or '' }}">
+              </div>
+              <div class="ip-col-3">
+                <label class="ip-label">Status</label>
+                <select class="form-select" name="f_status">
+                  <option value="" {% if not filtro_status %}selected{% endif %}>Todos</option>
+                  <option value="ativos" {% if filtro_status == 'ativos' %}selected{% endif %}>Ativos</option>
+                  <option value="inativos" {% if filtro_status == 'inativos' %}selected{% endif %}>Inativos</option>
+                </select>
+              </div>
+              <div class="ip-col-3 d-flex gap-2 align-items-end">
+                <button class="btn ip-btn-primary w-100">Filtrar</button>
+                <a class="btn ip-btn-secondary" href="{{ url_for('admin_itens_parados') }}">Limpar</a>
+              </div>
+            </form>
 
-    <div class="col-12 col-xl-6">
-      <div class="card shadow-sm h-100">
-        <div class="card-body">
-          <h5 class="mb-3">Fechamento manual</h5>
-          <form method="post" class="row g-2">
-            <input type="hidden" name="acao" value="fechar_periodo">
-            <div class="col-md-4"><label class="form-label">EMP</label><input class="form-control" name="fech_emp" placeholder="vazio = todas"></div>
-            <div class="col-md-4"><label class="form-label">Data início</label><input class="form-control" type="date" name="fech_di" required></div>
-            <div class="col-md-4"><label class="form-label">Data fim</label><input class="form-control" type="date" name="fech_df" required></div>
-            <div class="col-12"><button class="btn btn-primary">Criar fechamento</button></div>
-          </form>
+            <div class="ip-toolbar mt-3">
+              <div class="ip-toolbar-meta">Mostrando até {{ limite }} registros por página · total encontrado: {{ total_itens_label }}</div>
+              <div class="d-flex flex-wrap gap-2">
+                <span class="ip-chip">Filtros <strong>{{ 'ativos' if filtro_status == 'ativos' else 'inativos' if filtro_status == 'inativos' else 'todos' }}</strong></span>
+                {% if filtro_emp %}<span class="ip-chip">EMP <strong>{{ filtro_emp }}</strong></span>{% endif %}
+                {% if filtro_codigo %}<span class="ip-chip">Código <strong>{{ filtro_codigo }}</strong></span>{% endif %}
+              </div>
+            </div>
 
-          <hr>
-          <h6>Fechamentos recentes</h6>
-          <div class="table-responsive">
-            <table class="table table-sm table-striped mb-0">
-              <thead class="table-light"><tr><th>ID</th><th>EMP</th><th>Período</th><th>Criado por</th><th></th></tr></thead>
-              <tbody>
-                {% for f in fechamentos %}
+            <div class="table-responsive">
+              <table class="table table-hover align-middle">
+                <thead>
                   <tr>
-                    <td>{{ f.id }}</td>
-                    <td>{{ f.emp or 'Todas' }}</td>
-                    <td>{{ f.data_inicio.strftime('%d/%m/%Y') }} até {{ f.data_fim.strftime('%d/%m/%Y') }}</td>
-                    <td>{{ f.criado_por or '-' }}</td>
-                    <td class="text-end"><a class="btn btn-outline-primary btn-sm" href="{{ url_for('admin_itens_parados', ver_fech=f.id) }}">Ver</a></td>
+                    <th>ID</th>
+                    <th>EMP</th>
+                    <th>Código</th>
+                    <th>Descrição</th>
+                    <th class="text-end">Multiplicador</th>
+                    <th>Vigência</th>
+                    <th>Status</th>
+                    <th class="text-end">Ações</th>
                   </tr>
-                {% else %}
-                  <tr><td colspan="5" class="text-center text-muted py-4">Nenhum fechamento criado.</td></tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-
-  <div class="card shadow-sm mb-3">
-    <div class="card-body">
-      <form method="get" class="row g-2 align-items-end">
-        <div class="col-md-3"><label class="form-label">Filtrar EMP</label><input class="form-control" name="f_emp" value="{{ filtro_emp or '' }}"></div>
-        <div class="col-md-3"><label class="form-label">Filtrar código</label><input class="form-control" name="f_codigo" value="{{ filtro_codigo or '' }}"></div>
-        <div class="col-md-3"><label class="form-label">Status</label>
-          <select class="form-select" name="f_status">
-            <option value="" {% if not filtro_status %}selected{% endif %}>Todos</option>
-            <option value="ativos" {% if filtro_status == 'ativos' %}selected{% endif %}>Ativos</option>
-            <option value="inativos" {% if filtro_status == 'inativos' %}selected{% endif %}>Inativos</option>
-          </select>
-        </div>
-        <div class="col-md-3 d-flex gap-2">
-          <button class="btn btn-outline-primary w-100">Filtrar</button>
-          <a class="btn btn-outline-secondary" href="{{ url_for('admin_itens_parados') }}">Limpar</a>
-        </div>
-      </form>
-      <div class="small text-muted mt-2">Mostrando até {{ limite }} registros por página • total encontrado: {{ total_itens_label }}</div>
-    </div>
-  </div>
-  <div class="card shadow-sm mb-3">
-    <div class="card-body p-0">
-      <div class="table-responsive">
-        <table class="table table-striped table-hover mb-0 align-middle">
-          <thead class="table-dark">
-            <tr>
-              <th>ID</th><th>EMP</th><th>Código</th><th>Descrição</th><th class="text-end">Multiplicador</th><th>Vigência</th><th>Status</th><th class="text-end">Ações</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for it in itens %}
-              <tr>
-                <td>{{ it.id }}</td>
-                <td><strong>{{ it.emp }}</strong></td>
-                <td><code>{{ it.codigo }}</code></td>
-                <td>{{ it.descricao or '-' }}</td>
-                <td class="text-end">{{ '%.2f'|format(it.multiplicador_pontos or 1) }}x</td>
-                <td>
-                  {% if it.data_inicio or it.data_fim %}
-                    {{ it.data_inicio.strftime('%d/%m/%Y') if it.data_inicio else '...' }} até {{ it.data_fim.strftime('%d/%m/%Y') if it.data_fim else '...' }}
+                </thead>
+                <tbody>
+                  {% for it in itens %}
+                    <tr>
+                      <td>{{ it.id }}</td>
+                      <td><strong>{{ it.emp }}</strong></td>
+                      <td><code>{{ it.codigo }}</code></td>
+                      <td>{{ it.descricao or '-' }}</td>
+                      <td class="text-end">{{ '%.2f'|format(it.multiplicador_pontos or 1) }}x</td>
+                      <td>
+                        {% if it.data_inicio or it.data_fim %}
+                          {{ it.data_inicio.strftime('%d/%m/%Y') if it.data_inicio else '...' }} até {{ it.data_fim.strftime('%d/%m/%Y') if it.data_fim else '...' }}
+                        {% else %}
+                          <span class="ip-muted">Sem vigência</span>
+                        {% endif %}
+                      </td>
+                      <td>
+                        <span class="ip-status {{ 'is-active' if it.ativo else 'is-inactive' }}">
+                          {{ 'Ativo' if it.ativo else 'Inativo' }}
+                        </span>
+                      </td>
+                      <td class="text-end">
+                        <div class="ip-actions-cell">
+                          <form method="post" class="d-inline">
+                            <input type="hidden" name="acao" value="toggle_item">
+                            <input type="hidden" name="item_id" value="{{ it.id }}">
+                            <button class="btn ip-btn-warning btn-sm">{{ 'Desativar' if it.ativo else 'Ativar' }}</button>
+                          </form>
+                          <form method="post" class="d-inline" onsubmit="return confirm('Excluir item?');">
+                            <input type="hidden" name="acao" value="excluir_item">
+                            <input type="hidden" name="item_id" value="{{ it.id }}">
+                            <button class="btn ip-btn-danger btn-sm">Excluir</button>
+                          </form>
+                        </div>
+                      </td>
+                    </tr>
                   {% else %}
-                    <span class="text-muted">Sem vigência</span>
+                    <tr><td colspan="8" class="ip-empty">Nenhum item cadastrado.</td></tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+
+            {% if pagina > 1 or has_next %}
+              <div class="d-flex justify-content-between align-items-center mt-3 flex-wrap gap-2">
+                <div class="ip-toolbar-meta">Navegação de páginas</div>
+                <div class="btn-group">
+                  {% if pagina > 1 %}
+                    <a class="btn ip-btn-secondary btn-sm" href="{{ url_for('admin_itens_parados', f_emp=filtro_emp, f_codigo=filtro_codigo, f_status=filtro_status, page=pagina-1) }}">Anterior</a>
                   {% endif %}
-                </td>
-                <td>{{ 'Ativo' if it.ativo else 'Inativo' }}</td>
-                <td class="text-end">
-                  <form method="post" class="d-inline"><input type="hidden" name="acao" value="toggle_item"><input type="hidden" name="item_id" value="{{ it.id }}"><button class="btn btn-outline-warning btn-sm">{{ 'Desativar' if it.ativo else 'Ativar' }}</button></form>
-                  <form method="post" class="d-inline" onsubmit="return confirm('Excluir item?');"><input type="hidden" name="acao" value="excluir_item"><input type="hidden" name="item_id" value="{{ it.id }}"><button class="btn btn-outline-danger btn-sm">Excluir</button></form>
-                </td>
-              </tr>
-            {% else %}
-              <tr><td colspan="8" class="text-center text-muted py-4">Nenhum item cadastrado.</td></tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </div>
-
-  {% if pagina > 1 or has_next %}
-  <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-    <div class="text-muted small">Página {{ pagina }} de {{ total_paginas }}</div>
-    <div class="btn-group">
-      {% if pagina > 1 %}
-        <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin_itens_parados', f_emp=filtro_emp, f_codigo=filtro_codigo, f_status=filtro_status, page=pagina-1) }}">Anterior</a>
-      {% endif %}
-      {% if has_next %}
-        <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin_itens_parados', f_emp=filtro_emp, f_codigo=filtro_codigo, f_status=filtro_status, page=pagina+1) }}">Próxima</a>
-      {% endif %}
-    </div>
-  </div>
-  {% endif %}
-
-  <div class="row g-3">
-    <div class="col-12 col-xl-6">
-      <div class="card shadow-sm h-100">
-        <div class="card-body">
-          <h5 class="mb-3">Configurações ativas</h5>
-          <div class="table-responsive">
-            <table class="table table-sm table-striped mb-0">
-              <thead class="table-light"><tr><th>Escopo</th><th class="text-end">Base R$</th><th class="text-end">Valor/ponto</th><th>Status</th></tr></thead>
-              <tbody>
-                {% for cfg in cfg_global %}
-                  <tr><td><span class="badge text-bg-secondary">GLOBAL</span></td><td class="text-end">{{ brl(cfg.base_reais) }}</td><td class="text-end">{{ brl(cfg.valor_por_ponto) }}</td><td>{{ 'Ativa' if cfg.ativo else 'Inativa' }}</td></tr>
-                {% endfor %}
-                {% for cfg in cfg_by_emp %}
-                  <tr><td>{{ cfg.emp }}</td><td class="text-end">{{ brl(cfg.base_reais) }}</td><td class="text-end">{{ brl(cfg.valor_por_ponto) }}</td><td>{{ 'Ativa' if cfg.ativo else 'Inativa' }}</td></tr>
-                {% endfor %}
-              </tbody>
-            </table>
+                  {% if has_next %}
+                    <a class="btn ip-btn-secondary btn-sm" href="{{ url_for('admin_itens_parados', f_emp=filtro_emp, f_codigo=filtro_codigo, f_status=filtro_status, page=pagina+1) }}">Próxima</a>
+                  {% endif %}
+                </div>
+              </div>
+            {% endif %}
           </div>
+        </section>
+
+        <div class="ip-grid-2">
+          <section class="ip-card">
+            <div class="ip-card-head">
+              <div>
+                <div class="ip-section-label">Configuração</div>
+                <h2 class="ip-card-title">Configurações ativas</h2>
+                <p class="ip-card-subtitle">Resumo das regras de base e valor por ponto em uso.</p>
+              </div>
+            </div>
+            <div class="ip-card-body">
+              <div class="table-responsive">
+                <table class="table table-hover align-middle">
+                  <thead>
+                    <tr><th>Escopo</th><th class="text-end">Base R$</th><th class="text-end">Valor/ponto</th><th>Status</th></tr>
+                  </thead>
+                  <tbody>
+                    {% for cfg in cfg_global %}
+                      <tr>
+                        <td><span class="badge text-bg-secondary">GLOBAL</span></td>
+                        <td class="text-end">{{ brl(cfg.base_reais) }}</td>
+                        <td class="text-end">{{ brl(cfg.valor_por_ponto) }}</td>
+                        <td><span class="ip-status {{ 'is-active' if cfg.ativo else 'is-inactive' }}">{{ 'Ativa' if cfg.ativo else 'Inativa' }}</span></td>
+                      </tr>
+                    {% endfor %}
+                    {% for cfg in cfg_by_emp %}
+                      <tr>
+                        <td>{{ cfg.emp }}</td>
+                        <td class="text-end">{{ brl(cfg.base_reais) }}</td>
+                        <td class="text-end">{{ brl(cfg.valor_por_ponto) }}</td>
+                        <td><span class="ip-status {{ 'is-active' if cfg.ativo else 'is-inactive' }}">{{ 'Ativa' if cfg.ativo else 'Inativa' }}</span></td>
+                      </tr>
+                    {% endfor %}
+                    {% if not cfg_global and not cfg_by_emp %}
+                      <tr><td colspan="4" class="ip-empty">Nenhuma configuração cadastrada.</td></tr>
+                    {% endif %}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+
+          <section class="ip-card">
+            <div class="ip-card-head">
+              <div>
+                <div class="ip-section-label">Resultados</div>
+                <h2 class="ip-card-title">Fechamento {% if ver_fech %}#{{ ver_fech }}{% else %}selecionado{% endif %}</h2>
+                <p class="ip-card-subtitle">Visualização dos resultados congelados do fechamento manual, com destaque mais discreto no total.</p>
+              </div>
+            </div>
+            <div class="ip-card-body">
+              <div class="table-responsive">
+                <table class="table table-hover align-middle">
+                  <thead>
+                    <tr><th>EMP</th><th>Vendedor</th><th class="text-end">Vendeu</th><th class="text-end">Pontos</th><th class="text-end">Bônus extra</th><th class="text-end">Total</th></tr>
+                  </thead>
+                  <tbody>
+                    {% for r in res_fech %}
+                      <tr>
+                        <td>{{ r.emp }}</td>
+                        <td>{{ r.vendedor }}</td>
+                        <td class="text-end">{{ brl(r.valor_vendido) }}</td>
+                        <td class="text-end">{{ '%.2f'|format(r.pontos or 0) }}</td>
+                        <td class="text-end">{{ brl(r.bonus_extra) }}</td>
+                        <td class="text-end ip-result-total">{{ brl(r.total) }}</td>
+                      </tr>
+                    {% else %}
+                      <tr><td colspan="6" class="ip-empty">Selecione um fechamento para visualizar os resultados congelados.</td></tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </section>
         </div>
       </div>
-    </div>
 
-    <div class="col-12 col-xl-6">
-      <div class="card shadow-sm h-100">
-        <div class="card-body">
-          <h5 class="mb-3">Resultados do fechamento {% if ver_fech %}#{{ ver_fech }}{% endif %}</h5>
-          <div class="table-responsive">
-            <table class="table table-sm table-striped mb-0">
-              <thead class="table-light"><tr><th>EMP</th><th>Vendedor</th><th class="text-end">Vendeu</th><th class="text-end">Pontos</th><th class="text-end">Bônus extra</th><th class="text-end">Total</th></tr></thead>
-              <tbody>
-                {% for r in res_fech %}
-                  <tr>
-                    <td>{{ r.emp }}</td>
-                    <td>{{ r.vendedor }}</td>
-                    <td class="text-end">{{ brl(r.valor_vendido) }}</td>
-                    <td class="text-end">{{ '%.2f'|format(r.pontos or 0) }}</td>
-                    <td class="text-end">{{ brl(r.bonus_extra) }}</td>
-                    <td class="text-end fw-bold">{{ brl(r.total) }}</td>
-                  </tr>
-                {% else %}
-                  <tr><td colspan="6" class="text-center text-muted py-4">Selecione um fechamento para visualizar os resultados congelados.</td></tr>
-                {% endfor %}
-              </tbody>
-            </table>
+      <div class="ip-side-stack">
+        <section class="ip-card">
+          <div class="ip-card-head">
+            <div>
+              <div class="ip-section-label">Bônus</div>
+              <h2 class="ip-card-title">Faixa de bônus extra</h2>
+              <p class="ip-card-subtitle">Cadastre bônus por pontuação mínima no escopo global ou por EMP.</p>
+            </div>
           </div>
-        </div>
+          <div class="ip-card-body">
+            <form method="post" class="ip-form-grid">
+              <input type="hidden" name="acao" value="criar_bonus">
+
+              <div class="ip-col-12">
+                <label class="ip-label">EMP</label>
+                <input class="form-control" name="bonus_emp" placeholder="Vazio = global">
+              </div>
+              <div class="ip-col-6">
+                <label class="ip-label">Pontos mínimos</label>
+                <input class="form-control" name="min_pontos" value="10" required>
+              </div>
+              <div class="ip-col-6">
+                <label class="ip-label">Bônus extra (R$)</label>
+                <input class="form-control" name="bonus_valor" value="50,00" required>
+              </div>
+              <div class="ip-col-12 d-flex justify-content-end pt-1">
+                <button class="btn ip-btn-primary">Salvar faixa</button>
+              </div>
+            </form>
+          </div>
+          <div class="ip-card-body">
+            <div class="table-responsive">
+              <table class="table table-hover align-middle">
+                <thead>
+                  <tr><th>EMP</th><th>Pontos mín.</th><th class="text-end">Bônus</th><th class="text-end">Ações</th></tr>
+                </thead>
+                <tbody>
+                  {% for b in bonus_global %}
+                    <tr>
+                      <td><span class="badge text-bg-secondary">GLOBAL</span></td>
+                      <td>{{ '%.2f'|format(b.min_pontos or 0) }}</td>
+                      <td class="text-end">{{ brl(b.bonus_valor) }}</td>
+                      <td class="text-end">
+                        <div class="ip-actions-cell">
+                          <form method="post" class="d-inline">
+                            <input type="hidden" name="acao" value="toggle_bonus">
+                            <input type="hidden" name="bonus_id" value="{{ b.id }}">
+                            <button class="btn ip-btn-warning btn-sm">{{ 'Desativar' if b.ativo else 'Ativar' }}</button>
+                          </form>
+                          <form method="post" class="d-inline" onsubmit="return confirm('Excluir faixa?');">
+                            <input type="hidden" name="acao" value="excluir_bonus">
+                            <input type="hidden" name="bonus_id" value="{{ b.id }}">
+                            <button class="btn ip-btn-danger btn-sm">Excluir</button>
+                          </form>
+                        </div>
+                      </td>
+                    </tr>
+                  {% endfor %}
+                  {% for b in bonus_by_emp %}
+                    <tr>
+                      <td>{{ b.emp }}</td>
+                      <td>{{ '%.2f'|format(b.min_pontos or 0) }}</td>
+                      <td class="text-end">{{ brl(b.bonus_valor) }}</td>
+                      <td class="text-end">
+                        <div class="ip-actions-cell">
+                          <form method="post" class="d-inline">
+                            <input type="hidden" name="acao" value="toggle_bonus">
+                            <input type="hidden" name="bonus_id" value="{{ b.id }}">
+                            <button class="btn ip-btn-warning btn-sm">{{ 'Desativar' if b.ativo else 'Ativar' }}</button>
+                          </form>
+                          <form method="post" class="d-inline" onsubmit="return confirm('Excluir faixa?');">
+                            <input type="hidden" name="acao" value="excluir_bonus">
+                            <input type="hidden" name="bonus_id" value="{{ b.id }}">
+                            <button class="btn ip-btn-danger btn-sm">Excluir</button>
+                          </form>
+                        </div>
+                      </td>
+                    </tr>
+                  {% endfor %}
+                  {% if not bonus_global and not bonus_by_emp %}
+                    <tr><td colspan="4" class="ip-empty">Nenhuma faixa cadastrada.</td></tr>
+                  {% endif %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <section class="ip-card">
+          <div class="ip-card-head">
+            <div>
+              <div class="ip-section-label">Fechamento</div>
+              <h2 class="ip-card-title">Fechamento manual</h2>
+              <p class="ip-card-subtitle">Crie snapshots por período com visual mais organizado e histórico logo abaixo.</p>
+            </div>
+          </div>
+          <div class="ip-card-body">
+            <form method="post" class="ip-form-grid">
+              <input type="hidden" name="acao" value="fechar_periodo">
+
+              <div class="ip-col-12">
+                <label class="ip-label">EMP</label>
+                <input class="form-control" name="fech_emp" placeholder="Vazio = todas">
+              </div>
+              <div class="ip-col-6">
+                <label class="ip-label">Data início</label>
+                <input class="form-control" type="date" name="fech_di" required>
+              </div>
+              <div class="ip-col-6">
+                <label class="ip-label">Data fim</label>
+                <input class="form-control" type="date" name="fech_df" required>
+              </div>
+              <div class="ip-col-12 d-flex justify-content-end pt-1">
+                <button class="btn ip-btn-primary">Criar fechamento</button>
+              </div>
+            </form>
+          </div>
+          <div class="ip-card-body">
+            <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+              <h3 class="ip-card-title" style="font-size:1rem;">Fechamentos recentes</h3>
+              <span class="ip-toolbar-meta">Use “Ver” para carregar os resultados congelados.</span>
+            </div>
+            <div class="table-responsive">
+              <table class="table table-hover align-middle">
+                <thead>
+                  <tr><th>ID</th><th>EMP</th><th>Período</th><th>Criado por</th><th class="text-end">Ação</th></tr>
+                </thead>
+                <tbody>
+                  {% for f in fechamentos %}
+                    <tr>
+                      <td>{{ f.id }}</td>
+                      <td>{{ f.emp or 'Todas' }}</td>
+                      <td>{{ f.data_inicio.strftime('%d/%m/%Y') }} até {{ f.data_fim.strftime('%d/%m/%Y') }}</td>
+                      <td>{{ f.criado_por or '-' }}</td>
+                      <td class="text-end"><a class="btn ip-btn-secondary btn-sm" href="{{ url_for('admin_itens_parados', ver_fech=f.id) }}">Ver</a></td>
+                    </tr>
+                  {% else %}
+                    <tr><td colspan="5" class="ip-empty">Nenhum fechamento criado.</td></tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
       </div>
     </div>
   </div>
