@@ -25,10 +25,10 @@
   }
 
   .ip-admin-page .ip-shell{
-    width: min(1760px, calc(100vw - 52px));
-    max-width: 1760px;
+    width: 100%;
+    max-width: 1520px;
     margin: 0 auto;
-    padding: 8px 4px 32px;
+    padding: 8px 0 32px;
   }
 
   .ip-admin-page .ip-hero{
@@ -136,14 +136,16 @@
 
   .ip-admin-page .ip-layout{
     display: grid;
-    grid-template-columns: minmax(0, 1.5fr) minmax(360px, 1fr);
+    grid-template-columns: minmax(0, 1fr) minmax(320px, 400px);
     gap: 18px;
+    align-items: start;
   }
 
   .ip-admin-page .ip-main-stack,
   .ip-admin-page .ip-side-stack{
     display: grid;
     gap: 18px;
+    min-width: 0;
   }
 
   .ip-admin-page .ip-grid-2{
@@ -158,6 +160,7 @@
     border-radius: 20px;
     box-shadow: 0 10px 28px rgba(0, 0, 0, 0.18);
     overflow: hidden;
+    min-width: 0;
   }
 
   .ip-admin-page .ip-card-head{
@@ -447,7 +450,7 @@
 
   @media (max-width: 1480px){
     .ip-admin-page .ip-shell{
-      width: calc(100vw - 40px);
+      max-width: 100%;
     }
   }
 
@@ -458,7 +461,7 @@
     }
 
     .ip-admin-page .ip-shell{
-      width: calc(100vw - 28px);
+      width: 100%;
     }
   }
 
@@ -484,6 +487,7 @@
 
   @media (max-width: 640px){
     .ip-admin-page .ip-shell{
+      width: 100%;
       padding-inline: 0;
     }
 
@@ -643,9 +647,96 @@
         <section class="ip-card">
           <div class="ip-card-head">
             <div>
+              <div class="ip-section-label">Bônus</div>
+              <h2 class="ip-card-title">Faixa de bônus extra</h2>
+              <p class="ip-card-subtitle">Agora posicionada abaixo do cadastro e da pontuação para liberar mais largura útil e evitar rolagem horizontal no desktop.</p>
+            </div>
+          </div>
+          <div class="ip-card-body">
+            <form method="post" class="ip-form-grid">
+              <input type="hidden" name="acao" value="criar_bonus">
+
+              <div class="ip-col-4">
+                <label class="ip-label">EMP</label>
+                <input class="form-control" name="bonus_emp" placeholder="Vazio = global">
+              </div>
+              <div class="ip-col-4">
+                <label class="ip-label">Pontos mínimos</label>
+                <input class="form-control" name="min_pontos" value="10" required>
+              </div>
+              <div class="ip-col-4">
+                <label class="ip-label">Bônus extra (R$)</label>
+                <input class="form-control" name="bonus_valor" value="50,00" required>
+              </div>
+              <div class="ip-col-12 d-flex justify-content-end pt-1">
+                <button class="btn ip-btn-primary">Salvar faixa</button>
+              </div>
+            </form>
+          </div>
+          <div class="ip-card-body">
+            <div class="table-responsive">
+              <table class="table table-hover align-middle">
+                <thead>
+                  <tr><th>EMP</th><th>Pontos mín.</th><th class="text-end">Bônus</th><th class="text-end">Ações</th></tr>
+                </thead>
+                <tbody>
+                  {% for b in bonus_global %}
+                    <tr>
+                      <td><span class="badge text-bg-secondary">GLOBAL</span></td>
+                      <td>{{ '%.2f'|format(b.min_pontos or 0) }}</td>
+                      <td class="text-end">{{ brl(b.bonus_valor) }}</td>
+                      <td class="text-end">
+                        <div class="ip-actions-cell">
+                          <form method="post" class="d-inline">
+                            <input type="hidden" name="acao" value="toggle_bonus">
+                            <input type="hidden" name="bonus_id" value="{{ b.id }}">
+                            <button class="btn ip-btn-warning btn-sm">{{ 'Desativar' if b.ativo else 'Ativar' }}</button>
+                          </form>
+                          <form method="post" class="d-inline" onsubmit="return confirm('Excluir faixa?');">
+                            <input type="hidden" name="acao" value="excluir_bonus">
+                            <input type="hidden" name="bonus_id" value="{{ b.id }}">
+                            <button class="btn ip-btn-danger btn-sm">Excluir</button>
+                          </form>
+                        </div>
+                      </td>
+                    </tr>
+                  {% endfor %}
+                  {% for b in bonus_by_emp %}
+                    <tr>
+                      <td>{{ b.emp }}</td>
+                      <td>{{ '%.2f'|format(b.min_pontos or 0) }}</td>
+                      <td class="text-end">{{ brl(b.bonus_valor) }}</td>
+                      <td class="text-end">
+                        <div class="ip-actions-cell">
+                          <form method="post" class="d-inline">
+                            <input type="hidden" name="acao" value="toggle_bonus">
+                            <input type="hidden" name="bonus_id" value="{{ b.id }}">
+                            <button class="btn ip-btn-warning btn-sm">{{ 'Desativar' if b.ativo else 'Ativar' }}</button>
+                          </form>
+                          <form method="post" class="d-inline" onsubmit="return confirm('Excluir faixa?');">
+                            <input type="hidden" name="acao" value="excluir_bonus">
+                            <input type="hidden" name="bonus_id" value="{{ b.id }}">
+                            <button class="btn ip-btn-danger btn-sm">Excluir</button>
+                          </form>
+                        </div>
+                      </td>
+                    </tr>
+                  {% endfor %}
+                  {% if not bonus_global and not bonus_by_emp %}
+                    <tr><td colspan="4" class="ip-empty">Nenhuma faixa cadastrada.</td></tr>
+                  {% endif %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <section class="ip-card">
+          <div class="ip-card-head">
+            <div>
               <div class="ip-section-label">Consulta</div>
               <h2 class="ip-card-title">Itens cadastrados</h2>
-              <p class="ip-card-subtitle">Filtros distribuídos com mais largura útil no desktop para melhorar a leitura e reduzir áreas vazias laterais.</p>
+              <p class="ip-card-subtitle">Filtros distribuídos sem forçar rolagem horizontal, com melhor leitura e aproveitamento da largura no desktop.</p>
             </div>
             <div class="ip-toolbar-meta">Página {{ pagina }} de {{ total_paginas }}</div>
           </div>
@@ -829,92 +920,6 @@
       </div>
 
       <div class="ip-side-stack">
-        <section class="ip-card">
-          <div class="ip-card-head">
-            <div>
-              <div class="ip-section-label">Bônus</div>
-              <h2 class="ip-card-title">Faixa de bônus extra</h2>
-              <p class="ip-card-subtitle">Cadastre bônus por pontuação mínima no escopo global ou por EMP.</p>
-            </div>
-          </div>
-          <div class="ip-card-body">
-            <form method="post" class="ip-form-grid">
-              <input type="hidden" name="acao" value="criar_bonus">
-
-              <div class="ip-col-12">
-                <label class="ip-label">EMP</label>
-                <input class="form-control" name="bonus_emp" placeholder="Vazio = global">
-              </div>
-              <div class="ip-col-6">
-                <label class="ip-label">Pontos mínimos</label>
-                <input class="form-control" name="min_pontos" value="10" required>
-              </div>
-              <div class="ip-col-6">
-                <label class="ip-label">Bônus extra (R$)</label>
-                <input class="form-control" name="bonus_valor" value="50,00" required>
-              </div>
-              <div class="ip-col-12 d-flex justify-content-end pt-1">
-                <button class="btn ip-btn-primary">Salvar faixa</button>
-              </div>
-            </form>
-          </div>
-          <div class="ip-card-body">
-            <div class="table-responsive">
-              <table class="table table-hover align-middle">
-                <thead>
-                  <tr><th>EMP</th><th>Pontos mín.</th><th class="text-end">Bônus</th><th class="text-end">Ações</th></tr>
-                </thead>
-                <tbody>
-                  {% for b in bonus_global %}
-                    <tr>
-                      <td><span class="badge text-bg-secondary">GLOBAL</span></td>
-                      <td>{{ '%.2f'|format(b.min_pontos or 0) }}</td>
-                      <td class="text-end">{{ brl(b.bonus_valor) }}</td>
-                      <td class="text-end">
-                        <div class="ip-actions-cell">
-                          <form method="post" class="d-inline">
-                            <input type="hidden" name="acao" value="toggle_bonus">
-                            <input type="hidden" name="bonus_id" value="{{ b.id }}">
-                            <button class="btn ip-btn-warning btn-sm">{{ 'Desativar' if b.ativo else 'Ativar' }}</button>
-                          </form>
-                          <form method="post" class="d-inline" onsubmit="return confirm('Excluir faixa?');">
-                            <input type="hidden" name="acao" value="excluir_bonus">
-                            <input type="hidden" name="bonus_id" value="{{ b.id }}">
-                            <button class="btn ip-btn-danger btn-sm">Excluir</button>
-                          </form>
-                        </div>
-                      </td>
-                    </tr>
-                  {% endfor %}
-                  {% for b in bonus_by_emp %}
-                    <tr>
-                      <td>{{ b.emp }}</td>
-                      <td>{{ '%.2f'|format(b.min_pontos or 0) }}</td>
-                      <td class="text-end">{{ brl(b.bonus_valor) }}</td>
-                      <td class="text-end">
-                        <div class="ip-actions-cell">
-                          <form method="post" class="d-inline">
-                            <input type="hidden" name="acao" value="toggle_bonus">
-                            <input type="hidden" name="bonus_id" value="{{ b.id }}">
-                            <button class="btn ip-btn-warning btn-sm">{{ 'Desativar' if b.ativo else 'Ativar' }}</button>
-                          </form>
-                          <form method="post" class="d-inline" onsubmit="return confirm('Excluir faixa?');">
-                            <input type="hidden" name="acao" value="excluir_bonus">
-                            <input type="hidden" name="bonus_id" value="{{ b.id }}">
-                            <button class="btn ip-btn-danger btn-sm">Excluir</button>
-                          </form>
-                        </div>
-                      </td>
-                    </tr>
-                  {% endfor %}
-                  {% if not bonus_global and not bonus_by_emp %}
-                    <tr><td colspan="4" class="ip-empty">Nenhuma faixa cadastrada.</td></tr>
-                  {% endif %}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </section>
 
         <section class="ip-card">
           <div class="ip-card-head">
