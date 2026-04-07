@@ -24,11 +24,16 @@
     color: var(--ip-text);
   }
 
+  .ip-admin-page{
+    overflow-x: hidden;
+  }
+
   .ip-admin-page .ip-shell{
-    width: min(1760px, calc(100vw - 52px));
-    max-width: 1760px;
+    width: 100%;
+    max-width: none;
     margin: 0 auto;
-    padding: 8px 4px 32px;
+    padding: 8px 10px 32px;
+    box-sizing: border-box;
   }
 
   .ip-admin-page .ip-hero{
@@ -445,21 +450,12 @@
     font-weight: 800;
   }
 
-  @media (max-width: 1480px){
-    .ip-admin-page .ip-shell{
-      width: calc(100vw - 40px);
-    }
-  }
-
   @media (max-width: 1280px){
     .ip-admin-page .ip-layout,
     .ip-admin-page .ip-grid-2{
       grid-template-columns: 1fr;
     }
 
-    .ip-admin-page .ip-shell{
-      width: calc(100vw - 28px);
-    }
   }
 
   @media (max-width: 920px){
@@ -590,6 +586,7 @@
                   <label class="ip-label">Descrição</label>
                   <input class="form-control" name="descricao" placeholder="Opcional para facilitar identificação">
                 </div>
+
                 <div class="ip-col-3">
                   <label class="ip-label">Data início</label>
                   <input class="form-control" type="date" name="data_inicio">
@@ -599,7 +596,7 @@
                   <input class="form-control" type="date" name="data_fim">
                 </div>
                 <div class="ip-col-6 d-flex align-items-end">
-                  <span class="ip-inline-note">O cadastro continua com a mesma funcionalidade. O multiplicador segue salvo internamente com o padrão da regra atual.</span>
+                  <span class="ip-inline-note">Alteração apenas visual no cadastro. O multiplicador continua salvo internamente com o padrão da regra atual.</span>
                 </div>
 
                 <div class="ip-col-12 d-flex justify-content-end align-items-center flex-wrap gap-2 pt-1">
