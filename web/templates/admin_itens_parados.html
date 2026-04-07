@@ -24,62 +24,22 @@
     color: var(--ip-text);
   }
 
-  .app-page{
-    max-width: min(1720px, calc(100vw - 320px));
-  }
-
   .ip-admin-page .ip-shell{
-    max-width: none;
+    width: min(1760px, calc(100vw - 52px));
+    max-width: 1760px;
     margin: 0 auto;
-    padding: 10px 6px 34px;
-  }
-
-  @media (min-width: 1400px){
-    .app-main > .container-fluid{
-      padding-left: 18px !important;
-      padding-right: 18px !important;
-    }
-
-    .ip-admin-page .ip-layout{
-      grid-template-columns: minmax(0, 1.55fr) minmax(380px, 1fr);
-      gap: 20px;
-    }
-
-    .ip-admin-page .ip-main-stack,
-    .ip-admin-page .ip-side-stack,
-    .ip-admin-page .ip-grid-2,
-    .ip-admin-page .ip-stat-grid{
-      gap: 20px;
-    }
-
-    .ip-admin-page .ip-card-head{
-      padding: 20px 24px 0;
-    }
-
-    .ip-admin-page .ip-card-body{
-      padding: 20px 24px 24px;
-    }
-  }
-
-  @media (min-width: 1700px){
-    .app-page{
-      max-width: min(1860px, calc(100vw - 300px));
-    }
-
-    .ip-admin-page .ip-layout{
-      grid-template-columns: minmax(0, 1.7fr) minmax(420px, 1fr);
-    }
+    padding: 8px 4px 32px;
   }
 
   .ip-admin-page .ip-hero{
     position: relative;
     overflow: hidden;
     background:
-      radial-gradient(circle at top right, rgba(198, 164, 111, 0.12), transparent 32%),
+      radial-gradient(circle at top right, rgba(198, 164, 111, 0.08), transparent 32%),
       linear-gradient(135deg, rgba(23, 28, 35, 0.96), rgba(17, 21, 27, 0.98));
     border: 1px solid var(--ip-border);
     border-radius: 24px;
-    padding: 24px 24px 20px;
+    padding: 24px 28px 22px;
     box-shadow: 0 14px 36px rgba(0, 0, 0, 0.22);
     margin-bottom: 18px;
   }
@@ -176,20 +136,20 @@
 
   .ip-admin-page .ip-layout{
     display: grid;
-    grid-template-columns: minmax(0, 1.35fr) minmax(320px, .95fr);
-    gap: 16px;
+    grid-template-columns: minmax(0, 1.5fr) minmax(360px, 1fr);
+    gap: 18px;
   }
 
   .ip-admin-page .ip-main-stack,
   .ip-admin-page .ip-side-stack{
     display: grid;
-    gap: 16px;
+    gap: 18px;
   }
 
   .ip-admin-page .ip-grid-2{
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 16px;
+    gap: 18px;
   }
 
   .ip-admin-page .ip-card{
@@ -201,7 +161,7 @@
   }
 
   .ip-admin-page .ip-card-head{
-    padding: 18px 20px 0;
+    padding: 18px 22px 0;
     display: flex;
     justify-content: space-between;
     gap: 12px;
@@ -222,7 +182,7 @@
   }
 
   .ip-admin-page .ip-card-body{
-    padding: 18px 20px 20px;
+    padding: 18px 22px 22px;
   }
 
   .ip-admin-page .ip-card-body + .ip-card-body{
@@ -245,7 +205,7 @@
   .ip-admin-page .ip-form-grid{
     display: grid;
     grid-template-columns: repeat(12, minmax(0, 1fr));
-    gap: 12px;
+    gap: 14px;
   }
 
   .ip-admin-page .ip-col-2{ grid-column: span 2; }
@@ -485,10 +445,20 @@
     font-weight: 800;
   }
 
+  @media (max-width: 1480px){
+    .ip-admin-page .ip-shell{
+      width: calc(100vw - 40px);
+    }
+  }
+
   @media (max-width: 1280px){
     .ip-admin-page .ip-layout,
     .ip-admin-page .ip-grid-2{
       grid-template-columns: 1fr;
+    }
+
+    .ip-admin-page .ip-shell{
+      width: calc(100vw - 28px);
     }
   }
 
@@ -513,10 +483,6 @@
   }
 
   @media (max-width: 640px){
-    .app-page{
-      max-width: 100%;
-    }
-
     .ip-admin-page .ip-shell{
       padding-inline: 0;
     }
@@ -561,8 +527,8 @@
       <div class="ip-hero-top">
         <div>
           <span class="ip-eyebrow">Administração · Itens parados</span>
-          <h1 class="ip-title">Gestão visual mais limpa e menos agressiva</h1>
-          <p class="ip-subtitle">Cadastro de itens elegíveis, regras de pontuação, bônus e fechamento manual organizados em blocos mais claros, com paleta neutra e leitura mais confortável.</p>
+          <h1 class="ip-title">Admin — Itens Parados</h1>
+          <p class="ip-subtitle">Cadastro de itens elegíveis, regras de pontuação, bônus e fechamento manual com melhor aproveitamento da largura no desktop e leitura mais organizada.</p>
         </div>
         <div class="ip-hero-actions">
           <a class="btn ip-btn-secondary" href="{{ url_for('dashboard') }}">Voltar ao dashboard</a>
@@ -604,12 +570,13 @@
               <div>
                 <div class="ip-section-label">Cadastro</div>
                 <h2 class="ip-card-title">Cadastrar item elegível</h2>
-                <p class="ip-card-subtitle">Defina EMP, código, descrição, multiplicador e vigência sem alterar a regra de cálculo já existente.</p>
+                <p class="ip-card-subtitle">Defina EMP, código, descrição e vigência. O multiplicador permanece padronizado internamente.</p>
               </div>
             </div>
             <div class="ip-card-body">
               <form method="post" class="ip-form-grid">
                 <input type="hidden" name="acao" value="criar_item">
+                <input type="hidden" name="multiplicador_pontos" value="1,00">
 
                 <div class="ip-col-2">
                   <label class="ip-label">EMP</label>
@@ -624,20 +591,16 @@
                   <input class="form-control" name="descricao" placeholder="Opcional para facilitar identificação">
                 </div>
                 <div class="ip-col-2">
-                  <label class="ip-label">Multiplicador</label>
-                  <input class="form-control" name="multiplicador_pontos" value="1,00">
-                </div>
-                <div class="ip-col-2">
-                  <label class="ip-label">Início</label>
+                  <label class="ip-label">Data início</label>
                   <input class="form-control" type="date" name="data_inicio">
                 </div>
                 <div class="ip-col-2">
-                  <label class="ip-label">Fim</label>
+                  <label class="ip-label">Data fim</label>
                   <input class="form-control" type="date" name="data_fim">
                 </div>
 
                 <div class="ip-col-12 d-flex justify-content-between align-items-center flex-wrap gap-2 pt-1">
-                  <span class="ip-inline-note">O cadastro continua com a mesma funcionalidade. A mudança aqui é apenas visual.</span>
+                  <span class="ip-inline-note">O cadastro continua com a mesma funcionalidade. O multiplicador segue salvo internamente com o padrão da regra atual.</span>
                   <button class="btn ip-btn-primary">Salvar item</button>
                 </div>
               </form>
@@ -682,7 +645,7 @@
             <div>
               <div class="ip-section-label">Consulta</div>
               <h2 class="ip-card-title">Itens cadastrados</h2>
-              <p class="ip-card-subtitle">Filtros mais limpos, tabela mais escura e com contraste equilibrado para reduzir o impacto visual da página.</p>
+              <p class="ip-card-subtitle">Filtros distribuídos com mais largura útil no desktop para melhorar a leitura e reduzir áreas vazias laterais.</p>
             </div>
             <div class="ip-toolbar-meta">Página {{ pagina }} de {{ total_paginas }}</div>
           </div>
@@ -723,14 +686,13 @@
               <table class="table table-hover align-middle">
                 <thead>
                   <tr>
-                    <th>ID</th>
-                    <th>EMP</th>
-                    <th>Código</th>
+                    <th style="width:72px;">ID</th>
+                    <th style="width:88px;">EMP</th>
+                    <th style="width:130px;">Código</th>
                     <th>Descrição</th>
-                    <th class="text-end">Multiplicador</th>
-                    <th>Vigência</th>
-                    <th>Status</th>
-                    <th class="text-end">Ações</th>
+                    <th style="width:230px;">Vigência</th>
+                    <th style="width:110px;">Status</th>
+                    <th class="text-end" style="width:180px;">Ações</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -740,7 +702,6 @@
                       <td><strong>{{ it.emp }}</strong></td>
                       <td><code>{{ it.codigo }}</code></td>
                       <td>{{ it.descricao or '-' }}</td>
-                      <td class="text-end">{{ '%.2f'|format(it.multiplicador_pontos or 1) }}x</td>
                       <td>
                         {% if it.data_inicio or it.data_fim %}
                           {{ it.data_inicio.strftime('%d/%m/%Y') if it.data_inicio else '...' }} até {{ it.data_fim.strftime('%d/%m/%Y') if it.data_fim else '...' }}
@@ -769,7 +730,7 @@
                       </td>
                     </tr>
                   {% else %}
-                    <tr><td colspan="8" class="ip-empty">Nenhum item cadastrado.</td></tr>
+                    <tr><td colspan="7" class="ip-empty">Nenhum item cadastrado.</td></tr>
                   {% endfor %}
                 </tbody>
               </table>
@@ -797,7 +758,7 @@
               <div>
                 <div class="ip-section-label">Configuração</div>
                 <h2 class="ip-card-title">Configurações ativas</h2>
-                <p class="ip-card-subtitle">Resumo das regras de base e valor por ponto em uso.</p>
+                <p class="ip-card-subtitle">Resumo das regras de base e valor por ponto em uso, com bloco mais proporcional ao espaço do desktop.</p>
               </div>
             </div>
             <div class="ip-card-body">
@@ -837,7 +798,7 @@
               <div>
                 <div class="ip-section-label">Resultados</div>
                 <h2 class="ip-card-title">Fechamento {% if ver_fech %}#{{ ver_fech }}{% else %}selecionado{% endif %}</h2>
-                <p class="ip-card-subtitle">Visualização dos resultados congelados do fechamento manual, com destaque mais discreto no total.</p>
+                <p class="ip-card-subtitle">Visualização dos resultados congelados do fechamento manual com melhor distribuição horizontal dos dados.</p>
               </div>
             </div>
             <div class="ip-card-body">
@@ -960,7 +921,7 @@
             <div>
               <div class="ip-section-label">Fechamento</div>
               <h2 class="ip-card-title">Fechamento manual</h2>
-              <p class="ip-card-subtitle">Crie snapshots por período com visual mais organizado e histórico logo abaixo.</p>
+              <p class="ip-card-subtitle">Crie snapshots por período com melhor uso da largura disponível e histórico logo abaixo.</p>
             </div>
           </div>
           <div class="ip-card-body">
