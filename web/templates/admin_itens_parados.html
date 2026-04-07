@@ -141,8 +141,17 @@
 
   .ip-admin-page .ip-layout{
     display: grid;
-    grid-template-columns: minmax(0, 1.5fr) minmax(360px, 1fr);
+    grid-template-columns: minmax(0, 1fr);
     gap: 18px;
+  }
+
+  .ip-admin-page .ip-controls-grid,
+  .ip-admin-page .ip-bottom-grid,
+  .ip-admin-page .ip-grid-2{
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px;
+    align-items: start;
   }
 
   .ip-admin-page .ip-main-stack,
@@ -151,10 +160,25 @@
     gap: 18px;
   }
 
-  .ip-admin-page .ip-grid-2{
+  .ip-admin-page .ip-form-stack{
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 18px;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 14px;
+  }
+
+  .ip-admin-page .ip-form-actions{
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    padding-top: 4px;
+  }
+
+  .ip-admin-page .ip-note-block{
+    font-size: .8rem;
+    color: var(--ip-muted);
+    line-height: 1.55;
   }
 
   .ip-admin-page .ip-card{
@@ -451,11 +475,11 @@
   }
 
   @media (max-width: 1280px){
-    .ip-admin-page .ip-layout,
+    .ip-admin-page .ip-controls-grid,
+    .ip-admin-page .ip-bottom-grid,
     .ip-admin-page .ip-grid-2{
       grid-template-columns: 1fr;
     }
-
   }
 
   @media (max-width: 920px){
@@ -559,300 +583,107 @@
     {% if ok %}<div class="alert alert-success">{{ ok }}</div>{% endif %}
 
     <div class="ip-layout">
-      <div class="ip-main-stack">
-        <div class="ip-grid-2">
-          <section class="ip-card">
-            <div class="ip-card-head">
+      <div class="ip-controls-grid">
+        <section class="ip-card">
+          <div class="ip-card-head">
+            <div>
+              <div class="ip-section-label">Cadastro</div>
+              <h2 class="ip-card-title">Cadastrar item elegível</h2>
+              <p class="ip-card-subtitle">Layout mais estável e SaaS, com leitura vertical e descrição com mais respiro para evitar ruído visual no desktop.</p>
+            </div>
+          </div>
+          <div class="ip-card-body">
+            <form method="post" class="ip-form-stack">
+              <input type="hidden" name="acao" value="criar_item">
+              <input type="hidden" name="multiplicador_pontos" value="1,00">
+
               <div>
-                <div class="ip-section-label">Cadastro</div>
-                <h2 class="ip-card-title">Cadastrar item elegível</h2>
-                <p class="ip-card-subtitle">Defina EMP, código, descrição e vigência. O multiplicador permanece padronizado internamente.</p>
+                <label class="ip-label">EMP</label>
+                <input class="form-control" name="emp" required>
               </div>
-            </div>
-            <div class="ip-card-body">
-              <form method="post" class="ip-form-grid">
-                <input type="hidden" name="acao" value="criar_item">
-                <input type="hidden" name="multiplicador_pontos" value="1,00">
-
-                <div class="ip-col-2">
-                  <label class="ip-label">EMP</label>
-                  <input class="form-control" name="emp" required>
-                </div>
-                <div class="ip-col-2">
-                  <label class="ip-label">Código</label>
-                  <input class="form-control" name="codigo" required>
-                </div>
-                <div class="ip-col-8">
-                  <label class="ip-label">Descrição</label>
-                  <input class="form-control" name="descricao" placeholder="Opcional para facilitar identificação">
-                </div>
-
-                <div class="ip-col-3">
-                  <label class="ip-label">Data início</label>
-                  <input class="form-control" type="date" name="data_inicio">
-                </div>
-                <div class="ip-col-3">
-                  <label class="ip-label">Data fim</label>
-                  <input class="form-control" type="date" name="data_fim">
-                </div>
-                <div class="ip-col-6 d-flex align-items-end">
-                  <span class="ip-inline-note">Alteração apenas visual no cadastro. O multiplicador continua salvo internamente com o padrão da regra atual.</span>
-                </div>
-
-                <div class="ip-col-12 d-flex justify-content-end align-items-center flex-wrap gap-2 pt-1">
-                  <button class="btn ip-btn-primary">Salvar item</button>
-                </div>
-              </form>
-            </div>
-          </section>
-
-          <section class="ip-card">
-            <div class="ip-card-head">
               <div>
-                <div class="ip-section-label">Pontuação</div>
-                <h2 class="ip-card-title">Regra de pontos</h2>
-                <p class="ip-card-subtitle">Configure base em R$ e valor por ponto com escopo global ou específico por EMP.</p>
+                <label class="ip-label">Código</label>
+                <input class="form-control" name="codigo" required>
               </div>
-            </div>
-            <div class="ip-card-body">
-              <form method="post" class="ip-form-grid">
-                <input type="hidden" name="acao" value="salvar_config">
+              <div>
+                <label class="ip-label">Descrição</label>
+                <input class="form-control" name="descricao" placeholder="Opcional para facilitar identificação">
+              </div>
+              <div>
+                <label class="ip-label">Data início</label>
+                <input class="form-control" type="date" name="data_inicio">
+              </div>
+              <div>
+                <label class="ip-label">Data fim</label>
+                <input class="form-control" type="date" name="data_fim">
+              </div>
+              <div class="ip-note-block">O multiplicador continua salvo internamente com o padrão da regra atual. A mudança aqui é apenas visual.</div>
 
-                <div class="ip-col-4">
-                  <label class="ip-label">EMP</label>
-                  <input class="form-control" name="cfg_emp" placeholder="Vazio = regra global">
-                </div>
-                <div class="ip-col-4">
-                  <label class="ip-label">Base em R$</label>
-                  <input class="form-control" name="base_reais" value="100" required>
-                </div>
-                <div class="ip-col-4">
-                  <label class="ip-label">Valor por ponto</label>
-                  <input class="form-control" name="valor_por_ponto" value="10,00" required>
-                </div>
-
-                <div class="ip-col-12 d-flex justify-content-end pt-1">
-                  <button class="btn ip-btn-primary">Salvar configuração</button>
-                </div>
-              </form>
-            </div>
-          </section>
-        </div>
+              <div class="ip-form-actions">
+                <button class="btn ip-btn-primary">Salvar item</button>
+              </div>
+            </form>
+          </div>
+        </section>
 
         <section class="ip-card">
           <div class="ip-card-head">
             <div>
-              <div class="ip-section-label">Consulta</div>
-              <h2 class="ip-card-title">Itens cadastrados</h2>
-              <p class="ip-card-subtitle">Filtros distribuídos com mais largura útil no desktop para melhorar a leitura e reduzir áreas vazias laterais.</p>
+              <div class="ip-section-label">Pontuação</div>
+              <h2 class="ip-card-title">Regra de pontos</h2>
+              <p class="ip-card-subtitle">Configuração com escopo global ou por EMP, agora em fluxo mais limpo e consistente com o padrão do painel.</p>
             </div>
-            <div class="ip-toolbar-meta">Página {{ pagina }} de {{ total_paginas }}</div>
           </div>
           <div class="ip-card-body">
-            <form method="get" class="ip-form-grid">
-              <div class="ip-col-3">
-                <label class="ip-label">Filtrar EMP</label>
-                <input class="form-control" name="f_emp" value="{{ filtro_emp or '' }}">
+            <form method="post" class="ip-form-stack">
+              <input type="hidden" name="acao" value="salvar_config">
+
+              <div>
+                <label class="ip-label">EMP</label>
+                <input class="form-control" name="cfg_emp" placeholder="Vazio = regra global">
               </div>
-              <div class="ip-col-3">
-                <label class="ip-label">Filtrar código</label>
-                <input class="form-control" name="f_codigo" value="{{ filtro_codigo or '' }}">
+              <div>
+                <label class="ip-label">Base em R$</label>
+                <input class="form-control" name="base_reais" value="100" required>
               </div>
-              <div class="ip-col-3">
-                <label class="ip-label">Status</label>
-                <select class="form-select" name="f_status">
-                  <option value="" {% if not filtro_status %}selected{% endif %}>Todos</option>
-                  <option value="ativos" {% if filtro_status == 'ativos' %}selected{% endif %}>Ativos</option>
-                  <option value="inativos" {% if filtro_status == 'inativos' %}selected{% endif %}>Inativos</option>
-                </select>
+              <div>
+                <label class="ip-label">Valor por ponto</label>
+                <input class="form-control" name="valor_por_ponto" value="10,00" required>
               </div>
-              <div class="ip-col-3 d-flex gap-2 align-items-end">
-                <button class="btn ip-btn-primary w-100">Filtrar</button>
-                <a class="btn ip-btn-secondary" href="{{ url_for('admin_itens_parados') }}">Limpar</a>
+
+              <div class="ip-form-actions">
+                <button class="btn ip-btn-primary">Salvar configuração</button>
               </div>
             </form>
-
-            <div class="ip-toolbar mt-3">
-              <div class="ip-toolbar-meta">Mostrando até {{ limite }} registros por página · total encontrado: {{ total_itens_label }}</div>
-              <div class="d-flex flex-wrap gap-2">
-                <span class="ip-chip">Filtros <strong>{{ 'ativos' if filtro_status == 'ativos' else 'inativos' if filtro_status == 'inativos' else 'todos' }}</strong></span>
-                {% if filtro_emp %}<span class="ip-chip">EMP <strong>{{ filtro_emp }}</strong></span>{% endif %}
-                {% if filtro_codigo %}<span class="ip-chip">Código <strong>{{ filtro_codigo }}</strong></span>{% endif %}
-              </div>
-            </div>
-
-            <div class="table-responsive">
-              <table class="table table-hover align-middle">
-                <thead>
-                  <tr>
-                    <th style="width:72px;">ID</th>
-                    <th style="width:88px;">EMP</th>
-                    <th style="width:130px;">Código</th>
-                    <th>Descrição</th>
-                    <th style="width:230px;">Vigência</th>
-                    <th style="width:110px;">Status</th>
-                    <th class="text-end" style="width:180px;">Ações</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {% for it in itens %}
-                    <tr>
-                      <td>{{ it.id }}</td>
-                      <td><strong>{{ it.emp }}</strong></td>
-                      <td><code>{{ it.codigo }}</code></td>
-                      <td>{{ it.descricao or '-' }}</td>
-                      <td>
-                        {% if it.data_inicio or it.data_fim %}
-                          {{ it.data_inicio.strftime('%d/%m/%Y') if it.data_inicio else '...' }} até {{ it.data_fim.strftime('%d/%m/%Y') if it.data_fim else '...' }}
-                        {% else %}
-                          <span class="ip-muted">Sem vigência</span>
-                        {% endif %}
-                      </td>
-                      <td>
-                        <span class="ip-status {{ 'is-active' if it.ativo else 'is-inactive' }}">
-                          {{ 'Ativo' if it.ativo else 'Inativo' }}
-                        </span>
-                      </td>
-                      <td class="text-end">
-                        <div class="ip-actions-cell">
-                          <form method="post" class="d-inline">
-                            <input type="hidden" name="acao" value="toggle_item">
-                            <input type="hidden" name="item_id" value="{{ it.id }}">
-                            <button class="btn ip-btn-warning btn-sm">{{ 'Desativar' if it.ativo else 'Ativar' }}</button>
-                          </form>
-                          <form method="post" class="d-inline" onsubmit="return confirm('Excluir item?');">
-                            <input type="hidden" name="acao" value="excluir_item">
-                            <input type="hidden" name="item_id" value="{{ it.id }}">
-                            <button class="btn ip-btn-danger btn-sm">Excluir</button>
-                          </form>
-                        </div>
-                      </td>
-                    </tr>
-                  {% else %}
-                    <tr><td colspan="7" class="ip-empty">Nenhum item cadastrado.</td></tr>
-                  {% endfor %}
-                </tbody>
-              </table>
-            </div>
-
-            {% if pagina > 1 or has_next %}
-              <div class="d-flex justify-content-between align-items-center mt-3 flex-wrap gap-2">
-                <div class="ip-toolbar-meta">Navegação de páginas</div>
-                <div class="btn-group">
-                  {% if pagina > 1 %}
-                    <a class="btn ip-btn-secondary btn-sm" href="{{ url_for('admin_itens_parados', f_emp=filtro_emp, f_codigo=filtro_codigo, f_status=filtro_status, page=pagina-1) }}">Anterior</a>
-                  {% endif %}
-                  {% if has_next %}
-                    <a class="btn ip-btn-secondary btn-sm" href="{{ url_for('admin_itens_parados', f_emp=filtro_emp, f_codigo=filtro_codigo, f_status=filtro_status, page=pagina+1) }}">Próxima</a>
-                  {% endif %}
-                </div>
-              </div>
-            {% endif %}
           </div>
         </section>
 
-        <div class="ip-grid-2">
-          <section class="ip-card">
-            <div class="ip-card-head">
-              <div>
-                <div class="ip-section-label">Configuração</div>
-                <h2 class="ip-card-title">Configurações ativas</h2>
-                <p class="ip-card-subtitle">Resumo das regras de base e valor por ponto em uso, com bloco mais proporcional ao espaço do desktop.</p>
-              </div>
-            </div>
-            <div class="ip-card-body">
-              <div class="table-responsive">
-                <table class="table table-hover align-middle">
-                  <thead>
-                    <tr><th>Escopo</th><th class="text-end">Base R$</th><th class="text-end">Valor/ponto</th><th>Status</th></tr>
-                  </thead>
-                  <tbody>
-                    {% for cfg in cfg_global %}
-                      <tr>
-                        <td><span class="badge text-bg-secondary">GLOBAL</span></td>
-                        <td class="text-end">{{ brl(cfg.base_reais) }}</td>
-                        <td class="text-end">{{ brl(cfg.valor_por_ponto) }}</td>
-                        <td><span class="ip-status {{ 'is-active' if cfg.ativo else 'is-inactive' }}">{{ 'Ativa' if cfg.ativo else 'Inativa' }}</span></td>
-                      </tr>
-                    {% endfor %}
-                    {% for cfg in cfg_by_emp %}
-                      <tr>
-                        <td>{{ cfg.emp }}</td>
-                        <td class="text-end">{{ brl(cfg.base_reais) }}</td>
-                        <td class="text-end">{{ brl(cfg.valor_por_ponto) }}</td>
-                        <td><span class="ip-status {{ 'is-active' if cfg.ativo else 'is-inactive' }}">{{ 'Ativa' if cfg.ativo else 'Inativa' }}</span></td>
-                      </tr>
-                    {% endfor %}
-                    {% if not cfg_global and not cfg_by_emp %}
-                      <tr><td colspan="4" class="ip-empty">Nenhuma configuração cadastrada.</td></tr>
-                    {% endif %}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </section>
-
-          <section class="ip-card">
-            <div class="ip-card-head">
-              <div>
-                <div class="ip-section-label">Resultados</div>
-                <h2 class="ip-card-title">Fechamento {% if ver_fech %}#{{ ver_fech }}{% else %}selecionado{% endif %}</h2>
-                <p class="ip-card-subtitle">Visualização dos resultados congelados do fechamento manual com melhor distribuição horizontal dos dados.</p>
-              </div>
-            </div>
-            <div class="ip-card-body">
-              <div class="table-responsive">
-                <table class="table table-hover align-middle">
-                  <thead>
-                    <tr><th>EMP</th><th>Vendedor</th><th class="text-end">Vendeu</th><th class="text-end">Pontos</th><th class="text-end">Bônus extra</th><th class="text-end">Total</th></tr>
-                  </thead>
-                  <tbody>
-                    {% for r in res_fech %}
-                      <tr>
-                        <td>{{ r.emp }}</td>
-                        <td>{{ r.vendedor }}</td>
-                        <td class="text-end">{{ brl(r.valor_vendido) }}</td>
-                        <td class="text-end">{{ '%.2f'|format(r.pontos or 0) }}</td>
-                        <td class="text-end">{{ brl(r.bonus_extra) }}</td>
-                        <td class="text-end ip-result-total">{{ brl(r.total) }}</td>
-                      </tr>
-                    {% else %}
-                      <tr><td colspan="6" class="ip-empty">Selecione um fechamento para visualizar os resultados congelados.</td></tr>
-                    {% endfor %}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </section>
-        </div>
-      </div>
-
-      <div class="ip-side-stack">
         <section class="ip-card">
           <div class="ip-card-head">
             <div>
               <div class="ip-section-label">Bônus</div>
               <h2 class="ip-card-title">Faixa de bônus extra</h2>
-              <p class="ip-card-subtitle">Cadastre bônus por pontuação mínima no escopo global ou por EMP.</p>
+              <p class="ip-card-subtitle">Posicionada abaixo de Cadastro e Pontuação para distribuir melhor o painel e evitar compressão lateral.</p>
             </div>
           </div>
           <div class="ip-card-body">
-            <form method="post" class="ip-form-grid">
+            <form method="post" class="ip-form-stack">
               <input type="hidden" name="acao" value="criar_bonus">
 
-              <div class="ip-col-12">
+              <div>
                 <label class="ip-label">EMP</label>
                 <input class="form-control" name="bonus_emp" placeholder="Vazio = global">
               </div>
-              <div class="ip-col-6">
+              <div>
                 <label class="ip-label">Pontos mínimos</label>
                 <input class="form-control" name="min_pontos" value="10" required>
               </div>
-              <div class="ip-col-6">
+              <div>
                 <label class="ip-label">Bônus extra (R$)</label>
                 <input class="form-control" name="bonus_valor" value="50,00" required>
               </div>
-              <div class="ip-col-12 d-flex justify-content-end pt-1">
+
+              <div class="ip-form-actions">
                 <button class="btn ip-btn-primary">Salvar faixa</button>
               </div>
             </form>
@@ -920,26 +751,27 @@
             <div>
               <div class="ip-section-label">Fechamento</div>
               <h2 class="ip-card-title">Fechamento manual</h2>
-              <p class="ip-card-subtitle">Crie snapshots por período com melhor uso da largura disponível e histórico logo abaixo.</p>
+              <p class="ip-card-subtitle">Abaixo de Cadastro e Pontuação para equilibrar o painel e manter o fluxo operacional mais previsível.</p>
             </div>
           </div>
           <div class="ip-card-body">
-            <form method="post" class="ip-form-grid">
+            <form method="post" class="ip-form-stack">
               <input type="hidden" name="acao" value="fechar_periodo">
 
-              <div class="ip-col-12">
+              <div>
                 <label class="ip-label">EMP</label>
                 <input class="form-control" name="fech_emp" placeholder="Vazio = todas">
               </div>
-              <div class="ip-col-6">
+              <div>
                 <label class="ip-label">Data início</label>
                 <input class="form-control" type="date" name="fech_di" required>
               </div>
-              <div class="ip-col-6">
+              <div>
                 <label class="ip-label">Data fim</label>
                 <input class="form-control" type="date" name="fech_df" required>
               </div>
-              <div class="ip-col-12 d-flex justify-content-end pt-1">
+
+              <div class="ip-form-actions">
                 <button class="btn ip-btn-primary">Criar fechamento</button>
               </div>
             </form>
@@ -965,6 +797,193 @@
                     </tr>
                   {% else %}
                     <tr><td colspan="5" class="ip-empty">Nenhum fechamento criado.</td></tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <section class="ip-card">
+        <div class="ip-card-head">
+          <div>
+            <div class="ip-section-label">Consulta</div>
+            <h2 class="ip-card-title">Itens cadastrados</h2>
+            <p class="ip-card-subtitle">Consulta principal em largura total, com filtros mais confortáveis para leitura e sem pressionar as laterais do layout.</p>
+          </div>
+          <div class="ip-toolbar-meta">Página {{ pagina }} de {{ total_paginas }}</div>
+        </div>
+        <div class="ip-card-body">
+          <form method="get" class="ip-form-grid">
+            <div class="ip-col-3">
+              <label class="ip-label">Filtrar EMP</label>
+              <input class="form-control" name="f_emp" value="{{ filtro_emp or '' }}">
+            </div>
+            <div class="ip-col-3">
+              <label class="ip-label">Filtrar código</label>
+              <input class="form-control" name="f_codigo" value="{{ filtro_codigo or '' }}">
+            </div>
+            <div class="ip-col-3">
+              <label class="ip-label">Status</label>
+              <select class="form-select" name="f_status">
+                <option value="" {% if not filtro_status %}selected{% endif %}>Todos</option>
+                <option value="ativos" {% if filtro_status == 'ativos' %}selected{% endif %}>Ativos</option>
+                <option value="inativos" {% if filtro_status == 'inativos' %}selected{% endif %}>Inativos</option>
+              </select>
+            </div>
+            <div class="ip-col-3 d-flex gap-2 align-items-end">
+              <button class="btn ip-btn-primary w-100">Filtrar</button>
+              <a class="btn ip-btn-secondary" href="{{ url_for('admin_itens_parados') }}">Limpar</a>
+            </div>
+          </form>
+
+          <div class="ip-toolbar mt-3">
+            <div class="ip-toolbar-meta">Mostrando até {{ limite }} registros por página · total encontrado: {{ total_itens_label }}</div>
+            <div class="d-flex flex-wrap gap-2">
+              <span class="ip-chip">Filtros <strong>{{ 'ativos' if filtro_status == 'ativos' else 'inativos' if filtro_status == 'inativos' else 'todos' }}</strong></span>
+              {% if filtro_emp %}<span class="ip-chip">EMP <strong>{{ filtro_emp }}</strong></span>{% endif %}
+              {% if filtro_codigo %}<span class="ip-chip">Código <strong>{{ filtro_codigo }}</strong></span>{% endif %}
+            </div>
+          </div>
+
+          <div class="table-responsive">
+            <table class="table table-hover align-middle">
+              <thead>
+                <tr>
+                  <th style="width:72px;">ID</th>
+                  <th style="width:88px;">EMP</th>
+                  <th style="width:130px;">Código</th>
+                  <th>Descrição</th>
+                  <th style="width:230px;">Vigência</th>
+                  <th style="width:110px;">Status</th>
+                  <th class="text-end" style="width:180px;">Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for it in itens %}
+                  <tr>
+                    <td>{{ it.id }}</td>
+                    <td><strong>{{ it.emp }}</strong></td>
+                    <td><code>{{ it.codigo }}</code></td>
+                    <td>{{ it.descricao or '-' }}</td>
+                    <td>
+                      {% if it.data_inicio or it.data_fim %}
+                        {{ it.data_inicio.strftime('%d/%m/%Y') if it.data_inicio else '...' }} até {{ it.data_fim.strftime('%d/%m/%Y') if it.data_fim else '...' }}
+                      {% else %}
+                        <span class="ip-muted">Sem vigência</span>
+                      {% endif %}
+                    </td>
+                    <td>
+                      <span class="ip-status {{ 'is-active' if it.ativo else 'is-inactive' }}">
+                        {{ 'Ativo' if it.ativo else 'Inativo' }}
+                      </span>
+                    </td>
+                    <td class="text-end">
+                      <div class="ip-actions-cell">
+                        <form method="post" class="d-inline">
+                          <input type="hidden" name="acao" value="toggle_item">
+                          <input type="hidden" name="item_id" value="{{ it.id }}">
+                          <button class="btn ip-btn-warning btn-sm">{{ 'Desativar' if it.ativo else 'Ativar' }}</button>
+                        </form>
+                        <form method="post" class="d-inline" onsubmit="return confirm('Excluir item?');">
+                          <input type="hidden" name="acao" value="excluir_item">
+                          <input type="hidden" name="item_id" value="{{ it.id }}">
+                          <button class="btn ip-btn-danger btn-sm">Excluir</button>
+                        </form>
+                      </div>
+                    </td>
+                  </tr>
+                {% else %}
+                  <tr><td colspan="7" class="ip-empty">Nenhum item cadastrado.</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+
+          {% if pagina > 1 or has_next %}
+            <div class="d-flex justify-content-between align-items-center mt-3 flex-wrap gap-2">
+              <div class="ip-toolbar-meta">Navegação de páginas</div>
+              <div class="btn-group">
+                {% if pagina > 1 %}
+                  <a class="btn ip-btn-secondary btn-sm" href="{{ url_for('admin_itens_parados', f_emp=filtro_emp, f_codigo=filtro_codigo, f_status=filtro_status, page=pagina-1) }}">Anterior</a>
+                {% endif %}
+                {% if has_next %}
+                  <a class="btn ip-btn-secondary btn-sm" href="{{ url_for('admin_itens_parados', f_emp=filtro_emp, f_codigo=filtro_codigo, f_status=filtro_status, page=pagina+1) }}">Próxima</a>
+                {% endif %}
+              </div>
+            </div>
+          {% endif %}
+        </div>
+      </section>
+
+      <div class="ip-bottom-grid">
+        <section class="ip-card">
+          <div class="ip-card-head">
+            <div>
+              <div class="ip-section-label">Configuração</div>
+              <h2 class="ip-card-title">Configurações ativas</h2>
+              <p class="ip-card-subtitle">Resumo das regras de base e valor por ponto em uso.</p>
+            </div>
+          </div>
+          <div class="ip-card-body">
+            <div class="table-responsive">
+              <table class="table table-hover align-middle">
+                <thead>
+                  <tr><th>Escopo</th><th class="text-end">Base R$</th><th class="text-end">Valor/ponto</th><th>Status</th></tr>
+                </thead>
+                <tbody>
+                  {% for cfg in cfg_global %}
+                    <tr>
+                      <td><span class="badge text-bg-secondary">GLOBAL</span></td>
+                      <td class="text-end">{{ brl(cfg.base_reais) }}</td>
+                      <td class="text-end">{{ brl(cfg.valor_por_ponto) }}</td>
+                      <td><span class="ip-status {{ 'is-active' if cfg.ativo else 'is-inactive' }}">{{ 'Ativa' if cfg.ativo else 'Inativa' }}</span></td>
+                    </tr>
+                  {% endfor %}
+                  {% for cfg in cfg_by_emp %}
+                    <tr>
+                      <td>{{ cfg.emp }}</td>
+                      <td class="text-end">{{ brl(cfg.base_reais) }}</td>
+                      <td class="text-end">{{ brl(cfg.valor_por_ponto) }}</td>
+                      <td><span class="ip-status {{ 'is-active' if cfg.ativo else 'is-inactive' }}">{{ 'Ativa' if cfg.ativo else 'Inativa' }}</span></td>
+                    </tr>
+                  {% endfor %}
+                  {% if not cfg_global and not cfg_by_emp %}
+                    <tr><td colspan="4" class="ip-empty">Nenhuma configuração cadastrada.</td></tr>
+                  {% endif %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <section class="ip-card">
+          <div class="ip-card-head">
+            <div>
+              <div class="ip-section-label">Resultados</div>
+              <h2 class="ip-card-title">Fechamento {% if ver_fech %}#{{ ver_fech }}{% else %}selecionado{% endif %}</h2>
+              <p class="ip-card-subtitle">Visualização dos resultados congelados do fechamento manual.</p>
+            </div>
+          </div>
+          <div class="ip-card-body">
+            <div class="table-responsive">
+              <table class="table table-hover align-middle">
+                <thead>
+                  <tr><th>EMP</th><th>Vendedor</th><th class="text-end">Vendeu</th><th class="text-end">Pontos</th><th class="text-end">Bônus extra</th><th class="text-end">Total</th></tr>
+                </thead>
+                <tbody>
+                  {% for r in res_fech %}
+                    <tr>
+                      <td>{{ r.emp }}</td>
+                      <td>{{ r.vendedor }}</td>
+                      <td class="text-end">{{ brl(r.valor_vendido) }}</td>
+                      <td class="text-end">{{ '%.2f'|format(r.pontos or 0) }}</td>
+                      <td class="text-end">{{ brl(r.bonus_extra) }}</td>
+                      <td class="text-end ip-result-total">{{ brl(r.total) }}</td>
+                    </tr>
+                  {% else %}
+                    <tr><td colspan="6" class="ip-empty">Selecione um fechamento para visualizar os resultados congelados.</td></tr>
                   {% endfor %}
                 </tbody>
               </table>
