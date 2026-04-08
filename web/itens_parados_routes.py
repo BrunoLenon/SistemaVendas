@@ -4,7 +4,7 @@ from calendar import monthrange
 from datetime import date, datetime, timedelta
 import threading
 import time
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal, ROUND_FLOOR, ROUND_HALF_UP
 from io import BytesIO
 from typing import Callable
 
@@ -126,6 +126,16 @@ def _d(value) -> Decimal:
 
 def _round2(value: Decimal) -> Decimal:
     return value.quantize(TWOPLACES, rounding=ROUND_HALF_UP)
+
+
+def _bonus_base_from_pontos(pontos: Decimal, valor_por_ponto: Decimal) -> Decimal:
+    pontos_validos = _d(pontos)
+    if pontos_validos <= 0:
+        return Decimal("0")
+    pontos_fechados = pontos_validos.quantize(Decimal("1"), rounding=ROUND_FLOOR)
+    if pontos_fechados <= 0:
+        return Decimal("0")
+    return pontos_fechados * _d(valor_por_ponto)
 
 
 def _fmt_brl(value) -> str:
@@ -420,14 +430,12 @@ def _load_campaign_view():
                 continue
 
             pontos = data["pontos"]
-            elegivel_pagamento = pontos >= MIN_PONTOS_PAGAMENTO_ITENS_PARADOS
-            bonus_base = (pontos * valor_por_ponto) if elegivel_pagamento else Decimal("0")
+            bonus_base = _bonus_base_from_pontos(pontos, valor_por_ponto)
             bonus_extra = Decimal("0")
-            if elegivel_pagamento:
-                for faixa in bonus_list:
-                    min_pontos = _d(getattr(faixa, "min_pontos", 0) or 0)
-                    if pontos >= min_pontos:
-                        bonus_extra = _d(getattr(faixa, "bonus_valor", 0) or 0)
+            for faixa in bonus_list:
+                min_pontos = _d(getattr(faixa, "min_pontos", 0) or 0)
+                if pontos >= min_pontos:
+                    bonus_extra = _d(getattr(faixa, "bonus_valor", 0) or 0)
             total_final = bonus_base + bonus_extra
 
             vendido = data["valor_vendido"]
@@ -488,7 +496,7 @@ def _load_campaign_view():
                 "total_total": float(_round2(total_total_emp)),
                 "total_vendedores": len(ranking_rows),
                 "total_itens": len(itens_card),
-                "regra_descricao": f"1 ponto a cada {_fmt_brl(base_reais)} vendidos • {_fmt_brl(valor_por_ponto)} por ponto • pagamento só a partir de 10,00 pontos",
+                "regra_descricao": f"1 ponto a cada {_fmt_brl(base_reais)} vendidos • {_fmt_brl(valor_por_ponto)} por ponto fechado • sem pagamento parcial • bônus extra por faixa",
             }
         )
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date, datetime
 import threading
 import time
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal, ROUND_FLOOR, ROUND_HALF_UP
 from typing import Callable, Type
 
 from flask import current_app, redirect, render_template, request, session, url_for
@@ -222,6 +222,16 @@ def _round2(value: Decimal) -> Decimal:
     return value.quantize(TWOPLACES, rounding=ROUND_HALF_UP)
 
 
+def _bonus_base_from_pontos(pontos: Decimal, valor_por_ponto: Decimal) -> Decimal:
+    pontos_validos = _d(pontos)
+    if pontos_validos <= 0:
+        return Decimal("0")
+    pontos_fechados = pontos_validos.quantize(Decimal("1"), rounding=ROUND_FLOOR)
+    if pontos_fechados <= 0:
+        return Decimal("0")
+    return pontos_fechados * _d(valor_por_ponto)
+
+
 def _norm_emp(value) -> str | None:
     if value in (None, "", "NULL"):
         return None
@@ -393,13 +403,11 @@ def _processar_fechamento_itens_parados(db, *, ItemParado, emps, di, df, usuario
     for (emp_key, vend_key), data in acc.items():
         bonus_list = bonus_by_emp.get(emp_key) or bonus_global
         pontos = data["pontos"]
-        elegivel_pagamento = pontos >= MIN_PONTOS_PAGAMENTO_ITENS_PARADOS
-        bonus_base = (pontos * data["valor_por_ponto"]) if elegivel_pagamento else Decimal("0")
+        bonus_base = _bonus_base_from_pontos(pontos, data["valor_por_ponto"])
         bonus_extra = Decimal("0")
-        if elegivel_pagamento:
-            for min_pontos, bonus_valor in bonus_list:
-                if pontos >= min_pontos:
-                    bonus_extra = bonus_valor
+        for min_pontos, bonus_valor in bonus_list:
+            if pontos >= min_pontos:
+                bonus_extra = bonus_valor
         total_final = bonus_base + bonus_extra
 
         resultados_bulk.append(
