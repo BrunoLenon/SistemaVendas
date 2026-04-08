@@ -366,10 +366,40 @@
                             {% set totals.vendeu = totals.vendeu + (c.vendeu_rs or 0) %}
                             {% set totals.premio = totals.premio + (c.valor or 0) %}
                             <tr>
-                              <td class="sv-nowrap">{{ c.titulo }}</td>
-                              <td class="sv-center">{{ (c.qtd_minima or '-') }}</td>
-                              <td class="sv-right">{{ (c.recompensa_unit or 0)|brl_rs }}</td>
-                              <td class="sv-center">{{ (c.qtd_vendida or 0) }}</td>
+                              <td class="sv-nowrap">
+                                <div>
+                                  <div>
+                                    {% if c.tipo == 'META' %}
+                                      <span class="sv-pill sv-pill-info">META</span>
+                                    {% elif c.tipo == 'RANKING_MARCA' %}
+                                      <span class="sv-pill sv-pill-warn">RANKING</span>
+                                    {% elif c.tipo == 'PARADO' %}
+                                      <span class="sv-pill sv-pill-ok">ITENS PARADOS</span>
+                                    {% elif c.tipo == 'QTD' %}
+                                      <span class="sv-pill">CAMPANHA</span>
+                                    {% endif %}
+                                    <span class="sv-strong">{{ c.titulo }}</span>
+                                  </div>
+                                  {% if c.info_aux %}
+                                    <div class="sv-muted sv-small">{{ c.info_aux }}</div>
+                                  {% endif %}
+                                </div>
+                              </td>
+                              <td class="sv-center">
+                                {% if c.qtd_minima is not none and c.qtd_minima != '' %}
+                                  {{ c.qtd_minima }}
+                                {% else %}
+                                  -
+                                {% endif %}
+                              </td>
+                              <td class="sv-right">
+                                {% if c.recompensa_unit is not none and c.recompensa_unit != '' and c.recompensa_unit %}
+                                  {{ c.recompensa_unit|brl_rs }}
+                                {% else %}
+                                  -
+                                {% endif %}
+                              </td>
+                              <td class="sv-center">{{ c.metrica_display or (c.qtd_vendida or 0) }}</td>
                               <td class="sv-right">{{ (c.vendeu_rs or 0)|brl_rs }}</td>
                               <td class="sv-right">{{ (c.valor or 0)|brl_rs }}</td>
                               <td class="sv-center">
@@ -402,7 +432,7 @@
                   </div>
 
                   <div class="sv-note">
-                    Obs.: “Valor (R$)” mostra a premiação efetiva do período. Em campanhas do tipo combo, a recompensa só é liberada quando todos os requisitos do combo forem atingidos. Em Itens Parados, a coluna “Qtd vendida” representa os pontos do período e “Recomp. (R$/un)” representa o valor por ponto. “Vendeu (R$)” = soma do valor total vendido dos itens da campanha na competência. Em Itens Parados, a premiação só entra no total do vendedor quando ele atinge 10,00 pontos ou mais no período.
+                    Obs.: “Valor (R$)” mostra a premiação efetiva do período. Em campanhas do tipo combo, a recompensa só é liberada quando todos os requisitos do combo forem atingidos. Em Itens Parados, a coluna “Qtd vendida” representa os pontos do período e “Recomp. (R$/un)” representa o valor por ponto. Em Metas e Ranking por Marca, a coluna “Qtd vendida” pode exibir a métrica principal do resultado (ex.: crescimento, share, mix ou posição). “Vendeu (R$)” = soma do valor vendido considerado no cálculo da campanha na competência. Em Itens Parados, a premiação só entra no total do vendedor quando ele atinge 10,00 pontos ou mais no período.
                   </div>
                 </div>
               </td>

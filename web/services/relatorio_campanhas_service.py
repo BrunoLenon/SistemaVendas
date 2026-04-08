@@ -598,6 +598,7 @@ def build_relatorio_campanhas_unificado_context(
             vendedores_por_emp=vendedores_por_emp,
             incluir_zerados=False,
             usar_snapshot_itens_parados=True,
+            role=role_l,
         )
         if rows is None:
             rows = []

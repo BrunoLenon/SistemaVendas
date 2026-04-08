@@ -163,6 +163,8 @@ def register_relatorio_campanhas_routes(
                 "atingiu": bool(getattr(r, "atingiu", False)),
                 "tipo": str(getattr(r, "tipo", "") or "").strip().upper(),
                 "origem_id": int(getattr(r, "origem_id", 0) or 0),
+                "info_aux": getattr(r, "info_aux", None),
+                "metrica_display": getattr(r, "metrica_display", None),
             })
 
         def _agg_status(counts):
@@ -197,7 +199,13 @@ def register_relatorio_campanhas_routes(
             g["campanhas"] = resto + combo_cards
             def _camp_sort_key(c):
                 tipo = str(c.get("tipo") or "").strip().upper()
-                tipo_ord = 9 if tipo == 'PARADO' else (5 if tipo == 'COMBO_CARD' else 1)
+                tipo_ord = {
+                    'QTD': 1,
+                    'META': 2,
+                    'RANKING_MARCA': 3,
+                    'COMBO_CARD': 5,
+                    'PARADO': 9,
+                }.get(tipo, 4)
                 status_ord = {"PENDENTE": 0, "A_PAGAR": 1, "PAGO": 2}.get(c.get("status"), 9)
                 return (tipo_ord, status_ord, -float(c.get("valor") or 0), str(c.get("titulo") or ""))
             g["campanhas"].sort(key=_camp_sort_key)
