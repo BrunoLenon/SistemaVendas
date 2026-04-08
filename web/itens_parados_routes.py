@@ -36,6 +36,7 @@ _periodo_bounds: Callable[[int, int], tuple[object, object]] | None = None
 
 TWOPLACES = Decimal("0.01")
 MIN_PONTOS_PAGAMENTO_ITENS_PARADOS = Decimal("10")
+ITENS_PARADOS_MOV_TIPOS_VENDA = ("OA", "VV", "SV")
 _SCHEMA_LOCK = threading.Lock()
 _SCHEMA_READY = False
 _SCHEMA_READY_AT = 0.0
@@ -294,7 +295,7 @@ def _load_campaign_view():
             .filter(Venda.emp.in_(emps_com_itens))
             .filter(Venda.movimento >= periodo_inicio)
             .filter(Venda.movimento <= periodo_fim)
-            .filter(Venda.mov_tipo_movto == "OA")
+            .filter(func.upper(func.coalesce(Venda.mov_tipo_movto, "")).in_(ITENS_PARADOS_MOV_TIPOS_VENDA))
             .filter(Venda.mestre.in_(codigos))
         )
         if vendedor_alvo:

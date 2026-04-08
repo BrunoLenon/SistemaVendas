@@ -22,6 +22,7 @@ from db import (
 
 TWOPLACES = Decimal("0.01")
 MIN_PONTOS_PAGAMENTO_ITENS_PARADOS = Decimal("10")
+ITENS_PARADOS_MOV_TIPOS_VENDA = ("OA", "VV", "SV")
 _SCHEMA_LOCK = threading.Lock()
 _SCHEMA_READY = False
 _SCHEMA_READY_AT = 0.0
@@ -304,7 +305,7 @@ def _iter_vendas_agrupadas(db, emps, di, df, codigos):
         .filter(Venda.emp.in_(emps))
         .filter(Venda.movimento >= di)
         .filter(Venda.movimento <= df)
-        .filter(Venda.mov_tipo_movto == "OA")
+        .filter(func.upper(func.coalesce(Venda.mov_tipo_movto, "")).in_(ITENS_PARADOS_MOV_TIPOS_VENDA))
         .filter(Venda.mestre.in_(codigos))
         .group_by(Venda.emp, Venda.vendedor, Venda.mestre, Venda.movimento)
     )
