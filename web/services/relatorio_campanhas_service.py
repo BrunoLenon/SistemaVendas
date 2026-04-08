@@ -29,6 +29,7 @@ def _sanitize_emps(emp_list):
 from dataclasses import dataclass
 from datetime import date, datetime
 import datetime
+import time
 from typing import Any, Callable
 
 from sqlalchemy import or_
@@ -534,6 +535,73 @@ def build_relatorio_campanhas_context(
 
 
 
+_RELATORIO_UNIFICADO_CACHE: dict[tuple, tuple[float, dict[str, Any]]] = {}
+_RELATORIO_UNIFICADO_CACHE_TTL = 180
+_RELATORIO_UNIFICADO_CACHE_MAX = 48
+
+
+def _freeze_vendedores_por_emp(vendedores_por_emp: dict[str, list[str]], emps_sel: list[str]) -> tuple:
+    out = []
+    for emp in sorted({str(e) for e in (emps_sel or [])}):
+        vendedores = sorted({str(v or '').strip().upper() for v in (vendedores_por_emp.get(emp) or []) if str(v or '').strip()})
+        out.append((emp, tuple(vendedores)))
+    return tuple(out)
+
+
+def _cache_key_relatorio_unificado(*, role: str, vendedor_logado: str, ano: int, mes: int, emps_sel: list[str], vendedores_sel: list[str], vendedores_por_emp: dict[str, list[str]], include_combo_itens: bool) -> tuple:
+    emps_norm = tuple(sorted({str(e) for e in (emps_sel or []) if str(e).strip()}))
+    vendedores_norm = tuple(sorted({str(v or '').strip().upper() for v in (vendedores_sel or []) if str(v or '').strip()}))
+    vendors_scope = _freeze_vendedores_por_emp(vendedores_por_emp or {}, list(emps_norm))
+    return (
+        'relatorio_campanhas_unificado_v2',
+        str(role or '').strip().lower(),
+        str(vendedor_logado or '').strip().upper(),
+        int(ano),
+        int(mes),
+        emps_norm,
+        vendedores_norm,
+        vendors_scope,
+        bool(include_combo_itens),
+    )
+
+
+def _cache_get_relatorio_unificado(key: tuple) -> dict[str, Any] | None:
+    payload = _RELATORIO_UNIFICADO_CACHE.get(key)
+    if not payload:
+        return None
+    expires_at, data = payload
+    if expires_at < time.time():
+        _RELATORIO_UNIFICADO_CACHE.pop(key, None)
+        return None
+    return {
+        'rows': list(data.get('rows') or []),
+        'charts': dict(data.get('charts') or {}),
+        'total_linhas': int(data.get('total_linhas') or 0),
+        'total_recompensa': float(data.get('total_recompensa') or 0.0),
+        'cache_hit': True,
+    }
+
+
+def _cache_set_relatorio_unificado(key: tuple, data: dict[str, Any]) -> None:
+    now = time.time()
+    expired_keys = [k for k, (exp, _v) in _RELATORIO_UNIFICADO_CACHE.items() if exp < now]
+    for k in expired_keys:
+        _RELATORIO_UNIFICADO_CACHE.pop(k, None)
+    if len(_RELATORIO_UNIFICADO_CACHE) >= _RELATORIO_UNIFICADO_CACHE_MAX:
+        oldest_keys = sorted(_RELATORIO_UNIFICADO_CACHE.items(), key=lambda item: item[1][0])[: max(1, _RELATORIO_UNIFICADO_CACHE_MAX // 4)]
+        for k, _ in oldest_keys:
+            _RELATORIO_UNIFICADO_CACHE.pop(k, None)
+    _RELATORIO_UNIFICADO_CACHE[key] = (
+        now + _RELATORIO_UNIFICADO_CACHE_TTL,
+        {
+            'rows': list(data.get('rows') or []),
+            'charts': dict(data.get('charts') or {}),
+            'total_linhas': int(data.get('total_linhas') or 0),
+            'total_recompensa': float(data.get('total_recompensa') or 0.0),
+        },
+    )
+
+
 from services.relatorio_unificado_service import build_unified_rows, aggregate_for_charts
 
 def build_relatorio_campanhas_unificado_context(
@@ -549,12 +617,16 @@ def build_relatorio_campanhas_unificado_context(
     vendedores_por_emp: dict[str, list[str]],
     recalc: bool,
     flash: Callable[[str, str], None],
+    include_combo_itens: bool = False,
+    use_cache: bool = True,
 ) -> dict[str, Any]:
     """
     Novo contexto (v2) para relatorio_campanhas.html — visão consolidada.
 
     - NÃO recalcula por padrão (performance).
-    - Se `recalc=True`, dispara recálculo dos snapshots QTD/COMBO e (opcionalmente) persiste snapshot de Itens Parados.
+    - Se `recalc=True`, dispara recálculo dos snapshots QTD/COMBO.
+    - Itens de combo podem ser carregados sob demanda para reduzir payload inicial.
+    - Mantém cache curto por filtro para supervisor/admin durante navegação.
     """
 
     role_l = (role or "").strip().lower()
@@ -589,32 +661,61 @@ def build_relatorio_campanhas_unificado_context(
             flash("Não foi possível recalcular agora. Tente novamente em instantes.", "warning")
             print(f"[RELATORIO_UNIFICADO] erro recalc: {e}")
 
-    # Monta linhas unificadas
-    try:
-        rows = build_unified_rows(
-            ano=ano,
-            mes=mes,
-            emps=emps_sel,
-            vendedores_por_emp=vendedores_por_emp,
-            incluir_zerados=False,
-            usar_snapshot_itens_parados=True,
-            role=role_l,
-        )
-        if rows is None:
-            rows = []
-    except Exception as e:
+    cache_key = _cache_key_relatorio_unificado(
+        role=role_l,
+        vendedor_logado=vendedor_logado,
+        ano=ano,
+        mes=mes,
+        emps_sel=emps_sel,
+        vendedores_sel=vendedores_sel,
+        vendedores_por_emp=vendedores_por_emp,
+        include_combo_itens=include_combo_itens,
+    )
+
+    cached = None
+    if use_cache and not recalc:
+        cached = _cache_get_relatorio_unificado(cache_key)
+
+    if cached:
+        rows = cached.get("rows") or []
+        charts = cached.get("charts") or {}
+        total_linhas = int(cached.get("total_linhas") or 0)
+        total_recompensa = float(cached.get("total_recompensa") or 0.0)
+    else:
+        # Monta linhas unificadas
         try:
-            deps.SessionLocal().rollback()
-        except Exception:
-            pass
-        print(f"[RELATORIO_UNIFICADO] erro ao montar rows: {e}")
-        rows = []
+            rows = build_unified_rows(
+                ano=ano,
+                mes=mes,
+                emps=emps_sel,
+                vendedores_por_emp=vendedores_por_emp,
+                incluir_zerados=False,
+                usar_snapshot_itens_parados=True,
+                include_combo_itens=include_combo_itens,
+            )
+            if rows is None:
+                rows = []
+        except Exception as e:
+            try:
+                deps.SessionLocal().rollback()
+            except Exception:
+                pass
+            print(f"[RELATORIO_UNIFICADO] erro ao montar rows: {e}")
+            rows = []
 
-    charts = aggregate_for_charts(rows or [])
+        charts = aggregate_for_charts(rows or [])
 
-    # Stats básicos
-    total_linhas = len(rows or [])
-    total_recompensa = charts.get("total_recompensa", 0.0)
+        # Stats básicos
+        total_linhas = len(rows or [])
+        total_recompensa = charts.get("total_recompensa", 0.0)
+
+        if use_cache:
+            _cache_set_relatorio_unificado(cache_key, {
+                "rows": rows,
+                "charts": charts,
+                "total_linhas": total_linhas,
+                "total_recompensa": total_recompensa,
+            })
 
     return {
         "ano": ano,
@@ -630,4 +731,6 @@ def build_relatorio_campanhas_unificado_context(
         "total_linhas": total_linhas,
         "total_recompensa": total_recompensa,
         "recalc": recalc,
+        "include_combo_itens": bool(include_combo_itens),
+        "cache_ttl_seconds": _RELATORIO_UNIFICADO_CACHE_TTL,
     }

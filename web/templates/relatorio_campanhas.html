@@ -62,7 +62,7 @@
     <div class="sv-pagehead__left">
       <div class="sv-breadcrumb">Relatórios <span class="sv-muted">/</span> Campanhas</div>
       <h1 class="sv-h1">Campanhas do mês</h1>
-      <div class="sv-sub">Filtre por EMP e vendedor. Use <strong>Recalcular</strong> quando importar vendas.</div>
+      <div class="sv-sub">Filtre por EMP e vendedor. Use <strong>Recalcular</strong> quando importar vendas. Itens de combo são carregados sob demanda para acelerar a página.</div>
     </div>
     <div class="sv-pagehead__right">
       <a class="sv-btn sv-btn-ghost" href="{{ ctx.get('recalc_url') or url_for('relatorio_campanhas', recalc=1, page=1) }}">
@@ -324,6 +324,7 @@
                                 <button type="button"
                                         class="sv-combo-toggle js-toggle-combo"
                                         data-target="{{ combo_dom_id }}"
+                                        data-detail-url="{{ c.detail_url or '' }}"
                                         aria-expanded="false">
                                   {{ c.titulo }}
                                   <span class="sv-muted"> • ver itens</span>
@@ -366,40 +367,10 @@
                             {% set totals.vendeu = totals.vendeu + (c.vendeu_rs or 0) %}
                             {% set totals.premio = totals.premio + (c.valor or 0) %}
                             <tr>
-                              <td class="sv-nowrap">
-                                <div>
-                                  <div>
-                                    {% if c.tipo == 'META' %}
-                                      <span class="sv-pill sv-pill-info">META</span>
-                                    {% elif c.tipo == 'RANKING_MARCA' %}
-                                      <span class="sv-pill sv-pill-warn">RANKING</span>
-                                    {% elif c.tipo == 'PARADO' %}
-                                      <span class="sv-pill sv-pill-ok">ITENS PARADOS</span>
-                                    {% elif c.tipo == 'QTD' %}
-                                      <span class="sv-pill">CAMPANHA</span>
-                                    {% endif %}
-                                    <span class="sv-strong">{{ c.titulo }}</span>
-                                  </div>
-                                  {% if c.info_aux %}
-                                    <div class="sv-muted sv-small">{{ c.info_aux }}</div>
-                                  {% endif %}
-                                </div>
-                              </td>
-                              <td class="sv-center">
-                                {% if c.qtd_minima is not none and c.qtd_minima != '' %}
-                                  {{ c.qtd_minima }}
-                                {% else %}
-                                  -
-                                {% endif %}
-                              </td>
-                              <td class="sv-right">
-                                {% if c.recompensa_unit is not none and c.recompensa_unit != '' and c.recompensa_unit %}
-                                  {{ c.recompensa_unit|brl_rs }}
-                                {% else %}
-                                  -
-                                {% endif %}
-                              </td>
-                              <td class="sv-center">{{ c.metrica_display or (c.qtd_vendida or 0) }}</td>
+                              <td class="sv-nowrap">{{ c.titulo }}</td>
+                              <td class="sv-center">{{ (c.qtd_minima or '-') }}</td>
+                              <td class="sv-right">{{ (c.recompensa_unit or 0)|brl_rs }}</td>
+                              <td class="sv-center">{{ (c.qtd_vendida or 0) }}</td>
                               <td class="sv-right">{{ (c.vendeu_rs or 0)|brl_rs }}</td>
                               <td class="sv-right">{{ (c.valor or 0)|brl_rs }}</td>
                               <td class="sv-center">
@@ -432,7 +403,7 @@
                   </div>
 
                   <div class="sv-note">
-                    Obs.: “Valor (R$)” mostra a premiação efetiva do período. Em campanhas do tipo combo, a recompensa só é liberada quando todos os requisitos do combo forem atingidos. Em Itens Parados, a coluna “Qtd vendida” representa os pontos do período e “Recomp. (R$/un)” representa o valor por ponto. Em Metas e Ranking por Marca, a coluna “Qtd vendida” pode exibir a métrica principal do resultado (ex.: crescimento, share, mix ou posição). “Vendeu (R$)” = soma do valor vendido considerado no cálculo da campanha na competência. Em Itens Parados, a premiação só entra no total do vendedor quando ele atinge 10,00 pontos ou mais no período.
+                    Obs.: “Valor (R$)” mostra a premiação efetiva do período. Em campanhas do tipo combo, a recompensa só é liberada quando todos os requisitos do combo forem atingidos. Em Itens Parados, a coluna “Qtd vendida” representa os pontos do período e “Recomp. (R$/un)” representa o valor por ponto. “Vendeu (R$)” = soma do valor total vendido dos itens da campanha na competência. Em Itens Parados, a premiação só entra no total do vendedor quando ele atinge 10,00 pontos ou mais no período.
                   </div>
                 </div>
               </td>
@@ -511,8 +482,58 @@
 
 
 
-  // Toggle de itens de COMBO (expande/colapsa linhas filhas)
+  // Toggle de itens de COMBO (expande/colapsa linhas filhas com carregamento sob demanda)
   (function(){
+    function fmtBrl(value){
+      var n = Number(value || 0);
+      try {
+        return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(n);
+      } catch(_e){
+        return 'R$ ' + n.toFixed(2).replace('.', ',');
+      }
+    }
+
+    function fmtNumber(value){
+      var n = Number(value || 0);
+      return Number.isInteger(n) ? String(n) : n.toFixed(2).replace('.', ',');
+    }
+
+    function escapeHtml(value){
+      return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function statusPill(atingiu){
+      return atingiu
+        ? '<span class="sv-pill sv-pill--ok">ATINGIU</span>'
+        : '<span class="sv-pill sv-pill--warn">NÃO ATINGIU</span>';
+    }
+
+    function buildComboRows(btn, target, items){
+      var headerRow = btn.closest('tr');
+      if(!headerRow) return [];
+      var htmlRows = [];
+      (items || []).forEach(function(it){
+        htmlRows.push(
+          '<tr class="sv-combo-item ' + target + '" style="display:none;">' +
+            '<td class="sv-nowrap">' + escapeHtml(it.titulo || 'Item') + '</td>' +
+            '<td class="sv-center">' + (it.qtd_minima == null ? '-' : fmtNumber(it.qtd_minima)) + '</td>' +
+            '<td class="sv-right">' + fmtBrl(it.recompensa_unit || 0) + '</td>' +
+            '<td class="sv-center">' + fmtNumber(it.qtd_vendida || 0) + '</td>' +
+            '<td class="sv-right">' + fmtBrl(it.vendeu_rs || 0) + '</td>' +
+            '<td class="sv-right">' + fmtBrl(it.valor || 0) + '</td>' +
+            '<td class="sv-center">' + statusPill(!!it.atingiu) + '</td>' +
+          '</tr>'
+        );
+      });
+      headerRow.insertAdjacentHTML('afterend', htmlRows.join(''));
+      return document.querySelectorAll('tr.' + target);
+    }
+
     document.addEventListener('click', function(ev){
       var btn = ev.target.closest('.js-toggle-combo');
       if(!btn) return;
@@ -521,15 +542,48 @@
       if(!target) return;
 
       var rows = document.querySelectorAll('tr.' + target);
-      if(!rows || rows.length === 0) return;
+      var detailUrl = btn.getAttribute('data-detail-url') || '';
 
-      var anyHidden = false;
-      rows.forEach(function(r){ if(r.style.display === 'none' || r.style.display === '') anyHidden = true; });
+      function toggleRows(rowsToToggle){
+        if(!rowsToToggle || rowsToToggle.length === 0) return;
+        var anyHidden = false;
+        rowsToToggle.forEach(function(r){ if(r.style.display === 'none' || r.style.display === '') anyHidden = true; });
+        rowsToToggle.forEach(function(r){ r.style.display = anyHidden ? 'table-row' : 'none'; });
+        btn.setAttribute('aria-expanded', anyHidden ? 'true' : 'false');
+        btn.classList.toggle('is-open', anyHidden);
+      }
 
-      rows.forEach(function(r){ r.style.display = anyHidden ? 'table-row' : 'none'; });
+      if(rows && rows.length > 0){
+        toggleRows(rows);
+        return;
+      }
 
-      btn.setAttribute('aria-expanded', anyHidden ? 'true' : 'false');
-      btn.classList.toggle('is-open', anyHidden);
+      if(!detailUrl || btn.dataset.loading === '1'){
+        return;
+      }
+
+      btn.dataset.loading = '1';
+      var oldText = btn.innerHTML;
+      btn.innerHTML = String(oldText) + ' <span class="sv-muted">• carregando...</span>';
+
+      fetch(detailUrl, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+        .then(function(resp){ return resp.json(); })
+        .then(function(data){
+          if(!data || data.ok === false){
+            throw new Error((data && data.message) || 'Não foi possível carregar os itens do combo.');
+          }
+          var newRows = buildComboRows(btn, target, data.items || []);
+          btn.dataset.loaded = '1';
+          toggleRows(newRows);
+        })
+        .catch(function(err){
+          console.error(err);
+          window.alert('Não foi possível carregar os itens do combo agora.');
+        })
+        .finally(function(){
+          btn.dataset.loading = '0';
+          btn.innerHTML = oldText;
+        });
     });
   })();
 </script>

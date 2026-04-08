@@ -11,10 +11,11 @@ from __future__ import annotations
 from io import BytesIO
 from typing import Callable, Any
 
-from flask import flash, render_template, request, send_file, url_for
+from flask import flash, jsonify, render_template, request, send_file, url_for
 
 from services.campanhas_service import build_relatorio_campanhas_scope
 from services.relatorio_campanhas_service import build_relatorio_campanhas_unificado_context
+from services.relatorio_unificado_service import load_combo_item_details
 
 
 def register_relatorio_campanhas_routes(
@@ -74,6 +75,8 @@ def register_relatorio_campanhas_routes(
             vendedores_por_emp=vendedores_por_emp,
             recalc=str(request.args.get("recalc") or "").strip() in ("1", "true", "True", "sim", "SIM"),
             flash=flash,
+            include_combo_itens=False,
+            use_cache=True,
         )
 
         ctx["role"] = role
@@ -151,6 +154,18 @@ def register_relatorio_campanhas_routes(
 
             g["total"] += valor
             g["status_counts"][st if st in g["status_counts"] else "OUTROS"] += 1
+            tipo_camp = str(getattr(r, "tipo", "") or "").strip().upper()
+            origem_id = int(getattr(r, "origem_id", 0) or 0)
+            detail_url = None
+            if tipo_camp == "COMBO" and origem_id > 0 and not str(titulo or "").lstrip().startswith("↳"):
+                detail_url = url_for(
+                    "relatorio_campanhas_combo_itens",
+                    ano=ano,
+                    mes=mes,
+                    emp=emp_r,
+                    vendedor=vend_r,
+                    combo_id=origem_id,
+                )
             g["campanhas"].append({
                 "titulo": titulo,
                 "item_codigo": getattr(r, "item_codigo", None),
@@ -161,10 +176,9 @@ def register_relatorio_campanhas_routes(
                 "valor": valor,
                 "status": st,
                 "atingiu": bool(getattr(r, "atingiu", False)),
-                "tipo": str(getattr(r, "tipo", "") or "").strip().upper(),
-                "origem_id": int(getattr(r, "origem_id", 0) or 0),
-                "info_aux": getattr(r, "info_aux", None),
-                "metrica_display": getattr(r, "metrica_display", None),
+                "tipo": tipo_camp,
+                "origem_id": origem_id,
+                "detail_url": detail_url,
             })
 
         def _agg_status(counts):
@@ -199,13 +213,7 @@ def register_relatorio_campanhas_routes(
             g["campanhas"] = resto + combo_cards
             def _camp_sort_key(c):
                 tipo = str(c.get("tipo") or "").strip().upper()
-                tipo_ord = {
-                    'QTD': 1,
-                    'META': 2,
-                    'RANKING_MARCA': 3,
-                    'COMBO_CARD': 5,
-                    'PARADO': 9,
-                }.get(tipo, 4)
+                tipo_ord = 9 if tipo == 'PARADO' else (5 if tipo == 'COMBO_CARD' else 1)
                 status_ord = {"PENDENTE": 0, "A_PAGAR": 1, "PAGO": 2}.get(c.get("status"), 9)
                 return (tipo_ord, status_ord, -float(c.get("valor") or 0), str(c.get("titulo") or ""))
             g["campanhas"].sort(key=_camp_sort_key)
@@ -275,6 +283,56 @@ def register_relatorio_campanhas_routes(
 
         return render_template("relatorio_campanhas.html", ctx=ctx, **ctx)
 
+    def relatorio_campanhas_combo_itens():
+        """Carrega itens de um combo sob demanda para reduzir payload inicial da página."""
+        red = login_required_fn()
+        if red:
+            return red
+
+        role = (role_fn() or "").strip().lower()
+        emp_usuario = emp_fn()
+        vendedor_logado = (usuario_logado_fn() or "").strip().upper()
+
+        scope = build_relatorio_campanhas_scope(
+            deps,
+            role=role,
+            emp_usuario=emp_usuario,
+            vendedor_logado=vendedor_logado,
+            args=request.args,
+            flash=flash,
+        )
+
+        ano = int(scope["ano"])
+        mes = int(scope["mes"])
+        emps_scope = {str(e) for e in (scope.get("emps_scope") or []) if str(e).strip()}
+        vendedores_por_emp = scope.get("vendedores_por_emp") or {}
+
+        emp_req = str(request.args.get("emp") or "").strip()
+        vendedor_req = str(request.args.get("vendedor") or "").strip().upper()
+        combo_id = int(request.args.get("combo_id") or 0)
+
+        if not emp_req or not vendedor_req or combo_id <= 0:
+            return jsonify({"ok": False, "message": "Parâmetros inválidos."}), 400
+
+        if emp_req not in emps_scope:
+            return jsonify({"ok": False, "message": "EMP fora do escopo."}), 403
+
+        vendedores_emp = {str(v or '').strip().upper() for v in (vendedores_por_emp.get(emp_req) or []) if str(v or '').strip()}
+        if role == 'vendedor':
+            vendedores_emp = {vendedor_logado} if vendedor_logado else set()
+        if vendedor_req not in vendedores_emp:
+            return jsonify({"ok": False, "message": "Vendedor fora do escopo."}), 403
+
+        payload = load_combo_item_details(
+            ano=ano,
+            mes=mes,
+            emp=emp_req,
+            vendedor=vendedor_req,
+            combo_id=combo_id,
+        )
+        return jsonify(payload)
+
+
     def relatorio_campanhas_export_csv():
         """Exporta o relatório unificado (mes/ano/filtros) em CSV."""
         red = login_required_fn()
@@ -312,6 +370,8 @@ def register_relatorio_campanhas_routes(
             vendedores_por_emp=vendedores_por_emp,
             recalc=False,
             flash=flash,
+            include_combo_itens=True,
+            use_cache=True,
         )
 
         import csv
@@ -345,4 +405,5 @@ def register_relatorio_campanhas_routes(
         )
 
     app.add_url_rule("/relatorios/campanhas", endpoint="relatorio_campanhas", view_func=relatorio_campanhas, methods=["GET"])
+    app.add_url_rule("/relatorios/campanhas/combo-itens", endpoint="relatorio_campanhas_combo_itens", view_func=relatorio_campanhas_combo_itens, methods=["GET"])
     app.add_url_rule("/relatorios/campanhas/export.csv", endpoint="relatorio_campanhas_export_csv", view_func=relatorio_campanhas_export_csv, methods=["GET"])
