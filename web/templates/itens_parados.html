@@ -367,6 +367,100 @@
     padding: 24px 12px !important;
   }
 
+
+  .ip-user-page .ip-drawer{
+    border: 1px solid rgba(255,255,255,.06);
+    border-radius: 18px;
+    background: rgba(255,255,255,.02);
+    overflow: hidden;
+  }
+
+  .ip-user-page .ip-drawer + .ip-drawer{ margin-top: 12px; }
+
+  .ip-user-page .ip-drawer-summary{
+    list-style: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 16px 18px;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .ip-user-page .ip-drawer-summary::-webkit-details-marker,
+  .ip-user-page .ip-drawer-summary::marker{ display: none; content: ''; }
+
+  .ip-user-page .ip-drawer-summary:hover{
+    background: rgba(255,255,255,.025);
+  }
+
+  .ip-user-page .ip-drawer-title-wrap{
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .ip-user-page .ip-capsule{
+    display: inline-flex;
+    align-items: center;
+    width: fit-content;
+    padding: 5px 10px;
+    border-radius: 999px;
+    font-size: .74rem;
+    font-weight: 800;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    background: rgba(198,164,111,.10);
+    color: #ead8ba;
+    border: 1px solid rgba(198,164,111,.22);
+  }
+
+  .ip-user-page .ip-drawer-meta{
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    color: #d7dde5;
+    font-size: .84rem;
+  }
+
+  .ip-user-page .ip-drawer-toggle{
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 11px;
+    border-radius: 999px;
+    background: rgba(255,255,255,.04);
+    border: 1px solid rgba(255,255,255,.08);
+    color: #eef2f7;
+    font-weight: 700;
+  }
+
+  .ip-user-page .ip-drawer-toggle::before{
+    content: '+';
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 999px;
+    background: rgba(198,164,111,.12);
+    color: #f0ddb9;
+    font-size: .95rem;
+    line-height: 1;
+  }
+
+  .ip-user-page .ip-drawer[open] .ip-drawer-toggle::before{ content: '−'; }
+  .ip-user-page .ip-drawer[open] .ip-drawer-toggle span{ display:none; }
+  .ip-user-page .ip-drawer[open] .ip-drawer-toggle::after{ content:'Recolher'; }
+
+  .ip-user-page .ip-drawer-body{
+    padding: 0 0 0;
+    border-top: 1px solid rgba(255,255,255,.06);
+  }
+
   .ip-user-page .alert{
     border-radius: 16px;
     border: 1px solid rgba(255,255,255,.08);
@@ -397,6 +491,8 @@
 
   @media (max-width: 640px){
     .ip-user-page .ip-shell{ padding-inline: 0; }
+    .ip-user-page .ip-drawer-summary{ padding: 14px 14px; }
+    .ip-user-page .ip-drawer-meta{ justify-content: flex-start; }
     .ip-user-page .ip-hero,
     .ip-user-page .ip-card-head,
     .ip-user-page .ip-card-body{ padding-left: 16px; padding-right: 16px; }
@@ -577,43 +673,58 @@
               <div class="ip-toolbar">
                 <div>
                   <h3 class="ip-card-title-sm">Itens elegíveis</h3>
-                  <div class="ip-toolbar-meta">Produtos ativos usados para calcular a pontuação desta EMP.</div>
+                  <div class="ip-toolbar-meta">Agora em formato de gaveta por EMP, para reduzir peso visual e abrir só quando precisar consultar os itens ativos.</div>
                 </div>
               </div>
-              <div class="ip-table-wrap">
-                <div class="table-responsive">
-                  <table class="table table-hover align-middle mb-0">
-                    <thead>
-                      <tr>
-                        <th style="width:120px;">Código</th>
-                        <th>Descrição</th>
-                        <th class="text-end" style="width:140px;">Multiplicador</th>
-                        <th style="width:190px;">Período</th>
-                        <th style="width:110px;">Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {% for it in card.itens %}
-                        <tr>
-                          <td><code>{{ it.codigo }}</code></td>
-                          <td>{{ it.descricao or '-' }}</td>
-                          <td class="text-end">{{ "%.2f"|format(it.multiplicador_pontos) }}x</td>
-                          <td>
-                            {% if it.data_inicio or it.data_fim %}
-                              {{ it.data_inicio.strftime('%d/%m/%Y') if it.data_inicio else '...' }} até {{ it.data_fim.strftime('%d/%m/%Y') if it.data_fim else '...' }}
-                            {% else %}
-                              <span class="ip-muted">Sem vigência definida</span>
-                            {% endif %}
-                          </td>
-                          <td>
-                            <span class="ip-status">{{ 'Ativo' if it.ativo else 'Inativo' }}</span>
-                          </td>
-                        </tr>
-                      {% endfor %}
-                    </tbody>
-                  </table>
+              <details class="ip-drawer">
+                <summary class="ip-drawer-summary">
+                  <div class="ip-drawer-title-wrap">
+                    <span class="ip-capsule">EMP {{ card.emp }}</span>
+                    <div class="ip-card-title-sm">Abrir itens elegíveis da EMP {{ card.emp }}</div>
+                    <div class="ip-toolbar-meta">Clique para visualizar os produtos ativos que entram no cálculo da pontuação.</div>
+                  </div>
+                  <div class="ip-drawer-meta">
+                    <strong>{{ card.itens|length }}</strong> item(ns)
+                    <span class="ip-drawer-toggle"><span>Expandir</span></span>
+                  </div>
+                </summary>
+                <div class="ip-drawer-body">
+                  <div class="ip-table-wrap" style="border:0; border-radius:0;">
+                    <div class="table-responsive">
+                      <table class="table table-hover align-middle mb-0">
+                        <thead>
+                          <tr>
+                            <th style="width:120px;">Código</th>
+                            <th>Descrição</th>
+                            <th class="text-end" style="width:140px;">Multiplicador</th>
+                            <th style="width:190px;">Período</th>
+                            <th style="width:110px;">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {% for it in card.itens %}
+                            <tr>
+                              <td><code>{{ it.codigo }}</code></td>
+                              <td>{{ it.descricao or '-' }}</td>
+                              <td class="text-end">{{ "%.2f"|format(it.multiplicador_pontos) }}x</td>
+                              <td>
+                                {% if it.data_inicio or it.data_fim %}
+                                  {{ it.data_inicio.strftime('%d/%m/%Y') if it.data_inicio else '...' }} até {{ it.data_fim.strftime('%d/%m/%Y') if it.data_fim else '...' }}
+                                {% else %}
+                                  <span class="ip-muted">Sem vigência definida</span>
+                                {% endif %}
+                              </td>
+                              <td>
+                                <span class="ip-status">{{ 'Ativo' if it.ativo else 'Inativo' }}</span>
+                              </td>
+                            </tr>
+                          {% endfor %}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
                 </div>
-              </div>
+              </details>
             </section>
 
             <section>
