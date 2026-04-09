@@ -108,7 +108,6 @@ def _d(v: Any) -> Decimal:
         return Decimal("0")
 
 
-MIN_PONTOS_PAGAMENTO_ITENS_PARADOS = Decimal("10")
 ITENS_PARADOS_MOV_TIPOS_VENDA = ("OA", "VV", "SV")
 
 
@@ -553,14 +552,12 @@ def build_unified_rows(
                     valor_por_ponto = _d(getattr(cfg_emp, 'valor_por_ponto', None) or getattr(cfg_global, 'valor_por_ponto', 10.0) or 10.0)
                     for vend_u, data in acc.items():
                         pontos = data['pontos']
-                        elegivel_pagamento = pontos >= MIN_PONTOS_PAGAMENTO_ITENS_PARADOS
-                        bonus_base = _bonus_base_from_pontos(pontos, valor_por_ponto) if elegivel_pagamento else Decimal('0')
+                        bonus_base = _bonus_base_from_pontos(pontos, valor_por_ponto)
                         bonus_extra = Decimal('0')
-                        if elegivel_pagamento:
-                            for faixa in bonus_list:
-                                min_pontos = _d(getattr(faixa, 'min_pontos', 0) or 0)
-                                if pontos >= min_pontos:
-                                    bonus_extra = _d(getattr(faixa, 'bonus_valor', 0) or 0)
+                        for faixa in bonus_list:
+                            min_pontos = _d(getattr(faixa, 'min_pontos', 0) or 0)
+                            if pontos >= min_pontos:
+                                bonus_extra = _d(getattr(faixa, 'bonus_valor', 0) or 0)
                         valor_total = bonus_base + bonus_extra
                         if (not incluir_zerados) and valor_total <= 0 and pontos <= 0:
                             continue
@@ -575,7 +572,7 @@ def build_unified_rows(
                                 qtd_minima=None,
                                 recompensa_unit=_round2(valor_por_ponto),
                                 valor_vendido=_round2(data['valor_vendido']),
-                                atingiu_gate=bool(elegivel_pagamento),
+                                atingiu_gate=bool(valor_total > 0),
                                 qtd_base=_round2(pontos),
                                 qtd_premiada=None,
                                 valor_recompensa=_round2(valor_total),
