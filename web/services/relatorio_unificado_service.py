@@ -13,7 +13,7 @@ Objetivo:
 
 from dataclasses import dataclass
 from datetime import date
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal, ROUND_FLOOR, ROUND_HALF_UP
 from typing import Any
 
 from sqlalchemy import String, cast, func, or_
@@ -108,7 +108,17 @@ def _d(v: Any) -> Decimal:
         return Decimal("0")
 
 
-MIN_PONTOS_PAGAMENTO_ITENS_PARADOS = Decimal("10")
+ITENS_PARADOS_MOV_TIPOS_VENDA = ("OA", "VV", "SV")
+
+
+def _bonus_base_from_pontos(pontos: Decimal, valor_por_ponto: Decimal) -> Decimal:
+    pontos_validos = _d(pontos)
+    if pontos_validos <= 0:
+        return Decimal("0")
+    pontos_fechados = pontos_validos.quantize(Decimal("1"), rounding=ROUND_FLOOR)
+    if pontos_fechados <= 0:
+        return Decimal("0")
+    return pontos_fechados * _d(valor_por_ponto)
 
 
 def _round2(v: Any) -> float:
@@ -401,153 +411,163 @@ def build_unified_rows(
                         rows.extend(item_rows)
 
             # -------- ITENS PARADOS --------
-            # Prioridade:
-            # 1) snapshot legado (itens_parados_resultados), se existir e tiver linhas no mês
-            # 2) cálculo novo por pontos (ao vivo), agrupado em uma única linha por vendedor/EMP
-            # 3) fallback legado percentual, se houver cadastro antigo com recompensa_pct
+            # Regra atual: calcular ao vivo seguindo a página /itens_parados.
+            # Isso evita divergência com snapshots legados e garante consistência
+            # com a apuração vigente (OA/VV/SV + ponto fechado para baixo).
             par_rows_added = 0
-            if usar_snapshot_itens_parados and ItemParadoResultado is not None:
-                try:
-                    q_par = (
-                        db.query(ItemParadoResultado)
-                        .filter(
-                            ItemParadoResultado.competencia_ano == int(ano),
-                            ItemParadoResultado.competencia_mes == int(mes),
-                            ItemParadoResultado.emp == str(emp),
-                            ItemParadoResultado.vendedor.in_(vendedores),
-                        )
+            parados_defs = (
+                db.query(ItemParado)
+                .filter(ItemParado.ativo.is_(True), ItemParado.emp == str(emp))
+                .filter(or_(ItemParado.data_inicio.is_(None), ItemParado.data_inicio <= periodo_fim))
+                .filter(or_(ItemParado.data_fim.is_(None), ItemParado.data_fim >= periodo_ini))
+                .order_by(ItemParado.descricao.asc(), ItemParado.codigo.asc(), ItemParado.id.asc())
+                .all()
+            )
+
+            codigos = sorted({str(getattr(ip, 'codigo', '') or '').strip() for ip in parados_defs if str(getattr(ip, 'codigo', '') or '').strip()})
+            if codigos:
+                cfg_rows = (
+                    db.query(ItensParadosPontosConfig)
+                    .filter(ItensParadosPontosConfig.ativo.is_(True))
+                    .order_by(ItensParadosPontosConfig.id.desc())
+                    .all()
+                )
+                bonus_rows = (
+                    db.query(ItensParadosPontosBonus)
+                    .filter(ItensParadosPontosBonus.ativo.is_(True))
+                    .order_by(ItensParadosPontosBonus.emp.asc().nullsfirst(), ItensParadosPontosBonus.min_pontos.asc())
+                    .all()
+                )
+
+                cfg_global = next((c for c in cfg_rows if getattr(c, 'emp', None) in (None, '', 'NULL')), None)
+                cfg_emp = next((c for c in cfg_rows if str(getattr(c, 'emp', '') or '').strip() == str(emp)), None)
+                bonus_global = [b for b in bonus_rows if getattr(b, 'emp', None) in (None, '', 'NULL')]
+                bonus_emp = [b for b in bonus_rows if str(getattr(b, 'emp', '') or '').strip() == str(emp)]
+                bonus_list = bonus_emp or bonus_global
+
+                itens_por_codigo: dict[str, list[Any]] = {}
+                for ip in parados_defs:
+                    codigo = str(getattr(ip, 'codigo', '') or '').strip()
+                    if not codigo:
+                        continue
+                    itens_por_codigo.setdefault(codigo, []).append(ip)
+
+                vendas_rows = (
+                    db.query(
+                        Venda.vendedor,
+                        Venda.mestre,
+                        Venda.movimento,
+                        func.coalesce(func.sum(Venda.valor_total), 0.0),
                     )
-                    if not incluir_zerados:
-                        q_par = q_par.filter(or_(ItemParadoResultado.valor_recompensa > 0, ItemParadoResultado.base_valor_vendido > 0))
-                    par_all = q_par.all()
-                except Exception:
-                    par_all = []
-                for r in par_all:
+                    .filter(
+                        Venda.emp == str(emp),
+                        Venda.movimento >= periodo_ini,
+                        Venda.movimento <= periodo_fim,
+                        func.upper(func.coalesce(Venda.mov_tipo_movto, '')).in_(ITENS_PARADOS_MOV_TIPOS_VENDA),
+                        Venda.mestre.in_(codigos),
+                        Venda.vendedor.in_(vendedores),
+                    )
+                    .group_by(Venda.vendedor, Venda.mestre, Venda.movimento)
+                    .all()
+                )
+
+                acc: dict[str, dict[str, Decimal]] = {}
+                base_reais = _d(getattr(cfg_emp, 'base_reais', None) or getattr(cfg_global, 'base_reais', 100.0) or 100.0)
+                if base_reais <= 0:
+                    base_reais = Decimal('100')
+                valor_por_ponto = _d(getattr(cfg_emp, 'valor_por_ponto', None) or getattr(cfg_global, 'valor_por_ponto', 10.0) or 10.0)
+
+                for vend, mestre, movimento, total in vendas_rows:
+                    vend_u = _upper(vend)
+                    codigo = str(mestre or '').strip()
+                    if not vend_u or not codigo:
+                        continue
+                    total_dec = _d(total)
+                    if total_dec <= 0:
+                        continue
+                    pontos_sale = Decimal('0')
+                    elegivel = False
+                    mov_date = movimento if isinstance(movimento, date) else None
+                    for ip in itens_por_codigo.get(codigo, []):
+                        di = getattr(ip, 'data_inicio', None)
+                        df = getattr(ip, 'data_fim', None)
+                        if mov_date and di and mov_date < di:
+                            continue
+                        if mov_date and df and mov_date > df:
+                            continue
+                        mult = _d(getattr(ip, 'multiplicador_pontos', 1.0) or 1.0)
+                        if mult <= 0:
+                            mult = Decimal('1')
+                        pontos_sale += (total_dec / base_reais) * mult
+                        elegivel = True
+                    if not elegivel:
+                        continue
+                    cur = acc.setdefault(vend_u, {'valor_vendido': Decimal('0'), 'pontos': Decimal('0')})
+                    cur['valor_vendido'] += total_dec
+                    cur['pontos'] += pontos_sale
+
+                for vend_u, data in acc.items():
+                    pontos = data['pontos']
+                    bonus_base = _bonus_base_from_pontos(pontos, valor_por_ponto)
+                    bonus_extra = Decimal('0')
+                    for faixa in bonus_list:
+                        min_pontos = _d(getattr(faixa, 'min_pontos', 0) or 0)
+                        if pontos >= min_pontos:
+                            bonus_extra = _d(getattr(faixa, 'bonus_valor', 0) or 0)
+                    valor_total = bonus_base + bonus_extra
+                    if (not incluir_zerados) and valor_total <= 0 and pontos <= 0:
+                        continue
                     rows.append(
                         UnifiedRow(
                             tipo='PARADO',
-                            competencia_ano=int(getattr(r, 'competencia_ano', ano)),
-                            competencia_mes=int(getattr(r, 'competencia_mes', mes)),
-                            emp=str(getattr(r, 'emp', emp)),
-                            vendedor=_upper(getattr(r, 'vendedor', '')),
+                            competencia_ano=int(ano),
+                            competencia_mes=int(mes),
+                            emp=str(emp),
+                            vendedor=vend_u,
                             titulo='Itens Parados',
-                            recompensa_unit=_safe_float(getattr(r, 'recompensa_pct', 0.0)),
-                            valor_vendido=_safe_float(getattr(r, 'base_valor_vendido', 0.0)),
-                            atingiu_gate=True if _safe_float(getattr(r, 'valor_recompensa', 0.0)) > 0 else False,
-                            qtd_base=_safe_float(getattr(r, 'base_valor_vendido', 0.0)),
+                            qtd_minima=None,
+                            recompensa_unit=_round2(valor_por_ponto),
+                            valor_vendido=_round2(data['valor_vendido']),
+                            atingiu_gate=bool(valor_total > 0),
+                            qtd_base=_round2(pontos),
                             qtd_premiada=None,
-                            valor_recompensa=_safe_float(getattr(r, 'valor_recompensa', 0.0)),
-                            status_pagamento=str(getattr(r, 'status_pagamento', 'PENDENTE') or 'PENDENTE'),
-                            pago_em=getattr(r, 'pago_em', None),
-                            origem_id=int(getattr(r, 'item_parado_id', 0) or 0),
+                            valor_recompensa=_round2(valor_total),
+                            status_pagamento='PENDENTE',
+                            pago_em=None,
+                            origem_id=0,
                         )
                     )
                     par_rows_added += 1
 
+            # Fallback legado percentual, apenas se nada do modelo novo foi gerado
             if par_rows_added == 0:
-                parados_defs = (
-                    db.query(ItemParado)
-                    .filter(ItemParado.ativo.is_(True), ItemParado.emp == str(emp))
-                    .filter(or_(ItemParado.data_inicio.is_(None), ItemParado.data_inicio <= periodo_fim))
-                    .filter(or_(ItemParado.data_fim.is_(None), ItemParado.data_fim >= periodo_ini))
-                    .order_by(ItemParado.descricao.asc(), ItemParado.codigo.asc(), ItemParado.id.asc())
-                    .all()
-                )
+                for ip in parados_defs:
+                    codigo = (getattr(ip, 'codigo', '') or '').strip()
+                    if not codigo:
+                        continue
+                    pct = _safe_float(getattr(ip, 'recompensa_pct', 0.0))
+                    if pct <= 0:
+                        continue
 
-                # Novo modelo por pontos
-                codigos = sorted({str(getattr(ip, 'codigo', '') or '').strip() for ip in parados_defs if str(getattr(ip, 'codigo', '') or '').strip()})
-                if codigos:
-                    cfg_rows = (
-                        db.query(ItensParadosPontosConfig)
-                        .filter(ItensParadosPontosConfig.ativo.is_(True))
-                        .order_by(ItensParadosPontosConfig.id.desc())
-                        .all()
-                    )
-                    bonus_rows = (
-                        db.query(ItensParadosPontosBonus)
-                        .filter(ItensParadosPontosBonus.ativo.is_(True))
-                        .order_by(ItensParadosPontosBonus.emp.asc().nullsfirst(), ItensParadosPontosBonus.min_pontos.asc())
-                        .all()
-                    )
-
-                    cfg_global = next((c for c in cfg_rows if getattr(c, 'emp', None) in (None, '', 'NULL')), None)
-                    cfg_emp = next((c for c in cfg_rows if str(getattr(c, 'emp', '') or '').strip() == str(emp)), None)
-                    bonus_global = [b for b in bonus_rows if getattr(b, 'emp', None) in (None, '', 'NULL')]
-                    bonus_emp = [b for b in bonus_rows if str(getattr(b, 'emp', '') or '').strip() == str(emp)]
-                    bonus_list = bonus_emp or bonus_global
-
-                    itens_por_codigo: dict[str, list[Any]] = {}
-                    for ip in parados_defs:
-                        codigo = str(getattr(ip, 'codigo', '') or '').strip()
-                        if not codigo:
-                            continue
-                        itens_por_codigo.setdefault(codigo, []).append(ip)
-
-                    vendas_rows = (
-                        db.query(
-                            Venda.vendedor,
-                            Venda.mestre,
-                            Venda.movimento,
-                            func.coalesce(func.sum(Venda.valor_total), 0.0),
-                        )
+                    base_rows = (
+                        db.query(Venda.vendedor, func.sum(Venda.valor_total))
                         .filter(
                             Venda.emp == str(emp),
                             Venda.movimento >= periodo_ini,
                             Venda.movimento <= periodo_fim,
-                            Venda.mov_tipo_movto == 'OA',
-                            Venda.mestre.in_(codigos),
+                            ~Venda.mov_tipo_movto.in_(['DS', 'CA']),
+                            Venda.mestre == codigo,
                             Venda.vendedor.in_(vendedores),
                         )
-                        .group_by(Venda.vendedor, Venda.mestre, Venda.movimento)
+                        .group_by(Venda.vendedor)
                         .all()
                     )
 
-                    acc: dict[str, dict[str, Decimal]] = {}
-                    for vend, mestre, movimento, total in vendas_rows:
+                    for vend, base_val in base_rows:
                         vend_u = _upper(vend)
-                        codigo = str(mestre or '').strip()
-                        if not vend_u or not codigo:
-                            continue
-                        total_dec = _d(total)
-                        if total_dec <= 0:
-                            continue
-                        pontos_sale = Decimal('0')
-                        elegivel = False
-                        mov_date = movimento if isinstance(movimento, date) else None
-                        for ip in itens_por_codigo.get(codigo, []):
-                            di = getattr(ip, 'data_inicio', None)
-                            df = getattr(ip, 'data_fim', None)
-                            if mov_date and di and mov_date < di:
-                                continue
-                            if mov_date and df and mov_date > df:
-                                continue
-                            mult = _d(getattr(ip, 'multiplicador_pontos', 1.0) or 1.0)
-                            if mult <= 0:
-                                mult = Decimal('1')
-                            base_reais = _d(getattr(cfg_emp, 'base_reais', None) or getattr(cfg_global, 'base_reais', 100.0) or 100.0)
-                            if base_reais <= 0:
-                                base_reais = Decimal('100')
-                            pontos_sale += (total_dec / base_reais) * mult
-                            elegivel = True
-                        if not elegivel:
-                            continue
-                        cur = acc.setdefault(vend_u, {'valor_vendido': Decimal('0'), 'pontos': Decimal('0')})
-                        cur['valor_vendido'] += total_dec
-                        cur['pontos'] += pontos_sale
-
-                    valor_por_ponto = _d(getattr(cfg_emp, 'valor_por_ponto', None) or getattr(cfg_global, 'valor_por_ponto', 10.0) or 10.0)
-                    for vend_u, data in acc.items():
-                        pontos = data['pontos']
-                        elegivel_pagamento = pontos >= MIN_PONTOS_PAGAMENTO_ITENS_PARADOS
-                        bonus_base = (pontos * valor_por_ponto) if elegivel_pagamento else Decimal('0')
-                        bonus_extra = Decimal('0')
-                        if elegivel_pagamento:
-                            for faixa in bonus_list:
-                                min_pontos = _d(getattr(faixa, 'min_pontos', 0) or 0)
-                                if pontos >= min_pontos:
-                                    bonus_extra = _d(getattr(faixa, 'bonus_valor', 0) or 0)
-                        valor_total = bonus_base + bonus_extra
-                        if (not incluir_zerados) and valor_total <= 0 and pontos <= 0:
+                        base_val_f = _safe_float(base_val)
+                        valor = base_val_f * (pct / 100.0)
+                        if (not incluir_zerados) and valor <= 0:
                             continue
                         rows.append(
                             UnifiedRow(
@@ -557,69 +577,17 @@ def build_unified_rows(
                                 emp=str(emp),
                                 vendedor=vend_u,
                                 titulo='Itens Parados',
-                                qtd_minima=None,
-                                recompensa_unit=_round2(valor_por_ponto),
-                                valor_vendido=_round2(data['valor_vendido']),
-                                atingiu_gate=bool(elegivel_pagamento),
-                                qtd_base=_round2(pontos),
+                                recompensa_unit=pct,
+                                valor_vendido=base_val_f,
+                                atingiu_gate=True if base_val_f > 0 else False,
+                                qtd_base=base_val_f,
                                 qtd_premiada=None,
-                                valor_recompensa=_round2(valor_total),
+                                valor_recompensa=valor,
                                 status_pagamento='PENDENTE',
                                 pago_em=None,
-                                origem_id=0,
+                                origem_id=int(getattr(ip, 'id', 0) or 0),
                             )
                         )
-                        par_rows_added += 1
-
-                # Fallback legado percentual, apenas se nada do modelo novo foi gerado
-                if par_rows_added == 0:
-                    for ip in parados_defs:
-                        codigo = (getattr(ip, 'codigo', '') or '').strip()
-                        if not codigo:
-                            continue
-                        pct = _safe_float(getattr(ip, 'recompensa_pct', 0.0))
-                        if pct <= 0:
-                            continue
-
-                        base_rows = (
-                            db.query(Venda.vendedor, func.sum(Venda.valor_total))
-                            .filter(
-                                Venda.emp == str(emp),
-                                Venda.movimento >= periodo_ini,
-                                Venda.movimento <= periodo_fim,
-                                ~Venda.mov_tipo_movto.in_(['DS', 'CA']),
-                                Venda.mestre == codigo,
-                                Venda.vendedor.in_(vendedores),
-                            )
-                            .group_by(Venda.vendedor)
-                            .all()
-                        )
-
-                        for vend, base_val in base_rows:
-                            vend_u = _upper(vend)
-                            base_val_f = _safe_float(base_val)
-                            valor = base_val_f * (pct / 100.0)
-                            if (not incluir_zerados) and valor <= 0:
-                                continue
-                            rows.append(
-                                UnifiedRow(
-                                    tipo='PARADO',
-                                    competencia_ano=int(ano),
-                                    competencia_mes=int(mes),
-                                    emp=str(emp),
-                                    vendedor=vend_u,
-                                    titulo='Itens Parados',
-                                    recompensa_unit=pct,
-                                    valor_vendido=base_val_f,
-                                    atingiu_gate=True if base_val_f > 0 else False,
-                                    qtd_base=base_val_f,
-                                    qtd_premiada=None,
-                                    valor_recompensa=valor,
-                                    status_pagamento='PENDENTE',
-                                    pago_em=None,
-                                    origem_id=int(getattr(ip, 'id', 0) or 0),
-                                )
-                            )
 
     rows.sort(key=lambda r: (r.emp, r.vendedor, r.tipo, r.titulo))
     return rows
