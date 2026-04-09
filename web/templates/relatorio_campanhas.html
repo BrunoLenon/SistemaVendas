@@ -47,6 +47,19 @@
 .sv-combo-toggle{background:none;border:0;color:inherit;padding:0;font:inherit;cursor:pointer;display:inline-flex;align-items:center;gap:.35rem;}
 .sv-combo-head td{font-weight:600;}
 .sv-combo-item td:first-child{padding-left:1.25rem;}
+
+/* Cards por EMP */
+.sv-emp-grid{display:grid;grid-template-columns:1fr;gap:14px;}
+.sv-emp-card{padding:0;overflow:hidden;}
+.sv-emp-card__head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;padding:14px 16px;border-bottom:1px solid rgba(255,255,255,.08);}
+.sv-emp-card__title{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+.sv-emp-card__meta{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;}
+.sv-emp-card__body{padding:0 12px 12px;}
+.sv-badge-emp{display:inline-flex;align-items:center;justify-content:center;min-width:58px;padding:8px 12px;border-radius:12px;background:rgba(255,153,0,.14);border:1px solid rgba(255,153,0,.28);font-weight:800;letter-spacing:.3px;color:#FFD08A;}
+@media (max-width: 920px){
+  .sv-emp-card__head{flex-direction:column;align-items:flex-start;}
+  .sv-emp-card__meta{justify-content:flex-start;}
+}
 </style>
 {% endblock %}
 {% block content %}
@@ -259,57 +272,77 @@
       </div>
     </div>
 
-    <div class="sv-tablewrap">
-      <table class="sv-table sv-table--grouped">
-        <thead>
-          <tr>
-            <th>EMP</th>
-            <th>Vendedor</th>
-            <th>Campanhas</th>
-            <th class="sv-right">Total (R$)</th>
-            <th>Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% set groups = rows_grouped_page|default(ctx.get('rows_grouped_page', [])) %}
-                    {% for g in groups %}
-            {# Linha principal #}
-            <tr class="sv-master-row">
-              <td class="sv-mono">{{ g.emp }}</td>
-              <td>
-                <div class="sv-strong">{{ g.vendedor }}</div>
-                <div class="sv-muted">Campanhas: {{ g.campanhas_count }} • Total: {{ g.total|brl_rs }}</div>
-              </td>
-              <td>
-                <button type="button"
-                        class="sv-btn sv-btn-ghost sv-btn-xs js-toggle-camps"
-                        data-target="sv-detail-{{ loop.index0 }}"
-                        data-detail-url="{{ g.detail_url }}"
-                        aria-expanded="false">
-                  Ver campanhas ({{ g.campanhas_count }})
-                  <span class="sv-chev" aria-hidden="true">▾</span>
-                </button>
-              </td>
-              <td class="sv-right">{{ g.total|brl_rs }}</td>
-              <td>
-                <span class="sv-pill {{ 'sv-pill-warn' if g.status=='PENDENTE' else ('sv-pill-info' if g.status=='A_PAGAR' else ('sv-pill-ok' if g.status=='PAGO' else '')) }}">{{ g.status }}</span>
-              </td>
-            </tr>
-
-            {# Linha expandida carregada sob demanda #}
-            <tr id="sv-detail-{{ loop.index0 }}" class="sv-detail-row" style="display:none;">
-              <td colspan="5">
-                <div class="sv-subcard sv-subcard--full js-detail-content">
-                  <div class="sv-muted">Clique em “Ver campanhas” para carregar o detalhe.</div>
-                </div>
-              </td>
-            </tr>
-          {% endfor %}
-          {% if groups|length == 0 %}
-            <tr><td colspan="5" class="sv-muted">Sem dados para os filtros escolhidos.</td></tr>
-          {% endif %}
-        </tbody>
-      </table>
+    {% set emp_cards = rows_grouped_cards_page|default(ctx.get('rows_grouped_cards_page', [])) %}
+    <div class="sv-emp-grid">
+      {% for card in emp_cards %}
+        {% set card_outer_loop = loop %}
+        <div class="sv-card sv-glass sv-emp-card">
+          <div class="sv-emp-card__head">
+            <div class="sv-emp-card__title">
+              <span class="sv-badge-emp">{{ card.emp }}</span>
+              <div>
+                <div class="sv-strong">Loja {{ card.emp }}</div>
+                <div class="sv-muted">{{ card.rows|length }} vendedor(es) • {{ card.campanhas_count }} campanha(s) • Total {{ card.total|brl_rs }}</div>
+              </div>
+            </div>
+            <div class="sv-emp-card__meta">
+              <span class="sv-pill sv-pill--warn">Pendente {{ card.status_counts.get('PENDENTE', 0) }}</span>
+              <span class="sv-pill sv-pill-info">A Pagar {{ card.status_counts.get('A_PAGAR', 0) }}</span>
+              <span class="sv-pill sv-pill--ok">Pago {{ card.status_counts.get('PAGO', 0) }}</span>
+            </div>
+          </div>
+          <div class="sv-emp-card__body">
+            <div class="sv-tablewrap">
+              <table class="sv-table sv-table--grouped">
+                <thead>
+                  <tr>
+                    <th>Vendedor</th>
+                    <th>Campanhas</th>
+                    <th class="sv-right">Total (R$)</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for g in card.rows %}
+                    <tr class="sv-master-row">
+                      <td>
+                        <div class="sv-strong">{{ g.vendedor }}</div>
+                        <div class="sv-muted">Campanhas: {{ g.campanhas_count }} • Total: {{ g.total|brl_rs }}</div>
+                      </td>
+                      <td>
+                        <button type="button"
+                                class="sv-btn sv-btn-ghost sv-btn-xs js-toggle-camps"
+                                data-target="sv-detail-{{ card_outer_loop.index0 }}-{{ loop.index0 }}"
+                                data-detail-url="{{ g.detail_url }}"
+                                aria-expanded="false">
+                          Ver campanhas ({{ g.campanhas_count }})
+                          <span class="sv-chev" aria-hidden="true">▾</span>
+                        </button>
+                      </td>
+                      <td class="sv-right">{{ g.total|brl_rs }}</td>
+                      <td>
+                        <span class="sv-pill {{ 'sv-pill-warn' if g.status=='PENDENTE' else ('sv-pill-info' if g.status=='A_PAGAR' else ('sv-pill-ok' if g.status=='PAGO' else '')) }}">{{ g.status }}</span>
+                      </td>
+                    </tr>
+                    <tr id="sv-detail-{{ card_outer_loop.index0 }}-{{ loop.index0 }}" class="sv-detail-row" style="display:none;">
+                      <td colspan="4">
+                        <div class="sv-subcard sv-subcard--full js-detail-content">
+                          <div class="sv-muted">Clique em “Ver campanhas” para carregar o detalhe.</div>
+                        </div>
+                      </td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      {% endfor %}
+      {% if emp_cards|length == 0 %}
+        <div class="sv-card sv-glass sv-section">
+          <div class="sv-muted">Sem dados para os filtros escolhidos.</div>
+        </div>
+      {% endif %}
     </div>
 
     <div class="sv-pager">

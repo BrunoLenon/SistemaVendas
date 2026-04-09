@@ -60,6 +60,50 @@ def _agg_status(counts: dict[str, int]) -> str:
     return "OUTROS"
 
 
+def _emp_sort_key(emp_value: str):
+    emp_s = str(emp_value or "").strip()
+    if not emp_s:
+        return (2, float("inf"), "")
+    if emp_s.isdigit():
+        return (0, int(emp_s), emp_s)
+    digits = ''.join(ch for ch in emp_s if ch.isdigit())
+    if digits:
+        try:
+            return (1, int(digits), emp_s)
+        except Exception:
+            pass
+    return (2, float("inf"), emp_s)
+
+
+def _build_emp_cards(groups):
+    cards_map: dict[str, dict[str, Any]] = {}
+    for g in (groups or []):
+        emp_r = str(g.get("emp") or "").strip() or "—"
+        card = cards_map.get(emp_r)
+        if not card:
+            card = {
+                "emp": emp_r,
+                "rows": [],
+                "total": 0.0,
+                "campanhas_count": 0,
+                "status_counts": {"PENDENTE": 0, "A_PAGAR": 0, "PAGO": 0, "OUTROS": 0},
+            }
+            cards_map[emp_r] = card
+        card["rows"].append(g)
+        card["total"] += float(g.get("total") or 0)
+        card["campanhas_count"] += int(g.get("campanhas_count") or 0)
+        counts = g.get("status_counts") or {}
+        for key in card["status_counts"].keys():
+            card["status_counts"][key] += int(counts.get(key) or 0)
+
+    cards = list(cards_map.values())
+    for card in cards:
+        card["status"] = _agg_status(card["status_counts"])
+        card["rows"].sort(key=lambda row: (-float(row.get("total") or 0), str(row.get("vendedor") or "")))
+    cards.sort(key=lambda card: _emp_sort_key(card.get("emp")))
+    return cards
+
+
 def _build_group_summaries(rows, *, ano: int, mes: int):
     groups_map: dict[tuple[str, str], dict[str, Any]] = {}
     for r in (rows or []):
@@ -95,7 +139,7 @@ def _build_group_summaries(rows, *, ano: int, mes: int):
     for g in rows_grouped:
         g["status"] = _agg_status(g["status_counts"])
 
-    rows_grouped.sort(key=lambda gg: (-gg["total"], gg["emp"], gg["vendedor"]))
+    rows_grouped.sort(key=lambda gg: (_emp_sort_key(gg.get("emp")), str(gg.get("vendedor") or "")))
     return rows_grouped
 
 
@@ -185,7 +229,7 @@ def _calc_resumo_financeiro(rows):
         vd["linhas"] += 1
         vd["total"] += valor
         vd["status"][st_key] += valor
-    resumo["por_emp_ordenado"] = sorted(resumo["por_emp"].items(), key=lambda kv: kv[1].get("total", 0.0), reverse=True)
+    resumo["por_emp_ordenado"] = sorted(resumo["por_emp"].items(), key=lambda kv: _emp_sort_key(kv[0]))
     return resumo
 
 
@@ -280,6 +324,7 @@ def register_relatorio_campanhas_routes(
         end = start + per_page
         ctx["rows_grouped"] = rows_grouped
         ctx["rows_grouped_page"] = rows_grouped[start:end]
+        ctx["rows_grouped_cards_page"] = _build_emp_cards(ctx["rows_grouped_page"])
         ctx["rows_page"] = ctx["rows_grouped_page"]
         ctx["page"] = page
         ctx["per_page"] = per_page
