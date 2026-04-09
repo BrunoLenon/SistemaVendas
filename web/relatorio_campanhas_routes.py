@@ -204,7 +204,14 @@ def register_relatorio_campanhas_routes(
             g["status"] = _agg_status(g["status_counts"])
             g["campanhas_count"] = len(g["campanhas"])
 
-        rows_grouped.sort(key=lambda gg: (-gg["total"], gg["emp"], gg["vendedor"]))
+        def _emp_sort_key(val):
+            s = str(val or "").strip()
+            try:
+                return (0, int(s))
+            except Exception:
+                return (1, s)
+
+        rows_grouped.sort(key=lambda gg: (_emp_sort_key(gg.get("emp")), -float(gg.get("total") or 0), str(gg.get("vendedor") or "")))
 
         total_rows = len(rows_grouped)
         start = (page - 1) * per_page
@@ -212,6 +219,44 @@ def register_relatorio_campanhas_routes(
         ctx["rows_grouped"] = rows_grouped
         ctx["rows_grouped_page"] = rows_grouped[start:end]
         ctx["rows_page"] = ctx["rows_grouped_page"]
+
+        emp_cards_map = {}
+        for g in (ctx["rows_grouped_page"] or []):
+            emp_key = str(g.get("emp") or "—").strip() or "—"
+            card = emp_cards_map.get(emp_key)
+            if not card:
+                card = {
+                    "emp": emp_key,
+                    "rows": [],
+                    "total": 0.0,
+                    "campanhas_count": 0,
+                    "status_counts": {"PENDENTE": 0, "A_PAGAR": 0, "PAGO": 0, "OUTROS": 0},
+                }
+                emp_cards_map[emp_key] = card
+            card["rows"].append(g)
+            card["total"] += float(g.get("total") or 0)
+            card["campanhas_count"] += int(g.get("campanhas_count") or 0)
+            st = str(g.get("status") or "PENDENTE").strip().upper()
+            card["status_counts"][st if st in card["status_counts"] else "OUTROS"] += 1
+
+        def _card_status(counts):
+            if counts.get("PENDENTE"):
+                return "PENDENTE"
+            if counts.get("A_PAGAR"):
+                return "A_PAGAR"
+            if counts.get("PAGO"):
+                return "PAGO"
+            return "OUTROS"
+
+        emp_cards_page = []
+        for emp_key in sorted(emp_cards_map.keys(), key=_emp_sort_key):
+            card = emp_cards_map[emp_key]
+            card["rows"].sort(key=lambda gg: (-float(gg.get("total") or 0), str(gg.get("vendedor") or "")))
+            card["vendedores_count"] = len(card["rows"])
+            card["status"] = _card_status(card["status_counts"])
+            emp_cards_page.append(card)
+        ctx["emp_cards_page"] = emp_cards_page
+
         ctx["page"] = page
         ctx["per_page"] = per_page
         ctx["total_rows"] = total_rows

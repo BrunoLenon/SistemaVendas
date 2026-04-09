@@ -34,8 +34,13 @@
 .sv-subtotals__line{ display:flex; gap:10px; color:rgba(255,255,255,.70); }
 .sv-subtotals__line strong{ color: var(--sv-accent, #ff9a00); }
 .sv-note{ margin-top:8px; font-size:12px; color:rgba(255,255,255,.62); }
-
-
+.sv-empcards{display:grid;gap:16px;}
+.sv-empcard{border:1px solid rgba(255,153,0,.18);border-radius:18px;background:linear-gradient(180deg, rgba(18,20,29,.96), rgba(12,14,20,.96));box-shadow:0 14px 30px rgba(0,0,0,.18);overflow:hidden;}
+.sv-empcard__head{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;padding:16px 18px;border-bottom:1px solid rgba(255,153,0,.12);background:linear-gradient(180deg, rgba(255,153,0,.07), rgba(255,153,0,.015));}
+.sv-empcard__title{font-size:18px;font-weight:800;color:#fff;}
+.sv-empcard__meta{display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:flex-end;}
+.sv-empcard__kpi{display:flex;flex-direction:column;align-items:flex-end;min-width:110px;}
+.sv-empcard .sv-tablewrap{margin:0;}
 
 .sv-subcard--full{ margin-top:0; overflow:auto; }
 .sv-detail-row > td{ padding-top:.35rem; padding-bottom:.9rem; }
@@ -259,161 +264,71 @@
       </div>
     </div>
 
-    <div class="sv-tablewrap">
-      <table class="sv-table sv-table--grouped">
-        <thead>
-          <tr>
-            <th>EMP</th>
-            <th>Vendedor</th>
-            <th>Campanhas</th>
-            <th class="sv-right">Total (R$)</th>
-            <th>Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% set groups = rows_grouped_page|default(ctx.get('rows_grouped_page', [])) %}
-                    {% for g in groups %}
-            {# Linha principal #}
-            <tr class="sv-master-row">
-              <td class="sv-mono">{{ g.emp }}</td>
-              <td>
-                <div class="sv-strong">{{ g.vendedor }}</div>
-                <div class="sv-muted">Campanhas: {{ g.campanhas_count }} • Total: {{ g.total|brl_rs }}</div>
-              </td>
-              <td>
-                <button type="button"
-                        class="sv-btn sv-btn-ghost sv-btn-xs js-toggle-camps"
-                        data-target="sv-detail-{{ loop.index0 }}"
-                        aria-expanded="false">
-                  Ver campanhas ({{ g.campanhas_count }})
-                  <span class="sv-chev" aria-hidden="true">▾</span>
-                </button>
-              </td>
-              <td class="sv-right">{{ g.total|brl_rs }}</td>
-              <td>
-                <span class="sv-pill {{ 'sv-pill-warn' if g.status=='PENDENTE' else ('sv-pill-info' if g.status=='A_PAGAR' else ('sv-pill-ok' if g.status=='PAGO' else '')) }}">{{ g.status }}</span>
-              </td>
-            </tr>
-
-            {# Linha expandida (modelo) - ocupa a tabela inteira #}
-            <tr id="sv-detail-{{ loop.index0 }}" class="sv-detail-row" style="display:none;">
-              <td colspan="5">
-                <div class="sv-subcard sv-subcard--full">
-                  <table class="sv-subtable sv-subtable--wide">
-                    <thead>
-                      <tr>
-                        <th>Campanha / Item</th>
-                        <th class="sv-center">Qtd mín.</th>
-                        <th class="sv-right">Recomp. (R$/un)</th>
-                        <th class="sv-center">Qtd vendida</th>
-                        <th class="sv-right">Vendeu (R$)</th>
-                        <th class="sv-right">Valor (R$)</th>
-                        <th class="sv-center">Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {% set totals = namespace(vendeu=0, premio=0) %}
-                      {% if g.campanhas and g.campanhas|length > 0 %}
-                        {% for c in g.campanhas %}
-                          {% if (c.tipo or '') == 'COMBO_CARD' %}
-                            {% set combo_dom_id = 'sv-combo-' ~ loop.index0 ~ '-' ~ (c.origem_id or 0) %}
-                            {% set totals.vendeu = totals.vendeu + (c.vendeu_rs or 0) %}
-                            {% set totals.premio = totals.premio + (c.valor or 0) %}
-                            <tr class="sv-combo-head">
-                              <td class="sv-nowrap">
-                                <button type="button"
-                                        class="sv-combo-toggle js-toggle-combo"
-                                        data-target="{{ combo_dom_id }}"
-                                        aria-expanded="false">
-                                  {{ c.titulo }}
-                                  <span class="sv-muted"> • ver itens</span>
-                                  <span class="sv-chev" aria-hidden="true">▾</span>
-                                </button>
-                              </td>
-                              <td class="sv-center">-</td>
-                              <td class="sv-right">-</td>
-                              <td class="sv-center">-</td>
-                              <td class="sv-right">{{ (c.vendeu_rs or 0)|brl_rs }}</td>
-                              <td class="sv-right">{{ (c.valor or 0)|brl_rs }}</td>
-                              <td class="sv-center">
-                                {% if c.atingiu %}
-                                  <span class="sv-pill sv-pill--ok">ATINGIU</span>
-                                {% else %}
-                                  <span class="sv-pill sv-pill--warn">NÃO ATINGIU</span>
-                                {% endif %}
-                              </td>
-                            </tr>
-                            {% if c.itens and c.itens|length > 0 %}
-                              {% for it in c.itens %}
-                                <tr class="sv-combo-item {{ combo_dom_id }}" style="display:none;">
-                                  <td class="sv-nowrap">{{ it.titulo }}</td>
-                                  <td class="sv-center">{{ (it.qtd_minima or '-') }}</td>
-                                  <td class="sv-right">{{ (it.recompensa_unit or 0)|brl_rs }}</td>
-                                  <td class="sv-center">{{ (it.qtd_vendida or 0) }}</td>
-                                  <td class="sv-right">{{ (it.vendeu_rs or 0)|brl_rs }}</td>
-                                  <td class="sv-right">{{ (it.valor or 0)|brl_rs }}</td>
-                                  <td class="sv-center">
-                                    {% if it.atingiu %}
-                                      <span class="sv-pill sv-pill--ok">ATINGIU</span>
-                                    {% else %}
-                                      <span class="sv-pill sv-pill--warn">NÃO ATINGIU</span>
-                                    {% endif %}
-                                  </td>
-                                </tr>
-                              {% endfor %}
-                            {% endif %}
-                          {% else %}
-                            {% set totals.vendeu = totals.vendeu + (c.vendeu_rs or 0) %}
-                            {% set totals.premio = totals.premio + (c.valor or 0) %}
-                            <tr>
-                              <td class="sv-nowrap">{{ c.titulo }}</td>
-                              <td class="sv-center">{{ (c.qtd_minima or '-') }}</td>
-                              <td class="sv-right">{{ (c.recompensa_unit or 0)|brl_rs }}</td>
-                              <td class="sv-center">{{ (c.qtd_vendida or 0) }}</td>
-                              <td class="sv-right">{{ (c.vendeu_rs or 0)|brl_rs }}</td>
-                              <td class="sv-right">{{ (c.valor or 0)|brl_rs }}</td>
-                              <td class="sv-center">
-                                {% if c.atingiu %}
-                                  <span class="sv-pill sv-pill--ok">ATINGIU</span>
-                                {% else %}
-                                  <span class="sv-pill sv-pill--warn">NÃO ATINGIU</span>
-                                {% endif %}
-                              </td>
-                            </tr>
-                          {% endif %}
-                        {% endfor %}
-                      {% else %}
-                        <tr>
-                          <td colspan="7" class="sv-muted">Sem campanhas para este vendedor.</td>
-                        </tr>
-                      {% endif %}
-                    </tbody>
-                  </table>
-
-                  <div class="sv-subtotals">
-                    <div class="sv-subtotals__line">
-                      <span>Total vendido em campanhas:</span>
-                      <strong>{{ totals.vendeu|brl_rs }}</strong>
-                    </div>
-                    <div class="sv-subtotals__line">
-                      <span>Total premiação:</span>
-                      <strong>{{ totals.premio|brl_rs }}</strong>
-                    </div>
-                  </div>
-
-                  <div class="sv-note">
-                    Obs.: “Valor (R$)” mostra a premiação efetiva do período. Em campanhas do tipo combo, a recompensa só é liberada quando todos os requisitos do combo forem atingidos. Em Itens Parados, a coluna “Qtd vendida” representa os pontos do período e “Recomp. (R$/un)” representa o valor por ponto. “Vendeu (R$)” = soma do valor total vendido dos itens da campanha na competência. Em Itens Parados, a premiação só entra no total do vendedor quando ele atinge 10,00 pontos ou mais no período.
-                  </div>
+    {% set emp_cards = emp_cards_page|default(ctx.get('emp_cards_page', [])) %}
+    {% if emp_cards and emp_cards|length > 0 %}
+      <div class="sv-empcards">
+        {% for card in emp_cards %}
+          <div class="sv-empcard">
+            <div class="sv-empcard__head">
+              <div>
+                <div class="sv-empcard__title">Loja {{ card.emp }}</div>
+                <div class="sv-muted">{{ card.vendedores_count }} vendedor(es) • {{ card.campanhas_count }} campanha(s)</div>
+              </div>
+              <div class="sv-empcard__meta">
+                <div class="sv-empcard__kpi">
+                  <span class="sv-muted">Total</span>
+                  <strong>{{ card.total|brl_rs }}</strong>
                 </div>
-              </td>
-            </tr>
-          {% endfor %}
-          {% if groups|length == 0 %}
-            <tr><td colspan="5" class="sv-muted">Sem dados para os filtros escolhidos.</td></tr>
-          {% endif %}
-        </tbody>
-      </table>
-    </div>
+                <span class="sv-pill {{ 'sv-pill-warn' if card.status=='PENDENTE' else ('sv-pill-info' if card.status=='A_PAGAR' else ('sv-pill-ok' if card.status=='PAGO' else '')) }}">{{ card.status }}</span>
+              </div>
+            </div>
+
+            <div class="sv-tablewrap">
+              <table class="sv-table sv-table--grouped">
+                <thead>
+                  <tr>
+                    <th>Vendedor</th>
+                    <th>Campanhas</th>
+                    <th class="sv-right">Total (R$)</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for g in card.rows %}
+                    {% set detail_id = 'sv-detail-' ~ card.emp ~ '-' ~ loop.index0 %}
+                    <tr class="sv-master-row">
+                      <td>
+                        <div class="sv-strong">{{ g.vendedor }}</div>
+                        <div class="sv-muted">Campanhas: {{ g.campanhas_count }} • Total: {{ g.total|brl_rs }}</div>
+                      </td>
+                      <td>
+                        <button type="button"
+                                class="sv-btn sv-btn-ghost sv-btn-xs js-toggle-camps"
+                                data-target="{{ detail_id }}"
+                                aria-expanded="false">
+                          Ver campanhas ({{ g.campanhas_count }})
+                          <span class="sv-chev" aria-hidden="true">▾</span>
+                        </button>
+                      </td>
+                      <td class="sv-right">{{ g.total|brl_rs }}</td>
+                      <td>
+                        <span class="sv-pill {{ 'sv-pill-warn' if g.status=='PENDENTE' else ('sv-pill-info' if g.status=='A_PAGAR' else ('sv-pill-ok' if g.status=='PAGO' else '')) }}">{{ g.status }}</span>
+                      </td>
+                    </tr>
+
+                    <tr id="{{ detail_id }}" class="sv-detail-row" style="display:none;">
+                      <td colspan="4">{% include '_relatorio_campanhas_detalhes.html' %}</td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="sv-muted">Sem dados para os filtros escolhidos.</div>
+    {% endif %}
 
     <div class="sv-pager">
       <a class="sv-btn sv-btn-ghost" href="{{ ctx.prev_url }}">◀ Anterior</a>
