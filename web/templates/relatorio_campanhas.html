@@ -50,15 +50,37 @@
 
 /* Cards por EMP */
 .sv-emp-grid{display:grid;grid-template-columns:1fr;gap:14px;}
-.sv-emp-card{padding:0;overflow:hidden;}
-.sv-emp-card__head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;padding:14px 16px;border-bottom:1px solid rgba(255,255,255,.08);}
-.sv-emp-card__title{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+.sv-emp-card{padding:0;overflow:hidden;position:relative;}
+.sv-emp-card::before{content:"";position:absolute;inset:0 0 auto 0;height:1px;background:linear-gradient(90deg, rgba(255,153,0,.0), rgba(255,153,0,.45), rgba(255,153,0,.0));pointer-events:none;}
+.sv-emp-card__head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;padding:16px;border-bottom:1px solid rgba(255,255,255,.08);background:linear-gradient(180deg, rgba(255,153,0,.08), rgba(255,153,0,.02));}
+.sv-emp-card__title{display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
 .sv-emp-card__meta{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;}
 .sv-emp-card__body{padding:0 12px 12px;}
-.sv-badge-emp{display:inline-flex;align-items:center;justify-content:center;min-width:58px;padding:8px 12px;border-radius:12px;background:rgba(255,153,0,.14);border:1px solid rgba(255,153,0,.28);font-weight:800;letter-spacing:.3px;color:#FFD08A;}
+.sv-badge-emp{display:inline-flex;align-items:center;justify-content:center;min-width:58px;padding:8px 12px;border-radius:12px;background:rgba(255,153,0,.14);border:1px solid rgba(255,153,0,.28);font-weight:800;letter-spacing:.3px;color:#FFD08A;box-shadow:inset 0 1px 0 rgba(255,255,255,.05);}
+.sv-emp-card__kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;padding:12px 16px;border-bottom:1px solid rgba(255,255,255,.06);background:rgba(255,255,255,.02);}
+.sv-mini-kpi{padding:10px 12px;border-radius:14px;border:1px solid rgba(255,255,255,.07);background:rgba(0,0,0,.18);}
+.sv-mini-kpi__label{font-size:11px;letter-spacing:.35px;text-transform:uppercase;color:rgba(255,255,255,.58);margin-bottom:6px;}
+.sv-mini-kpi__value{font-size:18px;font-weight:800;color:#fff;line-height:1.1;}
+.sv-mini-kpi__sub{margin-top:4px;font-size:11px;color:rgba(255,255,255,.58);}
+.sv-tablewrap--emp{padding-top:10px;}
+.sv-rank-badge{display:inline-flex;align-items:center;justify-content:center;min-width:28px;height:28px;padding:0 8px;margin-right:10px;border-radius:999px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.10);font-size:11px;font-weight:800;color:rgba(255,255,255,.72);}
+.sv-vendor-meta{display:flex;align-items:flex-start;gap:10px;}
+.sv-vendor-lines{min-width:0;flex:1;}
+.sv-vendor-progress{margin-top:8px;height:7px;border-radius:999px;background:rgba(255,255,255,.06);overflow:hidden;}
+.sv-vendor-progress__bar{height:100%;border-radius:999px;background:linear-gradient(90deg, rgba(255,153,0,.45), rgba(255,153,0,.92));}
+.sv-vendor-progress__meta{margin-top:4px;font-size:11px;color:rgba(255,255,255,.52);}
+.sv-status-stack{display:flex;gap:8px;flex-wrap:wrap;}
+.sv-status-chip{display:inline-flex;align-items:center;gap:6px;padding:7px 10px;border-radius:999px;font-size:11px;font-weight:800;letter-spacing:.2px;border:1px solid transparent;}
+.sv-status-chip--pendente{background:rgba(255,165,0,.12);border-color:rgba(255,165,0,.26);color:#FFD08A;}
+.sv-status-chip--apagar{background:rgba(86,163,255,.12);border-color:rgba(86,163,255,.26);color:#B7D7FF;}
+.sv-status-chip--pago{background:rgba(29,200,110,.14);border-color:rgba(29,200,110,.28);color:#B7F7D0;}
 @media (max-width: 920px){
   .sv-emp-card__head{flex-direction:column;align-items:flex-start;}
   .sv-emp-card__meta{justify-content:flex-start;}
+  .sv-emp-card__kpis{grid-template-columns:repeat(2,minmax(0,1fr));}
+}
+@media (max-width: 640px){
+  .sv-emp-card__kpis{grid-template-columns:1fr;}
 }
 </style>
 {% endblock %}
@@ -276,23 +298,48 @@
     <div class="sv-emp-grid">
       {% for card in emp_cards %}
         {% set card_outer_loop = loop %}
+        {% set top_total = (card.rows[0].total if card.rows else 0) %}
         <div class="sv-card sv-glass sv-emp-card">
           <div class="sv-emp-card__head">
             <div class="sv-emp-card__title">
               <span class="sv-badge-emp">{{ card.emp }}</span>
               <div>
                 <div class="sv-strong">Loja {{ card.emp }}</div>
-                <div class="sv-muted">{{ card.rows|length }} vendedor(es) • {{ card.campanhas_count }} campanha(s) • Total {{ card.total|brl_rs }}</div>
+                <div class="sv-muted">Resumo consolidado da EMP no período filtrado.</div>
               </div>
             </div>
             <div class="sv-emp-card__meta">
-              <span class="sv-pill sv-pill--warn">Pendente {{ card.status_counts.get('PENDENTE', 0) }}</span>
-              <span class="sv-pill sv-pill-info">A Pagar {{ card.status_counts.get('A_PAGAR', 0) }}</span>
-              <span class="sv-pill sv-pill--ok">Pago {{ card.status_counts.get('PAGO', 0) }}</span>
+              <div class="sv-status-stack">
+                <span class="sv-status-chip sv-status-chip--pendente">Pendente {{ card.status_counts.get('PENDENTE', 0) }}</span>
+                <span class="sv-status-chip sv-status-chip--apagar">A Pagar {{ card.status_counts.get('A_PAGAR', 0) }}</span>
+                <span class="sv-status-chip sv-status-chip--pago">Pago {{ card.status_counts.get('PAGO', 0) }}</span>
+              </div>
+            </div>
+          </div>
+          <div class="sv-emp-card__kpis">
+            <div class="sv-mini-kpi">
+              <div class="sv-mini-kpi__label">Vendedores</div>
+              <div class="sv-mini-kpi__value">{{ card.rows|length }}</div>
+              <div class="sv-mini-kpi__sub">Com campanha no período</div>
+            </div>
+            <div class="sv-mini-kpi">
+              <div class="sv-mini-kpi__label">Campanhas</div>
+              <div class="sv-mini-kpi__value">{{ card.campanhas_count }}</div>
+              <div class="sv-mini-kpi__sub">Linhas consolidadas da loja</div>
+            </div>
+            <div class="sv-mini-kpi">
+              <div class="sv-mini-kpi__label">Premiação total</div>
+              <div class="sv-mini-kpi__value">{{ card.total|brl_rs }}</div>
+              <div class="sv-mini-kpi__sub">Somatório do card</div>
+            </div>
+            <div class="sv-mini-kpi">
+              <div class="sv-mini-kpi__label">Status dominante</div>
+              <div class="sv-mini-kpi__value">{{ card.status }}</div>
+              <div class="sv-mini-kpi__sub">Prioridade: Pendente → A Pagar → Pago</div>
             </div>
           </div>
           <div class="sv-emp-card__body">
-            <div class="sv-tablewrap">
+            <div class="sv-tablewrap sv-tablewrap--emp">
               <table class="sv-table sv-table--grouped">
                 <thead>
                   <tr>
@@ -304,10 +351,20 @@
                 </thead>
                 <tbody>
                   {% for g in card.rows %}
+                    {% set pct = ((g.total / top_total) * 100) if top_total else 0 %}
                     <tr class="sv-master-row">
                       <td>
-                        <div class="sv-strong">{{ g.vendedor }}</div>
-                        <div class="sv-muted">Campanhas: {{ g.campanhas_count }} • Total: {{ g.total|brl_rs }}</div>
+                        <div class="sv-vendor-meta">
+                          <span class="sv-rank-badge">#{{ loop.index }}</span>
+                          <div class="sv-vendor-lines">
+                            <div class="sv-strong">{{ g.vendedor }}</div>
+                            <div class="sv-muted">{{ g.campanhas_count }} campanha(s) • Total {{ g.total|brl_rs }}</div>
+                            <div class="sv-vendor-progress">
+                              <div class="sv-vendor-progress__bar" style="width: {{ '%.1f'|format(pct) }}%;"></div>
+                            </div>
+                            <div class="sv-vendor-progress__meta">{{ '%.1f'|format(pct) }}% do maior total desta loja</div>
+                          </div>
+                        </div>
                       </td>
                       <td>
                         <button type="button"
