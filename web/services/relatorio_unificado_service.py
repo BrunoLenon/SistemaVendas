@@ -21,6 +21,7 @@ from sqlalchemy import String, cast, func, or_
 from db import (
     SessionLocal,
     Venda,
+    CampanhaQtd,
     CampanhaQtdResultado,
     CampanhaComboResultado,
     CampanhaCombo,
@@ -128,6 +129,97 @@ def _round2(v: Any) -> float:
         return 0.0
 
 
+
+
+def _campanhas_qtd_mes_overlap(db, ano: int, mes: int, emp: str) -> list[Any]:
+    periodo_ini, periodo_fim = _periodo_bounds(ano, mes)
+    emp_s = str(emp)
+    return (
+        db.query(CampanhaQtd)
+        .filter(CampanhaQtd.ativo == 1)
+        .filter(
+            or_(
+                cast(CampanhaQtd.emp, String) == emp_s,
+                CampanhaQtd.emp.in_(['ALL', '*', '']),
+            )
+        )
+        .filter(CampanhaQtd.data_inicio <= periodo_fim, CampanhaQtd.data_fim >= periodo_ini)
+        .order_by(CampanhaQtd.data_inicio.asc(), CampanhaQtd.id.asc())
+        .all()
+    )
+
+
+def _build_qtd_escolhidas_por_vendedor(campanhas: list[Any], vendedores: list[str]) -> dict[str, list[Any]]:
+    geral_by_key: dict[tuple[str, str, str], Any] = {}
+    especificas: dict[str, dict[tuple[str, str, str], Any]] = {}
+
+    for c in (campanhas or []):
+        campo_match = (getattr(c, 'campo_match', None) or 'codigo').strip().lower()
+        if campo_match == 'descricao':
+            pref = (getattr(c, 'descricao_prefixo', '') or '').strip() or (getattr(c, 'produto_prefixo', '') or '').strip()
+            key = ('descricao', pref.lower().strip(), (getattr(c, 'marca', '') or '').strip().upper())
+        else:
+            key = ('codigo', (getattr(c, 'produto_prefixo', '') or '').strip().upper(), (getattr(c, 'marca', '') or '').strip().upper())
+
+        vend_especifico = (getattr(c, 'vendedor', None) or '').strip().upper()
+        if vend_especifico:
+            especificas.setdefault(vend_especifico, {})[key] = c
+        else:
+            geral_by_key.setdefault(key, c)
+
+    escolhidas: dict[str, list[Any]] = {}
+    for vend in (vendedores or []):
+        base = dict(geral_by_key)
+        if vend in especificas:
+            base.update(especificas[vend])
+        escolhidas[vend] = list(base.values())
+    return escolhidas
+
+
+def _calc_vendas_por_vendedor_para_campanha(db, emp: str, campanha: Any, periodo_ini: date, periodo_fim: date) -> dict[str, tuple[float, float]]:
+    campo_match = (getattr(campanha, 'campo_match', None) or 'codigo').strip().lower()
+    emp_s = str(emp)
+
+    if campo_match == 'descricao':
+        prefix_raw = (getattr(campanha, 'descricao_prefixo', '') or '').strip() or (getattr(campanha, 'produto_prefixo', '') or '').strip()
+        import unicodedata, re as _re
+        prefix_norm = ''.join(c for c in unicodedata.normalize('NFKD', prefix_raw) if not unicodedata.combining(c))
+        prefix_norm = _re.sub(r'\s+', ' ', prefix_norm).strip().lower()
+        campo_item = func.lower(func.trim(func.coalesce(Venda.descricao_norm, '')))
+        cond_prefix = campo_item.like(prefix_norm + '%')
+    else:
+        prefix = (getattr(campanha, 'produto_prefixo', '') or '').strip().upper()
+        campo_item = func.upper(func.trim(cast(Venda.mestre, String)))
+        cond_prefix = campo_item.like(prefix + '%')
+
+    conds = [
+        Venda.emp == emp_s,
+        Venda.movimento >= periodo_ini,
+        Venda.movimento <= periodo_fim,
+        ~Venda.mov_tipo_movto.in_(['DS', 'CA']),
+        cond_prefix,
+    ]
+
+    marca_up = (getattr(campanha, 'marca', '') or '').strip().upper()
+    if marca_up:
+        conds.append(func.upper(func.trim(cast(Venda.marca, String))) == marca_up)
+
+    q = (
+        db.query(
+            func.upper(func.trim(cast(Venda.vendedor, String))).label('vendedor'),
+            func.coalesce(func.sum(Venda.qtdade_vendida), 0.0).label('qtd'),
+            func.coalesce(func.sum(Venda.valor_total), 0.0).label('valor'),
+        )
+        .filter(*conds)
+        .group_by(func.upper(func.trim(cast(Venda.vendedor, String))))
+    )
+    out: dict[str, tuple[float, float]] = {}
+    for r in q.all():
+        vend_u = _upper(getattr(r, 'vendedor', ''))
+        if vend_u:
+            out[vend_u] = (_safe_float(getattr(r, 'qtd', 0.0)), _safe_float(getattr(r, 'valor', 0.0)))
+    return out
+
 def build_unified_rows(
     *,
     ano: int,
@@ -153,7 +245,19 @@ def build_unified_rows(
             if not vendedores:
                 continue
 
-            # -------- QTD (snapshot) --------
+            # -------- QTD (ativo + snapshot + fallback live) --------
+            campanhas_qtd_ativas = _campanhas_qtd_mes_overlap(db, int(ano), int(mes), str(emp))
+            escolhidas_por_vendedor = _build_qtd_escolhidas_por_vendedor(campanhas_qtd_ativas, vendedores)
+
+            campanha_ids_qtd: list[int] = []
+            for lst in escolhidas_por_vendedor.values():
+                for c in (lst or []):
+                    cid = int(getattr(c, 'id', 0) or 0)
+                    if cid > 0 and cid not in campanha_ids_qtd:
+                        campanha_ids_qtd.append(cid)
+
+            snap_qtd_map: dict[tuple[int, str], Any] = {}
+            snaps_extra_qtd: list[Any] = []
             q_qtd = (
                 db.query(CampanhaQtdResultado)
                 .filter(
@@ -163,37 +267,117 @@ def build_unified_rows(
                     CampanhaQtdResultado.vendedor.in_(vendedores),
                 )
             )
-            if not incluir_zerados:
-                q_qtd = q_qtd.filter(CampanhaQtdResultado.valor_recompensa > 0)
+            if campanha_ids_qtd:
+                q_qtd = q_qtd.filter(CampanhaQtdResultado.campanha_id.in_(campanha_ids_qtd))
+            qtd_snaps = q_qtd.all()
+            for s in qtd_snaps:
+                cid = int(getattr(s, 'campanha_id', 0) or 0)
+                vend_u = _upper(getattr(s, 'vendedor', ''))
+                if cid > 0 and vend_u:
+                    snap_qtd_map[(cid, vend_u)] = s
 
-            for r in q_qtd.all():
-                recompensa_unit = _safe_float(getattr(r, 'recompensa_unit', 0.0))
-                valor_recompensa = _safe_float(getattr(r, 'valor_recompensa', 0.0))
-                qtd_minima = getattr(r, 'qtd_minima', None)
-                valor_vendido = _safe_float(getattr(r, 'valor_vendido', 0.0))
+            vendas_qtd_cache: dict[int, dict[str, tuple[float, float]]] = {}
+            rows_qtd_keys_added: set[tuple[int, str]] = set()
+
+            for vend_u in vendedores:
+                for campanha in (escolhidas_por_vendedor.get(vend_u) or []):
+                    cid = int(getattr(campanha, 'id', 0) or 0)
+                    if cid <= 0:
+                        continue
+                    key = (cid, vend_u)
+                    rows_qtd_keys_added.add(key)
+
+                    snap = snap_qtd_map.get(key)
+                    if snap is not None:
+                        recompensa_unit = _safe_float(getattr(snap, 'recompensa_unit', getattr(campanha, 'recompensa_unit', 0.0)))
+                        valor_recompensa = _safe_float(getattr(snap, 'valor_recompensa', 0.0))
+                        qtd_base = _safe_float(getattr(snap, 'qtd_vendida', 0.0))
+                        valor_vendido = _safe_float(getattr(snap, 'valor_vendido', 0.0))
+                        qtd_minima = getattr(snap, 'qtd_minima', getattr(campanha, 'qtd_minima', None))
+                        atingiu = bool(int(getattr(snap, 'atingiu_minimo', 0) or 0))
+                        status_pagamento = str(getattr(snap, 'status_pagamento', 'PENDENTE') or 'PENDENTE')
+                        pago_em = getattr(snap, 'pago_em', None)
+                        titulo = str(getattr(snap, 'titulo', '') or '').strip() or str(getattr(campanha, 'titulo', '') or '').strip() or f"Campanha #{cid}"
+                        item_codigo = str(getattr(snap, 'produto_prefixo', '') or getattr(campanha, 'produto_prefixo', '') or '').strip() or None
+                    else:
+                        if cid not in vendas_qtd_cache:
+                            periodo_ini_qtd = max(getattr(campanha, 'data_inicio'), periodo_ini)
+                            periodo_fim_qtd = min(getattr(campanha, 'data_fim'), periodo_fim)
+                            vendas_qtd_cache[cid] = _calc_vendas_por_vendedor_para_campanha(db, str(emp), campanha, periodo_ini_qtd, periodo_fim_qtd)
+                        qtd_base, valor_vendido = vendas_qtd_cache.get(cid, {}).get(vend_u, (0.0, 0.0))
+                        recompensa_unit = _safe_float(getattr(campanha, 'recompensa_unit', 0.0))
+                        qtd_minima = getattr(campanha, 'qtd_minima', None)
+                        valor_minimo = _safe_float(getattr(campanha, 'valor_minimo', 0.0))
+                        atingiu = True
+                        if qtd_minima is not None and _safe_float(qtd_minima) > 0:
+                            atingiu = bool(float(qtd_base or 0.0) >= _safe_float(qtd_minima))
+                        if valor_minimo > 0:
+                            atingiu = bool(atingiu and float(valor_vendido or 0.0) >= valor_minimo)
+                        valor_recompensa = float(qtd_base or 0.0) * float(recompensa_unit or 0.0) if atingiu else 0.0
+                        status_pagamento = 'PENDENTE'
+                        pago_em = None
+                        titulo = str(getattr(campanha, 'titulo', '') or '').strip() or f"Campanha #{cid}"
+                        item_codigo = str(getattr(campanha, 'produto_prefixo', '') or '').strip() or None
+
+                    qtd_prem = None
+                    if recompensa_unit > 0 and valor_recompensa > 0:
+                        qtd_prem = valor_recompensa / recompensa_unit
+
+                    rows.append(
+                        UnifiedRow(
+                            tipo='QTD',
+                            competencia_ano=int(ano),
+                            competencia_mes=int(mes),
+                            emp=str(emp),
+                            vendedor=vend_u,
+                            titulo=titulo,
+                            item_codigo=item_codigo,
+                            qtd_minima=_safe_float(qtd_minima) if qtd_minima is not None else None,
+                            recompensa_unit=recompensa_unit,
+                            valor_vendido=valor_vendido,
+                            atingiu_gate=bool(atingiu),
+                            qtd_base=_safe_float(qtd_base),
+                            qtd_premiada=qtd_prem,
+                            valor_recompensa=_safe_float(valor_recompensa),
+                            status_pagamento=status_pagamento,
+                            pago_em=pago_em,
+                            origem_id=cid,
+                        )
+                    )
+
+            # preserva snapshots antigos/legados que não estejam mais no cadastro ativo,
+            # para não sumirem do relatório histórico da competência
+            for snap in qtd_snaps:
+                cid = int(getattr(snap, 'campanha_id', 0) or 0)
+                vend_u = _upper(getattr(snap, 'vendedor', ''))
+                if cid <= 0 or not vend_u or (cid, vend_u) in rows_qtd_keys_added:
+                    continue
+                recompensa_unit = _safe_float(getattr(snap, 'recompensa_unit', 0.0))
+                valor_recompensa = _safe_float(getattr(snap, 'valor_recompensa', 0.0))
+                qtd_minima = getattr(snap, 'qtd_minima', None)
+                valor_vendido = _safe_float(getattr(snap, 'valor_vendido', 0.0))
                 qtd_prem = None
                 if recompensa_unit > 0 and valor_recompensa > 0:
                     qtd_prem = valor_recompensa / recompensa_unit
-
                 rows.append(
                     UnifiedRow(
                         tipo='QTD',
-                        competencia_ano=int(getattr(r, 'competencia_ano', ano)),
-                        competencia_mes=int(getattr(r, 'competencia_mes', mes)),
-                        emp=str(getattr(r, 'emp', emp)),
-                        vendedor=_upper(getattr(r, 'vendedor', '')),
-                        titulo=str(getattr(r, 'titulo', '') or '').strip() or f"Campanha #{getattr(r, 'campanha_id', '')}",
-                        item_codigo=str(getattr(r, 'produto_prefixo', '') or '').strip() or None,
+                        competencia_ano=int(getattr(snap, 'competencia_ano', ano)),
+                        competencia_mes=int(getattr(snap, 'competencia_mes', mes)),
+                        emp=str(getattr(snap, 'emp', emp)),
+                        vendedor=vend_u,
+                        titulo=str(getattr(snap, 'titulo', '') or '').strip() or f"Campanha #{cid}",
+                        item_codigo=str(getattr(snap, 'produto_prefixo', '') or '').strip() or None,
                         qtd_minima=_safe_float(qtd_minima) if qtd_minima is not None else None,
                         recompensa_unit=recompensa_unit,
                         valor_vendido=valor_vendido,
-                        atingiu_gate=bool(int(getattr(r, 'atingiu_minimo', 0) or 0)),
-                        qtd_base=_safe_float(getattr(r, 'qtd_vendida', None)),
+                        atingiu_gate=bool(int(getattr(snap, 'atingiu_minimo', 0) or 0)),
+                        qtd_base=_safe_float(getattr(snap, 'qtd_vendida', None)),
                         qtd_premiada=qtd_prem,
                         valor_recompensa=valor_recompensa,
-                        status_pagamento=str(getattr(r, 'status_pagamento', 'PENDENTE') or 'PENDENTE'),
-                        pago_em=getattr(r, 'pago_em', None),
-                        origem_id=int(getattr(r, 'campanha_id', 0) or 0),
+                        status_pagamento=str(getattr(snap, 'status_pagamento', 'PENDENTE') or 'PENDENTE'),
+                        pago_em=getattr(snap, 'pago_em', None),
+                        origem_id=cid,
                     )
                 )
 
