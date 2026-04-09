@@ -273,8 +273,10 @@ def build_unified_rows(
                     CampanhaQtdResultado.vendedor.in_(vendedores),
                 )
             )
-            if not incluir_zerados:
-                q_qtd = q_qtd.filter(CampanhaQtdResultado.valor_recompensa > 0)
+            # QTD deve aparecer no relatório mesmo sem prêmio no período,
+            # para refletir as campanhas ativas criadas em /admin/campanhas.
+            # Por isso, diferentemente de outros blocos, NÃO filtramos snapshot
+            # por valor_recompensa > 0 aqui.
 
             qtd_snapshot_rows = q_qtd.all()
             for r in qtd_snapshot_rows:
@@ -350,9 +352,9 @@ def build_unified_rows(
                         atingiu_valor = True if valor_min in (None, '') else (float(valor_vendido or 0.0) >= float(valor_min or 0.0))
                         atingiu = bool(atingiu_qtd and atingiu_valor and qtd_vendida > 0)
                         valor_recompensa = float(qtd_vendida or 0.0) * float(recompensa_unit or 0.0) if atingiu else 0.0
-                        if (not incluir_zerados) and valor_recompensa <= 0:
-                            continue
-
+                        # QTD também deve aparecer quando ainda não atingiu.
+                        # Isso permite ao vendedor/supervisor enxergar campanhas
+                        # criadas no admin mesmo com valor zero no momento.
                         rows.append(
                             UnifiedRow(
                                 tipo='QTD',

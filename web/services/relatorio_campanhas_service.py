@@ -553,7 +553,7 @@ def _cache_key_relatorio_unificado(*, role: str, vendedor_logado: str, ano: int,
     vendedores_norm = tuple(sorted({str(v or '').strip().upper() for v in (vendedores_sel or []) if str(v or '').strip()}))
     vendors_scope = _freeze_vendedores_por_emp(vendedores_por_emp or {}, list(emps_norm))
     return (
-        'relatorio_campanhas_unificado_v4',
+        'relatorio_campanhas_unificado_v5',
         str(role or '').strip().lower(),
         str(vendedor_logado or '').strip().upper(),
         int(ano),
