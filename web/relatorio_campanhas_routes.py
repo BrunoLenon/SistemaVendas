@@ -129,6 +129,53 @@ def register_relatorio_campanhas_routes(
                 return "PENDENTE"
             return s
 
+        def _norm_tipo(tipo: str) -> str:
+            t = str(tipo or '').strip().upper()
+            if t in ('COMBO_CARD', 'COMBO'):
+                return 'COMBO'
+            if t in ('PARADO', 'ITENS_PARADOS', 'ITEM_PARADO'):
+                return 'PARADO'
+            if t in ('QTD', 'CAMPANHA', 'PRODUTO'):
+                return 'QTD'
+            if t in ('META', 'METAS'):
+                return 'META'
+            if t in ('RANKING', 'RANKING_MARCA', 'MARCA'):
+                return 'RANKING'
+            return t or 'OUTROS'
+
+        def _tipo_meta(tipo: str) -> dict[str, str]:
+            t = _norm_tipo(tipo)
+            mapping = {
+                'QTD': {'label': 'CAMPANHA', 'class': 'sv-type--qtd', 'short': 'QTD'},
+                'COMBO': {'label': 'COMBO', 'class': 'sv-type--combo', 'short': 'COMBO'},
+                'PARADO': {'label': 'ITENS PARADOS', 'class': 'sv-type--parado', 'short': 'PARADO'},
+                'META': {'label': 'META', 'class': 'sv-type--meta', 'short': 'META'},
+                'RANKING': {'label': 'RANKING', 'class': 'sv-type--ranking', 'short': 'RANKING'},
+                'OUTROS': {'label': 'OUTROS', 'class': 'sv-type--outros', 'short': 'OUTROS'},
+            }
+            return {'key': t, **mapping.get(t, mapping['OUTROS'])}
+
+        def _build_tipo_summary(camps):
+            buckets = {}
+            for c in (camps or []):
+                meta = _tipo_meta(c.get('tipo'))
+                key = meta['key']
+                item = buckets.get(key)
+                if not item:
+                    item = {
+                        'key': key,
+                        'label': meta['label'],
+                        'class': meta['class'],
+                        'short': meta['short'],
+                        'count': 0,
+                        'valor': 0.0,
+                    }
+                    buckets[key] = item
+                item['count'] += 1
+                item['valor'] += _to_float(c.get('valor') or 0)
+            order = {'PARADO': 0, 'QTD': 1, 'COMBO': 2, 'META': 3, 'RANKING': 4, 'OUTROS': 9}
+            return sorted(buckets.values(), key=lambda x: (order.get(x['key'], 9), x['label']))
+
         groups_map = {}
         for r in rows:
             emp_r = str(_pick(r, "emp", "EMP") or "").strip() or "—"
@@ -151,6 +198,8 @@ def register_relatorio_campanhas_routes(
 
             g["total"] += valor
             g["status_counts"][st if st in g["status_counts"] else "OUTROS"] += 1
+            tipo_raw = str(getattr(r, "tipo", "") or "").strip().upper()
+            tipo_meta = _tipo_meta(tipo_raw)
             g["campanhas"].append({
                 "titulo": titulo,
                 "item_codigo": getattr(r, "item_codigo", None),
@@ -161,7 +210,11 @@ def register_relatorio_campanhas_routes(
                 "valor": valor,
                 "status": st,
                 "atingiu": bool(getattr(r, "atingiu", False)),
-                "tipo": str(getattr(r, "tipo", "") or "").strip().upper(),
+                "tipo": tipo_raw,
+                "tipo_key": tipo_meta["key"],
+                "tipo_label": tipo_meta["label"],
+                "tipo_class": tipo_meta["class"],
+                "tipo_short": tipo_meta["short"],
                 "origem_id": int(getattr(r, "origem_id", 0) or 0),
             })
 
@@ -185,9 +238,14 @@ def register_relatorio_campanhas_routes(
             for header in combo_headers:
                 combo_id = int(header.get("origem_id") or 0)
                 itens = [i for i in combo_items if int(i.get("origem_id") or 0) == combo_id]
+                combo_meta = _tipo_meta('COMBO')
                 combo_cards.append({
                     **header,
                     "tipo": "COMBO_CARD",
+                    "tipo_key": combo_meta["key"],
+                    "tipo_label": combo_meta["label"],
+                    "tipo_class": combo_meta["class"],
+                    "tipo_short": combo_meta["short"],
                     "itens": itens,
                     "vendeu_rs": sum(float(i.get("vendeu_rs") or 0) for i in itens) or float(header.get("vendeu_rs") or 0),
                     "valor": sum(float(i.get("valor") or 0) for i in itens) or float(header.get("valor") or 0),
@@ -203,6 +261,7 @@ def register_relatorio_campanhas_routes(
             g["campanhas"].sort(key=_camp_sort_key)
             g["status"] = _agg_status(g["status_counts"])
             g["campanhas_count"] = len(g["campanhas"])
+            g["tipos_resumo"] = _build_tipo_summary(g["campanhas"])
 
         def _emp_sort_key(val):
             s = str(val or "").strip()
@@ -231,11 +290,13 @@ def register_relatorio_campanhas_routes(
                     "total": 0.0,
                     "campanhas_count": 0,
                     "status_counts": {"PENDENTE": 0, "A_PAGAR": 0, "PAGO": 0, "OUTROS": 0},
+                    "campanhas": [],
                 }
                 emp_cards_map[emp_key] = card
             card["rows"].append(g)
             card["total"] += float(g.get("total") or 0)
             card["campanhas_count"] += int(g.get("campanhas_count") or 0)
+            card["campanhas"].extend(g.get("campanhas") or [])
             st = str(g.get("status") or "PENDENTE").strip().upper()
             card["status_counts"][st if st in card["status_counts"] else "OUTROS"] += 1
 
@@ -254,6 +315,7 @@ def register_relatorio_campanhas_routes(
             card["rows"].sort(key=lambda gg: (-float(gg.get("total") or 0), str(gg.get("vendedor") or "")))
             card["vendedores_count"] = len(card["rows"])
             card["status"] = _card_status(card["status_counts"])
+            card["tipos_resumo"] = _build_tipo_summary(card.get("campanhas") or [])
             emp_cards_page.append(card)
         ctx["emp_cards_page"] = emp_cards_page
 

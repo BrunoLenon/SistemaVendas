@@ -34,6 +34,19 @@
 .sv-subtotals__line{ display:flex; gap:10px; color:rgba(255,255,255,.70); }
 .sv-subtotals__line strong{ color: var(--sv-accent, #ff9a00); }
 .sv-note{ margin-top:8px; font-size:12px; color:rgba(255,255,255,.62); }
+.sv-typechips{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+.sv-typechip{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;font-size:11px;font-weight:800;letter-spacing:.25px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.03);color:#fff;}
+.sv-typechip small{font-size:10px;font-weight:700;opacity:.78;}
+.sv-typechip--soft{padding:4px 8px;font-size:10px;}
+.sv-type--qtd{background:rgba(0,174,255,.10);border-color:rgba(0,174,255,.30);color:#9FDFFF;}
+.sv-type--combo{background:rgba(182,116,255,.12);border-color:rgba(182,116,255,.32);color:#DABEFF;}
+.sv-type--parado{background:rgba(44,214,113,.12);border-color:rgba(44,214,113,.32);color:#BEF7CF;}
+.sv-type--meta{background:rgba(255,177,66,.12);border-color:rgba(255,177,66,.32);color:#FFD79A;}
+.sv-type--ranking{background:rgba(255,99,146,.12);border-color:rgba(255,99,146,.32);color:#FFC2D3;}
+.sv-type--outros{background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.16);color:#EDEDED;}
+.sv-vendmeta{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;}
+.sv-empcard__subhead{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:8px;}
+.sv-empcard__subhead .sv-typechips{justify-content:flex-end;}
 .sv-empcards{display:grid;gap:16px;}
 .sv-empcard{border:1px solid rgba(255,153,0,.18);border-radius:18px;background:linear-gradient(180deg, rgba(18,20,29,.96), rgba(12,14,20,.96));box-shadow:0 14px 30px rgba(0,0,0,.18);overflow:hidden;}
 .sv-empcard__head{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;padding:16px 18px;border-bottom:1px solid rgba(255,153,0,.12);background:linear-gradient(180deg, rgba(255,153,0,.07), rgba(255,153,0,.015));}
@@ -282,6 +295,19 @@
                 <span class="sv-pill {{ 'sv-pill-warn' if card.status=='PENDENTE' else ('sv-pill-info' if card.status=='A_PAGAR' else ('sv-pill-ok' if card.status=='PAGO' else '')) }}">{{ card.status }}</span>
               </div>
             </div>
+            <div class="sv-empcard__subhead">
+              <div class="sv-muted sv-small">Mix de campanhas desta loja no período filtrado</div>
+              {% if card.tipos_resumo %}
+                <div class="sv-typechips">
+                  {% for tp in card.tipos_resumo %}
+                    <span class="sv-typechip {{ tp.class }}">
+                      {{ tp.label }}
+                      <small>{{ tp.count }}</small>
+                    </span>
+                  {% endfor %}
+                </div>
+              {% endif %}
+            </div>
 
             <div class="sv-tablewrap">
               <table class="sv-table sv-table--grouped">
@@ -300,6 +326,13 @@
                       <td>
                         <div class="sv-strong">{{ g.vendedor }}</div>
                         <div class="sv-muted">Campanhas: {{ g.campanhas_count }} • Total: {{ g.total|brl_rs }}</div>
+                        {% if g.tipos_resumo %}
+                          <div class="sv-vendmeta">
+                            {% for tp in g.tipos_resumo %}
+                              <span class="sv-typechip sv-typechip--soft {{ tp.class }}">{{ tp.short }} <small>{{ tp.count }}</small></span>
+                            {% endfor %}
+                          </div>
+                        {% endif %}
                       </td>
                       <td>
                         <button type="button"

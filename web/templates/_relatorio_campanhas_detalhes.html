@@ -20,16 +20,19 @@
             {% set totals.vendeu = totals.vendeu + (c.vendeu_rs or 0) %}
             {% set totals.premio = totals.premio + (c.valor or 0) %}
             <tr class="sv-combo-head">
-              <td class="sv-nowrap">
-                <button type="button"
-                        class="sv-combo-toggle js-toggle-combo"
-                        data-target="{{ combo_dom_id }}"
-                        data-detail-url="{{ c.detail_url or '' }}"
-                        aria-expanded="false">
-                  {{ c.titulo }}
-                  <span class="sv-muted"> • ver itens</span>
-                  <span class="sv-chev" aria-hidden="true">▾</span>
-                </button>
+              <td>
+                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                  <span class="sv-typechip sv-typechip--soft {{ c.tipo_class or 'sv-type--outros' }}">{{ c.tipo_label or c.tipo or 'COMBO' }}</span>
+                  <button type="button"
+                          class="sv-combo-toggle js-toggle-combo"
+                          data-target="{{ combo_dom_id }}"
+                          data-detail-url="{{ c.detail_url or '' }}"
+                          aria-expanded="false">
+                    {{ c.titulo }}
+                    <span class="sv-muted"> • ver itens</span>
+                    <span class="sv-chev" aria-hidden="true">▾</span>
+                  </button>
+                </div>
               </td>
               <td class="sv-center">-</td>
               <td class="sv-right">-</td>
@@ -48,7 +51,15 @@
             {% set totals.vendeu = totals.vendeu + (c.vendeu_rs or 0) %}
             {% set totals.premio = totals.premio + (c.valor or 0) %}
             <tr>
-              <td class="sv-nowrap">{{ c.titulo }}</td>
+              <td>
+                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                  <span class="sv-typechip sv-typechip--soft {{ c.tipo_class or 'sv-type--outros' }}">{{ c.tipo_label or c.tipo or 'CAMPANHA' }}</span>
+                  <span class="sv-nowrap">{{ c.titulo }}</span>
+                </div>
+                {% if c.item_codigo %}
+                  <div class="sv-muted sv-small" style="margin-top:4px;">Código: {{ c.item_codigo }}</div>
+                {% endif %}
+              </td>
               <td class="sv-center">{{ (c.qtd_minima or '-') }}</td>
               <td class="sv-right">{{ (c.recompensa_unit or 0)|brl_rs }}</td>
               <td class="sv-center">{{ (c.qtd_vendida or 0) }}</td>
