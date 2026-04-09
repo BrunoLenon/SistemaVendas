@@ -284,6 +284,7 @@
                 <button type="button"
                         class="sv-btn sv-btn-ghost sv-btn-xs js-toggle-camps"
                         data-target="sv-detail-{{ loop.index0 }}"
+                        data-detail-url="{{ g.detail_url }}"
                         aria-expanded="false">
                   Ver campanhas ({{ g.campanhas_count }})
                   <span class="sv-chev" aria-hidden="true">▾</span>
@@ -295,116 +296,11 @@
               </td>
             </tr>
 
-            {# Linha expandida (modelo) - ocupa a tabela inteira #}
+            {# Linha expandida carregada sob demanda #}
             <tr id="sv-detail-{{ loop.index0 }}" class="sv-detail-row" style="display:none;">
               <td colspan="5">
-                <div class="sv-subcard sv-subcard--full">
-                  <table class="sv-subtable sv-subtable--wide">
-                    <thead>
-                      <tr>
-                        <th>Campanha / Item</th>
-                        <th class="sv-center">Qtd mín.</th>
-                        <th class="sv-right">Recomp. (R$/un)</th>
-                        <th class="sv-center">Qtd vendida</th>
-                        <th class="sv-right">Vendeu (R$)</th>
-                        <th class="sv-right">Valor (R$)</th>
-                        <th class="sv-center">Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {% set totals = namespace(vendeu=0, premio=0) %}
-                      {% if g.campanhas and g.campanhas|length > 0 %}
-                        {% for c in g.campanhas %}
-                          {% if (c.tipo or '') == 'COMBO_CARD' %}
-                            {% set combo_dom_id = 'sv-combo-' ~ loop.index0 ~ '-' ~ (c.origem_id or 0) %}
-                            {% set totals.vendeu = totals.vendeu + (c.vendeu_rs or 0) %}
-                            {% set totals.premio = totals.premio + (c.valor or 0) %}
-                            <tr class="sv-combo-head">
-                              <td class="sv-nowrap">
-                                <button type="button"
-                                        class="sv-combo-toggle js-toggle-combo"
-                                        data-target="{{ combo_dom_id }}"
-                                        data-detail-url="{{ c.detail_url or '' }}"
-                                        aria-expanded="false">
-                                  {{ c.titulo }}
-                                  <span class="sv-muted"> • ver itens</span>
-                                  <span class="sv-chev" aria-hidden="true">▾</span>
-                                </button>
-                              </td>
-                              <td class="sv-center">-</td>
-                              <td class="sv-right">-</td>
-                              <td class="sv-center">-</td>
-                              <td class="sv-right">{{ (c.vendeu_rs or 0)|brl_rs }}</td>
-                              <td class="sv-right">{{ (c.valor or 0)|brl_rs }}</td>
-                              <td class="sv-center">
-                                {% if c.atingiu %}
-                                  <span class="sv-pill sv-pill--ok">ATINGIU</span>
-                                {% else %}
-                                  <span class="sv-pill sv-pill--warn">NÃO ATINGIU</span>
-                                {% endif %}
-                              </td>
-                            </tr>
-                            {% if c.itens and c.itens|length > 0 %}
-                              {% for it in c.itens %}
-                                <tr class="sv-combo-item {{ combo_dom_id }}" style="display:none;">
-                                  <td class="sv-nowrap">{{ it.titulo }}</td>
-                                  <td class="sv-center">{{ (it.qtd_minima or '-') }}</td>
-                                  <td class="sv-right">{{ (it.recompensa_unit or 0)|brl_rs }}</td>
-                                  <td class="sv-center">{{ (it.qtd_vendida or 0) }}</td>
-                                  <td class="sv-right">{{ (it.vendeu_rs or 0)|brl_rs }}</td>
-                                  <td class="sv-right">{{ (it.valor or 0)|brl_rs }}</td>
-                                  <td class="sv-center">
-                                    {% if it.atingiu %}
-                                      <span class="sv-pill sv-pill--ok">ATINGIU</span>
-                                    {% else %}
-                                      <span class="sv-pill sv-pill--warn">NÃO ATINGIU</span>
-                                    {% endif %}
-                                  </td>
-                                </tr>
-                              {% endfor %}
-                            {% endif %}
-                          {% else %}
-                            {% set totals.vendeu = totals.vendeu + (c.vendeu_rs or 0) %}
-                            {% set totals.premio = totals.premio + (c.valor or 0) %}
-                            <tr>
-                              <td class="sv-nowrap">{{ c.titulo }}</td>
-                              <td class="sv-center">{{ (c.qtd_minima or '-') }}</td>
-                              <td class="sv-right">{{ (c.recompensa_unit or 0)|brl_rs }}</td>
-                              <td class="sv-center">{{ (c.qtd_vendida or 0) }}</td>
-                              <td class="sv-right">{{ (c.vendeu_rs or 0)|brl_rs }}</td>
-                              <td class="sv-right">{{ (c.valor or 0)|brl_rs }}</td>
-                              <td class="sv-center">
-                                {% if c.atingiu %}
-                                  <span class="sv-pill sv-pill--ok">ATINGIU</span>
-                                {% else %}
-                                  <span class="sv-pill sv-pill--warn">NÃO ATINGIU</span>
-                                {% endif %}
-                              </td>
-                            </tr>
-                          {% endif %}
-                        {% endfor %}
-                      {% else %}
-                        <tr>
-                          <td colspan="7" class="sv-muted">Sem campanhas para este vendedor.</td>
-                        </tr>
-                      {% endif %}
-                    </tbody>
-                  </table>
-
-                  <div class="sv-subtotals">
-                    <div class="sv-subtotals__line">
-                      <span>Total vendido em campanhas:</span>
-                      <strong>{{ totals.vendeu|brl_rs }}</strong>
-                    </div>
-                    <div class="sv-subtotals__line">
-                      <span>Total premiação:</span>
-                      <strong>{{ totals.premio|brl_rs }}</strong>
-                    </div>
-                  </div>
-
-                  <div class="sv-note">
-                    Obs.: “Valor (R$)” mostra a premiação efetiva do período. Em campanhas do tipo combo, a recompensa só é liberada quando todos os requisitos do combo forem atingidos. Em Itens Parados, a coluna “Qtd vendida” representa os pontos do período e “Recomp. (R$/un)” representa o valor por ponto. “Vendeu (R$)” = soma do valor total vendido dos itens da campanha na competência. Em Itens Parados, a premiação base considera apenas os pontos fechados para baixo, e faixas extras entram conforme a configuração da EMP ou do escopo global.
-                  </div>
+                <div class="sv-subcard sv-subcard--full js-detail-content">
+                  <div class="sv-muted">Clique em “Ver campanhas” para carregar o detalhe.</div>
                 </div>
               </td>
             </tr>
@@ -441,7 +337,7 @@
     });
   })();
 
-  // Expansão "modelo": abre uma linha abaixo (colspan) em largura total
+  // Expansão do detalhe do vendedor com carregamento sob demanda
   (function(){
     function closeAll(exceptId){
       document.querySelectorAll('tr.sv-detail-row').forEach(function(tr){
@@ -450,7 +346,6 @@
       });
       document.querySelectorAll('.js-toggle-camps').forEach(function(btn){
         var isTarget = exceptId && btn.dataset.target === exceptId;
-        btn.classList.toggle('is-open', !!isTarget && document.getElementById(exceptId).style.display !== 'none');
         if(!isTarget){
           btn.classList.remove('is-open');
           btn.setAttribute('aria-expanded', 'false');
@@ -466,17 +361,45 @@
       var row = document.getElementById(id);
       if(!row) return;
 
+      var content = row.querySelector('.js-detail-content');
+      var detailUrl = btn.getAttribute('data-detail-url') || '';
       var open = row.style.display !== 'none';
+
       if(open){
         row.style.display = 'none';
         btn.classList.remove('is-open');
         btn.setAttribute('aria-expanded', 'false');
-      }else{
-        closeAll(id);
-        row.style.display = '';
-        btn.classList.add('is-open');
-        btn.setAttribute('aria-expanded', 'true');
+        return;
       }
+
+      closeAll(id);
+      row.style.display = '';
+      btn.classList.add('is-open');
+      btn.setAttribute('aria-expanded', 'true');
+
+      if(btn.dataset.loaded === '1' || btn.dataset.loading === '1' || !detailUrl || !content){
+        return;
+      }
+
+      btn.dataset.loading = '1';
+      content.innerHTML = '<div class="sv-muted">Carregando campanhas...</div>';
+
+      fetch(detailUrl, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+        .then(function(resp){
+          if(!resp.ok) throw new Error('Falha ao carregar detalhe');
+          return resp.text();
+        })
+        .then(function(html){
+          content.innerHTML = html;
+          btn.dataset.loaded = '1';
+        })
+        .catch(function(err){
+          console.error(err);
+          content.innerHTML = '<div class="sv-note">Não foi possível carregar o detalhe agora.</div>';
+        })
+        .finally(function(){
+          btn.dataset.loading = '0';
+        });
     });
   })();
 

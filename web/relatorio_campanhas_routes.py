@@ -18,6 +18,177 @@ from services.relatorio_campanhas_service import build_relatorio_campanhas_unifi
 from services.relatorio_unificado_service import load_combo_item_details
 
 
+def _pick(obj, *keys):
+    for k in keys:
+        try:
+            v = obj.get(k) if isinstance(obj, dict) else getattr(obj, k, None)
+            if v is None:
+                continue
+            if isinstance(v, str) and not v.strip():
+                continue
+            return v
+        except Exception:
+            continue
+    return None
+
+
+def _to_float(x):
+    try:
+        return float(x or 0)
+    except Exception:
+        return 0.0
+
+
+def _norm_status(s: str) -> str:
+    s = (s or "PENDENTE").strip().upper()
+    if s in ("A PAGAR", "A_PAGAR", "APAGAR"):
+        return "A_PAGAR"
+    if s == "PAGO":
+        return "PAGO"
+    if s == "PENDENTE":
+        return "PENDENTE"
+    return s
+
+
+def _agg_status(counts: dict[str, int]) -> str:
+    if counts.get("PENDENTE"):
+        return "PENDENTE"
+    if counts.get("A_PAGAR"):
+        return "A_PAGAR"
+    if counts.get("PAGO"):
+        return "PAGO"
+    return "OUTROS"
+
+
+def _build_group_summaries(rows, *, ano: int, mes: int):
+    groups_map: dict[tuple[str, str], dict[str, Any]] = {}
+    for r in (rows or []):
+        emp_r = str(_pick(r, "emp", "EMP") or "").strip() or "—"
+        vend_r = str(_pick(r, "vendedor", "VENDEDOR") or "").strip() or "—"
+        valor = _to_float(_pick(r, "valor_recompensa", "valor", "VALOR_RECOMPENSA") or 0)
+        st = _norm_status(_pick(r, "status_pagamento", "status", "STATUS_PAGAMENTO") or "PENDENTE")
+
+        key = (emp_r, vend_r)
+        g = groups_map.get(key)
+        if not g:
+            g = {
+                "emp": emp_r,
+                "vendedor": vend_r,
+                "total": 0.0,
+                "status_counts": {"PENDENTE": 0, "A_PAGAR": 0, "PAGO": 0, "OUTROS": 0},
+                "campanhas_count": 0,
+                "detail_url": url_for(
+                    "relatorio_campanhas_detalhes",
+                    ano=ano,
+                    mes=mes,
+                    emp=emp_r,
+                    vendedor=vend_r,
+                ),
+            }
+            groups_map[key] = g
+
+        g["total"] += valor
+        g["campanhas_count"] += 1
+        g["status_counts"][st if st in g["status_counts"] else "OUTROS"] += 1
+
+    rows_grouped = list(groups_map.values())
+    for g in rows_grouped:
+        g["status"] = _agg_status(g["status_counts"])
+
+    rows_grouped.sort(key=lambda gg: (-gg["total"], gg["emp"], gg["vendedor"]))
+    return rows_grouped
+
+
+def _build_group_detail(rows, *, ano: int, mes: int, emp: str, vendedor: str):
+    campanhas = []
+    total = 0.0
+    status_counts = {"PENDENTE": 0, "A_PAGAR": 0, "PAGO": 0, "OUTROS": 0}
+
+    for r in (rows or []):
+        emp_r = str(_pick(r, "emp", "EMP") or "").strip() or "—"
+        vendedor_r = str(_pick(r, "vendedor", "VENDEDOR") or "").strip() or "—"
+        if emp_r != emp or vendedor_r != vendedor:
+            continue
+
+        titulo = str(_pick(r, "titulo", "campanha", "CAMPANHA") or "").strip() or "—"
+        valor = _to_float(_pick(r, "valor_recompensa", "valor", "VALOR_RECOMPENSA") or 0)
+        st = _norm_status(_pick(r, "status_pagamento", "status", "STATUS_PAGAMENTO") or "PENDENTE")
+        tipo_camp = str(getattr(r, "tipo", "") or "").strip().upper()
+        origem_id = int(getattr(r, "origem_id", 0) or 0)
+
+        detail_url = None
+        if tipo_camp == "COMBO" and origem_id > 0:
+            detail_url = url_for(
+                "relatorio_campanhas_combo_itens",
+                ano=ano,
+                mes=mes,
+                emp=emp,
+                vendedor=vendedor,
+                combo_id=origem_id,
+            )
+
+        campanhas.append({
+            "titulo": titulo,
+            "item_codigo": getattr(r, "item_codigo", None),
+            "qtd_minima": getattr(r, "qtd_minima", None),
+            "recompensa_unit": getattr(r, "recompensa_unit", None),
+            "qtd_vendida": float(getattr(r, "qtd_base", 0) or 0),
+            "vendeu_rs": float(getattr(r, "valor_vendido", 0) or 0),
+            "valor": valor,
+            "status": st,
+            "atingiu": bool(getattr(r, "atingiu", False)),
+            "tipo": "COMBO_CARD" if tipo_camp == "COMBO" else tipo_camp,
+            "origem_id": origem_id,
+            "detail_url": detail_url,
+            "itens": [],
+        })
+        total += valor
+        status_counts[st if st in status_counts else "OUTROS"] += 1
+
+    def _camp_sort_key(c):
+        tipo = str(c.get("tipo") or "").strip().upper()
+        tipo_ord = 9 if tipo == "PARADO" else (5 if tipo == "COMBO_CARD" else 1)
+        status_ord = {"PENDENTE": 0, "A_PAGAR": 1, "PAGO": 2}.get(c.get("status"), 9)
+        return (tipo_ord, status_ord, -float(c.get("valor") or 0), str(c.get("titulo") or ""))
+
+    campanhas.sort(key=_camp_sort_key)
+    return {
+        "emp": emp,
+        "vendedor": vendedor,
+        "total": total,
+        "status": _agg_status(status_counts),
+        "campanhas_count": len(campanhas),
+        "campanhas": campanhas,
+    }
+
+
+def _calc_resumo_financeiro(rows):
+    resumo = {
+        "linhas": 0,
+        "total_valor": 0.0,
+        "status": {"PENDENTE": 0.0, "A_PAGAR": 0.0, "PAGO": 0.0, "OUTROS": 0.0},
+        "por_emp": {},
+    }
+    for r in (rows or []):
+        emp = str(_pick(r, "emp", "EMP") or "").strip() or "—"
+        vendedor = str(_pick(r, "vendedor", "VENDEDOR") or "").strip() or "—"
+        valor = _to_float(_pick(r, "valor_recompensa", "valor", "VALOR_RECOMPENSA") or 0)
+        st = _norm_status(_pick(r, "status_pagamento", "status", "STATUS_PAGAMENTO") or "PENDENTE")
+        st_key = st if st in ("PENDENTE", "A_PAGAR", "PAGO") else "OUTROS"
+        resumo["linhas"] += 1
+        resumo["total_valor"] += valor
+        resumo["status"][st_key] += valor
+        empd = resumo["por_emp"].setdefault(emp, {"total": 0.0, "status": {"PENDENTE": 0.0, "A_PAGAR": 0.0, "PAGO": 0.0, "OUTROS": 0.0}, "vendedores": {}})
+        empd["total"] += valor
+        empd["status"][st_key] += valor
+        vd = empd["vendedores"].setdefault(vendedor, {"total": 0.0, "status": {"PENDENTE": 0.0, "A_PAGAR": 0.0, "PAGO": 0.0, "OUTROS": 0.0}, "linhas": 0})
+        vd["linhas"] += 1
+        vd["total"] += valor
+        vd["status"][st_key] += valor
+    resumo["por_emp_ordenado"] = sorted(resumo["por_emp"].items(), key=lambda kv: kv[1].get("total", 0.0), reverse=True)
+    return resumo
+
+
 def register_relatorio_campanhas_routes(
     app,
     *,
@@ -102,125 +273,7 @@ def register_relatorio_campanhas_routes(
             page, per_page = 1, (100 if role in ("admin", "supervisor") else 50)
 
         rows = ctx.get("rows") or []
-
-        def _pick(obj, *keys):
-            for k in keys:
-                try:
-                    v = obj.get(k) if isinstance(obj, dict) else getattr(obj, k, None)
-                    if v is None:
-                        continue
-                    if isinstance(v, str) and not v.strip():
-                        continue
-                    return v
-                except Exception:
-                    continue
-            return None
-
-        def _to_float(x):
-            try:
-                return float(x or 0)
-            except Exception:
-                return 0.0
-
-        def _norm_status(s: str) -> str:
-            s = (s or "PENDENTE").strip().upper()
-            if s in ("A PAGAR", "A_PAGAR", "APAGAR"):
-                return "A_PAGAR"
-            if s == "PAGO":
-                return "PAGO"
-            if s == "PENDENTE":
-                return "PENDENTE"
-            return s
-
-        groups_map = {}
-        for r in rows:
-            emp_r = str(_pick(r, "emp", "EMP") or "").strip() or "—"
-            vend_r = str(_pick(r, "vendedor", "VENDEDOR") or "").strip() or "—"
-            titulo = str(_pick(r, "titulo", "campanha", "CAMPANHA") or "").strip() or "—"
-            valor = _to_float(_pick(r, "valor_recompensa", "valor", "VALOR_RECOMPENSA") or 0)
-            st = _norm_status(_pick(r, "status_pagamento", "status", "STATUS_PAGAMENTO") or "PENDENTE")
-
-            key = (emp_r, vend_r)
-            g = groups_map.get(key)
-            if not g:
-                g = {
-                    "emp": emp_r,
-                    "vendedor": vend_r,
-                    "total": 0.0,
-                    "status_counts": {"PENDENTE": 0, "A_PAGAR": 0, "PAGO": 0, "OUTROS": 0},
-                    "campanhas": [],
-                }
-                groups_map[key] = g
-
-            g["total"] += valor
-            g["status_counts"][st if st in g["status_counts"] else "OUTROS"] += 1
-            tipo_camp = str(getattr(r, "tipo", "") or "").strip().upper()
-            origem_id = int(getattr(r, "origem_id", 0) or 0)
-            detail_url = None
-            if tipo_camp == "COMBO" and origem_id > 0 and not str(titulo or "").lstrip().startswith("↳"):
-                detail_url = url_for(
-                    "relatorio_campanhas_combo_itens",
-                    ano=ano,
-                    mes=mes,
-                    emp=emp_r,
-                    vendedor=vend_r,
-                    combo_id=origem_id,
-                )
-            g["campanhas"].append({
-                "titulo": titulo,
-                "item_codigo": getattr(r, "item_codigo", None),
-                "qtd_minima": getattr(r, "qtd_minima", None),
-                "recompensa_unit": getattr(r, "recompensa_unit", None),
-                "qtd_vendida": float(getattr(r, "qtd_base", 0) or 0),
-                "vendeu_rs": float(getattr(r, "valor_vendido", 0) or 0),
-                "valor": valor,
-                "status": st,
-                "atingiu": bool(getattr(r, "atingiu", False)),
-                "tipo": tipo_camp,
-                "origem_id": origem_id,
-                "detail_url": detail_url,
-            })
-
-        def _agg_status(counts):
-            if counts.get("PENDENTE"):
-                return "PENDENTE"
-            if counts.get("A_PAGAR"):
-                return "A_PAGAR"
-            if counts.get("PAGO"):
-                return "PAGO"
-            return "OUTROS"
-
-        rows_grouped = list(groups_map.values())
-        for g in rows_grouped:
-            camps = g.get("campanhas") or []
-            combo_items = [c for c in camps if str(c.get("titulo") or "").lstrip().startswith("↳")]
-            combo_headers = [c for c in camps if str(c.get("titulo") or "").strip().upper().startswith("COMBO")]
-            resto = [c for c in camps if c not in combo_items and c not in combo_headers]
-
-            combo_cards = []
-            for header in combo_headers:
-                combo_id = int(header.get("origem_id") or 0)
-                itens = [i for i in combo_items if int(i.get("origem_id") or 0) == combo_id]
-                combo_cards.append({
-                    **header,
-                    "tipo": "COMBO_CARD",
-                    "itens": itens,
-                    "vendeu_rs": sum(float(i.get("vendeu_rs") or 0) for i in itens) or float(header.get("vendeu_rs") or 0),
-                    "valor": sum(float(i.get("valor") or 0) for i in itens) or float(header.get("valor") or 0),
-                    "atingiu": bool(header.get("atingiu")),
-                })
-
-            g["campanhas"] = resto + combo_cards
-            def _camp_sort_key(c):
-                tipo = str(c.get("tipo") or "").strip().upper()
-                tipo_ord = 9 if tipo == 'PARADO' else (5 if tipo == 'COMBO_CARD' else 1)
-                status_ord = {"PENDENTE": 0, "A_PAGAR": 1, "PAGO": 2}.get(c.get("status"), 9)
-                return (tipo_ord, status_ord, -float(c.get("valor") or 0), str(c.get("titulo") or ""))
-            g["campanhas"].sort(key=_camp_sort_key)
-            g["status"] = _agg_status(g["status_counts"])
-            g["campanhas_count"] = len(g["campanhas"])
-
-        rows_grouped.sort(key=lambda gg: (-gg["total"], gg["emp"], gg["vendedor"]))
+        rows_grouped = _build_group_summaries(rows, ano=ano, mes=mes)
 
         total_rows = len(rows_grouped)
         start = (page - 1) * per_page
@@ -232,37 +285,11 @@ def register_relatorio_campanhas_routes(
         ctx["per_page"] = per_page
         ctx["total_rows"] = total_rows
         ctx["total_pages"] = (total_rows + per_page - 1) // per_page if per_page else 1
-
-        def _calc_resumo_financeiro(_rows):
-            resumo = {
-                "linhas": 0,
-                "total_valor": 0.0,
-                "status": {"PENDENTE": 0.0, "A_PAGAR": 0.0, "PAGO": 0.0, "OUTROS": 0.0},
-                "por_emp": {},
-            }
-            for r in (_rows or []):
-                emp = str(_pick(r, "emp", "EMP") or "").strip() or "—"
-                vendedor = str(_pick(r, "vendedor", "VENDEDOR") or "").strip() or "—"
-                valor = _to_float(_pick(r, "valor_recompensa", "valor", "VALOR_RECOMPENSA") or 0)
-                st = _norm_status(_pick(r, "status_pagamento", "status", "STATUS_PAGAMENTO") or "PENDENTE")
-                st_key = st if st in ("PENDENTE", "A_PAGAR", "PAGO") else "OUTROS"
-                resumo["linhas"] += 1
-                resumo["total_valor"] += valor
-                resumo["status"][st_key] += valor
-                empd = resumo["por_emp"].setdefault(emp, {"total": 0.0, "status": {"PENDENTE": 0.0, "A_PAGAR": 0.0, "PAGO": 0.0, "OUTROS": 0.0}, "vendedores": {}})
-                empd["total"] += valor
-                empd["status"][st_key] += valor
-                vd = empd["vendedores"].setdefault(vendedor, {"total": 0.0, "status": {"PENDENTE": 0.0, "A_PAGAR": 0.0, "PAGO": 0.0, "OUTROS": 0.0}, "linhas": 0})
-                vd["linhas"] += 1
-                vd["total"] += valor
-                vd["status"][st_key] += valor
-            resumo["por_emp_ordenado"] = sorted(resumo["por_emp"].items(), key=lambda kv: kv[1].get("total", 0.0), reverse=True)
-            return resumo
-
         ctx["resumo"] = _calc_resumo_financeiro(rows)
 
         from urllib.parse import urlencode
         base_args = request.args.to_dict(flat=False) if request.args else {}
+
         def _make_url(endpoint: str, **updates):
             d = dict(base_args)
             for k, v in updates.items():
@@ -282,6 +309,65 @@ def register_relatorio_campanhas_routes(
         ctx["next_url"] = _make_url("relatorio_campanhas", page=min(ctx["total_pages"], page + 1))
 
         return render_template("relatorio_campanhas.html", ctx=ctx, **ctx)
+
+    def relatorio_campanhas_detalhes():
+        """Carrega o detalhe de um vendedor sob demanda para reduzir HTML inicial."""
+        red = login_required_fn()
+        if red:
+            return red
+
+        role = (role_fn() or "").strip().lower()
+        emp_usuario = emp_fn()
+        vendedor_logado = (usuario_logado_fn() or "").strip().upper()
+
+        scope = build_relatorio_campanhas_scope(
+            deps,
+            role=role,
+            emp_usuario=emp_usuario,
+            vendedor_logado=vendedor_logado,
+            args=request.args,
+            flash=flash,
+        )
+
+        ano = int(scope["ano"])
+        mes = int(scope["mes"])
+        emps_sel = scope["emps_sel"]
+        vendedores_sel = scope["vendedores_sel"]
+        emps_scope = {str(e) for e in (scope.get("emps_scope") or []) if str(e).strip()}
+        vendedores_por_emp = scope.get("vendedores_por_emp") or {}
+
+        emp_req = str(request.args.get("emp") or "").strip()
+        vendedor_req = str(request.args.get("vendedor") or "").strip().upper()
+        if not emp_req or not vendedor_req:
+            return "Parâmetros inválidos.", 400
+
+        if emp_req not in emps_scope:
+            return "EMP fora do escopo.", 403
+
+        vendedores_emp = {str(v or '').strip().upper() for v in (vendedores_por_emp.get(emp_req) or []) if str(v or '').strip()}
+        if role == 'vendedor':
+            vendedores_emp = {vendedor_logado} if vendedor_logado else set()
+        if vendedor_req not in vendedores_emp:
+            return "Vendedor fora do escopo.", 403
+
+        ctx = build_relatorio_campanhas_unificado_context(
+            deps,
+            role=role,
+            vendedor_logado=vendedor_logado,
+            ano=ano,
+            mes=mes,
+            emps_scope=list(emps_scope),
+            emps_sel=emps_sel,
+            vendedores_sel=vendedores_sel,
+            vendedores_por_emp=vendedores_por_emp,
+            recalc=False,
+            flash=flash,
+            include_combo_itens=False,
+            use_cache=True,
+        )
+
+        group_detail = _build_group_detail(ctx.get("rows") or [], ano=ano, mes=mes, emp=emp_req, vendedor=vendedor_req)
+        return render_template("_relatorio_campanhas_detalhes.html", g=group_detail)
 
     def relatorio_campanhas_combo_itens():
         """Carrega itens de um combo sob demanda para reduzir payload inicial da página."""
@@ -332,7 +418,6 @@ def register_relatorio_campanhas_routes(
         )
         return jsonify(payload)
 
-
     def relatorio_campanhas_export_csv():
         """Exporta o relatório unificado (mes/ano/filtros) em CSV."""
         red = login_required_fn()
@@ -378,21 +463,21 @@ def register_relatorio_campanhas_routes(
         from io import StringIO
         sio = StringIO()
         w = csv.writer(sio, delimiter=";")
-        w.writerow(["tipo","competencia","emp","vendedor","titulo","atingiu_gate","qtd_base","qtd_premiada","valor_recompensa","status_pagamento","pago_em"])
+        w.writerow(["tipo", "competencia", "emp", "vendedor", "titulo", "atingiu_gate", "qtd_base", "qtd_premiada", "valor_recompensa", "status_pagamento", "pago_em"])
         for r in (ctx.get("rows") or []):
-            comp = f"{getattr(r,'competencia_mes',mes):02d}/{getattr(r,'competencia_ano',ano)}"
+            comp = f"{getattr(r, 'competencia_mes', mes):02d}/{getattr(r, 'competencia_ano', ano)}"
             w.writerow([
-                getattr(r,"tipo",""),
+                getattr(r, "tipo", ""),
                 comp,
-                getattr(r,"emp",""),
-                getattr(r,"vendedor",""),
-                getattr(r,"titulo",""),
-                "SIM" if getattr(r,"atingiu_gate",None) else "NÃO" if getattr(r,"atingiu_gate",None) is not None else "",
-                getattr(r,"qtd_base", "") if getattr(r,"qtd_base",None) is not None else "",
-                getattr(r,"qtd_premiada","") if getattr(r,"qtd_premiada",None) is not None else "",
-                getattr(r,"valor_recompensa",0.0),
-                getattr(r,"status_pagamento","PENDENTE"),
-                getattr(r,"pago_em","") or "",
+                getattr(r, "emp", ""),
+                getattr(r, "vendedor", ""),
+                getattr(r, "titulo", ""),
+                "SIM" if getattr(r, "atingiu_gate", None) else "NÃO" if getattr(r, "atingiu_gate", None) is not None else "",
+                getattr(r, "qtd_base", "") if getattr(r, "qtd_base", None) is not None else "",
+                getattr(r, "qtd_premiada", "") if getattr(r, "qtd_premiada", None) is not None else "",
+                getattr(r, "valor_recompensa", 0.0),
+                getattr(r, "status_pagamento", "PENDENTE"),
+                getattr(r, "pago_em", "") or "",
             ])
 
         out = sio.getvalue().encode("utf-8")
@@ -405,5 +490,6 @@ def register_relatorio_campanhas_routes(
         )
 
     app.add_url_rule("/relatorios/campanhas", endpoint="relatorio_campanhas", view_func=relatorio_campanhas, methods=["GET"])
+    app.add_url_rule("/relatorios/campanhas/detalhes", endpoint="relatorio_campanhas_detalhes", view_func=relatorio_campanhas_detalhes, methods=["GET"])
     app.add_url_rule("/relatorios/campanhas/combo-itens", endpoint="relatorio_campanhas_combo_itens", view_func=relatorio_campanhas_combo_itens, methods=["GET"])
     app.add_url_rule("/relatorios/campanhas/export.csv", endpoint="relatorio_campanhas_export_csv", view_func=relatorio_campanhas_export_csv, methods=["GET"])
