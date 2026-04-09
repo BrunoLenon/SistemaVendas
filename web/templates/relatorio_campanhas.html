@@ -47,41 +47,6 @@
 .sv-combo-toggle{background:none;border:0;color:inherit;padding:0;font:inherit;cursor:pointer;display:inline-flex;align-items:center;gap:.35rem;}
 .sv-combo-head td{font-weight:600;}
 .sv-combo-item td:first-child{padding-left:1.25rem;}
-
-/* Cards por EMP */
-.sv-emp-grid{display:grid;grid-template-columns:1fr;gap:14px;}
-.sv-emp-card{padding:0;overflow:hidden;position:relative;}
-.sv-emp-card::before{content:"";position:absolute;inset:0 0 auto 0;height:1px;background:linear-gradient(90deg, rgba(255,153,0,.0), rgba(255,153,0,.45), rgba(255,153,0,.0));pointer-events:none;}
-.sv-emp-card__head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;padding:16px;border-bottom:1px solid rgba(255,255,255,.08);background:linear-gradient(180deg, rgba(255,153,0,.08), rgba(255,153,0,.02));}
-.sv-emp-card__title{display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
-.sv-emp-card__meta{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;}
-.sv-emp-card__body{padding:0 12px 12px;}
-.sv-badge-emp{display:inline-flex;align-items:center;justify-content:center;min-width:58px;padding:8px 12px;border-radius:12px;background:rgba(255,153,0,.14);border:1px solid rgba(255,153,0,.28);font-weight:800;letter-spacing:.3px;color:#FFD08A;box-shadow:inset 0 1px 0 rgba(255,255,255,.05);}
-.sv-emp-card__kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;padding:12px 16px;border-bottom:1px solid rgba(255,255,255,.06);background:rgba(255,255,255,.02);}
-.sv-mini-kpi{padding:10px 12px;border-radius:14px;border:1px solid rgba(255,255,255,.07);background:rgba(0,0,0,.18);}
-.sv-mini-kpi__label{font-size:11px;letter-spacing:.35px;text-transform:uppercase;color:rgba(255,255,255,.58);margin-bottom:6px;}
-.sv-mini-kpi__value{font-size:18px;font-weight:800;color:#fff;line-height:1.1;}
-.sv-mini-kpi__sub{margin-top:4px;font-size:11px;color:rgba(255,255,255,.58);}
-.sv-tablewrap--emp{padding-top:10px;}
-.sv-rank-badge{display:inline-flex;align-items:center;justify-content:center;min-width:28px;height:28px;padding:0 8px;margin-right:10px;border-radius:999px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.10);font-size:11px;font-weight:800;color:rgba(255,255,255,.72);}
-.sv-vendor-meta{display:flex;align-items:flex-start;gap:10px;}
-.sv-vendor-lines{min-width:0;flex:1;}
-.sv-vendor-progress{margin-top:8px;height:7px;border-radius:999px;background:rgba(255,255,255,.06);overflow:hidden;}
-.sv-vendor-progress__bar{height:100%;border-radius:999px;background:linear-gradient(90deg, rgba(255,153,0,.45), rgba(255,153,0,.92));}
-.sv-vendor-progress__meta{margin-top:4px;font-size:11px;color:rgba(255,255,255,.52);}
-.sv-status-stack{display:flex;gap:8px;flex-wrap:wrap;}
-.sv-status-chip{display:inline-flex;align-items:center;gap:6px;padding:7px 10px;border-radius:999px;font-size:11px;font-weight:800;letter-spacing:.2px;border:1px solid transparent;}
-.sv-status-chip--pendente{background:rgba(255,165,0,.12);border-color:rgba(255,165,0,.26);color:#FFD08A;}
-.sv-status-chip--apagar{background:rgba(86,163,255,.12);border-color:rgba(86,163,255,.26);color:#B7D7FF;}
-.sv-status-chip--pago{background:rgba(29,200,110,.14);border-color:rgba(29,200,110,.28);color:#B7F7D0;}
-@media (max-width: 920px){
-  .sv-emp-card__head{flex-direction:column;align-items:flex-start;}
-  .sv-emp-card__meta{justify-content:flex-start;}
-  .sv-emp-card__kpis{grid-template-columns:repeat(2,minmax(0,1fr));}
-}
-@media (max-width: 640px){
-  .sv-emp-card__kpis{grid-template-columns:1fr;}
-}
 </style>
 {% endblock %}
 {% block content %}
@@ -97,7 +62,7 @@
     <div class="sv-pagehead__left">
       <div class="sv-breadcrumb">Relatórios <span class="sv-muted">/</span> Campanhas</div>
       <h1 class="sv-h1">Campanhas do mês</h1>
-      <div class="sv-sub">Filtre por EMP e vendedor. Use <strong>Recalcular</strong> quando importar vendas. Itens de combo são carregados sob demanda para acelerar a página.</div>
+      <div class="sv-sub">Filtre por EMP e vendedor. Use <strong>Recalcular</strong> quando importar vendas.</div>
     </div>
     <div class="sv-pagehead__right">
       <a class="sv-btn sv-btn-ghost" href="{{ ctx.get('recalc_url') or url_for('relatorio_campanhas', recalc=1, page=1) }}">
@@ -294,112 +259,160 @@
       </div>
     </div>
 
-    {% set emp_cards = rows_grouped_cards_page|default(ctx.get('rows_grouped_cards_page', [])) %}
-    <div class="sv-emp-grid">
-      {% for card in emp_cards %}
-        {% set card_outer_loop = loop %}
-        {% set top_total = (card.rows[0].total if card.rows else 0) %}
-        <div class="sv-card sv-glass sv-emp-card">
-          <div class="sv-emp-card__head">
-            <div class="sv-emp-card__title">
-              <span class="sv-badge-emp">{{ card.emp }}</span>
-              <div>
-                <div class="sv-strong">Loja {{ card.emp }}</div>
-                <div class="sv-muted">Resumo consolidado da EMP no período filtrado.</div>
-              </div>
-            </div>
-            <div class="sv-emp-card__meta">
-              <div class="sv-status-stack">
-                <span class="sv-status-chip sv-status-chip--pendente">Pendente {{ card.status_counts.get('PENDENTE', 0) }}</span>
-                <span class="sv-status-chip sv-status-chip--apagar">A Pagar {{ card.status_counts.get('A_PAGAR', 0) }}</span>
-                <span class="sv-status-chip sv-status-chip--pago">Pago {{ card.status_counts.get('PAGO', 0) }}</span>
-              </div>
-            </div>
-          </div>
-          <div class="sv-emp-card__kpis">
-            <div class="sv-mini-kpi">
-              <div class="sv-mini-kpi__label">Vendedores</div>
-              <div class="sv-mini-kpi__value">{{ card.rows|length }}</div>
-              <div class="sv-mini-kpi__sub">Com campanha no período</div>
-            </div>
-            <div class="sv-mini-kpi">
-              <div class="sv-mini-kpi__label">Campanhas</div>
-              <div class="sv-mini-kpi__value">{{ card.campanhas_count }}</div>
-              <div class="sv-mini-kpi__sub">Linhas consolidadas da loja</div>
-            </div>
-            <div class="sv-mini-kpi">
-              <div class="sv-mini-kpi__label">Premiação total</div>
-              <div class="sv-mini-kpi__value">{{ card.total|brl_rs }}</div>
-              <div class="sv-mini-kpi__sub">Somatório do card</div>
-            </div>
-            <div class="sv-mini-kpi">
-              <div class="sv-mini-kpi__label">Status dominante</div>
-              <div class="sv-mini-kpi__value">{{ card.status }}</div>
-              <div class="sv-mini-kpi__sub">Prioridade: Pendente → A Pagar → Pago</div>
-            </div>
-          </div>
-          <div class="sv-emp-card__body">
-            <div class="sv-tablewrap sv-tablewrap--emp">
-              <table class="sv-table sv-table--grouped">
-                <thead>
-                  <tr>
-                    <th>Vendedor</th>
-                    <th>Campanhas</th>
-                    <th class="sv-right">Total (R$)</th>
-                    <th>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {% for g in card.rows %}
-                    {% set pct = ((g.total / top_total) * 100) if top_total else 0 %}
-                    <tr class="sv-master-row">
-                      <td>
-                        <div class="sv-vendor-meta">
-                          <span class="sv-rank-badge">#{{ loop.index }}</span>
-                          <div class="sv-vendor-lines">
-                            <div class="sv-strong">{{ g.vendedor }}</div>
-                            <div class="sv-muted">{{ g.campanhas_count }} campanha(s) • Total {{ g.total|brl_rs }}</div>
-                            <div class="sv-vendor-progress">
-                              <div class="sv-vendor-progress__bar" style="width: {{ '%.1f'|format(pct) }}%;"></div>
-                            </div>
-                            <div class="sv-vendor-progress__meta">{{ '%.1f'|format(pct) }}% do maior total desta loja</div>
-                          </div>
-                        </div>
-                      </td>
-                      <td>
-                        <button type="button"
-                                class="sv-btn sv-btn-ghost sv-btn-xs js-toggle-camps"
-                                data-target="sv-detail-{{ card_outer_loop.index0 }}-{{ loop.index0 }}"
-                                data-detail-url="{{ g.detail_url }}"
-                                aria-expanded="false">
-                          Ver campanhas ({{ g.campanhas_count }})
-                          <span class="sv-chev" aria-hidden="true">▾</span>
-                        </button>
-                      </td>
-                      <td class="sv-right">{{ g.total|brl_rs }}</td>
-                      <td>
-                        <span class="sv-pill {{ 'sv-pill-warn' if g.status=='PENDENTE' else ('sv-pill-info' if g.status=='A_PAGAR' else ('sv-pill-ok' if g.status=='PAGO' else '')) }}">{{ g.status }}</span>
-                      </td>
-                    </tr>
-                    <tr id="sv-detail-{{ card_outer_loop.index0 }}-{{ loop.index0 }}" class="sv-detail-row" style="display:none;">
-                      <td colspan="4">
-                        <div class="sv-subcard sv-subcard--full js-detail-content">
-                          <div class="sv-muted">Clique em “Ver campanhas” para carregar o detalhe.</div>
-                        </div>
-                      </td>
-                    </tr>
-                  {% endfor %}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      {% endfor %}
-      {% if emp_cards|length == 0 %}
-        <div class="sv-card sv-glass sv-section">
-          <div class="sv-muted">Sem dados para os filtros escolhidos.</div>
-        </div>
-      {% endif %}
+    <div class="sv-tablewrap">
+      <table class="sv-table sv-table--grouped">
+        <thead>
+          <tr>
+            <th>EMP</th>
+            <th>Vendedor</th>
+            <th>Campanhas</th>
+            <th class="sv-right">Total (R$)</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% set groups = rows_grouped_page|default(ctx.get('rows_grouped_page', [])) %}
+                    {% for g in groups %}
+            {# Linha principal #}
+            <tr class="sv-master-row">
+              <td class="sv-mono">{{ g.emp }}</td>
+              <td>
+                <div class="sv-strong">{{ g.vendedor }}</div>
+                <div class="sv-muted">Campanhas: {{ g.campanhas_count }} • Total: {{ g.total|brl_rs }}</div>
+              </td>
+              <td>
+                <button type="button"
+                        class="sv-btn sv-btn-ghost sv-btn-xs js-toggle-camps"
+                        data-target="sv-detail-{{ loop.index0 }}"
+                        aria-expanded="false">
+                  Ver campanhas ({{ g.campanhas_count }})
+                  <span class="sv-chev" aria-hidden="true">▾</span>
+                </button>
+              </td>
+              <td class="sv-right">{{ g.total|brl_rs }}</td>
+              <td>
+                <span class="sv-pill {{ 'sv-pill-warn' if g.status=='PENDENTE' else ('sv-pill-info' if g.status=='A_PAGAR' else ('sv-pill-ok' if g.status=='PAGO' else '')) }}">{{ g.status }}</span>
+              </td>
+            </tr>
+
+            {# Linha expandida (modelo) - ocupa a tabela inteira #}
+            <tr id="sv-detail-{{ loop.index0 }}" class="sv-detail-row" style="display:none;">
+              <td colspan="5">
+                <div class="sv-subcard sv-subcard--full">
+                  <table class="sv-subtable sv-subtable--wide">
+                    <thead>
+                      <tr>
+                        <th>Campanha / Item</th>
+                        <th class="sv-center">Qtd mín.</th>
+                        <th class="sv-right">Recomp. (R$/un)</th>
+                        <th class="sv-center">Qtd vendida</th>
+                        <th class="sv-right">Vendeu (R$)</th>
+                        <th class="sv-right">Valor (R$)</th>
+                        <th class="sv-center">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {% set totals = namespace(vendeu=0, premio=0) %}
+                      {% if g.campanhas and g.campanhas|length > 0 %}
+                        {% for c in g.campanhas %}
+                          {% if (c.tipo or '') == 'COMBO_CARD' %}
+                            {% set combo_dom_id = 'sv-combo-' ~ loop.index0 ~ '-' ~ (c.origem_id or 0) %}
+                            {% set totals.vendeu = totals.vendeu + (c.vendeu_rs or 0) %}
+                            {% set totals.premio = totals.premio + (c.valor or 0) %}
+                            <tr class="sv-combo-head">
+                              <td class="sv-nowrap">
+                                <button type="button"
+                                        class="sv-combo-toggle js-toggle-combo"
+                                        data-target="{{ combo_dom_id }}"
+                                        aria-expanded="false">
+                                  {{ c.titulo }}
+                                  <span class="sv-muted"> • ver itens</span>
+                                  <span class="sv-chev" aria-hidden="true">▾</span>
+                                </button>
+                              </td>
+                              <td class="sv-center">-</td>
+                              <td class="sv-right">-</td>
+                              <td class="sv-center">-</td>
+                              <td class="sv-right">{{ (c.vendeu_rs or 0)|brl_rs }}</td>
+                              <td class="sv-right">{{ (c.valor or 0)|brl_rs }}</td>
+                              <td class="sv-center">
+                                {% if c.atingiu %}
+                                  <span class="sv-pill sv-pill--ok">ATINGIU</span>
+                                {% else %}
+                                  <span class="sv-pill sv-pill--warn">NÃO ATINGIU</span>
+                                {% endif %}
+                              </td>
+                            </tr>
+                            {% if c.itens and c.itens|length > 0 %}
+                              {% for it in c.itens %}
+                                <tr class="sv-combo-item {{ combo_dom_id }}" style="display:none;">
+                                  <td class="sv-nowrap">{{ it.titulo }}</td>
+                                  <td class="sv-center">{{ (it.qtd_minima or '-') }}</td>
+                                  <td class="sv-right">{{ (it.recompensa_unit or 0)|brl_rs }}</td>
+                                  <td class="sv-center">{{ (it.qtd_vendida or 0) }}</td>
+                                  <td class="sv-right">{{ (it.vendeu_rs or 0)|brl_rs }}</td>
+                                  <td class="sv-right">{{ (it.valor or 0)|brl_rs }}</td>
+                                  <td class="sv-center">
+                                    {% if it.atingiu %}
+                                      <span class="sv-pill sv-pill--ok">ATINGIU</span>
+                                    {% else %}
+                                      <span class="sv-pill sv-pill--warn">NÃO ATINGIU</span>
+                                    {% endif %}
+                                  </td>
+                                </tr>
+                              {% endfor %}
+                            {% endif %}
+                          {% else %}
+                            {% set totals.vendeu = totals.vendeu + (c.vendeu_rs or 0) %}
+                            {% set totals.premio = totals.premio + (c.valor or 0) %}
+                            <tr>
+                              <td class="sv-nowrap">{{ c.titulo }}</td>
+                              <td class="sv-center">{{ (c.qtd_minima or '-') }}</td>
+                              <td class="sv-right">{{ (c.recompensa_unit or 0)|brl_rs }}</td>
+                              <td class="sv-center">{{ (c.qtd_vendida or 0) }}</td>
+                              <td class="sv-right">{{ (c.vendeu_rs or 0)|brl_rs }}</td>
+                              <td class="sv-right">{{ (c.valor or 0)|brl_rs }}</td>
+                              <td class="sv-center">
+                                {% if c.atingiu %}
+                                  <span class="sv-pill sv-pill--ok">ATINGIU</span>
+                                {% else %}
+                                  <span class="sv-pill sv-pill--warn">NÃO ATINGIU</span>
+                                {% endif %}
+                              </td>
+                            </tr>
+                          {% endif %}
+                        {% endfor %}
+                      {% else %}
+                        <tr>
+                          <td colspan="7" class="sv-muted">Sem campanhas para este vendedor.</td>
+                        </tr>
+                      {% endif %}
+                    </tbody>
+                  </table>
+
+                  <div class="sv-subtotals">
+                    <div class="sv-subtotals__line">
+                      <span>Total vendido em campanhas:</span>
+                      <strong>{{ totals.vendeu|brl_rs }}</strong>
+                    </div>
+                    <div class="sv-subtotals__line">
+                      <span>Total premiação:</span>
+                      <strong>{{ totals.premio|brl_rs }}</strong>
+                    </div>
+                  </div>
+
+                  <div class="sv-note">
+                    Obs.: “Valor (R$)” mostra a premiação efetiva do período. Em campanhas do tipo combo, a recompensa só é liberada quando todos os requisitos do combo forem atingidos. Em Itens Parados, a coluna “Qtd vendida” representa os pontos do período e “Recomp. (R$/un)” representa o valor por ponto. “Vendeu (R$)” = soma do valor total vendido dos itens da campanha na competência. Em Itens Parados, a premiação só entra no total do vendedor quando ele atinge 10,00 pontos ou mais no período.
+                  </div>
+                </div>
+              </td>
+            </tr>
+          {% endfor %}
+          {% if groups|length == 0 %}
+            <tr><td colspan="5" class="sv-muted">Sem dados para os filtros escolhidos.</td></tr>
+          {% endif %}
+        </tbody>
+      </table>
     </div>
 
     <div class="sv-pager">
@@ -427,7 +440,7 @@
     });
   })();
 
-  // Expansão do detalhe do vendedor com carregamento sob demanda
+  // Expansão "modelo": abre uma linha abaixo (colspan) em largura total
   (function(){
     function closeAll(exceptId){
       document.querySelectorAll('tr.sv-detail-row').forEach(function(tr){
@@ -436,6 +449,7 @@
       });
       document.querySelectorAll('.js-toggle-camps').forEach(function(btn){
         var isTarget = exceptId && btn.dataset.target === exceptId;
+        btn.classList.toggle('is-open', !!isTarget && document.getElementById(exceptId).style.display !== 'none');
         if(!isTarget){
           btn.classList.remove('is-open');
           btn.setAttribute('aria-expanded', 'false');
@@ -451,102 +465,24 @@
       var row = document.getElementById(id);
       if(!row) return;
 
-      var content = row.querySelector('.js-detail-content');
-      var detailUrl = btn.getAttribute('data-detail-url') || '';
       var open = row.style.display !== 'none';
-
       if(open){
         row.style.display = 'none';
         btn.classList.remove('is-open');
         btn.setAttribute('aria-expanded', 'false');
-        return;
+      }else{
+        closeAll(id);
+        row.style.display = '';
+        btn.classList.add('is-open');
+        btn.setAttribute('aria-expanded', 'true');
       }
-
-      closeAll(id);
-      row.style.display = '';
-      btn.classList.add('is-open');
-      btn.setAttribute('aria-expanded', 'true');
-
-      if(btn.dataset.loaded === '1' || btn.dataset.loading === '1' || !detailUrl || !content){
-        return;
-      }
-
-      btn.dataset.loading = '1';
-      content.innerHTML = '<div class="sv-muted">Carregando campanhas...</div>';
-
-      fetch(detailUrl, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
-        .then(function(resp){
-          if(!resp.ok) throw new Error('Falha ao carregar detalhe');
-          return resp.text();
-        })
-        .then(function(html){
-          content.innerHTML = html;
-          btn.dataset.loaded = '1';
-        })
-        .catch(function(err){
-          console.error(err);
-          content.innerHTML = '<div class="sv-note">Não foi possível carregar o detalhe agora.</div>';
-        })
-        .finally(function(){
-          btn.dataset.loading = '0';
-        });
     });
   })();
 
 
 
-  // Toggle de itens de COMBO (expande/colapsa linhas filhas com carregamento sob demanda)
+  // Toggle de itens de COMBO (expande/colapsa linhas filhas)
   (function(){
-    function fmtBrl(value){
-      var n = Number(value || 0);
-      try {
-        return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(n);
-      } catch(_e){
-        return 'R$ ' + n.toFixed(2).replace('.', ',');
-      }
-    }
-
-    function fmtNumber(value){
-      var n = Number(value || 0);
-      return Number.isInteger(n) ? String(n) : n.toFixed(2).replace('.', ',');
-    }
-
-    function escapeHtml(value){
-      return String(value == null ? '' : value)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;');
-    }
-
-    function statusPill(atingiu){
-      return atingiu
-        ? '<span class="sv-pill sv-pill--ok">ATINGIU</span>'
-        : '<span class="sv-pill sv-pill--warn">NÃO ATINGIU</span>';
-    }
-
-    function buildComboRows(btn, target, items){
-      var headerRow = btn.closest('tr');
-      if(!headerRow) return [];
-      var htmlRows = [];
-      (items || []).forEach(function(it){
-        htmlRows.push(
-          '<tr class="sv-combo-item ' + target + '" style="display:none;">' +
-            '<td class="sv-nowrap">' + escapeHtml(it.titulo || 'Item') + '</td>' +
-            '<td class="sv-center">' + (it.qtd_minima == null ? '-' : fmtNumber(it.qtd_minima)) + '</td>' +
-            '<td class="sv-right">' + fmtBrl(it.recompensa_unit || 0) + '</td>' +
-            '<td class="sv-center">' + fmtNumber(it.qtd_vendida || 0) + '</td>' +
-            '<td class="sv-right">' + fmtBrl(it.vendeu_rs || 0) + '</td>' +
-            '<td class="sv-right">' + fmtBrl(it.valor || 0) + '</td>' +
-            '<td class="sv-center">' + statusPill(!!it.atingiu) + '</td>' +
-          '</tr>'
-        );
-      });
-      headerRow.insertAdjacentHTML('afterend', htmlRows.join(''));
-      return document.querySelectorAll('tr.' + target);
-    }
-
     document.addEventListener('click', function(ev){
       var btn = ev.target.closest('.js-toggle-combo');
       if(!btn) return;
@@ -555,48 +491,15 @@
       if(!target) return;
 
       var rows = document.querySelectorAll('tr.' + target);
-      var detailUrl = btn.getAttribute('data-detail-url') || '';
+      if(!rows || rows.length === 0) return;
 
-      function toggleRows(rowsToToggle){
-        if(!rowsToToggle || rowsToToggle.length === 0) return;
-        var anyHidden = false;
-        rowsToToggle.forEach(function(r){ if(r.style.display === 'none' || r.style.display === '') anyHidden = true; });
-        rowsToToggle.forEach(function(r){ r.style.display = anyHidden ? 'table-row' : 'none'; });
-        btn.setAttribute('aria-expanded', anyHidden ? 'true' : 'false');
-        btn.classList.toggle('is-open', anyHidden);
-      }
+      var anyHidden = false;
+      rows.forEach(function(r){ if(r.style.display === 'none' || r.style.display === '') anyHidden = true; });
 
-      if(rows && rows.length > 0){
-        toggleRows(rows);
-        return;
-      }
+      rows.forEach(function(r){ r.style.display = anyHidden ? 'table-row' : 'none'; });
 
-      if(!detailUrl || btn.dataset.loading === '1'){
-        return;
-      }
-
-      btn.dataset.loading = '1';
-      var oldText = btn.innerHTML;
-      btn.innerHTML = String(oldText) + ' <span class="sv-muted">• carregando...</span>';
-
-      fetch(detailUrl, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
-        .then(function(resp){ return resp.json(); })
-        .then(function(data){
-          if(!data || data.ok === false){
-            throw new Error((data && data.message) || 'Não foi possível carregar os itens do combo.');
-          }
-          var newRows = buildComboRows(btn, target, data.items || []);
-          btn.dataset.loaded = '1';
-          toggleRows(newRows);
-        })
-        .catch(function(err){
-          console.error(err);
-          window.alert('Não foi possível carregar os itens do combo agora.');
-        })
-        .finally(function(){
-          btn.dataset.loading = '0';
-          btn.innerHTML = oldText;
-        });
+      btn.setAttribute('aria-expanded', anyHidden ? 'true' : 'false');
+      btn.classList.toggle('is-open', anyHidden);
     });
   })();
 </script>

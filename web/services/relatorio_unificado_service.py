@@ -13,7 +13,7 @@ Objetivo:
 
 from dataclasses import dataclass
 from datetime import date
-from decimal import Decimal, ROUND_HALF_UP, ROUND_FLOOR
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Any
 
 from sqlalchemy import String, cast, func, or_
@@ -21,7 +21,6 @@ from sqlalchemy import String, cast, func, or_
 from db import (
     SessionLocal,
     Venda,
-    CampanhaQtd,
     CampanhaQtdResultado,
     CampanhaComboResultado,
     CampanhaCombo,
@@ -109,17 +108,7 @@ def _d(v: Any) -> Decimal:
         return Decimal("0")
 
 
-ITENS_PARADOS_MOV_TIPOS_VENDA = ("OA", "VV", "SV")
-
-
-def _bonus_base_from_pontos(pontos: Any, valor_por_ponto: Any) -> Decimal:
-    pontos_validos = _d(pontos)
-    if pontos_validos <= 0:
-        return Decimal("0")
-    pontos_fechados = pontos_validos.quantize(Decimal("1"), rounding=ROUND_FLOOR)
-    if pontos_fechados <= 0:
-        return Decimal("0")
-    return pontos_fechados * _d(valor_por_ponto)
+MIN_PONTOS_PAGAMENTO_ITENS_PARADOS = Decimal("10")
 
 
 def _round2(v: Any) -> float:
@@ -129,114 +118,6 @@ def _round2(v: Any) -> float:
         return 0.0
 
 
-
-
-def _campanhas_qtd_mes_overlap(db, ano: int, mes: int, emp: str) -> list[Any]:
-    periodo_ini, periodo_fim = _periodo_bounds(ano, mes)
-    emp_s = str(emp or '').strip()
-    if not emp_s:
-        return []
-    try:
-        return (
-            db.query(CampanhaQtd)
-            .filter(CampanhaQtd.ativo == 1)
-            .filter(
-                or_(
-                    cast(CampanhaQtd.emp, String) == emp_s,
-                    CampanhaQtd.emp.in_(['ALL', '*', '']),
-                    CampanhaQtd.emp.is_(None),
-                )
-            )
-            .filter(CampanhaQtd.data_inicio <= periodo_fim, CampanhaQtd.data_fim >= periodo_ini)
-            .order_by(CampanhaQtd.id.asc())
-            .all()
-        )
-    except Exception:
-        return []
-
-
-def _qtd_campaign_key(campanha: Any) -> tuple[str, str, str]:
-    campo_match = str(getattr(campanha, 'campo_match', None) or 'codigo').strip().lower()
-    marca = str(getattr(campanha, 'marca', '') or '').strip().upper()
-    if campo_match == 'descricao':
-        prefixo = str(getattr(campanha, 'descricao_prefixo', '') or getattr(campanha, 'produto_prefixo', '') or '').strip().lower()
-        return ('descricao', prefixo, marca)
-    prefixo = str(getattr(campanha, 'produto_prefixo', '') or '').strip().upper()
-    return ('codigo', prefixo, marca)
-
-
-def _build_qtd_escolhidas_por_vendedor(campanhas: list[Any], vendedores: list[str]) -> dict[str, list[Any]]:
-    gerais: dict[tuple[str, str, str], Any] = {}
-    especificas: dict[str, dict[tuple[str, str, str], Any]] = {}
-
-    for camp in (campanhas or []):
-        key = _qtd_campaign_key(camp)
-        vendedor_camp = _upper(getattr(camp, 'vendedor', ''))
-        if vendedor_camp:
-            especificas.setdefault(vendedor_camp, {})[key] = camp
-        else:
-            gerais.setdefault(key, camp)
-
-    out: dict[str, list[Any]] = {}
-    for vend in (vendedores or []):
-        merged = dict(gerais)
-        if vend in especificas:
-            merged.update(especificas[vend])
-        out[vend] = list(merged.values())
-    return out
-
-
-def _calc_vendas_qtd_por_vendedor(db, *, emp: str, campanha: Any, periodo_ini: date, periodo_fim: date, vendedores: list[str] | None = None) -> dict[str, tuple[float, float]]:
-    emp_s = str(emp or '').strip()
-    if not emp_s:
-        return {}
-
-    campo_match = str(getattr(campanha, 'campo_match', None) or 'codigo').strip().lower()
-    conds = [
-        Venda.emp == emp_s,
-        Venda.movimento >= periodo_ini,
-        Venda.movimento <= periodo_fim,
-        ~Venda.mov_tipo_movto.in_(['DS', 'CA']),
-    ]
-
-    if vendedores:
-        vendedores_u = [_upper(v) for v in vendedores if str(v or '').strip()]
-        if vendedores_u:
-            conds.append(func.upper(func.coalesce(Venda.vendedor, '')).in_(vendedores_u))
-
-    if campo_match == 'descricao':
-        prefixo = str(getattr(campanha, 'descricao_prefixo', '') or getattr(campanha, 'produto_prefixo', '') or '').strip().lower()
-        if not prefixo:
-            return {}
-        conds.append(func.lower(func.coalesce(Venda.descricao_norm, '')).like(prefixo + '%'))
-    else:
-        prefixo = str(getattr(campanha, 'produto_prefixo', '') or '').strip().upper()
-        if not prefixo:
-            return {}
-        conds.append(func.upper(cast(Venda.mestre, String)).like(prefixo + '%'))
-
-    marca = str(getattr(campanha, 'marca', '') or '').strip().upper()
-    if marca:
-        conds.append(func.upper(func.coalesce(Venda.marca, '')) == marca)
-
-    q = (
-        db.query(
-            func.upper(func.coalesce(Venda.vendedor, '')).label('vendedor'),
-            func.coalesce(func.sum(Venda.qtdade_vendida), 0.0).label('qtd'),
-            func.coalesce(func.sum(Venda.valor_total), 0.0).label('valor'),
-        )
-        .filter(*conds)
-        .group_by(func.upper(func.coalesce(Venda.vendedor, '')))
-    )
-
-    out: dict[str, tuple[float, float]] = {}
-    for row in q.all():
-        vendedor_u = _upper(getattr(row, 'vendedor', ''))
-        if not vendedor_u:
-            continue
-        out[vendedor_u] = (_safe_float(getattr(row, 'qtd', 0.0)), _safe_float(getattr(row, 'valor', 0.0)))
-    return out
-
 def build_unified_rows(
     *,
     ano: int,
@@ -245,7 +126,6 @@ def build_unified_rows(
     vendedores_por_emp: dict[str, list[str]],
     incluir_zerados: bool = False,
     usar_snapshot_itens_parados: bool = True,
-    include_combo_itens: bool = False,
 ) -> list[UnifiedRow]:
     periodo_ini, periodo_fim = _periodo_bounds(ano, mes)
     rows: list[UnifiedRow] = []
@@ -262,8 +142,7 @@ def build_unified_rows(
             if not vendedores:
                 continue
 
-            # -------- QTD (snapshot + fallback live para campanhas ativas) --------
-            snap_qtd_map: dict[tuple[int, str], Any] = {}
+            # -------- QTD (snapshot) --------
             q_qtd = (
                 db.query(CampanhaQtdResultado)
                 .filter(
@@ -273,18 +152,10 @@ def build_unified_rows(
                     CampanhaQtdResultado.vendedor.in_(vendedores),
                 )
             )
-            # QTD deve aparecer no relatório mesmo sem prêmio no período,
-            # para refletir as campanhas ativas criadas em /admin/campanhas.
-            # Por isso, diferentemente de outros blocos, NÃO filtramos snapshot
-            # por valor_recompensa > 0 aqui.
+            if not incluir_zerados:
+                q_qtd = q_qtd.filter(CampanhaQtdResultado.valor_recompensa > 0)
 
-            qtd_snapshot_rows = q_qtd.all()
-            for r in qtd_snapshot_rows:
-                campanha_id = int(getattr(r, 'campanha_id', 0) or 0)
-                vend_u = _upper(getattr(r, 'vendedor', ''))
-                if campanha_id > 0 and vend_u:
-                    snap_qtd_map[(campanha_id, vend_u)] = r
-
+            for r in q_qtd.all():
                 recompensa_unit = _safe_float(getattr(r, 'recompensa_unit', 0.0))
                 valor_recompensa = _safe_float(getattr(r, 'valor_recompensa', 0.0))
                 qtd_minima = getattr(r, 'qtd_minima', None)
@@ -299,7 +170,7 @@ def build_unified_rows(
                         competencia_ano=int(getattr(r, 'competencia_ano', ano)),
                         competencia_mes=int(getattr(r, 'competencia_mes', mes)),
                         emp=str(getattr(r, 'emp', emp)),
-                        vendedor=vend_u,
+                        vendedor=_upper(getattr(r, 'vendedor', '')),
                         titulo=str(getattr(r, 'titulo', '') or '').strip() or f"Campanha #{getattr(r, 'campanha_id', '')}",
                         item_codigo=str(getattr(r, 'produto_prefixo', '') or '').strip() or None,
                         qtd_minima=_safe_float(qtd_minima) if qtd_minima is not None else None,
@@ -311,71 +182,9 @@ def build_unified_rows(
                         valor_recompensa=valor_recompensa,
                         status_pagamento=str(getattr(r, 'status_pagamento', 'PENDENTE') or 'PENDENTE'),
                         pago_em=getattr(r, 'pago_em', None),
-                        origem_id=campanha_id,
+                        origem_id=int(getattr(r, 'campanha_id', 0) or 0),
                     )
                 )
-
-            campanhas_qtd_ativas = _campanhas_qtd_mes_overlap(db, int(ano), int(mes), str(emp))
-            if campanhas_qtd_ativas:
-                escolhidas_por_vendedor = _build_qtd_escolhidas_por_vendedor(campanhas_qtd_ativas, vendedores)
-                campanhas_missing: dict[int, dict[str, Any]] = {}
-
-                for vend_u, campanhas_vend in (escolhidas_por_vendedor or {}).items():
-                    for camp in (campanhas_vend or []):
-                        campanha_id = int(getattr(camp, 'id', 0) or 0)
-                        if campanha_id <= 0:
-                            continue
-                        if (campanha_id, vend_u) in snap_qtd_map:
-                            continue
-                        bucket = campanhas_missing.setdefault(campanha_id, {'campanha': camp, 'vendedores': []})
-                        bucket['vendedores'].append(vend_u)
-
-                for campanha_id, payload in campanhas_missing.items():
-                    camp = payload.get('campanha')
-                    vendedores_missing = list(dict.fromkeys(payload.get('vendedores') or []))
-                    vendas_calc = _calc_vendas_qtd_por_vendedor(
-                        db,
-                        emp=str(emp),
-                        campanha=camp,
-                        periodo_ini=periodo_ini,
-                        periodo_fim=periodo_fim,
-                        vendedores=vendedores_missing,
-                    )
-
-                    recompensa_unit = _safe_float(getattr(camp, 'recompensa_unit', 0.0))
-                    qtd_min = getattr(camp, 'qtd_minima', None)
-                    valor_min = getattr(camp, 'valor_minimo', None)
-
-                    for vend_u in vendedores_missing:
-                        qtd_vendida, valor_vendido = vendas_calc.get(vend_u, (0.0, 0.0))
-                        atingiu_qtd = True if qtd_min in (None, '') else (float(qtd_vendida or 0.0) >= float(qtd_min or 0.0))
-                        atingiu_valor = True if valor_min in (None, '') else (float(valor_vendido or 0.0) >= float(valor_min or 0.0))
-                        atingiu = bool(atingiu_qtd and atingiu_valor and qtd_vendida > 0)
-                        valor_recompensa = float(qtd_vendida or 0.0) * float(recompensa_unit or 0.0) if atingiu else 0.0
-                        # QTD também deve aparecer quando ainda não atingiu.
-                        # Isso permite ao vendedor/supervisor enxergar campanhas
-                        # criadas no admin mesmo com valor zero no momento.
-                        rows.append(
-                            UnifiedRow(
-                                tipo='QTD',
-                                competencia_ano=int(ano),
-                                competencia_mes=int(mes),
-                                emp=str(emp),
-                                vendedor=vend_u,
-                                titulo=str(getattr(camp, 'titulo', '') or '').strip() or f'Campanha #{campanha_id}',
-                                item_codigo=str(getattr(camp, 'produto_prefixo', '') or '').strip() or None,
-                                qtd_minima=_safe_float(qtd_min) if qtd_min not in (None, '') else None,
-                                recompensa_unit=float(recompensa_unit or 0.0),
-                                valor_vendido=float(valor_vendido or 0.0),
-                                atingiu_gate=atingiu,
-                                qtd_base=float(qtd_vendida or 0.0),
-                                qtd_premiada=float(qtd_vendida or 0.0) if atingiu and recompensa_unit > 0 else None,
-                                valor_recompensa=float(valor_recompensa or 0.0),
-                                status_pagamento='PENDENTE',
-                                pago_em=None,
-                                origem_id=campanha_id,
-                            )
-                        )
 
             # -------- COMBO (ativo + itens detalhados + snapshot para pagamento) --------
             combos_ativos = (
@@ -491,7 +300,6 @@ def build_unified_rows(
                         total_vendeu = 0.0
                         total_premio_potencial = 0.0
                         itens_atingidos = 0
-                        total_itens_combo = len(itens)
 
                         for it in itens:
                             minimo = int(getattr(it, 'minimo_qtd', 0) or 0)
@@ -512,32 +320,31 @@ def build_unified_rows(
                             valor_potencial = float(qtd_vendida or 0) * float(recompensa_unit or 0)
                             total_premio_potencial += valor_potencial
 
-                            if include_combo_itens:
-                                item_codigo = mestre_prefixo or (str(getattr(it, 'match_mestre', '') or '').strip() or None)
-                                item_titulo = f'↳ {item_codigo}' if item_codigo else f'↳ {str(getattr(it, "nome_item", "") or "Item").strip() or "Item"}'
+                            item_codigo = mestre_prefixo or (str(getattr(it, 'match_mestre', '') or '').strip() or None)
+                            item_titulo = f'↳ {item_codigo}' if item_codigo else f'↳ {str(getattr(it, "nome_item", "") or "Item").strip() or "Item"}'
 
-                                item_rows.append(
-                                    UnifiedRow(
-                                        tipo='COMBO',
-                                        competencia_ano=int(ano),
-                                        competencia_mes=int(mes),
-                                        emp=str(emp),
-                                        vendedor=vend,
-                                        titulo=item_titulo,
-                                        item_codigo=item_codigo,
-                                        qtd_minima=float(minimo) if minimo > 0 else None,
-                                        recompensa_unit=float(recompensa_unit or 0.0),
-                                        qtd_base=float(qtd_vendida or 0.0),
-                                        valor_vendido=float(vendeu_rs or 0.0),
-                                        atingiu_gate=item_ok,
-                                        valor_recompensa=float(valor_potencial or 0.0),
-                                        status_pagamento='PENDENTE',
-                                        pago_em=None,
-                                        origem_id=combo_id,
-                                    )
+                            item_rows.append(
+                                UnifiedRow(
+                                    tipo='COMBO',
+                                    competencia_ano=int(ano),
+                                    competencia_mes=int(mes),
+                                    emp=str(emp),
+                                    vendedor=vend,
+                                    titulo=item_titulo,
+                                    item_codigo=item_codigo,
+                                    qtd_minima=float(minimo) if minimo > 0 else None,
+                                    recompensa_unit=float(recompensa_unit or 0.0),
+                                    qtd_base=float(qtd_vendida or 0.0),
+                                    valor_vendido=float(vendeu_rs or 0.0),
+                                    atingiu_gate=item_ok,
+                                    valor_recompensa=float(valor_potencial or 0.0),
+                                    status_pagamento='PENDENTE',
+                                    pago_em=None,
+                                    origem_id=combo_id,
                                 )
+                            )
 
-                        combo_atingiu = bool(total_itens_combo) and itens_atingidos == total_itens_combo
+                        combo_atingiu = bool(item_rows) and itens_atingidos == len(item_rows)
 
                         # Regra de negócio do COMBO:
                         # - vendedor só recebe premiação se atingir o combo completo
@@ -545,28 +352,27 @@ def build_unified_rows(
                         #   mas a recompensa permanece zerada
                         if not combo_atingiu:
                             total_premio_potencial = 0.0
-                            if include_combo_itens:
-                                item_rows = [
-                                    UnifiedRow(
-                                        tipo=ir.tipo,
-                                        competencia_ano=ir.competencia_ano,
-                                        competencia_mes=ir.competencia_mes,
-                                        emp=ir.emp,
-                                        vendedor=ir.vendedor,
-                                        titulo=ir.titulo,
-                                        item_codigo=ir.item_codigo,
-                                        qtd_minima=ir.qtd_minima,
-                                        recompensa_unit=ir.recompensa_unit,
-                                        qtd_base=ir.qtd_base,
-                                        valor_vendido=ir.valor_vendido,
-                                        atingiu_gate=ir.atingiu_gate,
-                                        valor_recompensa=0.0,
-                                        status_pagamento=ir.status_pagamento,
-                                        pago_em=ir.pago_em,
-                                        origem_id=ir.origem_id,
-                                    )
-                                    for ir in item_rows
-                                ]
+                            item_rows = [
+                                UnifiedRow(
+                                    tipo=ir.tipo,
+                                    competencia_ano=ir.competencia_ano,
+                                    competencia_mes=ir.competencia_mes,
+                                    emp=ir.emp,
+                                    vendedor=ir.vendedor,
+                                    titulo=ir.titulo,
+                                    item_codigo=ir.item_codigo,
+                                    qtd_minima=ir.qtd_minima,
+                                    recompensa_unit=ir.recompensa_unit,
+                                    qtd_base=ir.qtd_base,
+                                    valor_vendido=ir.valor_vendido,
+                                    atingiu_gate=ir.atingiu_gate,
+                                    valor_recompensa=0.0,
+                                    status_pagamento=ir.status_pagamento,
+                                    pago_em=ir.pago_em,
+                                    origem_id=ir.origem_id,
+                                )
+                                for ir in item_rows
+                            ]
 
                         snap = snap_map.get((combo_id, vend))
                         st_pag = str(getattr(snap, 'status_pagamento', 'PENDENTE') or 'PENDENTE') if snap else 'PENDENTE'
@@ -688,7 +494,7 @@ def build_unified_rows(
                             Venda.emp == str(emp),
                             Venda.movimento >= periodo_ini,
                             Venda.movimento <= periodo_fim,
-                            func.upper(func.coalesce(Venda.mov_tipo_movto, '')).in_(ITENS_PARADOS_MOV_TIPOS_VENDA),
+                            Venda.mov_tipo_movto == 'OA',
                             Venda.mestre.in_(codigos),
                             Venda.vendedor.in_(vendedores),
                         )
@@ -732,12 +538,14 @@ def build_unified_rows(
                     valor_por_ponto = _d(getattr(cfg_emp, 'valor_por_ponto', None) or getattr(cfg_global, 'valor_por_ponto', 10.0) or 10.0)
                     for vend_u, data in acc.items():
                         pontos = data['pontos']
-                        bonus_base = _bonus_base_from_pontos(pontos, valor_por_ponto)
+                        elegivel_pagamento = pontos >= MIN_PONTOS_PAGAMENTO_ITENS_PARADOS
+                        bonus_base = (pontos * valor_por_ponto) if elegivel_pagamento else Decimal('0')
                         bonus_extra = Decimal('0')
-                        for faixa in bonus_list:
-                            min_pontos = _d(getattr(faixa, 'min_pontos', 0) or 0)
-                            if pontos >= min_pontos:
-                                bonus_extra = _d(getattr(faixa, 'bonus_valor', 0) or 0)
+                        if elegivel_pagamento:
+                            for faixa in bonus_list:
+                                min_pontos = _d(getattr(faixa, 'min_pontos', 0) or 0)
+                                if pontos >= min_pontos:
+                                    bonus_extra = _d(getattr(faixa, 'bonus_valor', 0) or 0)
                         valor_total = bonus_base + bonus_extra
                         if (not incluir_zerados) and valor_total <= 0 and pontos <= 0:
                             continue
@@ -752,7 +560,7 @@ def build_unified_rows(
                                 qtd_minima=None,
                                 recompensa_unit=_round2(valor_por_ponto),
                                 valor_vendido=_round2(data['valor_vendido']),
-                                atingiu_gate=bool(valor_total > 0),
+                                atingiu_gate=bool(elegivel_pagamento),
                                 qtd_base=_round2(pontos),
                                 qtd_premiada=None,
                                 valor_recompensa=_round2(valor_total),
@@ -815,124 +623,6 @@ def build_unified_rows(
 
     rows.sort(key=lambda r: (r.emp, r.vendedor, r.tipo, r.titulo))
     return rows
-
-
-def load_combo_item_details(*, ano: int, mes: int, emp: str, vendedor: str, combo_id: int) -> dict[str, Any]:
-    periodo_ini, periodo_fim = _periodo_bounds(ano, mes)
-    vendedor_u = _upper(vendedor)
-    emp_s = str(emp)
-
-    with SessionLocal() as db:
-        combo = (
-            db.query(CampanhaCombo)
-            .filter(CampanhaCombo.id == int(combo_id))
-            .first()
-        )
-        if not combo:
-            return {"ok": False, "items": [], "message": "Combo não encontrado."}
-
-        itens = (
-            db.query(CampanhaComboItem)
-            .filter(CampanhaComboItem.combo_id == int(combo_id))
-            .order_by(CampanhaComboItem.ordem.asc(), CampanhaComboItem.id.asc())
-            .all()
-        )
-        if not itens:
-            return {"ok": True, "items": [], "atingiu": False, "valor": 0.0, "vendeu_rs": 0.0}
-
-        vendas_rows = (
-            db.query(
-                Venda.mestre,
-                func.coalesce(Venda.descricao, ''),
-                func.coalesce(func.sum(Venda.qtdade_vendida), 0),
-                func.coalesce(func.sum(Venda.valor_total), 0),
-            )
-            .filter(Venda.emp == emp_s)
-            .filter(func.upper(func.coalesce(Venda.vendedor, '')) == vendedor_u)
-            .filter(Venda.movimento >= periodo_ini, Venda.movimento <= periodo_fim)
-            .filter(~Venda.mov_tipo_movto.in_(['DS', 'CA']))
-            .group_by(Venda.mestre, func.coalesce(Venda.descricao, ''))
-            .all()
-        )
-
-        sales = [
-            {
-                'mestre': str(mestre or '').strip(),
-                'descricao': _upper(descricao),
-                'qtd': float(qtd or 0),
-                'valor': float(val or 0),
-            }
-            for mestre, descricao, qtd, val in vendas_rows
-        ]
-
-        def _sum_vendas_item(mestre_prefixo: str | None, descricao_contains: str | None) -> tuple[float, float]:
-            prefix = str(mestre_prefixo or '').strip()
-            desc_need = _upper(descricao_contains)
-            qtd_total = 0.0
-            val_total = 0.0
-            for sale in sales:
-                if prefix and not sale['mestre'].startswith(prefix):
-                    continue
-                if desc_need and desc_need not in sale['descricao']:
-                    continue
-                if not prefix and not desc_need:
-                    continue
-                qtd_total += float(sale['qtd'] or 0)
-                val_total += float(sale['valor'] or 0)
-            return qtd_total, val_total
-
-        items_payload: list[dict[str, Any]] = []
-        total_vendeu = 0.0
-        total_valor = 0.0
-        itens_atingidos = 0
-
-        for it in itens:
-            minimo = int(getattr(it, 'minimo_qtd', 0) or 0)
-            mestre_prefixo = str(getattr(it, 'mestre_prefixo', None) or getattr(it, 'match_mestre', None) or '').strip() or None
-            descricao_contains = str(getattr(it, 'descricao_contains', None) or '').strip() or None
-
-            qtd_vendida, vendeu_rs = _sum_vendas_item(mestre_prefixo, descricao_contains)
-            total_vendeu += vendeu_rs
-
-            item_ok = bool(minimo <= 0 or qtd_vendida >= float(minimo))
-            if item_ok:
-                itens_atingidos += 1
-
-            recompensa_unit = _safe_float(getattr(it, 'valor_unitario', None))
-            if recompensa_unit <= 0:
-                recompensa_unit = _safe_float(getattr(combo, 'valor_unitario_global', None))
-
-            valor_item = float(qtd_vendida or 0) * float(recompensa_unit or 0)
-            total_valor += valor_item
-
-            item_codigo = mestre_prefixo or (str(getattr(it, 'match_mestre', '') or '').strip() or None)
-            item_titulo = f'↳ {item_codigo}' if item_codigo else f'↳ {str(getattr(it, "nome_item", "") or "Item").strip() or "Item"}'
-
-            items_payload.append({
-                'titulo': item_titulo,
-                'qtd_minima': float(minimo) if minimo > 0 else None,
-                'recompensa_unit': float(recompensa_unit or 0.0),
-                'qtd_vendida': float(qtd_vendida or 0.0),
-                'vendeu_rs': float(vendeu_rs or 0.0),
-                'valor': float(valor_item or 0.0),
-                'atingiu': bool(item_ok),
-            })
-
-        combo_atingiu = bool(itens) and itens_atingidos == len(itens)
-        if not combo_atingiu:
-            total_valor = 0.0
-            for item in items_payload:
-                item['valor'] = 0.0
-
-        return {
-            "ok": True,
-            "items": items_payload,
-            "atingiu": bool(combo_atingiu),
-            "vendeu_rs": float(total_vendeu or 0.0),
-            "valor": float(total_valor or 0.0),
-            "itens_atingidos": int(itens_atingidos),
-            "itens_total": int(len(itens)),
-        }
 
 
 def aggregate_for_charts(rows: list[UnifiedRow] | None) -> dict[str, Any]:

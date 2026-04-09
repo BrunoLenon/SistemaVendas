@@ -1,82 +1,57 @@
--- Índices recomendados (Postgres/Supabase)
--- Execute no SQL Editor do Supabase.
--- Observação: ''IF NOT EXISTS'' evita erro se o índice já existir.
--- Se a tabela vendas estiver muito grande, prefira rodar em janela de menor uso.
+-- Fase 3 — banco e índices para /relatorios/campanhas
+--
+-- Objetivo:
+-- 1) reduzir tempo de leitura dos snapshots mensais
+-- 2) acelerar consultas em vendas usadas por Combo/QTD/Itens Parados
+-- 3) preparar a base para Metas / V2 / Financeiro sem recalcular tudo em memória
+--
+-- Como aplicar:
+-- - Execute este arquivo no SQL Editor do Supabase.
+-- - Se a tabela public.vendas for muito grande, rode em horário de menor uso.
+-- - Depois execute o arquivo relatorio_campanhas_fase3_poscheck.sql para conferir.
 
--- =========================
--- Índices gerais já usados em outros relatórios
--- =========================
+BEGIN;
 
--- Acelera filtros por EMP + vendedor + período
-CREATE INDEX IF NOT EXISTS ix_vendas_emp_vendedor_data
-ON public.vendas (emp, vendedor, movimento);
-
--- Acelera drill-down por cliente (razao_norm) + período (por EMP)
-CREATE INDEX IF NOT EXISTS ix_vendas_emp_cliente_data
-ON public.vendas (emp, razao_norm, movimento);
-
--- Acelera consulta de itens do cliente (mestre) + período (por EMP)
-CREATE INDEX IF NOT EXISTS ix_vendas_emp_mestre_data
-ON public.vendas (emp, mestre, movimento);
-
--- Opcional: se você usa muito 'marca' nos filtros de relatório
-CREATE INDEX IF NOT EXISTS ix_vendas_emp_marca_data
-ON public.vendas (emp, marca, movimento);
-
--- =========================
--- Fase 3 — /relatorios/campanhas
--- =========================
-
--- Vendas usadas por campanhas QTD/Combo (ignora DS/CA)
 CREATE INDEX IF NOT EXISTS ix_vendas_relatorio_ativos_emp_vendedor_mov_mestre
 ON public.vendas (emp, vendedor, movimento, mestre)
 WHERE mov_tipo_movto <> 'DS' AND mov_tipo_movto <> 'CA';
 
--- Vendas usadas por Itens Parados no modo novo (OA)
 CREATE INDEX IF NOT EXISTS ix_vendas_relatorio_oa_emp_mestre_mov_vendedor
 ON public.vendas (emp, mestre, movimento, vendedor)
 WHERE mov_tipo_movto = 'OA';
 
--- Snapshot mensal de campanhas QTD filtrado por competência + EMP + vendedor
 CREATE INDEX IF NOT EXISTS ix_camp_qtd_res_periodo_emp_vendedor_campanha
 ON public.campanhas_qtd_resultados (competencia_ano, competencia_mes, emp, vendedor, campanha_id);
 
--- Snapshot mensal de combos filtrado por competência + EMP + vendedor + combo
 CREATE INDEX IF NOT EXISTS ix_combo_res_periodo_emp_vendedor_combo
 ON public.campanhas_combo_resultados (competencia_ano, competencia_mes, emp, vendedor, combo_id);
 
--- Combos ativos do mês por EMP
 CREATE INDEX IF NOT EXISTS ix_combo_ativo_periodo_emp
 ON public.campanhas_combo (ano, mes, emp)
 WHERE ativo IS TRUE;
 
--- Combos globais ativos do mês (emp nulo/vazio)
 CREATE INDEX IF NOT EXISTS ix_combo_ativo_periodo_global
 ON public.campanhas_combo (ano, mes)
 WHERE ativo IS TRUE AND (emp IS NULL OR emp = '');
 
--- Itens do combo carregados por combo_id e ordenação visual
 CREATE INDEX IF NOT EXISTS ix_combo_itens_combo_ordem_id
 ON public.campanhas_combo_itens (combo_id, ordem, id);
 
--- Cadastros ativos de itens parados por EMP e vigência
 CREATE INDEX IF NOT EXISTS ix_itens_parados_emp_ativo_vigencia_codigo
 ON public.itens_parados (emp, data_inicio, data_fim, codigo)
 WHERE ativo IS TRUE;
 
--- Resultados de metas por competência + EMP + vendedor
 CREATE INDEX IF NOT EXISTS ix_meta_resultados_periodo_emp_vendedor_meta
 ON public.metas_resultados (ano, mes, emp, vendedor, meta_id);
 
--- Resultados V2 (Ranking/Metas V2) por competência + EMP + vendedor
 CREATE INDEX IF NOT EXISTS ix_camp_v2_result_periodo_emp_vendedor_campanha
 ON public.campanhas_v2_resultados (ano, mes, emp, vendedor, campanha_id);
 
--- Financeiro por competência + origem + EMP + vendedor
 CREATE INDEX IF NOT EXISTS ix_fin_pag_periodo_origem_emp_vendedor_origemid
 ON public.financeiro_pagamentos (ano, mes, origem_tipo, emp, vendedor, origem_id);
 
--- Atualiza estatísticas do planner após criar os índices
+COMMIT;
+
 ANALYZE public.vendas;
 ANALYZE public.campanhas_qtd_resultados;
 ANALYZE public.campanhas_combo_resultados;
