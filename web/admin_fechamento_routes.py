@@ -86,7 +86,7 @@ def register_admin_fechamento_routes(
             "abrir": "reabrir",
         }.get(acao_raw, acao_raw)
 
-        def _redirect_relatorio(*, exportar_csv: bool, recalc: bool = False):
+        def _redirect_relatorio(*, exportar_pdf: bool, recalc: bool = False):
             params: list[tuple[str, str | int]] = [
                 ("mes", int(mes)),
                 ("ano", int(ano)),
@@ -98,7 +98,7 @@ def register_admin_fechamento_routes(
                 emp_n = _emp_norm(emp)
                 if emp_n:
                     params.append(("emp", emp_n))
-            endpoint = "relatorio_campanhas_export_csv" if exportar_csv else "relatorio_campanhas"
+            endpoint = "relatorio_campanhas_export_pdf" if exportar_pdf else "relatorio_campanhas"
             base = url_for(endpoint)
             try:
                 from urllib.parse import urlencode
@@ -124,13 +124,13 @@ def register_admin_fechamento_routes(
                     msgs.append("⚠️ Selecione ao menos 1 EMP para conferir a apuração do período.")
                 else:
                     flash("Apuração atualizada. Confira os valores no relatório consolidado do período.", "info")
-                    return _redirect_relatorio(exportar_csv=False, recalc=True)
+                    return _redirect_relatorio(exportar_pdf=False, recalc=True)
 
             if request.method == "POST" and acao == "gerar_snapshot":
                 if not emps_sel:
                     msgs.append("⚠️ Selecione ao menos 1 EMP para exportar o fechamento.")
                 else:
-                    return _redirect_relatorio(exportar_csv=True, recalc=True)
+                    return _redirect_relatorio(exportar_pdf=True, recalc=True)
 
             if request.method == "POST" and acao in {"fechar_a_pagar", "fechar_pago", "reabrir"}:
                 app.logger.info(

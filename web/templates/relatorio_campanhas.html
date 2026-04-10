@@ -86,8 +86,11 @@
       <a class="sv-btn sv-btn-ghost" href="{{ ctx.get('recalc_url') or url_for('relatorio_campanhas', recalc=1, page=1) }}">
         Recalcular
       </a>
-      <a class="sv-btn sv-btn-primary" href="{{ ctx.get('export_url') or url_for('relatorio_campanhas_export_csv') }}">
-        Exportar CSV
+      <a class="sv-btn sv-btn-primary" href="{{ ctx.get('export_url') or url_for('relatorio_campanhas_export_pdf') }}">
+        Exportar PDF
+      </a>
+      <a class="sv-btn sv-btn-ghost" href="{{ ctx.get('export_csv_url') or url_for('relatorio_campanhas_export_csv') }}">
+        CSV
       </a>
     </div>
   </div>

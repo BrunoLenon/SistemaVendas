@@ -90,7 +90,7 @@
 </button>
 
 <button class="btn btn-outline-dark" type="submit" onclick="document.getElementById('acao_fechamento').value='gerar_snapshot'" {% if not emps_sel %}disabled{% endif %}>
-  Exportar fechamento (CSV)
+  Exportar fechamento (PDF)
 </button>
 
 <button class="btn btn-primary" type="submit" onclick="document.getElementById('acao_fechamento').value='fechar_a_pagar'" {% if not emps_sel %}disabled{% endif %}>
@@ -108,7 +108,7 @@
       <div class="alert alert-secondary small mt-3 mb-0">
         <div><b>Como usar:</b></div>
         <div class="mt-1"><b>Conferir apuração no relatório</b> recalcula e abre o <code>/relatorios/campanhas</code> com as EMPs selecionadas.</div>
-        <div><b>Exportar fechamento (CSV)</b> baixa o consolidado da competência com a mesma base do relatório de campanhas.</div>
+        <div><b>Exportar fechamento (PDF)</b> baixa um relatório visual da competência, agrupado por loja, vendedor e campanhas detalhadas, usando a mesma base do relatório de campanhas.</div>
         <div><b>Fechar (A pagar)</b> trava o período e sinaliza que os valores estão prontos para pagamento.</div>
         <div><b>Fechar (Pago)</b> trava o período já marcando a competência como liquidada.</div>
       </div>
