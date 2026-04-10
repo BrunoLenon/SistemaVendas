@@ -30,7 +30,7 @@
     <div>
       <h3 class="m-0 page-title">✅ Fechamento Mensal</h3>
       <div class="subtitle mt-1">
-        Trava edição de campanhas/resumos no período. Apenas ADMIN.
+        Fecha a competência por loja e permite conferir/exportar exatamente a base usada no relatório de campanhas. Apenas ADMIN.
       </div>
   </div>
 </div>
@@ -86,11 +86,11 @@
           <input class="sv-input" type="hidden" name="acao" id="acao_fechamento" value="">
 
 <button class="btn btn-outline-primary" type="submit" onclick="document.getElementById('acao_fechamento').value='gerar_fechamento'" {% if not emps_sel %}disabled{% endif %}>
-  Gerar Fechamento (Congelar)
+  Conferir apuração no relatório
 </button>
 
 <button class="btn btn-outline-dark" type="submit" onclick="document.getElementById('acao_fechamento').value='gerar_snapshot'" {% if not emps_sel %}disabled{% endif %}>
-  Gerar Snapshot (Relatório)
+  Exportar fechamento (CSV)
 </button>
 
 <button class="btn btn-primary" type="submit" onclick="document.getElementById('acao_fechamento').value='fechar_a_pagar'" {% if not emps_sel %}disabled{% endif %}>
@@ -103,6 +103,14 @@
   Reabrir (Voltar para Aberto)
 </button>
 </form>
+      </div>
+
+      <div class="alert alert-secondary small mt-3 mb-0">
+        <div><b>Como usar:</b></div>
+        <div class="mt-1"><b>Conferir apuração no relatório</b> recalcula e abre o <code>/relatorios/campanhas</code> com as EMPs selecionadas.</div>
+        <div><b>Exportar fechamento (CSV)</b> baixa o consolidado da competência com a mesma base do relatório de campanhas.</div>
+        <div><b>Fechar (A pagar)</b> trava o período e sinaliza que os valores estão prontos para pagamento.</div>
+        <div><b>Fechar (Pago)</b> trava o período já marcando a competência como liquidada.</div>
       </div>
 
       <div class="mt-3">

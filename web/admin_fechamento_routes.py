@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, date
 from typing import Callable, Any
 
-from flask import request, redirect, url_for, render_template
+from flask import request, redirect, url_for, render_template, flash
 
 
 def register_admin_fechamento_routes(
@@ -67,6 +67,14 @@ def register_admin_fechamento_routes(
         # variações, ex.: sem underscore, com hífen ou com espaços).
         acao_raw = (request.values.get("acao") or request.values.get("action") or request.form.get("acao") or "").strip().lower()
         acao = {
+            "gerar_fechamento": "gerar_fechamento",
+            "gerar-fechamento": "gerar_fechamento",
+            "congelar": "gerar_fechamento",
+            "gerar_snapshot": "gerar_snapshot",
+            "gerar-snapshot": "gerar_snapshot",
+            "snapshot": "gerar_snapshot",
+            "exportar_fechamento": "gerar_snapshot",
+            "exportar-fechamento": "gerar_snapshot",
             "fechar_a_pagar": "fechar_a_pagar",
             "fechar_apagar": "fechar_a_pagar",
             "fechar-a-pagar": "fechar_a_pagar",
@@ -77,6 +85,27 @@ def register_admin_fechamento_routes(
             "reabrir": "reabrir",
             "abrir": "reabrir",
         }.get(acao_raw, acao_raw)
+
+        def _redirect_relatorio(*, exportar_csv: bool, recalc: bool = False):
+            params: list[tuple[str, str | int]] = [
+                ("mes", int(mes)),
+                ("ano", int(ano)),
+                ("view", "detalhado"),
+            ]
+            if recalc:
+                params.append(("recalc", 1))
+            for emp in (emps_sel or []):
+                emp_n = _emp_norm(emp)
+                if emp_n:
+                    params.append(("emp", emp_n))
+            endpoint = "relatorio_campanhas_export_csv" if exportar_csv else "relatorio_campanhas"
+            base = url_for(endpoint)
+            try:
+                from urllib.parse import urlencode
+                qs = urlencode(params, doseq=True)
+                return redirect(base + (("?" + qs) if qs else ""))
+            except Exception:
+                return redirect(base)
 
         with SessionLocal() as db:
             # Carrega opções de EMP para o filtro (admin: todas cadastradas, fallback: EMPs com vendas no período)
@@ -89,6 +118,19 @@ def register_admin_fechamento_routes(
                     emps_all = _get_emps_com_vendas_no_periodo(ano, mes)
                 except Exception:
                     emps_all = []
+
+            if request.method == "POST" and acao == "gerar_fechamento":
+                if not emps_sel:
+                    msgs.append("⚠️ Selecione ao menos 1 EMP para conferir a apuração do período.")
+                else:
+                    flash("Apuração atualizada. Confira os valores no relatório consolidado do período.", "info")
+                    return _redirect_relatorio(exportar_csv=False, recalc=True)
+
+            if request.method == "POST" and acao == "gerar_snapshot":
+                if not emps_sel:
+                    msgs.append("⚠️ Selecione ao menos 1 EMP para exportar o fechamento.")
+                else:
+                    return _redirect_relatorio(exportar_csv=True, recalc=True)
 
             if request.method == "POST" and acao in {"fechar_a_pagar", "fechar_pago", "reabrir"}:
                 app.logger.info(

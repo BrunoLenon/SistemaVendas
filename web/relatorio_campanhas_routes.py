@@ -399,6 +399,7 @@ def register_relatorio_campanhas_routes(
         emps_scope = scope["emps_scope"]
         vendedores_por_emp = scope["vendedores_por_emp"]
 
+        recalc = str(request.args.get("recalc", "0") or "0").strip() in {"1", "true", "True", "yes", "on"}
         ctx = build_relatorio_campanhas_unificado_context(
             deps,
             role=role,
@@ -409,7 +410,7 @@ def register_relatorio_campanhas_routes(
             emps_sel=emps_sel,
             vendedores_sel=vendedores_sel,
             vendedores_por_emp=vendedores_por_emp,
-            recalc=False,
+            recalc=recalc,
             flash=flash,
         )
 
