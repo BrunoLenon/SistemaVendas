@@ -3,181 +3,247 @@
 
 {% block extra_head %}
 <style>
-  .sv-page.sv-page--wide{max-width: 1480px;}
-  .sv-accordion .accordion-item{background: rgba(255,255,255,0.04); border:1px solid rgba(255,165,0,0.18); border-radius:14px; overflow:hidden; margin-bottom:10px;}
-  .sv-accordion .accordion-button{background: transparent; color:#e9eef5;}
-  .sv-accordion .accordion-button:focus{box-shadow:none;}
-  .sv-accordion .accordion-button:not(.collapsed){background: rgba(255,165,0,0.08); color:#fff;}
-  .sv-badge{display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border-radius:999px; font-size:12px; border:1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.04);}
-  .sv-badge--ok{border-color: rgba(0,255,140,0.28); background: rgba(0,255,140,0.08);}
-  .sv-badge--warn{border-color: rgba(255,165,0,0.35); background: rgba(255,165,0,0.10);}
+  .sv-page.sv-page--wide{max-width:1500px;}
+  .sv-toolbar{display:grid;grid-template-columns:repeat(6,minmax(120px,1fr));gap:12px;align-items:end;}
+  .sv-toolbar .sv-field--span2{grid-column:span 2;}
+  .sv-kpis{display:grid;grid-template-columns:repeat(5,minmax(170px,1fr));gap:12px;}
+  .sv-kpi{background:rgba(255,255,255,.04);border:1px solid rgba(255,165,0,.16);border-radius:18px;padding:14px 16px;}
+  .sv-kpi__label{font-size:12px;opacity:.72;margin-bottom:6px;}
+  .sv-kpi__value{font-size:22px;font-weight:800;line-height:1.1;}
+  .sv-badge{display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border-radius:999px;font-size:12px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);}
+  .sv-badge--pend{border-color:rgba(255,165,0,.35);background:rgba(255,165,0,.12);color:#ffd08a;}
+  .sv-badge--pay{border-color:rgba(84,160,255,.35);background:rgba(84,160,255,.12);color:#b7d5ff;}
+  .sv-badge--ok{border-color:rgba(0,255,140,.28);background:rgba(0,255,140,.10);color:#b5ffd7;}
   .sv-badge--muted{opacity:.78;}
-  .sv-btn-mini{padding:.25rem .55rem; border-radius:10px;}
-  .sv-kpi{display:flex; gap:10px; flex-wrap:wrap;}
-  .sv-kpi .k{flex:1 1 220px; min-width:220px; background:rgba(0,0,0,0.25); border:1px solid rgba(255,165,0,0.14); border-radius:14px; padding:10px 12px;}
-  .sv-kpi .k .t{font-size:12px; opacity:.75;}
-  .sv-kpi .k .v{font-size:18px; font-weight:700;}
-  .sv-table td,.sv-table th{padding:.5rem .55rem;}
+  .sv-emp-grid{display:grid;gap:16px;}
+  .sv-emp-card{border:1px solid rgba(255,165,0,.14);border-radius:22px;background:linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02));overflow:hidden;}
+  .sv-emp-head{padding:16px 18px;border-bottom:1px solid rgba(255,255,255,.08);display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;}
+  .sv-emp-title{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+  .sv-emp-meta{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+  .sv-emp-body{padding:16px;display:grid;gap:14px;}
+  .sv-vendor{border:1px solid rgba(255,255,255,.07);border-radius:18px;background:rgba(0,0,0,.20);}
+  .sv-vendor-head{padding:14px 16px;border-bottom:1px solid rgba(255,255,255,.06);display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center;}
+  .sv-vendor-meta{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+  .sv-table td,.sv-table th{padding:.58rem .62rem;vertical-align:middle;}
+  .sv-table th{font-size:12px;letter-spacing:.02em;opacity:.78;text-transform:uppercase;}
+  .sv-type{display:inline-flex;padding:4px 10px;border-radius:999px;font-size:11px;font-weight:700;border:1px solid transparent;}
+  .sv-type--qtd{background:rgba(255,165,0,.10);border-color:rgba(255,165,0,.28);color:#ffd08a;}
+  .sv-type--combo{background:rgba(91,164,255,.12);border-color:rgba(91,164,255,.30);color:#bdd8ff;}
+  .sv-type--parado{background:rgba(255,93,154,.11);border-color:rgba(255,93,154,.24);color:#ffc1d7;}
+  .sv-actions{display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap;}
+  .sv-btn-mini{padding:.28rem .58rem;border-radius:10px;}
+  .sv-empty{padding:28px 14px;text-align:center;color:rgba(255,255,255,.68);}
+  @media (max-width: 1100px){
+    .sv-toolbar{grid-template-columns:repeat(2,minmax(0,1fr));}
+    .sv-toolbar .sv-field--span2{grid-column:span 2;}
+    .sv-kpis{grid-template-columns:repeat(2,minmax(0,1fr));}
+  }
+  @media (max-width: 700px){
+    .sv-toolbar,.sv-kpis{grid-template-columns:1fr;}
+    .sv-toolbar .sv-field--span2{grid-column:span 1;}
+  }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="sv-page sv-page--wide">
   <div class="sv-pagehead sv-glass mb-3">
-    <div class="d-flex justify-content-between align-items-start gap-2 flex-wrap">
+    <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
       <div>
-        <div class="d-flex align-items-center gap-2">
+        <div class="d-flex align-items-center gap-2 flex-wrap">
           <h3 class="mb-0">Financeiro · Campanhas</h3>
-          <span class="sv-badge sv-badge--muted">Pagamento</span>
+          <span class="sv-badge sv-badge--muted">Cockpit financeiro</span>
         </div>
-        <div class="sv-muted mt-1">Visualize campanhas <b>FECHADAS</b> e <b>A_PAGAR</b> e marque como <b>PAGO</b>.</div>
+        <div class="sv-muted mt-1">Feche o ciclo das campanhas por loja e vendedor. O status é controlado no Financeiro sem alterar a apuração base.</div>
       </div>
-      <form class="d-flex gap-2 align-items-end" method="get">
+      <div class="d-flex align-items-center gap-2 flex-wrap">
+        <a class="btn btn-outline-warning sv-btn-mini" href="{{ url_for('relatorio_campanhas', ano=ano, mes=mes) }}">Ver relatório</a>
+      </div>
+    </div>
+  </div>
+
+  <form method="get" class="sv-card sv-glass mb-3">
+    <div class="sv-card-pad">
+      <div class="sv-toolbar">
         <div>
           <label class="form-label mb-1">Ano</label>
-          <input class="sv-input" style="width:120px;" name="ano" value="{{ ano }}">
+          <input class="sv-input" name="ano" value="{{ ano }}">
         </div>
         <div>
           <label class="form-label mb-1">Mês</label>
-          <input class="sv-input" style="width:100px;" name="mes" value="{{ '%02d'|format(mes) }}">
+          <input class="sv-input" name="mes" value="{{ '%02d'|format(mes) }}">
         </div>
-        <button class="btn btn-warning sv-btn-mini" type="submit">Filtrar</button>
-      </form>
-    </div>
-  </div>
-
-  <div class="sv-kpi mb-3">
-    <div class="k">
-      <div class="t">Competência</div>
-      <div class="v">{{ '%02d'|format(mes) }}/{{ ano }}</div>
-    </div>
-    <div class="k">
-      <div class="t">Total a pagar / pago (visível)</div>
-      <div class="v">
-        {% set total = 0 %}
-        {% for e in relatorio %}
-          {% set total = total + (e.total or 0) %}
-        {% endfor %}
-        {{ total|brl_rs }}
+        <div>
+          <label class="form-label mb-1">Status</label>
+          <select class="sv-input" name="status">
+            <option value="" {% if not status_sel %}selected{% endif %}>Todos</option>
+            <option value="PENDENTE" {% if status_sel=='PENDENTE' %}selected{% endif %}>PENDENTE</option>
+            <option value="A_PAGAR" {% if status_sel=='A_PAGAR' %}selected{% endif %}>A_PAGAR</option>
+            <option value="PAGO" {% if status_sel=='PAGO' %}selected{% endif %}>PAGO</option>
+          </select>
+        </div>
+        <div>
+          <label class="form-label mb-1">Tipo</label>
+          <select class="sv-input" name="tipo">
+            <option value="" {% if not tipo_sel %}selected{% endif %}>Todos</option>
+            <option value="QTD" {% if tipo_sel=='QTD' %}selected{% endif %}>Campanha</option>
+            <option value="COMBO" {% if tipo_sel=='COMBO' %}selected{% endif %}>Combo</option>
+            <option value="PARADO" {% if tipo_sel=='PARADO' %}selected{% endif %}>Itens parados</option>
+          </select>
+        </div>
+        <div class="sv-field--span2">
+          <label class="form-label mb-1">Lojas (EMP)</label>
+          <select class="sv-input" name="emp" multiple size="4">
+            {% for emp_opt in emps_scope %}
+              <option value="{{ emp_opt }}" {% if emp_opt in emps_sel %}selected{% endif %}>EMP {{ emp_opt }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="sv-field--span2">
+          <label class="form-label mb-1">Vendedores</label>
+          <select class="sv-input" name="vendedor" multiple size="4">
+            {% for vendedor_opt in vendedores_scope %}
+              <option value="{{ vendedor_opt }}" {% if vendedor_opt in vendedores_sel %}selected{% endif %}>{{ vendedor_opt }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      <div class="d-flex justify-content-between align-items-center gap-2 flex-wrap mt-3">
+        <div class="sv-muted">Dica: use Ctrl para selecionar múltiplas lojas ou vendedores.</div>
+        <div class="d-flex gap-2 flex-wrap">
+          <button class="btn btn-warning sv-btn-mini" type="submit">Aplicar filtros</button>
+          <button class="btn btn-outline-light sv-btn-mini" type="submit" name="recalc" value="1">Recalcular</button>
+        </div>
       </div>
     </div>
-    <div class="k">
-      <div class="t">EMPs no relatório</div>
-      <div class="v">{{ relatorio|length }}</div>
+  </form>
+
+  <div class="sv-kpis mb-3">
+    <div class="sv-kpi">
+      <div class="sv-kpi__label">Competência</div>
+      <div class="sv-kpi__value">{{ '%02d'|format(mes) }}/{{ ano }}</div>
+    </div>
+    <div class="sv-kpi">
+      <div class="sv-kpi__label">Total geral</div>
+      <div class="sv-kpi__value">{{ totais.geral | brl_rs }}</div>
+    </div>
+    <div class="sv-kpi">
+      <div class="sv-kpi__label">Pendente</div>
+      <div class="sv-kpi__value">{{ totais.pendente | brl_rs }}</div>
+    </div>
+    <div class="sv-kpi">
+      <div class="sv-kpi__label">A pagar</div>
+      <div class="sv-kpi__value">{{ totais.a_pagar | brl_rs }}</div>
+    </div>
+    <div class="sv-kpi">
+      <div class="sv-kpi__label">Pago</div>
+      <div class="sv-kpi__value">{{ totais.pago | brl_rs }}</div>
     </div>
   </div>
 
-  <div class="accordion sv-accordion" id="accEmp">
+  <div class="sv-emp-grid">
     {% for e in relatorio %}
-      {% set emp_id = 'emp' ~ e.emp %}
-      <div class="accordion-item">
-        <h2 class="accordion-header" id="h{{ emp_id }}">
-          <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#c{{ emp_id }}" aria-expanded="false" aria-controls="c{{ emp_id }}">
-            <div class="d-flex justify-content-between w-100 align-items-center gap-2 flex-wrap">
-              <div class="d-flex align-items-center gap-2">
-                {% if e.emp == 0 %}
-                  <span class="sv-badge">🌐 GLOBAL</span>
-                {% else %}
-                  <span class="sv-badge">🏢 EMP {{ e.emp }}</span>
-                {% endif %}
-                {% if e.fechada %}
-                  <span class="sv-badge sv-badge--ok">✅ FECHADA</span>
-                {% else %}
-                  <span class="sv-badge sv-badge--warn">⚠️ NÃO FECHADA</span>
-                {% endif %}
-              </div>
-              <div class="d-flex align-items-center gap-3">
-                <span class="sv-muted">Vendedores: <b>{{ e.vendedores|length }}</b></span>
-                <span class="sv-badge">Total: <b>{{ (e.total or 0)|brl_rs }}</b></span>
-              </div>
-            </div>
-          </button>
-        </h2>
-        <div id="c{{ emp_id }}" class="accordion-collapse collapse" aria-labelledby="h{{ emp_id }}" data-bs-parent="#accEmp">
-          <div class="accordion-body">
-
-            {% for v in e.vendedores %}
-              <div class="sv-card sv-glass mb-3">
-                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2" style="padding:12px 12px 0 12px;">
-                  <div class="d-flex align-items-center gap-2">
-                    <strong>👤 {{ v.vendedor }}</strong>
-                    <span class="sv-badge sv-badge--muted">Campanhas: {{ v.itens|length }}</span>
-                  </div>
-                  <div class="sv-badge">Subtotal: <b>{{ (v.total or 0)|brl_rs }}</b></div>
-                </div>
-
-                <div class="sv-card-pad">
-                  <div class="table-responsive">
-                    <table class="sv-table">
-                      <thead>
-                        <tr>
-                          <th style="min-width:320px;">Campanha</th>
-                          <th style="width:120px;">Tipo</th>
-                          <th class="text-end" style="width:120px;">Base</th>
-                          <th class="text-end" style="width:150px;">Valor</th>
-                          <th style="width:140px;">Status</th>
-                          <th class="text-end" style="width:140px;">Ação</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {% for it in v.itens %}
-                          <tr>
-                            <td>
-                              <div style="font-weight:700;">{{ it.titulo }}</div>
-                              <div class="sv-muted" style="font-size:12px;">#{{ it.campanha_id }}</div>
-                            </td>
-                            <td><code>{{ it.tipo }}</code></td>
-                            <td class="text-end">{{ '%.2f'|format(it.base or 0) }}</td>
-                            <td class="text-end"><b>{{ (it.valor or 0)|brl_rs }}</b></td>
-                            <td>
-                              {% if it.status == 'PAGO' %}
-                                <span class="sv-badge sv-badge--ok">PAGO</span>
-                              {% elif it.status == 'A_PAGAR' %}
-                                <span class="sv-badge sv-badge--warn">A_PAGAR</span>
-                              {% else %}
-                                <span class="sv-badge sv-badge--muted">FECHADA</span>
-                              {% endif %}
-                            </td>
-                            <td class="text-end">
-                              {% if it.status != 'PAGO' %}
-                                <form method="post" class="d-inline">
-                                  <input type="hidden" name="action" value="marcar_pago">
-                                  <input type="hidden" name="ano" value="{{ ano }}">
-                                  <input type="hidden" name="mes" value="{{ mes }}">
-                                  <input type="hidden" name="resultado_id" value="{{ it.resultado_id }}">
-                                  <button type="submit" class="btn btn-sm btn-success sv-btn-mini">Marcar PAGO</button>
-                                </form>
-                              {% else %}
-                                <span class="sv-muted" style="font-size:12px;">—</span>
-                              {% endif %}
-                            </td>
-                          </tr>
-                        {% endfor %}
-                        {% if v.itens|length == 0 %}
-                          <tr><td colspan="6" class="text-center sv-muted py-3">Sem campanhas para este vendedor.</td></tr>
-                        {% endif %}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              </div>
-            {% endfor %}
-
-            {% if e.vendedores|length == 0 %}
-              <div class="sv-muted">Nenhum vendedor nesta EMP para a competência.</div>
+      <section class="sv-emp-card sv-glass">
+        <div class="sv-emp-head">
+          <div class="sv-emp-title">
+            <h4 class="mb-0">🏢 EMP {{ e.emp }}</h4>
+            {% if e.fechada %}
+              <span class="sv-badge sv-badge--ok">Fechada</span>
+            {% else %}
+              <span class="sv-badge sv-badge--pend">Sem fechamento</span>
             {% endif %}
           </div>
+          <div class="sv-emp-meta">
+            <span class="sv-badge">Vendedores {{ e.vendedores|length }}</span>
+            <span class="sv-badge sv-badge--pend">Pendente {{ e.status.PENDENTE | brl_rs }}</span>
+            <span class="sv-badge sv-badge--pay">A pagar {{ e.status.A_PAGAR | brl_rs }}</span>
+            <span class="sv-badge sv-badge--ok">Pago {{ e.status.PAGO | brl_rs }}</span>
+            <span class="sv-badge">Total {{ e.total | brl_rs }}</span>
+          </div>
         </div>
+        <div class="sv-emp-body">
+          {% for v in e.vendedores %}
+            <article class="sv-vendor">
+              <div class="sv-vendor-head">
+                <div>
+                  <div style="font-weight:800;">👤 {{ v.vendedor }}</div>
+                  <div class="sv-muted" style="font-size:12px;">{{ v.itens|length }} campanhas financeiras nesta competência</div>
+                </div>
+                <div class="sv-vendor-meta">
+                  <span class="sv-badge sv-badge--pend">{{ v.status.PENDENTE | brl_rs }}</span>
+                  <span class="sv-badge sv-badge--pay">{{ v.status.A_PAGAR | brl_rs }}</span>
+                  <span class="sv-badge sv-badge--ok">{{ v.status.PAGO | brl_rs }}</span>
+                  <span class="sv-badge">Subtotal {{ v.total | brl_rs }}</span>
+                </div>
+              </div>
+              <div class="sv-card-pad">
+                <div class="table-responsive">
+                  <table class="sv-table">
+                    <thead>
+                      <tr>
+                        <th>Campanha</th>
+                        <th>Tipo</th>
+                        <th class="text-end">Base</th>
+                        <th class="text-end">Vendeu (R$)</th>
+                        <th class="text-end">Prêmio</th>
+                        <th>Status</th>
+                        <th class="text-end">Ação</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {% for it in v.itens %}
+                        <tr>
+                          <td>
+                            <div style="font-weight:700;">{{ it.titulo }}</div>
+                            <div class="sv-muted" style="font-size:12px;">Origem {{ it.origem_tipo }} · #{{ it.origem_id }}</div>
+                          </td>
+                          <td>
+                            <span class="sv-type {{ 'sv-type--qtd' if it.tipo=='QTD' else ('sv-type--combo' if it.tipo=='COMBO' else ('sv-type--parado' if it.tipo=='PARADO' else '')) }}">{{ 'CAMPANHA' if it.tipo=='QTD' else ('COMBO' if it.tipo=='COMBO' else ('ITENS PARADOS' if it.tipo=='PARADO' else it.tipo)) }}</span>
+                          </td>
+                          <td class="text-end">{{ '%.2f'|format(it.base or 0) }}</td>
+                          <td class="text-end">{{ it.vendeu_rs | brl_rs }}</td>
+                          <td class="text-end"><strong>{{ it.valor | brl_rs }}</strong></td>
+                          <td>
+                            {% if it.status == 'PAGO' %}
+                              <span class="sv-badge sv-badge--ok">PAGO</span>
+                            {% elif it.status == 'A_PAGAR' %}
+                              <span class="sv-badge sv-badge--pay">A_PAGAR</span>
+                            {% else %}
+                              <span class="sv-badge sv-badge--pend">PENDENTE</span>
+                            {% endif %}
+                          </td>
+                          <td class="text-end">
+                            <div class="sv-actions">
+                              <form method="post">
+                                <input type="hidden" name="ano" value="{{ ano }}">
+                                <input type="hidden" name="mes" value="{{ mes }}">
+                                <input type="hidden" name="tipo" value="{{ it.tipo }}">
+                                <input type="hidden" name="origem_id" value="{{ it.origem_id }}">
+                                <input type="hidden" name="emp" value="{{ it.emp }}">
+                                <input type="hidden" name="vendedor" value="{{ it.vendedor }}">
+                                <input type="hidden" name="titulo" value="{{ it.titulo }}">
+                                <input type="hidden" name="valor" value="{{ it.valor }}">
+                                <input type="hidden" name="return_qs" value="{{ return_qs }}">
+                                <button class="btn btn-sm btn-outline-warning sv-btn-mini" type="submit" name="novo_status" value="A_PAGAR">A_PAGAR</button>
+                                <button class="btn btn-sm btn-success sv-btn-mini" type="submit" name="novo_status" value="PAGO">PAGO</button>
+                              </form>
+                            </div>
+                          </td>
+                        </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </article>
+          {% endfor %}
+        </div>
+      </section>
+    {% else %}
+      <div class="sv-card sv-glass">
+        <div class="sv-empty">Nenhuma campanha financeira encontrada para os filtros informados.</div>
       </div>
     {% endfor %}
-
-    {% if relatorio|length == 0 %}
-      <div class="sv-card sv-glass">
-        <div class="sv-card-pad text-center sv-muted py-4">
-          Nenhuma campanha fechada/A_PAGAR encontrada para {{ '%02d'|format(mes) }}/{{ ano }}.
-        </div>
-      </div>
-    {% endif %}
   </div>
 </div>
 {% endblock %}

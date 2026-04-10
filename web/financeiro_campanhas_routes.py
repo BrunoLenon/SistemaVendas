@@ -1,38 +1,58 @@
 # -*- coding: utf-8 -*-
 """Rotas do Financeiro (Campanhas / Fechamento V2).
 
-Extraído do web/app.py como refatoração pura (sem alterar comportamento externo).
-- Mantém os mesmos paths e os mesmos nomes de endpoint usados em url_for(...)
-
-Observação:
-- Registramos explicitamente o 'endpoint' para garantir backward compatibility.
+Evolução segura:
+- mantém os endpoints legados /financeiro/campanhas_v2 e /financeiro/fechamento_v2
+- passa a implementar /financeiro/campanhas como cockpit financeiro do relatório unificado
+- status do Financeiro é controlado em `financeiro_pagamentos`, evitando alterar cada
+  tabela de resultado neste primeiro passo.
 """
 
 from __future__ import annotations
 
+from datetime import date
+from urllib.parse import urlencode
+from typing import Any, Callable
+
 from flask import flash, redirect, render_template, request, url_for
 
-from auth_helpers import financeiro_required, login_required
 from db import CampanhaV2Master, CampanhaV2Resultado, SessionLocal
+from services.campanhas_service import build_relatorio_campanhas_scope
+from services.financeiro_service import (
+    build_financeiro_campanhas_context,
+    ensure_pagamento_from_row,
+)
 
 
-def register_financeiro_campanhas_routes(app) -> None:
+def register_financeiro_campanhas_routes(
+    app,
+    *,
+    deps: Any,
+    login_required_fn: Callable[[], Any],
+    financeiro_required_fn: Callable[[Callable[..., Any]], Callable[..., Any]],
+    role_fn: Callable[[], str | None],
+    emp_fn: Callable[[], str | None],
+    usuario_logado_fn: Callable[[], str | None],
+) -> None:
     """Registra rotas do Financeiro no app Flask."""
 
+    def _redirect_back(default_endpoint: str = "financeiro_campanhas"):
+        qs = (request.form.get("return_qs") or "").strip()
+        base = url_for(default_endpoint)
+        return redirect(f"{base}?{qs}" if qs else base)
+
     def financeiro_campanhas_v2():
-        # por enquanto, redireciona para o fechamento (mesma visão)
+        # por enquanto, redireciona para o fechamento (mesma visão legada)
         return redirect(url_for("financeiro_fechamento_v2"))
 
     app.add_url_rule(
         "/financeiro/campanhas_v2",
         endpoint="financeiro_campanhas_v2",
-        view_func=financeiro_required(financeiro_campanhas_v2),
+        view_func=financeiro_required_fn(financeiro_campanhas_v2),
         methods=["GET"],
     )
 
     def financeiro_fechamento_v2():
-        from datetime import date
-
         ano = int(request.args.get("ano") or date.today().year)
         mes = int(request.args.get("mes") or date.today().month)
         db = SessionLocal()
@@ -69,7 +89,7 @@ def register_financeiro_campanhas_routes(app) -> None:
     app.add_url_rule(
         "/financeiro/fechamento_v2",
         endpoint="financeiro_fechamento_v2",
-        view_func=financeiro_required(financeiro_fechamento_v2),
+        view_func=financeiro_required_fn(financeiro_fechamento_v2),
         methods=["GET"],
     )
 
@@ -97,25 +117,92 @@ def register_financeiro_campanhas_routes(app) -> None:
     app.add_url_rule(
         "/financeiro/fechamento_v2/status",
         endpoint="financeiro_fechamento_v2_status",
-        view_func=financeiro_required(financeiro_fechamento_v2_status),
+        view_func=financeiro_required_fn(financeiro_fechamento_v2_status),
         methods=["POST"],
     )
 
     def financeiro_campanhas():
-        """Endpoint compatível com o menu lateral (sidebar).
+        red = login_required_fn()
+        if red:
+            return red
 
-        Caso a implementação atual esteja em /financeiro/campanhas_v2, redireciona para lá.
-        """
+        role = (role_fn() or "").strip().lower()
+        if role not in ("financeiro", "admin"):
+            flash("Acesso restrito ao Financeiro.", "warning")
+            return redirect(url_for("dashboard"))
 
-        try:
-            return redirect(url_for("financeiro_campanhas_v2"))
-        except Exception:
-            # fallback: se não existir v2, renderiza página simples informativa
-            return redirect("/financeiro/campanhas_v2")
+        emp_usuario = emp_fn()
+        vendedor_logado = (usuario_logado_fn() or "").strip().upper()
+
+        if request.method == "POST":
+            novo_status = (request.form.get("novo_status") or "PENDENTE").strip().upper()
+            if novo_status not in ("PENDENTE", "A_PAGAR", "PAGO"):
+                novo_status = "PENDENTE"
+
+            try:
+                db = SessionLocal()
+                try:
+                    ensure_pagamento_from_row(
+                        db,
+                        ano=int(request.form.get("ano") or date.today().year),
+                        mes=int(request.form.get("mes") or date.today().month),
+                        tipo=request.form.get("tipo") or "",
+                        origem_id=int(request.form.get("origem_id") or 0),
+                        emp=request.form.get("emp") or 0,
+                        vendedor=request.form.get("vendedor") or "",
+                        campanha_nome=request.form.get("titulo") or "",
+                        valor_premio=float(request.form.get("valor") or 0),
+                        actor=vendedor_logado,
+                        novo_status=novo_status,
+                    )
+                    db.commit()
+                    flash(f"Status atualizado para {novo_status}.", "success")
+                except Exception as e:
+                    db.rollback()
+                    flash(f"Erro ao atualizar status financeiro: {e}", "danger")
+                finally:
+                    db.close()
+            except Exception as e:
+                flash(f"Erro ao abrir sessão do financeiro: {e}", "danger")
+            return _redirect_back()
+
+        scope = build_relatorio_campanhas_scope(
+            deps,
+            role=role,
+            emp_usuario=emp_usuario,
+            vendedor_logado=vendedor_logado,
+            args=request.args,
+            flash=flash,
+        )
+        ano = int(scope["ano"])
+        mes = int(scope["mes"])
+        emps_sel = scope["emps_sel"]
+        vendedores_sel = scope["vendedores_sel"]
+        emps_scope = scope["emps_scope"]
+        vendedores_por_emp = scope["vendedores_por_emp"]
+
+        ctx = build_financeiro_campanhas_context(
+            deps,
+            role=role,
+            vendedor_logado=vendedor_logado,
+            ano=ano,
+            mes=mes,
+            emps_scope=emps_scope,
+            emps_sel=emps_sel,
+            vendedores_sel=vendedores_sel,
+            vendedores_por_emp=vendedores_por_emp,
+            recalc=str(request.args.get("recalc") or "").strip() in ("1", "true", "True", "sim", "SIM"),
+            status_sel=(request.args.get("status") or "").strip(),
+            tipo_sel=(request.args.get("tipo") or "").strip(),
+            flash=flash,
+        )
+        ctx["role"] = role
+        ctx["return_qs"] = urlencode(request.args, doseq=True)
+        return render_template("financeiro_campanhas.html", **ctx)
 
     app.add_url_rule(
         "/financeiro/campanhas",
         endpoint="financeiro_campanhas",
-        view_func=login_required(financeiro_campanhas),
-        methods=["GET"],
+        view_func=financeiro_campanhas,
+        methods=["GET", "POST"],
     )

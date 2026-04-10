@@ -2327,6 +2327,7 @@ from admin_cache_routes import register_admin_cache_routes
 from core_routes import register_core_routes
 from errors import register_error_handlers
 from operacoes_vendas_produtos_routes import register_operacoes_vendas_produtos_routes
+from financeiro_campanhas_routes import register_financeiro_campanhas_routes
 
 # Admin / Configurações
 register_admin_config_routes(app)
@@ -2346,6 +2347,15 @@ register_relatorio_cidades_clientes_routes(
     role_fn=_role,
     emp_fn=_emp,
     allowed_emps_fn=_allowed_emps,
+    usuario_logado_fn=_usuario_logado,
+)
+register_financeiro_campanhas_routes(
+    app,
+    deps=_campanhas_deps,
+    login_required_fn=_login_required,
+    financeiro_required_fn=financeiro_required,
+    role_fn=_role,
+    emp_fn=_emp,
     usuario_logado_fn=_usuario_logado,
 )
 
