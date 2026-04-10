@@ -198,6 +198,12 @@ def register_financeiro_campanhas_routes(
         )
         ctx["role"] = role
         ctx["return_qs"] = urlencode(request.args, doseq=True)
+        rel_args = [("ano", str(ano)), ("mes", str(mes)), ("view", "detalhado")]
+        for emp in emps_sel:
+            rel_args.append(("emp", str(emp)))
+        for vendedor in vendedores_sel:
+            rel_args.append(("vendedor", str(vendedor)))
+        ctx["relatorio_url"] = f"{url_for('relatorio_campanhas')}?{urlencode(rel_args, doseq=True)}"
         return render_template("financeiro_campanhas.html", **ctx)
 
     app.add_url_rule(
