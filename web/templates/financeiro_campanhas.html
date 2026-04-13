@@ -3,106 +3,51 @@
 
 {% block extra_head %}
 <style>
-  .sv-page.sv-page--wide{max-width:1520px;}
-  .fin-toolbar{display:grid;grid-template-columns:repeat(6,minmax(120px,1fr));gap:12px;align-items:end;}
-  .fin-toolbar .span-2{grid-column:span 2;}
-  .fin-kpis{display:grid;grid-template-columns:repeat(7,minmax(150px,1fr));gap:12px;}
-  .fin-kpi{background:rgba(255,255,255,.04);border:1px solid rgba(255,165,0,.14);border-radius:18px;padding:14px 16px;min-height:92px;}
-  .fin-kpi__label{font-size:12px;opacity:.72;margin-bottom:7px;}
-  .fin-kpi__value{font-size:24px;font-weight:800;line-height:1.05;}
-  .fin-kpi__sub{font-size:12px;opacity:.72;margin-top:8px;}
-  .fin-badge{display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border-radius:999px;font-size:12px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);}
-  .fin-badge--pend{border-color:rgba(255,165,0,.34);background:rgba(255,165,0,.11);color:#ffd08a;}
-  .fin-badge--pay{border-color:rgba(84,160,255,.34);background:rgba(84,160,255,.12);color:#bdd7ff;}
-  .fin-badge--ok{border-color:rgba(16,185,129,.32);background:rgba(16,185,129,.12);color:#b7ffd9;}
-  .fin-badge--locked{border-color:rgba(16,185,129,.32);background:rgba(16,185,129,.12);color:#b7ffd9;}
-  .fin-badge--open{border-color:rgba(255,255,255,.16);background:rgba(255,255,255,.06);color:#f3f4f6;}
-  .fin-chip{display:inline-flex;align-items:center;padding:4px 10px;border-radius:999px;font-size:11px;font-weight:700;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);}
-  .fin-chip--qtd{background:rgba(255,165,0,.10);border-color:rgba(255,165,0,.24);color:#ffd08a;}
-  .fin-chip--combo{background:rgba(91,164,255,.12);border-color:rgba(91,164,255,.28);color:#c2dbff;}
-  .fin-chip--parado{background:rgba(255,93,154,.12);border-color:rgba(255,93,154,.24);color:#ffc0d7;}
-  .fin-chip--meta{background:rgba(0,204,153,.12);border-color:rgba(0,204,153,.24);color:#b5ffe7;}
-  .fin-chip--ranking{background:rgba(168,85,247,.14);border-color:rgba(168,85,247,.26);color:#e3c8ff;}
-  .fin-grid{display:grid;gap:16px;}
-  .fin-emp{border:1px solid rgba(255,165,0,.14);border-radius:24px;background:linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02));overflow:hidden;}
-  .fin-emp__head{padding:16px 18px;border-bottom:1px solid rgba(255,255,255,.08);display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;}
-  .fin-emp__title{display:grid;gap:8px;}
-  .fin-emp__title h4{margin:0;display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
-  .fin-emp__meta{display:grid;grid-template-columns:repeat(5,minmax(120px,1fr));gap:10px;min-width:min(720px,100%);}
-  .fin-mini{border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:10px 12px;background:rgba(0,0,0,.18);}
-  .fin-mini__label{font-size:11px;opacity:.72;margin-bottom:4px;}
-  .fin-mini__value{font-size:18px;font-weight:800;line-height:1.05;}
-  .fin-mini__sub{font-size:11px;opacity:.7;margin-top:4px;}
-  .fin-emp__body{padding:16px;display:grid;gap:12px;}
-  .fin-vendor{border:1px solid rgba(255,255,255,.08);border-radius:18px;background:rgba(0,0,0,.20);overflow:hidden;}
-  .fin-vendor__summary{padding:14px 16px;display:grid;grid-template-columns:minmax(180px,1.2fr) minmax(200px,1fr) minmax(230px,1fr) auto;gap:12px;align-items:center;}
-  .fin-vendor__summary + .fin-vendor__details{border-top:1px solid rgba(255,255,255,.07);}
-  .fin-vendor__name{font-weight:800;font-size:16px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
-  .fin-vendor__sub{font-size:12px;opacity:.72;margin-top:5px;}
-  .fin-vendor__metrics{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
-  .fin-vendor__totals{display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:flex-start;}
-  .fin-vendor__actions{display:flex;gap:8px;justify-content:flex-end;align-items:center;flex-wrap:wrap;}
-  .fin-toggle{min-width:132px;}
-  .fin-vendor__details{display:none;padding:14px 16px 16px;}
-  .fin-vendor.is-open .fin-vendor__details{display:block;}
-  .fin-vendor.is-open .fin-toggle .fin-toggle__label::after{content:'Ocultar';}
-  .fin-vendor:not(.is-open) .fin-toggle .fin-toggle__label::after{content:'Ver campanhas';}
-  .fin-toggle .caret{transition:transform .18s ease;display:inline-block;}
-  .fin-vendor.is-open .fin-toggle .caret{transform:rotate(180deg);}
-  .fin-sheet{width:100%;border-collapse:collapse;border-spacing:0;overflow:hidden;border-radius:16px;background:rgba(8,12,22,.56);}
-  .fin-sheet thead th{padding:.72rem .70rem;font-size:11px;text-transform:uppercase;letter-spacing:.03em;color:#d1d5db;background:rgba(255,255,255,.04);border-bottom:1px solid rgba(255,255,255,.08);}
-  .fin-sheet td{padding:.72rem .70rem;border-bottom:1px solid rgba(255,255,255,.06);vertical-align:middle;}
-  .fin-sheet tbody tr:nth-child(even){background:rgba(255,255,255,.02);}
-  .fin-sheet tbody tr:last-child td{border-bottom:none;}
-  .fin-sheet .text-end{text-align:right;}
-  .fin-sheet__title{font-weight:700;}
-  .fin-sheet__sub{font-size:12px;opacity:.7;margin-top:4px;}
-  .fin-actions{display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap;}
-  .fin-btn-mini{padding:.30rem .62rem;border-radius:10px;}
-  .fin-empty{padding:28px 14px;text-align:center;color:rgba(255,255,255,.68);}
-  .fin-note{font-size:12px;opacity:.72;}
-  @media (max-width: 1280px){
-    .fin-kpis{grid-template-columns:repeat(4,minmax(140px,1fr));}
-    .fin-emp__meta{grid-template-columns:repeat(3,minmax(120px,1fr));min-width:100%;}
-    .fin-vendor__summary{grid-template-columns:1.1fr 1fr auto;}
-    .fin-vendor__actions{grid-column:1/-1;justify-content:flex-start;}
-  }
+  .sv-page.sv-page--wide{max-width:1500px;}
+  .sv-toolbar{display:grid;grid-template-columns:repeat(6,minmax(120px,1fr));gap:12px;align-items:end;}
+  .sv-toolbar .sv-field--span2{grid-column:span 2;}
+  .sv-kpis{display:grid;grid-template-columns:repeat(5,minmax(170px,1fr));gap:12px;}
+  .sv-kpi{background:rgba(255,255,255,.04);border:1px solid rgba(255,165,0,.16);border-radius:18px;padding:14px 16px;}
+  .sv-kpi__label{font-size:12px;opacity:.72;margin-bottom:6px;}
+  .sv-kpi__value{font-size:22px;font-weight:800;line-height:1.1;}
+  .sv-badge{display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border-radius:999px;font-size:12px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);}
+  .sv-badge--pend{border-color:rgba(255,165,0,.35);background:rgba(255,165,0,.12);color:#ffd08a;}
+  .sv-badge--pay{border-color:rgba(84,160,255,.35);background:rgba(84,160,255,.12);color:#b7d5ff;}
+  .sv-badge--ok{border-color:rgba(0,255,140,.28);background:rgba(0,255,140,.10);color:#b5ffd7;}
+  .sv-badge--muted{opacity:.78;}
+  .sv-emp-grid{display:grid;gap:16px;}
+  .sv-emp-card{border:1px solid rgba(255,165,0,.14);border-radius:22px;background:linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02));overflow:hidden;}
+  .sv-emp-head{padding:16px 18px;border-bottom:1px solid rgba(255,255,255,.08);display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;}
+  .sv-emp-title{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+  .sv-emp-meta{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+  .sv-emp-body{padding:16px;display:grid;gap:14px;}
+  .sv-vendor{border:1px solid rgba(255,255,255,.07);border-radius:18px;background:rgba(0,0,0,.20);}
+  .sv-vendor-head{padding:14px 16px;border-bottom:1px solid rgba(255,255,255,.06);display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center;}
+  .sv-vendor-meta{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+  .sv-table td,.sv-table th{padding:.58rem .62rem;vertical-align:middle;}
+  .sv-table th{font-size:12px;letter-spacing:.02em;opacity:.78;text-transform:uppercase;}
+  .sv-type{display:inline-flex;padding:4px 10px;border-radius:999px;font-size:11px;font-weight:700;border:1px solid transparent;}
+  .sv-type--qtd{background:rgba(255,165,0,.10);border-color:rgba(255,165,0,.28);color:#ffd08a;}
+  .sv-type--combo{background:rgba(91,164,255,.12);border-color:rgba(91,164,255,.30);color:#bdd8ff;}
+  .sv-type--parado{background:rgba(255,93,154,.11);border-color:rgba(255,93,154,.24);color:#ffc1d7;}
+  .sv-actions{display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap;}
+  .sv-btn-mini{padding:.28rem .58rem;border-radius:10px;}
+  .sv-empty{padding:28px 14px;text-align:center;color:rgba(255,255,255,.68);}
+  .sv-bulkbar{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:12px 14px;margin-bottom:14px;}
+  .sv-bulk-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
+  .sv-action-group{display:flex;gap:6px;align-items:center;flex-wrap:wrap;}
+  .sv-divider-dot{width:4px;height:4px;border-radius:999px;background:rgba(255,255,255,.25);display:inline-block;}
   @media (max-width: 1100px){
-    .fin-toolbar{grid-template-columns:repeat(2,minmax(0,1fr));}
-    .fin-toolbar .span-2{grid-column:span 2;}
-    .fin-kpis{grid-template-columns:repeat(2,minmax(0,1fr));}
-    .fin-vendor__summary{grid-template-columns:1fr;}
-    .fin-vendor__actions{justify-content:flex-start;}
+    .sv-toolbar{grid-template-columns:repeat(2,minmax(0,1fr));}
+    .sv-toolbar .sv-field--span2{grid-column:span 2;}
+    .sv-kpis{grid-template-columns:repeat(2,minmax(0,1fr));}
   }
   @media (max-width: 700px){
-    .fin-toolbar,.fin-kpis,.fin-emp__meta{grid-template-columns:1fr;}
-    .fin-toolbar .span-2{grid-column:span 1;}
+    .sv-toolbar,.sv-kpis{grid-template-columns:1fr;}
+    .sv-toolbar .sv-field--span2{grid-column:span 1;}
   }
 </style>
 {% endblock %}
-
-{% macro status_badge(status) -%}
-  {% set s = (status or 'PENDENTE')|upper %}
-  {% if s == 'PAGO' %}
-    <span class="fin-badge fin-badge--ok">PAGO</span>
-  {% elif s == 'A_PAGAR' %}
-    <span class="fin-badge fin-badge--pay">A PAGAR</span>
-  {% else %}
-    <span class="fin-badge fin-badge--pend">PENDENTE</span>
-  {% endif %}
-{%- endmacro %}
-
-{% macro tipo_chip(tipo) -%}
-  {% set t = (tipo or '')|upper %}
-  {% set cls = 'fin-chip' %}
-  {% set label = t %}
-  {% if t == 'QTD' %}{% set cls = cls + ' fin-chip--qtd' %}{% set label = 'CAMPANHA' %}{% endif %}
-  {% if t == 'COMBO' %}{% set cls = cls + ' fin-chip--combo' %}{% set label = 'COMBO' %}{% endif %}
-  {% if t == 'PARADO' %}{% set cls = cls + ' fin-chip--parado' %}{% set label = 'ITENS PARADOS' %}{% endif %}
-  {% if t == 'META' %}{% set cls = cls + ' fin-chip--meta' %}{% set label = 'META' %}{% endif %}
-  {% if t == 'RANKING' %}{% set cls = cls + ' fin-chip--ranking' %}{% set label = 'RANKING' %}{% endif %}
-  <span class="{{ cls }}">{{ label }}</span>
-{%- endmacro %}
 
 {% block content %}
 <div class="sv-page sv-page--wide">
@@ -111,20 +56,19 @@
       <div>
         <div class="d-flex align-items-center gap-2 flex-wrap">
           <h3 class="mb-0">Financeiro · Campanhas</h3>
-          <span class="fin-badge fin-badge--pend">Operacional</span>
+          <span class="sv-badge sv-badge--muted">Cockpit financeiro</span>
         </div>
-        <div class="sv-muted mt-1">Feche o ciclo financeiro por loja e vendedor com a mesma base consolidada do relatório. Use os cards para navegar por competência, loja e campanhas.</div>
+        <div class="sv-muted mt-1">Feche o ciclo das campanhas por loja e vendedor. O status é controlado no Financeiro sem alterar a apuração base.</div>
       </div>
       <div class="d-flex align-items-center gap-2 flex-wrap">
-        <a class="btn btn-outline-warning fin-btn-mini" href="{{ relatorio_url or url_for('relatorio_campanhas', ano=ano, mes=mes) }}">Abrir relatório</a>
-        <button type="button" class="btn btn-outline-light fin-btn-mini" id="btnToggleAll">Expandir tudo</button>
+        <a class="btn btn-outline-warning sv-btn-mini" href="{{ url_for('relatorio_campanhas', ano=ano, mes=mes) }}">Ver relatório</a>
       </div>
     </div>
   </div>
 
   <form method="get" class="sv-card sv-glass mb-3">
     <div class="sv-card-pad">
-      <div class="fin-toolbar">
+      <div class="sv-toolbar">
         <div>
           <label class="form-label mb-1">Ano</label>
           <input class="sv-input" name="ano" value="{{ ano }}">
@@ -138,7 +82,7 @@
           <select class="sv-input" name="status">
             <option value="" {% if not status_sel %}selected{% endif %}>Todos</option>
             <option value="PENDENTE" {% if status_sel=='PENDENTE' %}selected{% endif %}>PENDENTE</option>
-            <option value="A_PAGAR" {% if status_sel=='A_PAGAR' %}selected{% endif %}>A PAGAR</option>
+            <option value="A_PAGAR" {% if status_sel=='A_PAGAR' %}selected{% endif %}>A_PAGAR</option>
             <option value="PAGO" {% if status_sel=='PAGO' %}selected{% endif %}>PAGO</option>
           </select>
         </div>
@@ -149,11 +93,9 @@
             <option value="QTD" {% if tipo_sel=='QTD' %}selected{% endif %}>Campanha</option>
             <option value="COMBO" {% if tipo_sel=='COMBO' %}selected{% endif %}>Combo</option>
             <option value="PARADO" {% if tipo_sel=='PARADO' %}selected{% endif %}>Itens parados</option>
-            <option value="META" {% if tipo_sel=='META' %}selected{% endif %}>Meta</option>
-            <option value="RANKING" {% if tipo_sel=='RANKING' %}selected{% endif %}>Ranking</option>
           </select>
         </div>
-        <div class="span-2">
+        <div class="sv-field--span2">
           <label class="form-label mb-1">Lojas (EMP)</label>
           <select class="sv-input" name="emp" multiple size="4">
             {% for emp_opt in emps_scope %}
@@ -161,7 +103,7 @@
             {% endfor %}
           </select>
         </div>
-        <div class="span-2">
+        <div class="sv-field--span2">
           <label class="form-label mb-1">Vendedores</label>
           <select class="sv-input" name="vendedor" multiple size="4">
             {% for vendedor_opt in vendedores_scope %}
@@ -171,142 +113,111 @@
         </div>
       </div>
       <div class="d-flex justify-content-between align-items-center gap-2 flex-wrap mt-3">
-        <div class="fin-note">Dica: esta visão é financeira. Ela não recalcula regra de pagamento; só organiza e controla o status operacional das campanhas já apuradas.</div>
+        <div class="sv-muted">Dica: use Ctrl para selecionar múltiplas lojas ou vendedores.</div>
         <div class="d-flex gap-2 flex-wrap">
-          <button class="btn btn-warning fin-btn-mini" type="submit">Aplicar filtros</button>
-          <button class="btn btn-outline-light fin-btn-mini" type="submit" name="recalc" value="1">Recalcular base</button>
+          <button class="btn btn-warning sv-btn-mini" type="submit">Aplicar filtros</button>
+          <button class="btn btn-outline-light sv-btn-mini" type="submit" name="recalc" value="1">Recalcular</button>
         </div>
       </div>
     </div>
   </form>
 
-  <div class="fin-kpis mb-3">
-    <div class="fin-kpi">
-      <div class="fin-kpi__label">Competência</div>
-      <div class="fin-kpi__value">{{ '%02d'|format(mes) }}/{{ ano }}</div>
-      <div class="fin-kpi__sub">Visão financeira consolidada</div>
+  <div class="sv-bulkbar">
+    <div>
+      <div style="font-weight:800;">Ações em lote</div>
+      <div class="sv-muted" style="font-size:12px;">Aplique status para tudo que está visível nos filtros atuais, ou por loja e vendedor logo abaixo.</div>
     </div>
-    <div class="fin-kpi">
-      <div class="fin-kpi__label">Total geral</div>
-      <div class="fin-kpi__value">{{ totais.geral | brl_rs }}</div>
-      <div class="fin-kpi__sub">{{ totais.linhas }} linhas financeiras</div>
-    </div>
-    <div class="fin-kpi">
-      <div class="fin-kpi__label">Pendente</div>
-      <div class="fin-kpi__value">{{ totais.pendente | brl_rs }}</div>
-      <div class="fin-kpi__sub">Aguardando decisão do Financeiro</div>
-    </div>
-    <div class="fin-kpi">
-      <div class="fin-kpi__label">A pagar</div>
-      <div class="fin-kpi__value">{{ totais.a_pagar | brl_rs }}</div>
-      <div class="fin-kpi__sub">Pronto para pagamento</div>
-    </div>
-    <div class="fin-kpi">
-      <div class="fin-kpi__label">Pago</div>
-      <div class="fin-kpi__value">{{ totais.pago | brl_rs }}</div>
-      <div class="fin-kpi__sub">Liquidado na competência</div>
-    </div>
-    <div class="fin-kpi">
-      <div class="fin-kpi__label">Lojas</div>
-      <div class="fin-kpi__value">{{ totais.lojas or relatorio|length }}</div>
-      <div class="fin-kpi__sub">Cards separados por EMP</div>
-    </div>
-    <div class="fin-kpi">
-      <div class="fin-kpi__label">Vendedores</div>
-      <div class="fin-kpi__value">{{ totais.vendedores or 0 }}</div>
-      <div class="fin-kpi__sub">Com valor apurado nesta competência</div>
+    <div class="sv-bulk-actions">
+      <form method="post" class="sv-action-group">
+        <input type="hidden" name="batch_scope" value="filtered">
+        <input type="hidden" name="return_qs" value="{{ return_qs }}">
+        <button class="btn btn-outline-light sv-btn-mini" type="submit" name="novo_status" value="PENDENTE">Voltar pendente</button>
+        <button class="btn btn-outline-warning sv-btn-mini" type="submit" name="novo_status" value="A_PAGAR">A pagar filtrados</button>
+        <button class="btn btn-success sv-btn-mini" type="submit" name="novo_status" value="PAGO">Pagar filtrados</button>
+      </form>
     </div>
   </div>
 
-  <div class="fin-grid">
+  <div class="sv-kpis mb-3">
+    <div class="sv-kpi">
+      <div class="sv-kpi__label">Competência</div>
+      <div class="sv-kpi__value">{{ '%02d'|format(mes) }}/{{ ano }}</div>
+    </div>
+    <div class="sv-kpi">
+      <div class="sv-kpi__label">Total geral</div>
+      <div class="sv-kpi__value">{{ totais.geral | brl_rs }}</div>
+    </div>
+    <div class="sv-kpi">
+      <div class="sv-kpi__label">Pendente</div>
+      <div class="sv-kpi__value">{{ totais.pendente | brl_rs }}</div>
+    </div>
+    <div class="sv-kpi">
+      <div class="sv-kpi__label">A pagar</div>
+      <div class="sv-kpi__value">{{ totais.a_pagar | brl_rs }}</div>
+    </div>
+    <div class="sv-kpi">
+      <div class="sv-kpi__label">Pago</div>
+      <div class="sv-kpi__value">{{ totais.pago | brl_rs }}</div>
+    </div>
+  </div>
+
+  <div class="sv-emp-grid">
     {% for e in relatorio %}
-      <section class="fin-emp sv-glass">
-        <div class="fin-emp__head">
-          <div class="fin-emp__title">
-            <h4>
-              <span>🏢 Loja {{ e.emp }}</span>
-              {% if e.fechada %}
-                <span class="fin-badge fin-badge--locked">Competência fechada</span>
-              {% else %}
-                <span class="fin-badge fin-badge--open">Competência aberta</span>
-              {% endif %}
-              {{ status_badge(e.status_dominante) }}
-            </h4>
-            <div class="d-flex gap-2 flex-wrap align-items-center">
-              {% for tipo in e.tipos %}
-                {{ tipo_chip(tipo) }}
-              {% endfor %}
-            </div>
+      <section class="sv-emp-card sv-glass">
+        <div class="sv-emp-head">
+          <div class="sv-emp-title">
+            <h4 class="mb-0">🏢 EMP {{ e.emp }}</h4>
+            {% if e.fechada %}
+              <span class="sv-badge sv-badge--ok">Fechada</span>
+            {% else %}
+              <span class="sv-badge sv-badge--pend">Sem fechamento</span>
+            {% endif %}
           </div>
-          <div class="fin-emp__meta">
-            <div class="fin-mini">
-              <div class="fin-mini__label">Total da loja</div>
-              <div class="fin-mini__value">{{ e.total | brl_rs }}</div>
-              <div class="fin-mini__sub">{{ e.qtd_itens }} campanha(s) financeira(s)</div>
-            </div>
-            <div class="fin-mini">
-              <div class="fin-mini__label">Vendedores</div>
-              <div class="fin-mini__value">{{ e.qtd_vendedores or e.vendedores|length }}</div>
-              <div class="fin-mini__sub">com valor nesta competência</div>
-            </div>
-            <div class="fin-mini">
-              <div class="fin-mini__label">Pendente</div>
-              <div class="fin-mini__value">{{ e.status.PENDENTE | brl_rs }}</div>
-              <div class="fin-mini__sub">aguardando definição</div>
-            </div>
-            <div class="fin-mini">
-              <div class="fin-mini__label">A pagar</div>
-              <div class="fin-mini__value">{{ e.status.A_PAGAR | brl_rs }}</div>
-              <div class="fin-mini__sub">pronto para pagamento</div>
-            </div>
-            <div class="fin-mini">
-              <div class="fin-mini__label">Pago</div>
-              <div class="fin-mini__value">{{ e.status.PAGO | brl_rs }}</div>
-              <div class="fin-mini__sub">liquidado</div>
-            </div>
+          <div class="sv-emp-meta">
+            <span class="sv-badge">Vendedores {{ e.vendedores|length }}</span>
+            <span class="sv-badge sv-badge--pend">Pendente {{ e.status.PENDENTE | brl_rs }}</span>
+            <span class="sv-badge sv-badge--pay">A pagar {{ e.status.A_PAGAR | brl_rs }}</span>
+            <span class="sv-badge sv-badge--ok">Pago {{ e.status.PAGO | brl_rs }}</span>
+            <span class="sv-badge">Total {{ e.total | brl_rs }}</span>
+            <span class="sv-divider-dot"></span>
+            <form method="post" class="sv-action-group">
+              <input type="hidden" name="batch_scope" value="emp">
+              <input type="hidden" name="emp_scope" value="{{ e.emp }}">
+              <input type="hidden" name="return_qs" value="{{ return_qs }}">
+              <button class="btn btn-outline-warning sv-btn-mini" type="submit" name="novo_status" value="A_PAGAR">A pagar loja</button>
+              <button class="btn btn-success sv-btn-mini" type="submit" name="novo_status" value="PAGO">Pagar loja</button>
+            </form>
           </div>
         </div>
-
-        <div class="fin-emp__body">
+        <div class="sv-emp-body">
           {% for v in e.vendedores %}
-            {% set detail_id = 'fin-vendor-' ~ e.emp ~ '-' ~ loop.index0 %}
-            <article class="fin-vendor" data-vendor-card>
-              <div class="fin-vendor__summary">
+            <article class="sv-vendor">
+              <div class="sv-vendor-head">
                 <div>
-                  <div class="fin-vendor__name">
-                    <span>👤 {{ v.vendedor }}</span>
-                    {{ status_badge(v.status_dominante) }}
-                  </div>
-                  <div class="fin-vendor__sub">{{ v.qtd_itens or v.itens|length }} campanha(s) financeira(s) nesta competência</div>
+                  <div style="font-weight:800;">👤 {{ v.vendedor }}</div>
+                  <div class="sv-muted" style="font-size:12px;">{{ v.itens|length }} campanhas financeiras nesta competência</div>
                 </div>
-
-                <div class="fin-vendor__metrics">
-                  {% for tipo in v.tipos %}
-                    {{ tipo_chip(tipo) }}
-                  {% endfor %}
-                </div>
-
-                <div class="fin-vendor__totals">
-                  <span class="fin-badge fin-badge--pend">{{ v.status.PENDENTE | brl_rs }}</span>
-                  <span class="fin-badge fin-badge--pay">{{ v.status.A_PAGAR | brl_rs }}</span>
-                  <span class="fin-badge fin-badge--ok">{{ v.status.PAGO | brl_rs }}</span>
-                  <span class="fin-badge">Total {{ v.total | brl_rs }}</span>
-                </div>
-
-                <div class="fin-vendor__actions">
-                  <button type="button" class="btn btn-outline-warning fin-btn-mini fin-toggle" data-toggle-target="{{ detail_id }}">
-                    <span class="fin-toggle__label"></span>
-                    <span class="caret">▾</span>
-                  </button>
+                <div class="sv-vendor-meta">
+                  <span class="sv-badge sv-badge--pend">{{ v.status.PENDENTE | brl_rs }}</span>
+                  <span class="sv-badge sv-badge--pay">{{ v.status.A_PAGAR | brl_rs }}</span>
+                  <span class="sv-badge sv-badge--ok">{{ v.status.PAGO | brl_rs }}</span>
+                  <span class="sv-badge">Subtotal {{ v.total | brl_rs }}</span>
+                  <form method="post" class="sv-action-group">
+                    <input type="hidden" name="batch_scope" value="vendedor">
+                    <input type="hidden" name="emp_scope" value="{{ e.emp }}">
+                    <input type="hidden" name="vendedor_scope" value="{{ v.vendedor }}">
+                    <input type="hidden" name="return_qs" value="{{ return_qs }}">
+                    <button class="btn btn-outline-warning sv-btn-mini" type="submit" name="novo_status" value="A_PAGAR">A pagar vendedor</button>
+                    <button class="btn btn-success sv-btn-mini" type="submit" name="novo_status" value="PAGO">Pagar vendedor</button>
+                  </form>
                 </div>
               </div>
-
-              <div class="fin-vendor__details" id="{{ detail_id }}">
+              <div class="sv-card-pad">
                 <div class="table-responsive">
-                  <table class="fin-sheet">
+                  <table class="sv-table">
                     <thead>
                       <tr>
-                        <th>Campanha / item</th>
+                        <th>Campanha</th>
                         <th>Tipo</th>
                         <th class="text-end">Base</th>
                         <th class="text-end">Vendeu (R$)</th>
@@ -319,16 +230,26 @@
                       {% for it in v.itens %}
                         <tr>
                           <td>
-                            <div class="fin-sheet__title">{{ it.titulo }}</div>
-                            <div class="fin-sheet__sub">Origem {{ it.origem_tipo }} · #{{ it.origem_id }}</div>
+                            <div style="font-weight:700;">{{ it.titulo }}</div>
+                            <div class="sv-muted" style="font-size:12px;">Origem {{ it.origem_tipo }} · #{{ it.origem_id }}</div>
                           </td>
-                          <td>{{ tipo_chip(it.tipo) }}</td>
+                          <td>
+                            <span class="sv-type {{ 'sv-type--qtd' if it.tipo=='QTD' else ('sv-type--combo' if it.tipo=='COMBO' else ('sv-type--parado' if it.tipo=='PARADO' else '')) }}">{{ 'CAMPANHA' if it.tipo=='QTD' else ('COMBO' if it.tipo=='COMBO' else ('ITENS PARADOS' if it.tipo=='PARADO' else it.tipo)) }}</span>
+                          </td>
                           <td class="text-end">{{ '%.2f'|format(it.base or 0) }}</td>
                           <td class="text-end">{{ it.vendeu_rs | brl_rs }}</td>
                           <td class="text-end"><strong>{{ it.valor | brl_rs }}</strong></td>
-                          <td>{{ status_badge(it.status) }}</td>
+                          <td>
+                            {% if it.status == 'PAGO' %}
+                              <span class="sv-badge sv-badge--ok">PAGO</span>
+                            {% elif it.status == 'A_PAGAR' %}
+                              <span class="sv-badge sv-badge--pay">A_PAGAR</span>
+                            {% else %}
+                              <span class="sv-badge sv-badge--pend">PENDENTE</span>
+                            {% endif %}
+                          </td>
                           <td class="text-end">
-                            <div class="fin-actions">
+                            <div class="sv-actions">
                               <form method="post">
                                 <input type="hidden" name="ano" value="{{ ano }}">
                                 <input type="hidden" name="mes" value="{{ mes }}">
@@ -339,8 +260,8 @@
                                 <input type="hidden" name="titulo" value="{{ it.titulo }}">
                                 <input type="hidden" name="valor" value="{{ it.valor }}">
                                 <input type="hidden" name="return_qs" value="{{ return_qs }}">
-                                <button class="btn btn-sm btn-outline-warning fin-btn-mini" type="submit" name="novo_status" value="A_PAGAR">A PAGAR</button>
-                                <button class="btn btn-sm btn-success fin-btn-mini" type="submit" name="novo_status" value="PAGO">PAGO</button>
+                                <button class="btn btn-sm btn-outline-warning sv-btn-mini" type="submit" name="novo_status" value="A_PAGAR">A_PAGAR</button>
+                                <button class="btn btn-sm btn-success sv-btn-mini" type="submit" name="novo_status" value="PAGO">PAGO</button>
                               </form>
                             </div>
                           </td>
@@ -356,37 +277,9 @@
       </section>
     {% else %}
       <div class="sv-card sv-glass">
-        <div class="fin-empty">Nenhuma campanha financeira encontrada para os filtros informados.</div>
+        <div class="sv-empty">Nenhuma campanha financeira encontrada para os filtros informados.</div>
       </div>
     {% endfor %}
   </div>
 </div>
-
-<script>
-(function(){
-  const toggleButtons = Array.from(document.querySelectorAll('[data-toggle-target]'));
-  function setOpen(card, open){
-    if(!card) return;
-    card.classList.toggle('is-open', !!open);
-  }
-  toggleButtons.forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const targetId = btn.getAttribute('data-toggle-target');
-      const detail = document.getElementById(targetId);
-      const card = btn.closest('[data-vendor-card]');
-      if(!detail || !card) return;
-      setOpen(card, !card.classList.contains('is-open'));
-    });
-  });
-  const toggleAllBtn = document.getElementById('btnToggleAll');
-  if(toggleAllBtn){
-    toggleAllBtn.addEventListener('click', () => {
-      const cards = Array.from(document.querySelectorAll('[data-vendor-card]'));
-      const shouldOpen = cards.some((card) => !card.classList.contains('is-open'));
-      cards.forEach((card) => setOpen(card, shouldOpen));
-      toggleAllBtn.textContent = shouldOpen ? 'Recolher tudo' : 'Expandir tudo';
-    });
-  }
-})();
-</script>
 {% endblock %}

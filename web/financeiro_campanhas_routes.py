@@ -11,14 +11,16 @@ Evolução segura:
 from __future__ import annotations
 
 from datetime import date
-from urllib.parse import urlencode
+from urllib.parse import urlencode, parse_qs
 from typing import Any, Callable
 
 from flask import flash, redirect, render_template, request, url_for
+from werkzeug.datastructures import MultiDict
 
 from db import CampanhaV2Master, CampanhaV2Resultado, SessionLocal
 from services.campanhas_service import build_relatorio_campanhas_scope
 from services.financeiro_service import (
+    apply_bulk_status_from_relatorio,
     build_financeiro_campanhas_context,
     ensure_pagamento_from_row,
 )
@@ -40,6 +42,14 @@ def register_financeiro_campanhas_routes(
         qs = (request.form.get("return_qs") or "").strip()
         base = url_for(default_endpoint)
         return redirect(f"{base}?{qs}" if qs else base)
+
+    def _args_from_qs(qs: str):
+        data = parse_qs(qs or '', keep_blank_values=True)
+        args = MultiDict()
+        for key, values in data.items():
+            for value in values:
+                args.add(key, value)
+        return args
 
     def financeiro_campanhas_v2():
         # por enquanto, redireciona para o fechamento (mesma visão legada)
@@ -139,24 +149,73 @@ def register_financeiro_campanhas_routes(
             if novo_status not in ("PENDENTE", "A_PAGAR", "PAGO"):
                 novo_status = "PENDENTE"
 
+            batch_scope = (request.form.get("batch_scope") or "").strip().lower()
+
             try:
                 db = SessionLocal()
                 try:
-                    ensure_pagamento_from_row(
-                        db,
-                        ano=int(request.form.get("ano") or date.today().year),
-                        mes=int(request.form.get("mes") or date.today().month),
-                        tipo=request.form.get("tipo") or "",
-                        origem_id=int(request.form.get("origem_id") or 0),
-                        emp=request.form.get("emp") or 0,
-                        vendedor=request.form.get("vendedor") or "",
-                        campanha_nome=request.form.get("titulo") or "",
-                        valor_premio=float(request.form.get("valor") or 0),
-                        actor=vendedor_logado,
-                        novo_status=novo_status,
-                    )
-                    db.commit()
-                    flash(f"Status atualizado para {novo_status}.", "success")
+                    if batch_scope:
+                        args_post = _args_from_qs(request.form.get("return_qs") or "")
+                        scope_post = build_relatorio_campanhas_scope(
+                            deps,
+                            role=role,
+                            emp_usuario=emp_usuario,
+                            vendedor_logado=vendedor_logado,
+                            args=args_post,
+                            flash=flash,
+                        )
+                        ctx_post = build_financeiro_campanhas_context(
+                            deps,
+                            role=role,
+                            vendedor_logado=vendedor_logado,
+                            ano=int(scope_post["ano"]),
+                            mes=int(scope_post["mes"]),
+                            emps_scope=scope_post["emps_scope"],
+                            emps_sel=scope_post["emps_sel"],
+                            vendedores_sel=scope_post["vendedores_sel"],
+                            vendedores_por_emp=scope_post["vendedores_por_emp"],
+                            recalc=False,
+                            status_sel=(args_post.get("status") or "").strip(),
+                            tipo_sel=(args_post.get("tipo") or "").strip(),
+                            flash=flash,
+                        )
+                        changed, total = apply_bulk_status_from_relatorio(
+                            db,
+                            ano=int(scope_post["ano"]),
+                            mes=int(scope_post["mes"]),
+                            relatorio=ctx_post.get("relatorio") or [],
+                            novo_status=novo_status,
+                            actor=vendedor_logado,
+                            emp=request.form.get("emp_scope") or None,
+                            vendedor=request.form.get("vendedor_scope") or None,
+                        )
+                        db.commit()
+                        if total <= 0:
+                            flash("Nenhuma campanha encontrada para a ação em lote nos filtros atuais.", "warning")
+                        elif changed <= 0:
+                            flash(f"Nenhuma linha precisou ser alterada para {novo_status}.", "info")
+                        else:
+                            alvo = (
+                                f"loja EMP {request.form.get('emp_scope')}" if batch_scope == "emp"
+                                else (f"vendedor {request.form.get('vendedor_scope')}" if batch_scope == "vendedor" else "filtros atuais")
+                            )
+                            flash(f"{changed} linha(s) atualizadas para {novo_status} em {alvo}.", "success")
+                    else:
+                        ensure_pagamento_from_row(
+                            db,
+                            ano=int(request.form.get("ano") or date.today().year),
+                            mes=int(request.form.get("mes") or date.today().month),
+                            tipo=request.form.get("tipo") or "",
+                            origem_id=int(request.form.get("origem_id") or 0),
+                            emp=request.form.get("emp") or 0,
+                            vendedor=request.form.get("vendedor") or "",
+                            campanha_nome=request.form.get("titulo") or "",
+                            valor_premio=float(request.form.get("valor") or 0),
+                            actor=vendedor_logado,
+                            novo_status=novo_status,
+                        )
+                        db.commit()
+                        flash(f"Status atualizado para {novo_status}.", "success")
                 except Exception as e:
                     db.rollback()
                     flash(f"Erro ao atualizar status financeiro: {e}", "danger")
@@ -198,12 +257,6 @@ def register_financeiro_campanhas_routes(
         )
         ctx["role"] = role
         ctx["return_qs"] = urlencode(request.args, doseq=True)
-        rel_args = [("ano", str(ano)), ("mes", str(mes)), ("view", "detalhado")]
-        for emp in emps_sel:
-            rel_args.append(("emp", str(emp)))
-        for vendedor in vendedores_sel:
-            rel_args.append(("vendedor", str(vendedor)))
-        ctx["relatorio_url"] = f"{url_for('relatorio_campanhas')}?{urlencode(rel_args, doseq=True)}"
         return render_template("financeiro_campanhas.html", **ctx)
 
     app.add_url_rule(

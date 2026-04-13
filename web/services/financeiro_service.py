@@ -289,6 +289,63 @@ def ensure_pagamento_from_row(
     return p
 
 
+def collect_financeiro_items(relatorio: list[dict[str, Any]] | None, *, emp: str | None = None, vendedor: str | None = None) -> list[dict[str, Any]]:
+    """Coleta itens financeiros visíveis no contexto atual, com filtro opcional por EMP e vendedor."""
+    emp_s = str(emp or '').strip()
+    vendedor_u = (vendedor or '').strip().upper()
+    items: list[dict[str, Any]] = []
+
+    for eg in (relatorio or []):
+        if emp_s and str(eg.get('emp') or '').strip() != emp_s:
+            continue
+        for vg in (eg.get('vendedores') or []):
+            if vendedor_u and str(vg.get('vendedor') or '').strip().upper() != vendedor_u:
+                continue
+            for it in (vg.get('itens') or []):
+                items.append(it)
+    return items
+
+
+def apply_bulk_status_from_relatorio(
+    db,
+    *,
+    ano: int,
+    mes: int,
+    relatorio: list[dict[str, Any]] | None,
+    novo_status: str,
+    actor: str = '',
+    emp: str | None = None,
+    vendedor: str | None = None,
+) -> tuple[int, int]:
+    """Aplica status em lote usando exatamente os itens visíveis no contexto financeiro atual."""
+    items = collect_financeiro_items(relatorio, emp=emp, vendedor=vendedor)
+    changed = 0
+    total = 0
+    status_final = _norm_status(novo_status)
+
+    for it in items:
+        total += 1
+        status_atual = _norm_status(it.get('status'))
+        if status_atual == status_final:
+            continue
+        ensure_pagamento_from_row(
+            db,
+            ano=int(ano),
+            mes=int(mes),
+            tipo=it.get('tipo') or '',
+            origem_id=int(it.get('origem_id') or 0),
+            emp=it.get('emp') or '',
+            vendedor=it.get('vendedor') or '',
+            campanha_nome=it.get('titulo') or '',
+            valor_premio=float(it.get('valor') or 0),
+            actor=actor,
+            novo_status=status_final,
+        )
+        changed += 1
+
+    return changed, total
+
+
 def build_financeiro_campanhas_context(
     deps,
     *,
@@ -379,7 +436,6 @@ def build_financeiro_campanhas_context(
     totals_by_status = {'PENDENTE': 0.0, 'A_PAGAR': 0.0, 'PAGO': 0.0}
     total_geral = 0.0
     total_linhas = 0
-    total_vendedores = set()
 
     def _sort_emp_key(emp: str):
         s = str(emp or '').strip()
@@ -403,7 +459,6 @@ def build_financeiro_campanhas_context(
 
         total_linhas += 1
         total_geral += valor
-        total_vendedores.add((emp, vendedor))
         if status in totals_by_status:
             totals_by_status[status] += valor
 
@@ -412,25 +467,19 @@ def build_financeiro_campanhas_context(
             'fechada': bool(fech_map.get(emp, False)),
             'total': 0.0,
             'status': {'PENDENTE': 0.0, 'A_PAGAR': 0.0, 'PAGO': 0.0},
-            'tipo_counts': {},
-            'qtd_itens': 0,
             'vendedores_map': {},
         })
         eg['total'] += valor
         eg['status'][status] += valor
-        eg['qtd_itens'] += 1
-        eg['tipo_counts'][tipo] = int(eg['tipo_counts'].get(tipo, 0) or 0) + 1
 
         vg = eg['vendedores_map'].setdefault(vendedor, {
             'vendedor': vendedor,
             'total': 0.0,
             'status': {'PENDENTE': 0.0, 'A_PAGAR': 0.0, 'PAGO': 0.0},
-            'tipo_counts': {},
             'itens': [],
         })
         vg['total'] += valor
         vg['status'][status] += valor
-        vg['tipo_counts'][tipo] = int(vg['tipo_counts'].get(tipo, 0) or 0) + 1
 
         vg['itens'].append({
             'titulo': str(getattr(r, 'titulo', '') or '').strip() or 'Campanha',
@@ -449,24 +498,12 @@ def build_financeiro_campanhas_context(
         })
 
     relatorio = []
-
-    def _dominant_status(status_map: dict[str, float]) -> str:
-        ordered = [('PENDENTE', float(status_map.get('PENDENTE', 0) or 0)), ('A_PAGAR', float(status_map.get('A_PAGAR', 0) or 0)), ('PAGO', float(status_map.get('PAGO', 0) or 0))]
-        ordered.sort(key=lambda x: (-x[1], {'PENDENTE': 0, 'A_PAGAR': 1, 'PAGO': 2}.get(x[0], 9)))
-        return ordered[0][0] if ordered and ordered[0][1] > 0 else 'PENDENTE'
-
     for emp, eg in sorted(emp_groups.items(), key=lambda kv: _sort_emp_key(kv[0])):
         vendedores = list(eg.pop('vendedores_map').values())
         for v in vendedores:
             v['itens'].sort(key=lambda it: ({'PENDENTE': 0, 'A_PAGAR': 1, 'PAGO': 2}.get(it['status'], 9), -float(it['valor'] or 0), str(it['titulo'] or '')))
-            v['qtd_itens'] = len(v['itens'])
-            v['tipos'] = [k for k, _ in sorted((v.get('tipo_counts') or {}).items(), key=lambda kv: (-int(kv[1] or 0), str(kv[0] or '')))]
-            v['status_dominante'] = _dominant_status(v.get('status') or {})
         vendedores.sort(key=lambda x: (-float(x['total'] or 0), str(x['vendedor'] or '')))
         eg['vendedores'] = vendedores
-        eg['qtd_vendedores'] = len(vendedores)
-        eg['tipos'] = [k for k, _ in sorted((eg.get('tipo_counts') or {}).items(), key=lambda kv: (-int(kv[1] or 0), str(kv[0] or '')))]
-        eg['status_dominante'] = _dominant_status(eg.get('status') or {})
         relatorio.append(eg)
 
     return {
@@ -486,8 +523,6 @@ def build_financeiro_campanhas_context(
             'a_pagar': _round2(totals_by_status['A_PAGAR']),
             'pago': _round2(totals_by_status['PAGO']),
             'linhas': int(total_linhas),
-            'lojas': len(relatorio),
-            'vendedores': len(total_vendedores),
         },
         'recalc': bool(recalc),
     }
