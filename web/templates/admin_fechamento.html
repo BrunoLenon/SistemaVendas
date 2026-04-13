@@ -19,6 +19,25 @@
   .sv-table td,.sv-table th{padding:.5rem .55rem;}
   .sv-table thead th{font-size:12px; letter-spacing:.02em;}
   .sv-muted{opacity:.78}
+
+  .sv-fechamento-status{margin-bottom:0;}
+  .sv-fechamento-status tbody tr td{
+    background:rgba(255,140,0,.055) !important;
+    border-top:1px solid rgba(255,140,0,.12);
+    color:rgba(255,244,232,.96);
+    transition:background-color .18s ease, border-color .18s ease;
+  }
+  .sv-fechamento-status tbody tr:nth-child(even) td{
+    background:rgba(255,140,0,.075) !important;
+  }
+  .sv-fechamento-status tbody tr:hover td{
+    background:rgba(255,140,0,.12) !important;
+    border-top-color:rgba(255,140,0,.22);
+  }
+  .sv-fechamento-status tbody td.text-muted,
+  .sv-fechamento-status tbody .text-muted{
+    color:rgba(255,244,232,.72) !important;
+  }
 </style>
 {% endblock %}
 
@@ -117,8 +136,8 @@
         {% if not emps_sel %}
           <div class="alert alert-warning mb-0">Selecione ao menos 1 EMP para ver o status e executar o fechamento.</div>
         {% else %}
-          <div class="table-responsive">
-            <table class="sv-table table align-middle">
+          <div class="sv-tablewrap">
+            <table class="sv-table table align-middle sv-fechamento-status">
               <thead>
                 <tr>
                   <th>EMP</th>
