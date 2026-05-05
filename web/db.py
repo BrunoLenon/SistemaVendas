@@ -412,6 +412,14 @@ class ItemParadoResultado(Base):
 
     base_valor_vendido = Column(Float, nullable=False, default=0.0)
     recompensa_pct = Column(Float, nullable=False, default=0.0)
+
+    # Snapshot v2 do relatório unificado:
+    # - qtd_base guarda a quantidade/pontos exibida na coluna “Qtd vendida”
+    # - recompensa_unit guarda o valor unitário/ponto exibido em “Recomp. (R$/un)”
+    # Mantemos recompensa_pct por compatibilidade com versões antigas.
+    qtd_base = Column(Float, nullable=True)
+    recompensa_unit = Column(Float, nullable=True)
+
     valor_recompensa = Column(Float, nullable=False, default=0.0)
 
     status_pagamento = Column(String(20), nullable=False, default="PENDENTE")
@@ -1388,6 +1396,11 @@ END $$;
             # Fechamento mensal: status financeiro (aberto/a_pagar/pago)
             conn.execute(text("ALTER TABLE fechamento_mensal ADD COLUMN IF NOT EXISTS status varchar(20) DEFAULT 'aberto';"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_fechamento_mensal_status ON fechamento_mensal (status);"))
+
+            # Itens Parados Resultado: colunas de snapshot v2 usadas pelo relatório unificado
+            conn.execute(text("ALTER TABLE itens_parados_resultados ADD COLUMN IF NOT EXISTS qtd_base double precision;"))
+            conn.execute(text("ALTER TABLE itens_parados_resultados ADD COLUMN IF NOT EXISTS recompensa_unit double precision;"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_itens_parados_res_comp_emp_vend ON itens_parados_resultados (competencia_ano, competencia_mes, emp, vendedor);"))
 
             # Fix default/nullable do fechamento (mes nasce aberto)
             try:

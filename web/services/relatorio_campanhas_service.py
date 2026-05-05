@@ -537,7 +537,11 @@ def build_relatorio_campanhas_context(
 
 
 
-from services.relatorio_unificado_service import build_unified_rows, aggregate_for_charts
+from services.relatorio_unificado_service import (
+    build_unified_rows,
+    aggregate_for_charts,
+    rebuild_itens_parados_snapshot,
+)
 
 _RELATORIO_UNIFICADO_CACHE: dict[tuple, tuple[float, list[Any], dict[str, Any]]] = {}
 _RELATORIO_UNIFICADO_CACHE_LOCK = threading.Lock()
@@ -655,6 +659,23 @@ def build_relatorio_campanhas_unificado_context(
                 deps.recalcular_resultados_combos_para_scope(ano=ano, mes=mes, emps=emps_sel, vendedores_por_emp=vendedores_por_emp)
             except TypeError:
                 deps.recalcular_resultados_combos_para_scope(ano=ano, mes=mes, emps_scope=emps_sel, vendedores_por_emp=vendedores_por_emp)
+
+            # Passo 3: gera snapshot mensal de Itens Parados no recálculo manual.
+            # A tela e o PDF passam a ler esse snapshot nas próximas aberturas,
+            # evitando cálculo pesado ao vivo em cima de vendas.
+            try:
+                snap_stats = rebuild_itens_parados_snapshot(
+                    ano=int(ano),
+                    mes=int(mes),
+                    emps=emps_sel,
+                    vendedores_por_emp=vendedores_por_emp,
+                )
+                print(
+                    "[RELATORIO_UNIFICADO] itens_parados_snapshot "
+                    f"emps={snap_stats.get('emps', 0)} rows={snap_stats.get('rows', 0)} skipped={snap_stats.get('skipped', 0)}"
+                )
+            except Exception as snap_exc:
+                print(f"[RELATORIO_UNIFICADO] erro snapshot itens parados: {snap_exc}")
         except Exception as e:
             try:
                 deps.SessionLocal().rollback()

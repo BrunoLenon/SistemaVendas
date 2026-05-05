@@ -41,6 +41,14 @@ CREATE INDEX IF NOT EXISTS ix_itens_parados_emp_ativo_vigencia_codigo
 ON public.itens_parados (emp, data_inicio, data_fim, codigo)
 WHERE ativo IS TRUE;
 
+
+ALTER TABLE public.itens_parados_resultados
+  ADD COLUMN IF NOT EXISTS qtd_base double precision,
+  ADD COLUMN IF NOT EXISTS recompensa_unit double precision;
+
+CREATE INDEX IF NOT EXISTS ix_itens_parados_res_comp_emp_vend
+ON public.itens_parados_resultados (competencia_ano, competencia_mes, emp, vendedor);
+
 CREATE INDEX IF NOT EXISTS ix_meta_resultados_periodo_emp_vendedor_meta
 ON public.metas_resultados (ano, mes, emp, vendedor, meta_id);
 
@@ -58,6 +66,7 @@ ANALYZE public.campanhas_combo_resultados;
 ANALYZE public.campanhas_combo;
 ANALYZE public.campanhas_combo_itens;
 ANALYZE public.itens_parados;
+ANALYZE public.itens_parados_resultados;
 ANALYZE public.metas_resultados;
 ANALYZE public.campanhas_v2_resultados;
 ANALYZE public.financeiro_pagamentos;
