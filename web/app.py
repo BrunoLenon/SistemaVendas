@@ -1,5 +1,6 @@
 import os
 import sys
+import time
 
 # --- Path shim: permite rodar tanto como 'app:app' (--chdir web) quanto 'web.app:app' ---
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -133,6 +134,46 @@ IS_PROD = bool(os.getenv("RENDER")) or (os.getenv("FLASK_ENV") == "production")
 # Cache TTL (horas) - se o cache estiver mais velho que isso, recalcula ao vivo
 CACHE_TTL_HOURS = float(os.getenv("CACHE_TTL_HOURS", "12") or 12)
 
+# ==============================
+# Performance segura (Passo 1)
+# ==============================
+# Cache curto para leituras globais que hoje acontecem em praticamente todas as telas.
+# Mantém comportamento funcional, mas evita consultas repetidas ao banco em navegação normal.
+GLOBAL_SETTING_CACHE_SECONDS = int(os.getenv("GLOBAL_SETTING_CACHE_SECONDS", "30") or 30)
+MAINTENANCE_CACHE_SECONDS = int(os.getenv("MAINTENANCE_CACHE_SECONDS", "15") or 15)
+BRANDING_CACHE_SECONDS = int(os.getenv("BRANDING_CACHE_SECONDS", "60") or 60)
+STATIC_CACHE_SECONDS = int(os.getenv("STATIC_CACHE_SECONDS", "86400") or 86400)
+STATIC_VERSIONED_CACHE_SECONDS = int(os.getenv("STATIC_VERSIONED_CACHE_SECONDS", "31536000") or 31536000)
+SLOW_REQUEST_MS = int(os.getenv("SLOW_REQUEST_MS", "1200") or 1200)
+_PERF_CACHE: dict[str, tuple[float, object]] = {}
+_CACHE_MISS = object()
+
+
+def _cache_get(key: str):
+    item = _PERF_CACHE.get(key)
+    if not item:
+        return _CACHE_MISS
+    expires_at, value = item
+    if expires_at <= time.time():
+        _PERF_CACHE.pop(key, None)
+        return _CACHE_MISS
+    return value
+
+
+def _cache_set(key: str, value, ttl_seconds: int):
+    ttl = max(0, int(ttl_seconds or 0))
+    if ttl <= 0:
+        _PERF_CACHE.pop(key, None)
+        return value
+    _PERF_CACHE[key] = (time.time() + ttl, value)
+    return value
+
+
+def _cache_clear_prefix(prefix: str):
+    for k in list(_PERF_CACHE.keys()):
+        if k.startswith(prefix):
+            _PERF_CACHE.pop(k, None)
+
 
 # Respeitar X-Forwarded-* (https/ip real) atrás do Render
 try:
@@ -146,9 +187,16 @@ app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
     SESSION_COOKIE_SECURE=IS_PROD,  # em dev/local pode ser False
+    SEND_FILE_MAX_AGE_DEFAULT=STATIC_CACHE_SECONDS,
 )
 
 from security_utils import audit, rate_limit, normalize_role
+
+@app.before_request
+def _mark_request_start():
+    # Usado pelo after_request para Server-Timing e logs de lentidão.
+    request.environ["sv_started_at"] = time.perf_counter()
+    return None
 
 @app.before_request
 def _security_rate_limits():
@@ -189,6 +237,30 @@ def _security_headers(resp):
     # HSTS somente em produção
     if IS_PROD:
         resp.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+
+    # Cache mais eficiente para assets locais. Quando há ?v=..., considera versionado/imutável.
+    if request.endpoint == "static" or request.path.startswith("/static/"):
+        max_age = STATIC_VERSIONED_CACHE_SECONDS if request.query_string else STATIC_CACHE_SECONDS
+        if max_age > 0:
+            resp.headers["Cache-Control"] = f"public, max-age={max_age}" + (", immutable" if request.query_string else "")
+
+    # Métrica simples para acompanhar gargalos nos logs do Render e no DevTools.
+    started_at = request.environ.get("sv_started_at")
+    if started_at is not None:
+        try:
+            elapsed_ms = int((time.perf_counter() - float(started_at)) * 1000)
+            resp.headers["Server-Timing"] = f"app;dur={elapsed_ms}"
+            if request.endpoint != "static" and elapsed_ms >= SLOW_REQUEST_MS:
+                app.logger.warning(
+                    "SLOW_REQUEST path=%s method=%s status=%s duration_ms=%s",
+                    request.path,
+                    request.method,
+                    getattr(resp, "status_code", ""),
+                    elapsed_ms,
+                )
+        except Exception:
+            pass
+
     return resp
 
 # --------------------------
@@ -275,7 +347,7 @@ def _maintenance_guard():
     if not flag:
         try:
             with SessionLocal() as db:
-                flag = (_get_setting(db, "maintenance_mode", "off") or "off").strip().lower()
+                flag = (_get_setting_cached(db, "maintenance_mode", "off", ttl_seconds=MAINTENANCE_CACHE_SECONDS) or "off").strip().lower()
         except Exception:
             # Se falhar leitura, não bloqueia (fail-open)
             return None
@@ -299,6 +371,16 @@ def _get_setting(db, key: str, default: str | None = None) -> str | None:
     s = db.query(AppSetting).filter(AppSetting.key == key).first()
     return s.value if s and s.value is not None else default
 
+
+def _get_setting_cached(db, key: str, default: str | None = None, *, ttl_seconds: int | None = None) -> str | None:
+    cache_key = f"setting:{key}"
+    cached = _cache_get(cache_key)
+    if cached is not _CACHE_MISS:
+        return cached  # type: ignore[return-value]
+    value = _get_setting(db, key, default)
+    return _cache_set(cache_key, value, ttl_seconds or GLOBAL_SETTING_CACHE_SECONDS)  # type: ignore[return-value]
+
+
 def _set_setting(db, key: str, value: str | None):
     s = db.query(AppSetting).filter(AppSetting.key == key).first()
     if not s:
@@ -306,9 +388,19 @@ def _set_setting(db, key: str, value: str | None):
         db.add(s)
     else:
         s.value = value
+    _cache_clear_prefix(f"setting:{key}")
+    if key.startswith("branding."):
+        _cache_clear_prefix("branding:")
 
 def _current_branding(db) -> dict:
-    """Retorna branding atual (tema sazonal ativo ou padrão)."""
+    """Retorna branding atual (tema sazonal ativo ou padrão).
+
+    Cache curto em memória por worker para evitar consulta de branding em toda renderização.
+    """
+    cached = _cache_get("branding:current")
+    if isinstance(cached, dict):
+        return dict(cached)
+
     today = date.today()
     theme = (
         db.query(BrandingTheme)
@@ -320,9 +412,9 @@ def _current_branding(db) -> dict:
     )
     if theme:
         ver = theme.updated_at.isoformat() if theme.updated_at else ""
-        login_logo_left = _get_setting(db, "branding.login_logo_left_url", theme.logo_url)
-        login_logo_right = _get_setting(db, "branding.login_logo_right_url", theme.logo_url)
-        return {
+        login_logo_left = _get_setting_cached(db, "branding.login_logo_left_url", theme.logo_url)
+        login_logo_right = _get_setting_cached(db, "branding.login_logo_right_url", theme.logo_url)
+        b = {
             "logo_url": theme.logo_url,
             "favicon_url": theme.favicon_url,
             "theme_name": theme.name,
@@ -330,13 +422,15 @@ def _current_branding(db) -> dict:
             "login_logo_left_url": login_logo_left,
             "login_logo_right_url": login_logo_right,
         }
+        return dict(_cache_set("branding:current", b, BRANDING_CACHE_SECONDS))
+
     # Padrão
-    logo = _get_setting(db, "branding.default_logo_url")
-    favicon = _get_setting(db, "branding.default_favicon_url")
-    ver = _get_setting(db, "branding.default_version", "")
-    login_logo_left = _get_setting(db, "branding.login_logo_left_url", logo)
-    login_logo_right = _get_setting(db, "branding.login_logo_right_url", logo)
-    return {
+    logo = _get_setting_cached(db, "branding.default_logo_url")
+    favicon = _get_setting_cached(db, "branding.default_favicon_url")
+    ver = _get_setting_cached(db, "branding.default_version", "")
+    login_logo_left = _get_setting_cached(db, "branding.login_logo_left_url", logo)
+    login_logo_right = _get_setting_cached(db, "branding.login_logo_right_url", logo)
+    b = {
         "logo_url": logo,
         "favicon_url": favicon,
         "theme_name": "default",
@@ -344,6 +438,7 @@ def _current_branding(db) -> dict:
         "login_logo_left_url": login_logo_left,
         "login_logo_right_url": login_logo_right,
     }
+    return dict(_cache_set("branding:current", b, BRANDING_CACHE_SECONDS))
 
 @app.context_processor
 def inject_branding():

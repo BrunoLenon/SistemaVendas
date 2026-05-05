@@ -9,7 +9,7 @@ import requests
 from flask import request, render_template
 
 from auth_helpers import _admin_required
-from branding import _get_setting, _set_setting, _current_branding
+from branding import _get_setting, _set_setting, _current_branding, clear_branding_cache
 from db import SessionLocal, BrandingTheme, Usuario
 
 
@@ -178,6 +178,7 @@ def register_admin_config_routes(app):
                     )
                     db.add(t)
                     db.commit()
+                    clear_branding_cache()
                     msgs.append("Tema criado com sucesso.")
 
                 except Exception as e:
@@ -196,6 +197,7 @@ def register_admin_config_routes(app):
                     if acao == "theme_toggle":
                         t.is_active = not bool(t.is_active)
                         db.commit()
+                        clear_branding_cache()
                         msgs.append("Status do tema atualizado.")
 
                     elif acao == "theme_update":
@@ -227,11 +229,13 @@ def register_admin_config_routes(app):
                             t.favicon_url = _supabase_storage_upload(fav_file.filename, data, ctype, folder="themes")
 
                         db.commit()
+                        clear_branding_cache()
                         msgs.append("Tema atualizado com sucesso.")
 
                     elif acao == "theme_delete":
                         db.delete(t)
                         db.commit()
+                        clear_branding_cache()
                         msgs.append("Tema removido.")
 
                     elif acao == "alterar_emp":
