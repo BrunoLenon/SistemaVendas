@@ -11,7 +11,9 @@ from __future__ import annotations
 from io import BytesIO
 from typing import Any, Callable
 
-from flask import flash, render_template, request, send_file, url_for
+from werkzeug.datastructures import MultiDict
+
+from flask import Response, flash, render_template, request, send_file, url_for
 
 from services.campanhas_service import build_relatorio_campanhas_scope
 from services.relatorio_campanhas_service import build_relatorio_campanhas_unificado_context
@@ -327,6 +329,21 @@ def _augment_ctx(ctx, *, role: str, vendedor_logado: str, vendedores_por_emp: di
     ctx['recalc_url'] = _make_url('relatorio_campanhas', recalc=1, page=1)
     ctx['export_url'] = _make_url('relatorio_campanhas_export_pdf', page=None, per_page=None)
     ctx['export_csv_url'] = _make_url('relatorio_campanhas_export_csv', page=None, per_page=None)
+
+    # URL sob demanda dos detalhes: a página principal renderiza só o resumo
+    # e busca a subtabela quando o usuário clica em "Ver campanhas".
+    # Isso reduz o HTML inicial sem alterar cálculo nem permissão.
+    try:
+        for g in (ctx.get('rows_grouped_page') or []):
+            g['detail_url'] = _make_url(
+                'relatorio_campanhas_detalhes',
+                detail_emp=g.get('emp'),
+                detail_vendedor=g.get('vendedor'),
+                page=None,
+                per_page=None,
+            )
+    except Exception:
+        pass
     per_page_opts = [50, 100, 200, 500]
     ctx['per_page_opts'] = per_page_opts
     ctx['per_page_urls'] = {opt: _make_url('relatorio_campanhas', per_page=opt, page=1) for opt in per_page_opts}
@@ -413,6 +430,72 @@ def register_relatorio_campanhas_routes(
         )
         return render_template('relatorio_campanhas.html', ctx=ctx, **ctx)
 
+    def relatorio_campanhas_detalhes():
+        red = login_required_fn()
+        if red:
+            return red
+
+        role = (role_fn() or '').strip().lower()
+        emp_usuario = emp_fn()
+        vendedor_logado = (usuario_logado_fn() or '').strip().upper()
+
+        detail_emp = str(request.args.get('detail_emp') or '').strip()
+        detail_vendedor = str(request.args.get('detail_vendedor') or '').strip().upper()
+        if not detail_emp or not detail_vendedor:
+            return Response('<div class="sv-muted">Detalhe inválido.</div>', mimetype='text/html; charset=utf-8', status=400)
+
+        # Reaplica a regra de escopo usando somente o vendedor/EMP solicitado.
+        # A própria função de escopo impede admin/supervisor/vendedor de enxergar fora do permitido.
+        detail_args = MultiDict()
+        try:
+            for key, values in request.args.lists():
+                detail_args.setlist(key, list(values or []))
+            detail_args.poplist('emp')
+            detail_args.poplist('vendedor')
+            detail_args.poplist('page')
+            detail_args.poplist('per_page')
+            detail_args.poplist('recalc')
+        except Exception:
+            pass
+        detail_args.add('emp', detail_emp)
+        detail_args.add('vendedor', detail_vendedor)
+
+        ctx, vendedores_por_emp = _build_relatorio_ctx(
+            deps,
+            role=role,
+            emp_usuario=emp_usuario,
+            vendedor_logado=vendedor_logado,
+            request_args=detail_args,
+            flash_fn=flash,
+            recalc_override=False,
+        )
+        ctx = _augment_ctx(
+            ctx,
+            role=role,
+            vendedor_logado=vendedor_logado,
+            vendedores_por_emp=vendedores_por_emp,
+            request_args=detail_args,
+            include_pagination=False,
+        )
+
+        group = None
+        for g in (ctx.get('rows_grouped') or []):
+            if str(g.get('emp') or '').strip() == detail_emp and str(g.get('vendedor') or '').strip().upper() == detail_vendedor:
+                group = g
+                break
+
+        if group is None:
+            group = {
+                'emp': detail_emp,
+                'vendedor': detail_vendedor,
+                'campanhas': [],
+                'total': 0.0,
+                'campanhas_count': 0,
+            }
+
+        html = render_template('_relatorio_campanhas_detalhes.html', g=group)
+        return Response(html, mimetype='text/html; charset=utf-8')
+
     def relatorio_campanhas_export_csv():
         red = login_required_fn()
         if red:
@@ -498,5 +581,6 @@ def register_relatorio_campanhas_routes(
         return send_file(BytesIO(pdf_bytes), mimetype='application/pdf', as_attachment=True, download_name=filename)
 
     app.add_url_rule('/relatorios/campanhas', endpoint='relatorio_campanhas', view_func=relatorio_campanhas, methods=['GET'])
+    app.add_url_rule('/relatorios/campanhas/detalhes', endpoint='relatorio_campanhas_detalhes', view_func=relatorio_campanhas_detalhes, methods=['GET'])
     app.add_url_rule('/relatorios/campanhas/export.csv', endpoint='relatorio_campanhas_export_csv', view_func=relatorio_campanhas_export_csv, methods=['GET'])
     app.add_url_rule('/relatorios/campanhas/export.pdf', endpoint='relatorio_campanhas_export_pdf', view_func=relatorio_campanhas_export_pdf, methods=['GET'])

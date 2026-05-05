@@ -56,6 +56,8 @@
 .sv-empcard .sv-tablewrap{margin:0;}
 
 .sv-subcard--full{ margin-top:0; overflow:auto; }
+.sv-detail-placeholder{ color:rgba(255,255,255,.68); font-size:12px; padding:14px; }
+.sv-detail-placeholder strong{ color:#fff; }
 .sv-detail-row > td{ padding-top:.35rem; padding-bottom:.9rem; }
 .js-toggle-camps .sv-chev{ display:inline-block; margin-left:6px; transition: transform .15s ease; }
 .js-toggle-camps.is-open .sv-chev{ transform: rotate(180deg); }
@@ -341,6 +343,7 @@
                         <button type="button"
                                 class="sv-btn sv-btn-ghost sv-btn-xs js-toggle-camps"
                                 data-target="{{ detail_id }}"
+                                data-detail-url="{{ g.detail_url or '' }}"
                                 aria-expanded="false">
                           Ver campanhas ({{ g.campanhas_count }})
                           <span class="sv-chev" aria-hidden="true">▾</span>
@@ -352,8 +355,12 @@
                       </td>
                     </tr>
 
-                    <tr id="{{ detail_id }}" class="sv-detail-row" style="display:none;">
-                      <td colspan="4">{% include '_relatorio_campanhas_detalhes.html' %}</td>
+                    <tr id="{{ detail_id }}" class="sv-detail-row" style="display:none;" data-loaded="0">
+                      <td colspan="4">
+                        <div class="sv-subcard sv-subcard--full sv-detail-placeholder">
+                          Clique em <strong>Ver campanhas</strong> para carregar os detalhes deste vendedor.
+                        </div>
+                      </td>
                     </tr>
                   {% endfor %}
                 </tbody>
@@ -391,7 +398,7 @@
     });
   })();
 
-  // Expansão "modelo": abre uma linha abaixo (colspan) em largura total
+  // Expansão sob demanda: a página inicial traz só o resumo; a subtabela é buscada ao clicar.
   (function(){
     function closeAll(exceptId){
       document.querySelectorAll('tr.sv-detail-row').forEach(function(tr){
@@ -405,6 +412,41 @@
           btn.classList.remove('is-open');
           btn.setAttribute('aria-expanded', 'false');
         }
+      });
+    }
+
+    function setRowContent(row, html){
+      var cell = row.querySelector('td');
+      if(cell) cell.innerHTML = html;
+    }
+
+    function loadDetail(row, btn){
+      var url = btn.getAttribute('data-detail-url');
+      if(!url || row.getAttribute('data-loaded') === '1') {
+        return Promise.resolve();
+      }
+
+      row.setAttribute('data-loading', '1');
+      setRowContent(row, '<div class="sv-subcard sv-subcard--full sv-detail-placeholder">Carregando campanhas...</div>');
+
+      return fetch(url, {
+        method: 'GET',
+        headers: {'X-Requested-With': 'XMLHttpRequest'},
+        credentials: 'same-origin'
+      })
+      .then(function(resp){
+        if(!resp.ok) throw new Error('Falha ao carregar detalhes');
+        return resp.text();
+      })
+      .then(function(html){
+        setRowContent(row, html);
+        row.setAttribute('data-loaded', '1');
+      })
+      .catch(function(){
+        setRowContent(row, '<div class="sv-subcard sv-subcard--full sv-detail-placeholder">Não foi possível carregar os detalhes agora. Atualize a página e tente novamente.</div>');
+      })
+      .finally(function(){
+        row.removeAttribute('data-loading');
       });
     }
 
@@ -426,6 +468,7 @@
         row.style.display = '';
         btn.classList.add('is-open');
         btn.setAttribute('aria-expanded', 'true');
+        loadDetail(row, btn);
       }
     });
   })();

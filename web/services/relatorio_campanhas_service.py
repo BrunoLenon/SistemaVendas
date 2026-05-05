@@ -29,6 +29,9 @@ def _sanitize_emps(emp_list):
 from dataclasses import dataclass
 from datetime import date, datetime
 import datetime
+import os
+import threading
+import time
 from typing import Any, Callable
 
 from sqlalchemy import or_
@@ -536,6 +539,77 @@ def build_relatorio_campanhas_context(
 
 from services.relatorio_unificado_service import build_unified_rows, aggregate_for_charts
 
+_RELATORIO_UNIFICADO_CACHE: dict[tuple, tuple[float, list[Any], dict[str, Any]]] = {}
+_RELATORIO_UNIFICADO_CACHE_LOCK = threading.Lock()
+
+
+def _relatorio_cache_ttl_seconds() -> int:
+    try:
+        return max(0, int(os.environ.get("RELATORIO_CAMPANHAS_CACHE_TTL_SECONDS", "45") or 0))
+    except Exception:
+        return 45
+
+
+def _relatorio_vendedores_key(vendedores_por_emp: dict[str, list[str]] | None, emps: list[str]) -> tuple:
+    """Chave estável do escopo efetivo usado no relatório.
+
+    Não usamos request args crus: usamos apenas EMPs e vendedores já autorizados
+    pela regra de escopo. Assim o cache não muda permissão nem resultado.
+    """
+    out = []
+    mapa = vendedores_por_emp or {}
+    for emp in sorted({str(e).strip() for e in (emps or []) if str(e).strip()}):
+        vendedores = sorted({str(v or "").strip().upper() for v in (mapa.get(emp) or []) if str(v or "").strip()})
+        out.append((emp, tuple(vendedores)))
+    return tuple(out)
+
+
+def _relatorio_cache_key(*, role: str, vendedor_logado: str, ano: int, mes: int, emps: list[str], vendedores_por_emp: dict[str, list[str]]) -> tuple:
+    return (
+        "relatorio_campanhas_unificado_v2",
+        str(role or "").strip().lower(),
+        str(vendedor_logado or "").strip().upper(),
+        int(ano),
+        int(mes),
+        tuple(sorted({str(e).strip() for e in (emps or []) if str(e).strip()})),
+        _relatorio_vendedores_key(vendedores_por_emp, emps),
+    )
+
+
+def _relatorio_cache_get(key: tuple) -> tuple[list[Any], dict[str, Any]] | None:
+    ttl = _relatorio_cache_ttl_seconds()
+    if ttl <= 0:
+        return None
+    now = time.monotonic()
+    with _RELATORIO_UNIFICADO_CACHE_LOCK:
+        item = _RELATORIO_UNIFICADO_CACHE.get(key)
+        if not item:
+            return None
+        created, rows, charts = item
+        if now - created > ttl:
+            _RELATORIO_UNIFICADO_CACHE.pop(key, None)
+            return None
+        return rows, charts
+
+
+def _relatorio_cache_set(key: tuple, rows: list[Any], charts: dict[str, Any]) -> None:
+    ttl = _relatorio_cache_ttl_seconds()
+    if ttl <= 0:
+        return
+    with _RELATORIO_UNIFICADO_CACHE_LOCK:
+        # Evita crescimento indefinido em processos longos.
+        if len(_RELATORIO_UNIFICADO_CACHE) > 32:
+            oldest = sorted(_RELATORIO_UNIFICADO_CACHE.items(), key=lambda kv: kv[1][0])[:8]
+            for old_key, _ in oldest:
+                _RELATORIO_UNIFICADO_CACHE.pop(old_key, None)
+        _RELATORIO_UNIFICADO_CACHE[key] = (time.monotonic(), rows, charts)
+
+
+def _relatorio_cache_clear() -> None:
+    with _RELATORIO_UNIFICADO_CACHE_LOCK:
+        _RELATORIO_UNIFICADO_CACHE.clear()
+
+
 def build_relatorio_campanhas_unificado_context(
     deps: CampanhasDeps,
     *,
@@ -589,27 +663,54 @@ def build_relatorio_campanhas_unificado_context(
             flash("Não foi possível recalcular agora. Tente novamente em instantes.", "warning")
             print(f"[RELATORIO_UNIFICADO] erro recalc: {e}")
 
-    # Monta linhas unificadas
-    try:
-        rows = build_unified_rows(
-            ano=ano,
-            mes=mes,
-            emps=emps_sel,
-            vendedores_por_emp=vendedores_por_emp,
-            incluir_zerados=False,
-            usar_snapshot_itens_parados=True,
-        )
-        if rows is None:
-            rows = []
-    except Exception as e:
+    cache_key = _relatorio_cache_key(
+        role=role_l,
+        vendedor_logado=vendedor_logado,
+        ano=ano,
+        mes=mes,
+        emps=emps_sel,
+        vendedores_por_emp=vendedores_por_emp,
+    )
+
+    # Recalcular deve sempre invalidar cache do processo atual.
+    if recalc:
+        _relatorio_cache_clear()
+
+    cached = None if recalc else _relatorio_cache_get(cache_key)
+    if cached is not None:
+        rows, charts = cached
         try:
-            deps.SessionLocal().rollback()
+            print(f"[RELATORIO_UNIFICADO] cache_hit rows={len(rows or [])} ano={ano} mes={mes} emps={len(emps_sel or [])}")
         except Exception:
             pass
-        print(f"[RELATORIO_UNIFICADO] erro ao montar rows: {e}")
-        rows = []
+    else:
+        started = time.perf_counter()
+        try:
+            rows = build_unified_rows(
+                ano=ano,
+                mes=mes,
+                emps=emps_sel,
+                vendedores_por_emp=vendedores_por_emp,
+                incluir_zerados=False,
+                usar_snapshot_itens_parados=True,
+            )
+            if rows is None:
+                rows = []
+        except Exception as e:
+            try:
+                deps.SessionLocal().rollback()
+            except Exception:
+                pass
+            print(f"[RELATORIO_UNIFICADO] erro ao montar rows: {e}")
+            rows = []
 
-    charts = aggregate_for_charts(rows or [])
+        charts = aggregate_for_charts(rows or [])
+        _relatorio_cache_set(cache_key, rows, charts)
+        try:
+            elapsed_ms = int((time.perf_counter() - started) * 1000)
+            print(f"[RELATORIO_UNIFICADO] cache_miss duration_ms={elapsed_ms} rows={len(rows or [])} ano={ano} mes={mes} emps={len(emps_sel or [])}")
+        except Exception:
+            pass
 
     # Stats básicos
     total_linhas = len(rows or [])
