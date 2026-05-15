@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 from typing import Any, Callable
+from types import SimpleNamespace
 from services.campanhas_v2_service import list_resultados_v2
 
 
@@ -40,6 +41,97 @@ class CampanhasDeps:
     recalcular_resultados_campanhas_para_scope: Callable[[int, int, list[str], dict[str, list[str]]], None]
     recalcular_resultados_combos_para_scope: Callable[[int, int, list[str], dict[str, list[str]]], None]
 
+
+
+def _meta_tipo_label_public(tipo: str) -> str:
+    tipo = (tipo or "").strip().upper()
+    if tipo == "CRESCIMENTO":
+        return "Meta Crescimento"
+    if tipo == "MIX":
+        return "Meta Mix"
+    if tipo == "SHARE_MARCA":
+        return "Meta Marcas"
+    return "Meta"
+
+
+def _meta_metric_label(calc: Any) -> str:
+    tipo = (getattr(calc, "tipo", "") or "").strip().upper()
+    try:
+        if tipo == "CRESCIMENTO":
+            pct = float(getattr(calc, "crescimento_pct", 0.0) or 0.0)
+            return f"{pct:.2f}%"
+        if tipo == "MIX":
+            mix = int(float(getattr(calc, "mix_itens_unicos", 0) or 0))
+            return str(mix)
+        if tipo == "SHARE_MARCA":
+            pct = float(getattr(calc, "share_pct", 0.0) or 0.0)
+            return f"{pct:.2f}%"
+    except Exception:
+        pass
+    return "0"
+
+
+def _build_meta_cards_for_vendedor(db: Any, *, ano: int, mes: int, emp: str, vendedor: str, incluir_zeradas: bool = True) -> list[Any]:
+    """Monta linhas de metas para a tela /campanhas sem acoplar template ao módulo /metas."""
+    try:
+        from metas_helpers import calcular_meta, get_meta_emps, metas_ativas_periodo
+    except Exception:
+        return []
+
+    out: list[Any] = []
+    vendedor_u = (vendedor or "").strip().upper()
+    emp_s = str(emp or "").strip()
+    if not vendedor_u or not emp_s:
+        return out
+
+    try:
+        metas = metas_ativas_periodo(db, int(ano), int(mes), only_active=True) or []
+    except Exception:
+        metas = []
+
+    for meta in metas:
+        try:
+            meta_emps = set(str(e).strip() for e in (get_meta_emps(db, int(getattr(meta, "id", 0) or 0)) or []) if str(e).strip())
+            if meta_emps and emp_s not in meta_emps:
+                continue
+            calc = calcular_meta(db, meta, emp_s, vendedor_u, persist=True)
+            premio = float(getattr(calc, "premio", 0.0) or 0.0)
+            if not incluir_zeradas and premio <= 0:
+                continue
+
+            tipo = (getattr(meta, "tipo", "") or "").strip().upper()
+            titulo_base = (getattr(meta, "nome", "") or _meta_tipo_label_public(tipo)).strip()
+            bloqueado = bool(getattr(calc, "bloqueado_minimo", False))
+            subtitulo = "Mínimo não atingido" if bloqueado else "Meta ativa"
+            if tipo == "CRESCIMENTO" and getattr(calc, "base_valor", None) is not None:
+                subtitulo = f"Base R$ {float(getattr(calc, 'base_valor', 0.0) or 0.0):,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
+            elif tipo == "MIX":
+                subtitulo = "Itens únicos vendidos"
+            elif tipo == "SHARE_MARCA":
+                subtitulo = "Participação das marcas"
+
+            out.append(SimpleNamespace(
+                tipo="META",
+                titulo=f"{_meta_tipo_label_public(tipo)} • {titulo_base}",
+                nome=titulo_base,
+                marca="METAS",
+                base=subtitulo,
+                qtd_total=_meta_metric_label(calc),
+                qtd=_meta_metric_label(calc),
+                valor_recompensa=premio,
+                inicio=f"{int(mes):02d}/{int(ano)}",
+                fim="",
+                meta_tipo=tipo,
+                meta_id=int(getattr(meta, "id", 0) or 0),
+                atingiu=bool(premio > 0),
+            ))
+        except Exception as exc:
+            try:
+                print(f"[CAMPANHAS] erro ao calcular meta integrada emp={emp_s} vendedor={vendedor_u}: {exc}")
+            except Exception:
+                pass
+            continue
+    return out
 
 def build_campanhas_page_context(
     deps: CampanhasDeps,
@@ -174,7 +266,15 @@ def build_campanhas_page_context(
                     resultados_calc.append(res)
                     vend_total += float(getattr(res, "valor_recompensa", 0.0) or 0.0)
 
-                resultados_calc.sort(key=lambda r: float(getattr(r, "valor_recompensa", 0.0) or 0.0), reverse=True)
+                # Integração oficial: Metas entram na página /campanhas junto das campanhas.
+                # Mostramos também metas zeradas para o vendedor acompanhar o que falta atingir,
+                # mas somente valores positivos entram no total de recompensa.
+                metas_cards = _build_meta_cards_for_vendedor(db, ano=ano, mes=mes, emp=emp, vendedor=vend, incluir_zeradas=True)
+                for meta_card in metas_cards:
+                    resultados_calc.append(meta_card)
+                    vend_total += float(getattr(meta_card, "valor_recompensa", 0.0) or 0.0)
+
+                resultados_calc.sort(key=lambda r: (0 if str(getattr(r, "tipo", "") or "").upper() == "META" else 1, -float(getattr(r, "valor_recompensa", 0.0) or 0.0), str(getattr(r, "titulo", "") or getattr(r, "nome", "") or "")))
 
                 total_campanhas += len(resultados_calc)
                 total_recompensa += vend_total

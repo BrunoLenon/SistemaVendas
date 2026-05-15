@@ -508,6 +508,139 @@ def rebuild_itens_parados_snapshot(
 
     return stats
 
+
+def _meta_unified_title(meta: Any, calc: Any) -> str:
+    tipo = str(getattr(meta, 'tipo', '') or '').strip().upper()
+    nome = str(getattr(meta, 'nome', '') or '').strip()
+    if tipo == 'CRESCIMENTO':
+        prefix = 'Meta Crescimento'
+    elif tipo == 'MIX':
+        prefix = 'Meta Mix'
+    elif tipo == 'SHARE_MARCA':
+        prefix = 'Meta Marcas'
+    else:
+        prefix = 'Meta'
+    return f"{prefix} • {nome}" if nome else prefix
+
+
+def _append_metas_unificadas(
+    db: Any,
+    rows: list[UnifiedRow],
+    *,
+    ano: int,
+    mes: int,
+    emp: str,
+    vendedores: list[str],
+    incluir_zerados: bool,
+) -> None:
+    """Integra Metas no dataset unificado usado por /relatorios/campanhas e /financeiro/campanhas."""
+    try:
+        from metas_helpers import calcular_meta, get_meta_emps, metas_ativas_periodo
+    except Exception as exc:
+        try:
+            print(f"[RELATORIO_UNIFICADO] metas indisponiveis: {exc}")
+        except Exception:
+            pass
+        return
+
+    emp_s = str(emp or '').strip()
+    if not emp_s or not vendedores:
+        return
+
+    try:
+        metas = metas_ativas_periodo(db, int(ano), int(mes), only_active=True) or []
+    except Exception as exc:
+        try:
+            print(f"[RELATORIO_UNIFICADO] erro ao listar metas: {exc}")
+        except Exception:
+            pass
+        metas = []
+
+    if not metas:
+        return
+
+    meta_emps_cache: dict[int, set[str]] = {}
+    for meta in metas:
+        try:
+            meta_id = int(getattr(meta, 'id', 0) or 0)
+            meta_emps_cache[meta_id] = {str(e).strip() for e in (get_meta_emps(db, meta_id) or []) if str(e).strip()}
+        except Exception:
+            meta_emps_cache[int(getattr(meta, 'id', 0) or 0)] = set()
+
+    for meta in metas:
+        meta_id = int(getattr(meta, 'id', 0) or 0)
+        if meta_id <= 0:
+            continue
+        emps_meta = meta_emps_cache.get(meta_id) or set()
+        if emps_meta and emp_s not in emps_meta:
+            continue
+
+        tipo_meta = str(getattr(meta, 'tipo', '') or '').strip().upper()
+        for vend in vendedores:
+            vend_u = _upper(vend)
+            if not vend_u:
+                continue
+            try:
+                calc = calcular_meta(db, meta, emp_s, vend_u, persist=True)
+            except Exception as exc:
+                try:
+                    print(f"[RELATORIO_UNIFICADO] erro meta emp={emp_s} vendedor={vend_u} meta={meta_id}: {exc}")
+                except Exception:
+                    pass
+                continue
+
+            valor_premio = _safe_float(getattr(calc, 'premio', 0.0) or 0.0)
+            if valor_premio <= 0 and not incluir_zerados:
+                continue
+
+            if tipo_meta == 'CRESCIMENTO':
+                qtd_base = _safe_float(getattr(calc, 'crescimento_pct', 0.0) or 0.0)
+                qtd_minima = _safe_float(getattr(calc, 'faixa_limite', 0.0) or 0.0) if getattr(calc, 'faixa_limite', None) is not None else None
+                recompensa_unit = _safe_float(getattr(calc, 'bonus_percentual', 0.0) or 0.0)
+                valor_vendido = _safe_float(getattr(calc, 'valor_mes', 0.0) or 0.0)
+                item_codigo = 'CRESCIMENTO'
+            elif tipo_meta == 'MIX':
+                qtd_base = _safe_float(getattr(calc, 'mix_itens_unicos', 0.0) or 0.0)
+                qtd_minima = _safe_float(getattr(calc, 'faixa_limite', 0.0) or 0.0) if getattr(calc, 'faixa_limite', None) is not None else None
+                recompensa_unit = _safe_float(getattr(calc, 'bonus_percentual', 0.0) or 0.0)
+                valor_vendido = _safe_float(getattr(calc, 'valor_mes', 0.0) or 0.0)
+                item_codigo = 'MIX'
+            elif tipo_meta == 'SHARE_MARCA':
+                qtd_base = _safe_float(getattr(calc, 'share_pct', 0.0) or 0.0)
+                qtd_minima = _safe_float(getattr(calc, 'faixa_limite', 0.0) or 0.0) if getattr(calc, 'faixa_limite', None) is not None else None
+                recompensa_unit = _safe_float(getattr(calc, 'bonus_percentual', 0.0) or 0.0)
+                valor_vendido = _safe_float(getattr(calc, 'valor_marcas', 0.0) or 0.0)
+                item_codigo = 'MARCAS'
+            else:
+                qtd_base = 0.0
+                qtd_minima = None
+                recompensa_unit = _safe_float(getattr(calc, 'bonus_percentual', 0.0) or 0.0)
+                valor_vendido = _safe_float(getattr(calc, 'valor_mes', 0.0) or 0.0)
+                item_codigo = 'META'
+
+            atingiu = bool(valor_premio > 0 and not bool(getattr(calc, 'bloqueado_minimo', False)))
+            rows.append(
+                UnifiedRow(
+                    tipo='META',
+                    competencia_ano=int(ano),
+                    competencia_mes=int(mes),
+                    emp=emp_s,
+                    vendedor=vend_u,
+                    titulo=_meta_unified_title(meta, calc),
+                    item_codigo=item_codigo,
+                    qtd_minima=qtd_minima,
+                    recompensa_unit=recompensa_unit,
+                    valor_vendido=valor_vendido,
+                    atingiu_gate=atingiu,
+                    qtd_base=qtd_base,
+                    qtd_premiada=None,
+                    valor_recompensa=valor_premio,
+                    status_pagamento='PENDENTE',
+                    pago_em=None,
+                    origem_id=meta_id,
+                )
+            )
+
 def build_unified_rows(
     *,
     ano: int,
@@ -790,6 +923,20 @@ def build_unified_rows(
                         )
                         rows.extend(item_rows)
 
+            # -------- METAS --------
+            # As metas ativas do período entram no mesmo dataset unificado.
+            # Dessa forma /relatorios/campanhas, CSV/PDF e /financeiro/campanhas passam
+            # a considerar Crescimento, Mix e Marcas sem duplicar regra de cálculo.
+            _append_metas_unificadas(
+                db,
+                rows,
+                ano=int(ano),
+                mes=int(mes),
+                emp=str(emp),
+                vendedores=vendedores,
+                incluir_zerados=incluir_zerados,
+            )
+
             # -------- ITENS PARADOS --------
             # Passo 3: lê snapshot mensal quando existir. Se ainda não foi gerado,
             # cai automaticamente para o cálculo ao vivo para preservar resultado.
@@ -819,6 +966,19 @@ def build_unified_rows(
                         incluir_zerados=incluir_zerados,
                     )
                 )
+
+        # Persiste snapshots de metas calculados com persist=True.
+        try:
+            db.commit()
+        except Exception as exc:
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            try:
+                print(f"[RELATORIO_UNIFICADO] erro ao persistir snapshots de metas: {exc}")
+            except Exception:
+                pass
 
     rows.sort(key=lambda r: (r.emp, r.vendedor, r.tipo, r.titulo))
     return rows

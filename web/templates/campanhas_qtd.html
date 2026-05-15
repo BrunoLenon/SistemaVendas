@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Campanhas (Qtd){% endblock %}
+{% block title %}Campanhas e Metas{% endblock %}
 
 {% block extra_head %}
 <style>
@@ -26,7 +26,7 @@
   <div class="sv-pagehead sv-glass">
     <div class="sv-pagehead__left">
       <div class="sv-kicker">Operação</div>
-      <div class="sv-title">Campanhas (Qtd)</div>
+      <div class="sv-title">Campanhas e Metas</div>
       <div class="sv-sub">Período: <strong>{{ "%02d"|format(mes|int) }}/{{ ano }}</strong> • Total recompensa: <strong>{{ total_recompensa|brl_rs }}</strong></div>
     </div>
 
@@ -115,7 +115,7 @@
         <div class="sv-kpi__v">{{ emps_data|length }}</div>
       </div>
       <div class="sv-kpi sv-glass">
-        <div class="sv-kpi__k">Total de campanhas</div>
+        <div class="sv-kpi__k">Campanhas/metas</div>
         <div class="sv-kpi__v">{{ total_campanhas }}</div>
       </div>
       <div class="sv-kpi sv-glass">
@@ -125,7 +125,7 @@
     </div>
 
     <div class="sv-mini" style="margin-top:8px;">
-      Clique na <b>empresa</b> para ver vendedores. Clique no <b>vendedor</b> para ver campanhas.
+      Clique na <b>empresa</b> para ver vendedores. As metas ativas aparecem junto das campanhas do vendedor.
     </div>
 
     <div class="sv-acc" id="accRoot">
@@ -146,7 +146,7 @@
               <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:flex-end;">
                 <span class="sv-chip">Vendedores: <b>{{ (emp.vendedores or [])|length }}</b></span>
                 <span class="sv-chip">Recompensa: <b>{{ (emp.total_recompensa or 0)|float|brl_rs }}</b></span>
-                <span class="sv-chip">Campanhas: <b>{{ (emp.total_campanhas or 0)|int }}</b></span>
+                <span class="sv-chip">Campanhas/metas: <b>{{ (emp.total_campanhas or 0)|int }}</b></span>
               </div>
             </div>
 
@@ -160,7 +160,7 @@
                     <div class="sv-row" style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;">
                       <div>
                         <div style="font-weight:900;font-size:1.05rem;">{{ vend.vendedor }}</div>
-                        <div class="sv-mini">Campanhas: <b>{{ (vend.campanhas or [])|length }}</b></div>
+                        <div class="sv-mini">Campanhas/metas: <b>{{ (vend.campanhas or [])|length }}</b></div>
                       </div>
                       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
                         <span class="sv-chip">Recompensa: <b>{{ (vend.total_recompensa or 0)|float|brl_rs }}</b></span>
@@ -184,9 +184,12 @@
                             {% for c in vend.campanhas %}
                               <tr>
                                 <td>
-                                  <div style="font-weight:800;">{{ c.titulo or c.nome or "Campanha" }}</div>
+                                  <div style="font-weight:800;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                                    <span>{{ c.titulo or c.nome or "Campanha" }}</span>
+                                    {% if (c.tipo or '') == 'META' %}<span class="sv-chip" style="font-size:.72rem;padding:.12rem .45rem;">META</span>{% endif %}
+                                  </div>
                                   {% if c.base %}
-                                    <div class="sv-mini">Base: {{ c.base }}</div>
+                                    <div class="sv-mini">{{ 'Status' if (c.tipo or '') == 'META' else 'Base' }}: {{ c.base }}</div>
                                   {% endif %}
                                 </td>
                                 <td>{{ c.marca or "-" }}</td>

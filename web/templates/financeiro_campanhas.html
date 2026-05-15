@@ -30,6 +30,7 @@
   .sv-type--qtd{background:rgba(255,165,0,.10);border-color:rgba(255,165,0,.28);color:#ffd08a;}
   .sv-type--combo{background:rgba(91,164,255,.12);border-color:rgba(91,164,255,.30);color:#bdd8ff;}
   .sv-type--parado{background:rgba(255,93,154,.11);border-color:rgba(255,93,154,.24);color:#ffc1d7;}
+  .sv-type--meta{background:rgba(255,177,66,.12);border-color:rgba(255,177,66,.30);color:#ffd99f;}
   .sv-actions{display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap;}
   .sv-btn-mini{padding:.28rem .58rem;border-radius:10px;}
   .sv-empty{padding:28px 14px;text-align:center;color:rgba(255,255,255,.68);}
@@ -93,6 +94,7 @@
             <option value="QTD" {% if tipo_sel=='QTD' %}selected{% endif %}>Campanha</option>
             <option value="COMBO" {% if tipo_sel=='COMBO' %}selected{% endif %}>Combo</option>
             <option value="PARADO" {% if tipo_sel=='PARADO' %}selected{% endif %}>Itens parados</option>
+            <option value="META" {% if tipo_sel=='META' %}selected{% endif %}>Metas</option>
           </select>
         </div>
         <div class="sv-field--span2">
@@ -234,7 +236,7 @@
                             <div class="sv-muted" style="font-size:12px;">Origem {{ it.origem_tipo }} · #{{ it.origem_id }}</div>
                           </td>
                           <td>
-                            <span class="sv-type {{ 'sv-type--qtd' if it.tipo=='QTD' else ('sv-type--combo' if it.tipo=='COMBO' else ('sv-type--parado' if it.tipo=='PARADO' else '')) }}">{{ 'CAMPANHA' if it.tipo=='QTD' else ('COMBO' if it.tipo=='COMBO' else ('ITENS PARADOS' if it.tipo=='PARADO' else it.tipo)) }}</span>
+                            <span class="sv-type {{ 'sv-type--qtd' if it.tipo=='QTD' else ('sv-type--combo' if it.tipo=='COMBO' else ('sv-type--parado' if it.tipo=='PARADO' else ('sv-type--meta' if it.tipo=='META' else ''))) }}">{{ 'CAMPANHA' if it.tipo=='QTD' else ('COMBO' if it.tipo=='COMBO' else ('ITENS PARADOS' if it.tipo=='PARADO' else ('METAS' if it.tipo=='META' else it.tipo))) }}</span>
                           </td>
                           <td class="text-end">{{ '%.2f'|format(it.base or 0) }}</td>
                           <td class="text-end">{{ it.vendeu_rs | brl_rs }}</td>

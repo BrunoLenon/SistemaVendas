@@ -180,6 +180,8 @@ def _norm_tipo(v: str | None) -> str:
         return 'COMBO'
     if s in ('PARADO', 'ITENS_PARADOS', 'ITEM_PARADO'):
         return 'PARADO'
+    if s in ('META', 'METAS'):
+        return 'META'
     return s or 'OUTROS'
 
 
