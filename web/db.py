@@ -570,7 +570,7 @@ class MetaPrograma(Base):
     escopo = Column(String(20), nullable=False, default="VENDEDOR")
 
     # Gates / travas opcionais
-    faturamento_minimo = Column(Float, nullable=True, default=70000.0)
+    faturamento_minimo = Column(Float, nullable=True, default=0.0)
     margem_minima = Column(Float, nullable=True, default=0.0)
 
     # Teto opcional de % de premiação quando o faturamento atingir um valor específico.
@@ -592,6 +592,13 @@ class MetaProgramaEmp(Base):
     id = Column(Integer, primary_key=True)
     meta_id = Column(Integer, nullable=False, index=True)
     emp = Column(String(30), nullable=False, index=True)
+
+    # Permite remover uma EMP da meta sem perder histórico/base manual.
+    # O vínculo antigo fica inativo e pode ser reativado depois.
+    ativo = Column(Boolean, nullable=False, default=True)
+    criado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
+    atualizado_em = Column(DateTime, nullable=True)
+    removido_em = Column(DateTime, nullable=True)
 
     __table_args__ = (
         UniqueConstraint("meta_id", "emp", name="uq_meta_emp"),
@@ -1271,11 +1278,16 @@ def criar_tabelas():
             # Metas - evolução compatível para metas de lojas / gerente
             conn.execute(text("ALTER TABLE metas_programas ADD COLUMN IF NOT EXISTS escopo varchar(20) NOT NULL DEFAULT 'VENDEDOR';"))
             conn.execute(text("ALTER TABLE metas_programas ADD COLUMN IF NOT EXISTS faturamento_minimo double precision;"))
-            conn.execute(text("ALTER TABLE metas_programas ALTER COLUMN faturamento_minimo SET DEFAULT 70000;"))
-            conn.execute(text("UPDATE metas_programas SET faturamento_minimo = 70000 WHERE faturamento_minimo IS NULL;"))
             conn.execute(text("ALTER TABLE metas_programas ADD COLUMN IF NOT EXISTS margem_minima double precision;"))
             conn.execute(text("ALTER TABLE metas_programas ADD COLUMN IF NOT EXISTS teto_faturamento double precision;"))
             conn.execute(text("ALTER TABLE metas_programas ADD COLUMN IF NOT EXISTS teto_bonus_percentual double precision;"))
+            conn.execute(text("ALTER TABLE metas_programas ALTER COLUMN faturamento_minimo SET DEFAULT 70000;"))
+            conn.execute(text("UPDATE metas_programas SET faturamento_minimo = 70000 WHERE faturamento_minimo IS NULL;"))
+            conn.execute(text("ALTER TABLE metas_programas_emps ADD COLUMN IF NOT EXISTS ativo boolean NOT NULL DEFAULT true;"))
+            conn.execute(text("ALTER TABLE metas_programas_emps ADD COLUMN IF NOT EXISTS criado_em timestamp NOT NULL DEFAULT now();"))
+            conn.execute(text("ALTER TABLE metas_programas_emps ADD COLUMN IF NOT EXISTS atualizado_em timestamp;"))
+            conn.execute(text("ALTER TABLE metas_programas_emps ADD COLUMN IF NOT EXISTS removido_em timestamp;"))
+            conn.execute(text("UPDATE metas_programas_emps SET ativo = true WHERE ativo IS NULL;"))
             conn.execute(text("ALTER TABLE metas_bases_manuais ADD COLUMN IF NOT EXISTS margem_percentual double precision;"))
             conn.execute(text("ALTER TABLE metas_bases_manuais ADD COLUMN IF NOT EXISTS bonus_extra_percentual double precision;"))
             # Compatibilidade: se existir tabela antiga usuario_emp, copia vínculos (não derruba se falhar)
@@ -1510,7 +1522,11 @@ def ensure_metas_lojas_schema():
                 CREATE TABLE IF NOT EXISTS metas_programas_emps (
                     id SERIAL PRIMARY KEY,
                     meta_id INTEGER NOT NULL,
-                    emp VARCHAR(30) NOT NULL
+                    emp VARCHAR(30) NOT NULL,
+                    ativo BOOLEAN NOT NULL DEFAULT TRUE,
+                    criado_em TIMESTAMP NOT NULL DEFAULT NOW(),
+                    atualizado_em TIMESTAMP,
+                    removido_em TIMESTAMP
                 );
             """))
             conn.execute(text("""
@@ -1564,11 +1580,16 @@ def ensure_metas_lojas_schema():
 
             conn.execute(text("ALTER TABLE metas_programas ADD COLUMN IF NOT EXISTS escopo varchar(20) NOT NULL DEFAULT 'VENDEDOR';"))
             conn.execute(text("ALTER TABLE metas_programas ADD COLUMN IF NOT EXISTS faturamento_minimo double precision;"))
-            conn.execute(text("ALTER TABLE metas_programas ALTER COLUMN faturamento_minimo SET DEFAULT 70000;"))
-            conn.execute(text("UPDATE metas_programas SET faturamento_minimo = 70000 WHERE faturamento_minimo IS NULL;"))
             conn.execute(text("ALTER TABLE metas_programas ADD COLUMN IF NOT EXISTS margem_minima double precision;"))
             conn.execute(text("ALTER TABLE metas_programas ADD COLUMN IF NOT EXISTS teto_faturamento double precision;"))
             conn.execute(text("ALTER TABLE metas_programas ADD COLUMN IF NOT EXISTS teto_bonus_percentual double precision;"))
+            conn.execute(text("ALTER TABLE metas_programas ALTER COLUMN faturamento_minimo SET DEFAULT 70000;"))
+            conn.execute(text("UPDATE metas_programas SET faturamento_minimo = 70000 WHERE faturamento_minimo IS NULL;"))
+            conn.execute(text("ALTER TABLE metas_programas_emps ADD COLUMN IF NOT EXISTS ativo boolean NOT NULL DEFAULT true;"))
+            conn.execute(text("ALTER TABLE metas_programas_emps ADD COLUMN IF NOT EXISTS criado_em timestamp NOT NULL DEFAULT now();"))
+            conn.execute(text("ALTER TABLE metas_programas_emps ADD COLUMN IF NOT EXISTS atualizado_em timestamp;"))
+            conn.execute(text("ALTER TABLE metas_programas_emps ADD COLUMN IF NOT EXISTS removido_em timestamp;"))
+            conn.execute(text("UPDATE metas_programas_emps SET ativo = true WHERE ativo IS NULL;"))
             conn.execute(text("ALTER TABLE metas_bases_manuais ADD COLUMN IF NOT EXISTS margem_percentual double precision;"))
             conn.execute(text("ALTER TABLE metas_bases_manuais ADD COLUMN IF NOT EXISTS bonus_extra_percentual double precision;"))
             conn.execute(text("ALTER TABLE metas_bases_manuais ADD COLUMN IF NOT EXISTS observacao varchar(200);"))
@@ -1577,6 +1598,7 @@ def ensure_metas_lojas_schema():
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_metas_programas_tipo_periodo ON metas_programas (tipo, ano, mes);"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_metas_programas_emps_meta ON metas_programas_emps (meta_id);"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_metas_programas_emps_emp ON metas_programas_emps (emp);"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_metas_programas_emps_ativo ON metas_programas_emps (meta_id, ativo, emp);"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_metas_escalas_meta ON metas_escalas (meta_id);"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_metas_marcas_meta ON metas_marcas (meta_id);"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_metas_marcas_marca ON metas_marcas (marca);"))

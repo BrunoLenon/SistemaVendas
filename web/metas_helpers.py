@@ -220,13 +220,11 @@ def get_active_emps(db, allowed_emps: list[str] | None = None) -> list[str]:
     return [str(r[0]).strip() for r in rows if r and str(r[0]).strip()]
 
 
-def get_meta_emps(db, meta_id: int) -> list[str]:
-    rows = (
-        db.query(MetaProgramaEmp.emp)
-        .filter(MetaProgramaEmp.meta_id == int(meta_id))
-        .order_by(MetaProgramaEmp.emp.asc())
-        .all()
-    )
+def get_meta_emps(db, meta_id: int, incluir_inativas: bool = False) -> list[str]:
+    q = db.query(MetaProgramaEmp.emp).filter(MetaProgramaEmp.meta_id == int(meta_id))
+    if not incluir_inativas and hasattr(MetaProgramaEmp, "ativo"):
+        q = q.filter(MetaProgramaEmp.ativo.is_(True))
+    rows = q.order_by(MetaProgramaEmp.emp.asc()).all()
     return [normalize_emp(r[0]) for r in rows if r and normalize_emp(r[0])]
 
 
@@ -393,25 +391,8 @@ class MetaCalc:
     premio: float = 0.0
     regra_teto_aplicada: bool = False
     faturamento_minimo: float = 0.0
-    elegivel_faturamento: bool = True
-    bloqueado_por_faturamento: bool = False
-
-
-def aplicar_trava_faturamento_minimo(calc: MetaCalc, meta: MetaPrograma) -> MetaCalc:
-    """Zera o prêmio quando o vendedor não atinge o faturamento mínimo da meta."""
-    minimo_raw = getattr(meta, "faturamento_minimo", None)
-    minimo = 70000.0 if minimo_raw is None else float(minimo_raw or 0.0)
-    calc.faturamento_minimo = minimo
-    calc.elegivel_faturamento = True
-    calc.bloqueado_por_faturamento = False
-    if minimo > 0 and float(calc.valor_mes or 0.0) < minimo:
-        calc.elegivel_faturamento = False
-        calc.bloqueado_por_faturamento = True
-        calc.premio = 0.0
-        calc.bonus_percentual = 0.0
-        calc.faixa_limite = None
-        calc.regra_teto_aplicada = False
-    return calc
+    faturamento_minimo_atingido: bool = True
+    bloqueado_minimo: bool = False
 
 
 def calcular_meta(db, meta: MetaPrograma, emp: str, vendedor: str, persist: bool = False) -> MetaCalc:
@@ -422,6 +403,8 @@ def calcular_meta(db, meta: MetaPrograma, emp: str, vendedor: str, persist: bool
     escalas = get_meta_escalas(db, int(meta.id))
 
     calc = MetaCalc(meta_id=int(meta.id), tipo=tipo, emp=emp_n, vendedor=vendedor_n)
+    faturamento_minimo = float(getattr(meta, "faturamento_minimo", 0.0) or 0.0)
+    calc.faturamento_minimo = faturamento_minimo
 
     if tipo == "CRESCIMENTO":
         valor_mes = Decimal(str(query_valor_mes(db, meta.ano, meta.mes, emp_n, vendedor_n)))
@@ -477,7 +460,14 @@ def calcular_meta(db, meta: MetaPrograma, emp: str, vendedor: str, persist: bool
         calc.bonus_percentual = bonus_pct
         calc.premio = float(premio)
 
-    aplicar_trava_faturamento_minimo(calc, meta)
+    if faturamento_minimo > 0 and float(calc.valor_mes or 0.0) < faturamento_minimo:
+        calc.faturamento_minimo_atingido = False
+        calc.bloqueado_minimo = True
+        # Mantém as métricas/faixas para conferência, mas zera o pagamento porque não atingiu o faturamento mínimo.
+        calc.premio = 0.0
+    else:
+        calc.faturamento_minimo_atingido = True
+        calc.bloqueado_minimo = False
 
     if persist:
         upsert_resultado(db, calc)

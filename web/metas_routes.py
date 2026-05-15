@@ -9,7 +9,7 @@ Substitui a estrutura antiga mantendo os endpoints publicos:
 from __future__ import annotations
 
 import re
-from datetime import date
+from datetime import date, datetime
 
 from flask import flash, redirect, render_template, request, session, url_for
 from sqlalchemy import func, text
@@ -49,6 +49,8 @@ def register_metas_routes(app) -> None:
     app.add_url_rule("/admin/metas/criar", endpoint="admin_metas_criar", view_func=admin_metas_criar, methods=["POST"])
     app.add_url_rule("/admin/metas/toggle/<int:meta_id>", endpoint="admin_metas_toggle", view_func=admin_metas_toggle, methods=["POST"])
     app.add_url_rule("/admin/metas/excluir/<int:meta_id>", endpoint="admin_metas_excluir", view_func=admin_metas_excluir, methods=["POST"])
+    app.add_url_rule("/admin/metas/emps/<int:meta_id>", endpoint="admin_metas_emps_salvar", view_func=admin_metas_emps_salvar, methods=["POST"])
+    app.add_url_rule("/admin/metas/regra/<int:meta_id>", endpoint="admin_metas_regra_salvar", view_func=admin_metas_regra_salvar, methods=["POST"])
     app.add_url_rule("/admin/metas/recalcular", endpoint="admin_metas_recalcular", view_func=admin_metas_recalcular, methods=["POST"])
     app.add_url_rule("/admin/metas/bases/<int:meta_id>", endpoint="admin_meta_bases", view_func=admin_meta_bases, methods=["GET"])
     app.add_url_rule("/admin/metas/bases/<int:meta_id>/salvar", endpoint="admin_meta_bases_salvar", view_func=admin_meta_bases_salvar, methods=["POST"])
@@ -359,8 +361,8 @@ def admin_metas_criar():
     emps = [normalize_emp(e) for e in request.form.getlist("emps") if normalize_emp(e)]
     escalas = _parse_escalas(request.form.get("escalas"), tipo)
     marcas = _parse_marcas(request.form.get("marcas"))
-    faturamento_minimo = _safe_float(request.form.get("faturamento_minimo"), 0.0)
     teto_faturamento = _safe_float(request.form.get("teto_faturamento"), 0.0)
+    faturamento_minimo = _safe_float(request.form.get("faturamento_minimo"), 70000.0)
 
     if tipo not in TIPOS_META:
         flash("Tipo de meta inválido.", "danger")
@@ -383,8 +385,7 @@ def admin_metas_criar():
             mes=mes,
             ativo=True,
             escopo="VENDEDOR",
-            # Trava mínima: abaixo deste faturamento, o vendedor não participa da meta.
-            faturamento_minimo=faturamento_minimo if faturamento_minimo > 0 else None,
+            faturamento_minimo=faturamento_minimo if faturamento_minimo > 0 else 0.0,
             # No crescimento, este campo representa a trava: venda >= teto aplica maior faixa.
             teto_faturamento=teto_faturamento if tipo == "CRESCIMENTO" and teto_faturamento > 0 else None,
             teto_bonus_percentual=None,
@@ -394,7 +395,7 @@ def admin_metas_criar():
         db.flush()
 
         for emp_codigo in sorted(set(emps)):
-            db.add(MetaProgramaEmp(meta_id=meta.id, emp=emp_codigo))
+            db.add(MetaProgramaEmp(meta_id=meta.id, emp=emp_codigo, ativo=True))
         for idx, (lim, valor) in enumerate(escalas, start=1):
             db.add(MetaEscala(meta_id=meta.id, ordem=idx, limite_min=float(lim), bonus_percentual=float(valor)))
         for marca in marcas:
@@ -403,6 +404,91 @@ def admin_metas_criar():
 
     flash(f"Meta '{nome}' criada com sucesso.", "success")
     return redirect(url_for("admin_metas", ano=ano, mes=mes, emp_sel=emps[0] if emps else ""))
+
+
+def admin_metas_emps_salvar(meta_id: int):
+    ensure_metas_lojas_schema()
+    red = _admin_guard()
+    if red:
+        return red
+
+    ano, mes = _period_from_request()
+    emp_selected = normalize_emp(request.form.get("emp_sel"))
+    vendedor_selected = normalize_text(request.form.get("vendedor"))
+    novas_emps = sorted(set(normalize_emp(e) for e in request.form.getlist("emps") if normalize_emp(e)))
+
+    if not novas_emps:
+        flash("Selecione pelo menos uma EMP para a meta.", "warning")
+        return redirect(url_for("admin_metas", ano=ano, mes=mes, emp_sel=emp_selected, vendedor=vendedor_selected))
+
+    with SessionLocal() as db:
+        meta = db.query(MetaPrograma).filter(MetaPrograma.id == int(meta_id)).first()
+        if not meta:
+            flash("Meta não encontrada.", "danger")
+            return redirect(url_for("admin_metas", ano=ano, mes=mes, emp_sel=emp_selected, vendedor=vendedor_selected))
+        if not bool(meta.ativo):
+            flash("Ative a meta antes de alterar as EMPs participantes.", "warning")
+            return redirect(url_for("admin_metas", ano=meta.ano, mes=meta.mes, emp_sel=emp_selected, vendedor=vendedor_selected))
+
+        existentes = {normalize_emp(r.emp): r for r in db.query(MetaProgramaEmp).filter(MetaProgramaEmp.meta_id == meta.id).all()}
+        agora = datetime.utcnow()
+        adicionadas = 0
+        removidas = 0
+
+        for emp_codigo in novas_emps:
+            vinc = existentes.get(emp_codigo)
+            if vinc:
+                if not bool(getattr(vinc, "ativo", True)):
+                    adicionadas += 1
+                vinc.ativo = True
+                vinc.removido_em = None
+                vinc.atualizado_em = agora
+                db.add(vinc)
+            else:
+                db.add(MetaProgramaEmp(meta_id=meta.id, emp=emp_codigo, ativo=True, criado_em=agora, atualizado_em=agora))
+                adicionadas += 1
+
+        novas_set = set(novas_emps)
+        for emp_codigo, vinc in existentes.items():
+            if emp_codigo and emp_codigo not in novas_set and bool(getattr(vinc, "ativo", True)):
+                vinc.ativo = False
+                vinc.removido_em = agora
+                vinc.atualizado_em = agora
+                db.add(vinc)
+                removidas += 1
+
+        db.commit()
+
+    flash(f"EMPs da meta atualizadas. Adicionadas: {adicionadas}. Removidas: {removidas}.", "success")
+    return redirect(url_for("admin_metas", ano=ano, mes=mes, emp_sel=emp_selected or novas_emps[0], vendedor=vendedor_selected))
+
+
+def admin_metas_regra_salvar(meta_id: int):
+    ensure_metas_lojas_schema()
+    red = _admin_guard()
+    if red:
+        return red
+
+    ano, mes = _period_from_request()
+    emp_selected = normalize_emp(request.form.get("emp_sel"))
+    vendedor_selected = normalize_text(request.form.get("vendedor"))
+    faturamento_minimo = _safe_float(request.form.get("faturamento_minimo"), 0.0)
+    teto_faturamento = _safe_float(request.form.get("teto_faturamento"), 0.0)
+
+    with SessionLocal() as db:
+        meta = db.query(MetaPrograma).filter(MetaPrograma.id == int(meta_id)).first()
+        if not meta:
+            flash("Meta não encontrada.", "danger")
+            return redirect(url_for("admin_metas", ano=ano, mes=mes, emp_sel=emp_selected, vendedor=vendedor_selected))
+
+        meta.faturamento_minimo = faturamento_minimo if faturamento_minimo > 0 else 0.0
+        if normalize_text(meta.tipo) == "CRESCIMENTO":
+            meta.teto_faturamento = teto_faturamento if teto_faturamento > 0 else None
+        db.add(meta)
+        db.commit()
+
+    flash("Regras da meta atualizadas.", "success")
+    return redirect(url_for("admin_metas", ano=ano, mes=mes, emp_sel=emp_selected, vendedor=vendedor_selected))
 
 
 def admin_metas_toggle(meta_id: int):

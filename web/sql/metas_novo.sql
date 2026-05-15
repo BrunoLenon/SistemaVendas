@@ -20,7 +20,11 @@ CREATE TABLE IF NOT EXISTS metas_programas (
 CREATE TABLE IF NOT EXISTS metas_programas_emps (
     id SERIAL PRIMARY KEY,
     meta_id INTEGER NOT NULL,
-    emp VARCHAR(30) NOT NULL
+    emp VARCHAR(30) NOT NULL,
+    ativo BOOLEAN NOT NULL DEFAULT TRUE,
+    criado_em TIMESTAMP NOT NULL DEFAULT NOW(),
+    atualizado_em TIMESTAMP,
+    removido_em TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS metas_escalas (
@@ -69,11 +73,16 @@ CREATE TABLE IF NOT EXISTS metas_resultados (
 
 ALTER TABLE metas_programas ADD COLUMN IF NOT EXISTS escopo varchar(20) NOT NULL DEFAULT 'VENDEDOR';
 ALTER TABLE metas_programas ADD COLUMN IF NOT EXISTS faturamento_minimo double precision;
-ALTER TABLE metas_programas ALTER COLUMN faturamento_minimo SET DEFAULT 70000;
-UPDATE metas_programas SET faturamento_minimo = 70000 WHERE faturamento_minimo IS NULL;
 ALTER TABLE metas_programas ADD COLUMN IF NOT EXISTS margem_minima double precision;
 ALTER TABLE metas_programas ADD COLUMN IF NOT EXISTS teto_faturamento double precision;
 ALTER TABLE metas_programas ADD COLUMN IF NOT EXISTS teto_bonus_percentual double precision;
+ALTER TABLE metas_programas ALTER COLUMN faturamento_minimo SET DEFAULT 70000;
+UPDATE metas_programas SET faturamento_minimo = 70000 WHERE faturamento_minimo IS NULL;
+ALTER TABLE metas_programas_emps ADD COLUMN IF NOT EXISTS ativo boolean NOT NULL DEFAULT true;
+ALTER TABLE metas_programas_emps ADD COLUMN IF NOT EXISTS criado_em timestamp NOT NULL DEFAULT now();
+ALTER TABLE metas_programas_emps ADD COLUMN IF NOT EXISTS atualizado_em timestamp;
+ALTER TABLE metas_programas_emps ADD COLUMN IF NOT EXISTS removido_em timestamp;
+UPDATE metas_programas_emps SET ativo = true WHERE ativo IS NULL;
 ALTER TABLE metas_bases_manuais ADD COLUMN IF NOT EXISTS margem_percentual double precision;
 ALTER TABLE metas_bases_manuais ADD COLUMN IF NOT EXISTS bonus_extra_percentual double precision;
 ALTER TABLE metas_bases_manuais ADD COLUMN IF NOT EXISTS observacao varchar(200);
@@ -94,3 +103,5 @@ CREATE INDEX IF NOT EXISTS ix_vendas_metas_periodo_emp_vendedor ON vendas (ano, 
 CREATE INDEX IF NOT EXISTS ix_vendas_metas_movimento_emp_vendedor ON vendas (movimento, emp, vendedor);
 CREATE INDEX IF NOT EXISTS ix_vendas_metas_marca ON vendas (emp, vendedor, marca);
 CREATE INDEX IF NOT EXISTS ix_vendas_metas_mestre ON vendas (emp, vendedor, mestre);
+
+CREATE INDEX IF NOT EXISTS ix_metas_programas_emps_ativo ON metas_programas_emps (meta_id, ativo, emp);
