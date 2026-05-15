@@ -4,288 +4,344 @@
 
 {% block extra_head %}
 <style>
-  /* Admin pages: use more width + compact spacing */
-  .sv-page.sv-page--wide{max-width: 1480px; width:100%;}
-  .sv-page{padding-top:10px;padding-bottom:10px;}
-  .sv-pagehead{padding:12px;}
-  .sv-card-pad{padding:12px;}
-  .sv-table td,.sv-table th{padding:.5rem .55rem;}
-  .sv-table thead th{font-size:12px; letter-spacing:.02em;}
-  .sv-muted{opacity:.78}
-
-  /* Users list readability (avoid white Bootstrap backgrounds) */
-  .sv-users-table{--bs-table-bg: transparent;}
-  .sv-users-table tbody td{background: rgba(5,5,5,.45) !important;}
-  .sv-users-table tbody tr:nth-child(even) td{background: rgba(255,255,255,.03) !important;}
-  .sv-users-table tbody tr:hover td{background: rgba(255,140,0,.10) !important;}
-
+  .users-admin{max-width:1680px;margin:0 auto;padding:4px 0 22px;color:#f8fafc!important;}
+  .users-admin .text-muted,.users-admin .form-text{color:#cbd5e1!important;}
+  .users-hero{position:relative;overflow:hidden;border:1px solid rgba(255,255,255,.08);border-radius:24px;padding:18px;background:radial-gradient(circle at top right,rgba(255,145,0,.22),transparent 32%),linear-gradient(180deg,rgba(255,255,255,.055),rgba(255,255,255,.025));box-shadow:0 18px 42px rgba(0,0,0,.24)}
+  .users-title{font-size:28px;font-weight:900;letter-spacing:-.035em;margin:0;color:#fff;}
+  .users-sub{color:#d1d5db;font-size:13px;max-width:980px;margin-top:7px;}
+  .users-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;align-items:center;}
+  .users-kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin-top:14px;}
+  .users-kpi{border:1px solid rgba(255,255,255,.08);border-radius:18px;background:rgba(0,0,0,.24);padding:13px;min-height:92px;}
+  .users-kpi small{display:block;color:#aeb6c2;text-transform:uppercase;letter-spacing:.08em;font-weight:900;font-size:10px;}
+  .users-kpi strong{display:block;color:#fff;font-size:24px;line-height:1.05;margin-top:8px;}
+  .users-kpi span{color:#cbd5e1;font-size:12px;}
+  .users-grid{display:grid;grid-template-columns:minmax(340px,440px) minmax(0,1fr);gap:14px;margin-top:14px;align-items:start;}
+  .users-card{border:1px solid rgba(255,255,255,.08);border-radius:22px;background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,.02));box-shadow:0 18px 42px rgba(0,0,0,.18);overflow:hidden;}
+  .users-card-head{display:flex;justify-content:space-between;align-items:start;gap:10px;padding:14px 16px;border-bottom:1px solid rgba(255,255,255,.075);background:rgba(0,0,0,.16);}
+  .users-card-title{font-size:18px;font-weight:900;letter-spacing:-.02em;margin:0;color:#fff;}
+  .users-card-sub{font-size:12px;color:#cbd5e1;margin-top:3px;}
+  .users-card-body{padding:15px;}
+  .users-stack{display:grid;gap:12px;}
+  .users-panel{border:1px solid rgba(255,255,255,.08);border-radius:18px;background:rgba(255,255,255,.028);padding:14px;}
+  .users-panel h6{font-weight:900;letter-spacing:-.01em;margin:0 0 4px;color:#fff;}
+  .users-panel p{color:#cbd5e1;font-size:12px;margin:0 0 12px;}
+  .users-label{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#b8c0ca;font-weight:900;margin-bottom:6px;}
+  .users-input,.users-select{background:rgba(10,10,10,.80)!important;border-color:rgba(255,255,255,.12)!important;color:#fff!important;border-radius:12px!important;min-height:40px;}
+  .users-input::placeholder{color:#9ca3af!important;}
+  .users-select option{background:#111;color:#fff;}
+  .users-emp-box{max-height:210px;overflow:auto;border:1px solid rgba(255,255,255,.09);border-radius:14px;padding:8px;background:rgba(0,0,0,.20);}
+  .users-emp-check{display:flex;gap:8px;align-items:flex-start;padding:7px 8px;border-radius:10px;color:#f8fafc;line-height:1.25;}
+  .users-emp-check:hover{background:rgba(255,255,255,.06);}
+  .users-emp-check input{margin-top:2px;}
+  .users-table-tools{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px;}
+  .users-search{position:relative;min-width:270px;flex:1;max-width:520px;}
+  .users-search input{padding-left:36px;}
+  .users-search span{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:#9ca3af;}
+  .users-table-wrap{border:1px solid rgba(255,255,255,.08);border-radius:18px;overflow:auto;background:rgba(0,0,0,.14);max-height:74vh;}
+  .users-table{margin:0;color:#f8fafc!important;}
+  .users-table th{position:sticky;top:0;z-index:2;background:rgba(17,17,17,.97)!important;color:#d1d5db!important;font-size:11px;text-transform:uppercase;letter-spacing:.07em;white-space:nowrap;border-color:rgba(255,255,255,.07)!important;padding:.62rem .72rem;}
+  .users-table td{background:rgba(5,5,5,.34)!important;border-color:rgba(255,255,255,.065)!important;color:#f8fafc!important;padding:.65rem .72rem;vertical-align:middle;}
+  .users-table tbody tr:nth-child(even) td{background:rgba(255,255,255,.028)!important;}
+  .users-table tbody tr:hover td{background:rgba(255,145,0,.08)!important;}
+  .users-chip{display:inline-flex;align-items:center;gap:5px;border:1px solid rgba(255,255,255,.10);background:rgba(255,255,255,.045);border-radius:999px;padding:4px 9px;font-size:12px;font-weight:900;margin:2px 3px 2px 0;white-space:nowrap;color:#f8fafc;}
+  .users-chip.ok{background:rgba(46,204,113,.11);border-color:rgba(46,204,113,.22);color:#9de7b5;}
+  .users-chip.warn{background:rgba(255,177,66,.10);border-color:rgba(255,177,66,.24);color:#ffd098;}
+  .users-chip.info{background:rgba(86,156,255,.12);border-color:rgba(86,156,255,.26);color:#b7d2ff;}
+  .users-chip.danger{background:rgba(255,77,109,.11);border-color:rgba(255,77,109,.28);color:#ffb3c1;}
+  .users-chip.off{color:#cbd5e1;}
+  .users-empty{border:1px dashed rgba(255,255,255,.14);border-radius:18px;padding:22px;text-align:center;color:#cbd5e1;background:rgba(255,255,255,.025);}
+  .users-help{font-size:12px;color:#cbd5e1;}.users-help b{color:#fff;}
+  .btn-users-primary{background:linear-gradient(135deg,#ff8a00,#ffbb5c);border:0;color:#1e1200!important;font-weight:900;border-radius:12px;}
+  .btn-users-primary:hover{filter:brightness(1.05);color:#1e1200!important;}
+  .btn-users-outline{border-color:rgba(255,255,255,.16)!important;color:#f8fafc!important;border-radius:12px;font-weight:800;background:rgba(255,255,255,.03)!important;}
+  .btn-users-outline:hover{background:rgba(255,145,0,.12)!important;border-color:rgba(255,145,0,.36)!important;color:#fff!important;}
+  .users-alert{border-radius:16px;border:1px solid rgba(255,255,255,.10);padding:10px 12px;margin-top:12px;font-weight:700;}
+  .users-alert.error{background:rgba(255,77,109,.11);color:#ffd0d8;border-color:rgba(255,77,109,.24);}
+  .users-alert.ok{background:rgba(46,204,113,.11);color:#b9f4ca;border-color:rgba(46,204,113,.24);}
+  .users-mobile-actions{display:none;}
+  @media(max-width:1200px){.users-kpis{grid-template-columns:repeat(2,minmax(0,1fr));}.users-grid{grid-template-columns:1fr;}.users-table-wrap{max-height:none;}}
+  @media(max-width:760px){.users-title{font-size:23px;}.users-hero{padding:15px}.users-kpis{grid-template-columns:1fr}.users-card-head{flex-direction:column}.users-actions{justify-content:flex-start}.users-search{min-width:100%;}.users-table th:nth-child(4),.users-table td:nth-child(4){display:none;}}
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="sv-page sv-page--wide">
+{% set ns = namespace(admin=0, supervisor=0, vendedor=0, financeiro=0) %}
+{% for u in usuarios %}
+  {% if u.role == 'admin' %}{% set ns.admin = ns.admin + 1 %}
+  {% elif u.role == 'supervisor' %}{% set ns.supervisor = ns.supervisor + 1 %}
+  {% elif u.role == 'financeiro' %}{% set ns.financeiro = ns.financeiro + 1 %}
+  {% else %}{% set ns.vendedor = ns.vendedor + 1 %}
+  {% endif %}
+{% endfor %}
 
-    <!-- Topo -->
-    <div class="sv-pagehead sv-glass mb-3">
-  <div class="d-flex justify-content-between align-items-center w-100">
+<div class="users-admin">
+  <section class="users-hero mb-3">
+    <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
       <div>
-        <h3 class="m-0">🛠️ Administração</h3>
-        <div class="text-muted">Logado como <strong>{{ usuario }}</strong></div>
+        <h1 class="users-title">👥 Administração de Usuários</h1>
+        <div class="users-sub">Cadastro, perfis e vínculos de EMP com visual premium no mesmo padrão da página Metas. Use esta tela para manter vendedores, supervisores, financeiro e administradores organizados.</div>
       </div>
-
-      <div class="d-flex gap-2 flex-wrap justify-content-end">
-        <!-- ✅ NOVO: botão de importação -->
-        <a class="btn btn-primary btn-sm" href="/admin/importar">📥 Importar Vendas</a>
-
-        <a class="btn btn-outline-secondary btn-sm" href="/admin/emps">🏢 EMPs</a>
-
-        <a class="btn btn-outline-primary btn-sm" href="/senha">Trocar minha senha</a>
-        <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('dashboard') }}">Dashboard</a>
-        <a class="btn btn-outline-danger btn-sm" href="/logout">Sair</a>
+      <div class="users-actions">
+        <a class="btn btn-sm btn-users-primary px-3" href="/admin/importar">📥 Importar Vendas</a>
+        <a class="btn btn-sm btn-users-outline px-3" href="/admin/emps">🏢 EMPs</a>
+        <a class="btn btn-sm btn-users-outline px-3" href="/senha">🔑 Trocar senha</a>
+        <a class="btn btn-sm btn-users-outline px-3" href="{{ url_for('dashboard') }}">📊 Dashboard</a>
       </div>
     </div>
-</div>
 
-    <!-- Alerts -->
-    {% if erro %}
-      <div class="alert alert-danger py-2">{{ erro }}</div>
-    {% endif %}
-    {% if ok %}
-      <div class="alert alert-success py-2">{{ ok }}</div>
-    {% endif %}
+    {% if erro %}<div class="users-alert error">{{ erro }}</div>{% endif %}
+    {% if ok %}<div class="users-alert ok">{{ ok }}</div>{% endif %}
 
-    <div class="row g-3">
-      <!-- Coluna esquerda -->
-      <div class="col-lg-5">
+    <div class="users-kpis">
+      <div class="users-kpi"><small>Total de usuários</small><strong>{{ usuarios|length }}</strong><span>cadastros ativos no sistema</span></div>
+      <div class="users-kpi"><small>Vendedores</small><strong>{{ ns.vendedor }}</strong><span>acompanham próprias vendas/metas</span></div>
+      <div class="users-kpi"><small>Supervisores</small><strong>{{ ns.supervisor }}</strong><span>visão por EMP vinculada</span></div>
+      <div class="users-kpi"><small>Financeiro</small><strong>{{ ns.financeiro }}</strong><span>fechamento e pagamentos</span></div>
+      <div class="users-kpi"><small>EMPs cadastradas</small><strong>{{ emps_cadastradas|length }}</strong><span>disponíveis para vínculo</span></div>
+    </div>
+  </section>
 
-        <!-- ✅ Ações rápidas -->
-        <div class="sv-card sv-glass card shadow-sm mb-3">
-          <div class="card-body sv-card-pad">
-            <h5 class="card-title mb-2">⚡ Ações rápidas</h5>
-            <div class="text-muted small mb-3">
-              Use os atalhos abaixo para tarefas comuns do ADMIN.
-            </div>
-
-            <div class="d-grid gap-2">
-              <a class="btn btn-primary" href="/admin/importar">📥 Importar Vendas por Planilha</a>
-              <a class="btn btn-outline-primary" href="/senha">🔑 Trocar minha senha</a>
-              <a class="btn btn-outline-secondary" href="{{ url_for('dashboard') }}">📊 Voltar ao Dashboard</a>
-            </div>
+  <div class="users-grid">
+    <aside class="users-stack">
+      <section class="users-card">
+        <div class="users-card-head">
+          <div>
+            <h2 class="users-card-title">➕ Criar / Atualizar usuário</h2>
+            <div class="users-card-sub">O usuário é salvo em maiúsculo. Para vendedor/supervisor, selecione ao menos uma EMP.</div>
           </div>
+          <span class="users-chip warn">ADMIN</span>
         </div>
-
-        <div class="sv-card sv-glass card shadow-sm">
-          <div class="card-body sv-card-pad">
-            <h5 class="card-title mb-3">➕ Criar / Atualizar usuário</h5>
-
-            <form method="post">
-              <input class="sv-input" type="hidden" name="acao" value="criar">
-
-              <div class="mb-2">
-                <label class="form-label">Usuário</label>
-                <input class="form-control sv-input" name="novo_usuario" placeholder="Ex.: RAFAEL" required>
-                <div class="form-text">O sistema salva tudo em MAIÚSCULO.</div>
-              </div>
-
-              <div class="mb-2">
-                <label class="form-label">Senha</label>
-                <input type="password" class="form-control sv-input" name="nova_senha" required>
-                <div class="form-text">Mínimo 4 caracteres.</div>
-              </div>
-
-              <div class="mb-3">
-                <label class="form-label">Perfil</label>
-                <select class="form-select sv-select" name="role" id="roleSelect">
-                  <option value="vendedor" selected>Vendedor</option>
-                  <option value="supervisor">Supervisor</option>
-                  <option value="admin">Administrador</option>
-                  <option value="financeiro">Financeiro</option>
-                </select>
-              </div>
-
-              <div class="mb-3">
-                <label class="form-label">Empresas do usuário</label>
-
-                {% if emps_cadastradas and emps_cadastradas|length > 0 %}
-                  <div class="border rounded p-2" style="max-height: 220px; overflow:auto;">
-                    {% for e in emps_cadastradas %}
-                      {% if e.ativo %}
-                        <div class="form-check">
-                          <input class="form-check-input sv-input" type="checkbox" name="emps_multi" id="emp_new_{{ e.codigo }}" value="{{ e.codigo }}">
-                          <label class="form-check-label" for="emp_new_{{ e.codigo }}">
-                            {{ emp_labels.get(e.codigo|string, e.codigo) if emp_labels else (e.codigo ~ ' — ' ~ e.nome) }}
-                          </label>
-                        </div>
-                      {% endif %}
-                    {% endfor %}
-                  </div>
-                  <div class="form-text">
-                    Marque 1+ empresas. <strong>Vendedor/Supervisor</strong> precisam de ao menos 1 empresa ativa. <strong>Admin</strong> é opcional.
-                  </div>
-                {% else %}
-                  <input class="form-control sv-input" name="emps_text" placeholder="Ex.: 101, 102, 103">
-                  <div class="form-text">
-                    Ainda não há empresas cadastradas. Cadastre em <a href="/admin/emps">Empresas</a>. Por enquanto, informe os códigos separados por vírgula.
-                  </div>
-                {% endif %}
-              </div>
-
-              <button class="btn btn-primary w-100">Salvar</button>
-            </form>
-          </div>
-        </div>
-
-        <div class="sv-card sv-glass card shadow-sm mt-3">
-          <div class="card-body sv-card-pad">
-            <h5 class="card-title mb-3">🔁 Resetar senha</h5>
-
-            <form method="post">
-              <input class="sv-input" type="hidden" name="acao" value="reset">
-
-              <div class="mb-2">
-                <label class="form-label">Usuário</label>
-                <input class="form-control sv-input" name="alvo" placeholder="Ex.: KENNEDY" required>
-              </div>
-
-              <div class="mb-3">
-                <label class="form-label">Nova senha</label>
-                <input type="password" class="form-control sv-input" name="nova_senha" required>
-              </div>
-
-              <button class="btn btn-outline-primary w-100">Atualizar senha</button>
-            </form>
-
-            <div class="text-muted small mt-2">
-              Observação: por segurança, a senha do <strong>ADMIN</strong> deve ser alterada em “Trocar minha senha”.
+        <div class="users-card-body">
+          <form method="post" id="formUsuario">
+            <input type="hidden" name="acao" value="criar">
+            <div class="mb-3">
+              <div class="users-label">Usuário</div>
+              <input class="form-control users-input" name="novo_usuario" id="novoUsuario" placeholder="Ex.: RAFAEL" required>
             </div>
-          </div>
-        </div>
-
-
-        <div class="sv-card sv-glass card shadow-sm mt-3">
-          <div class="card-body sv-card-pad">
-            <h5 class="card-title mb-2">🏢 Empresas do usuário</h5>
-            <div class="text-muted small mb-3">
-              Selecione as <strong>empresas (lojas)</strong> que o usuário pode visualizar. A permissão oficial é pela tabela <code>usuario_emps</code>.
+            <div class="mb-3">
+              <div class="users-label">Senha</div>
+              <input type="password" class="form-control users-input" name="nova_senha" placeholder="Mínimo 4 caracteres" required>
+              <div class="users-help mt-1">Ao atualizar um usuário existente, informe a nova senha.</div>
             </div>
-
-            <form method="post" class="row g-2">
-              <input class="sv-input" type="hidden" name="acao" value="set_emps">
-
-              <div class="col-12">
-                <label class="form-label">Usuário</label>
-                <input class="form-control sv-input" name="alvo" placeholder="Ex.: LUCAS" required>
-              </div>
-
-              <div class="col-12">
-                <label class="form-label">Empresas (marque 1+)</label>
-                {% if emps_cadastradas and emps_cadastradas|length > 0 %}
-                  <div class="border rounded p-2" style="max-height: 220px; overflow:auto;">
-                    {% for e in emps_cadastradas %}
-                      {% if e.ativo %}
-                        <div class="form-check">
-                          <input class="form-check-input sv-input" type="checkbox" name="emps_multi" id="emp_set_{{ e.codigo }}" value="{{ e.codigo }}">
-                          <label class="form-check-label" for="emp_set_{{ e.codigo }}">
-                            {{ emp_labels.get(e.codigo|string, e.codigo) if emp_labels else (e.codigo ~ ' — ' ~ e.nome) }}
-                          </label>
-                        </div>
-                      {% endif %}
-                    {% endfor %}
-                  </div>
-                  <div class="form-text">
-                    <strong>Vendedor/Supervisor</strong> precisam de ao menos 1 empresa ativa. <strong>Admin</strong> é opcional.
-                  </div>
-                {% else %}
-                  <input class="form-control sv-input" name="emps" placeholder="Ex.: 101, 102, 103" required>
-                  <div class="form-text">
-                    Ainda não há empresas cadastradas. Cadastre em <a href="/admin/emps">Empresas</a>. Por enquanto, informe os códigos separados por vírgula.
-                  </div>
-                {% endif %}
-              </div>
-
-              <div class="col-12 d-grid">
-                <button class="btn btn-outline-primary">Salvar empresas</button>
-              </div>
-            </form>
-          </div>
-        </div>
-
-        <div class="sv-card sv-glass card shadow-sm mt-3">
-          <div class="card-body sv-card-pad">
-            <h5 class="card-title mb-3">🗑️ Remover usuário</h5>
-
-            <form method="post" onsubmit="return confirm('Tem certeza que deseja remover este usuário?');">
-              <input class="sv-input" type="hidden" name="acao" value="remover">
-
-              <div class="mb-3">
-                <label class="form-label">Usuário</label>
-                <input class="form-control sv-input" name="alvo" placeholder="Ex.: MOISES" required>
-              </div>
-
-              <button class="btn btn-outline-danger w-100">Remover</button>
-            </form>
-          </div>
-        </div>
-      </div>
-
-      <!-- Coluna direita -->
-      <div class="col-lg-7">
-        <div class="sv-card sv-glass card shadow-sm">
-          <div class="card-body sv-card-pad">
-            <div class="d-flex justify-content-between align-items-center mb-2">
-              <h5 class="card-title mb-0">👥 Usuários cadastrados</h5>
-              <span class="badge text-bg-light border">{{ usuarios|length }} usuários</span>
+            <div class="mb-3">
+              <div class="users-label">Perfil</div>
+              <select class="form-select users-select" name="role" id="roleSelect">
+                <option value="vendedor" selected>Vendedor</option>
+                <option value="supervisor">Supervisor</option>
+                <option value="admin">Administrador</option>
+                <option value="financeiro">Financeiro</option>
+              </select>
             </div>
-
-            <div class="sv-tablewrap" style="max-height: 72vh; overflow:auto;">
-              <table class="sv-table sv-users-table table table-sm align-middle">
-                <thead>
-                  <tr>
-                    <th>Usuário</th>
-                    <th>Perfil</th>
-                    <th>Empresas</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {% for u in usuarios %}
-                    <tr>
-                      <td><strong>{{ u.usuario }}</strong></td>
-                      <td>
-                        {% if u.role == 'admin' %}
-                          <span class="badge text-bg-dark">admin</span>
-                        {% elif u.role == 'supervisor' %}
-                          <span class="badge text-bg-primary">supervisor</span>
-                        {% elif u.role == 'financeiro' %}
-                          <span class="badge text-bg-warning">financeiro</span>
-                        {% else %}
-                          <span class="badge text-bg-secondary">vendedor</span>
-                        {% endif %}
-                      </td>
-                      <td>
-                        {% set emps = vinculos.get(u.usuario) %}
-                        {% if emps %}
-                          <span class="text-muted">
-                            {% for code in emps %}
-                              {{ emp_labels.get(code|string, code) if emp_labels else code }}{% if not loop.last %}, {% endif %}
-                            {% endfor %}
-                          </span>
-                        {% else %}
-                          <span class="text-muted">-</span>
-                        {% endif %}
-                      </td>
-                    </tr>
+            <div class="mb-3">
+              <div class="users-label">Empresas do usuário</div>
+              {% if emps_cadastradas and emps_cadastradas|length > 0 %}
+                <div class="users-emp-box" id="empBoxNovo">
+                  {% for e in emps_cadastradas %}
+                    {% if e.ativo %}
+                      <label class="users-emp-check" for="emp_new_{{ e.codigo }}">
+                        <input class="form-check-input" type="checkbox" name="emps_multi" id="emp_new_{{ e.codigo }}" value="{{ e.codigo }}">
+                        <span>{{ emp_labels.get(e.codigo|string, e.codigo) if emp_labels else (e.codigo ~ ' — ' ~ e.nome) }}</span>
+                      </label>
+                    {% endif %}
                   {% endfor %}
-                </tbody>
-              </table>
+                </div>
+                <div class="users-help mt-2"><b>Vendedor/Supervisor</b> precisam de ao menos uma EMP ativa. <b>Admin/Financeiro</b> podem ficar sem vínculo.</div>
+              {% else %}
+                <input class="form-control users-input" name="emps_text" placeholder="Ex.: 101, 102, 103">
+                <div class="users-help mt-2">Ainda não há empresas cadastradas. Cadastre em <a href="/admin/emps">Empresas</a> ou informe os códigos separados por vírgula.</div>
+              {% endif %}
             </div>
-
-            <div class="text-muted small">
-              Dica: o usuário do vendedor deve bater com a coluna <strong>VENDEDOR</strong> da planilha (mesmo texto).
+            <div class="d-grid gap-2">
+              <button class="btn btn-users-primary">Salvar usuário</button>
+              <button class="btn btn-users-outline" type="button" onclick="clearUserForm()">Limpar formulário</button>
             </div>
-          </div>
+          </form>
         </div>
+      </section>
+
+      <section class="users-panel">
+        <h6>🏢 Empresas do usuário</h6>
+        <p>Atualize somente os vínculos de EMP sem trocar a senha do usuário.</p>
+        <form method="post" class="row g-2" id="formEmpUsuario">
+          <input type="hidden" name="acao" value="set_emps">
+          <div class="col-12">
+            <div class="users-label">Usuário</div>
+            <input class="form-control users-input" name="alvo" id="alvoEmp" placeholder="Ex.: LUCAS" required>
+          </div>
+          <div class="col-12">
+            <div class="users-label">Empresas</div>
+            {% if emps_cadastradas and emps_cadastradas|length > 0 %}
+              <div class="users-emp-box" id="empBoxSet">
+                {% for e in emps_cadastradas %}
+                  {% if e.ativo %}
+                    <label class="users-emp-check" for="emp_set_{{ e.codigo }}">
+                      <input class="form-check-input" type="checkbox" name="emps_multi" id="emp_set_{{ e.codigo }}" value="{{ e.codigo }}">
+                      <span>{{ emp_labels.get(e.codigo|string, e.codigo) if emp_labels else (e.codigo ~ ' — ' ~ e.nome) }}</span>
+                    </label>
+                  {% endif %}
+                {% endfor %}
+              </div>
+            {% else %}
+              <input class="form-control users-input" name="emps" placeholder="Ex.: 101, 102, 103" required>
+            {% endif %}
+          </div>
+          <div class="col-12 d-grid">
+            <button class="btn btn-users-outline">Salvar empresas</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="users-panel">
+        <h6>🔁 Resetar senha</h6>
+        <p>Atualize a senha de um usuário sem mexer no perfil ou nas EMPs.</p>
+        <form method="post" class="row g-2">
+          <input type="hidden" name="acao" value="reset">
+          <div class="col-12 col-md-6">
+            <div class="users-label">Usuário</div>
+            <input class="form-control users-input" name="alvo" id="alvoSenha" placeholder="Ex.: KENNEDY" required>
+          </div>
+          <div class="col-12 col-md-6">
+            <div class="users-label">Nova senha</div>
+            <input type="password" class="form-control users-input" name="nova_senha" required>
+          </div>
+          <div class="col-12 d-grid"><button class="btn btn-users-outline">Atualizar senha</button></div>
+        </form>
+        <div class="users-help mt-2">Por segurança, a senha do <b>ADMIN</b> deve ser alterada em “Trocar minha senha”.</div>
+      </section>
+
+      <section class="users-panel">
+        <h6>🗑️ Remover usuário</h6>
+        <p>Use com cuidado. O usuário ADMIN não pode ser removido.</p>
+        <form method="post" onsubmit="return confirm('Tem certeza que deseja remover este usuário?');">
+          <input type="hidden" name="acao" value="remover">
+          <div class="mb-3">
+            <div class="users-label">Usuário</div>
+            <input class="form-control users-input" name="alvo" id="alvoRemover" placeholder="Ex.: MOISES" required>
+          </div>
+          <button class="btn btn-outline-danger w-100" style="border-radius:12px;font-weight:900;">Remover usuário</button>
+        </form>
+      </section>
+    </aside>
+
+    <main class="users-card">
+      <div class="users-card-head">
+        <div>
+          <h2 class="users-card-title">👥 Usuários cadastrados</h2>
+          <div class="users-card-sub">Lista geral com perfil e empresas vinculadas pela tabela oficial <b>usuario_emps</b>.</div>
+        </div>
+        <span class="users-chip ok">{{ usuarios|length }} usuários</span>
       </div>
-    </div>
+      <div class="users-card-body">
+        <div class="users-table-tools">
+          <div class="users-search">
+            <span>🔎</span>
+            <input class="form-control users-input" id="usersSearch" placeholder="Pesquisar por usuário, perfil ou EMP...">
+          </div>
+          <div class="users-help">Dica: o usuário do vendedor deve bater com a coluna <b>VENDEDOR</b> da planilha.</div>
+        </div>
+
+        {% if usuarios|length == 0 %}
+          <div class="users-empty">Nenhum usuário cadastrado.</div>
+        {% else %}
+          <div class="users-table-wrap">
+            <table class="table table-sm align-middle users-table" id="usersTable">
+              <thead>
+                <tr>
+                  <th>Usuário</th>
+                  <th>Perfil</th>
+                  <th>Empresas</th>
+                  <th class="text-end">Ações rápidas</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for u in usuarios %}
+                  {% set emps = vinculos.get(u.usuario) %}
+                  {% set emps_join = (emps|join(',')) if emps else '' %}
+                  <tr data-search="{{ (u.usuario ~ ' ' ~ u.role ~ ' ' ~ emps_join)|lower }}">
+                    <td>
+                      <strong style="color:#fff;">{{ u.usuario }}</strong>
+                      {% if u.usuario == usuario %}<span class="users-chip info ms-1">você</span>{% endif %}
+                    </td>
+                    <td>
+                      {% if u.role == 'admin' %}
+                        <span class="users-chip danger">admin</span>
+                      {% elif u.role == 'supervisor' %}
+                        <span class="users-chip info">supervisor</span>
+                      {% elif u.role == 'financeiro' %}
+                        <span class="users-chip warn">financeiro</span>
+                      {% else %}
+                        <span class="users-chip ok">vendedor</span>
+                      {% endif %}
+                    </td>
+                    <td>
+                      {% if emps %}
+                        {% for code in emps[:8] %}
+                          <span class="users-chip off">{{ emp_labels.get(code|string, code) if emp_labels else code }}</span>
+                        {% endfor %}
+                        {% if emps|length > 8 %}<span class="users-chip warn">+{{ emps|length - 8 }}</span>{% endif %}
+                      {% else %}
+                        <span class="users-chip off">sem EMP</span>
+                      {% endif %}
+                    </td>
+                    <td class="text-end">
+                      <button class="btn btn-sm btn-users-outline" type="button" onclick="fillEmpForm('{{ u.usuario }}','{{ emps_join }}')">EMPs</button>
+                      <button class="btn btn-sm btn-users-outline" type="button" onclick="fillUserForm('{{ u.usuario }}','{{ u.role }}','{{ emps_join }}')">Editar</button>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% endif %}
+      </div>
+    </main>
+  </div>
 </div>
 
+<script>
+(function(){
+  const input = document.getElementById('usersSearch');
+  const table = document.getElementById('usersTable');
+  if(!input || !table) return;
+  input.addEventListener('input', function(){
+    const q = (this.value || '').toLowerCase().trim();
+    table.querySelectorAll('tbody tr').forEach(function(row){
+      const hay = row.getAttribute('data-search') || row.textContent.toLowerCase();
+      row.style.display = hay.includes(q) ? '' : 'none';
+    });
+  });
+})();
+
+function setCheckedInBox(boxId, empsCsv){
+  const box = document.getElementById(boxId);
+  if(!box) return;
+  const selected = new Set((empsCsv || '').split(',').map(x => x.trim()).filter(Boolean));
+  box.querySelectorAll('input[type="checkbox"]').forEach(function(cb){ cb.checked = selected.has(cb.value); });
+}
+
+function fillUserForm(usuario, role, empsCsv){
+  const usuarioInput = document.getElementById('novoUsuario');
+  const roleSelect = document.getElementById('roleSelect');
+  if(usuarioInput) usuarioInput.value = usuario || '';
+  if(roleSelect) roleSelect.value = role || 'vendedor';
+  setCheckedInBox('empBoxNovo', empsCsv || '');
+  const form = document.getElementById('formUsuario');
+  if(form) form.scrollIntoView({behavior:'smooth', block:'start'});
+}
+
+function fillEmpForm(usuario, empsCsv){
+  const alvo = document.getElementById('alvoEmp');
+  if(alvo) alvo.value = usuario || '';
+  setCheckedInBox('empBoxSet', empsCsv || '');
+  const form = document.getElementById('formEmpUsuario');
+  if(form) form.scrollIntoView({behavior:'smooth', block:'start'});
+}
+
+function clearUserForm(){
+  const form = document.getElementById('formUsuario');
+  if(!form) return;
+  form.reset();
+  setCheckedInBox('empBoxNovo', '');
+}
+</script>
 {% endblock %}
