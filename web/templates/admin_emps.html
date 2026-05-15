@@ -4,136 +4,260 @@
 
 {% block extra_head %}
 <style>
-. { max-width: 1100px; }
-.card { border-radius: 14px; }
-</style>
-
-<style>
-  /* Admin pages: use more width + compact spacing */
-  .sv-page.sv-page--wide{max-width: 1480px;}
-  .sv-page{padding-top:10px;padding-bottom:10px;}
-  .sv-pagehead{padding:12px;}
-  .sv-card-pad{padding:12px;}
-  .sv-table td,.sv-table th{padding:.5rem .55rem;}
-  .sv-table thead th{font-size:12px; letter-spacing:.02em;}
-  .sv-muted{opacity:.78}
+  .emp-admin{max-width:1680px;margin:0 auto;padding:4px 0 24px;color:#f8fafc;}
+  .emp-hero{position:relative;overflow:hidden;border:1px solid rgba(255,255,255,.08);border-radius:24px;padding:18px;background:radial-gradient(circle at top right,rgba(255,145,0,.22),transparent 34%),linear-gradient(180deg,rgba(255,255,255,.055),rgba(255,255,255,.025));box-shadow:0 18px 42px rgba(0,0,0,.25);}
+  .emp-title{font-size:28px;font-weight:900;letter-spacing:-.035em;margin:0;color:#fff;}
+  .emp-sub{color:#cbd5e1;font-size:13px;max-width:900px;margin-top:7px;}
+  .emp-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;align-items:center;}
+  .emp-actions .btn{border-radius:12px;font-weight:800;}
+  .emp-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:14px;}
+  .emp-kpi{border:1px solid rgba(255,255,255,.08);border-radius:18px;background:rgba(0,0,0,.24);padding:13px;}
+  .emp-kpi small{display:block;color:#a8b3c3;text-transform:uppercase;letter-spacing:.08em;font-weight:900;font-size:10px;}
+  .emp-kpi strong{display:block;color:#fff;font-size:24px;line-height:1.05;margin-top:8px;}
+  .emp-kpi span{display:block;color:#cbd5e1;font-size:12px;margin-top:3px;}
+  .emp-grid{display:grid;grid-template-columns:minmax(320px,430px) minmax(0,1fr);gap:14px;margin-top:14px;align-items:start;}
+  .emp-card{border:1px solid rgba(255,255,255,.08);border-radius:22px;background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,.02));box-shadow:0 14px 34px rgba(0,0,0,.18);overflow:hidden;}
+  .emp-card-head{padding:14px 16px;border-bottom:1px solid rgba(255,255,255,.08);background:rgba(0,0,0,.14);display:flex;justify-content:space-between;align-items:flex-start;gap:10px;}
+  .emp-card-title{font-size:16px;font-weight:900;margin:0;color:#fff;letter-spacing:-.015em;}
+  .emp-card-sub{font-size:12px;color:#cbd5e1;margin-top:4px;}
+  .emp-card-body{padding:16px;}
+  .emp-label{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#a8b3c3;font-weight:900;margin-bottom:6px;}
+  .emp-input,.emp-select{background:rgba(10,10,10,.78)!important;border:1px solid rgba(255,255,255,.12)!important;color:#fff!important;border-radius:13px!important;min-height:42px;box-shadow:none!important;}
+  .emp-input:focus,.emp-select:focus{border-color:rgba(255,145,0,.70)!important;box-shadow:0 0 0 .2rem rgba(255,145,0,.10)!important;}
+  .emp-input::placeholder{color:#7f8b9a!important;}
+  .emp-help{font-size:12px;color:#cbd5e1;}
+  .emp-check{display:flex;align-items:center;gap:10px;border:1px solid rgba(255,255,255,.08);border-radius:14px;background:rgba(0,0,0,.20);padding:10px 12px;color:#fff;}
+  .emp-check .form-check-input{margin:0;background-color:rgba(0,0,0,.40);border-color:rgba(255,255,255,.25);}
+  .emp-check .form-check-input:checked{background-color:#ff9f1a;border-color:#ff9f1a;}
+  .btn-emp-primary{background:linear-gradient(135deg,#ff8a00,#ffbb5c);border:0;color:#1e1200;font-weight:900;border-radius:14px;min-height:42px;}
+  .btn-emp-primary:hover{filter:brightness(1.05);color:#1e1200;}
+  .btn-emp-soft{border:1px solid rgba(255,255,255,.10);background:rgba(255,255,255,.04);color:#fff;border-radius:12px;font-weight:800;}
+  .btn-emp-soft:hover{background:rgba(255,145,0,.10);border-color:rgba(255,145,0,.25);color:#fff;}
+  .emp-alert{border:1px solid rgba(255,255,255,.12);border-radius:16px;padding:10px 12px;margin-top:12px;color:#fff;}
+  .emp-alert.success{background:rgba(46,204,113,.12);border-color:rgba(46,204,113,.25);}
+  .emp-alert.danger{background:rgba(255,70,85,.12);border-color:rgba(255,70,85,.28);}
+  .emp-toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:end;justify-content:space-between;margin-bottom:12px;}
+  .emp-search{min-width:min(100%,360px);}
+  .emp-table-wrap{border:1px solid rgba(255,255,255,.08);border-radius:18px;overflow:auto;background:rgba(0,0,0,.14);max-height:calc(100vh - 330px);min-height:420px;}
+  .emp-table{margin:0;color:#f8fafc!important;}
+  .emp-table > :not(caption) > * > *{background-color:transparent!important;color:#f8fafc!important;border-color:rgba(255,255,255,.065)!important;}
+  .emp-table thead th{position:sticky;top:0;z-index:2;background:rgba(17,17,17,.97)!important;color:#cbd5e1!important;font-size:11px;text-transform:uppercase;letter-spacing:.07em;white-space:nowrap;padding:.72rem .78rem;}
+  .emp-table tbody td{padding:.68rem .78rem;vertical-align:middle;background:rgba(5,5,5,.32)!important;}
+  .emp-table tbody tr:nth-child(even) td{background:rgba(255,255,255,.028)!important;}
+  .emp-table tbody tr:hover td{background:rgba(255,145,0,.08)!important;}
+  .emp-code{font-weight:900;color:#fff;font-size:15px;}
+  .emp-name{font-weight:800;color:#fff;}
+  .emp-muted{color:#cbd5e1!important;}
+  .emp-chip{display:inline-flex;align-items:center;gap:5px;border:1px solid rgba(255,255,255,.10);background:rgba(255,255,255,.045);border-radius:999px;padding:4px 9px;font-size:12px;font-weight:900;white-space:nowrap;color:#fff;}
+  .emp-chip.ok{background:rgba(46,204,113,.12);border-color:rgba(46,204,113,.24);color:#9de7b5;}
+  .emp-chip.off{background:rgba(148,163,184,.10);border-color:rgba(148,163,184,.20);color:#d1d5db;}
+  .emp-row-actions{display:flex;gap:6px;justify-content:flex-end;align-items:center;flex-wrap:wrap;}
+  .emp-empty{border:1px dashed rgba(255,255,255,.14);border-radius:18px;padding:24px;text-align:center;color:#cbd5e1;background:rgba(255,255,255,.025);}
+  @media(max-width:1200px){.emp-grid{grid-template-columns:1fr}.emp-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.emp-table-wrap{max-height:none;}}
+  @media(max-width:760px){.emp-title{font-size:23px}.emp-kpis{grid-template-columns:1fr}.emp-hero{padding:14px}.emp-card-body{padding:13px}.emp-table-wrap{min-height:0}.emp-row-actions{justify-content:flex-start}.emp-table{min-width:760px;}}
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="sv-page sv-page--wide">
-
-  <div class="sv-pagehead sv-glass mb-3">
-  <div class="d-flex justify-content-between align-items-center w-100">
-    <div>
-      <h3 class="m-0">🏢 Cadastro de EMPs</h3>
-      <div class="text-muted">Logado como <strong>{{ usuario }}</strong></div>
-    </div>
-    <div class="d-flex gap-2 flex-wrap justify-content-end">
-      <a class="btn btn-outline-secondary btn-sm" href="/admin/usuarios">Usuários</a>
-      <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('dashboard') }}">Dashboard</a>
-      <a class="btn btn-outline-danger btn-sm" href="/logout">Sair</a>
-    </div>
-  </div>
-
-  {% if erro %}
-    <div class="alert alert-danger py-2">{{ erro }}</div>
-  {% endif %}
-  {% if ok %}
-    <div class="alert alert-success py-2">{{ ok }}</div>
-  {% endif %}
-
-  <div class="row g-3">
-    <div class="col-lg-4">
-      <div class="sv-card sv-glass card shadow-sm">
-        <div class="sv-card sv-glass card-body">
-          <h5 class="sv-card sv-glass card-title mb-3">➕ Criar / Atualizar EMP</h5>
-          <form method="post" class="vstack gap-2">
-            <input class="sv-input" type="hidden" name="acao" value="criar">
-
-            <div>
-              <label class="form-label">Código (EMP)</label>
-              <input class="form-control sv-input" name="codigo" placeholder="Ex.: 101" required>
-            </div>
-            <div>
-              <label class="form-label">Nome</label>
-              <input class="form-control sv-input" name="nome" placeholder="Ex.: Veipecas" required>
-            </div>
-            <div>
-              <label class="form-label">Cidade</label>
-              <input class="form-control sv-input" name="cidade" placeholder="Ex.: Goiânia">
-            </div>
-            <div>
-              <label class="form-label">UF</label>
-              <input class="form-control sv-input" name="uf" placeholder="Ex.: GO" maxlength="2">
-            </div>
-            <div class="form-check mt-1">
-              <input class="form-check-input sv-input" type="checkbox" value="1" id="ativoChk" name="ativo" checked>
-              <label class="form-check-label" for="ativoChk">Ativa</label>
-            </div>
-
-            <button class="btn btn-primary">Salvar</button>
-            <div class="text-muted small">Dica: se o código já existir, ele será atualizado.</div>
-          </form>
-        </div>
+<div class="emp-admin">
+  <section class="emp-hero mb-3">
+    <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
+      <div>
+        <h1 class="emp-title">🏢 Administração de EMPs</h1>
+        <div class="emp-sub">Cadastro das empresas/lojas utilizadas nos filtros, permissões, metas, campanhas e relatórios. Visual escuro padronizado com a nova página de Metas.</div>
+      </div>
+      <div class="emp-actions">
+        <a class="btn btn-emp-soft btn-sm" href="/admin/usuarios">Usuários</a>
+        <a class="btn btn-emp-soft btn-sm" href="{{ url_for('dashboard') }}">Dashboard</a>
+        <a class="btn btn-outline-danger btn-sm" href="/logout">Sair</a>
       </div>
     </div>
 
-    <div class="col-lg-8">
-      <div class="sv-card sv-glass card shadow-sm">
-        <div class="sv-card sv-glass card-body">
-          <div class="d-flex justify-content-between align-items-center mb-2">
-            <h5 class="sv-card sv-glass card-title m-0">EMPs cadastradas</h5>
-            <span class="badge text-bg-light">{{ emps|length }} EMPs</span>
+    {% set emps_ativas = emps|selectattr('ativo')|list|length %}
+    {% set emps_inativas = emps|rejectattr('ativo')|list|length %}
+    <div class="emp-kpis">
+      <div class="emp-kpi"><small>Total cadastrado</small><strong>{{ emps|length }}</strong><span>EMP(s) no sistema</span></div>
+      <div class="emp-kpi"><small>Ativas</small><strong>{{ emps_ativas }}</strong><span>Disponíveis nos cadastros</span></div>
+      <div class="emp-kpi"><small>Inativas</small><strong>{{ emps_inativas }}</strong><span>Preservadas no histórico</span></div>
+      <div class="emp-kpi"><small>Usuário</small><strong>{{ usuario }}</strong><span>Logado como administrador</span></div>
+    </div>
+
+    {% if erro %}
+      <div class="emp-alert danger">{{ erro }}</div>
+    {% endif %}
+    {% if ok %}
+      <div class="emp-alert success">{{ ok }}</div>
+    {% endif %}
+  </section>
+
+  <section class="emp-grid">
+    <div class="emp-card">
+      <div class="emp-card-head">
+        <div>
+          <h2 class="emp-card-title">➕ Criar / Atualizar EMP</h2>
+          <div class="emp-card-sub">Se o código já existir, o cadastro será atualizado.</div>
+        </div>
+        <span class="emp-chip ok">Admin</span>
+      </div>
+      <div class="emp-card-body">
+        <form method="post" class="vstack gap-3" id="empForm">
+          <input type="hidden" name="acao" value="criar">
+
+          <div>
+            <div class="emp-label">Código da EMP</div>
+            <input class="form-control emp-input" name="codigo" id="empCodigo" placeholder="Ex.: 101" required autocomplete="off">
           </div>
-          <div class="table-responsive">
-            <table class="sv-table table table-sm align-middle">
+
+          <div>
+            <div class="emp-label">Nome da EMP</div>
+            <input class="form-control emp-input" name="nome" id="empNome" placeholder="Ex.: Veipeças" required autocomplete="off">
+          </div>
+
+          <div class="row g-2">
+            <div class="col-8">
+              <div class="emp-label">Cidade</div>
+              <input class="form-control emp-input" name="cidade" id="empCidade" placeholder="Ex.: Campo Grande" autocomplete="off">
+            </div>
+            <div class="col-4">
+              <div class="emp-label">UF</div>
+              <input class="form-control emp-input text-uppercase" name="uf" id="empUf" placeholder="MS" maxlength="2" autocomplete="off">
+            </div>
+          </div>
+
+          <label class="emp-check">
+            <input class="form-check-input" type="checkbox" value="1" id="ativoChk" name="ativo" checked>
+            <span class="fw-bold">EMP ativa</span>
+          </label>
+
+          <div class="d-grid gap-2">
+            <button class="btn btn-emp-primary" type="submit">Salvar EMP</button>
+            <button class="btn btn-emp-soft" type="button" id="limparEmpForm">Limpar formulário</button>
+          </div>
+
+          <div class="emp-help">Dica: use o botão <b>Editar</b> na tabela para carregar os dados no formulário.</div>
+        </form>
+      </div>
+    </div>
+
+    <div class="emp-card">
+      <div class="emp-card-head">
+        <div>
+          <h2 class="emp-card-title">EMPs cadastradas</h2>
+          <div class="emp-card-sub">Lista operacional usada pelo restante do sistema.</div>
+        </div>
+        <span class="emp-chip">{{ emps|length }} EMPs</span>
+      </div>
+      <div class="emp-card-body">
+        <div class="emp-toolbar">
+          <div class="emp-search">
+            <div class="emp-label">Pesquisar</div>
+            <input class="form-control emp-input" id="empSearch" placeholder="Buscar por código, nome, cidade ou UF..." autocomplete="off">
+          </div>
+          <div class="emp-help">Empresas inativas não somem do histórico de vendas.</div>
+        </div>
+
+        {% if emps|length == 0 %}
+          <div class="emp-empty">Nenhuma EMP cadastrada ainda.</div>
+        {% else %}
+          <div class="emp-table-wrap">
+            <table class="table table-sm align-middle emp-table" id="empsTable">
               <thead>
                 <tr>
-                  <th>Código</th>
+                  <th style="width:110px;">Código</th>
                   <th>Nome</th>
                   <th>Cidade/UF</th>
-                  <th>Status</th>
-                  <th class="text-end">Ações</th>
+                  <th style="width:110px;">Status</th>
+                  <th class="text-end" style="width:190px;">Ações</th>
                 </tr>
               </thead>
               <tbody>
                 {% for e in emps %}
-                  <tr>
-                    <td><strong>{{ e.codigo }}</strong></td>
-                    <td>{{ e.nome }}</td>
+                  <tr data-search="{{ (e.codigo ~ ' ' ~ e.nome ~ ' ' ~ (e.cidade or '') ~ ' ' ~ (e.uf or ''))|lower|e }}">
+                    <td><span class="emp-code">{{ e.codigo }}</span></td>
+                    <td><div class="emp-name">{{ e.nome }}</div></td>
                     <td>
-                      {{ e.cidade or '-' }}{% if e.uf %}/{{ e.uf }}{% endif %}
+                      <span class="emp-muted">{{ e.cidade or '-' }}{% if e.uf %}/{{ e.uf }}{% endif %}</span>
                     </td>
                     <td>
                       {% if e.ativo %}
-                        <span class="badge text-bg-success">ativa</span>
+                        <span class="emp-chip ok">ativa</span>
                       {% else %}
-                        <span class="badge text-bg-secondary">inativa</span>
+                        <span class="emp-chip off">inativa</span>
                       {% endif %}
                     </td>
-                    <td class="text-end">
-                      <form method="post" style="display:inline">
-                        <input class="sv-input" type="hidden" name="acao" value="toggle">
-                        <input class="sv-input" type="hidden" name="codigo" value="{{ e.codigo }}">
-                        <button class="btn btn-outline-secondary btn-sm">
-                          {% if e.ativo %}Desativar{% else %}Ativar{% endif %}
+                    <td>
+                      <div class="emp-row-actions">
+                        <button type="button"
+                                class="btn btn-emp-soft btn-sm emp-edit-btn"
+                                data-codigo="{{ e.codigo|e }}"
+                                data-nome="{{ e.nome|e }}"
+                                data-cidade="{{ (e.cidade or '')|e }}"
+                                data-uf="{{ (e.uf or '')|e }}"
+                                data-ativo="{{ '1' if e.ativo else '0' }}">
+                          Editar
                         </button>
-                      </form>
+                        <form method="post" class="m-0">
+                          <input type="hidden" name="acao" value="toggle">
+                          <input type="hidden" name="codigo" value="{{ e.codigo }}">
+                          <button class="btn btn-outline-secondary btn-sm" type="submit">
+                            {% if e.ativo %}Desativar{% else %}Ativar{% endif %}
+                          </button>
+                        </form>
+                      </div>
                     </td>
                   </tr>
                 {% endfor %}
               </tbody>
             </table>
           </div>
-
-          <div class="text-muted small">
-            As EMPs inativas não somem do histórico de vendas, mas podem ser ocultadas de seleções e cadastros.
-          </div>
-        </div>
+        {% endif %}
       </div>
     </div>
-  </div>
-
+  </section>
 </div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+(function(){
+  const search = document.getElementById('empSearch');
+  const rows = Array.from(document.querySelectorAll('#empsTable tbody tr'));
+  if (search && rows.length) {
+    search.addEventListener('input', function(){
+      const term = (this.value || '').trim().toLowerCase();
+      rows.forEach(row => {
+        row.style.display = !term || (row.dataset.search || '').includes(term) ? '' : 'none';
+      });
+    });
+  }
+
+  const form = document.getElementById('empForm');
+  const codigo = document.getElementById('empCodigo');
+  const nome = document.getElementById('empNome');
+  const cidade = document.getElementById('empCidade');
+  const uf = document.getElementById('empUf');
+  const ativo = document.getElementById('ativoChk');
+
+  document.querySelectorAll('.emp-edit-btn').forEach(btn => {
+    btn.addEventListener('click', function(){
+      codigo.value = this.dataset.codigo || '';
+      nome.value = this.dataset.nome || '';
+      cidade.value = this.dataset.cidade || '';
+      uf.value = this.dataset.uf || '';
+      ativo.checked = (this.dataset.ativo || '0') === '1';
+      codigo.focus();
+      form.scrollIntoView({behavior:'smooth', block:'center'});
+    });
+  });
+
+  const limpar = document.getElementById('limparEmpForm');
+  if (limpar) {
+    limpar.addEventListener('click', function(){
+      form.reset();
+      ativo.checked = true;
+      codigo.focus();
+    });
+  }
+})();
+</script>
 {% endblock %}
