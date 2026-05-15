@@ -4,6 +4,20 @@
 {% block extra_head %}
 <style>
   .meta-bases{max-width:1500px;margin:0 auto;padding:4px 0 22px}.mb-hero{border:1px solid rgba(255,255,255,.08);border-radius:22px;padding:16px;background:radial-gradient(circle at top right,rgba(255,145,0,.18),transparent 34%),linear-gradient(180deg,rgba(255,255,255,.05),rgba(255,255,255,.02));box-shadow:0 16px 38px rgba(0,0,0,.22)}.mb-title{font-size:25px;font-weight:900;letter-spacing:-.025em;margin:0}.mb-sub{font-size:13px;color:#bdbdbd;margin-top:6px}.mb-filter{display:flex;gap:8px;flex-wrap:wrap;align-items:end}.mb-filter .form-select{background:rgba(12,12,12,.8);border-color:rgba(255,255,255,.10);color:#fff;border-radius:12px}.mb-card{border:1px solid rgba(255,255,255,.08);border-radius:20px;background:rgba(255,255,255,.028);padding:15px}.mb-table-wrap{border:1px solid rgba(255,255,255,.08);border-radius:18px;overflow:auto;background:rgba(0,0,0,.14)}.mb-table{margin:0}.mb-table th{position:sticky;top:0;z-index:2;background:rgba(17,17,17,.96)!important;color:#bdbdbd;font-size:11px;text-transform:uppercase;letter-spacing:.07em;white-space:nowrap}.mb-table td,.mb-table th{padding:.58rem .65rem;border-color:rgba(255,255,255,.065);vertical-align:middle}.mb-table tbody td{background:rgba(5,5,5,.32)!important}.mb-table tbody tr:nth-child(even) td{background:rgba(255,255,255,.028)!important}.mb-input{background:rgba(10,10,10,.78)!important;border-color:rgba(255,255,255,.10)!important;color:#fff!important;border-radius:12px!important}.mb-help{font-size:12px;color:#b8b8b8}.btn-meta-primary{background:linear-gradient(135deg,#ff8a00,#ffbb5c);border:0;color:#1e1200;font-weight:900}.btn-meta-primary:hover{filter:brightness(1.05);color:#1e1200}
+
+  /* Contraste reforçado para legibilidade no tema dark */
+  .meta-bases{color:#f8fafc;}
+  .mb-title,.mb-card .fw-bold,.mb-table td,.mb-table th{color:#f8fafc!important;}
+  .mb-sub,.mb-help,.mb-table .text-muted{color:#cbd5e1!important;}
+  .mb-hero,.mb-card,.mb-table-wrap{border-color:rgba(255,255,255,.16)!important;}
+  .mb-table tbody td{background:rgba(8,11,16,.74)!important;color:#f8fafc!important;}
+  .mb-table tbody tr:nth-child(even) td{background:rgba(20,24,31,.80)!important;}
+  .mb-table tbody tr:hover td{background:rgba(255,145,0,.13)!important;}
+  .mb-table th{background:rgba(2,6,14,.96)!important;color:#e2e8f0!important;}
+  .mb-input,.mb-filter .form-select{background:rgba(3,7,18,.86)!important;border-color:rgba(255,255,255,.22)!important;color:#fff!important;}
+  .mb-input::placeholder{color:#94a3b8!important;}
+  .mb-status-ok{color:#9de7b5;font-size:12px;font-weight:800;}
+  .mb-status-warn{color:#ffd79c;font-size:12px;font-weight:800;}
 </style>
 {% endblock %}
 
@@ -13,7 +27,7 @@
     <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
       <div>
         <h1 class="mb-title">🧮 Bases dos Vendedores</h1>
-        <div class="mb-sub"><strong>{{ meta.nome }}</strong> · {{ tipo_label(meta.tipo) }} · {{ '%02d'|format(meta.mes) }}/{{ meta.ano }}. A base é manual por EMP e vendedor.</div>
+        <div class="mb-sub"><strong>{{ meta.nome }}</strong> · {{ tipo_label(meta.tipo) }} · {{ '%02d'|format(meta.mes) }}/{{ meta.ano }}. A base é manual por EMP e vendedor. {% if meta.faturamento_minimo %}Mínimo para participar: <strong>{{ meta.faturamento_minimo|brl_rs }}</strong>.{% endif %}</div>
       </div>
       <form class="mb-filter" method="get" action="{{ url_for('admin_meta_bases', meta_id=meta.id) }}">
         <div><div class="mb-help mb-1">EMP</div><select class="form-select form-select-sm" name="emp" style="min-width:190px">{% for e in emps %}<option value="{{ e }}" {% if emp_selected==e %}selected{% endif %}>{{ e }}</option>{% endfor %}</select></div>
@@ -41,7 +55,7 @@
                 <td class="fw-semibold">{{ l.vendedor }}</td>
                 <td class="text-end">{{ l.venda_mes|brl_rs }}</td>
                 <td><input class="form-control form-control-sm mb-input text-end" name="base__{{ l.vendedor }}" value="{{ l.base_valor|brl if l.base_valor else '' }}" placeholder="0,00"></td>
-                <td class="text-end">{{ l.crescimento_pct|brl }}%</td>
+                <td class="text-end">{{ l.crescimento_pct|brl }}%{% if meta.faturamento_minimo and l.venda_mes < meta.faturamento_minimo %}<div class="mb-status-warn">abaixo do mínimo</div>{% elif meta.faturamento_minimo %}<div class="mb-status-ok">apto</div>{% endif %}</td>
                 <td><input class="form-control form-control-sm mb-input" name="obs__{{ l.vendedor }}" value="{{ l.observacao or '' }}" placeholder="Opcional"></td>
               </tr>
             {% endfor %}

@@ -392,6 +392,26 @@ class MetaCalc:
     bonus_percentual: float = 0.0
     premio: float = 0.0
     regra_teto_aplicada: bool = False
+    faturamento_minimo: float = 0.0
+    elegivel_faturamento: bool = True
+    bloqueado_por_faturamento: bool = False
+
+
+def aplicar_trava_faturamento_minimo(calc: MetaCalc, meta: MetaPrograma) -> MetaCalc:
+    """Zera o prêmio quando o vendedor não atinge o faturamento mínimo da meta."""
+    minimo_raw = getattr(meta, "faturamento_minimo", None)
+    minimo = 70000.0 if minimo_raw is None else float(minimo_raw or 0.0)
+    calc.faturamento_minimo = minimo
+    calc.elegivel_faturamento = True
+    calc.bloqueado_por_faturamento = False
+    if minimo > 0 and float(calc.valor_mes or 0.0) < minimo:
+        calc.elegivel_faturamento = False
+        calc.bloqueado_por_faturamento = True
+        calc.premio = 0.0
+        calc.bonus_percentual = 0.0
+        calc.faixa_limite = None
+        calc.regra_teto_aplicada = False
+    return calc
 
 
 def calcular_meta(db, meta: MetaPrograma, emp: str, vendedor: str, persist: bool = False) -> MetaCalc:
@@ -456,6 +476,8 @@ def calcular_meta(db, meta: MetaPrograma, emp: str, vendedor: str, persist: bool
         calc.faixa_limite = float(getattr(escala, "limite_min", 0.0) or 0.0) if escala else None
         calc.bonus_percentual = bonus_pct
         calc.premio = float(premio)
+
+    aplicar_trava_faturamento_minimo(calc, meta)
 
     if persist:
         upsert_resultado(db, calc)

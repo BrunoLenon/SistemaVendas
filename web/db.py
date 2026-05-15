@@ -570,7 +570,7 @@ class MetaPrograma(Base):
     escopo = Column(String(20), nullable=False, default="VENDEDOR")
 
     # Gates / travas opcionais
-    faturamento_minimo = Column(Float, nullable=True, default=0.0)
+    faturamento_minimo = Column(Float, nullable=True, default=70000.0)
     margem_minima = Column(Float, nullable=True, default=0.0)
 
     # Teto opcional de % de premiação quando o faturamento atingir um valor específico.
@@ -1271,6 +1271,8 @@ def criar_tabelas():
             # Metas - evolução compatível para metas de lojas / gerente
             conn.execute(text("ALTER TABLE metas_programas ADD COLUMN IF NOT EXISTS escopo varchar(20) NOT NULL DEFAULT 'VENDEDOR';"))
             conn.execute(text("ALTER TABLE metas_programas ADD COLUMN IF NOT EXISTS faturamento_minimo double precision;"))
+            conn.execute(text("ALTER TABLE metas_programas ALTER COLUMN faturamento_minimo SET DEFAULT 70000;"))
+            conn.execute(text("UPDATE metas_programas SET faturamento_minimo = 70000 WHERE faturamento_minimo IS NULL;"))
             conn.execute(text("ALTER TABLE metas_programas ADD COLUMN IF NOT EXISTS margem_minima double precision;"))
             conn.execute(text("ALTER TABLE metas_programas ADD COLUMN IF NOT EXISTS teto_faturamento double precision;"))
             conn.execute(text("ALTER TABLE metas_programas ADD COLUMN IF NOT EXISTS teto_bonus_percentual double precision;"))
@@ -1562,6 +1564,8 @@ def ensure_metas_lojas_schema():
 
             conn.execute(text("ALTER TABLE metas_programas ADD COLUMN IF NOT EXISTS escopo varchar(20) NOT NULL DEFAULT 'VENDEDOR';"))
             conn.execute(text("ALTER TABLE metas_programas ADD COLUMN IF NOT EXISTS faturamento_minimo double precision;"))
+            conn.execute(text("ALTER TABLE metas_programas ALTER COLUMN faturamento_minimo SET DEFAULT 70000;"))
+            conn.execute(text("UPDATE metas_programas SET faturamento_minimo = 70000 WHERE faturamento_minimo IS NULL;"))
             conn.execute(text("ALTER TABLE metas_programas ADD COLUMN IF NOT EXISTS margem_minima double precision;"))
             conn.execute(text("ALTER TABLE metas_programas ADD COLUMN IF NOT EXISTS teto_faturamento double precision;"))
             conn.execute(text("ALTER TABLE metas_programas ADD COLUMN IF NOT EXISTS teto_bonus_percentual double precision;"))

@@ -359,6 +359,7 @@ def admin_metas_criar():
     emps = [normalize_emp(e) for e in request.form.getlist("emps") if normalize_emp(e)]
     escalas = _parse_escalas(request.form.get("escalas"), tipo)
     marcas = _parse_marcas(request.form.get("marcas"))
+    faturamento_minimo = _safe_float(request.form.get("faturamento_minimo"), 0.0)
     teto_faturamento = _safe_float(request.form.get("teto_faturamento"), 0.0)
 
     if tipo not in TIPOS_META:
@@ -382,6 +383,8 @@ def admin_metas_criar():
             mes=mes,
             ativo=True,
             escopo="VENDEDOR",
+            # Trava mínima: abaixo deste faturamento, o vendedor não participa da meta.
+            faturamento_minimo=faturamento_minimo if faturamento_minimo > 0 else None,
             # No crescimento, este campo representa a trava: venda >= teto aplica maior faixa.
             teto_faturamento=teto_faturamento if tipo == "CRESCIMENTO" and teto_faturamento > 0 else None,
             teto_bonus_percentual=None,
