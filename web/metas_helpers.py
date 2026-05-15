@@ -1,467 +1,568 @@
 # -*- coding: utf-8 -*-
-"""Metas helpers (Crescimento / MIX / Share de Marcas).
+"""Motor oficial de Metas.
 
-Evolução leve do módulo para suportar metas de lojas, com:
-- escopo por vendedor ou gerente/loja
-- margem manual por mês
-- gate de faturamento mínimo
-- teto opcional de % de premiação
-- bônus extra manual (ex.: checklist/avaliação)
+Regras contempladas:
+- Crescimento: compara venda liquida do mes contra Meta Base manual.
+- Mix: conta codigos MESTRE unicos vendidos, considerando saldo liquido de quantidade.
+- Marcas: mede a participacao de um grupo de marcas sobre a venda total do vendedor.
+
+Movimentos:
+- OA, VV e SV = venda positiva.
+- DS e CA = devolucao/cancelamento, entram como negativo.
+- Outros movimentos sao ignorados para manter o pagamento auditavel.
 """
 
 from __future__ import annotations
 
 import calendar
+from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal, ROUND_HALF_UP
+from typing import Iterable
 
 from sqlalchemy import text
 
 from sv_utils import _emp_norm
-
 from db import (
-    VendasResumoPeriodo,
-    MetaPrograma,
+    Emp,
+    MetaBaseManual,
     MetaEscala,
     MetaMarca,
-    MetaBaseManual,
+    MetaPrograma,
+    MetaProgramaEmp,
     MetaResultado,
+    Usuario,
+    UsuarioEmp,
 )
 
-META_GERENTE_ALIAS = "__GERENTE__"
+POSITIVE_MOV_TYPES = ("OA", "VV", "SV")
+NEGATIVE_MOV_TYPES = ("DS", "CA")
+META_GERENTE_ALIAS = "__GERENTE__"  # mantido por compatibilidade com telas antigas
 META_GERENTE_LABEL = "GERENTE"
 
 
-def _periodo_bounds_ym(ano: int, mes: int) -> tuple[date, date]:
-    inicio = date(int(ano), int(mes), 1)
-    fim = date(int(ano), int(mes), calendar.monthrange(int(ano), int(mes))[1])
+def periodo_bounds_ym(ano: int, mes: int) -> tuple[date, date]:
+    ano = int(ano)
+    mes = int(mes)
+    inicio = date(ano, mes, 1)
+    fim = date(ano, mes, calendar.monthrange(ano, mes)[1])
     return inicio, fim
 
 
-def _as_decimal(v) -> Decimal:
+# Alias antigo usado por partes legadas.
+_periodo_bounds_ym = periodo_bounds_ym
+
+
+def normalize_text(value: object) -> str:
+    return str(value or "").strip().upper()
+
+
+def normalize_emp(value: object) -> str:
+    return _emp_norm(str(value or "").strip())
+
+
+def as_decimal(value: object) -> Decimal:
     try:
-        if v is None:
+        if value is None or value == "":
             return Decimal("0")
-        return Decimal(str(v))
+        return Decimal(str(value))
     except Exception:
         return Decimal("0")
 
 
-def _money2(v: Decimal) -> Decimal:
-    return v.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+def money2(value: Decimal | float | int) -> Decimal:
+    return as_decimal(value).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
-def _normalize_limit_percent(limit_value: float | int | None) -> float:
-    """Aceita 5 (=5%) ou 0.05 (=5%)."""
-    try:
-        v = float(limit_value or 0.0)
-    except Exception:
-        return 0.0
-    if abs(v) < 1.0:
-        return v * 100.0
-    return v
+def percent2(value: Decimal | float | int) -> Decimal:
+    return as_decimal(value).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
-def _normalize_bonus_percent(bonus_value: float | int | None) -> float:
-    """Retorna bônus em pontos percentuais.
-
-    Aceita:
-    - 0.10  => 0,10%
-    - 0.001 => 0,10% (estilo fórmula Excel multiplicada direto pelo valor)
-    - 1.25  => 1,25%
-    """
-    try:
-        v = float(bonus_value or 0.0)
-    except Exception:
-        return 0.0
-    if abs(v) < 0.01:
-        return v * 100.0
-    return v
+def _mov_params() -> dict[str, tuple[str, ...]]:
+    return {"positivos": list(POSITIVE_MOV_TYPES), "negativos": list(NEGATIVE_MOV_TYPES)}
 
 
-def _normalize_manual_pct(v) -> float | None:
-    """Aceita 8 ou 0.08 e retorna 8.0. Campo vazio => None."""
-    if v is None:
-        return None
-    try:
-        raw = float(v)
-    except Exception:
-        return None
-    if abs(raw) <= 1.0:
-        return raw * 100.0
-    return raw
-
-
-def _meta_pick_bonus(escalas: list[MetaEscala], valor_metric: float) -> float:
-    """Retorna o bonus_percentual da maior faixa cujo limite_min <= valor_metric.
-
-    valor retornado em pontos percentuais (0,10 => 0,10%).
-    """
-    try:
-        metric = float(valor_metric or 0.0)
-    except Exception:
-        metric = 0.0
-
-    best = 0.0
-    for esc in sorted(escalas, key=lambda x: (x.limite_min, x.ordem)):
-        lim = _normalize_limit_percent(getattr(esc, "limite_min", 0.0))
-        bon = _normalize_bonus_percent(getattr(esc, "bonus_percentual", 0.0))
-        if metric >= lim:
-            best = bon
-    return float(best or 0.0)
-
-
-def _sql_valor_mes_signed(vendedor_filter: bool = True):
-    filtro_vendedor = "AND vendedor = :vendedor" if vendedor_filter else ""
+def signed_value_sql(column_name: str = "valor_total") -> str:
+    """Expressao SQL de valor assinado conforme regra comercial de vendas."""
     return f"""
-        SELECT
-          SUM(
-            CASE
-              WHEN mov_tipo_movto IN ('CA','DS') THEN -COALESCE(valor_total,0)
-              ELSE COALESCE(valor_total,0)
-            END
-          )::double precision AS valor_mes
-        FROM vendas
-        WHERE emp = :emp
-          {filtro_vendedor}
-          AND movimento BETWEEN :ini AND :fim
+        CASE
+          WHEN UPPER(COALESCE(mov_tipo_movto,'')) = ANY(:negativos)
+            THEN -ABS(COALESCE({column_name},0))
+          WHEN UPPER(COALESCE(mov_tipo_movto,'')) = ANY(:positivos)
+            THEN COALESCE({column_name},0)
+          ELSE 0
+        END
     """
 
 
-def _sql_valor_marcas_signed(vendedor_filter: bool = True):
-    filtro_vendedor = "AND vendedor = :vendedor" if vendedor_filter else ""
-    return f"""
-      SELECT
-        SUM(
-          CASE
-            WHEN UPPER(COALESCE(marca,'')) = ANY(:marcas)
-              THEN CASE WHEN mov_tipo_movto IN ('CA','DS') THEN -COALESCE(valor_total,0) ELSE COALESCE(valor_total,0) END
-            ELSE 0
-          END
-        )::double precision AS valor_marcas,
-        SUM(
-          CASE
-            WHEN mov_tipo_movto IN ('CA','DS') THEN -COALESCE(valor_total,0)
-            ELSE COALESCE(valor_total,0)
-          END
-        )::double precision AS valor_mes
-      FROM vendas
-      WHERE emp = :emp
-        {filtro_vendedor}
-        AND movimento BETWEEN :ini AND :fim
+def _scope_emp_clause(emps: list[str]) -> tuple[str, dict]:
+    clean = [normalize_emp(e) for e in (emps or []) if normalize_emp(e)]
+    if not clean:
+        return "", {}
+    return "AND emp = ANY(:emps)", {"emps": clean}
+
+
+def query_valor_mes(db, ano: int, mes: int, emp: str, vendedor: str | None = None) -> float:
+    """Venda liquida do mes para EMP e opcionalmente vendedor."""
+    inicio, fim = periodo_bounds_ym(ano, mes)
+    emp_n = normalize_emp(emp)
+    vendedor_n = normalize_text(vendedor)
+    vendedor_clause = "AND UPPER(COALESCE(vendedor,'')) = :vendedor" if vendedor_n else ""
+    sql = f"""
+        SELECT COALESCE(SUM({signed_value_sql('valor_total')}),0)::double precision
+          FROM vendas
+         WHERE emp = :emp
+           {vendedor_clause}
+           AND movimento BETWEEN :ini AND :fim
     """
-
-
-def _query_valor_mes(db, ano: int, mes: int, emp: str, vendedor: str) -> float:
-    vend = (vendedor or '').strip().upper()
-    emp_n = _emp_norm(emp)
-
-    try:
-        q = (
-            db.query(VendasResumoPeriodo.valor_venda)
-            .filter(
-                VendasResumoPeriodo.vendedor == vend,
-                VendasResumoPeriodo.ano == ano,
-                VendasResumoPeriodo.mes == mes,
-            )
-        )
-        if emp_n:
-            q_emp = q.filter(VendasResumoPeriodo.emp == emp_n).one_or_none()
-            if q_emp is not None:
-                return float(q_emp[0] or 0.0)
-            q_fallback = q.filter(VendasResumoPeriodo.emp.in_(['', 'EMPTY'])).one_or_none()
-            if q_fallback is not None:
-                return float(q_fallback[0] or 0.0)
-        else:
-            q_fallback = q.filter(VendasResumoPeriodo.emp.in_(['', 'EMPTY'])).one_or_none()
-            if q_fallback is not None:
-                return float(q_fallback[0] or 0.0)
-    except Exception:
-        pass
-
-    inicio, fim = _periodo_bounds_ym(ano, mes)
-    sql = _sql_valor_mes_signed(vendedor_filter=True)
-    row = db.execute(text(sql), {"emp": emp_n, "vendedor": vend, "ini": inicio, "fim": fim}).fetchone()
+    params = {"emp": emp_n, "vendedor": vendedor_n, "ini": inicio, "fim": fim, **_mov_params()}
+    row = db.execute(text(sql), params).fetchone()
     return float(row[0] or 0.0) if row else 0.0
+
+
+# Aliases legados.
+def _query_valor_mes(db, ano: int, mes: int, emp: str, vendedor: str) -> float:
+    return query_valor_mes(db, ano, mes, emp, vendedor)
 
 
 def _query_valor_emp_mes(db, ano: int, mes: int, emp: str) -> float:
-    emp_n = _emp_norm(emp)
-    inicio, fim = _periodo_bounds_ym(ano, mes)
-
-    try:
-        row = db.execute(
-            text(
-                """
-                SELECT COALESCE(SUM(valor_venda), 0)::double precision
-                FROM vendas_resumo_periodo
-                WHERE emp = :emp
-                  AND ano = :ano
-                  AND mes = :mes
-                """
-            ),
-            {"emp": emp_n, "ano": ano, "mes": mes},
-        ).fetchone()
-        if row is not None and row[0] is not None:
-            return float(row[0] or 0.0)
-    except Exception:
-        pass
-
-    sql = _sql_valor_mes_signed(vendedor_filter=False)
-    row = db.execute(text(sql), {"emp": emp_n, "ini": inicio, "fim": fim}).fetchone()
-    return float(row[0] or 0.0) if row else 0.0
+    return query_valor_mes(db, ano, mes, emp, None)
 
 
-def _query_mix_itens(db, ano: int, mes: int, emp: str, vendedor: str) -> float:
-    vend = (vendedor or '').strip().upper()
-    emp_n = _emp_norm(emp)
+def query_valor_marcas(db, ano: int, mes: int, emp: str, vendedor: str, marcas: list[str]) -> tuple[float, float, float]:
+    """Retorna (share_pct, valor_marcas, valor_total_vendedor)."""
+    inicio, fim = periodo_bounds_ym(ano, mes)
+    marcas_norm = [normalize_text(m) for m in (marcas or []) if normalize_text(m)]
+    if not marcas_norm:
+        return 0.0, 0.0, query_valor_mes(db, ano, mes, emp, vendedor)
 
-    try:
-        q = (
-            db.query(VendasResumoPeriodo.mix_produtos)
-            .filter(
-                VendasResumoPeriodo.vendedor == vend,
-                VendasResumoPeriodo.ano == ano,
-                VendasResumoPeriodo.mes == mes,
-            )
-        )
-        if emp_n:
-            q_emp = q.filter(VendasResumoPeriodo.emp == emp_n).one_or_none()
-            if q_emp is not None:
-                return float(q_emp[0] or 0.0)
-            q_fallback = q.filter(VendasResumoPeriodo.emp.in_(['', 'EMPTY'])).one_or_none()
-            if q_fallback is not None:
-                return float(q_fallback[0] or 0.0)
-        else:
-            q_fallback = q.filter(VendasResumoPeriodo.emp.in_(['', 'EMPTY'])).one_or_none()
-            if q_fallback is not None:
-                return float(q_fallback[0] or 0.0)
-    except Exception:
-        pass
+    sql = f"""
+        SELECT
+          COALESCE(SUM(CASE WHEN UPPER(COALESCE(marca,'')) = ANY(:marcas)
+                            THEN {signed_value_sql('valor_total')}
+                            ELSE 0 END),0)::double precision AS valor_marcas,
+          COALESCE(SUM({signed_value_sql('valor_total')}),0)::double precision AS valor_total
+          FROM vendas
+         WHERE emp = :emp
+           AND UPPER(COALESCE(vendedor,'')) = :vendedor
+           AND movimento BETWEEN :ini AND :fim
+    """
+    params = {
+        "emp": normalize_emp(emp),
+        "vendedor": normalize_text(vendedor),
+        "marcas": marcas_norm,
+        "ini": inicio,
+        "fim": fim,
+        **_mov_params(),
+    }
+    row = db.execute(text(sql), params).fetchone()
+    valor_marcas = float(row[0] or 0.0) if row else 0.0
+    valor_total = float(row[1] or 0.0) if row else 0.0
+    share = (valor_marcas / valor_total * 100.0) if valor_total > 0 else 0.0
+    return float(share), float(valor_marcas), float(valor_total)
 
-    inicio, fim = _periodo_bounds_ym(ano, mes)
+
+# Alias legado.
+def _query_share_marca(db, ano: int, mes: int, emp: str, vendedor: str, marcas: list[str]) -> tuple[float, float, float]:
+    return query_valor_marcas(db, ano, mes, emp, vendedor, marcas)
+
+
+def query_mix_itens_unicos(db, ano: int, mes: int, emp: str, vendedor: str) -> int:
+    """Conta MESTRE unico com quantidade liquida positiva no periodo."""
+    inicio, fim = periodo_bounds_ym(ano, mes)
     sql = """
       WITH por_produto AS (
         SELECT
-          mestre,
+          UPPER(TRIM(COALESCE(mestre,''))) AS mestre_norm,
           SUM(
             CASE
-              WHEN mov_tipo_movto = 'CA' THEN -COALESCE(qtdade_vendida,0)
-              WHEN mov_tipo_movto = 'DS' THEN 0
-              ELSE COALESCE(qtdade_vendida,0)
+              WHEN UPPER(COALESCE(mov_tipo_movto,'')) = ANY(:negativos)
+                THEN -ABS(COALESCE(qtdade_vendida,0))
+              WHEN UPPER(COALESCE(mov_tipo_movto,'')) = ANY(:positivos)
+                THEN COALESCE(qtdade_vendida,0)
+              ELSE 0
             END
           ) AS qtd_liquida
         FROM vendas
         WHERE emp = :emp
-          AND vendedor = :vendedor
+          AND UPPER(COALESCE(vendedor,'')) = :vendedor
           AND movimento BETWEEN :ini AND :fim
-          AND mestre IS NOT NULL AND mestre <> ''
-        GROUP BY mestre
+          AND COALESCE(mestre,'') <> ''
+        GROUP BY UPPER(TRIM(COALESCE(mestre,'')))
       )
-      SELECT COUNT(*)::double precision
-      FROM por_produto
-      WHERE qtd_liquida > 0
+      SELECT COUNT(*)::integer
+        FROM por_produto
+       WHERE mestre_norm <> ''
+         AND qtd_liquida > 0
     """
-    row = db.execute(text(sql), {"emp": emp_n, "vendedor": vend, "ini": inicio, "fim": fim}).fetchone()
-    return float(row[0] or 0.0) if row else 0.0
-
-
-def _query_share_marca(db, ano: int, mes: int, emp: str, vendedor: str, marcas: list[str]) -> tuple[float, float, float]:
-    inicio, fim = _periodo_bounds_ym(ano, mes)
-    marcas_norm = [str(m).strip().upper() for m in (marcas or []) if str(m).strip()]
-    sql = _sql_valor_marcas_signed(vendedor_filter=True)
-    params = {"emp": _emp_norm(emp), "vendedor": (vendedor or '').strip().upper(), "ini": inicio, "fim": fim, "marcas": marcas_norm}
+    params = {
+        "emp": normalize_emp(emp),
+        "vendedor": normalize_text(vendedor),
+        "ini": inicio,
+        "fim": fim,
+        **_mov_params(),
+    }
     row = db.execute(text(sql), params).fetchone()
-    valor_marcas = float((row[0] or 0.0)) if row else 0.0
-    valor_mes = float((row[1] or 0.0)) if row else 0.0
-    share = (valor_marcas / valor_mes * 100.0) if valor_mes else 0.0
-    return float(share), float(valor_marcas), float(valor_mes)
+    return int(row[0] or 0) if row else 0
 
 
-def _query_share_marca_emp(db, ano: int, mes: int, emp: str, marcas: list[str]) -> tuple[float, float, float]:
-    inicio, fim = _periodo_bounds_ym(ano, mes)
-    marcas_norm = [str(m).strip().upper() for m in (marcas or []) if str(m).strip()]
-    sql = _sql_valor_marcas_signed(vendedor_filter=False)
-    params = {"emp": _emp_norm(emp), "ini": inicio, "fim": fim, "marcas": marcas_norm}
-    row = db.execute(text(sql), params).fetchone()
-    valor_marcas = float((row[0] or 0.0)) if row else 0.0
-    valor_mes = float((row[1] or 0.0)) if row else 0.0
-    share = (valor_marcas / valor_mes * 100.0) if valor_mes else 0.0
-    return float(share), float(valor_marcas), float(valor_mes)
+# Alias legado.
+def _query_mix_itens(db, ano: int, mes: int, emp: str, vendedor: str) -> float:
+    return float(query_mix_itens_unicos(db, ano, mes, emp, vendedor))
 
 
+def get_active_emps(db, allowed_emps: list[str] | None = None) -> list[str]:
+    q = db.query(Emp.codigo).filter(Emp.ativo.is_(True))
+    allowed = [normalize_emp(e) for e in (allowed_emps or []) if normalize_emp(e)]
+    if allowed:
+        q = q.filter(Emp.codigo.in_(allowed))
+    rows = q.order_by(Emp.codigo.asc()).all()
+    return [str(r[0]).strip() for r in rows if r and str(r[0]).strip()]
+
+
+def get_meta_emps(db, meta_id: int) -> list[str]:
+    rows = (
+        db.query(MetaProgramaEmp.emp)
+        .filter(MetaProgramaEmp.meta_id == int(meta_id))
+        .order_by(MetaProgramaEmp.emp.asc())
+        .all()
+    )
+    return [normalize_emp(r[0]) for r in rows if r and normalize_emp(r[0])]
+
+
+def get_meta_escalas(db, meta_id: int) -> list[MetaEscala]:
+    return (
+        db.query(MetaEscala)
+        .filter(MetaEscala.meta_id == int(meta_id))
+        .order_by(MetaEscala.limite_min.asc(), MetaEscala.ordem.asc())
+        .all()
+    )
+
+
+def get_meta_marcas(db, meta_id: int) -> list[str]:
+    rows = (
+        db.query(MetaMarca.marca)
+        .filter(MetaMarca.meta_id == int(meta_id))
+        .order_by(MetaMarca.marca.asc())
+        .all()
+    )
+    return [normalize_text(r[0]) for r in rows if r and normalize_text(r[0])]
+
+
+def get_vendedores_no_periodo(db, ano: int, mes: int, emps: list[str] | None = None) -> list[str]:
+    inicio, fim = periodo_bounds_ym(ano, mes)
+    emp_clause, extra = _scope_emp_clause(emps or [])
+    sql = f"""
+        SELECT DISTINCT UPPER(TRIM(COALESCE(vendedor,''))) AS vendedor
+          FROM vendas
+         WHERE movimento BETWEEN :ini AND :fim
+           {emp_clause}
+           AND COALESCE(vendedor,'') <> ''
+         ORDER BY vendedor
+    """
+    rows = db.execute(text(sql), {"ini": inicio, "fim": fim, **extra}).fetchall()
+    return [normalize_text(r[0]) for r in rows if r and normalize_text(r[0])]
+
+
+# Alias legado.
 def _get_vendedores_no_periodo(db, ano: int, mes: int, emps: list[str]) -> list[str]:
-    inicio, fim = _periodo_bounds_ym(ano, mes)
-    if emps:
-        rows = db.execute(
-            text("""
-                SELECT DISTINCT vendedor
-                FROM vendas
-                WHERE emp = ANY(:emps)
-                  AND movimento BETWEEN :ini AND :fim
-                ORDER BY vendedor
-            """),
-            {"emps": emps, "ini": inicio, "fim": fim},
-        ).fetchall()
-    else:
-        rows = db.execute(
-            text("""
-                SELECT DISTINCT vendedor
-                FROM vendas
-                WHERE movimento BETWEEN :ini AND :fim
-                ORDER BY vendedor
-            """),
-            {"ini": inicio, "fim": fim},
-        ).fetchall()
-    return [str(r[0]).strip().upper() for r in rows if r and r[0] is not None and str(r[0]).strip()]
+    return get_vendedores_no_periodo(db, ano, mes, emps)
 
 
+def get_emps_no_periodo(db, ano: int, mes: int, allowed_emps: list[str] | None = None) -> list[str]:
+    inicio, fim = periodo_bounds_ym(ano, mes)
+    emp_clause, extra = _scope_emp_clause(allowed_emps or [])
+    sql = f"""
+        SELECT DISTINCT emp
+          FROM vendas
+         WHERE movimento BETWEEN :ini AND :fim
+           {emp_clause}
+           AND COALESCE(emp,'') <> ''
+         ORDER BY emp
+    """
+    rows = db.execute(text(sql), {"ini": inicio, "fim": fim, **extra}).fetchall()
+    return [normalize_emp(r[0]) for r in rows if r and normalize_emp(r[0])]
+
+
+# Alias legado.
 def _get_emps_no_periodo(db, ano: int, mes: int, emps_allowed: list[str]) -> list[str]:
-    inicio, fim = _periodo_bounds_ym(ano, mes)
-    if emps_allowed:
-        rows = db.execute(
-            text("""
-                SELECT DISTINCT emp
-                FROM vendas
-                WHERE emp = ANY(:emps)
-                  AND movimento BETWEEN :ini AND :fim
-                ORDER BY emp
-            """),
-            {"emps": emps_allowed, "ini": inicio, "fim": fim},
-        ).fetchall()
-    else:
-        rows = db.execute(
-            text("""
-                SELECT DISTINCT emp
-                FROM vendas
-                WHERE movimento BETWEEN :ini AND :fim
-                ORDER BY emp
-            """),
-            {"ini": inicio, "fim": fim},
-        ).fetchall()
-    return [str(r[0]).strip() for r in rows if r and r[0] is not None and str(r[0]).strip()]
+    return get_emps_no_periodo(db, ano, mes, emps_allowed)
 
 
-def _manual_inputs(db, meta_id: int, emp: str, vendedor: str):
-    vend = (vendedor or '').strip().upper()
+def get_vendedores_cadastrados(db, emps: list[str] | None = None) -> list[str]:
+    allowed = [normalize_emp(e) for e in (emps or []) if normalize_emp(e)]
+    q = (
+        db.query(Usuario.username)
+        .join(UsuarioEmp, UsuarioEmp.usuario_id == Usuario.id)
+        .filter(UsuarioEmp.ativo.is_(True))
+        .filter(Usuario.role.ilike("vendedor"))
+    )
+    if allowed:
+        q = q.filter(UsuarioEmp.emp.in_(allowed))
+    rows = q.order_by(Usuario.username.asc()).all()
+    return [normalize_text(r[0]) for r in rows if r and normalize_text(r[0])]
+
+
+def get_vendedores_para_metas(db, ano: int, mes: int, emps: list[str] | None = None) -> list[str]:
+    """Une vendedores cadastrados, vendedores com venda e vendedores com base manual."""
+    nomes: list[str] = []
+    nomes.extend(get_vendedores_cadastrados(db, emps))
+    nomes.extend(get_vendedores_no_periodo(db, ano, mes, emps))
+
+    emp_clause = ""
+    params: dict[str, object] = {"ano": ano, "mes": mes}
+    # MetaBaseManual nao tem ano/mes; buscamos por metas do periodo.
+    allowed = [normalize_emp(e) for e in (emps or []) if normalize_emp(e)]
+    if allowed:
+        emp_clause = "AND b.emp = ANY(:emps)"
+        params["emps"] = allowed
+    sql = f"""
+      SELECT DISTINCT UPPER(TRIM(COALESCE(b.vendedor,'')))
+        FROM metas_bases_manuais b
+        JOIN metas_programas m ON m.id = b.meta_id
+       WHERE m.ano = :ano AND m.mes = :mes
+         {emp_clause}
+         AND COALESCE(b.vendedor,'') <> ''
+    """
+    try:
+        rows = db.execute(text(sql), params).fetchall()
+        nomes.extend([normalize_text(r[0]) for r in rows if r and normalize_text(r[0])])
+    except Exception:
+        pass
+
+    seen: set[str] = set()
+    out: list[str] = []
+    for n in nomes:
+        n = normalize_text(n)
+        if n and n not in seen:
+            seen.add(n)
+            out.append(n)
+    return sorted(out)
+
+
+def get_base_manual(db, meta_id: int, emp: str, vendedor: str) -> MetaBaseManual | None:
     return (
         db.query(MetaBaseManual)
-        .filter(MetaBaseManual.meta_id == meta_id, MetaBaseManual.emp == emp, MetaBaseManual.vendedor == vend)
+        .filter(
+            MetaBaseManual.meta_id == int(meta_id),
+            MetaBaseManual.emp == normalize_emp(emp),
+            MetaBaseManual.vendedor == normalize_text(vendedor),
+        )
         .first()
     )
 
 
-def _calc_and_upsert_meta_result(db, meta: MetaPrograma, emp: str, vendedor: str) -> MetaResultado:
-    escalas = db.query(MetaEscala).filter(MetaEscala.meta_id == meta.id).order_by(MetaEscala.ordem.asc()).all() or []
-    scope = (getattr(meta, "escopo", None) or "VENDEDOR").strip().upper()
-    vendedor_ref = META_GERENTE_ALIAS if scope == "GERENTE" else (vendedor or '').strip().upper()
-    vendedor_label = META_GERENTE_LABEL if scope == "GERENTE" else vendedor_ref
+def upsert_base_manual(db, meta_id: int, emp: str, vendedor: str, base_valor: float, observacao: str | None = None) -> MetaBaseManual:
+    item = get_base_manual(db, meta_id, emp, vendedor)
+    if not item:
+        item = MetaBaseManual(meta_id=int(meta_id), emp=normalize_emp(emp), vendedor=normalize_text(vendedor))
+    item.base_valor = float(base_valor or 0.0)
+    item.observacao = (observacao or "").strip()[:200]
+    db.add(item)
+    return item
 
+
+def pick_scale(escalas: Iterable[MetaEscala], metric: float) -> MetaEscala | None:
+    best = None
+    metric_f = float(metric or 0.0)
+    for esc in sorted(list(escalas or []), key=lambda e: (float(e.limite_min or 0.0), int(e.ordem or 0))):
+        if metric_f >= float(esc.limite_min or 0.0):
+            best = esc
+    return best
+
+
+def max_scale(escalas: Iterable[MetaEscala]) -> MetaEscala | None:
+    ordered = sorted(list(escalas or []), key=lambda e: (float(e.limite_min or 0.0), int(e.ordem or 0)))
+    return ordered[-1] if ordered else None
+
+
+@dataclass
+class MetaCalc:
+    meta_id: int
+    tipo: str
+    emp: str
+    vendedor: str
+    valor_mes: float = 0.0
+    base_valor: float | None = None
+    crescimento_pct: float | None = None
+    mix_itens_unicos: int | None = None
+    valor_marcas: float | None = None
+    share_pct: float | None = None
+    faixa_limite: float | None = None
+    bonus_percentual: float = 0.0
+    premio: float = 0.0
+    regra_teto_aplicada: bool = False
+
+
+def calcular_meta(db, meta: MetaPrograma, emp: str, vendedor: str, persist: bool = False) -> MetaCalc:
+    """Calcula uma meta para EMP+vendedor. Se persist=True, atualiza metas_resultados."""
+    tipo = normalize_text(meta.tipo)
+    emp_n = normalize_emp(emp)
+    vendedor_n = normalize_text(vendedor)
+    escalas = get_meta_escalas(db, int(meta.id))
+
+    calc = MetaCalc(meta_id=int(meta.id), tipo=tipo, emp=emp_n, vendedor=vendedor_n)
+
+    if tipo == "CRESCIMENTO":
+        valor_mes = Decimal(str(query_valor_mes(db, meta.ano, meta.mes, emp_n, vendedor_n)))
+        base = get_base_manual(db, int(meta.id), emp_n, vendedor_n)
+        base_valor = Decimal(str(getattr(base, "base_valor", 0.0) or 0.0)) if base else Decimal("0")
+        crescimento = Decimal("0")
+        if base_valor > 0:
+            crescimento = (valor_mes - base_valor) / base_valor * Decimal("100")
+
+        teto = float(getattr(meta, "teto_faturamento", 0.0) or 0.0)
+        escala = None
+        teto_aplicado = False
+        if teto > 0 and float(valor_mes) >= teto:
+            escala = max_scale(escalas)
+            teto_aplicado = escala is not None
+        else:
+            escala = pick_scale(escalas, float(crescimento))
+
+        bonus_pct = float(getattr(escala, "bonus_percentual", 0.0) or 0.0) if escala else 0.0
+        premio = money2(valor_mes * Decimal(str(bonus_pct)) / Decimal("100"))
+
+        calc.valor_mes = float(valor_mes)
+        calc.base_valor = float(base_valor)
+        calc.crescimento_pct = float(percent2(crescimento))
+        calc.faixa_limite = float(getattr(escala, "limite_min", 0.0) or 0.0) if escala else None
+        calc.bonus_percentual = bonus_pct
+        calc.premio = float(premio)
+        calc.regra_teto_aplicada = bool(teto_aplicado)
+
+    elif tipo == "MIX":
+        valor_mes = Decimal(str(query_valor_mes(db, meta.ano, meta.mes, emp_n, vendedor_n)))
+        mix = query_mix_itens_unicos(db, meta.ano, meta.mes, emp_n, vendedor_n)
+        escala = pick_scale(escalas, mix)
+        premio_fixo = float(getattr(escala, "bonus_percentual", 0.0) or 0.0) if escala else 0.0
+
+        calc.valor_mes = float(valor_mes)
+        calc.mix_itens_unicos = int(mix)
+        calc.faixa_limite = float(getattr(escala, "limite_min", 0.0) or 0.0) if escala else None
+        calc.bonus_percentual = premio_fixo  # no MIX este campo guarda o valor fixo da faixa
+        calc.premio = float(money2(Decimal(str(premio_fixo))))
+
+    elif tipo == "SHARE_MARCA":
+        marcas = get_meta_marcas(db, int(meta.id))
+        share_pct, valor_marcas, valor_mes_f = query_valor_marcas(db, meta.ano, meta.mes, emp_n, vendedor_n, marcas)
+        escala = pick_scale(escalas, share_pct)
+        bonus_pct = float(getattr(escala, "bonus_percentual", 0.0) or 0.0) if escala else 0.0
+        premio = money2(Decimal(str(valor_mes_f)) * Decimal(str(bonus_pct)) / Decimal("100"))
+
+        calc.valor_mes = float(valor_mes_f)
+        calc.valor_marcas = float(valor_marcas)
+        calc.share_pct = float(percent2(share_pct))
+        calc.faixa_limite = float(getattr(escala, "limite_min", 0.0) or 0.0) if escala else None
+        calc.bonus_percentual = bonus_pct
+        calc.premio = float(premio)
+
+    if persist:
+        upsert_resultado(db, calc)
+
+    return calc
+
+
+def upsert_resultado(db, calc: MetaCalc) -> MetaResultado:
     res = (
         db.query(MetaResultado)
         .filter(
-            MetaResultado.meta_id == meta.id,
-            MetaResultado.emp == emp,
-            MetaResultado.vendedor == vendedor_label,
-            MetaResultado.ano == meta.ano,
-            MetaResultado.mes == meta.mes,
+            MetaResultado.meta_id == calc.meta_id,
+            MetaResultado.emp == calc.emp,
+            MetaResultado.vendedor == calc.vendedor,
         )
         .first()
     )
     if not res:
-        res = MetaResultado(meta_id=meta.id, emp=emp, vendedor=vendedor_label, ano=meta.ano, mes=meta.mes)
-
-    insumo = _manual_inputs(db, meta.id, emp, vendedor_ref)
-    margem_pct = _normalize_manual_pct(getattr(insumo, "margem_percentual", None))
-    bonus_extra_pct = _normalize_manual_pct(getattr(insumo, "bonus_extra_percentual", None)) or 0.0
-
-    bonus = 0.0
-    premio = Decimal("0.00")
-    valor_mes = Decimal("0")
-
-    if meta.tipo == "MIX":
-        valor_mes = _as_decimal(_query_valor_mes(db, meta.ano, meta.mes, emp, vendedor_ref))
-        mix = float(_query_mix_itens(db, meta.ano, meta.mes, emp, vendedor_ref))
-        bonus = _meta_pick_bonus(escalas, mix)
-        res.valor_mes = float(valor_mes)
-        res.mix_itens_unicos = float(mix)
-        res.valor_marcas = None
-        res.share_pct = None
-        res.base_valor = None
-        res.crescimento_pct = None
-
-    elif meta.tipo == "SHARE_MARCA":
-        marcas = [m.marca for m in db.query(MetaMarca).filter(MetaMarca.meta_id == meta.id).all()]
-        if scope == "GERENTE":
-            share_pct, valor_marcas, valor_mes_f = _query_share_marca_emp(db, meta.ano, meta.mes, emp, marcas)
-        else:
-            share_pct, valor_marcas, valor_mes_f = _query_share_marca(db, meta.ano, meta.mes, emp, vendedor_ref, marcas)
-        valor_mes = _as_decimal(valor_mes_f)
-        bonus = _meta_pick_bonus(escalas, share_pct)
-        res.valor_mes = float(valor_mes)
-        res.valor_marcas = float(valor_marcas)
-        res.share_pct = float(share_pct)
-        res.mix_itens_unicos = None
-        res.base_valor = None
-        res.crescimento_pct = None
-
-    else:  # CRESCIMENTO
-        if scope == "GERENTE":
-            valor_mes = _as_decimal(_query_valor_emp_mes(db, meta.ano, meta.mes, emp))
-            base_auto = _as_decimal(_query_valor_emp_mes(db, meta.ano - 1, meta.mes, emp))
-        else:
-            valor_mes = _as_decimal(_query_valor_mes(db, meta.ano, meta.mes, emp, vendedor_ref))
-            base_auto = _as_decimal(_query_valor_mes(db, meta.ano - 1, meta.mes, emp, vendedor_ref))
-
-        if insumo and getattr(insumo, "base_valor", None) not in (None, 0, 0.0):
-            base_val = _as_decimal(insumo.base_valor)
-        else:
-            base_val = base_auto
-
-        crescimento_pct = 0.0
-        if base_val != 0:
-            crescimento_pct = float((valor_mes - base_val) / base_val * Decimal("100"))
-
-        bonus = _meta_pick_bonus(escalas, crescimento_pct)
-        res.valor_mes = float(valor_mes)
-        res.base_valor = float(base_val)
-        res.crescimento_pct = float(crescimento_pct)
-        res.mix_itens_unicos = None
-        res.share_pct = None
-        res.valor_marcas = None
-
-    try:
-        faturamento_minimo = float(getattr(meta, "faturamento_minimo", 0.0) or 0.0)
-    except Exception:
-        faturamento_minimo = 0.0
-    try:
-        margem_minima = _normalize_manual_pct(getattr(meta, "margem_minima", 0.0)) or 0.0
-    except Exception:
-        margem_minima = 0.0
-    try:
-        teto_faturamento = float(getattr(meta, "teto_faturamento", 0.0) or 0.0)
-    except Exception:
-        teto_faturamento = 0.0
-    try:
-        teto_bonus_pct = _normalize_bonus_percent(getattr(meta, "teto_bonus_percentual", 0.0) or 0.0)
-    except Exception:
-        teto_bonus_pct = 0.0
-
-    if faturamento_minimo > 0 and float(valor_mes) < faturamento_minimo:
-        bonus = 0.0
-    if margem_minima > 0:
-        if margem_pct is None or margem_pct < margem_minima:
-            bonus = 0.0
-    if teto_faturamento > 0 and teto_bonus_pct > 0 and float(valor_mes) >= teto_faturamento:
-        bonus = min(float(bonus or 0.0), float(teto_bonus_pct))
-
-    premio = _money2(valor_mes * (Decimal(str(float(bonus or 0.0))) / Decimal("100")))
-    if bonus_extra_pct > 0:
-        premio = _money2(premio * (Decimal("1") + (Decimal(str(bonus_extra_pct)) / Decimal("100"))))
-
-    res.bonus_percentual = float(bonus or 0.0)
-    res.premio = float(premio)
+        # ano/mes sao buscados pela meta para manter compatibilidade com constraint antiga.
+        meta = db.query(MetaPrograma).filter(MetaPrograma.id == calc.meta_id).first()
+        res = MetaResultado(
+            meta_id=calc.meta_id,
+            emp=calc.emp,
+            vendedor=calc.vendedor,
+            ano=int(getattr(meta, "ano", 0) or 0),
+            mes=int(getattr(meta, "mes", 0) or 0),
+        )
+    res.valor_mes = float(calc.valor_mes or 0.0)
+    res.base_valor = calc.base_valor
+    res.crescimento_pct = calc.crescimento_pct
+    res.mix_itens_unicos = float(calc.mix_itens_unicos) if calc.mix_itens_unicos is not None else None
+    res.valor_marcas = calc.valor_marcas
+    res.share_pct = calc.share_pct
+    res.bonus_percentual = float(calc.bonus_percentual or 0.0)
+    res.premio = float(calc.premio or 0.0)
     res.calculado_em = datetime.utcnow()
     db.add(res)
-    db.commit()
     return res
+
+
+# Alias antigo.
+def _calc_and_upsert_meta_result(db, meta: MetaPrograma, emp: str, vendedor: str) -> MetaResultado:
+    calc = calcular_meta(db, meta, emp, vendedor, persist=True)
+    db.commit()
+    return (
+        db.query(MetaResultado)
+        .filter(MetaResultado.meta_id == calc.meta_id, MetaResultado.emp == calc.emp, MetaResultado.vendedor == calc.vendedor)
+        .first()
+    )
+
+
+def metas_ativas_periodo(db, ano: int, mes: int, only_active: bool = True) -> list[MetaPrograma]:
+    q = db.query(MetaPrograma).filter(MetaPrograma.ano == int(ano), MetaPrograma.mes == int(mes))
+    if only_active:
+        q = q.filter(MetaPrograma.ativo.is_(True))
+    return q.order_by(MetaPrograma.tipo.asc(), MetaPrograma.nome.asc(), MetaPrograma.id.asc()).all()
+
+
+def montar_resultados_periodo(
+    db,
+    ano: int,
+    mes: int,
+    emps: list[str] | None = None,
+    vendedor: str | None = None,
+    persist: bool = False,
+) -> tuple[list[MetaPrograma], list[dict]]:
+    """Monta matriz EMP+Vendedor com metas calculadas para a tela de acompanhamento."""
+    metas = metas_ativas_periodo(db, ano, mes, only_active=True)
+    if not metas:
+        return [], []
+
+    emps_filter = [normalize_emp(e) for e in (emps or []) if normalize_emp(e)]
+    vendedor_filter = normalize_text(vendedor)
+
+    rows_by_key: dict[tuple[str, str], dict] = {}
+    metas_visiveis: list[MetaPrograma] = []
+
+    for meta in metas:
+        meta_emps = get_meta_emps(db, int(meta.id))
+        if emps_filter:
+            meta_emps = [e for e in meta_emps if e in set(emps_filter)]
+        if not meta_emps:
+            continue
+        metas_visiveis.append(meta)
+
+        for emp in meta_emps:
+            vendedores = [vendedor_filter] if vendedor_filter else get_vendedores_para_metas(db, ano, mes, [emp])
+            for vend in vendedores:
+                if not vend:
+                    continue
+                calc = calcular_meta(db, meta, emp, vend, persist=persist)
+                key = (emp, vend)
+                row = rows_by_key.setdefault(
+                    key,
+                    {
+                        "emp": emp,
+                        "vendedor": vend,
+                        "valor_mes": float(calc.valor_mes or 0.0),
+                        "metas": {},
+                        "detalhes": {},
+                        "total_premios": 0.0,
+                    },
+                )
+                row["valor_mes"] = max(float(row.get("valor_mes") or 0.0), float(calc.valor_mes or 0.0))
+                row["metas"][int(meta.id)] = float(calc.premio or 0.0)
+                row["detalhes"][int(meta.id)] = calc
+                row["total_premios"] = round(float(row.get("total_premios") or 0.0) + float(calc.premio or 0.0), 2)
+
+    rows = sorted(rows_by_key.values(), key=lambda r: (str(r["emp"]), str(r["vendedor"])))
+    return metas_visiveis, rows

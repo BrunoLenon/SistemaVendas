@@ -1480,9 +1480,86 @@ class FinanceiroPagamentoAudit(Base):
 
 
 def ensure_metas_lojas_schema():
-    """Garante colunas extras do módulo de metas sem depender do AUTO_MIGRATE."""
+    """Garante a estrutura do módulo novo de Metas.
+
+    Mantido idempotente para não depender de AUTO_MIGRATE em produção.
+    """
     try:
-        with engine.begin() as conn:
+        with engine.connect() as conn:
+            conn = conn.execution_options(isolation_level="AUTOCOMMIT")
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS metas_programas (
+                    id SERIAL PRIMARY KEY,
+                    nome VARCHAR(180) NOT NULL,
+                    tipo VARCHAR(30) NOT NULL,
+                    ano INTEGER NOT NULL,
+                    mes INTEGER NOT NULL,
+                    ativo BOOLEAN NOT NULL DEFAULT TRUE,
+                    escopo VARCHAR(20) NOT NULL DEFAULT 'VENDEDOR',
+                    faturamento_minimo DOUBLE PRECISION,
+                    margem_minima DOUBLE PRECISION,
+                    teto_faturamento DOUBLE PRECISION,
+                    teto_bonus_percentual DOUBLE PRECISION,
+                    created_by_user_id INTEGER,
+                    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+                );
+            """))
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS metas_programas_emps (
+                    id SERIAL PRIMARY KEY,
+                    meta_id INTEGER NOT NULL,
+                    emp VARCHAR(30) NOT NULL
+                );
+            """))
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS metas_escalas (
+                    id SERIAL PRIMARY KEY,
+                    meta_id INTEGER NOT NULL,
+                    ordem INTEGER NOT NULL DEFAULT 0,
+                    limite_min DOUBLE PRECISION NOT NULL,
+                    bonus_percentual DOUBLE PRECISION NOT NULL
+                );
+            """))
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS metas_marcas (
+                    id SERIAL PRIMARY KEY,
+                    meta_id INTEGER NOT NULL,
+                    marca VARCHAR(120) NOT NULL
+                );
+            """))
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS metas_bases_manuais (
+                    id SERIAL PRIMARY KEY,
+                    meta_id INTEGER NOT NULL,
+                    emp VARCHAR(30) NOT NULL,
+                    vendedor VARCHAR(80) NOT NULL,
+                    base_valor DOUBLE PRECISION NOT NULL DEFAULT 0,
+                    margem_percentual DOUBLE PRECISION,
+                    bonus_extra_percentual DOUBLE PRECISION DEFAULT 0,
+                    observacao VARCHAR(200),
+                    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+                );
+            """))
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS metas_resultados (
+                    id SERIAL PRIMARY KEY,
+                    meta_id INTEGER NOT NULL,
+                    emp VARCHAR(30) NOT NULL,
+                    vendedor VARCHAR(80) NOT NULL,
+                    ano INTEGER NOT NULL,
+                    mes INTEGER NOT NULL,
+                    valor_mes DOUBLE PRECISION NOT NULL DEFAULT 0,
+                    base_valor DOUBLE PRECISION,
+                    crescimento_pct DOUBLE PRECISION,
+                    mix_itens_unicos DOUBLE PRECISION,
+                    share_pct DOUBLE PRECISION,
+                    valor_marcas DOUBLE PRECISION,
+                    bonus_percentual DOUBLE PRECISION NOT NULL DEFAULT 0,
+                    premio DOUBLE PRECISION NOT NULL DEFAULT 0,
+                    calculado_em TIMESTAMP NOT NULL DEFAULT NOW()
+                );
+            """))
+
             conn.execute(text("ALTER TABLE metas_programas ADD COLUMN IF NOT EXISTS escopo varchar(20) NOT NULL DEFAULT 'VENDEDOR';"))
             conn.execute(text("ALTER TABLE metas_programas ADD COLUMN IF NOT EXISTS faturamento_minimo double precision;"))
             conn.execute(text("ALTER TABLE metas_programas ADD COLUMN IF NOT EXISTS margem_minima double precision;"))
@@ -1490,5 +1567,17 @@ def ensure_metas_lojas_schema():
             conn.execute(text("ALTER TABLE metas_programas ADD COLUMN IF NOT EXISTS teto_bonus_percentual double precision;"))
             conn.execute(text("ALTER TABLE metas_bases_manuais ADD COLUMN IF NOT EXISTS margem_percentual double precision;"))
             conn.execute(text("ALTER TABLE metas_bases_manuais ADD COLUMN IF NOT EXISTS bonus_extra_percentual double precision;"))
+            conn.execute(text("ALTER TABLE metas_bases_manuais ADD COLUMN IF NOT EXISTS observacao varchar(200);"))
+
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_metas_programas_periodo ON metas_programas (ano, mes);"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_metas_programas_tipo_periodo ON metas_programas (tipo, ano, mes);"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_metas_programas_emps_meta ON metas_programas_emps (meta_id);"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_metas_programas_emps_emp ON metas_programas_emps (emp);"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_metas_escalas_meta ON metas_escalas (meta_id);"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_metas_marcas_meta ON metas_marcas (meta_id);"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_metas_marcas_marca ON metas_marcas (marca);"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_metas_bases_meta_emp_vendedor ON metas_bases_manuais (meta_id, emp, vendedor);"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_metas_resultados_emp_periodo ON metas_resultados (emp, ano, mes);"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_metas_resultados_meta_periodo ON metas_resultados (meta_id, ano, mes);"))
     except Exception:
         pass
