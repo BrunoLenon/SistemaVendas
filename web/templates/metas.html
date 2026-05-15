@@ -75,7 +75,7 @@
                         {% if d.regra_teto_aplicada %}<span class="metas-chip ok">Faixa máxima por teto</span>{% endif %}
                       {% elif m.tipo == 'MIX' %}
                         <div class="metas-detail">{{ d.mix_itens_unicos or 0 }} códigos MESTRE únicos</div>
-                        {% if d.faixa_limite %}<div class="metas-detail">Faixa atingida: {{ d.faixa_limite|round(0)|int }}</div>{% endif %}
+                        {% if d.faixa_limite is not none %}<div class="metas-detail">Faixa atingida: {{ d.faixa_limite|round(0)|int }}</div>{% else %}<div class="metas-detail">Sem faixa atingida</div>{% endif %}
                       {% elif m.tipo == 'SHARE_MARCA' %}
                         <div class="metas-detail">Marcas: {{ (d.valor_marcas or 0)|brl_rs }}</div>
                         <div class="metas-detail">Part.: {{ (d.share_pct or 0)|brl }}% · Prêmio: {{ (d.bonus_percentual or 0)|brl }}%</div>

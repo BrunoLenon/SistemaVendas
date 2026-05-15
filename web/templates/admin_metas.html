@@ -75,7 +75,7 @@
                     <div class="meta-label">Faixas</div>
                     {% for esc in p.escalas %}
                       {% if m.tipo == 'MIX' %}
-                        <span class="meta-chip">{{ esc.limite_min|round(0)|int }} = {{ esc.bonus_percentual|brl_rs }}</span>
+                        <span class="meta-chip">{{ (esc.limite_min if esc.limite_min is not none else 0)|round(0)|int }} = {{ (esc.bonus_percentual or 0)|brl_rs }}</span>
                       {% else %}
                         <span class="meta-chip">{{ esc.limite_min|brl }}% = {{ esc.bonus_percentual|brl }}%</span>
                       {% endif %}
@@ -190,7 +190,7 @@ VEI</textarea></div>
                         {% if d %}
                           <div class="fw-bold">{{ d.premio|brl_rs }}</div>
                           {% if m.tipo == 'CRESCIMENTO' %}<div class="small text-muted">{{ d.crescimento_pct|brl }}% · {{ d.bonus_percentual|brl }}%</div>{% endif %}
-                          {% if m.tipo == 'MIX' %}<div class="small text-muted">{{ d.mix_itens_unicos }} únicos · faixa {{ d.faixa_limite|default(0)|round(0)|int }}</div>{% endif %}
+                          {% if m.tipo == 'MIX' %}<div class="small text-muted">{{ d.mix_itens_unicos or 0 }} únicos · {% if d.faixa_limite is not none %}faixa {{ d.faixa_limite|round(0)|int }}{% else %}sem faixa atingida{% endif %}</div>{% endif %}
                           {% if m.tipo == 'SHARE_MARCA' %}<div class="small text-muted">{{ d.share_pct|brl }}% · {{ d.bonus_percentual|brl }}%</div>{% endif %}
                         {% else %}<span class="text-muted">-</span>{% endif %}
                       </td>
