@@ -1,331 +1,476 @@
 {% extends "base.html" %}
 
-{% block title %}Configurações (Admin){% endblock %}
+{% block title %}Configurações - Admin{% endblock %}
 
 {% block extra_head %}
 <style>
-.preview-box { border:1px dashed #cfd4da; border-radius:12px; padding:16px; background:#fafbfc; }
-    .preview-img { max-height:64px; max-width:220px; object-fit:contain; }
-    .hint { color:#6c757d; font-size:.9rem; }
-    .card { border-radius:16px; }
-    .btn { border-radius:12px; }
-</style>
-<style>
-.brand-preview {
-    border: 1px dashed #cfd8dc;
-    background: #f8fafc;
-    border-radius: 12px;
-    padding: 10px;
-    display: flex;
-    gap: 12px;
-    align-items: center;
-    margin-top: 8px;
+  .sv-config-page{max-width:1320px;margin:0 auto;padding:12px;}
+  .sv-config-hero{
+    padding:18px;
+    border-radius:22px;
+    background:
+      linear-gradient(135deg, rgba(255,140,0,.14), rgba(255,140,0,.045)),
+      rgba(18,18,18,.92);
+    border:1px solid rgba(255,140,0,.26);
+    box-shadow:0 18px 50px rgba(0,0,0,.28);
   }
-  .brand-preview img {
-    max-height: 56px;
-    max-width: 220px;
-    object-fit: contain;
-    background: white;
-    border: 1px solid #e9ecef;
-    border-radius: 10px;
-    padding: 6px;
+  .sv-config-title{font-size:24px;font-weight:950;letter-spacing:-.035em;margin:0;color:#fff;}
+  .sv-config-sub{font-size:13px;color:rgba(255,255,255,.72);margin-top:4px;}
+  .sv-config-chip{
+    display:inline-flex;align-items:center;gap:7px;padding:7px 10px;border-radius:999px;
+    background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);color:rgba(255,255,255,.88);
+    font-size:12px;font-weight:850;white-space:nowrap;
   }
-  .brand-preview .hint {
-    font-size: .9rem;
-    color: #6c757d;
+  .sv-config-chip--ok{background:rgba(46,204,113,.10);border-color:rgba(46,204,113,.28);color:#b8ffd1;}
+  .sv-config-chip--warn{background:rgba(255,193,7,.10);border-color:rgba(255,193,7,.28);color:#ffe49a;}
+  .sv-config-chip--muted{background:rgba(255,255,255,.055);border-color:rgba(255,255,255,.12);color:rgba(255,255,255,.78);}
+  .sv-config-chip--danger{background:rgba(255,77,79,.10);border-color:rgba(255,77,79,.32);color:#ffb7b8;}
+  .sv-config-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
+  .sv-config-btn-primary{
+    background:linear-gradient(135deg,#ff8c00,#ffa500)!important;border-color:#ff9b18!important;color:#151515!important;font-weight:900!important;
+    box-shadow:0 12px 26px rgba(255,140,0,.18);
   }
+  .sv-config-btn-outline{border-color:rgba(255,255,255,.22)!important;color:rgba(255,255,255,.88)!important;background:rgba(0,0,0,.12)!important;}
+  .sv-config-btn-outline:hover{background:rgba(255,140,0,.10)!important;border-color:rgba(255,140,0,.42)!important;color:#fff!important;}
+  .sv-config-btn-danger{border-color:rgba(255,77,79,.46)!important;color:#ffd1d2!important;background:rgba(255,77,79,.10)!important;font-weight:850!important;}
+  .sv-config-btn-danger:hover{background:rgba(255,77,79,.18)!important;color:#fff!important;}
+
+  .sv-config-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(360px,.72fr);gap:16px;margin-top:16px;align-items:start;}
+  .sv-config-grid-2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;}
+  @media (max-width: 1120px){.sv-config-grid,.sv-config-grid-2{grid-template-columns:1fr}.sv-config-page{padding:8px}}
+
+  .sv-config-panel{
+    border-radius:20px;
+    background:linear-gradient(180deg, rgba(255,255,255,.045), rgba(255,255,255,.025));
+    border:1px solid rgba(255,140,0,.18);
+    box-shadow:0 18px 45px rgba(0,0,0,.18);
+    overflow:hidden;
+  }
+  .sv-config-panel__head{
+    padding:16px 18px;
+    border-bottom:1px solid rgba(255,140,0,.14);
+    display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;
+  }
+  .sv-config-panel__body{padding:18px;}
+  .sv-config-panel h2,.sv-config-panel h3,.sv-config-panel h4,.sv-config-panel h5{color:#fff;}
+  .sv-config-muted{color:rgba(255,255,255,.68)!important;}
+  .sv-config-soft{color:rgba(255,255,255,.86)!important;}
+  .sv-config-divider{height:1px;background:rgba(255,140,0,.13);margin:18px 0;}
+
+  .sv-config-logo-current{
+    width:72px;height:72px;border-radius:18px;
+    background:rgba(0,0,0,.28);
+    border:1px solid rgba(255,140,0,.18);
+    display:flex;align-items:center;justify-content:center;
+    overflow:hidden;flex:0 0 auto;
+  }
+  .sv-config-logo-current img{max-width:92%;max-height:92%;object-fit:contain;filter:drop-shadow(0 8px 16px rgba(0,0,0,.28));}
+  .sv-config-preview-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;}
+  @media (max-width: 720px){.sv-config-preview-grid{grid-template-columns:1fr}}
+  .sv-config-preview-card{
+    padding:14px;border-radius:18px;background:rgba(0,0,0,.24);border:1px solid rgba(255,140,0,.13);
+    min-height:128px;
+  }
+  .sv-config-preview-card__label{font-size:11px;text-transform:uppercase;letter-spacing:.06em;font-weight:900;color:rgba(255,255,255,.62);}
+  .sv-config-preview-card__imgwrap{
+    margin-top:10px;min-height:64px;border-radius:14px;background:rgba(255,255,255,.045);border:1px dashed rgba(255,255,255,.14);
+    display:flex;align-items:center;justify-content:center;padding:10px;
+  }
+  .sv-config-preview-img{max-height:68px;max-width:220px;object-fit:contain;}
+  .sv-config-preview-img--fav{max-height:32px;max-width:32px;}
+  .sv-config-empty{color:rgba(255,255,255,.50);font-weight:800;}
+
+  .sv-config-page .form-label{color:rgba(255,255,255,.86);font-weight:850;font-size:13px;}
+  .sv-config-page .form-text,.sv-config-page .text-muted{color:rgba(255,255,255,.58)!important;}
+  .sv-config-page .form-control,.sv-config-page .form-select{
+    background:#111!important;color:#fff!important;border:1px solid rgba(255,255,255,.12)!important;border-radius:14px!important;
+  }
+  .sv-config-page .form-control:focus,.sv-config-page .form-select:focus{
+    border-color:rgba(255,140,0,.72)!important;box-shadow:0 0 0 .2rem rgba(255,140,0,.15)!important;background:#111!important;color:#fff!important;
+  }
+  .sv-config-page .form-control::file-selector-button{background:rgba(255,140,0,.92);color:#141414;border:0;font-weight:850;margin-right:12px;border-radius:10px;padding:.48rem .75rem;}
+
+  .sv-config-upload-preview{
+    border:1px dashed rgba(255,140,0,.28);
+    background:rgba(255,140,0,.055);
+    border-radius:16px;
+    padding:12px;
+    display:flex;
+    gap:12px;
+    align-items:center;
+    margin-top:8px;
+  }
+  .sv-config-upload-preview img{
+    max-height:58px;max-width:220px;object-fit:contain;background:rgba(0,0,0,.22);border:1px solid rgba(255,255,255,.10);border-radius:12px;padding:6px;
+  }
+
+  .sv-config-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:14px;}
+  @media (max-width: 800px){.sv-config-kpis{grid-template-columns:repeat(2,minmax(0,1fr));}}
+  .sv-config-kpi{padding:12px;border-radius:16px;background:rgba(0,0,0,.24);border:1px solid rgba(255,140,0,.13);}
+  .sv-config-kpi__label{font-size:11px;color:rgba(255,255,255,.62);text-transform:uppercase;letter-spacing:.06em;font-weight:850;}
+  .sv-config-kpi__value{font-size:18px;color:#fff;font-weight:950;margin-top:3px;}
+  .sv-config-kpi__meta{font-size:12px;color:rgba(255,255,255,.58);margin-top:2px;}
+
+  .sv-config-theme-card{
+    padding:14px;border-radius:18px;background:rgba(0,0,0,.22);border:1px solid rgba(255,140,0,.14);
+  }
+  .sv-config-theme-card + .sv-config-theme-card{margin-top:12px;}
+  .sv-config-theme-media{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
+  .sv-config-theme-thumb{width:54px;height:38px;border-radius:12px;background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.10);display:flex;align-items:center;justify-content:center;padding:5px;}
+  .sv-config-theme-thumb img{max-width:100%;max-height:100%;object-fit:contain;}
+  .sv-config-page details summary{list-style:none;cursor:pointer;}
+  .sv-config-page details summary::-webkit-details-marker{display:none;}
+
+  .sv-config-page .alert{border-radius:16px;border:1px solid rgba(255,140,0,.20);background:rgba(255,140,0,.08);color:#fff;}
+  .sv-config-page code{color:#ffd28a;background:rgba(0,0,0,.26);padding:2px 6px;border-radius:8px;}
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="container py-4" style="max-width:1100px;">
-    <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap mb-3">
-      <div class="d-flex align-items-center gap-3">
-        {% if branding and branding.logo_url %}
-          <img class="preview-img" src="{{ branding.logo_url }}{% if branding.version %}?v={{ branding.version }}{% endif %}" alt="Logo">
-        {% else %}
-          <span class="fs-4">⚙️</span>
-        {% endif %}
+{% set mm = (maintenance_mode or 'off')|lower %}
+{% set is_maintenance_on = mm in ['on','true','1','yes','y'] %}
+{% set theme_count = themes|length if themes else 0 %}
+{% set default_files_count = (1 if default_logo else 0) + (1 if default_favicon else 0) + (1 if (login_logo_left|default(default_logo)) else 0) + (1 if (login_logo_right|default(default_logo)) else 0) %}
+
+<div class="sv-config-page">
+  <section class="sv-config-hero">
+    <div class="d-flex align-items-start justify-content-between gap-3 flex-wrap">
+      <div class="d-flex align-items-start gap-3">
+        <div class="sv-config-logo-current">
+          {% if branding and branding.logo_url %}
+            <img src="{{ branding.logo_url }}{% if branding.version %}?v={{ branding.version }}{% endif %}" alt="Logo atual">
+          {% else %}
+            <span class="fs-3">⚙️</span>
+          {% endif %}
+        </div>
         <div>
-          <h4 class="m-0">Configurações</h4>
-          <div class="hint">Tema ativo: <b>{{ branding.theme_name }}</b></div>
+          <div class="sv-config-chip sv-config-chip--ok mb-2">⚙️ Painel administrativo</div>
+          <h1 class="sv-config-title">Configurações</h1>
+          <div class="sv-config-sub">Gerencie identidade visual, logos, favicon, temas sazonais e modo manutenção do sistema.</div>
         </div>
       </div>
-      <div class="d-flex gap-2">
-        <a class="btn btn-outline-secondary" href="{{ url_for('dashboard') }}">Voltar</a>
-        <a class="btn btn-outline-danger" href="/logout">Sair</a>
+      <div class="sv-config-actions">
+        <a class="btn sv-config-btn-outline" href="{{ url_for('dashboard') }}">← Voltar ao dashboard</a>
+        <a class="btn sv-config-btn-danger" href="/logout">Sair</a>
       </div>
     </div>
 
-    {% if msgs and msgs|length %}
-      {% for m in msgs %}
-        <div class="alert alert-info">{{ m }}</div>
-      {% endfor %}
-    {% endif %}
+    <div class="sv-config-kpis">
+      <div class="sv-config-kpi">
+        <div class="sv-config-kpi__label">Tema ativo</div>
+        <div class="sv-config-kpi__value">{{ branding.theme_name if branding and branding.theme_name else 'Padrão' }}</div>
+        <div class="sv-config-kpi__meta">Aplicado automaticamente</div>
+      </div>
+      <div class="sv-config-kpi">
+        <div class="sv-config-kpi__label">Manutenção</div>
+        <div class="sv-config-kpi__value">{% if is_maintenance_on %}Ativa{% else %}Desativada{% endif %}</div>
+        <div class="sv-config-kpi__meta">Acesso restrito para admin</div>
+      </div>
+      <div class="sv-config-kpi">
+        <div class="sv-config-kpi__label">Temas</div>
+        <div class="sv-config-kpi__value">{{ theme_count }}</div>
+        <div class="sv-config-kpi__meta">Cadastrados por período</div>
+      </div>
+      <div class="sv-config-kpi">
+        <div class="sv-config-kpi__label">Arquivos de marca</div>
+        <div class="sv-config-kpi__value">{{ default_files_count }}/4</div>
+        <div class="sv-config-kpi__meta">Logo, favicon e login</div>
+      </div>
+    </div>
+  </section>
 
-    
-    <!-- Modo Manutenção -->
-    <div class="card shadow-sm mb-3" style="border-radius: 1rem;">
-      <div class="card-body d-flex flex-wrap justify-content-between align-items-center gap-2">
-        <div>
-          <div class="fw-semibold">Modo manutenção</div>
-          <div class="hint">Quando ativado, apenas usuários <b>admin</b> conseguem acessar o sistema. Útil para atualizações durante o dia.</div>
+  {% if msgs and msgs|length %}
+    <div class="mt-3">
+      {% for m in msgs %}
+        <div class="alert mb-2">{{ m }}</div>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  <div class="sv-config-grid">
+    <main>
+      <section class="sv-config-panel mb-3">
+        <div class="sv-config-panel__head">
+          <div>
+            <h2 class="h5 mb-1">Branding padrão</h2>
+            <div class="sv-config-muted small">Usado quando não há tema sazonal ativo. Ideal para manter login, sidebar e favicon consistentes.</div>
+          </div>
+          <span class="sv-config-chip sv-config-chip--muted">Identidade principal</span>
         </div>
-        <div class="d-flex align-items-center gap-2">
-          {% set mm = (maintenance_mode or 'off')|lower %}
-          {% if mm in ['on','true','1','yes','y'] %}
-            <span class="badge text-bg-warning">ATIVO</span>
+        <div class="sv-config-panel__body">
+          <div class="sv-config-preview-grid mb-3">
+            <div class="sv-config-preview-card">
+              <div class="sv-config-preview-card__label">Logo atual</div>
+              <div class="sv-config-preview-card__imgwrap">
+                {% if default_logo %}
+                  <img class="sv-config-preview-img" src="{{ default_logo }}" alt="Logo padrão">
+                {% else %}
+                  <span class="sv-config-empty">—</span>
+                {% endif %}
+              </div>
+            </div>
+            <div class="sv-config-preview-card">
+              <div class="sv-config-preview-card__label">Favicon atual</div>
+              <div class="sv-config-preview-card__imgwrap">
+                {% if default_favicon %}
+                  <img class="sv-config-preview-img sv-config-preview-img--fav" src="{{ default_favicon }}" alt="Favicon padrão">
+                {% else %}
+                  <span class="sv-config-empty">—</span>
+                {% endif %}
+              </div>
+            </div>
+            <div class="sv-config-preview-card">
+              <div class="sv-config-preview-card__label">Login — lado esquerdo</div>
+              <div class="sv-config-preview-card__imgwrap">
+                {% set login_left = login_logo_left|default(default_logo) %}
+                {% if login_left %}
+                  <img class="sv-config-preview-img" src="{{ login_left }}" alt="Logo login esquerda">
+                {% else %}
+                  <span class="sv-config-empty">—</span>
+                {% endif %}
+              </div>
+            </div>
+            <div class="sv-config-preview-card">
+              <div class="sv-config-preview-card__label">Login — lado direito</div>
+              <div class="sv-config-preview-card__imgwrap">
+                {% set login_right = login_logo_right|default(default_logo) %}
+                {% if login_right %}
+                  <img class="sv-config-preview-img" src="{{ login_right }}" alt="Logo login direita">
+                {% else %}
+                  <span class="sv-config-empty">—</span>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+
+          <form method="post" enctype="multipart/form-data" class="row g-3">
+            <input type="hidden" name="acao" value="upload_default">
+            <div class="col-12 col-md-6">
+              <label class="form-label">Logo principal</label>
+              <input class="form-control" type="file" name="default_logo" accept=".png,.jpg,.jpeg,.webp,.svg" id="default_logo_file">
+              <div class="form-text">PNG/JPG/WEBP/SVG, até 2MB.</div>
+              <div class="sv-config-upload-preview" id="preview_default_logo_box" style="display:none;">
+                <img id="preview_default_logo_img" alt="Prévia da logo">
+                <div class="sv-config-muted small">Prévia da logo selecionada antes de salvar.</div>
+              </div>
+            </div>
+
+            <div class="col-12 col-md-6">
+              <label class="form-label">Favicon</label>
+              <input class="form-control" type="file" name="default_favicon" accept=".ico,.png,.jpg,.jpeg,.webp,.svg" id="default_favicon_file">
+              <div class="form-text">ICO/PNG/JPG/WEBP/SVG, até 400KB.</div>
+              <div class="sv-config-upload-preview" id="preview_default_favicon_box" style="display:none;">
+                <img id="preview_default_favicon_img" alt="Prévia do favicon">
+                <div class="sv-config-muted small">Prévia do favicon selecionado antes de salvar.</div>
+              </div>
+            </div>
+
+            <div class="col-12 col-md-6">
+              <label class="form-label">Logo do login — lado esquerdo</label>
+              <input class="form-control" type="file" name="login_logo_left" accept=".png,.jpg,.jpeg,.webp,.svg" id="login_logo_left_file">
+              <div class="form-text">Usada na tela de login, quando configurada.</div>
+              <div class="sv-config-upload-preview" id="preview_login_logo_left_box" style="display:none;">
+                <img id="preview_login_logo_left_img" alt="Prévia da logo esquerda do login">
+                <div class="sv-config-muted small">Prévia da logo esquerda do login.</div>
+              </div>
+            </div>
+
+            <div class="col-12 col-md-6">
+              <label class="form-label">Logo do login — lado direito</label>
+              <input class="form-control" type="file" name="login_logo_right" accept=".png,.jpg,.jpeg,.webp,.svg" id="login_logo_right_file">
+              <div class="form-text">Usada na tela de login, quando configurada.</div>
+              <div class="sv-config-upload-preview" id="preview_login_logo_right_box" style="display:none;">
+                <img id="preview_login_logo_right_img" alt="Prévia da logo direita do login">
+                <div class="sv-config-muted small">Prévia da logo direita do login.</div>
+              </div>
+            </div>
+
+            <div class="col-12 d-flex justify-content-between align-items-center gap-2 flex-wrap">
+              <div class="sv-config-muted small">Dica: use o bucket público <code>branding</code> no Supabase ou defina <code>SUPABASE_STORAGE_BUCKET</code>.</div>
+              <button class="btn sv-config-btn-primary">Salvar branding</button>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <section class="sv-config-panel">
+        <div class="sv-config-panel__head">
+          <div>
+            <h2 class="h5 mb-1">Temas cadastrados</h2>
+            <div class="sv-config-muted small">O sistema escolhe automaticamente o tema ativo pela data e status.</div>
+          </div>
+          <span class="sv-config-chip sv-config-chip--muted">{{ theme_count }} tema(s)</span>
+        </div>
+        <div class="sv-config-panel__body">
+          {% if themes and themes|length > 0 %}
+            {% for t in themes %}
+              <article class="sv-config-theme-card">
+                <div class="d-flex justify-content-between gap-3 flex-wrap">
+                  <div>
+                    <div class="d-flex align-items-center gap-2 flex-wrap mb-1">
+                      <h3 class="h6 mb-0">{{ t.name }}</h3>
+                      {% if t.is_active %}
+                        <span class="sv-config-chip sv-config-chip--ok">Ativo</span>
+                      {% else %}
+                        <span class="sv-config-chip sv-config-chip--muted">Inativo</span>
+                      {% endif %}
+                    </div>
+                    <div class="sv-config-muted small">{{ t.start_date }} → {{ t.end_date }}</div>
+                  </div>
+                  <div class="sv-config-theme-media">
+                    <div class="sv-config-theme-thumb">
+                      {% if t.logo_url %}<img src="{{ t.logo_url }}" alt="Logo {{ t.name }}">{% else %}<span class="sv-config-empty">—</span>{% endif %}
+                    </div>
+                    <div class="sv-config-theme-thumb" style="width:42px;">
+                      {% if t.favicon_url %}<img src="{{ t.favicon_url }}" alt="Favicon {{ t.name }}">{% else %}<span class="sv-config-empty">—</span>{% endif %}
+                    </div>
+                  </div>
+                </div>
+
+                <div class="sv-config-actions mt-3">
+                  <form method="post" class="m-0">
+                    <input type="hidden" name="acao" value="theme_toggle">
+                    <input type="hidden" name="theme_id" value="{{ t.id }}">
+                    <button class="btn btn-sm {% if t.is_active %}sv-config-btn-outline{% else %}sv-config-btn-primary{% endif %}">
+                      {% if t.is_active %}Inativar{% else %}Ativar{% endif %}
+                    </button>
+                  </form>
+
+                  <details>
+                    <summary class="btn btn-sm sv-config-btn-outline">Editar tema</summary>
+                    <div class="mt-3 p-3 rounded-4" style="background:rgba(0,0,0,.22);border:1px solid rgba(255,140,0,.12);">
+                      <form method="post" enctype="multipart/form-data" class="row g-3">
+                        <input type="hidden" name="acao" value="theme_update">
+                        <input type="hidden" name="theme_id" value="{{ t.id }}">
+                        <div class="col-12 col-md-6">
+                          <label class="form-label">Nome</label>
+                          <input class="form-control form-control-sm" name="name" value="{{ t.name }}">
+                        </div>
+                        <div class="col-6 col-md-3">
+                          <label class="form-label">Início</label>
+                          <input class="form-control form-control-sm" type="date" name="start_date" value="{{ t.start_date }}">
+                        </div>
+                        <div class="col-6 col-md-3">
+                          <label class="form-label">Fim</label>
+                          <input class="form-control form-control-sm" type="date" name="end_date" value="{{ t.end_date }}">
+                        </div>
+                        <div class="col-12 col-md-6">
+                          <label class="form-label">Trocar logo</label>
+                          <input class="form-control form-control-sm" type="file" name="theme_logo" accept=".png,.jpg,.jpeg,.webp,.svg">
+                        </div>
+                        <div class="col-12 col-md-6">
+                          <label class="form-label">Trocar favicon</label>
+                          <input class="form-control form-control-sm" type="file" name="theme_favicon" accept=".ico,.png,.jpg,.jpeg,.webp,.svg">
+                        </div>
+                        <div class="col-12 d-flex justify-content-end">
+                          <button class="btn btn-sm sv-config-btn-primary">Salvar alterações</button>
+                        </div>
+                      </form>
+
+                      <div class="sv-config-divider"></div>
+
+                      <form method="post" class="m-0 d-flex justify-content-end">
+                        <input type="hidden" name="acao" value="theme_delete">
+                        <input type="hidden" name="theme_id" value="{{ t.id }}">
+                        <button class="btn btn-sm sv-config-btn-danger" onclick="return confirm('Excluir tema {{ t.name }}?')">Excluir tema</button>
+                      </form>
+                    </div>
+                  </details>
+                </div>
+              </article>
+            {% endfor %}
           {% else %}
-            <span class="badge text-bg-success">DESATIVADO</span>
+            <div class="sv-config-theme-card text-center py-4">
+              <div class="h5 text-white mb-1">Nenhum tema sazonal cadastrado</div>
+              <div class="sv-config-muted small">Crie o primeiro tema no painel lateral.</div>
+            </div>
           {% endif %}
 
-          
-          <div class="d-flex gap-2">
+          <div class="sv-config-muted small mt-3">
+            Segurança: uploads aceitam apenas extensões comuns e tamanho limitado. Para mais controle, torne o bucket privado e use uma edge function para assinar URLs.
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <aside>
+      <section class="sv-config-panel mb-3">
+        <div class="sv-config-panel__head">
+          <div>
+            <h2 class="h5 mb-1">Modo manutenção</h2>
+            <div class="sv-config-muted small">Quando ativo, apenas usuários admin conseguem acessar o sistema.</div>
+          </div>
+          {% if is_maintenance_on %}
+            <span class="sv-config-chip sv-config-chip--warn">ATIVO</span>
+          {% else %}
+            <span class="sv-config-chip sv-config-chip--ok">DESATIVADO</span>
+          {% endif %}
+        </div>
+        <div class="sv-config-panel__body">
+          <div class="sv-config-muted small mb-3">Use para atualizações durante o dia, manutenção técnica ou bloqueio temporário de acesso operacional.</div>
+          <div class="sv-config-actions">
             <form method="post" class="m-0">
               <input type="hidden" name="acao" value="maintenance_on">
-              <button class="btn btn-sm {% if mm in ['on','true','1','yes','y'] %}btn-outline-secondary{% else %}btn-primary{% endif %}">
-                Ativar
-              </button>
+              <button class="btn {% if is_maintenance_on %}sv-config-btn-outline{% else %}sv-config-btn-primary{% endif %}">Ativar</button>
             </form>
             <form method="post" class="m-0">
               <input type="hidden" name="acao" value="maintenance_off">
-              <button class="btn btn-sm {% if mm in ['on','true','1','yes','y'] %}btn-danger{% else %}btn-outline-secondary{% endif %}">
-                Desativar
-              </button>
+              <button class="btn {% if is_maintenance_on %}sv-config-btn-danger{% else %}sv-config-btn-outline{% endif %}">Desativar</button>
             </form>
           </div>
-
         </div>
-      </div>
-    </div>
+      </section>
 
-<div class="row g-3">
-      <div class="col-12 col-lg-6">
-        <div class="card shadow-sm">
-          <div class="card-body">
-            <h5 class="mb-1">Branding padrão</h5>
-            <div class="hint mb-3">Usado quando não há tema sazonal ativo.</div>
-
-            <div class="preview-box mb-3">
-              <div class="row g-2 align-items-center">
-                <div class="col-12 col-md-6">
-                  <div class="hint">Logo atual</div>
-                  {% if default_logo %}
-                    <img class="preview-img" src="{{ default_logo }}" alt="Logo padrão">
-                  {% else %}
-                    <div class="text-muted">—</div>
-                  {% endif %}
-                </div>
-                <div class="col-12 col-md-6">
-                  <div class="hint">Favicon atual</div>
-                  {% if default_favicon %}
-                    <img class="preview-img" style="max-height:32px; max-width:32px;" src="{{ default_favicon }}" alt="Favicon padrão">
-                  {% else %}
-                    <div class="text-muted">—</div>
-                  {% endif %}
-                </div>
-                <div class="col-12 col-md-6">
-                  <div class="hint">Logo atual do login — lado esquerdo</div>
-                  {% if login_logo_left %}
-                    <img class="preview-img" src="{{ login_logo_left }}" alt="Logo login esquerda">
-                  {% else %}
-                    <div class="text-muted">—</div>
-                  {% endif %}
-                </div>
-                <div class="col-12 col-md-6">
-                  <div class="hint">Logo atual do login — lado direito</div>
-                  {% if login_logo_right %}
-                    <img class="preview-img" src="{{ login_logo_right }}" alt="Logo login direita">
-                  {% else %}
-                    <div class="text-muted">—</div>
-                  {% endif %}
-                </div>
-              </div>
+      <section class="sv-config-panel">
+        <div class="sv-config-panel__head">
+          <div>
+            <h2 class="h5 mb-1">Criar tema sazonal</h2>
+            <div class="sv-config-muted small">Ex.: Carnaval, Páscoa, Dia das Mães ou campanha promocional.</div>
+          </div>
+          <span class="sv-config-chip sv-config-chip--muted">Por data</span>
+        </div>
+        <div class="sv-config-panel__body">
+          <form method="post" enctype="multipart/form-data" class="row g-3">
+            <input type="hidden" name="acao" value="create_theme">
+            <div class="col-12">
+              <label class="form-label">Nome</label>
+              <input class="form-control" name="name" placeholder="Ex.: Carnaval" required>
             </div>
-
-            <form method="post" enctype="multipart/form-data" class="row g-2">
-              <input type="hidden" name="acao" value="upload_default">
-              <div class="col-12">
-                <label class="form-label">Logo (PNG/JPG/WEBP/SVG, até 2MB)</label>
-                <input class="form-control" type="file" name="default_logo" accept=".png,.jpg,.jpeg,.webp,.svg" id="default_logo_file">
-              <div class="brand-preview" id="preview_default_logo_box" style="display:none;">
-                <img id="preview_default_logo_img" alt="Prévia da logo">
-                <div class="hint">Prévia da logo selecionada (antes de salvar).</div>
-              </div>
-
-              </div>
-              <div class="col-12">
-                <label class="form-label">Favicon (ICO/PNG/JPG/WEBP/SVG, até 400KB)</label>
-                <input class="form-control" type="file" name="default_favicon" accept=".ico,.png,.jpg,.jpeg,.webp,.svg" id="default_favicon_file">
-              <div class="brand-preview" id="preview_default_favicon_box" style="display:none;">
-                <img id="preview_default_favicon_img" alt="Prévia do favicon">
-                <div class="hint">Prévia do favicon selecionado (antes de salvar).</div>
-              </div>
-
-              </div>
-              <div class="col-12">
-                <label class="form-label">Logo do login — lado esquerdo (PNG/JPG/WEBP/SVG, até 2MB)</label>
-                <input class="form-control" type="file" name="login_logo_left" accept=".png,.jpg,.jpeg,.webp,.svg" id="login_logo_left_file">
-                <div class="brand-preview" id="preview_login_logo_left_box" style="display:none;">
-                  <img id="preview_login_logo_left_img" alt="Prévia da logo esquerda do login">
-                  <div class="hint">Prévia da logo esquerda do login (antes de salvar).</div>
-                </div>
-              </div>
-              <div class="col-12">
-                <label class="form-label">Logo do login — lado direito (PNG/JPG/WEBP/SVG, até 2MB)</label>
-                <input class="form-control" type="file" name="login_logo_right" accept=".png,.jpg,.jpeg,.webp,.svg" id="login_logo_right_file">
-                <div class="brand-preview" id="preview_login_logo_right_box" style="display:none;">
-                  <img id="preview_login_logo_right_img" alt="Prévia da logo direita do login">
-                  <div class="hint">Prévia da logo direita do login (antes de salvar).</div>
-                </div>
-              </div>
-              <div class="col-12 d-flex justify-content-end">
-                <button class="btn btn-primary">Salvar</button>
-              </div>
-              <div class="col-12 hint">
-                Dica: crie um bucket público no Supabase chamado <b>branding</b> (ou defina <code>SUPABASE_STORAGE_BUCKET</code>).
-              </div>
-            </form>
-          </div>
-        </div>
-      </div>
-
-      <div class="col-12 col-lg-6">
-        <div class="card shadow-sm">
-          <div class="card-body">
-            <h5 class="mb-1">Criar tema sazonal</h5>
-            <div class="hint mb-3">Ex.: Carnaval, Páscoa, Dia das Mães. Validade por data.</div>
-
-            <form method="post" enctype="multipart/form-data" class="row g-2">
-              <input type="hidden" name="acao" value="create_theme">
-              <div class="col-12">
-                <label class="form-label">Nome</label>
-                <input class="form-control" name="name" placeholder="Ex.: Carnaval" required>
-              </div>
-              <div class="col-6">
-                <label class="form-label">Início</label>
-                <input class="form-control" type="date" name="start_date" value="{{ today }}" required>
-              </div>
-              <div class="col-6">
-                <label class="form-label">Fim</label>
-                <input class="form-control" type="date" name="end_date" value="{{ today }}" required>
-              </div>
-              <div class="col-12">
-                <label class="form-label">Logo do tema (opcional)</label>
-                <input class="form-control" type="file" name="theme_logo" accept=".png,.jpg,.jpeg,.webp,.svg" id="create_theme_logo_file">
-              <div class="brand-preview" id="preview_create_theme_logo_box" style="display:none;">
+            <div class="col-6">
+              <label class="form-label">Início</label>
+              <input class="form-control" type="date" name="start_date" value="{{ today }}" required>
+            </div>
+            <div class="col-6">
+              <label class="form-label">Fim</label>
+              <input class="form-control" type="date" name="end_date" value="{{ today }}" required>
+            </div>
+            <div class="col-12">
+              <label class="form-label">Logo do tema</label>
+              <input class="form-control" type="file" name="theme_logo" accept=".png,.jpg,.jpeg,.webp,.svg" id="create_theme_logo_file">
+              <div class="form-text">Opcional. Se vazio, mantém o logo padrão.</div>
+              <div class="sv-config-upload-preview" id="preview_create_theme_logo_box" style="display:none;">
                 <img id="preview_create_theme_logo_img" alt="Prévia da logo do tema">
-                <div class="hint">Prévia da logo do tema selecionada (antes de criar).</div>
+                <div class="sv-config-muted small">Prévia da logo do tema.</div>
               </div>
-
-              </div>
-              <div class="col-12">
-                <label class="form-label">Favicon do tema (opcional)</label>
-                <input class="form-control" type="file" name="theme_favicon" accept=".ico,.png,.jpg,.jpeg,.webp,.svg" id="create_theme_favicon_file">
-              <div class="brand-preview" id="preview_create_theme_favicon_box" style="display:none;">
+            </div>
+            <div class="col-12">
+              <label class="form-label">Favicon do tema</label>
+              <input class="form-control" type="file" name="theme_favicon" accept=".ico,.png,.jpg,.jpeg,.webp,.svg" id="create_theme_favicon_file">
+              <div class="form-text">Opcional. Até 400KB.</div>
+              <div class="sv-config-upload-preview" id="preview_create_theme_favicon_box" style="display:none;">
                 <img id="preview_create_theme_favicon_img" alt="Prévia do favicon do tema">
-                <div class="hint">Prévia do favicon do tema selecionado (antes de criar).</div>
+                <div class="sv-config-muted small">Prévia do favicon do tema.</div>
               </div>
-
-              </div>
-              <div class="col-12 d-flex justify-content-end">
-                <button class="btn btn-success">Criar</button>
-              </div>
-            </form>
-
-          </div>
+            </div>
+            <div class="col-12 d-grid">
+              <button class="btn sv-config-btn-primary">Criar tema</button>
+            </div>
+          </form>
         </div>
-      </div>
-
-      <div class="col-12">
-        <div class="card shadow-sm">
-          <div class="card-body">
-            <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
-              <h5 class="m-0">Temas cadastrados</h5>
-              <div class="hint">O sistema escolhe automaticamente o tema ativo pela data.</div>
-            </div>
-            <div class="table-responsive mt-3">
-              <table class="table table-sm align-middle">
-                <thead>
-                  <tr>
-                    <th>Ativo</th>
-                    <th>Nome</th>
-                    <th>Período</th>
-                    <th>Logo</th>
-                    <th>Favicon</th>
-                    <th style="width:360px;">Ações</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {% for t in themes %}
-                    <tr>
-                      <td>
-                        <form method="post" class="m-0">
-                          <input type="hidden" name="acao" value="theme_toggle">
-                          <input type="hidden" name="theme_id" value="{{ t.id }}">
-                          <button class="btn btn-sm {% if t.is_active %}btn-outline-success{% else %}btn-outline-secondary{% endif %}">
-                            {% if t.is_active %}Sim{% else %}Não{% endif %}
-                          </button>
-                        </form>
-                      </td>
-                      <td><b>{{ t.name }}</b></td>
-                      <td>{{ t.start_date }} → {{ t.end_date }}</td>
-                      <td>{% if t.logo_url %}<img class="preview-img" src="{{ t.logo_url }}" alt="logo">{% else %}<span class="text-muted">—</span>{% endif %}</td>
-                      <td>{% if t.favicon_url %}<img class="preview-img" style="max-height:20px; max-width:20px;" src="{{ t.favicon_url }}" alt="fav">{% else %}<span class="text-muted">—</span>{% endif %}</td>
-                      <td>
-                        <details>
-                          <summary class="btn btn-sm btn-outline-primary">Editar</summary>
-                          <form method="post" enctype="multipart/form-data" class="row g-2 mt-2">
-                            <input type="hidden" name="acao" value="theme_update">
-                            <input type="hidden" name="theme_id" value="{{ t.id }}">
-                            <div class="col-12 col-md-6">
-                              <label class="form-label">Nome</label>
-                              <input class="form-control form-control-sm" name="name" value="{{ t.name }}">
-                            </div>
-                            <div class="col-6 col-md-3">
-                              <label class="form-label">Início</label>
-                              <input class="form-control form-control-sm" type="date" name="start_date" value="{{ t.start_date }}">
-                            </div>
-                            <div class="col-6 col-md-3">
-                              <label class="form-label">Fim</label>
-                              <input class="form-control form-control-sm" type="date" name="end_date" value="{{ t.end_date }}">
-                            </div>
-                            <div class="col-12 col-md-6">
-                              <label class="form-label">Trocar logo</label>
-                              <input class="form-control form-control-sm" type="file" name="theme_logo" accept=".png,.jpg,.jpeg,.webp,.svg">
-                            </div>
-                            <div class="col-12 col-md-6">
-                              <label class="form-label">Trocar favicon</label>
-                              <input class="form-control form-control-sm" type="file" name="theme_favicon" accept=".ico,.png,.jpg,.jpeg,.webp,.svg">
-                            </div>
-                            <div class="col-12 d-flex gap-2 justify-content-end">
-                              <button class="btn btn-sm btn-primary">Salvar</button>
-                          </form>
-                          <form method="post" class="m-0">
-                            <input type="hidden" name="acao" value="theme_delete">
-                            <input type="hidden" name="theme_id" value="{{ t.id }}">
-                            <button class="btn btn-sm btn-outline-danger" onclick="return confirm('Excluir tema {{ t.name }}?')">Excluir</button>
-                          </form>
-                            </div>
-                        </details>
-                      </td>
-                    </tr>
-                  {% endfor %}
-                  {% if not themes or themes|length == 0 %}
-                    <tr><td colspan="6" class="text-muted">Nenhum tema cadastrado.</td></tr>
-                  {% endif %}
-                </tbody>
-              </table>
-            </div>
-            <div class="hint mt-2">
-              Segurança: uploads aceitam apenas extensões comuns e tamanho limitado. Para mais controle, torne o bucket privado e use uma edge function para assinar URLs.
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
+      </section>
+    </aside>
   </div>
+</div>
 
 <script>
 (function () {
@@ -345,36 +490,20 @@
     if (boxEl) boxEl.style.display = "flex";
   }
 
-  // Branding padrão
-  const defaultLogoInput = document.getElementById("default_logo_file");
-  const defaultLogoImg = document.getElementById("preview_default_logo_img");
-  const defaultLogoBox = document.getElementById("preview_default_logo_box");
-  if (defaultLogoInput) defaultLogoInput.addEventListener("change", () => previewFile(defaultLogoInput, defaultLogoImg, defaultLogoBox));
+  const pairs = [
+    ["default_logo_file", "preview_default_logo_img", "preview_default_logo_box"],
+    ["default_favicon_file", "preview_default_favicon_img", "preview_default_favicon_box"],
+    ["login_logo_left_file", "preview_login_logo_left_img", "preview_login_logo_left_box"],
+    ["login_logo_right_file", "preview_login_logo_right_img", "preview_login_logo_right_box"],
+    ["create_theme_logo_file", "preview_create_theme_logo_img", "preview_create_theme_logo_box"],
+    ["create_theme_favicon_file", "preview_create_theme_favicon_img", "preview_create_theme_favicon_box"]
+  ];
 
-  const defaultFavInput = document.getElementById("default_favicon_file");
-  const defaultFavImg = document.getElementById("preview_default_favicon_img");
-  const defaultFavBox = document.getElementById("preview_default_favicon_box");
-  if (defaultFavInput) defaultFavInput.addEventListener("change", () => previewFile(defaultFavInput, defaultFavImg, defaultFavBox));
-
-  // Tema sazonal (criar)
-  const cThemeLogoInput = document.getElementById("create_theme_logo_file");
-  const cThemeLogoImg = document.getElementById("preview_create_theme_logo_img");
-  const cThemeLogoBox = document.getElementById("preview_create_theme_logo_box");
-  if (cThemeLogoInput) cThemeLogoInput.addEventListener("change", () => previewFile(cThemeLogoInput, cThemeLogoImg, cThemeLogoBox));
-
-  const cThemeFavInput = document.getElementById("create_theme_favicon_file");
-  const cThemeFavImg = document.getElementById("preview_create_theme_favicon_img");
-  const cThemeFavBox = document.getElementById("preview_create_theme_favicon_box");
-  if (cThemeFavInput) cThemeFavInput.addEventListener("change", () => previewFile(cThemeFavInput, cThemeFavImg, cThemeFavBox));
-
-  // Tema sazonal (editar na lista)
-  document.querySelectorAll('tr form input[type="file"]').forEach((inp) => {
-    inp.addEventListener("change", () => {
-      const tr = inp.closest("tr");
-      if (!tr) return;
-      const img = tr.querySelector(inp.name === "theme_logo" ? 'img[data-role="tema_logo_preview"]' : 'img[data-role="tema_favicon_preview"]');
-      if (img) previewFile(inp, img, null);
-    });
+  pairs.forEach(([inputId, imgId, boxId]) => {
+    const input = document.getElementById(inputId);
+    const img = document.getElementById(imgId);
+    const box = document.getElementById(boxId);
+    if (input) input.addEventListener("change", () => previewFile(input, img, box));
   });
 })();
 </script>
