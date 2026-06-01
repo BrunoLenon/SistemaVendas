@@ -4,297 +4,416 @@
 
 {% block extra_head %}
 <style>
-.soft-shadow { box-shadow: 0 10px 30px rgba(0,0,0,.06); }
-    .dropzone {
-      border: 2px dashed rgba(13,110,253,.35);
-      border-radius: 16px;
-      padding: 18px;
-      background: rgba(13,110,253,.03);
-      transition: .15s ease-in-out;
-      cursor: pointer;
-    }
-    .dropzone.dragover {
-      background: rgba(13,110,253,.06);
-      border-color: rgba(13,110,253,.6);
-    }
-    .metric {
-      font-size: 1.35rem;
-      font-weight: 700;
-      letter-spacing: -0.02em;
-    }
-    .muted { color: rgba(0,0,0,.62); }
-    .pill {
-      font-size: .75rem;
-      padding: .25rem .6rem;
-      border-radius: 999px;
-      border: 1px solid rgba(0,0,0,.10);
-      background: rgba(0,0,0,.03);
-      color: rgba(0,0,0,.70);
-      white-space: nowrap;
-    }
-    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
-    .step-badge {
-      width: 28px;
-      height: 28px;
-      border-radius: 999px;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      font-weight: 700;
-      background: rgba(13,110,253,.12);
-      color: #0d6efd;
-    }
+  .sv-import-page{max-width:1320px;margin:0 auto;padding:12px;}
+  .sv-import-hero{
+    padding:18px;
+    border-radius:22px;
+    background:
+      linear-gradient(135deg, rgba(255,140,0,.14), rgba(255,140,0,.045)),
+      rgba(18,18,18,.92);
+    border:1px solid rgba(255,140,0,.26);
+    box-shadow:0 18px 50px rgba(0,0,0,.28);
+  }
+  .sv-import-title{font-size:24px;font-weight:900;letter-spacing:-.03em;margin:0;color:#fff;}
+  .sv-import-sub{font-size:13px;color:rgba(255,255,255,.72);margin-top:4px;}
+  .sv-import-grid{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(360px,.85fr);gap:16px;margin-top:16px;align-items:start;}
+  @media (max-width: 1100px){.sv-import-grid{grid-template-columns:1fr}.sv-import-page{padding:8px}}
+
+  .sv-import-panel{
+    border-radius:20px;
+    background:linear-gradient(180deg, rgba(255,255,255,.045), rgba(255,255,255,.025));
+    border:1px solid rgba(255,140,0,.18);
+    box-shadow:0 18px 45px rgba(0,0,0,.18);
+    overflow:hidden;
+  }
+  .sv-import-panel__head{
+    padding:16px 18px;
+    border-bottom:1px solid rgba(255,140,0,.14);
+    display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;
+  }
+  .sv-import-panel__body{padding:18px;}
+  .sv-import-panel h2,.sv-import-panel h3,.sv-import-panel h4,.sv-import-panel h5{color:#fff;}
+  .sv-import-step{
+    width:34px;height:34px;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;
+    background:linear-gradient(135deg,#ff8c00,#ffa500);color:#151515;font-weight:950;box-shadow:0 8px 24px rgba(255,140,0,.22);flex:0 0 auto;
+  }
+  .sv-import-chip{
+    display:inline-flex;align-items:center;gap:7px;padding:7px 10px;border-radius:999px;
+    background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);color:rgba(255,255,255,.88);
+    font-size:12px;font-weight:800;white-space:nowrap;
+  }
+  .sv-import-chip--ok{background:rgba(46,204,113,.10);border-color:rgba(46,204,113,.28);color:#b8ffd1;}
+  .sv-import-chip--warn{background:rgba(255,193,7,.10);border-color:rgba(255,193,7,.28);color:#ffe49a;}
+  .sv-import-chip--danger{background:rgba(255,77,79,.10);border-color:rgba(255,77,79,.32);color:#ffb7b8;}
+
+  .sv-import-dropzone{
+    border:2px dashed rgba(255,140,0,.36);
+    border-radius:18px;
+    padding:20px;
+    background:
+      radial-gradient(620px 180px at 12% 0%, rgba(255,140,0,.13), transparent 60%),
+      rgba(0,0,0,.24);
+    transition:.16s ease-in-out;
+    cursor:pointer;
+  }
+  .sv-import-dropzone:hover,.sv-import-dropzone.dragover{border-color:rgba(255,165,0,.72);background:rgba(255,140,0,.08);}
+  .sv-import-fileicon{
+    width:48px;height:48px;border-radius:16px;display:flex;align-items:center;justify-content:center;
+    background:rgba(255,140,0,.12);border:1px solid rgba(255,140,0,.25);font-size:24px;flex:0 0 auto;
+  }
+  .sv-import-muted{color:rgba(255,255,255,.68)!important;}
+  .sv-import-soft{color:rgba(255,255,255,.82)!important;}
+  .sv-import-mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;}
+  .sv-import-codebox{
+    border-radius:16px;
+    background:rgba(0,0,0,.28);
+    border:1px solid rgba(255,140,0,.16);
+    color:rgba(255,255,255,.88);
+    padding:14px;
+    line-height:1.55;
+  }
+  .sv-import-feature{
+    border-radius:16px;
+    background:rgba(0,0,0,.22);
+    border:1px solid rgba(255,140,0,.14);
+    padding:14px;
+    height:100%;
+  }
+  .sv-import-feature strong{color:#fff;}
+  .sv-import-divider{height:1px;background:rgba(255,140,0,.13);margin:18px 0;}
+
+  .sv-import-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:14px;}
+  @media (max-width: 760px){.sv-import-kpis{grid-template-columns:repeat(2,minmax(0,1fr));}}
+  .sv-import-kpi{padding:12px;border-radius:16px;background:rgba(0,0,0,.24);border:1px solid rgba(255,140,0,.13);}
+  .sv-import-kpi__label{font-size:11px;color:rgba(255,255,255,.62);text-transform:uppercase;letter-spacing:.06em;font-weight:800;}
+  .sv-import-kpi__value{font-size:18px;color:#fff;font-weight:900;margin-top:3px;}
+
+  .sv-import-tabs .nav-link{
+    color:rgba(255,255,255,.76);
+    border-radius:999px;
+    border:1px solid rgba(255,255,255,.10);
+    background:rgba(0,0,0,.18);
+    margin-right:8px;
+    font-weight:800;
+    font-size:13px;
+  }
+  .sv-import-tabs .nav-link.active{background:#ff8c00;color:#171717;border-color:#ff8c00;}
+  .sv-import-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
+  .sv-import-btn-primary{
+    background:linear-gradient(135deg,#ff8c00,#ffa500)!important;border-color:#ff9b18!important;color:#151515!important;font-weight:900!important;
+    box-shadow:0 12px 26px rgba(255,140,0,.18);
+  }
+  .sv-import-btn-outline{border-color:rgba(255,255,255,.22)!important;color:rgba(255,255,255,.88)!important;background:rgba(0,0,0,.12)!important;}
+  .sv-import-btn-outline:hover{background:rgba(255,140,0,.10)!important;border-color:rgba(255,140,0,.42)!important;}
+  .sv-import-btn-danger{border-color:rgba(255,77,79,.46)!important;color:#ffd1d2!important;background:rgba(255,77,79,.10)!important;font-weight:800!important;}
+  .sv-import-btn-danger:hover{background:rgba(255,77,79,.18)!important;}
+
+  .sv-import-page .form-label{color:rgba(255,255,255,.86);font-weight:800;font-size:13px;}
+  .sv-import-page .form-text{color:rgba(255,255,255,.58)!important;}
+  .sv-import-page .form-check-label{color:rgba(255,255,255,.86);font-weight:700;}
+  .sv-import-page .form-check-input{background-color:#121212;border-color:rgba(255,140,0,.35);}
+  .sv-import-page .form-check-input:checked{background-color:#ff8c00;border-color:#ff8c00;}
+  .sv-import-page hr{border-color:rgba(255,140,0,.18);opacity:1;}
+  .sv-import-page .table{--bs-table-bg:transparent;--bs-table-color:rgba(255,255,255,.88);--bs-table-border-color:rgba(255,140,0,.12);}
+  .sv-import-page .table thead th{background:rgba(0,0,0,.32);color:#fff;border-color:rgba(255,140,0,.14);}
+  .sv-import-page .table tbody tr:hover td{background:rgba(255,140,0,.06);}
+  .sv-import-page .badge.bg-light{background:rgba(255,255,255,.08)!important;color:#fff!important;border-color:rgba(255,255,255,.16)!important;}
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="container py-4" style="max-width: 1100px;">
-
-    <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+<div class="sv-import-page">
+  <section class="sv-import-hero">
+    <div class="d-flex align-items-start justify-content-between gap-3 flex-wrap">
       <div>
-        <h3 class="mb-0">📥 Importar Vendas</h3>
-        <div class="muted">Envie a planilha (.xlsx). O sistema ignora duplicados e mantém histórico.</div>
+        <div class="sv-import-chip sv-import-chip--ok mb-2">📥 Importação administrativa</div>
+        <h1 class="sv-import-title">Importar Vendas</h1>
+        <div class="sv-import-sub">Envie a planilha de vendas em XLSX. O sistema ignora duplicados, preserva histórico e usa a chave com EMP e MOV_TIPO_MOVTO.</div>
       </div>
-      <div class="d-flex gap-2">
-        <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('dashboard') }}">Voltar</a>
+      <div class="sv-import-actions">
+        <a class="btn sv-import-btn-outline" href="{{ url_for('dashboard') }}">← Voltar ao dashboard</a>
+        <a class="btn sv-import-btn-outline" href="/admin/importar">Limpar tela</a>
       </div>
     </div>
-<div class="row g-3">
-      <!-- COLUNA ESQUERDA -->
-      <div class="col-lg-7">
 
-        <!-- STEP 1 -->
-        <div class="card border-0 soft-shadow mb-3">
-          <div class="card-body p-4">
-            <div class="d-flex align-items-start gap-2 mb-2">
-              <span class="step-badge">1</span>
-              <div class="flex-grow-1">
-                <div class="fw-semibold">Enviar arquivo e opções</div>
-                <div class="muted small">Arraste a planilha para a área abaixo ou clique para selecionar.</div>
+    <div class="sv-kpi-grid mt-3">
+      <div class="sv-kpi sv-card">
+        <div class="sv-kpi__label">Formato aceito</div>
+        <div class="sv-kpi__value">XLSX</div>
+        <div class="sv-kpi__meta">Planilha de vendas</div>
+      </div>
+      <div class="sv-kpi sv-card">
+        <div class="sv-kpi__label">Deduplicação</div>
+        <div class="sv-kpi__value">EMP + Nota</div>
+        <div class="sv-kpi__meta">Inclui MOV_TIPO_MOVTO</div>
+      </div>
+      <div class="sv-kpi sv-card">
+        <div class="sv-kpi__label">Movimentos</div>
+        <div class="sv-kpi__value">OA/VV/SV</div>
+        <div class="sv-kpi__meta">DS/CA descontam nos relatórios</div>
+      </div>
+      <div class="sv-kpi sv-card">
+        <div class="sv-kpi__label">Segurança</div>
+        <div class="sv-kpi__value">Histórico</div>
+        <div class="sv-kpi__meta">Reprocessamento controlado</div>
+      </div>
+    </div>
+  </section>
+
+  <div class="sv-import-grid">
+    <div>
+      {% if last_resumo %}
+      <section class="sv-import-panel mb-3">
+        <div class="sv-import-panel__head">
+          <div class="d-flex align-items-start gap-2">
+            <span class="sv-import-step">✓</span>
+            <div>
+              <h2 class="h5 mb-1">Última importação</h2>
+              <div class="sv-import-muted small">
+                {{ last_resumo.arquivo }} · {{ "%.2f"|format(last_resumo.duracao_s or 0) }}s
+                {% if last_resumo.reprocessar %}<span class="sv-import-chip sv-import-chip--warn ms-2">reprocessado</span>{% endif %}
               </div>
-              <span class="pill">Seguro reprocessar</span>
+            </div>
+          </div>
+          <div class="text-end">
+            <div class="sv-import-muted small">Líquido</div>
+            <div class="h4 mb-0 text-white">R$ {{ "{:,.2f}".format(last_resumo.total_liquido or 0).replace(",", "X").replace(".", ",").replace("X", ".") }}</div>
+          </div>
+        </div>
+        <div class="sv-import-panel__body">
+          <div class="sv-import-muted small">
+            Bruto: R$ {{ "{:,.2f}".format(last_resumo.total_bruto or 0).replace(",", "X").replace(".", ",").replace("X", ".") }} ·
+            CA: R$ {{ "{:,.2f}".format(last_resumo.total_ca or 0).replace(",", "X").replace(".", ",").replace("X", ".") }}
+            ({{ last_resumo.ca_linhas or 0 }} linhas)
+          </div>
+
+          <div class="sv-import-kpis">
+            <div class="sv-import-kpi"><div class="sv-import-kpi__label">Lidas</div><div class="sv-import-kpi__value">{{ last_resumo.total_linhas }}</div></div>
+            <div class="sv-import-kpi"><div class="sv-import-kpi__label">Válidas</div><div class="sv-import-kpi__value">{{ last_resumo.validas }}</div></div>
+            <div class="sv-import-kpi"><div class="sv-import-kpi__label">Inseridas</div><div class="sv-import-kpi__value">{{ last_resumo.inseridas }}</div></div>
+            <div class="sv-import-kpi"><div class="sv-import-kpi__label">Ignoradas</div><div class="sv-import-kpi__value">{{ last_resumo.ignoradas }}</div></div>
+          </div>
+
+          {% if last_resumo.affected_periods and last_resumo.affected_periods|length > 0 %}
+          <div class="mt-3 small sv-import-muted">
+            <strong class="text-white">Períodos afetados:</strong>
+            {% for p in last_resumo.affected_periods[:10] %}
+              <span class="badge bg-light border">{{ p[0] }} · {{ "%02d"|format(p[2]) }}/{{ p[1] }}</span>
+            {% endfor %}
+            {% if last_resumo.affected_periods|length > 10 %}
+              <span class="sv-import-muted">(+{{ last_resumo.affected_periods|length - 10 }})</span>
+            {% endif %}
+          </div>
+          {% endif %}
+        </div>
+      </section>
+      {% endif %}
+
+      <section class="sv-import-panel">
+        <div class="sv-import-panel__head">
+          <div class="d-flex align-items-start gap-2">
+            <span class="sv-import-step">1</span>
+            <div>
+              <h2 class="h5 mb-1">Enviar arquivo e opções</h2>
+              <div class="sv-import-muted small">Arraste a planilha para a área abaixo ou clique para selecionar.</div>
+            </div>
+          </div>
+          <span class="sv-import-chip sv-import-chip--ok">Seguro reprocessar</span>
+        </div>
+
+        <div class="sv-import-panel__body">
+          <form action="/admin/importar" method="POST" enctype="multipart/form-data" id="formImport">
+            <div class="sv-import-dropzone" id="dropzone">
+              <div class="d-flex align-items-start gap-3">
+                <div class="sv-import-fileicon">📄</div>
+                <div class="flex-grow-1">
+                  <div class="fw-bold text-white">Planilha de vendas (.xlsx)</div>
+                  <div class="sv-import-muted small">Clique aqui ou arraste o arquivo para importar.</div>
+                  <input class="form-control mt-3" type="file" name="arquivo" id="arquivo" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required>
+                  <div class="sv-import-muted small mt-2" id="fileInfo">Nenhum arquivo selecionado.</div>
+                </div>
+              </div>
             </div>
 
+            <div class="sv-import-divider"></div>
 
-{% if last_resumo %}
-<div class="card border-0 soft-shadow mb-3">
-  <div class="card-body">
-    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
-      <div>
-        <div class="fw-semibold">✅ Última importação</div>
-        <div class="muted small">
-          {{ last_resumo.arquivo }} · {{ "%.2f"|format(last_resumo.duracao_s or 0) }}s
-          {% if last_resumo.reprocessar %} · <span class="badge bg-warning text-dark">reprocessado</span>{% endif %}
+            <div class="row g-3">
+              <div class="col-md-6">
+                <label class="form-label">Modo de importação</label>
+                <select class="form-select" name="modo">
+                  <option value="ignorar_duplicados" selected>Ignorar duplicados (recomendado)</option>
+                  <option value="atualizar">Atualizar se já existir</option>
+                </select>
+                <div class="form-text">“Ignorar duplicados” evita repetir vendas já importadas.</div>
+              </div>
+
+              <div class="col-md-6">
+                <label class="form-label">Chave anti-duplicidade</label>
+                <select class="form-select" name="chave">
+                  <option value="mestre_movimento_vendedor_nota_tipo_emp" selected>MESTRE + MARCA + MOVIMENTO + VENDEDOR + NOTA + MOV_TIPO_MOVTO + EMP</option>
+                  <option value="mestre_marca_movimento_vendedor_nota_tipo_emp">Nome explícito com MARCA</option>
+                  <option value="mestre_movimento_vendedor_nota_emp">MESTRE + MARCA + MOVIMENTO + VENDEDOR + NOTA + EMP</option>
+                </select>
+                <div class="form-text">Para lojas diferentes com nota repetida, use a opção com EMP.</div>
+              </div>
+            </div>
+
+            <div class="form-check mt-3 p-3 rounded-4" style="background:rgba(255,140,0,.06);border:1px solid rgba(255,140,0,.16);">
+              <input class="form-check-input ms-0 me-2" type="checkbox" value="1" id="reprocessar" name="reprocessar">
+              <label class="form-check-label" for="reprocessar">Reprocessar competência do arquivo</label>
+              <div class="sv-import-muted small mt-1 ps-4">Use quando precisar corrigir um mês/EMP sem apagar o banco inteiro.</div>
+            </div>
+
+            <div class="sv-import-actions mt-4">
+              <button class="btn btn-lg sv-import-btn-primary" type="submit" id="btnImportar">Importar agora</button>
+              <a class="btn btn-lg sv-import-btn-outline" href="/admin/importar">Limpar</a>
+            </div>
+
+            <div class="row g-3 mt-3">
+              <div class="col-12 col-md-4"><div class="sv-import-feature"><strong>✔ Deduplicação</strong><div class="sv-import-muted small mt-1">Ignora vendas repetidas automaticamente.</div></div></div>
+              <div class="col-12 col-md-4"><div class="sv-import-feature"><strong>✔ Histórico</strong><div class="sv-import-muted small mt-1">Mantém dados para relatórios e comparativos.</div></div></div>
+              <div class="col-12 col-md-4"><div class="sv-import-feature"><strong>✔ Auditoria</strong><div class="sv-import-muted small mt-1">Logs no Render para conferência.</div></div></div>
+            </div>
+          </form>
         </div>
-      </div>
-      <div class="text-end">
-        <div class="fw-semibold">Líquido: R$ {{ "{:,.2f}".format(last_resumo.total_liquido or 0).replace(",", "X").replace(".", ",").replace("X", ".") }}</div>
-        <div class="muted small">Bruto: R$ {{ "{:,.2f}".format(last_resumo.total_bruto or 0).replace(",", "X").replace(".", ",").replace("X", ".") }} · CA: R$ {{ "{:,.2f}".format(last_resumo.total_ca or 0).replace(",", "X").replace(".", ",").replace("X", ".") }} ({{ last_resumo.ca_linhas or 0 }} linhas)</div>
-      </div>
+      </section>
+
+      <section id="processingCard" class="sv-import-panel mt-3 d-none">
+        <div class="sv-import-panel__body">
+          <div class="d-flex align-items-start gap-2 mb-3">
+            <span class="sv-import-step">2</span>
+            <div>
+              <h3 class="h5 mb-1">Processando importação</h3>
+              <div class="sv-import-muted small">Não feche esta página. Pode levar alguns segundos.</div>
+            </div>
+          </div>
+          <div class="d-flex align-items-center gap-3 p-3 rounded-4" style="background:rgba(0,0,0,.24);border:1px solid rgba(255,140,0,.14);">
+            <div class="spinner-border text-warning" role="status" aria-label="Processando..."></div>
+            <div>
+              <div class="fw-bold text-white">Estamos importando sua planilha…</div>
+              <div class="sv-import-muted small">Ao finalizar, você verá o resultado no topo da página.</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="sv-import-panel mt-3">
+        <div class="sv-import-panel__head">
+          <div>
+            <h2 class="h5 mb-1">🧾 Últimas importações</h2>
+            <div class="sv-import-muted small">Histórico operacional recente, quando disponível.</div>
+          </div>
+        </div>
+        <div class="sv-import-panel__body p-0">
+          <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+              <thead>
+                <tr>
+                  <th>Data</th>
+                  <th>Arquivo</th>
+                  <th>Linhas</th>
+                  <th>Inseridas</th>
+                  <th>Ignoradas</th>
+                  <th>Líquido</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for it in import_logs or [] %}
+                  <tr>
+                    <td class="small">{{ it.criado_em.strftime("%d/%m/%Y %H:%M") if it.criado_em else "" }}</td>
+                    <td class="small">{{ it.arquivo_nome or "-" }}</td>
+                    <td class="small">{{ it.total_linhas or 0 }}</td>
+                    <td class="small">{{ it.inseridas or 0 }}</td>
+                    <td class="small">{{ it.ignoradas or 0 }}</td>
+                    <td class="small">R$ {{ "{:,.2f}".format(it.total_liquido or 0).replace(",", "X").replace(".", ",").replace("X", ".") }}</td>
+                  </tr>
+                {% else %}
+                  <tr><td colspan="6" class="small sv-import-muted p-3">Nenhuma importação registrada ainda.</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
     </div>
 
-    <hr class="my-3"/>
+    <aside>
+      <section class="sv-import-panel mb-3">
+        <div class="sv-import-panel__head">
+          <div>
+            <h2 class="h5 mb-1">📌 Formato da planilha</h2>
+            <div class="sv-import-muted small">Cabeçalhos obrigatórios e opcionais.</div>
+          </div>
+          <span class="sv-import-chip">Cabeçalhos exatos</span>
+        </div>
+        <div class="sv-import-panel__body">
+          <p class="sv-import-muted mb-3">As colunas devem existir com estes nomes:</p>
+          <div class="sv-import-codebox sv-import-mono small">
+            MESTRE<br>MARCA<br>MOVIMENTO<br>MOV_TIPO_MOVTO<br>VENDEDOR<br>NOTA<br>EMP<br>UNIT<br>DES<br>QTDADE_VENDIDA<br>VALOR_TOTAL
+            <br><br>
+            <span class="sv-import-muted">+ opcionais</span><br>
+            DESCRICAO<br>RAZAO<br>CIDADE<br>CNPJ_CPF
+          </div>
+          <div class="sv-import-muted mt-3 small">Dica: mantenha <span class="sv-import-mono text-white">VENDEDOR</span> igual ao login do vendedor.</div>
+        </div>
+      </section>
 
-    <div class="row g-2">
-      <div class="col-6 col-md-3"><div class="small muted">Lidas</div><div class="fw-semibold">{{ last_resumo.total_linhas }}</div></div>
-      <div class="col-6 col-md-3"><div class="small muted">Válidas</div><div class="fw-semibold">{{ last_resumo.validas }}</div></div>
-      <div class="col-6 col-md-3"><div class="small muted">Inseridas</div><div class="fw-semibold">{{ last_resumo.inseridas }}</div></div>
-      <div class="col-6 col-md-3"><div class="small muted">Ignoradas</div><div class="fw-semibold">{{ last_resumo.ignoradas }}</div></div>
-    </div>
+      <section class="sv-import-panel">
+        <div class="sv-import-panel__head">
+          <div>
+            <h2 class="h5 mb-1">🧹 Apagar importações</h2>
+            <div class="sv-import-muted small">Correção por dia ou por mês.</div>
+          </div>
+          <span class="sv-import-chip sv-import-chip--danger">Ação irreversível</span>
+        </div>
+        <div class="sv-import-panel__body">
+          <div class="sv-import-muted small">Apague vendas por <strong class="text-white">dia</strong> ou por <strong class="text-white">mês</strong>. Use somente para corrigir importações indevidas.</div>
 
-    {% if last_resumo.affected_periods and last_resumo.affected_periods|length > 0 %}
-      <div class="mt-3 muted small">
-        <span class="fw-semibold">Períodos afetados:</span>
-        {% for p in last_resumo.affected_periods[:10] %}
-          <span class="badge bg-light text-dark border">{{ p[0] }} · {{ "%02d"|format(p[2]) }}/{{ p[1] }}</span>
-        {% endfor %}
-        {% if last_resumo.affected_periods|length > 10 %}
-          <span class="muted">(+{{ last_resumo.affected_periods|length - 10 }})</span>
-        {% endif %}
-      </div>
-    {% endif %}
+          <ul class="nav nav-pills sv-import-tabs mt-3" id="tabs" role="tablist">
+            <li class="nav-item" role="presentation">
+              <button class="nav-link active" id="tab-dia" data-bs-toggle="pill" data-bs-target="#painel-dia" type="button" role="tab">Por dia</button>
+            </li>
+            <li class="nav-item" role="presentation">
+              <button class="nav-link" id="tab-mes" data-bs-toggle="pill" data-bs-target="#painel-mes" type="button" role="tab">Por mês</button>
+            </li>
+          </ul>
+
+          <div class="tab-content mt-3">
+            <div class="tab-pane fade show active" id="painel-dia" role="tabpanel">
+              <form method="POST" action="/admin/apagar_vendas" onsubmit="return confirmDelete(this);">
+                <input type="hidden" name="tipo" value="dia">
+                <label class="form-label">Selecione o dia</label>
+                <input class="form-control" type="date" name="valor" required>
+                <button class="btn sv-import-btn-danger w-100 mt-3" type="submit">Apagar vendas do dia</button>
+                <div class="sv-import-muted small mt-2">Use quando importou algo errado em um dia específico.</div>
+              </form>
+            </div>
+
+            <div class="tab-pane fade" id="painel-mes" role="tabpanel">
+              <form method="POST" action="/admin/apagar_vendas" onsubmit="return confirmDelete(this);">
+                <input type="hidden" name="tipo" value="mes">
+                <label class="form-label">Selecione o mês</label>
+                <input class="form-control" type="month" name="valor" required>
+                <button class="btn sv-import-btn-danger w-100 mt-3" type="submit">Apagar vendas do mês</button>
+                <div class="sv-import-muted small mt-2">Use quando uma planilha do mês inteiro foi importada indevidamente.</div>
+              </form>
+            </div>
+          </div>
+
+          <div class="sv-import-divider"></div>
+          <div class="sv-import-muted small">
+            <strong class="text-white">Observação:</strong> o sistema apaga pelo campo <span class="sv-import-mono text-white">movimento</span> na tabela <span class="sv-import-mono text-white">vendas</span>.
+          </div>
+        </div>
+      </section>
+    </aside>
   </div>
 </div>
-{% endif %}
+{% endblock %}
 
-            <form action="/admin/importar" method="POST" enctype="multipart/form-data" id="formImport">
-              <div class="dropzone" id="dropzone">
-                <div class="d-flex align-items-start gap-3">
-                  <div class="fs-3">📄</div>
-                  <div class="flex-grow-1">
-                    <div class="fw-semibold">Planilha de vendas (.xlsx)</div>
-                    <div class="muted small">Clique aqui ou arraste o arquivo para importar</div>
-
-                    <input class="form-control mt-3" type="file" name="arquivo" id="arquivo"
-                          accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required>
-                    <div class="muted small mt-2" id="fileInfo">Nenhum arquivo selecionado.</div>
-                  </div>
-                </div>
-              </div>
-
-              <hr class="my-4">
-
-              <div class="row g-3">
-                <div class="col-md-6">
-                  <label class="form-label">Modo de importação</label>
-                  <select class="form-select" name="modo">
-                    <option value="ignorar_duplicados" selected>Ignorar duplicados (recomendado)</option>
-                    <option value="atualizar">Atualizar se já existir</option>
-                  </select>
-                  <div class="form-text">“Ignorar duplicados” evita repetir vendas já importadas.</div>
-                </div>
-
-                <div class="col-md-6">
-                  <label class="form-label">Chave anti-duplicidade (considera MOV_TIPO_MOVTO)</label>
-                  <select class="form-select" name="chave">
-                    <option value="mestre_movimento_vendedor_nota_tipo_emp" selected>MESTRE + MARCA + MOVIMENTO + VENDEDOR + NOTA + MOV_TIPO_MOVTO + EMP (recomendado)</option>
-                    <option value="mestre_marca_movimento_vendedor_nota_tipo_emp">(mesma chave) Nome explícito com MARCA</option>
-                    <option value="mestre_movimento_vendedor_nota_emp">MESTRE + MARCA + MOVIMENTO + VENDEDOR + NOTA + EMP</option>
-                  </select>
-                  <div class="form-text">Se sua NOTA pode repetir em lojas diferentes, use a opção com EMP.</div>
-                </div>
-              
-<div class="form-check mt-3">
-  <input class="form-check-input" type="checkbox" value="1" id="reprocessar" name="reprocessar">
-  <label class="form-check-label" for="reprocessar">
-    Reprocessar competência do arquivo (limpa o recorte do mês antes de importar)
-  </label>
-  <div class="muted small">Use quando precisar corrigir um mês/EMP sem apagar o banco inteiro.</div>
-</div>
-
-</div>
-
-              <div class="d-flex flex-wrap gap-2 mt-4">
-                <button class="btn btn-primary btn-lg" type="submit" id="btnImportar">Importar agora</button>
-                <a class="btn btn-outline-secondary btn-lg" href="/admin/importar">Limpar</a>
-              </div>
-
-              <div class="row g-3 mt-3">
-                <div class="col-12 col-md-4">
-                  <div class="p-3 rounded-3 bg-white border h-100">
-                    <div class="fw-semibold">✔ Deduplicação</div>
-                    <div class="muted small">Ignora vendas repetidas automaticamente.</div>
-                  </div>
-                </div>
-                <div class="col-12 col-md-4">
-                  <div class="p-3 rounded-3 bg-white border h-100">
-                    <div class="fw-semibold">✔ Histórico</div>
-                    <div class="muted small">Mantém dados para relatórios e comparativos.</div>
-                  </div>
-                </div>
-                <div class="col-12 col-md-4">
-                  <div class="p-3 rounded-3 bg-white border h-100">
-                    <div class="fw-semibold">✔ Auditoria</div>
-                    <div class="muted small">Logs no Render para conferência.</div>
-                  </div>
-                </div>
-              </div>
-            </form>
-          </div>
-        </div>
-
-        <!-- STEP 2 -->
-        <div id="processingCard" class="card border-0 soft-shadow mb-3 d-none">
-          <div class="card-body p-4">
-            <div class="d-flex align-items-start gap-2 mb-2">
-              <span class="step-badge">2</span>
-              <div>
-                <div class="fw-semibold">Processando</div>
-                <div class="muted small">Não feche esta página. Pode levar alguns segundos.</div>
-              </div>
-            </div>
-
-            <div class="d-flex align-items-center gap-3">
-              <div class="spinner-border" role="status" aria-label="Processando..."></div>
-              <div>
-                <div class="fw-semibold">Estamos importando sua planilha…</div>
-                <div class="muted small">Ao finalizar, você verá o resultado no topo da página.</div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-      </div>
-
-      <!-- COLUNA DIREITA -->
-      <div class="col-lg-5">
-        <!-- AJUDA -->
-        <div class="card border-0 soft-shadow mb-3">
-          <div class="card-body p-4">
-            <div class="d-flex align-items-center justify-content-between gap-2">
-              <h5 class="mb-0">📌 Formato da planilha</h5>
-              <span class="pill">Cabeçalhos exatos</span>
-            </div>
-            <p class="muted mb-3 mt-2">As colunas devem existir (nomes exatamente assim):</p>
-
-            <div class="border rounded-3 p-3 mono small bg-light">
-              MESTRE<br>MARCA<br>MOVIMENTO<br>MOV_TIPO_MOVTO<br>VENDEDOR<br>NOTA<br>EMP<br>UNIT<br>DES<br>QTDADE_VENDIDA<br>VALOR_TOTAL
-              <br><br>
-              <span class="muted">(+ opcionais)</span><br>
-              DESCRICAO<br>RAZAO<br>CIDADE<br>CNPJ_CPF
-            </div>
-
-            <div class="muted mt-3">
-              Dica: mantenha <span class="mono">VENDEDOR</span> igual ao login do vendedor.
-            </div>
-          </div>
-        </div>
-
-        <!-- APAGAR IMPORTAÇÕES -->
-        <div class="card border-0 soft-shadow">
-          <div class="card-body p-4">
-            <div class="d-flex justify-content-between align-items-center gap-2">
-              <h5 class="mb-0">🧹 Apagar importações</h5>
-              <span class="pill">Ação irreversível</span>
-            </div>
-            <div class="muted mt-2">
-              Apague vendas por <strong>dia</strong> ou por <strong>mês</strong>. Isso ajuda a corrigir importações.
-            </div>
-
-            <ul class="nav nav-pills mt-3" id="tabs" role="tablist">
-              <li class="nav-item" role="presentation">
-                <button class="nav-link active" id="tab-dia" data-bs-toggle="pill" data-bs-target="#painel-dia" type="button" role="tab">Por dia</button>
-              </li>
-              <li class="nav-item" role="presentation">
-                <button class="nav-link" id="tab-mes" data-bs-toggle="pill" data-bs-target="#painel-mes" type="button" role="tab">Por mês</button>
-              </li>
-            </ul>
-
-            <div class="tab-content mt-3">
-              <div class="tab-pane fade show active" id="painel-dia" role="tabpanel">
-                <form method="POST" action="/admin/apagar_vendas" onsubmit="return confirmDelete(this);">
-                  <input type="hidden" name="tipo" value="dia">
-                  <label class="form-label">Selecione o dia</label>
-                  <input class="form-control" type="date" name="valor" required>
-                  <button class="btn btn-danger w-100 mt-3" type="submit">Apagar vendas do dia</button>
-                  <div class="muted small mt-2">Use quando importou algo errado em um dia específico.</div>
-                </form>
-              </div>
-
-              <div class="tab-pane fade" id="painel-mes" role="tabpanel">
-                <form method="POST" action="/admin/apagar_vendas" onsubmit="return confirmDelete(this);">
-                  <input type="hidden" name="tipo" value="mes">
-                  <label class="form-label">Selecione o mês</label>
-                  <input class="form-control" type="month" name="valor" required>
-                  <button class="btn btn-danger w-100 mt-3" type="submit">Apagar vendas do mês</button>
-                  <div class="muted small mt-2">Use quando uma planilha do mês inteiro foi importada indevidamente.</div>
-                </form>
-              </div>
-            </div>
-
-            <hr class="my-4">
-            <div class="muted small">
-              <strong>Observação:</strong> o sistema apaga pelo campo <span class="mono">movimento</span> na tabela <span class="mono">vendas</span>.
-            </div>
-          </div>
-        </div>
-
-      </div>
-    </div>
-  </div>
-
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-  <script>
+{% block extra_scripts %}
+<script>
+  (function(){
     const dropzone = document.getElementById("dropzone");
     const input = document.getElementById("arquivo");
     const fileInfo = document.getElementById("fileInfo");
@@ -302,7 +421,11 @@
     const processingCard = document.getElementById("processingCard");
     const btnImportar = document.getElementById("btnImportar");
 
-    dropzone.addEventListener("click", () => input.click());
+    if (!dropzone || !input || !fileInfo || !formImport || !processingCard || !btnImportar) return;
+
+    dropzone.addEventListener("click", (e) => {
+      if (e.target !== input) input.click();
+    });
 
     function setInfo() {
       if (input.files && input.files[0]) fileInfo.textContent = "Selecionado: " + input.files[0].name;
@@ -341,51 +464,14 @@
       btnImportar.innerText = "Importando...";
     });
 
-    function confirmDelete(form){
-      const tipo = form.querySelector('input[name="tipo"]').value;
-      const valor = form.querySelector('input[name="valor"]').value;
-      const label = (tipo === "dia") ? ("do dia " + valor) : ("do mês " + valor);
-      return confirm("Tem certeza que deseja APAGAR TODAS as vendas " + label + "?\n\nEssa ação não pode ser desfeita.");
-    }
-
     setInfo();
-  </script>
+  })();
 
-
-<div class="card border-0 soft-shadow mt-4">
-  <div class="card-body">
-    <div class="fw-semibold mb-2">🧾 Últimas importações</div>
-    <div class="table-responsive">
-      <table class="table table-sm align-middle mb-0">
-        <thead>
-          <tr>
-            <th>Data</th>
-            <th>Arquivo</th>
-            <th>Linhas</th>
-            <th>Inseridas</th>
-            <th>Ignoradas</th>
-            <th>Líquido</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for it in import_logs or [] %}
-            <tr>
-              <td class="small">{{ it.criado_em.strftime("%d/%m/%Y %H:%M") if it.criado_em else "" }}</td>
-              <td class="small">{{ it.arquivo_nome or "-" }}</td>
-              <td class="small">{{ it.total_linhas or 0 }}</td>
-              <td class="small">{{ it.inseridas or 0 }}</td>
-              <td class="small">{{ it.ignoradas or 0 }}</td>
-              <td class="small">
-                R$ {{ "{:,.2f}".format(it.total_liquido or 0).replace(",", "X").replace(".", ",").replace("X", ".") }}
-              </td>
-            </tr>
-          {% else %}
-            <tr><td colspan="6" class="muted small">Nenhuma importação registrada ainda.</td></tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </div>
-</div>
-
+  function confirmDelete(form){
+    const tipo = form.querySelector('input[name="tipo"]').value;
+    const valor = form.querySelector('input[name="valor"]').value;
+    const label = (tipo === "dia") ? ("do dia " + valor) : ("do mês " + valor);
+    return confirm("Tem certeza que deseja APAGAR TODAS as vendas " + label + "?\n\nEssa ação não pode ser desfeita.");
+  }
+</script>
 {% endblock %}
