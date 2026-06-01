@@ -170,3 +170,31 @@ body.sidebar-collapsed .sv-sidebar-logo img{
 @media (max-width: 576px){
   .app-main > .container-fluid{ padding-left: 10px !important; padding-right: 10px !important; padding-top: 10px !important; padding-bottom: 10px !important; }
 }
+
+/* =====================================================================
+   Veipeças Global Layout Base — ajustes seguros para páginas premium
+   ===================================================================== */
+.app-main > .container-fluid{
+  width: 100%;
+}
+
+@media (min-width: 992px){
+  .app-main > .container-fluid{
+    padding-left: 24px;
+    padding-right: 24px;
+  }
+}
+
+@media (max-width: 576px){
+  .sv-admin-page .sv-action-row,
+  .sv-admin-page .sv-filter-bar{
+    align-items:stretch;
+  }
+  .sv-admin-page .sv-action-row > *,
+  .sv-admin-page .sv-filter-bar > *,
+  .sv-admin-page .btn-sv-primary,
+  .sv-admin-page .sv-btn-primary{
+    width:100%;
+    justify-content:center;
+  }
+}
