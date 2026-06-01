@@ -5,190 +5,267 @@
 
 {% block extra_head %}
 <style>
-  .page-title{font-weight:800; letter-spacing:-.3px}
-  .subtitle{color:var(--bs-secondary-color)}
-  .kpi{min-height:84px}
-</style>
-
-<style>
-  /* Admin pages: use more width + compact spacing */
-  .sv-page.sv-page--wide{max-width: 1480px;}
-  .sv-page{padding-top:10px;padding-bottom:10px;}
-  .sv-pagehead{padding:12px;}
-  .sv-card-pad{padding:12px;}
-  .sv-table td,.sv-table th{padding:.5rem .55rem;}
-  .sv-table thead th{font-size:12px; letter-spacing:.02em;}
-  .sv-muted{opacity:.78}
-
-  .sv-fechamento-status{margin-bottom:0;}
-  .sv-fechamento-status tbody tr td{
-    background:rgba(255,140,0,.055) !important;
-    border-top:1px solid rgba(255,140,0,.12);
-    color:rgba(255,244,232,.96);
-    transition:background-color .18s ease, border-color .18s ease;
+  .fech-page{max-width:1480px;margin:0 auto;padding:18px 18px 28px;color:rgba(255,255,255,.94);}
+  .fech-hero{
+    border:1px solid rgba(255,143,31,.28);
+    border-radius:24px;
+    padding:22px;
+    background:
+      radial-gradient(circle at 12% 0%, rgba(255,143,31,.18), transparent 34%),
+      linear-gradient(135deg, rgba(28,28,28,.98), rgba(43,26,9,.94));
+    box-shadow:0 22px 70px rgba(0,0,0,.38);
   }
-  .sv-fechamento-status tbody tr:nth-child(even) td{
-    background:rgba(255,140,0,.075) !important;
+  .fech-title{font-weight:900;letter-spacing:-.04em;margin:0;font-size:clamp(1.35rem,2.1vw,2.15rem);}
+  .fech-subtitle{color:rgba(255,255,255,.70);font-size:.95rem;max-width:900px;line-height:1.45;}
+  .fech-pill{display:inline-flex;align-items:center;gap:8px;border:1px solid rgba(255,255,255,.13);background:rgba(255,255,255,.055);border-radius:999px;padding:7px 11px;color:rgba(255,255,255,.86);font-size:.82rem;font-weight:750;}
+  .fech-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-top:18px;}
+  .fech-kpi{border:1px solid rgba(255,255,255,.10);border-radius:18px;background:rgba(8,8,8,.38);padding:14px 16px;min-height:92px;}
+  .fech-kpi .label{font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:rgba(255,255,255,.62);font-weight:850;}
+  .fech-kpi .value{font-size:1.55rem;font-weight:950;color:#fff;line-height:1.1;margin-top:8px;}
+  .fech-kpi .hint{font-size:.78rem;color:rgba(255,255,255,.64);margin-top:5px;}
+  .fech-panel{border:1px solid rgba(255,255,255,.105);border-radius:22px;background:linear-gradient(180deg,rgba(22,22,22,.98),rgba(14,14,14,.98));box-shadow:0 18px 55px rgba(0,0,0,.32);}
+  .fech-panel-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:18px 18px 14px;border-bottom:1px solid rgba(255,255,255,.075);}
+  .fech-panel-title{margin:0;font-weight:900;letter-spacing:-.02em;color:#fff;font-size:1.05rem;}
+  .fech-panel-sub{color:rgba(255,255,255,.62);font-size:.84rem;margin-top:3px;}
+  .fech-panel-body{padding:18px;}
+  .fech-label,.fech-page .form-label{color:rgba(255,255,255,.88)!important;font-weight:800;font-size:.83rem;margin-bottom:7px;}
+  .fech-page .form-text{color:rgba(255,255,255,.55)!important;}
+  .fech-page .form-control,.fech-page .form-select,.fech-page .sv-input{
+    background:rgba(4,4,4,.64)!important;color:#fff!important;border:1px solid rgba(255,255,255,.13)!important;border-radius:14px!important;min-height:44px;
   }
-  .sv-fechamento-status tbody tr:hover td{
-    background:rgba(255,140,0,.12) !important;
-    border-top-color:rgba(255,140,0,.22);
-  }
-  .sv-fechamento-status tbody td.text-muted,
-  .sv-fechamento-status tbody .text-muted{
-    color:rgba(255,244,232,.72) !important;
-  }
+  .fech-page .form-control:focus,.fech-page .form-select:focus,.fech-page .sv-input:focus{border-color:rgba(255,143,31,.68)!important;box-shadow:0 0 0 .2rem rgba(255,143,31,.14)!important;}
+  .fech-page .btn{border-radius:14px;font-weight:850;}
+  .fech-btn-primary{background:linear-gradient(135deg,#ff8f1f,#ffb347)!important;border:0!important;color:#111!important;box-shadow:0 10px 28px rgba(255,143,31,.18);}
+  .fech-btn-ghost{background:rgba(255,255,255,.055)!important;border:1px solid rgba(255,255,255,.16)!important;color:#fff!important;}
+  .fech-btn-green{background:rgba(22,163,74,.16)!important;border:1px solid rgba(34,197,94,.38)!important;color:#8df4b5!important;}
+  .fech-btn-red{background:rgba(239,68,68,.12)!important;border:1px solid rgba(239,68,68,.42)!important;color:#ffb4b4!important;}
+  .fech-btn-blue{background:rgba(59,130,246,.14)!important;border:1px solid rgba(96,165,250,.38)!important;color:#b9d7ff!important;}
+  .fech-alert{border-radius:18px;border:1px solid rgba(255,255,255,.11);background:rgba(255,255,255,.055);color:rgba(255,255,255,.82);padding:14px 16px;}
+  .fech-alert-warning{border-color:rgba(245,158,11,.35);background:rgba(245,158,11,.10);color:#ffe2aa;}
+  .fech-alert-info{border-color:rgba(59,130,246,.28);background:rgba(59,130,246,.10);color:#cfe3ff;}
+  .fech-table-wrap{overflow:auto;border:1px solid rgba(255,255,255,.09);border-radius:18px;background:rgba(0,0,0,.22);}
+  .fech-table{width:100%;margin:0;border-collapse:separate;border-spacing:0;color:rgba(255,255,255,.90);}
+  .fech-table thead th{background:rgba(255,143,31,.10);color:rgba(255,255,255,.86);font-size:.73rem;text-transform:uppercase;letter-spacing:.075em;font-weight:900;border-bottom:1px solid rgba(255,255,255,.10);padding:12px 14px;white-space:nowrap;}
+  .fech-table tbody td{padding:14px;border-bottom:1px solid rgba(255,255,255,.075);background:rgba(255,255,255,.025);vertical-align:middle;}
+  .fech-table tbody tr:nth-child(even) td{background:rgba(255,143,31,.035);}
+  .fech-table tbody tr:hover td{background:rgba(255,143,31,.085);}
+  .fech-table tbody tr:last-child td{border-bottom:0;}
+  .status-chip{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:6px 10px;font-size:.74rem;font-weight:950;text-transform:uppercase;letter-spacing:.03em;border:1px solid rgba(255,255,255,.12);}
+  .status-open{background:rgba(34,197,94,.16);color:#9af2bc;border-color:rgba(34,197,94,.36);}
+  .status-closed{background:rgba(239,68,68,.16);color:#ffc2c2;border-color:rgba(239,68,68,.38);}
+  .status-pay{background:rgba(245,158,11,.17);color:#ffdf9c;border-color:rgba(245,158,11,.40);}
+  .status-paid{background:rgba(59,130,246,.17);color:#bdd9ff;border-color:rgba(59,130,246,.40);}
+  .status-info{background:rgba(14,165,233,.14);color:#b8ecff;border-color:rgba(14,165,233,.36);}
+  .fech-code{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;color:#fff;font-weight:900;}
+  .action-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;}
+  .action-card{display:flex;flex-direction:column;gap:8px;align-items:flex-start;justify-content:space-between;text-align:left;border-radius:18px;padding:13px 14px;min-height:118px;white-space:normal;}
+  .action-card .act-title{font-size:.88rem;font-weight:950;}
+  .action-card .act-desc{font-size:.76rem;line-height:1.34;opacity:.72;font-weight:600;}
+  .fech-rule-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:0;padding:0;list-style:none;}
+  .fech-rule-list li{border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.035);border-radius:15px;padding:11px 12px;color:rgba(255,255,255,.72);font-size:.84rem;}
+  .fech-rule-list b{color:#fff;}
+  @media (max-width:1100px){.fech-kpis{grid-template-columns:repeat(2,minmax(0,1fr));}.action-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.fech-rule-list{grid-template-columns:1fr;}}
+  @media (max-width:700px){.fech-page{padding:12px;}.fech-hero,.fech-panel-body,.fech-panel-head{padding:15px;}.fech-kpis{grid-template-columns:1fr;}.action-grid{grid-template-columns:1fr;}}
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="sv-page sv-page--wide">
+{% set ns = namespace(fechadas=0, abertas=0, a_pagar=0, pago=0) %}
+{% for e in (emps_sel or []) %}
+  {% set st = status_por_emp.get(e) %}
+  {% if st and st.fechado %}{% set ns.fechadas = ns.fechadas + 1 %}{% else %}{% set ns.abertas = ns.abertas + 1 %}{% endif %}
+  {% if st and st.status == 'a_pagar' %}{% set ns.a_pagar = ns.a_pagar + 1 %}{% endif %}
+  {% if st and st.status == 'pago' %}{% set ns.pago = ns.pago + 1 %}{% endif %}
+{% endfor %}
 
-  <div class="sv-pagehead sv-glass mb-3">
-  <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 w-100">
-    <div>
-      <h3 class="m-0 page-title">✅ Fechamento Mensal</h3>
-      <div class="subtitle mt-1">
-        Fecha a competência por loja e permite conferir/exportar exatamente a base usada no relatório de campanhas. Apenas ADMIN.
+<div class="fech-page">
+  <section class="fech-hero mb-3">
+    <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
+      <div>
+        <div class="fech-pill mb-3">🔒 Controle financeiro mensal</div>
+        <h1 class="fech-title">Fechamento Mensal</h1>
+        <div class="fech-subtitle mt-2">
+          Trave a competência por EMP, envie valores para pagamento, exporte a conferência e mantenha rastreabilidade do que foi apurado nos relatórios de campanhas.
+        </div>
       </div>
-  </div>
-</div>
-
-<div class="d-flex gap-2">
-      <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin_resumos_periodo') }}">Ir para Resumos por Período</a>
+      <div class="d-flex flex-wrap gap-2">
+        <a class="btn fech-btn-ghost" href="{{ url_for('admin_resumos_periodo') }}">📊 Resumos por Período</a>
+      </div>
     </div>
-  </div>
+
+    <div class="fech-kpis">
+      <div class="fech-kpi">
+        <div class="label">Competência</div>
+        <div class="value">{{ "%02d"|format(mes|int) }}/{{ ano }}</div>
+        <div class="hint">Mês/ano em análise</div>
+      </div>
+      <div class="fech-kpi">
+        <div class="label">EMPs selecionadas</div>
+        <div class="value">{{ (emps_sel or [])|length }}</div>
+        <div class="hint">Lojas no filtro atual</div>
+      </div>
+      <div class="fech-kpi">
+        <div class="label">Fechadas</div>
+        <div class="value">{{ ns.fechadas }}</div>
+        <div class="hint">Com trava de fechamento</div>
+      </div>
+      <div class="fech-kpi">
+        <div class="label">Financeiro</div>
+        <div class="value">{{ ns.a_pagar }} / {{ ns.pago }}</div>
+        <div class="hint">A pagar / Pago</div>
+      </div>
+    </div>
+  </section>
 
   {% if msgs %}
     {% for m in msgs %}
-      <div class="alert alert-info py-2 mb-2">{{ m|safe }}</div>
+      <div class="fech-alert fech-alert-info mb-2">{{ m|safe }}</div>
     {% endfor %}
   {% endif %}
 
-  <form method="get" action="{{ url_for('admin_fechamento') }}" class="filter-bar mb-3">
-    <div class="row g-2 align-items-end">
-      <div class="col-md-6">
-        {{ multiselect("emp", emps_options or [], emps_sel or [], label="EMP(s)", placeholder="Selecione EMP(s)") }}
-        <div class="form-text">Você pode selecionar 1 ou várias EMPs para fechar/reabrir em lote.</div>
+  <section class="fech-panel mb-3">
+    <div class="fech-panel-head">
+      <div>
+        <h2 class="fech-panel-title">Filtros de fechamento</h2>
+        <div class="fech-panel-sub">Selecione uma ou várias EMPs para executar conferência, exportação ou fechamento em lote.</div>
       </div>
-
-      <div class="col-6 col-md-2">
-        <label class="form-label">Mês</label>
-        <input class="form-control sv-input" type="number" name="mes" min="1" max="12" value="{{ mes }}" required>
-      </div>
-      <div class="col-6 col-md-2">
-        <label class="form-label">Ano</label>
-        <input class="form-control sv-input" type="number" name="ano" min="2000" max="2100" value="{{ ano }}" required>
-      </div>
-
-      <div class="col-12 col-md-2 d-grid">
-        <button class="btn btn-primary" type="submit">Carregar</button>
-      </div>
+      <span class="fech-pill">Acesso ADMIN</span>
     </div>
-  </form>
-
-  <div class="sv-card sv-glass card shadow-sm">
-    <div class="sv-card sv-glass card-body">
-      <div class="d-flex flex-wrap justify-content-between align-items-start gap-2">
-        <div>
-          <h5 class="m-0">Status do período</h5>
-          <div class="subtitle small mt-1">Competência: <b>{{ mes }}/{{ ano }}</b></div>
+    <div class="fech-panel-body">
+      <form method="get" action="{{ url_for('admin_fechamento') }}">
+        <div class="row g-3 align-items-end">
+          <div class="col-lg-7">
+            {{ multiselect("emp", emps_options or [], emps_sel or [], label="EMP(s)", placeholder="Selecione EMP(s)") }}
+            <div class="form-text">Você pode selecionar 1 ou várias EMPs para fechamento/reabertura em lote.</div>
+          </div>
+          <div class="col-6 col-lg-2">
+            <label class="form-label">Mês</label>
+            <input class="form-control" type="number" name="mes" min="1" max="12" value="{{ mes }}" required>
+          </div>
+          <div class="col-6 col-lg-2">
+            <label class="form-label">Ano</label>
+            <input class="form-control" type="number" name="ano" min="2000" max="2100" value="{{ ano }}" required>
+          </div>
+          <div class="col-lg-1 d-grid">
+            <button class="btn fech-btn-primary" type="submit">Filtrar</button>
+          </div>
         </div>
-
-    <form method="post" action="{{ url_for('admin_fechamento') }}" class="d-flex flex-wrap gap-2 align-items-end">
-          {# mantém filtros no POST #}
-          {% for e in (emps_sel or []) %}
-            <input class="sv-input" type="hidden" name="emp" value="{{ e }}">
-          {% endfor %}
-          <input class="sv-input" type="hidden" name="mes" value="{{ mes }}">
-          <input class="sv-input" type="hidden" name="ano" value="{{ ano }}">
-          <input class="sv-input" type="hidden" name="acao" id="acao_fechamento" value="">
-
-<button class="btn btn-outline-primary" type="submit" onclick="document.getElementById('acao_fechamento').value='gerar_fechamento'" {% if not emps_sel %}disabled{% endif %}>
-  Conferir apuração no relatório
-</button>
-
-<button class="btn btn-outline-dark" type="submit" onclick="document.getElementById('acao_fechamento').value='gerar_snapshot'" {% if not emps_sel %}disabled{% endif %}>
-  Exportar fechamento (PDF)
-</button>
-
-<button class="btn btn-primary" type="submit" onclick="document.getElementById('acao_fechamento').value='fechar_a_pagar'" {% if not emps_sel %}disabled{% endif %}>
-  Fechar (A pagar)
-</button>
-<button class="btn btn-success" type="submit" onclick="document.getElementById('acao_fechamento').value='fechar_pago'" {% if not emps_sel %}disabled{% endif %}>
-  Fechar (Pago)
-</button>
-<button class="btn btn-outline-secondary" type="submit" onclick="document.getElementById('acao_fechamento').value='reabrir'" {% if not emps_sel %}disabled{% endif %}>
-  Reabrir (Voltar para Aberto)
-</button>
-</form>
-      </div>
-
-      <div class="alert alert-secondary small mt-3 mb-0">
-        <div><b>Como usar:</b></div>
-        <div class="mt-1"><b>Conferir apuração no relatório</b> recalcula e abre o <code>/relatorios/campanhas</code> com as EMPs selecionadas.</div>
-        <div><b>Exportar fechamento (PDF)</b> baixa um relatório visual da competência, agrupado por loja, vendedor e campanhas detalhadas, usando a mesma base do relatório de campanhas.</div>
-        <div><b>Fechar (A pagar)</b> trava o período e sinaliza que os valores estão prontos para pagamento.</div>
-        <div><b>Fechar (Pago)</b> trava o período já marcando a competência como liquidada.</div>
-      </div>
-
-      <div class="mt-3">
-        {% if not emps_sel %}
-          <div class="alert alert-warning mb-0">Selecione ao menos 1 EMP para ver o status e executar o fechamento.</div>
-        {% else %}
-          <div class="sv-tablewrap">
-            <table class="sv-table table align-middle sv-fechamento-status">
-              <thead>
-                <tr>
-                  <th>EMP</th>
-                  <th>Trava</th>
-                  <th>Financeiro</th>
-                  <th>Fechado em</th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for e in emps_sel %}
-                  {% set st = status_por_emp.get(e) %}
-                  <tr>
-                    <td><b>{{ e }}</b></td>
-                    <td>
-                      {% if st and st.fechado %}
-                        <span class="badge text-bg-danger">FECHADO</span>
-                      {% else %}
-                        <span class="badge text-bg-success">ABERTO</span>
-                      {% endif %}
-                    </td>
-                    <td>
-                      {% if st and st.status == "pago" %}
-                        <span class="badge text-bg-primary">PAGO</span>
-                      {% elif st and st.status == "a_pagar" %}
-                        <span class="badge text-bg-warning">A PAGAR</span>
-                      {% elif st and st.status == "fechado" %}
-                        <span class="badge text-bg-info">FECHADO</span>
-                      {% else %}
-                        <span class="badge text-bg-secondary">ABERTO</span>
-                      {% endif %}
-                    </td>
-                    <td class="small text-muted">
-                      {% if st and st.fechado_em %}
-                        {{ st.fechado_em }}
-                      {% else %}
-                        —
-                      {% endif %}
-                    </td>
-                  </tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
-
-          <div class="alert alert-secondary small mb-0">
-            <b>Dica:</b> Se o mês estiver <span class="badge text-bg-danger">FECHADO</span>, telas que respeitam a trava não devem permitir alteração dos cadastros do período.
-          </div>
-        {% endif %}
-      </div>
+      </form>
     </div>
-  </div>
+  </section>
 
+  <section class="fech-panel mb-3">
+    <div class="fech-panel-head">
+      <div>
+        <h2 class="fech-panel-title">Ações do período</h2>
+        <div class="fech-panel-sub">Competência <b>{{ "%02d"|format(mes|int) }}/{{ ano }}</b>. As ações abaixo respeitam as EMPs selecionadas.</div>
+      </div>
+      {% if not emps_sel %}
+        <span class="status-chip status-pay">Selecione EMPs</span>
+      {% else %}
+        <span class="status-chip status-info">{{ (emps_sel or [])|length }} EMP(s)</span>
+      {% endif %}
+    </div>
+    <div class="fech-panel-body">
+      <form method="post" action="{{ url_for('admin_fechamento') }}">
+        {% for e in (emps_sel or []) %}
+          <input type="hidden" name="emp" value="{{ e }}">
+        {% endfor %}
+        <input type="hidden" name="mes" value="{{ mes }}">
+        <input type="hidden" name="ano" value="{{ ano }}">
+        <input type="hidden" name="acao" id="acao_fechamento" value="">
+
+        <div class="action-grid">
+          <button class="btn fech-btn-blue action-card" type="submit" onclick="document.getElementById('acao_fechamento').value='gerar_fechamento'" {% if not emps_sel %}disabled{% endif %}>
+            <span class="act-title">🔎 Conferir apuração</span>
+            <span class="act-desc">Recalcula e abre o relatório consolidado para validação.</span>
+          </button>
+          <button class="btn fech-btn-ghost action-card" type="submit" onclick="document.getElementById('acao_fechamento').value='gerar_snapshot'" {% if not emps_sel %}disabled{% endif %}>
+            <span class="act-title">📄 Exportar PDF</span>
+            <span class="act-desc">Gera o fechamento visual por loja, vendedor e campanha/meta.</span>
+          </button>
+          <button class="btn fech-btn-primary action-card" type="submit" onclick="document.getElementById('acao_fechamento').value='fechar_a_pagar'" {% if not emps_sel %}disabled{% endif %}>
+            <span class="act-title">💰 Fechar A pagar</span>
+            <span class="act-desc">Trava a competência e sinaliza valores prontos para pagamento.</span>
+          </button>
+          <button class="btn fech-btn-green action-card" type="submit" onclick="document.getElementById('acao_fechamento').value='fechar_pago'" {% if not emps_sel %}disabled{% endif %}>
+            <span class="act-title">✅ Fechar Pago</span>
+            <span class="act-desc">Trava a competência já marcando como liquidada.</span>
+          </button>
+          <button class="btn fech-btn-red action-card" type="submit" onclick="document.getElementById('acao_fechamento').value='reabrir'" {% if not emps_sel %}disabled{% endif %}>
+            <span class="act-title">↩️ Reabrir</span>
+            <span class="act-desc">Volta o período para aberto e libera ajustes quando necessário.</span>
+          </button>
+        </div>
+      </form>
+
+      <ul class="fech-rule-list mt-3">
+        <li><b>Conferir apuração:</b> abre <code>/relatorios/campanhas</code> com recálculo para as EMPs selecionadas.</li>
+        <li><b>Exportar PDF:</b> usa a mesma base do relatório, agrupando loja, vendedor e campanhas/metas.</li>
+        <li><b>Fechar A pagar:</b> deixa os valores prontos para o financeiro executar pagamento.</li>
+        <li><b>Fechar Pago:</b> registra a competência como liquidada no controle financeiro.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="fech-panel">
+    <div class="fech-panel-head">
+      <div>
+        <h2 class="fech-panel-title">Status das EMPs</h2>
+        <div class="fech-panel-sub">Controle da trava mensal e situação financeira por empresa.</div>
+      </div>
+      <span class="fech-pill">{{ "%02d"|format(mes|int) }}/{{ ano }}</span>
+    </div>
+    <div class="fech-panel-body">
+      {% if not emps_sel %}
+        <div class="fech-alert fech-alert-warning mb-0">Selecione ao menos 1 EMP para visualizar o status e executar fechamento.</div>
+      {% else %}
+        <div class="fech-table-wrap mb-3">
+          <table class="fech-table">
+            <thead>
+              <tr>
+                <th>EMP</th>
+                <th>Trava</th>
+                <th>Financeiro</th>
+                <th>Fechado em</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for e in emps_sel %}
+                {% set st = status_por_emp.get(e) %}
+                <tr>
+                  <td><span class="fech-code">{{ e }}</span></td>
+                  <td>
+                    {% if st and st.fechado %}
+                      <span class="status-chip status-closed">Fechado</span>
+                    {% else %}
+                      <span class="status-chip status-open">Aberto</span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    {% if st and st.status == "pago" %}
+                      <span class="status-chip status-paid">Pago</span>
+                    {% elif st and st.status == "a_pagar" %}
+                      <span class="status-chip status-pay">A pagar</span>
+                    {% elif st and st.status == "fechado" %}
+                      <span class="status-chip status-info">Fechado</span>
+                    {% else %}
+                      <span class="status-chip status-open">Aberto</span>
+                    {% endif %}
+                  </td>
+                  <td style="color:rgba(255,255,255,.66);">
+                    {% if st and st.fechado_em %}{{ st.fechado_em }}{% else %}—{% endif %}
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        <div class="fech-alert mb-0">
+          <b>Dica:</b> quando o mês estiver <span class="status-chip status-closed">Fechado</span>, as telas que respeitam a trava não devem permitir alteração nos cadastros do período.
+        </div>
+      {% endif %}
+    </div>
+  </section>
 </div>
 {% endblock %}

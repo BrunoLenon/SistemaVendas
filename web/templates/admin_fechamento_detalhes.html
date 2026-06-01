@@ -4,48 +4,110 @@
 
 {% block extra_head %}
 <style>
-  .page-title{font-weight:800; letter-spacing:-.3px}
-  .subtitle{color:var(--bs-secondary-color)}
-  .mono{font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;}
-  .item-row{background: rgba(0,0,0,.02)}
-</style>
-
-<style>
-  /* Admin pages: use more width + compact spacing */
-  .sv-page.sv-page--wide{max-width: 1480px;}
-  .sv-page{padding-top:10px;padding-bottom:10px;}
-  .sv-pagehead{padding:12px;}
-  .sv-card-pad{padding:12px;}
-  .sv-table td,.sv-table th{padding:.5rem .55rem;}
-  .sv-table thead th{font-size:12px; letter-spacing:.02em;}
-  .sv-muted{opacity:.78}
+  .fd-page{max-width:1480px;margin:0 auto;padding:18px 18px 28px;color:rgba(255,255,255,.94);}
+  .fd-hero{border:1px solid rgba(255,143,31,.28);border-radius:24px;padding:22px;background:radial-gradient(circle at 12% 0%, rgba(255,143,31,.18), transparent 34%),linear-gradient(135deg,rgba(28,28,28,.98),rgba(43,26,9,.94));box-shadow:0 22px 70px rgba(0,0,0,.38);}
+  .fd-title{font-weight:900;letter-spacing:-.04em;margin:0;font-size:clamp(1.25rem,2vw,2rem);}
+  .fd-subtitle{color:rgba(255,255,255,.70);font-size:.95rem;}
+  .fd-pill{display:inline-flex;align-items:center;gap:8px;border:1px solid rgba(255,255,255,.13);background:rgba(255,255,255,.055);border-radius:999px;padding:7px 11px;color:rgba(255,255,255,.86);font-size:.82rem;font-weight:750;}
+  .fd-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-top:18px;}
+  .fd-kpi{border:1px solid rgba(255,255,255,.10);border-radius:18px;background:rgba(8,8,8,.38);padding:14px 16px;min-height:92px;}
+  .fd-kpi .label{font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:rgba(255,255,255,.62);font-weight:850;}
+  .fd-kpi .value{font-size:1.35rem;font-weight:950;color:#fff;line-height:1.1;margin-top:8px;}
+  .fd-kpi .hint{font-size:.78rem;color:rgba(255,255,255,.64);margin-top:5px;}
+  .fd-panel{border:1px solid rgba(255,255,255,.105);border-radius:22px;background:linear-gradient(180deg,rgba(22,22,22,.98),rgba(14,14,14,.98));box-shadow:0 18px 55px rgba(0,0,0,.32);}
+  .fd-panel-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:18px 18px 14px;border-bottom:1px solid rgba(255,255,255,.075);}
+  .fd-panel-title{margin:0;font-weight:900;letter-spacing:-.02em;color:#fff;font-size:1.05rem;}
+  .fd-panel-sub{color:rgba(255,255,255,.62);font-size:.84rem;margin-top:3px;}
+  .fd-panel-body{padding:18px;}
+  .fd-btn-primary{background:linear-gradient(135deg,#ff8f1f,#ffb347)!important;border:0!important;color:#111!important;border-radius:14px;font-weight:850;}
+  .fd-btn-ghost{background:rgba(255,255,255,.055)!important;border:1px solid rgba(255,255,255,.16)!important;color:#fff!important;border-radius:14px;font-weight:850;}
+  .fd-btn-green{background:rgba(22,163,74,.16)!important;border:1px solid rgba(34,197,94,.38)!important;color:#8df4b5!important;border-radius:14px;font-weight:850;}
+  .fd-alert{border-radius:18px;border:1px solid rgba(245,158,11,.35);background:rgba(245,158,11,.10);color:#ffe2aa;padding:14px 16px;}
+  .fd-table-wrap{overflow:auto;border:1px solid rgba(255,255,255,.09);border-radius:18px;background:rgba(0,0,0,.22);}
+  .fd-table{width:100%;margin:0;border-collapse:separate;border-spacing:0;color:rgba(255,255,255,.90);}
+  .fd-table thead th{background:rgba(255,143,31,.10);color:rgba(255,255,255,.86);font-size:.73rem;text-transform:uppercase;letter-spacing:.075em;font-weight:900;border-bottom:1px solid rgba(255,255,255,.10);padding:12px 14px;white-space:nowrap;}
+  .fd-table tbody td{padding:14px;border-bottom:1px solid rgba(255,255,255,.075);background:rgba(255,255,255,.025);vertical-align:middle;}
+  .fd-table tbody tr:nth-child(even) td{background:rgba(255,143,31,.035);}
+  .fd-table tbody tr:hover td{background:rgba(255,143,31,.085);}
+  .fd-table tbody tr:last-child td{border-bottom:0;}
+  .fd-table-sm thead th{padding:10px 12px;font-size:.70rem;}
+  .fd-table-sm tbody td{padding:10px 12px;font-size:.88rem;}
+  .fd-collapse-row td{background:rgba(0,0,0,.20)!important;}
+  .fd-mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;}
+  .fd-money{font-weight:950;color:#fff;white-space:nowrap;}
+  .fd-muted{color:rgba(255,255,255,.58)!important;}
+  .fd-chip{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:6px 10px;font-size:.74rem;font-weight:950;text-transform:uppercase;letter-spacing:.03em;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.07);color:rgba(255,255,255,.85);}
+  .fd-chip-pay{background:rgba(245,158,11,.15);color:#ffdf9c;border-color:rgba(245,158,11,.35);}
+  .fd-chip-paid{background:rgba(34,197,94,.15);color:#9af2bc;border-color:rgba(34,197,94,.34);}
+  @media (max-width:1100px){.fd-kpis{grid-template-columns:repeat(2,minmax(0,1fr));}}
+  @media (max-width:700px){.fd-page{padding:12px;}.fd-hero,.fd-panel-body,.fd-panel-head{padding:15px;}.fd-kpis{grid-template-columns:1fr;}}
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="sv-page sv-page--wide">
+{% set total_geral = 0 %}
+{% set ns = namespace(total=0, qtd=0, combo=0, parados=0, ranking=0, itens=0) %}
+{% for d in (detalhes or []) %}
+  {% set ns.total = ns.total + (d.total or 0) %}
+  {% set ns.qtd = ns.qtd + (d.qtd or 0) %}
+  {% set ns.combo = ns.combo + (d.combo or 0) %}
+  {% set ns.parados = ns.parados + (d.parados or 0) %}
+  {% set ns.ranking = ns.ranking + (d.ranking_marca or 0) %}
+  {% set ns.itens = ns.itens + ((d.itens or [])|length) %}
+{% endfor %}
 
-  <div class="sv-pagehead sv-glass mb-3">
-  <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 w-100">
-    <div>
-      <h3 class="m-0 page-title">📌 Detalhes do Fechamento</h3>
-      <div class="subtitle mt-1">EMP <b>{{ emp }}</b> — Competência: <b>{{ mes }}/{{ ano }}</b></div>
-  </div>
-</div>
-
-<div class="d-flex gap-2">
-      <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('admin_fechamento', emp=emp, ano=ano, mes=mes) }}">Voltar</a>
-      <a class="btn btn-outline-success btn-sm" href="{{ url_for('admin_fechamento_detalhes', emp=emp, ano=ano, mes=mes, export=1) }}">Exportar Excel</a>
+<div class="fd-page">
+  <section class="fd-hero mb-3">
+    <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
+      <div>
+        <div class="fd-pill mb-3">📌 Conferência detalhada</div>
+        <h1 class="fd-title">Detalhes do Fechamento</h1>
+        <div class="fd-subtitle mt-2">EMP <b>{{ emp }}</b> — Competência <b>{{ "%02d"|format(mes|int) }}/{{ ano }}</b></div>
+      </div>
+      <div class="d-flex flex-wrap gap-2">
+        <a class="btn fd-btn-ghost" href="{{ url_for('admin_fechamento', emp=emp, ano=ano, mes=mes) }}">← Voltar</a>
+        <a class="btn fd-btn-green" href="{{ url_for('admin_fechamento_detalhes', emp=emp, ano=ano, mes=mes, export=1) }}">Exportar Excel</a>
+      </div>
     </div>
-  </div>
+
+    <div class="fd-kpis">
+      <div class="fd-kpi">
+        <div class="label">Vendedores</div>
+        <div class="value">{{ (detalhes or [])|length }}</div>
+        <div class="hint">Com apuração no período</div>
+      </div>
+      <div class="fd-kpi">
+        <div class="label">Total apurado</div>
+        <div class="value">{{ ns.total|brl_rs }}</div>
+        <div class="hint">Recompensa geral</div>
+      </div>
+      <div class="fd-kpi">
+        <div class="label">Itens detalhados</div>
+        <div class="value">{{ ns.itens }}</div>
+        <div class="hint">Linhas de conferência</div>
+      </div>
+      <div class="fd-kpi">
+        <div class="label">Ranking marca</div>
+        <div class="value">{{ ns.ranking|brl_rs }}</div>
+        <div class="hint">Subtotal do tipo</div>
+      </div>
+    </div>
+  </section>
 
   {% if not detalhes %}
-    <div class="alert alert-warning">Sem dados para o período/EMP selecionada.</div>
+    <div class="fd-alert">Sem dados para o período/EMP selecionada.</div>
   {% else %}
-    <div class="sv-card sv-glass card shadow-sm">
-      <div class="sv-card sv-glass card-body">
-        <div class="table-responsive">
-          <table class="sv-table table align-middle">
+    <section class="fd-panel">
+      <div class="fd-panel-head">
+        <div>
+          <h2 class="fd-panel-title">Apuração por vendedor</h2>
+          <div class="fd-panel-sub">Clique em “Ver itens” para abrir o detalhamento de campanhas, metas e recompensas do vendedor.</div>
+        </div>
+        <span class="fd-pill">{{ (detalhes or [])|length }} vendedor(es)</span>
+      </div>
+      <div class="fd-panel-body">
+        <div class="fd-table-wrap">
+          <table class="fd-table">
             <thead>
               <tr>
                 <th>Vendedor</th>
@@ -62,24 +124,24 @@
                 {% set collapse_id = 'itens_' ~ loop.index %}
                 <tr>
                   <td><b>{{ d.vendedor }}</b></td>
-                  <td class="text-end">{{ "%.2f"|format(d.qtd or 0) }}</td>
-                  <td class="text-end">{{ "%.2f"|format(d.combo or 0) }}</td>
-                  <td class="text-end">{{ "%.2f"|format(d.parados or 0) }}</td>
-                  <td class="text-end">{{ "%.2f"|format(d.ranking_marca or 0) }}</td>
-                  <td class="text-end"><b>{{ "%.2f"|format(d.total or 0) }}</b></td>
+                  <td class="text-end fd-money">{{ (d.qtd or 0)|brl_rs }}</td>
+                  <td class="text-end fd-money">{{ (d.combo or 0)|brl_rs }}</td>
+                  <td class="text-end fd-money">{{ (d.parados or 0)|brl_rs }}</td>
+                  <td class="text-end fd-money">{{ (d.ranking_marca or 0)|brl_rs }}</td>
+                  <td class="text-end fd-money">{{ (d.total or 0)|brl_rs }}</td>
                   <td class="text-end">
-                    <button class="btn btn-outline-primary btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#{{ collapse_id }}" aria-expanded="false" aria-controls="{{ collapse_id }}">
+                    <button class="btn fd-btn-primary btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#{{ collapse_id }}" aria-expanded="false" aria-controls="{{ collapse_id }}">
                       Ver itens ({{ (d.itens or [])|length }})
                     </button>
                   </td>
                 </tr>
-                <tr class="collapse item-row" id="{{ collapse_id }}">
+                <tr class="collapse fd-collapse-row" id="{{ collapse_id }}">
                   <td colspan="7">
                     {% if not d.itens %}
-                      <div class="text-muted small">Sem itens detalhados.</div>
+                      <div class="fd-muted small">Sem itens detalhados.</div>
                     {% else %}
-                      <div class="table-responsive">
-                        <table class="sv-table table table-sm mb-0">
+                      <div class="fd-table-wrap">
+                        <table class="fd-table fd-table-sm">
                           <thead>
                             <tr>
                               <th>Tipo</th>
@@ -94,21 +156,29 @@
                           <tbody>
                             {% for it in d.itens %}
                               <tr>
-                                <td><span class="badge text-bg-secondary">{{ it.tipo }}</span></td>
+                                <td><span class="fd-chip">{{ it.tipo }}</span></td>
                                 <td>{{ it.titulo }}</td>
-                                <td class="mono">{{ it.marca or '' }}</td>
-                                <td class="mono">{{ it.item or '' }}</td>
-                                <td class="text-end">
+                                <td class="fd-mono">{{ it.marca or '' }}</td>
+                                <td class="fd-mono">{{ it.item or '' }}</td>
+                                <td class="text-end fd-money">
                                   {% if it.valor_vendido is defined and it.valor_vendido is not none %}
-                                    {{ "%.2f"|format(it.valor_vendido or 0) }}
+                                    {{ (it.valor_vendido or 0)|brl_rs }}
                                   {% elif it.valor_base is defined and it.valor_base is not none %}
-                                    {{ "%.2f"|format(it.valor_base or 0) }}
+                                    {{ (it.valor_base or 0)|brl_rs }}
                                   {% else %}
                                     —
                                   {% endif %}
                                 </td>
-                                <td class="text-end"><b>{{ "%.2f"|format(it.valor or 0) }}</b></td>
-                                <td class="small">{{ it.status_pagamento or 'PENDENTE' }}</td>
+                                <td class="text-end fd-money">{{ (it.valor or 0)|brl_rs }}</td>
+                                <td>
+                                  {% if (it.status_pagamento or 'PENDENTE')|upper == 'PAGO' %}
+                                    <span class="fd-chip fd-chip-paid">PAGO</span>
+                                  {% elif (it.status_pagamento or 'PENDENTE')|upper == 'A_PAGAR' %}
+                                    <span class="fd-chip fd-chip-pay">A PAGAR</span>
+                                  {% else %}
+                                    <span class="fd-chip">{{ it.status_pagamento or 'PENDENTE' }}</span>
+                                  {% endif %}
+                                </td>
                               </tr>
                             {% endfor %}
                           </tbody>
@@ -122,8 +192,7 @@
           </table>
         </div>
       </div>
-    </div>
+    </section>
   {% endif %}
-
 </div>
 {% endblock %}
