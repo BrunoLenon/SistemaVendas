@@ -198,3 +198,53 @@ body.sidebar-collapsed .sv-sidebar-logo img{
     justify-content:center;
   }
 }
+
+
+/* =====================================================================
+   Sidebar global consistente
+   Garante que páginas antigas e novas usem o mesmo painel lateral
+   quando o usuário estiver logado, mesmo se o template da rota não
+   passar variáveis como role/emp manualmente.
+   ===================================================================== */
+.app-shell{
+  width:100%;
+}
+.app-main{
+  background:
+    radial-gradient(1000px 520px at 12% 0%, rgba(255,140,0,.055), transparent 60%),
+    var(--bg-main);
+}
+.app-sidebar{
+  flex:0 0 280px;
+}
+.app-page{
+  width:100%;
+}
+@media (min-width: 992px){
+  body:not(.sidebar-collapsed) .app-main{
+    margin-left:280px;
+  }
+  body.sidebar-collapsed .app-main{
+    margin-left:84px;
+  }
+}
+
+body.sidebar-collapsed .sb-title,
+body.sidebar-collapsed .sb-sec .lbl,
+body.sidebar-collapsed .sb-foot{
+  display:none !important;
+}
+body.sidebar-collapsed .sb-head{
+  justify-content:center;
+  padding-left:6px;
+  padding-right:6px;
+}
+body.sidebar-collapsed .sb-link{
+  justify-content:center;
+  padding-left:8px;
+  padding-right:8px;
+  font-size:0;
+}
+body.sidebar-collapsed .sb-link::first-letter{
+  font-size:18px;
+}

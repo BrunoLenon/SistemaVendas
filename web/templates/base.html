@@ -17,7 +17,13 @@
 </head>
 
 <body>
-  {% set r = (role|default('')|lower) %}
+  {#
+    Papel do usuário com fallback global.
+    Algumas rotas antigas não enviam `role` no render_template; nesses casos,
+    usamos a sessão para manter topbar, sidebar e shell padrão em todas as páginas logadas.
+  #}
+  {% set r_raw = role if (role is defined and role) else (session.get('role') or session.get('perfil') or '') %}
+  {% set r = (r_raw|string|lower) %}
   {% set is_logged = (r in ['admin','supervisor','vendedor','financeiro']) %}
 
   {% if is_logged %}
