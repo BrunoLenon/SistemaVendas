@@ -111,7 +111,7 @@
         <div class="sv-help-box mb-3 sv-help-text">
           <b>Código:</b> use prefixo, exemplo <code>406</code>, para considerar todos os códigos iniciados com esse valor.<br>
           <b>Descrição:</b> use o início exato, exemplo <code>JOGO JUNTA</code>, sempre combinando com a marca.<br>
-          <b>Mínimos:</b> quantidade e valor são opcionais. Se preencher ambos, os dois serão exigidos.
+          <b>Mínimos:</b> quantidade e valor do item são opcionais. Se preencher o faturamento mínimo da EMP, o pagamento só libera quando a loja atingir esse valor no período.
         </div>
       </div>
 
@@ -170,8 +170,14 @@
           </div>
 
           <div class="sv-field">
-            <label class="sv-form-label">Valor mínimo</label>
+            <label class="sv-form-label">Valor mínimo do item</label>
             <input class="form-control" type="text" name="valor_minimo" placeholder="Ex: 1000,00">
+          </div>
+
+          <div class="sv-field span-2">
+            <label class="sv-form-label">Faturamento mínimo da EMP</label>
+            <input class="form-control" type="text" name="faturamento_minimo_emp" placeholder="Ex: 500000,00">
+            <div class="sv-help-text mt-1">Opcional. Se preencher, a loja precisa atingir esse faturamento para liberar as recompensas dos vendedores.</div>
           </div>
 
           <div class="sv-field">
@@ -228,6 +234,7 @@
                 <th>Vendedor</th>
                 <th>Marca</th>
                 <th class="text-end">Mínimos</th>
+                <th class="text-end">Mínimo EMP</th>
                 <th class="text-end">R$/un</th>
                 <th>Vigência</th>
                 <th class="text-end">Ação</th>
@@ -236,7 +243,7 @@
             <tbody>
               {% for grp in campanhas|sort(attribute='data_inicio', reverse=True)|groupby('competencia_label') %}
                 <tr class="sv-group-row">
-                  <td colspan="9" style="background:rgba(255,140,0,.075)!important;color:#ffd39b!important;font-weight:900;">
+                  <td colspan="10" style="background:rgba(255,140,0,.075)!important;color:#ffd39b!important;font-weight:900;">
                     Competência {{ grp.grouper or 'Sem competência' }}
                   </td>
                 </tr>
@@ -262,6 +269,9 @@
                       {% if c.qtd_minima %}{{ c.qtd_minima }}{% else %}-{% endif %}
                       <span class="text-muted"> / </span>
                       {% if c.valor_minimo %}{{ c.valor_minimo|brl_rs }}{% else %}-{% endif %}
+                    </td>
+                    <td class="text-end sv-money">
+                      {% if c.faturamento_minimo_emp %}{{ c.faturamento_minimo_emp|brl_rs }}{% else %}-{% endif %}
                     </td>
                     <td class="text-end sv-money">{% if c.recompensa_unit %}{{ c.recompensa_unit|brl_rs }}{% else %}{{ 0|brl_rs }}{% endif %}</td>
                     <td class="sv-help-text">

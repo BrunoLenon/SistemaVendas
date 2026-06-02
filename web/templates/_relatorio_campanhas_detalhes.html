@@ -7,18 +7,21 @@
         <th class="sv-right">Recomp. (R$/un)</th>
         <th class="sv-center">Qtd vendida</th>
         <th class="sv-right">Vendeu (R$)</th>
-        <th class="sv-right">Valor (R$)</th>
+        <th class="sv-right">Valor liberado</th>
+        <th class="sv-right">Potencial</th>
+        <th class="sv-center">Trava EMP</th>
         <th class="sv-center">Status</th>
       </tr>
     </thead>
     <tbody>
-      {% set totals = namespace(vendeu=0, premio=0) %}
+      {% set totals = namespace(vendeu=0, premio=0, potencial=0) %}
       {% if g.campanhas and g.campanhas|length > 0 %}
         {% for c in g.campanhas %}
           {% if (c.tipo or '') == 'COMBO_CARD' %}
             {% set combo_dom_id = 'sv-combo-' ~ (g.emp|replace(' ', '_')) ~ '-' ~ (g.vendedor|replace(' ', '_')) ~ '-' ~ loop.index0 ~ '-' ~ (c.origem_id or 0) %}
             {% set totals.vendeu = totals.vendeu + (c.vendeu_rs or 0) %}
             {% set totals.premio = totals.premio + (c.valor or 0) %}
+            {% set totals.potencial = totals.potencial + (c.premio_potencial if c.premio_potencial is not none else c.valor or 0) %}
             <tr class="sv-combo-head">
               <td>
                 <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
@@ -39,6 +42,8 @@
               <td class="sv-center">-</td>
               <td class="sv-right">{{ (c.vendeu_rs or 0)|brl_rs }}</td>
               <td class="sv-right">{{ (c.valor or 0)|brl_rs }}</td>
+              <td class="sv-right">{{ (c.premio_potencial if c.premio_potencial is not none else c.valor or 0)|brl_rs }}</td>
+              <td class="sv-center"><span class="sv-pill">-</span></td>
               <td class="sv-center">
                 {% if c.atingiu %}
                   <span class="sv-pill sv-pill--ok">ATINGIU</span>
@@ -50,6 +55,7 @@
           {% else %}
             {% set totals.vendeu = totals.vendeu + (c.vendeu_rs or 0) %}
             {% set totals.premio = totals.premio + (c.valor or 0) %}
+            {% set totals.potencial = totals.potencial + (c.premio_potencial if c.premio_potencial is not none else c.valor or 0) %}
             <tr>
               <td>
                 <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
@@ -65,6 +71,17 @@
               <td class="sv-center">{{ (c.qtd_vendida or 0) }}</td>
               <td class="sv-right">{{ (c.vendeu_rs or 0)|brl_rs }}</td>
               <td class="sv-right">{{ (c.valor or 0)|brl_rs }}</td>
+              <td class="sv-right">{{ (c.premio_potencial if c.premio_potencial is not none else c.valor or 0)|brl_rs }}</td>
+              <td class="sv-center">
+                {% if c.bloqueado_faturamento_emp %}
+                  <span class="sv-pill sv-pill--warn">EMP ABAIXO</span>
+                  <div class="sv-muted sv-small">Faltam {{ (c.faltante_faturamento_emp or 0)|brl_rs }}</div>
+                {% elif c.faturamento_minimo_emp %}
+                  <span class="sv-pill sv-pill--ok">LIBERADA</span>
+                {% else %}
+                  <span class="sv-pill">SEM TRAVA</span>
+                {% endif %}
+              </td>
               <td class="sv-center">
                 {% if c.atingiu %}
                   <span class="sv-pill sv-pill--ok">ATINGIU</span>
@@ -77,7 +94,7 @@
         {% endfor %}
       {% else %}
         <tr>
-          <td colspan="7" class="sv-muted">Sem campanhas para este vendedor.</td>
+          <td colspan="9" class="sv-muted">Sem campanhas para este vendedor.</td>
         </tr>
       {% endif %}
     </tbody>
@@ -89,12 +106,16 @@
       <strong>{{ totals.vendeu|brl_rs }}</strong>
     </div>
     <div class="sv-subtotals__line">
-      <span>Total premiação:</span>
+      <span>Total premiação liberada:</span>
       <strong>{{ totals.premio|brl_rs }}</strong>
+    </div>
+    <div class="sv-subtotals__line">
+      <span>Total potencial:</span>
+      <strong>{{ totals.potencial|brl_rs }}</strong>
     </div>
   </div>
 
   <div class="sv-note">
-    Obs.: “Valor (R$)” mostra a premiação efetiva do período. Em campanhas do tipo combo, a recompensa só é liberada quando todos os requisitos do combo forem atingidos. Em Itens Parados, a coluna “Qtd vendida” representa os pontos do período e “Recomp. (R$/un)” representa o valor por ponto. “Vendeu (R$)” = soma do valor total vendido dos itens da campanha na competência. Em Itens Parados, a premiação base considera apenas os pontos fechados para baixo, e faixas extras entram conforme a configuração da EMP ou do escopo global. Em Metas, a linha representa Crescimento, Mix ou Marcas conforme a regra cadastrada em /admin/metas, respeitando faturamento mínimo e EMPs ativas.
+    Obs.: “Valor liberado” mostra a premiação efetiva do período. “Potencial” mostra o valor acumulado que poderá ser liberado quando a EMP atingir o faturamento mínimo configurado. Em campanhas do tipo combo, a recompensa só é liberada quando todos os requisitos do combo forem atingidos. Em Itens Parados, a coluna “Qtd vendida” representa os pontos do período e “Recomp. (R$/un)” representa o valor por ponto. “Vendeu (R$)” = soma do valor total vendido dos itens da campanha na competência. Em Itens Parados, a premiação base considera apenas os pontos fechados para baixo, e faixas extras entram conforme a configuração da EMP ou do escopo global. Em Metas, a linha representa Crescimento, Mix ou Marcas conforme a regra cadastrada em /admin/metas, respeitando faturamento mínimo e EMPs ativas.
   </div>
 </div>

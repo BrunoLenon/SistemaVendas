@@ -96,6 +96,7 @@ def register_admin_campanhas_routes(
                         recompensa_raw = (request.form.get("recompensa_unit") or "").strip().replace(",", ".")
                         qtd_min_raw = (request.form.get("qtd_minima") or "").strip().replace(",", ".")
                         valor_min_raw = (request.form.get("valor_minimo") or "").strip().replace(",", ".")
+                        faturamento_min_emp_raw = (request.form.get("faturamento_minimo_emp") or "").strip().replace(",", ".")
 
                         data_ini_raw = (request.form.get("data_inicio") or "").strip()
                         data_fim_raw = (request.form.get("data_fim") or "").strip()
@@ -133,12 +134,18 @@ def register_admin_campanhas_routes(
                         if valor_minimo is not None and valor_minimo < 0:
                             raise ValueError("Valor mínimo não pode ser negativo.")
 
+                        faturamento_minimo_emp = _to_dec(faturamento_min_emp_raw) if faturamento_min_emp_raw else None
+                        if faturamento_minimo_emp is not None and faturamento_minimo_emp < 0:
+                            raise ValueError("Faturamento mínimo da EMP não pode ser negativo.")
+
                         # Persistimos como float (compatibilidade), mas com precisão controlada
                         recompensa_unit = float(recompensa_unit.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP))
                         if qtd_minima is not None:
                             qtd_minima = float(qtd_minima)
                         if valor_minimo is not None:
                             valor_minimo = float(valor_minimo)
+                        if faturamento_minimo_emp is not None:
+                            faturamento_minimo_emp = float(faturamento_minimo_emp)
                         data_inicio = datetime.strptime(data_ini_raw, "%Y-%m-%d").date()
                         data_fim = datetime.strptime(data_fim_raw, "%Y-%m-%d").date()
                         if data_fim < data_inicio:
@@ -156,6 +163,7 @@ def register_admin_campanhas_routes(
                                 recompensa_unit=float(recompensa_unit),
                                 qtd_minima=float(qtd_minima) if qtd_minima is not None else None,
                                 valor_minimo=float(valor_minimo) if valor_minimo is not None else None,
+                                faturamento_minimo_emp=float(faturamento_minimo_emp) if faturamento_minimo_emp is not None else None,
                                 data_inicio=data_inicio,
                                 data_fim=data_fim,
                                 ativo=1,

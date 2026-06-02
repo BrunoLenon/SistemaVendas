@@ -253,7 +253,7 @@ def build_relatorio_campanhas_context(
                     CampanhaQtdResultado.competencia_mes == int(mes),
                     CampanhaQtdResultado.emp == emp,
                     CampanhaQtdResultado.vendedor.in_(vendedores),
-                    CampanhaQtdResultado.valor_recompensa > 0,
+                    or_(CampanhaQtdResultado.valor_recompensa > 0, CampanhaQtdResultado.bloqueado_faturamento_emp == 1),
                 )
                 .all()
             )
@@ -396,7 +396,12 @@ def build_relatorio_campanhas_context(
                     "qtd_vendida": float(getattr(r, "qtd_vendida", 0) or 0),
                     "valor_vendido": float(getattr(r, "valor_vendido", 0) or 0),
                     "valor_recompensa": float(getattr(r, "valor_recompensa", 0) or 0),
-                    "atingiu": bool(atingiu),
+                    "premio_potencial": float(getattr(r, "premio_potencial", None) if getattr(r, "premio_potencial", None) is not None else getattr(r, "valor_recompensa", 0) or 0),
+                    "faturamento_minimo_emp": float(getattr(r, "faturamento_minimo_emp", 0) or 0),
+                    "faturamento_emp": float(getattr(r, "faturamento_emp", 0) or 0),
+                    "faltante_faturamento_emp": float(getattr(r, "faltante_faturamento_emp", 0) or 0),
+                    "bloqueado_faturamento_emp": bool(getattr(r, "bloqueado_faturamento_emp", False)),
+                    "atingiu": bool(atingiu) and not bool(getattr(r, "bloqueado_faturamento_emp", False)),
                     "vigencia": vig,
                     "status_pagamento": getattr(r, "status_pagamento", None) or "PENDENTE",
                     "origem": "QTD",

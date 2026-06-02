@@ -15,6 +15,7 @@ from services.campanhas_service import (
 )
 from services.relatorio_campanhas_service import build_relatorio_campanhas_context, build_relatorio_campanhas_unificado_context
 from services.campanhas_v2_engine import recalc_v2_competencia
+from services.campanhas_qtd_gate import calcular_faturamento_emp_periodo, aplicar_trava_faturamento_emp
 import os
 import re
 import mimetypes
@@ -2201,9 +2202,19 @@ def _upsert_resultado(
     if atingiu:
         valor_recomp_dec = (Decimal(str(qtd_vendida)) * recompensa_unit_dec)
         # arredondamento monetário
-        valor_recomp = float(valor_recomp_dec.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+        premio_potencial = float(valor_recomp_dec.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
     else:
-        valor_recomp = 0.0
+        premio_potencial = 0.0
+
+    faturamento_emp = calcular_faturamento_emp_periodo(db, emp=emp, periodo_ini=periodo_ini, periodo_fim=periodo_fim)
+    gate_emp = aplicar_trava_faturamento_emp(
+        campanha=campanha,
+        emp=emp,
+        faturamento_emp=faturamento_emp,
+        premio_potencial=premio_potencial,
+        atingiu_regras_item=bool(atingiu),
+    )
+    valor_recomp = float(gate_emp.get("valor_recompensa", 0.0) or 0.0)
 
     # Upsert por chave única
     res = (
@@ -2239,7 +2250,12 @@ def _upsert_resultado(
 
     res.qtd_vendida = qtd_vendida
     res.valor_vendido = valor_vendido
-    res.atingiu_minimo = int(atingiu)
+    res.atingiu_minimo = int(gate_emp.get("atingiu_final", False))
+    res.premio_potencial = float(gate_emp.get("premio_potencial", premio_potencial) or 0.0)
+    res.faturamento_minimo_emp = float(gate_emp.get("faturamento_minimo_emp", 0.0) or 0.0) or None
+    res.faturamento_emp = float(gate_emp.get("faturamento_emp", 0.0) or 0.0)
+    res.faltante_faturamento_emp = float(gate_emp.get("faltante_faturamento_emp", 0.0) or 0.0)
+    res.bloqueado_faturamento_emp = 1 if gate_emp.get("bloqueado_faturamento_emp") else 0
     res.valor_recompensa = float(valor_recomp)
     res.atualizado_em = datetime.utcnow()
     return res
@@ -2323,9 +2339,19 @@ def _calc_resultado_all_vendedores(
 
     if atingiu:
         valor_recomp_dec = (Decimal(str(qtd_vendida)) * recompensa_unit_dec)
-        valor_recomp = float(valor_recomp_dec.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+        premio_potencial = float(valor_recomp_dec.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
     else:
-        valor_recomp = 0.0
+        premio_potencial = 0.0
+
+    faturamento_emp = calcular_faturamento_emp_periodo(db, emp=emp, periodo_ini=periodo_ini, periodo_fim=periodo_fim)
+    gate_emp = aplicar_trava_faturamento_emp(
+        campanha=campanha,
+        emp=emp,
+        faturamento_emp=faturamento_emp,
+        premio_potencial=premio_potencial,
+        atingiu_regras_item=bool(atingiu),
+    )
+    valor_recomp = float(gate_emp.get("valor_recompensa", 0.0) or 0.0)
 
     # Objeto leve com os mesmos campos que o template usa
     from types import SimpleNamespace
@@ -2345,7 +2371,12 @@ def _calc_resultado_all_vendedores(
         data_fim=campanha.data_fim,
         qtd_vendida=qtd_vendida,
         valor_vendido=valor_vendido,
-        atingiu_minimo=int(atingiu),
+        atingiu_minimo=int(gate_emp.get("atingiu_final", False)),
+        premio_potencial=float(gate_emp.get("premio_potencial", premio_potencial) or 0.0),
+        faturamento_minimo_emp=float(gate_emp.get("faturamento_minimo_emp", 0.0) or 0.0) or None,
+        faturamento_emp=float(gate_emp.get("faturamento_emp", 0.0) or 0.0),
+        faltante_faturamento_emp=float(gate_emp.get("faltante_faturamento_emp", 0.0) or 0.0),
+        bloqueado_faturamento_emp=1 if gate_emp.get("bloqueado_faturamento_emp") else 0,
         valor_recompensa=float(valor_recomp),
         atualizado_em=datetime.utcnow(),
     )
@@ -2886,10 +2917,24 @@ def _recalcular_resultados_campanhas_para_scope(ano: int, mes: int, emps: list[s
                 for c in escolhidas_por_vendedor.get(v, []):
                     qtd, valor = vendas_por_campanha.get(c.id, {}).get(v, (0.0, 0.0))
                     minimo = c.qtd_minima
+                    min_val = getattr(c, "valor_minimo", None)
                     atingiu = 1
                     if minimo is not None and float(minimo) > 0:
                         atingiu = 1 if float(qtd) >= float(minimo) else 0
-                    valor_recomp = (float(qtd) * float(c.recompensa_unit or 0.0)) if atingiu else 0.0
+                    if atingiu and min_val is not None and float(min_val) > 0:
+                        atingiu = 1 if float(valor) >= float(min_val) else 0
+                    premio_potencial = (float(qtd) * float(c.recompensa_unit or 0.0)) if atingiu else 0.0
+                    periodo_ini = max(c.data_inicio, inicio_mes)
+                    periodo_fim = min(c.data_fim, fim_mes)
+                    faturamento_emp = calcular_faturamento_emp_periodo(db, emp=emp, periodo_ini=periodo_ini, periodo_fim=periodo_fim)
+                    gate_emp = aplicar_trava_faturamento_emp(
+                        campanha=c,
+                        emp=emp,
+                        faturamento_emp=faturamento_emp,
+                        premio_potencial=premio_potencial,
+                        atingiu_regras_item=bool(atingiu),
+                    )
+                    valor_recomp = float(gate_emp.get("valor_recompensa", 0.0) or 0.0)
 
                     novos.append(CampanhaQtdResultado(
                         campanha_id=c.id,
@@ -2906,7 +2951,12 @@ def _recalcular_resultados_campanhas_para_scope(ano: int, mes: int, emps: list[s
                         data_fim=c.data_fim,
                         qtd_vendida=float(qtd),
                         valor_vendido=float(valor),
-                        atingiu_minimo=int(atingiu),
+                        atingiu_minimo=int(gate_emp.get("atingiu_final", False)),
+                        premio_potencial=float(gate_emp.get("premio_potencial", premio_potencial) or 0.0),
+                        faturamento_minimo_emp=float(gate_emp.get("faturamento_minimo_emp", 0.0) or 0.0) or None,
+                        faturamento_emp=float(gate_emp.get("faturamento_emp", 0.0) or 0.0),
+                        faltante_faturamento_emp=float(gate_emp.get("faltante_faturamento_emp", 0.0) or 0.0),
+                        bloqueado_faturamento_emp=1 if gate_emp.get("bloqueado_faturamento_emp") else 0,
                         valor_recompensa=float(valor_recomp),
                         status_pagamento="PENDENTE",
                         atualizado_em=datetime.utcnow(),

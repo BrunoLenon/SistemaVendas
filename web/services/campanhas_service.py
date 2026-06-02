@@ -220,6 +220,8 @@ def build_campanhas_page_context(
     # ===== Calcula snapshots e monta estrutura EMP -> Vendedores -> Campanhas =====
     emps_data: list[dict[str, Any]] = []
     total_recompensa = 0.0
+    total_potencial = 0.0
+    total_bloqueado_emp = 0.0
     total_campanhas = 0
 
     with deps.SessionLocal() as db:
@@ -233,6 +235,9 @@ def build_campanhas_page_context(
 
             vendedores_rows: list[dict[str, Any]] = []
             emp_total = 0.0
+            emp_potencial = 0.0
+            emp_bloqueado_emp = 0.0
+            emp_faturamento_refs: list[dict[str, Any]] = []
 
             for vend in (vendedores_emp or []):
                 vend = (vend or "").strip().upper()
@@ -258,13 +263,28 @@ def build_campanhas_page_context(
 
                 resultados_calc: list[Any] = []
                 vend_total = 0.0
+                vend_potencial = 0.0
+                vend_bloqueado_emp = 0.0
 
                 for c in campanhas_final:
                     periodo_ini = max(getattr(c, "data_inicio"), inicio_mes)
                     periodo_fim = min(getattr(c, "data_fim"), fim_mes)
                     res = deps.upsert_resultado(db, c, vend, emp, ano, mes, periodo_ini, periodo_fim)
                     resultados_calc.append(res)
-                    vend_total += float(getattr(res, "valor_recompensa", 0.0) or 0.0)
+                    valor_liberado = float(getattr(res, "valor_recompensa", 0.0) or 0.0)
+                    premio_pot = float(getattr(res, "premio_potencial", None) if getattr(res, "premio_potencial", None) is not None else valor_liberado)
+                    bloqueado_emp = bool(int(getattr(res, "bloqueado_faturamento_emp", 0) or 0))
+                    vend_total += valor_liberado
+                    vend_potencial += premio_pot
+                    if bloqueado_emp:
+                        vend_bloqueado_emp += max(0.0, premio_pot - valor_liberado)
+                        emp_faturamento_refs.append({
+                            "campanha": getattr(res, "titulo", None) or f"Campanha #{getattr(res, 'campanha_id', '')}",
+                            "minimo": float(getattr(res, "faturamento_minimo_emp", 0.0) or 0.0),
+                            "atual": float(getattr(res, "faturamento_emp", 0.0) or 0.0),
+                            "faltante": float(getattr(res, "faltante_faturamento_emp", 0.0) or 0.0),
+                            "potencial": premio_pot,
+                        })
 
                 # Integração oficial: Metas entram na página /campanhas junto das campanhas.
                 # Mostramos também metas zeradas para o vendedor acompanhar o que falta atingir,
@@ -272,18 +292,27 @@ def build_campanhas_page_context(
                 metas_cards = _build_meta_cards_for_vendedor(db, ano=ano, mes=mes, emp=emp, vendedor=vend, incluir_zeradas=True)
                 for meta_card in metas_cards:
                     resultados_calc.append(meta_card)
-                    vend_total += float(getattr(meta_card, "valor_recompensa", 0.0) or 0.0)
+                    meta_valor = float(getattr(meta_card, "valor_recompensa", 0.0) or 0.0)
+                    vend_total += meta_valor
+                    vend_potencial += meta_valor
 
                 resultados_calc.sort(key=lambda r: (0 if str(getattr(r, "tipo", "") or "").upper() == "META" else 1, -float(getattr(r, "valor_recompensa", 0.0) or 0.0), str(getattr(r, "titulo", "") or getattr(r, "nome", "") or "")))
 
                 total_campanhas += len(resultados_calc)
                 total_recompensa += vend_total
+                total_potencial += vend_potencial
+                total_bloqueado_emp += vend_bloqueado_emp
                 emp_total += vend_total
+                emp_potencial += vend_potencial
+                emp_bloqueado_emp += vend_bloqueado_emp
 
                 vendedores_rows.append({
                     "vendedor": vend,
                     "total_recompensa": vend_total,
+                    "total_potencial": vend_potencial,
+                    "total_bloqueado_emp": vend_bloqueado_emp,
                     "resultados": resultados_calc,
+                    "campanhas": resultados_calc,
                 })
 
             vendedores_rows.sort(key=lambda x: float(x.get("total_recompensa", 0.0) or 0.0), reverse=True)
@@ -292,6 +321,10 @@ def build_campanhas_page_context(
                 "emp": emp,
                 "emp_label": emp_label_map.get(emp, emp),
                 "emp_total": emp_total,
+                "total_recompensa": emp_total,
+                "total_potencial": emp_potencial,
+                "total_bloqueado_emp": emp_bloqueado_emp,
+                "faturamento_refs": emp_faturamento_refs,
                 "vendedores": vendedores_rows,
             })
 
@@ -322,6 +355,8 @@ def build_campanhas_page_context(
 
         "emps_data": emps_data,
         "total_recompensa": float(total_recompensa or 0.0),
+        "total_potencial": float(total_potencial or 0.0),
+        "total_bloqueado_emp": float(total_bloqueado_emp or 0.0),
         "total_campanhas": int(total_campanhas or 0),
     }
 

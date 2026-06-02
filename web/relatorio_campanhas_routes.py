@@ -126,6 +126,10 @@ def _group_rows(rows):
         vend_r = str(_pick(r, 'vendedor', 'VENDEDOR') or '').strip() or '—'
         titulo = str(_pick(r, 'titulo', 'campanha', 'CAMPANHA') or '').strip() or '—'
         valor = _to_float(_pick(r, 'valor_recompensa', 'valor', 'VALOR_RECOMPENSA') or 0)
+        premio_potencial = _to_float(getattr(r, 'premio_potencial', None))
+        if premio_potencial <= 0:
+            premio_potencial = valor
+        bloqueado_emp = bool(getattr(r, 'bloqueado_faturamento_emp', False))
         st = _norm_status(_pick(r, 'status_pagamento', 'status', 'STATUS_PAGAMENTO') or 'PENDENTE')
 
         key = (emp_r, vend_r)
@@ -152,8 +156,13 @@ def _group_rows(rows):
             'qtd_vendida': float(getattr(r, 'qtd_base', 0) or 0),
             'vendeu_rs': float(getattr(r, 'valor_vendido', 0) or 0),
             'valor': valor,
+            'premio_potencial': premio_potencial,
+            'faturamento_minimo_emp': _to_float(getattr(r, 'faturamento_minimo_emp', 0) or 0),
+            'faturamento_emp': _to_float(getattr(r, 'faturamento_emp', 0) or 0),
+            'faltante_faturamento_emp': _to_float(getattr(r, 'faltante_faturamento_emp', 0) or 0),
+            'bloqueado_faturamento_emp': bloqueado_emp,
             'status': st,
-            'atingiu': bool(getattr(r, 'atingiu', False)),
+            'atingiu': bool(getattr(r, 'atingiu', False)) and not bloqueado_emp,
             'tipo': tipo_raw,
             'tipo_key': tipo_meta['key'],
             'tipo_label': tipo_meta['label'],
@@ -184,6 +193,7 @@ def _group_rows(rows):
                 'itens': itens,
                 'vendeu_rs': sum(float(i.get('vendeu_rs') or 0) for i in itens) or float(header.get('vendeu_rs') or 0),
                 'valor': sum(float(i.get('valor') or 0) for i in itens) or float(header.get('valor') or 0),
+                'premio_potencial': sum(float(i.get('premio_potencial') or 0) for i in itens) or float(header.get('premio_potencial') or header.get('valor') or 0),
                 'atingiu': bool(header.get('atingiu')),
             })
 
@@ -519,7 +529,7 @@ def register_relatorio_campanhas_routes(
 
         sio = StringIO()
         w = csv.writer(sio, delimiter=';')
-        w.writerow(['tipo', 'competencia', 'emp', 'vendedor', 'titulo', 'atingiu_gate', 'qtd_base', 'qtd_premiada', 'valor_recompensa', 'status_pagamento', 'pago_em'])
+        w.writerow(['tipo', 'competencia', 'emp', 'vendedor', 'titulo', 'atingiu_gate', 'qtd_base', 'qtd_premiada', 'premio_potencial', 'valor_recompensa_liberado', 'bloqueado_faturamento_emp', 'faturamento_emp', 'faturamento_minimo_emp', 'faltante_faturamento_emp', 'status_pagamento', 'pago_em'])
         ano = int(ctx.get('ano') or 0)
         mes = int(ctx.get('mes') or 0)
         for r in (ctx.get('rows') or []):
@@ -533,7 +543,12 @@ def register_relatorio_campanhas_routes(
                 'SIM' if getattr(r, 'atingiu_gate', None) else 'NÃO' if getattr(r, 'atingiu_gate', None) is not None else '',
                 getattr(r, 'qtd_base', '') if getattr(r, 'qtd_base', None) is not None else '',
                 getattr(r, 'qtd_premiada', '') if getattr(r, 'qtd_premiada', None) is not None else '',
+                getattr(r, 'premio_potencial', None) if getattr(r, 'premio_potencial', None) is not None else getattr(r, 'valor_recompensa', 0.0),
                 getattr(r, 'valor_recompensa', 0.0),
+                'SIM' if getattr(r, 'bloqueado_faturamento_emp', False) else 'NÃO',
+                getattr(r, 'faturamento_emp', 0.0),
+                getattr(r, 'faturamento_minimo_emp', 0.0),
+                getattr(r, 'faltante_faturamento_emp', 0.0),
                 getattr(r, 'status_pagamento', 'PENDENTE'),
                 getattr(r, 'pago_em', '') or '',
             ])

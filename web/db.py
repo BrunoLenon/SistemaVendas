@@ -469,6 +469,9 @@ class CampanhaQtd(Base):
     recompensa_unit = Column(Float, nullable=False, default=0.0)
     qtd_minima = Column(Float, nullable=True)
     valor_minimo = Column(Float, nullable=True)
+    # Trava comercial por loja: só libera pagamento se o faturamento total da EMP
+    # no período da campanha atingir este valor. NULL/0 mantém comportamento antigo.
+    faturamento_minimo_emp = Column(Float, nullable=True)
 
     data_inicio = Column(Date, nullable=False, index=True)
     data_fim = Column(Date, nullable=False, index=True)
@@ -514,7 +517,16 @@ class CampanhaQtdResultado(Base):
     qtd_vendida = Column(Float, nullable=False, default=0.0)
     valor_vendido = Column(Float, nullable=False, default=0.0)
     atingiu_minimo = Column(Integer, nullable=False, default=0)
+
+    # Valor efetivamente liberado para pagamento.
     valor_recompensa = Column(Float, nullable=False, default=0.0)
+
+    # Auditoria da trava de faturamento mínimo da EMP.
+    premio_potencial = Column(Float, nullable=True)
+    faturamento_minimo_emp = Column(Float, nullable=True)
+    faturamento_emp = Column(Float, nullable=True)
+    faltante_faturamento_emp = Column(Float, nullable=True)
+    bloqueado_faturamento_emp = Column(Integer, nullable=False, default=0)
 
     status_pagamento = Column(String(20), nullable=False, default="PENDENTE")
     pago_em = Column(DateTime, nullable=True)
@@ -1378,6 +1390,13 @@ def criar_tabelas():
             conn.execute(text("ALTER TABLE campanhas_qtd ADD COLUMN IF NOT EXISTS campo_match varchar(20) DEFAULT 'codigo';"))
             conn.execute(text("ALTER TABLE campanhas_qtd ADD COLUMN IF NOT EXISTS descricao_prefixo varchar(200);"))
             conn.execute(text("ALTER TABLE campanhas_qtd ADD COLUMN IF NOT EXISTS valor_minimo double precision;"))
+            conn.execute(text("ALTER TABLE campanhas_qtd ADD COLUMN IF NOT EXISTS faturamento_minimo_emp double precision;"))
+            conn.execute(text("ALTER TABLE campanhas_qtd_resultados ADD COLUMN IF NOT EXISTS premio_potencial double precision;"))
+            conn.execute(text("ALTER TABLE campanhas_qtd_resultados ADD COLUMN IF NOT EXISTS faturamento_minimo_emp double precision;"))
+            conn.execute(text("ALTER TABLE campanhas_qtd_resultados ADD COLUMN IF NOT EXISTS faturamento_emp double precision;"))
+            conn.execute(text("ALTER TABLE campanhas_qtd_resultados ADD COLUMN IF NOT EXISTS faltante_faturamento_emp double precision;"))
+            conn.execute(text("ALTER TABLE campanhas_qtd_resultados ADD COLUMN IF NOT EXISTS bloqueado_faturamento_emp integer NOT NULL DEFAULT 0;"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_campanhas_qtd_resultados_bloq_emp ON campanhas_qtd_resultados (competencia_ano, competencia_mes, emp, bloqueado_faturamento_emp);"))
             conn.execute(text("UPDATE campanhas_qtd SET campo_match='codigo' WHERE campo_match IS NULL OR campo_match='';"))
 
 

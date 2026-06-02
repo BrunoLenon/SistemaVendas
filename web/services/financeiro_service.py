@@ -450,6 +450,10 @@ def build_financeiro_campanhas_context(
         emp = str(getattr(r, 'emp', '') or '').strip() or '0'
         vendedor = (getattr(r, 'vendedor', '') or '').strip().upper()
         valor = _round2(getattr(r, 'valor_recompensa', 0) or 0)
+        # Segurança: campanhas QTD bloqueadas por faturamento mínimo da EMP
+        # não entram no financeiro, mesmo que apareçam no relatório como potencial.
+        if bool(getattr(r, 'bloqueado_faturamento_emp', False)):
+            continue
         if valor <= 0:
             continue
         pay = payments_map.get((origem_tipo, origem_id, _safe_emp_int(emp), vendedor))
