@@ -12,6 +12,13 @@ from typing import Any, Callable
 
 from flask import redirect, render_template, request
 
+from services.visao_operacional import (
+    filter_campaigns_operational,
+    get_fechamento_status_map,
+    normalize_status_filter,
+    status_filter_label,
+)
+
 
 def register_admin_campanhas_routes(
     app,
@@ -55,6 +62,7 @@ def register_admin_campanhas_routes(
         hoje = date.today()
         mes = int(request.values.get("mes") or hoje.month)
         ano = int(request.values.get("ano") or hoje.year)
+        status_visao = normalize_status_filter(request.values.get("status"), default="abertas")
 
         with SessionLocal() as db:
             if request.method == "POST":
@@ -218,8 +226,17 @@ def register_admin_campanhas_routes(
                     erro = str(e)
                     app.logger.exception("Erro ao gerenciar campanhas")
 
-            campanhas = db.query(CampanhaQtd).order_by(CampanhaQtd.emp.asc(), CampanhaQtd.data_inicio.desc()).all()
-            resultados = (
+            status_map = get_fechamento_status_map(db, ano, mes)
+
+            campanhas_base = (
+                db.query(CampanhaQtd)
+                .order_by(CampanhaQtd.emp.asc(), CampanhaQtd.data_inicio.desc())
+                .all()
+            )
+            campanhas_total_base = len(campanhas_base or [])
+            campanhas = filter_campaigns_operational(campanhas_base, ano, mes, status_visao, status_map)
+
+            resultados_base = (
                 db.query(CampanhaQtdResultado)
                 .filter(
                     CampanhaQtdResultado.competencia_ano == int(ano),
@@ -228,6 +245,12 @@ def register_admin_campanhas_routes(
                 .order_by(CampanhaQtdResultado.valor_recompensa.desc())
                 .all()
             )
+            if status_visao == "abertas":
+                resultados = [r for r in (resultados_base or []) if status_map.get(str(getattr(r, "emp", "") or "").strip(), {}).get("status", "aberto") == "aberto" and not bool(status_map.get(str(getattr(r, "emp", "") or "").strip(), {}).get("fechado", False))]
+            elif status_visao == "encerradas":
+                resultados = [r for r in (resultados_base or []) if str(getattr(r, "emp", "") or "").strip() in status_map and (status_map.get(str(getattr(r, "emp", "") or "").strip(), {}).get("status") != "aberto" or bool(status_map.get(str(getattr(r, "emp", "") or "").strip(), {}).get("fechado", False)))]
+            else:
+                resultados = resultados_base
 
     
         # UX: agrupa por competência (mês/ano) na lista
@@ -250,6 +273,9 @@ def register_admin_campanhas_routes(
                 mes=mes,
                 erro=erro,
                 ok=ok,
+                status_visao=status_visao,
+                status_label=status_filter_label(status_visao),
+                campanhas_total_base=campanhas_total_base,
             )
 
     app.add_url_rule(

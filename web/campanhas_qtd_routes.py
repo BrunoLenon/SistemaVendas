@@ -7,6 +7,11 @@ from typing import Callable, Any
 from flask import render_template, request, send_file
 
 from services.campanhas_service import build_campanhas_page_context
+from services.visao_operacional import (
+    filter_emps_by_status,
+    get_fechamento_status_map,
+    normalize_status_filter,
+)
 
 
 def register_campanhas_qtd_routes(
@@ -72,6 +77,7 @@ def register_campanhas_qtd_routes(
         hoje = date.today()
         mes = int(request.args.get("mes") or hoje.month)
         ano = int(request.args.get("ano") or hoje.year)
+        status_visao = normalize_status_filter(request.args.get("status"), default="abertas")
 
         vendedor_logado = (usuario_logado_fn() or "").strip().upper()
         if (role or "").lower() == "supervisor":
@@ -92,6 +98,13 @@ def register_campanhas_qtd_routes(
             emps_scope = [emp_param] if emp_param else get_emps_vendedor_fn(vendedor_sel)
         else:
             emps_scope = resolver_emp_scope_fn(vendedor_sel, role, emp_usuario)
+
+        try:
+            with SessionLocal() as db_status:
+                status_map = get_fechamento_status_map(db_status, ano, mes)
+            emps_scope = filter_emps_by_status(emps_scope, status_visao, status_map)
+        except Exception:
+            pass
 
         from reportlab.lib.pagesizes import A4
         from reportlab.pdfgen import canvas

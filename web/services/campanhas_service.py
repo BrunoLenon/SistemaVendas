@@ -5,6 +5,12 @@ from datetime import date
 from typing import Any, Callable
 from types import SimpleNamespace
 from services.campanhas_v2_service import list_resultados_v2
+from services.visao_operacional import (
+    filter_emps_by_status,
+    get_fechamento_status_map,
+    normalize_status_filter,
+    status_filter_label,
+)
 
 
 @dataclass(frozen=True)
@@ -162,6 +168,7 @@ def build_campanhas_page_context(
     vendedores_sel = [str(v).strip().upper() for v in deps.parse_multi_args(args, "vendedor") if str(v).strip()]
 
     visao = (args.get("visao") or "detalhado").strip().lower()
+    status_visao = normalize_status_filter(args.get("status"), default="abertas")
     por_pagina = int(args.get("por_pagina") or 25)
 
     # Dropdown/Checklist de vendedores (sem carregar tudo em memória)
@@ -185,6 +192,14 @@ def build_campanhas_page_context(
         else:
             emps_scope = emps_base[:]
         emps_options_base = emps_base
+
+    # Visão operacional: por padrão exibe apenas EMPs ainda abertas na competência.
+    try:
+        with deps.SessionLocal() as db_status:
+            fechamento_status_map = get_fechamento_status_map(db_status, ano, mes)
+    except Exception:
+        fechamento_status_map = {}
+    emps_scope = filter_emps_by_status(emps_scope, status_visao, fechamento_status_map)
 
     emps_options = deps.get_emp_options(emps_options_base)
 
@@ -344,6 +359,8 @@ def build_campanhas_page_context(
         "ano": ano,
         "mes": mes,
         "visao": visao,
+        "status_visao": status_visao,
+        "status_label": status_filter_label(status_visao),
         "por_pagina": por_pagina,
 
         "emps_scope": emps_scope,

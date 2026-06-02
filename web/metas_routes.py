@@ -25,6 +25,13 @@ from db import (
     SessionLocal,
     ensure_metas_lojas_schema,
 )
+from services.visao_operacional import (
+    filter_emps_by_status,
+    get_fechamento_status_map,
+    is_emp_period_open,
+    normalize_status_filter,
+    status_filter_label,
+)
 from metas_helpers import (
     calcular_meta,
     get_active_emps,
@@ -200,6 +207,7 @@ def metas():
         return red
 
     ano, mes = _period_from_request()
+    status_visao = normalize_status_filter(request.args.get("status"), default="abertas")
     role = (_role() or "").lower()
     usuario = normalize_text(session.get("usuario"))
 
@@ -232,6 +240,11 @@ def metas():
             if vendedor_filtro and vendedor_filtro not in vendedores_choices:
                 vendedor_filtro = ""
 
+        status_map = get_fechamento_status_map(db, ano, mes)
+        if status_visao != "todas":
+            base_status_emps = emps_calc or emps_choices
+            emps_calc = filter_emps_by_status(base_status_emps, status_visao, status_map)
+
         metas_list, resultados = montar_resultados_periodo(
             db,
             ano,
@@ -255,6 +268,8 @@ def metas():
             emp=_emp(),
             ano=ano,
             mes=mes,
+            status_visao=status_visao,
+            status_label=status_filter_label(status_visao),
             emp_filtro=emp_filtro,
             vendedor_filtro=vendedor_filtro,
             emps_choices=emps_choices,
@@ -274,6 +289,7 @@ def admin_metas():
         return red
 
     ano, mes = _period_from_request()
+    status_visao = normalize_status_filter(request.args.get("status"), default="abertas")
     emp_selected = normalize_emp(request.args.get("emp_sel"))
     vendedor_selected = normalize_text(request.args.get("vendedor"))
 
@@ -283,13 +299,28 @@ def admin_metas():
         if emp_selected and emp_selected not in set(emps_codes):
             emp_selected = ""
 
-        metas_db = (
+        status_map = get_fechamento_status_map(db, ano, mes)
+        metas_db_all = (
             db.query(MetaPrograma)
             .filter(MetaPrograma.ano == ano, MetaPrograma.mes == mes)
             .order_by(MetaPrograma.tipo.asc(), MetaPrograma.nome.asc(), MetaPrograma.id.asc())
             .all()
         )
-        metas_payload = [_meta_payload(db, m) for m in metas_db]
+        metas_payload_all = [_meta_payload(db, m) for m in metas_db_all]
+
+        def _payload_operacional_aberto(payload):
+            meta_obj = payload.get("meta")
+            if not bool(getattr(meta_obj, "ativo", False)):
+                return False
+            return any(is_emp_period_open(status_map, e) for e in (payload.get("emps") or []))
+
+        if status_visao == "abertas":
+            metas_payload = [p for p in metas_payload_all if _payload_operacional_aberto(p)]
+        elif status_visao == "encerradas":
+            metas_payload = [p for p in metas_payload_all if not _payload_operacional_aberto(p)]
+        else:
+            metas_payload = metas_payload_all
+        metas_db = [p["meta"] for p in metas_payload]
 
         crescimento_meta = next((p["meta"] for p in metas_payload if normalize_text(p["meta"].tipo) == "CRESCIMENTO" and p["meta"].ativo), None)
         base_rows = []
@@ -317,6 +348,9 @@ def admin_metas():
                 })
 
         sim_emps = [emp_selected] if emp_selected else []
+        if status_visao != "todas":
+            sim_base_emps = sim_emps or emps_codes
+            sim_emps = filter_emps_by_status(sim_base_emps, status_visao, status_map)
         sim_vendedor = vendedor_selected if vendedor_selected else None
         metas_sim, resultados_sim = montar_resultados_periodo(db, ano, mes, emps=sim_emps, vendedor=sim_vendedor, persist=False)
 
@@ -334,6 +368,8 @@ def admin_metas():
             emp=_emp(),
             ano=ano,
             mes=mes,
+            status_visao=status_visao,
+            status_label=status_filter_label(status_visao),
             emp_selected=emp_selected,
             vendedor_selected=vendedor_selected,
             emps_rows=emps_rows,

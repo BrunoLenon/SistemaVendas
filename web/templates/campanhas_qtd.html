@@ -69,13 +69,13 @@
       <div class="sv-breadcrumb">Operação / Campanhas</div>
       <div class="sv-h1">Campanhas e Metas</div>
       <div class="sv-sub sv-muted">
-        Acompanhamento por EMP e vendedor • Período <b>{{ "%02d"|format(mes|int) }}/{{ ano }}</b> • Total liberado <b>{{ total_recompensa|brl_rs }}</b>
+        Acompanhamento por EMP e vendedor • Período <b>{{ "%02d"|format(mes|int) }}/{{ ano }}</b> • Situação <b>{{ status_label|default('Abertas') }}</b> • Total liberado <b>{{ total_recompensa|brl_rs }}</b>
       </div>
     </div>
 
     <div class="sv-pagehead__right">
       <a class="sv-btn sv-btn-ghost" href="{{ url_for('dashboard') }}">Voltar</a>
-      <a class="sv-btn sv-btn-primary" href="{{ url_for('campanhas_qtd_pdf', mes=mes, ano=ano) }}">Exportar PDF</a>
+      <a class="sv-btn sv-btn-primary" href="{{ url_for('campanhas_qtd_pdf', mes=mes, ano=ano, status=status_visao|default('abertas')) }}">Exportar PDF</a>
     </div>
   </div>
 
@@ -143,6 +143,15 @@
             <select class="sv-select" name="visao">
               <option value="detalhado" {% if (visao or "") == "detalhado" %}selected{% endif %}>Detalhado</option>
               <option value="resumo" {% if (visao or "") == "resumo" %}selected{% endif %}>Resumo</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="sv-label">Situação</label>
+            <select class="sv-select" name="status">
+              <option value="abertas" {% if (status_visao|default('abertas')) == 'abertas' %}selected{% endif %}>Abertas</option>
+              <option value="encerradas" {% if (status_visao|default('abertas')) == 'encerradas' %}selected{% endif %}>Histórico</option>
+              <option value="todas" {% if (status_visao|default('abertas')) == 'todas' %}selected{% endif %}>Todas</option>
             </select>
           </div>
 
