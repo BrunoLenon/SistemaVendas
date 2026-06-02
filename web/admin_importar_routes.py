@@ -55,7 +55,7 @@ def register_admin_importar_routes(
             tmp_path = tmp.name
 
         try:
-            resumo = importar_planilha(tmp_path, modo=modo, chave=chave)
+            resumo = importar_planilha(tmp_path, modo=modo, chave=chave, reprocessar_competencia=True)
             if not resumo.get("ok"):
                 faltando = resumo.get("faltando")
                 if faltando:
@@ -64,12 +64,15 @@ def register_admin_importar_routes(
                     flash(resumo.get("msg", "Falha ao importar."), "danger")
                 return redirect(url_for("admin_importar"))
 
+            apagadas = int(resumo.get("linhas_reprocessadas_apagadas") or 0)
+            recortes = int((resumo.get("reprocessamento") or {}).get("recortes") or 0)
             flash(
                 (
                     f"Importação concluída. Válidas: {resumo['validas']} | "
                     f"Inseridas: {resumo['inseridas']} | "
                     f"Ignoradas: {resumo['ignoradas']} | "
-                    f"Erros: {resumo['erros_linha']}"
+                    f"Erros: {resumo['erros_linha']} | "
+                    f"Reprocessamento automático: {recortes} recorte(s), {apagadas} linha(s) substituída(s)"
                 ),
                 "success",
             )

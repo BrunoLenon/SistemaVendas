@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import datetime as dt
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -137,6 +137,65 @@ def _client_id_norm(cnpj_cpf: Any, razao: Any) -> Optional[str]:
         return f"razao:{h}"
     return None
 
+
+def _month_period_from_date(emp: str, mov: dt.date) -> Tuple[str, int, int]:
+    return (str(emp), int(mov.year), int(mov.month))
+
+
+def _safe_date_key(emp: Any, mov: Any) -> Optional[Tuple[str, dt.date]]:
+    """Retorna chave segura (EMP, data) para reprocessamento automático."""
+    try:
+        e = _norm_str(emp)
+        d = _to_date(mov)
+        if not e or not d:
+            return None
+        return (str(e), d)
+    except Exception:
+        return None
+
+
+def _delete_affected_dates(datas: List[Tuple[str, dt.date]]) -> Dict[str, Any]:
+    """Remove vendas já existentes apenas para os recortes exatos do arquivo.
+
+    Segurança: em vez de apagar o mês inteiro, apaga somente EMP + DATA presentes
+    na planilha. Isso evita perder vendas de outros dias quando a importação diária
+    contém apenas parte da competência mensal.
+    """
+    unique_dates = sorted({(str(emp), mov) for emp, mov in datas if emp and mov})
+    if not unique_dates:
+        return {"ok": True, "tipo": "EMP_DATA", "recortes": 0, "linhas_apagadas": 0, "detalhes": []}
+
+    db = SessionLocal()
+    detalhes = []
+    total = 0
+    try:
+        for emp, mov in unique_dates:
+            apagadas = (
+                db.query(Venda)
+                .filter(Venda.emp == str(emp))
+                .filter(Venda.movimento == mov)
+                .delete(synchronize_session=False)
+            )
+            apagadas = int(apagadas or 0)
+            total += apagadas
+            detalhes.append({"emp": str(emp), "data": mov.isoformat(), "linhas_apagadas": apagadas})
+        db.commit()
+        return {
+            "ok": True,
+            "tipo": "EMP_DATA",
+            "recortes": len(unique_dates),
+            "linhas_apagadas": int(total),
+            "detalhes": detalhes,
+        }
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        try:
+            db.close()
+        except Exception:
+            pass
+
 def _conflict_cols_from_key(chave: str) -> List[str]:
     """Mapeia o nome da chave para colunas do banco.
 
@@ -194,9 +253,11 @@ def _build_stmt(records: List[dict], modo: str, conflict_cols: List[str]):
 
 
 
-def scan_metadata_xlsx(filepath: str) -> Dict[str, Any]:
-    """Varre o XLSX (read_only) apenas para descobrir EMP(s) e competência(s) presentes.
-    Retorna {"ok": True, "emps": [...], "periodos": [(emp, ano, mes), ...], "multi_competencia": bool}
+def scan_metadata_xlsx(filepath: str, check_required: bool = False) -> Dict[str, Any]:
+    """Varre o XLSX (read_only) para descobrir EMP(s), datas e competência(s) presentes.
+
+    Retorna:
+      {"ok": True, "emps": [...], "datas": [(emp, date)], "periodos": [(emp, ano, mes)]}
     """
     from openpyxl import load_workbook
     wb = None
@@ -209,25 +270,27 @@ def scan_metadata_xlsx(filepath: str) -> Dict[str, Any]:
             return {"ok": False, "msg": "Planilha vazia."}
         cols = _norm_cols(list(header))
         col_index = {c: i for i, c in enumerate(cols)}
-        missing = [c for c in ("EMP", "MOVIMENTO") if c not in col_index]
+        required = REQUIRED_COLS if check_required else ["EMP", "MOVIMENTO"]
+        missing = [c for c in required if c not in col_index]
         if missing:
-            return {"ok": False, "msg": "Colunas faltando para varredura.", "faltando": missing}
+            return {"ok": False, "msg": "Colunas faltando para varredura.", "faltando": missing, "lidas": cols}
         periodos = set()
+        datas = set()
         emps = set()
         for r in rows:
-            try:
-                emp = _norm_str(r[col_index["EMP"]])
-                mov = _to_date(r[col_index["MOVIMENTO"]])
-                if emp and mov:
-                    emps.add(str(emp))
-                    periodos.add((str(emp), int(mov.year), int(mov.month)))
-            except Exception:
+            key = _safe_date_key(r[col_index["EMP"]], r[col_index["MOVIMENTO"]])
+            if not key:
                 continue
+            emp, mov = key
+            emps.add(str(emp))
+            datas.add((str(emp), mov))
+            periodos.add(_month_period_from_date(str(emp), mov))
         return {
             "ok": True,
             "emps": sorted(emps),
+            "datas": sorted(datas),
             "periodos": sorted(periodos),
-            "multi_competencia": (len({(a,m) for _,a,m in periodos}) > 1),
+            "multi_competencia": (len({(a, m) for _, a, m in periodos}) > 1),
         }
     finally:
         try:
@@ -237,6 +300,41 @@ def scan_metadata_xlsx(filepath: str) -> Dict[str, Any]:
             pass
 
 
+def scan_metadata_csv(filepath: str, check_required: bool = False, csv_chunksize: int = 3000) -> Dict[str, Any]:
+    """Varre CSV para descobrir EMP(s), datas e competência(s) presentes sem importar."""
+    periodos = set()
+    datas = set()
+    emps = set()
+    first = True
+    seen_cols = []
+    required = REQUIRED_COLS if check_required else ["EMP", "MOVIMENTO"]
+    for chunk in pd.read_csv(filepath, chunksize=csv_chunksize, dtype=str, encoding_errors="ignore"):
+        chunk.columns = _norm_cols(list(chunk.columns))
+        if first:
+            seen_cols = list(chunk.columns)
+            missing = [c for c in required if c not in chunk.columns]
+            if missing:
+                return {"ok": False, "msg": "Colunas faltando para varredura.", "faltando": missing, "lidas": seen_cols}
+            first = False
+        for _emp, _mov in chunk[["EMP", "MOVIMENTO"]].dropna().itertuples(index=False, name=None):
+            key = _safe_date_key(_emp, _mov)
+            if not key:
+                continue
+            emp, mov = key
+            emps.add(str(emp))
+            datas.add((str(emp), mov))
+            periodos.add(_month_period_from_date(str(emp), mov))
+    if first:
+        return {"ok": False, "msg": "Arquivo CSV vazio."}
+    return {
+        "ok": True,
+        "emps": sorted(emps),
+        "datas": sorted(datas),
+        "periodos": sorted(periodos),
+        "multi_competencia": (len({(a, m) for _, a, m in periodos}) > 1),
+    }
+
+
 def importar_planilha(
     filepath: str,
     modo: str = "ignorar_duplicados",
@@ -244,11 +342,13 @@ def importar_planilha(
     batch_size: int = 300,
     csv_chunksize: int = 3000,
     xlsx_max_mb: int = 12,
+    reprocessar_competencia: bool = False,
 ) -> Dict[str, Any]:
     """Importa vendas no banco com inserção em lotes."""
     ext = os.path.splitext(filepath)[1].lower()
 
     conflict_cols = _conflict_cols_from_key(chave)
+    reprocess_info: Dict[str, Any] = {"ok": True, "tipo": "EMP_DATA", "recortes": 0, "linhas_apagadas": 0, "detalhes": []}
 
     if ext == ".xlsx":
         try:
@@ -264,6 +364,12 @@ def importar_planilha(
                 }
         except Exception:
             pass
+
+        if reprocessar_competencia:
+            meta = scan_metadata_xlsx(filepath, check_required=True)
+            if not meta.get("ok"):
+                return {"ok": False, "msg": meta.get("msg", "Falha ao varrer planilha."), "faltando": meta.get("faltando"), "lidas": meta.get("lidas")}
+            reprocess_info = _delete_affected_dates(meta.get("datas") or [])
 
         from openpyxl import load_workbook
 
@@ -408,6 +514,9 @@ def importar_planilha(
                 "total_ca": float(total_ca),
                 "total_liquido": float(total_bruto - total_ca),
                 "ca_linhas": int(ca_linhas),
+                "reprocessar": bool(reprocessar_competencia),
+                "reprocessamento": reprocess_info,
+                "linhas_reprocessadas_apagadas": int((reprocess_info or {}).get("linhas_apagadas") or 0),
                 "affected_periods": sorted(list(affected_periods)),
             }
 
@@ -432,6 +541,15 @@ def importar_planilha(
     inseridas = 0
     atualizadas = 0
     affected_periods = set()
+    total_bruto = 0.0
+    total_ca = 0.0
+    ca_linhas = 0
+
+    if reprocessar_competencia:
+        meta = scan_metadata_csv(filepath, check_required=True, csv_chunksize=csv_chunksize)
+        if not meta.get("ok"):
+            return {"ok": False, "msg": meta.get("msg", "Falha ao varrer CSV."), "faltando": meta.get("faltando"), "lidas": meta.get("lidas")}
+        reprocess_info = _delete_affected_dates(meta.get("datas") or [])
 
     db = SessionLocal()
     try:
@@ -507,6 +625,15 @@ def importar_planilha(
                     records.append(rec)
                     validas += 1
 
+                    try:
+                        v = float(rec.get('valor_total') or 0.0)
+                    except Exception:
+                        v = 0.0
+                    total_bruto += v
+                    if mov_tipo == 'CA':
+                        total_ca += abs(v)
+                        ca_linhas += 1
+
                     if len(records) >= batch_size:
                         stmt = _build_stmt(records, modo, conflict_cols)
                         res = db.execute(stmt)
@@ -564,5 +691,8 @@ def importar_planilha(
         "total_ca": float(total_ca),
         "total_liquido": float(total_bruto - total_ca),
         "ca_linhas": int(ca_linhas),
+        "reprocessar": bool(reprocessar_competencia),
+        "reprocessamento": reprocess_info,
+        "linhas_reprocessadas_apagadas": int((reprocess_info or {}).get("linhas_apagadas") or 0),
         "affected_periods": sorted(list(affected_periods)),
     }
