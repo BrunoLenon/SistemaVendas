@@ -128,7 +128,7 @@
       <div>
         <div class="sv-import-chip sv-import-chip--ok mb-2">📥 Importação administrativa</div>
         <h1 class="sv-import-title">Importar Vendas</h1>
-        <div class="sv-import-sub">Envie a planilha de vendas em XLSX. O sistema reprocessa automaticamente o recorte do arquivo, ignora duplicados e usa a chave com EMP e MOV_TIPO_MOVTO.</div>
+        <div class="sv-import-sub">Envie a planilha de vendas em XLSX. O sistema ignora duplicados, preserva histórico e usa a chave com EMP e MOV_TIPO_MOVTO.</div>
       </div>
       <div class="sv-import-actions">
         <a class="btn sv-import-btn-outline" href="{{ url_for('dashboard') }}">← Voltar ao dashboard</a>
@@ -154,8 +154,8 @@
       </div>
       <div class="sv-kpi sv-card">
         <div class="sv-kpi__label">Segurança</div>
-        <div class="sv-kpi__value">Automático</div>
-        <div class="sv-kpi__meta">Reprocessa EMP + data do arquivo</div>
+        <div class="sv-kpi__value">Histórico</div>
+        <div class="sv-kpi__meta">Reprocessamento controlado</div>
       </div>
     </div>
   </section>
@@ -218,7 +218,7 @@
               <div class="sv-import-muted small">Arraste a planilha para a área abaixo ou clique para selecionar.</div>
             </div>
           </div>
-          <span class="sv-import-chip sv-import-chip--ok">Reprocessamento automático</span>
+          <span class="sv-import-chip sv-import-chip--ok">Seguro reprocessar</span>
         </div>
 
         <div class="sv-import-panel__body">
@@ -258,19 +258,10 @@
               </div>
             </div>
 
-            <div class="mt-3 p-3 rounded-4" style="background:rgba(46,204,113,.07);border:1px solid rgba(46,204,113,.22);">
-              <div class="d-flex align-items-start gap-2">
-                <span class="sv-import-chip sv-import-chip--ok">Ativo</span>
-                <div>
-                  <div class="fw-bold text-white">Reprocessamento automático do arquivo</div>
-                  <div class="sv-import-muted small mt-1">
-                    A cada importação, o sistema identifica EMP e data das vendas da planilha, substitui o recorte já existente e importa novamente. Isso evita duplicidade e corrige o período sem depender de marcação manual.
-                  </div>
-                  <div class="sv-import-muted small mt-1">
-                    Segurança: apenas os recortes presentes no arquivo são substituídos; o restante do banco permanece intacto.
-                  </div>
-                </div>
-              </div>
+            <div class="form-check mt-3 p-3 rounded-4" style="background:rgba(255,140,0,.06);border:1px solid rgba(255,140,0,.16);">
+              <input class="form-check-input ms-0 me-2" type="checkbox" value="1" id="reprocessar" name="reprocessar">
+              <label class="form-check-label" for="reprocessar">Reprocessar competência do arquivo</label>
+              <div class="sv-import-muted small mt-1 ps-4">Use quando precisar corrigir um mês/EMP sem apagar o banco inteiro.</div>
             </div>
 
             <div class="sv-import-actions mt-4">
@@ -279,7 +270,7 @@
             </div>
 
             <div class="row g-3 mt-3">
-              <div class="col-12 col-md-4"><div class="sv-import-feature"><strong>✔ Reprocessamento</strong><div class="sv-import-muted small mt-1">Substitui automaticamente EMP + data presentes no arquivo.</div></div></div>
+              <div class="col-12 col-md-4"><div class="sv-import-feature"><strong>✔ Deduplicação</strong><div class="sv-import-muted small mt-1">Ignora vendas repetidas automaticamente.</div></div></div>
               <div class="col-12 col-md-4"><div class="sv-import-feature"><strong>✔ Histórico</strong><div class="sv-import-muted small mt-1">Mantém dados para relatórios e comparativos.</div></div></div>
               <div class="col-12 col-md-4"><div class="sv-import-feature"><strong>✔ Auditoria</strong><div class="sv-import-muted small mt-1">Logs no Render para conferência.</div></div></div>
             </div>
@@ -364,6 +355,34 @@
             DESCRICAO<br>RAZAO<br>CIDADE<br>CNPJ_CPF
           </div>
           <div class="sv-import-muted mt-3 small">Dica: mantenha <span class="sv-import-mono text-white">VENDEDOR</span> igual ao login do vendedor.</div>
+        </div>
+      </section>
+
+
+      <section class="sv-import-panel mb-3">
+        <div class="sv-import-panel__head">
+          <div>
+            <h2 class="h5 mb-1">🔁 Reprocessar período</h2>
+            <div class="sv-import-muted small">Remove duplicidades do mês selecionado e atualiza a leitura dos relatórios.</div>
+          </div>
+          <span class="sv-import-chip sv-import-chip--ok">Seguro</span>
+        </div>
+        <div class="sv-import-panel__body">
+          <div class="sv-import-muted small mb-3">
+            Use quando você sabe que houve duplicidade em uma competência, mas não sabe o dia exato. O sistema mantém apenas uma venda por chave de importação e atualiza o cache do período.
+          </div>
+          <form method="POST" action="/admin/reprocessar_vendas_periodo" onsubmit="return confirmReprocess(this);">
+            <label class="form-label">Mês de referência</label>
+            <input class="form-control" type="month" name="valor" required>
+
+            <label class="form-label mt-3">EMP específica <span class="sv-import-muted">(opcional)</span></label>
+            <input class="form-control" type="text" name="emp" placeholder="Ex.: 102 — deixe vazio para todas as EMPs">
+
+            <button class="btn sv-import-btn-primary w-100 mt-3" type="submit">Reprocessar mês</button>
+            <div class="sv-import-muted small mt-2">
+              Chave usada: <span class="sv-import-mono text-white">MESTRE + MARCA + MOVIMENTO + VENDEDOR + NOTA + MOV_TIPO_MOVTO + EMP</span>.
+            </div>
+          </form>
         </div>
       </section>
 
@@ -482,5 +501,16 @@
     const label = (tipo === "dia") ? ("do dia " + valor) : ("do mês " + valor);
     return confirm("Tem certeza que deseja APAGAR TODAS as vendas " + label + "?\n\nEssa ação não pode ser desfeita.");
   }
+
+  function confirmReprocess(form){
+    const valor = form.querySelector('input[name="valor"]').value;
+    const emp = (form.querySelector('input[name="emp"]').value || '').trim();
+    const escopo = emp ? ("EMP " + emp) : "todas as EMPs";
+    return confirm(
+      "Reprocessar duplicidades do mês " + valor + " para " + escopo + "?\n\n" +
+      "Essa ação NÃO apaga vendas válidas. Ela mantém apenas um registro por chave de importação e atualiza o cache do período."
+    );
+  }
+
 </script>
 {% endblock %}
