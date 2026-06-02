@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from typing import Callable, Optional, Any
 from datetime import date
+import time
 
 from flask import (
     flash,
@@ -20,6 +21,43 @@ from sqlalchemy import func, case
 
 from db import SessionLocal, Venda, Usuario, UsuarioEmp, Emp
 from sv_utils import _periodo_bounds
+
+
+_DASHBOARD_RUNTIME_CACHE: dict[tuple, tuple[float, object]] = {}
+_DASHBOARD_RUNTIME_TTL_SECONDS = 120
+
+
+def _runtime_cache_get(key: tuple, ttl_seconds: int = _DASHBOARD_RUNTIME_TTL_SECONDS):
+    cached = _DASHBOARD_RUNTIME_CACHE.get(key)
+    if not cached:
+        return None
+    created_at, value = cached
+    if (time.time() - created_at) > ttl_seconds:
+        _DASHBOARD_RUNTIME_CACHE.pop(key, None)
+        return None
+    return value
+
+
+def _runtime_cache_set(key: tuple, value: object):
+    # Mantém o cache em memória pequeno para não pesar no Render.
+    if len(_DASHBOARD_RUNTIME_CACHE) > 80:
+        oldest = sorted(_DASHBOARD_RUNTIME_CACHE.items(), key=lambda kv: kv[1][0])[:20]
+        for old_key, _ in oldest:
+            _DASHBOARD_RUNTIME_CACHE.pop(old_key, None)
+    _DASHBOARD_RUNTIME_CACHE[key] = (time.time(), value)
+    return value
+
+
+def _cache_bypass_requested() -> bool:
+    return (request.args.get("recalc") == "1" or request.args.get("refresh") == "1")
+
+
+def _get_or_build_runtime(key: tuple, builder):
+    if not _cache_bypass_requested():
+        cached = _runtime_cache_get(key)
+        if cached is not None:
+            return cached
+    return _runtime_cache_set(key, builder())
 
 
 def _meses_referencia(ano: int, mes: int, quantidade: int = 3) -> list[tuple[int, int]]:
@@ -361,8 +399,14 @@ def register_dashboard_routes(
         if (role or "").lower() == "admin" and not vendedor_alvo:
             emp_selecionada = (request.args.get("emp") or "").strip() or None
             try:
-                dados_admin = dados_admin_geral_fn(mes=mes, ano=ano)
-                global_analysis = _build_global_sales_analysis(ano=ano, mes=mes)
+                dados_admin = _get_or_build_runtime(
+                    ("dash_admin", int(ano), int(mes)),
+                    lambda: dados_admin_geral_fn(mes=mes, ano=ano),
+                )
+                global_analysis = _get_or_build_runtime(
+                    ("dash_global_analysis", int(ano), int(mes)),
+                    lambda: _build_global_sales_analysis(ano=ano, mes=mes),
+                )
             except Exception:
                 app.logger.exception("Erro ao carregar dashboard geral do admin")
                 dados_admin = None
@@ -370,7 +414,10 @@ def register_dashboard_routes(
             emp_options = [str((row or {}).get("emp") or "").strip() for row in (dados_admin or {}).get("ranking_emp_list", []) if str((row or {}).get("emp") or "").strip()]
             if emp_selecionada:
                 try:
-                    dashboard_emp = _build_emp_dashboard(ano=ano, mes=mes, emp=emp_selecionada)
+                    dashboard_emp = _get_or_build_runtime(
+                        ("dash_emp", str(emp_selecionada), int(ano), int(mes)),
+                        lambda: _build_emp_dashboard(ano=ano, mes=mes, emp=emp_selecionada),
+                    )
                 except Exception:
                     app.logger.exception("Erro ao carregar dashboard detalhado por EMP")
                     dashboard_emp = None
@@ -380,7 +427,10 @@ def register_dashboard_routes(
                 emp_selecionada = allowed_emps[0]
             emp_options = list(allowed_emps)
             try:
-                dashboard_emp = _build_emp_dashboard(ano=ano, mes=mes, emp=emp_selecionada)
+                dashboard_emp = _get_or_build_runtime(
+                    ("dash_emp", str(emp_selecionada), int(ano), int(mes)),
+                    lambda: _build_emp_dashboard(ano=ano, mes=mes, emp=emp_selecionada),
+                )
             except Exception:
                 app.logger.exception("Erro ao carregar dashboard detalhado por EMP do supervisor")
                 dashboard_emp = None

@@ -4,699 +4,497 @@
 
 {% block extra_head %}
 <style>
-/* Compact + wide layout (page-level only) */
-.sv-page{max-width:100%;margin:0;padding:10px 10px;}
-.sv-pagehead{margin-bottom:12px;}
-.sv-card{border-radius:16px;}
-.sv-card-body{padding:12px 12px;}
-.sv-tablewrap{overflow:auto;}
-
-.sv-table td,.sv-table th{padding:.5rem .45rem; vertical-align:middle;}
-/* Reduce bootstrap row gutters inside sv pages */
-.row.g-3{--bs-gutter-y: .65rem; --bs-gutter-x: .55rem;}
-</style>
-
-<style>
-.table-sm td, .table-sm th { padding: .55rem; }
+  .sv-dash-page{
+    width:100%;
+    max-width:1600px;
+    margin:0 auto;
+    padding:2px 0 18px;
+  }
+  .sv-dash-hero{
+    border:1px solid rgba(255,140,0,.20);
+    border-radius:22px;
+    padding:18px;
+    background:
+      linear-gradient(135deg, rgba(255,140,0,.14), rgba(255,140,0,.025) 46%, rgba(255,255,255,.035)),
+      rgba(15,15,15,.86);
+    box-shadow:0 18px 46px rgba(0,0,0,.25);
+  }
+  .sv-dash-kicker{font-size:.76rem;text-transform:uppercase;letter-spacing:.12em;color:rgba(255,255,255,.58);font-weight:800;}
+  .sv-dash-title{font-size:clamp(1.45rem,2.5vw,2.15rem);line-height:1.05;font-weight:900;color:#fff;margin:4px 0 4px;}
+  .sv-dash-sub{color:rgba(255,255,255,.70);font-size:.93rem;}
+  .sv-dash-chip{
+    display:inline-flex;align-items:center;gap:.35rem;
+    padding:.35rem .62rem;border-radius:999px;
+    background:rgba(255,255,255,.07);
+    border:1px solid rgba(255,255,255,.10);
+    color:rgba(255,255,255,.86);
+    font-size:.78rem;font-weight:800;
+  }
+  .sv-dash-panel{
+    background:rgba(18,18,18,.84);
+    border:1px solid rgba(255,255,255,.09);
+    border-radius:18px;
+    box-shadow:0 12px 30px rgba(0,0,0,.18);
+  }
+  .sv-dash-panel__head{
+    display:flex;justify-content:space-between;align-items:flex-start;gap:12px;
+    padding:14px 14px 0;
+  }
+  .sv-dash-panel__body{padding:14px;}
+  .sv-dash-panel h2,.sv-dash-panel h3,.sv-dash-panel h4,.sv-dash-panel h5{color:#fff;}
+  .sv-dash-panel .text-muted,.sv-dash-muted{color:rgba(255,255,255,.62)!important;}
+  .sv-dash-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;}
+  @media(max-width:1100px){.sv-dash-kpis{grid-template-columns:repeat(2,minmax(0,1fr));}}
+  @media(max-width:560px){.sv-dash-kpis{grid-template-columns:1fr;}}
+  .sv-dash-kpi{
+    position:relative;overflow:hidden;
+    padding:14px;border-radius:18px;
+    background:linear-gradient(180deg, rgba(255,255,255,.055), rgba(255,255,255,.025));
+    border:1px solid rgba(255,255,255,.09);
+    min-height:104px;
+  }
+  .sv-dash-kpi:before{
+    content:"";position:absolute;inset:auto -18% -45% auto;width:115px;height:115px;border-radius:50%;
+    background:rgba(255,140,0,.10);filter:blur(1px);
+  }
+  .sv-dash-kpi__label{font-size:.77rem;color:rgba(255,255,255,.62);font-weight:800;text-transform:uppercase;letter-spacing:.045em;}
+  .sv-dash-kpi__value{position:relative;margin-top:8px;font-size:clamp(1.25rem,2.2vw,1.82rem);font-weight:900;color:#fff;line-height:1.05;}
+  .sv-dash-kpi__meta{position:relative;margin-top:6px;font-size:.80rem;color:rgba(255,255,255,.60);}
+  .sv-dash-grid-2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px;}
+  .sv-dash-grid-3{display:grid;grid-template-columns:1.2fr .8fr 1fr;gap:12px;}
+  @media(max-width:992px){.sv-dash-grid-2,.sv-dash-grid-3{grid-template-columns:1fr;}}
+  .sv-dash-tablewrap{overflow:auto;border-radius:14px;border:1px solid rgba(255,255,255,.08);}
+  .sv-dash-table{width:100%;border-collapse:separate;border-spacing:0;min-width:520px;}
+  .sv-dash-table th{
+    position:sticky;top:0;z-index:1;
+    padding:.68rem .72rem;
+    background:rgba(255,140,0,.12);
+    color:rgba(255,255,255,.82);
+    font-size:.74rem;text-transform:uppercase;letter-spacing:.05em;
+    border-bottom:1px solid rgba(255,255,255,.09);
+  }
+  .sv-dash-table td{padding:.64rem .72rem;color:rgba(255,255,255,.88);border-bottom:1px solid rgba(255,255,255,.055);vertical-align:middle;}
+  .sv-dash-table tbody tr:hover{background:rgba(255,140,0,.055);}
+  .sv-row-click{cursor:pointer;}
+  .sv-dash-form{display:grid;grid-template-columns:1.45fr 1fr .48fr .58fr auto;gap:10px;align-items:end;}
+  @media(max-width:1000px){.sv-dash-form{grid-template-columns:1fr 1fr;}.sv-dash-form .sv-filter-action{grid-column:1/-1;}}
+  @media(max-width:620px){.sv-dash-form{grid-template-columns:1fr;}}
+  .sv-dash-label{display:block;margin-bottom:6px;font-size:.78rem;color:rgba(255,255,255,.68);font-weight:800;}
+  .sv-dash-input,.sv-dash-select{
+    width:100%;height:42px;padding:8px 11px;border-radius:12px;
+    border:1px solid rgba(255,255,255,.13);background:rgba(4,4,4,.36);color:#f4f4f4;outline:0;
+  }
+  .sv-dash-input:focus,.sv-dash-select:focus{border-color:rgba(255,140,0,.72);box-shadow:0 0 0 .18rem rgba(255,140,0,.13);}
+  .sv-dash-btn{
+    height:42px;display:inline-flex;align-items:center;justify-content:center;gap:.45rem;
+    padding:0 .9rem;border-radius:12px;border:1px solid rgba(255,140,0,.42);
+    background:linear-gradient(135deg,#ff9f1a,#ff7a00);color:#141414;font-weight:900;text-decoration:none;
+  }
+  .sv-dash-btn:hover{filter:brightness(1.04);color:#111;}
+  .sv-dash-btn-ghost{background:rgba(255,255,255,.04);color:#fff;border-color:rgba(255,255,255,.12);}
+  .sv-dash-btn-ghost:hover{background:rgba(255,140,0,.10);color:#fff;}
+  .sv-dash-progress{height:8px;background:rgba(255,255,255,.08);border-radius:999px;overflow:hidden;}
+  .sv-dash-progress span{display:block;height:100%;background:linear-gradient(90deg,#ff7a00,#ffbd59);border-radius:999px;}
+  .sv-dash-rank-badge{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:9px;background:rgba(255,140,0,.13);border:1px solid rgba(255,140,0,.25);font-weight:900;color:#ffbd59;}
+  .sv-dash-pill{display:inline-flex;align-items:center;border-radius:999px;padding:.33rem .58rem;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.10);color:rgba(255,255,255,.82);font-size:.78rem;font-weight:800;}
+  .sv-dash-empty{padding:18px;border-radius:16px;background:rgba(255,255,255,.045);border:1px dashed rgba(255,255,255,.14);color:rgba(255,255,255,.68);}
+  .sv-dash-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:flex-end;}
+  @media(max-width:700px){.sv-dash-actions{justify-content:flex-start;width:100%;}.sv-dash-hero{padding:14px;}}
 </style>
 {% endblock %}
 
 {% block extra_scripts %}
 <script>
-  // UX: evita cliques repetidos e mostra spinner ao atualizar filtros
-  (function(){
-    const form = document.getElementById('filtersForm');
-    const btn = document.getElementById('filtersSubmit');
-    if (!form || !btn) return;
-    form.addEventListener('submit', function(){
-      btn.disabled = true;
-      const sp = btn.querySelector('.spinner-border');
-      const lb = btn.querySelector('.btn-label');
-      if (lb) lb.textContent = 'Carregando...';
-      if (sp) sp.classList.remove('d-none');
-    });
-  })();
+(function(){
+  const form = document.getElementById('filtersForm');
+  const btn = document.getElementById('filtersSubmit');
+  if(!form || !btn) return;
+  form.addEventListener('submit', function(){
+    btn.disabled = true;
+    const label = btn.querySelector('.btn-label');
+    const spinner = btn.querySelector('.spinner-border');
+    if(label) label.textContent = 'Carregando...';
+    if(spinner) spinner.classList.remove('d-none');
+  });
+})();
 </script>
 {% endblock %}
 
-{% block content %}
-<div class="sv-page">
-<!-- INSIGHTS PARCIAIS -->
-{% if insights %}
-<div class="row g-3 mb-3">
+{% macro kpi_card(label, value, meta='', icon='') -%}
+  <div class="sv-dash-kpi">
+    <div class="sv-dash-kpi__label">{{ icon }} {{ label }}</div>
+    <div class="sv-dash-kpi__value">{{ value }}</div>
+    {% if meta %}<div class="sv-dash-kpi__meta">{{ meta }}</div>{% endif %}
+  </div>
+{%- endmacro %}
 
-  <div class="col-12 col-md-3">
-    <div class="sv-card h-100">
-      <div class="sv-card-body">
-        <div class="small text-muted">🏆 Cidade destaque</div>
-        <div class="fw-bold fs-5">{{ insights.cidade_destaque.cidade_norm|default('—') }}</div>
-        <div class="text-success fw-semibold">
-          {{ insights.cidade_destaque.total_vendido|default(0)|brl_rs }}
+{% macro empty_state(text) -%}
+  <div class="sv-dash-empty">{{ text }}</div>
+{%- endmacro %}
+
+{% block content %}
+<div class="sv-dash-page">
+
+  <div class="sv-dash-hero mb-3">
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-3">
+      <div>
+        <div class="sv-dash-kicker">Painel comercial</div>
+        <div class="sv-dash-title">Dashboard</div>
+        <div class="sv-dash-sub">
+          Visualizando <strong class="text-white">{{ vendedor or usuario or 'Visão geral' }}</strong>
+          <span class="mx-1">•</span>
+          período <strong class="text-white">{{ "%02d"|format(mes|int) }}/{{ ano }}</strong>
+        </div>
+        <div class="d-flex flex-wrap gap-2 mt-3">
+          {% if role %}<span class="sv-dash-chip">Perfil {{ role|upper }}</span>{% endif %}
+          {% if emp %}<span class="sv-dash-chip">EMP {{ emp }}</span>{% endif %}
+          {% if admin_geral %}<span class="sv-dash-chip">Visão geral admin</span>{% endif %}
+        </div>
+      </div>
+      <div class="sv-dash-actions">
+        {% if role and role|lower == "admin" %}
+          <a class="sv-dash-btn sv-dash-btn-ghost" href="/admin/importar">Importar vendas</a>
+          <a class="sv-dash-btn sv-dash-btn-ghost" href="/admin/campanhas">Campanhas</a>
+        {% endif %}
+        <a class="sv-dash-btn sv-dash-btn-ghost" href="/relatorios/campanhas?mes={{ mes }}&ano={{ ano }}">Relatórios</a>
+        <a class="sv-dash-btn sv-dash-btn-ghost" href="/campanhas?mes={{ mes }}&ano={{ ano }}">Campanhas vendedor</a>
+      </div>
+    </div>
+
+    {% if mensagem_role %}
+      <div class="alert alert-warning py-2 px-3 mt-3 mb-0">{{ mensagem_role }}</div>
+    {% endif %}
+  </div>
+
+  <div class="sv-dash-panel mb-3">
+    <div class="sv-dash-panel__body">
+      <form id="filtersForm" method="get" action="{{ url_for('dashboard') }}" class="sv-dash-form">
+        {% if role and role|lower in ["admin", "supervisor"] %}
+          <div>
+            <label class="sv-dash-label">Vendedor</label>
+            <select class="sv-dash-select" name="vendedor">
+              <option value="" {% if not vendedor_selecionado %}selected{% endif %}>Todos vendedores / visão geral</option>
+              {% for v in vendedores %}
+                <option value="{{ v }}" {% if vendedor_selecionado == v %}selected{% endif %}>{{ v }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div>
+            <label class="sv-dash-label">EMP</label>
+            <select class="sv-dash-select" name="emp">
+              <option value="" {% if not emp_selecionada %}selected{% endif %}>Todas / visão geral</option>
+              {% for code in emp_options %}
+                <option value="{{ code }}" {% if emp_selecionada == code %}selected{% endif %}>EMP {{ code }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        {% endif %}
+        <div>
+          <label class="sv-dash-label">Mês</label>
+          <input class="sv-dash-input" type="number" name="mes" min="1" max="12" value="{{ mes }}" required>
+        </div>
+        <div>
+          <label class="sv-dash-label">Ano</label>
+          <input class="sv-dash-input" type="number" name="ano" min="2000" max="2100" value="{{ ano }}" required>
+        </div>
+        <div class="sv-filter-action">
+          <button id="filtersSubmit" class="sv-dash-btn w-100" type="submit">
+            <span class="btn-label">Atualizar</span>
+            <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  {% if admin_geral and dados_admin %}
+    <div class="sv-dash-kpis mb-3">
+      {{ kpi_card('Total líquido', dados_admin.valor_atual|brl_rs, 'Resultado do mês com DS/CA abatidos', '💰') }}
+      {{ kpi_card('Bruto', dados_admin.valor_bruto|brl_rs, 'Somente vendas positivas', '🧾') }}
+      {{ kpi_card('Devolvido', dados_admin.valor_devolvido|brl_rs, 'DS/CA no período', '↩️') }}
+      {{ kpi_card('Clientes', (global_analysis.clientes_total if global_analysis else 0), 'Compradores únicos do mês', '👥') }}
+    </div>
+
+    <div class="sv-dash-grid-2 mb-3">
+      <div class="sv-dash-panel">
+        <div class="sv-dash-panel__head">
+          <div>
+            <h5 class="m-0">Ranking por EMP</h5>
+            <div class="sv-dash-muted small">Clique em uma EMP para abrir a análise detalhada.</div>
+          </div>
+        </div>
+        <div class="sv-dash-panel__body">
+          <div class="sv-dash-tablewrap">
+            <table class="sv-dash-table">
+              <thead><tr><th style="width:70px;">EMP</th><th class="text-end">Líquido</th><th class="text-end">Bruto</th><th class="text-end">Devolvido</th></tr></thead>
+              <tbody>
+              {% for row in dados_admin.ranking_emp_list or [] %}
+                <tr class="sv-row-click" onclick="window.location='/dashboard?emp={{ row.emp }}&mes={{ mes }}&ano={{ ano }}'">
+                  <td><span class="sv-dash-rank-badge">{{ row.emp }}</span></td>
+                  <td class="text-end fw-bold">{{ row.valor_atual|brl_rs }}</td>
+                  <td class="text-end">{{ row.valor_bruto|brl_rs }}</td>
+                  <td class="text-end">{{ row.valor_devolvido|brl_rs }}</td>
+                </tr>
+              {% endfor %}
+              {% if not dados_admin.ranking_emp_list %}<tr><td colspan="4">Sem dados por EMP.</td></tr>{% endif %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="sv-dash-panel">
+        <div class="sv-dash-panel__head">
+          <div>
+            <h5 class="m-0">Ranking de vendedores</h5>
+            <div class="sv-dash-muted small">Top vendedores do período.</div>
+          </div>
+        </div>
+        <div class="sv-dash-panel__body">
+          <div class="sv-dash-tablewrap">
+            <table class="sv-dash-table">
+              <thead><tr><th>Vendedor</th><th class="text-end">Líquido</th></tr></thead>
+              <tbody>
+              {% for row in (dados_admin.ranking_vendedores_list or [])[:12] %}
+                <tr class="sv-row-click" onclick="window.location='/dashboard?vendedor={{ row.vendedor }}&mes={{ mes }}&ano={{ ano }}'">
+                  <td class="fw-bold">{{ row.vendedor }}</td>
+                  <td class="text-end fw-bold">{{ row.valor|brl_rs }}</td>
+                </tr>
+              {% endfor %}
+              {% if not dados_admin.ranking_vendedores_list %}<tr><td colspan="2">Sem vendedores no período.</td></tr>{% endif %}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     </div>
-  </div>
 
-  <div class="col-12 col-md-3">
-    <div class="sv-card h-100">
-      <div class="sv-card-body">
-        <div class="small text-muted">📉 Cidade em queda</div>
-        {% if insights.cidade_queda %}
-          <div class="fw-bold fs-5">{{ insights.cidade_queda.cidade_norm }}</div>
-          <div class="text-danger fw-semibold">
-            {{ insights.cidade_queda.variacao|brl_rs }}
+    <div class="sv-dash-grid-2 mb-3">
+      <div class="sv-dash-panel">
+        <div class="sv-dash-panel__head">
+          <div>
+            <h5 class="m-0">Itens campeões</h5>
+            <div class="sv-dash-muted small">Produtos com maior valor vendido no mês.</div>
           </div>
-        {% else %}
-          <div class="fw-bold fs-5">—</div>
-          <div class="text-muted">Sem base comparativa</div>
-        {% endif %}
-      </div>
-    </div>
-  </div>
-
-  <div class="col-12 col-md-3">
-    <div class="sv-card h-100">
-      <div class="sv-card-body">
-        <div class="small text-muted">🆕 Clientes novos</div>
-        <div class="fw-bold fs-4">{{ insights.clientes_novos|default(0) }}</div>
-      </div>
-    </div>
-  </div>
-
-  <div class="col-12 col-md-3">
-    <div class="sv-card h-100">
-      <div class="sv-card-body">
-        <div class="small text-muted">🔁 Clientes recorrentes</div>
-        <div class="fw-bold fs-4">{{ insights.clientes_recorrentes|default(0) }}</div>
-      </div>
-    </div>
-  </div>
-
-
-{% if insights and insights.clientes_destaque %}
-<div class="row g-3 mb-3">
-  <div class="col-12 col-md-6">
-    <div class="sv-card h-100">
-      <div class="sv-card-body">
-        <div class="small text-muted">⭐ Cliente destaque (↑ vs mês anterior)</div>
-        {% set c = (insights.clientes_destaque.crescimento[0] if insights.clientes_destaque.crescimento and insights.clientes_destaque.crescimento|length>0 else None) %}
-        {% if c %}
-          <div class="fw-bold fs-5">{{ c.cliente }}</div>
-          <div class="text-success fw-semibold">
-            + {{ c.delta|brl_rs }}{% if c.pct is not none %} ({{ c.pct|round(1) }}%) {% endif %}
-          </div>
-          <div class="text-muted small">Atual: {{ c.atual|brl_rs }} • Anterior: {{ c.anterior|brl_rs }}</div>
-        {% else %}
-          <div class="fw-bold fs-5">—</div>
-          <div class="text-muted">Sem base comparativa</div>
-        {% endif %}
-      </div>
-    </div>
-  </div>
-
-  <div class="col-12 col-md-6">
-    <div class="sv-card h-100">
-      <div class="sv-card-body">
-        <div class="small text-muted">⚠️ Cliente em queda (↓ vs mês anterior)</div>
-        {% set q = (insights.clientes_destaque.queda[0] if insights.clientes_destaque.queda and insights.clientes_destaque.queda|length>0 else None) %}
-        {% if q %}
-          <div class="fw-bold fs-5">{{ q.cliente }}</div>
-          <div class="text-danger fw-semibold">
-            {{ q.delta|brl_rs }}{% if q.pct is not none %} ({{ q.pct|round(1) }}%) {% endif %}
-          </div>
-          <div class="text-muted small">Atual: {{ q.atual|brl_rs }} • Anterior: {{ q.anterior|brl_rs }}</div>
-        {% else %}
-          <div class="fw-bold fs-5">—</div>
-          <div class="text-muted">Sem base comparativa</div>
-        {% endif %}
-      </div>
-    </div>
-  </div>
-</div>
-{% endif %}
-
-</div>
-{% endif %}
-
-
-    <div class="sv-card mb-3 d-flex flex-wrap align-items-start justify-content-between gap-3">
-  <div>
-    <div class="d-flex align-items-center flex-wrap gap-2">
-      <div class="sv-h1">Dashboard</div>
-      {% if role %}<span class="badge text-bg-dark">{{ role|upper }}</span>{% endif %}
-      {% if role and role|lower == "supervisor" and emp %}<span class="badge text-bg-secondary">EMP {{ emp }}</span>{% endif %}
-    </div>
-    <div class="text-muted mt-1">
-      Visualizando: <strong class="text-body">{{ vendedor or usuario }}</strong>
-      <span class="mx-1">•</span>
-      Período: <strong class="text-body">{{ "%02d"|format(mes) }}/{{ ano }}</strong>
-    </div>
-    {% if mensagem_role %}
-      <div class="alert alert-warning py-2 px-3 mt-2 mb-0">{{ mensagem_role }}</div>
-    {% endif %}
-  </div>
-  <div class="d-flex align-items-center gap-2">
-    <div class="dropdown">
-  <button class="btn btn-sm btn-primary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
-    ⚡ Ações rápidas
-  </button>
-  <ul class="dropdown-menu dropdown-menu-end shadow-sm">
-    {% if role and role|lower == "admin" %}
-      <li><h6 class="dropdown-header">Admin</h6></li>
-      <li><a class="dropdown-item" href="/admin/usuarios">👥 Usuários</a></li>
-      <li><a class="dropdown-item" href="/admin/importar">📥 Importar vendas</a></li>
-      <li><a class="dropdown-item" href="/admin/itens_parados">🧊 Itens parados (Admin)</a></li>
-      <li><a class="dropdown-item" href="/admin/resumos_periodo">🗓️ Resumos (Ano passado)</a></li>
-      <li><a class="dropdown-item" href="/admin/campanhas">🎯 Campanhas (Admin)</a></li>
-      <li><hr class="dropdown-divider"></li>
-    {% endif %}
-    <li><a class="dropdown-item" href="/itens_parados">🧊 Itens parados</a></li>
-        <li><a class="dropdown-item" href="/relatorios/campanhas">📊 Relatório Campanhas</a></li>
-    <li><a class="dropdown-item" href="/relatorios/cidades-clientes">🏙️ Cidades &amp; Clientes</a></li>
-    <li><hr class="dropdown-divider"></li>
-    <li><a class="dropdown-item" href="/senha">🔑 Trocar senha</a></li>
-    {% if role and role|lower == "admin" %}
-      <li><a class="dropdown-item" href="/admin/configuracoes">⚙️ Configurações</a></li>
-    {% endif %}
-    <li><a class="dropdown-item text-danger" href="/logout">🚪 Sair</a></li>
-  </ul>
-</div>
-  </div>
-</div>
-
-{% if admin_geral and dados_admin %}
-
-  <div class="alert alert-info d-flex align-items-center gap-2 mb-3">
-    <div><strong>Visão Comercial Geral</strong> — acompanhe o desempenho consolidado do mês, veja os itens e marcas líderes em todas as empresas e clique em uma EMP para abrir a análise comercial completa da loja.</div>
-  </div>
-
-  <div class="row g-3 mb-3">
-    <div class="col-md-3">
-      <div class="card shadow-sm kpi"><div class="sv-card-body">
-        <div class="text-muted small">Total líquido (mês)</div>
-        <div class="fs-4 fw-bold">{{ dados_admin.valor_atual|brl_rs }}</div>
-      </div></div>
-    </div>
-    <div class="col-md-3">
-      <div class="card shadow-sm kpi"><div class="sv-card-body">
-        <div class="text-muted small">Bruto (sem devolução)</div>
-        <div class="fs-4 fw-bold">{{ dados_admin.valor_bruto|brl_rs }}</div>
-      </div></div>
-    </div>
-    <div class="col-md-3">
-      <div class="card shadow-sm kpi"><div class="sv-card-body">
-        <div class="text-muted small">Devolvido</div>
-        <div class="fs-4 fw-bold">{{ dados_admin.valor_devolvido|brl_rs }}</div>
-      </div></div>
-    </div>
-    <div class="col-md-3">
-      <div class="card shadow-sm kpi"><div class="sv-card-body">
-        <div class="text-muted small">Clientes compradores</div>
-        <div class="fs-4 fw-bold">{{ global_analysis.clientes_total if global_analysis else 0 }}</div>
-      </div></div>
-    </div>
-  </div>
-
-  <div class="row g-3 mb-3">
-    <div class="col-lg-5">
-      <div class="card shadow-sm h-100">
-        <div class="sv-card-body">
-          <div class="d-flex justify-content-between align-items-center mb-2">
-            <h5 class="m-0">Itens campeões em todas as EMPs</h5>
-            <span class="text-muted small">Venda geral por item no mês</span>
-          </div>
-          <div class="sv-tablewrap">
-            <table class="sv-table align-middle">
-              <thead>
-                <tr>
-                  <th>Produto</th>
-                  <th class="text-end">Valor</th>
-                  <th class="text-end">Mix</th>
-                  <th class="text-end">EMPs</th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for row in (global_analysis.top_produtos if global_analysis else []) %}
+        </div>
+        <div class="sv-dash-panel__body">
+          {% if global_analysis and global_analysis.top_produtos %}
+            <div class="sv-dash-tablewrap">
+              <table class="sv-dash-table">
+                <thead><tr><th>Produto</th><th class="text-end">Valor</th><th class="text-end">Mix</th><th class="text-end">EMPs</th></tr></thead>
+                <tbody>
+                {% for row in global_analysis.top_produtos %}
                   <tr>
-                    <td>
-                      <div class="fw-semibold">{{ row.descricao }}</div>
-                      <div class="text-muted small">{{ row.codigo }}</div>
-                    </td>
-                    <td class="text-end fw-semibold">{{ row.valor|brl_rs }}</td>
+                    <td><div class="fw-bold">{{ row.descricao }}</div><div class="sv-dash-muted small">{{ row.codigo }}</div></td>
+                    <td class="text-end fw-bold">{{ row.valor|brl_rs }}</td>
                     <td class="text-end">{{ row.qtd|round(0)|int }}</td>
                     <td class="text-end">{{ row.emps }}</td>
                   </tr>
                 {% endfor %}
-                {% if not (global_analysis.top_produtos if global_analysis else []) %}
-                  <tr><td colspan="4" class="text-muted">Sem itens no período.</td></tr>
-                {% endif %}
-              </tbody>
-            </table>
-          </div>
+                </tbody>
+              </table>
+            </div>
+          {% else %}
+            {{ empty_state('Sem produtos no período selecionado.') }}
+          {% endif %}
         </div>
       </div>
-    </div>
-    <div class="col-lg-3">
-      <div class="card shadow-sm h-100">
-        <div class="sv-card-body">
-          <div class="d-flex justify-content-between align-items-center mb-2">
-            <h5 class="m-0">Marcas mais vendidas</h5>
-            <span class="text-muted small">Participação geral</span>
+
+      <div class="sv-dash-panel">
+        <div class="sv-dash-panel__head">
+          <div>
+            <h5 class="m-0">Marcas líderes</h5>
+            <div class="sv-dash-muted small">Participação entre as principais marcas.</div>
           </div>
-          {% for row in (global_analysis.top_marcas if global_analysis else []) %}
-            <div class="mb-3">
-              <div class="d-flex justify-content-between gap-2 mb-1">
-                <div class="fw-semibold">{{ row.marca }}</div>
-                <div class="text-end small">{{ '%.1f'|format(row.pct) }}%</div>
+        </div>
+        <div class="sv-dash-panel__body">
+          {% if global_analysis and global_analysis.top_marcas %}
+            {% for row in global_analysis.top_marcas %}
+              <div class="mb-3">
+                <div class="d-flex justify-content-between gap-2 mb-1">
+                  <div class="fw-bold text-white">{{ row.marca }}</div>
+                  <div class="small text-white">{{ '%.1f'|format(row.pct) }}%</div>
+                </div>
+                <div class="sv-dash-progress"><span style="width:{{ row.pct|round(1) }}%;"></span></div>
+                <div class="d-flex justify-content-between mt-1 sv-dash-muted small"><span>{{ row.valor|brl_rs }}</span><span>{{ row.qtd|round(0)|int }} itens</span></div>
               </div>
-              <div class="progress" style="height:8px; background: rgba(255,255,255,.06);">
-                <div class="progress-bar" role="progressbar" style="width: {{ row.pct|round(1) }}%; background: linear-gradient(90deg, rgba(255,140,0,.9), rgba(255,184,77,.95));"></div>
-              </div>
-              <div class="d-flex justify-content-between mt-1 text-muted small">
-                <span>{{ row.valor|brl_rs }}</span>
-                <span>{{ row.qtd|round(0)|int }} itens</span>
-              </div>
-            </div>
-          {% endfor %}
-          {% if not (global_analysis.top_marcas if global_analysis else []) %}
-            <div class="text-muted">Sem marcas no período.</div>
+            {% endfor %}
+          {% else %}
+            {{ empty_state('Sem marcas no período selecionado.') }}
           {% endif %}
         </div>
       </div>
     </div>
-    <div class="col-lg-4">
-      <div class="card shadow-sm h-100">
-        <div class="sv-card-body">
-          <div class="d-flex justify-content-between align-items-center mb-2">
-            <h5 class="m-0">EMPs para análise comercial</h5>
-            <span class="text-muted small">Clique para abrir detalhe</span>
-          </div>
-          <div class="sv-tablewrap">
-            <table class="sv-table align-middle">
-              <thead>
-                <tr>
-                  <th>EMP</th>
-                  <th class="text-end">Líquido</th>
-                  <th class="text-end">Bruto</th>
-                  <th class="text-end">Devolução</th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for row in (dados_admin.ranking_emp_list or []) %}
-                  <tr class="sv-row-click" onclick="window.location='{{ url_for('dashboard') }}?emp={{ row.emp }}&mes={{ mes }}&ano={{ ano }}#emp-analise'">
-                    <td class="fw-semibold">EMP {{ row.emp or '—' }}</td>
-                    <td class="text-end fw-semibold">{{ row.valor_atual|brl_rs }}</td>
-                    <td class="text-end text-muted">{{ row.valor_bruto|brl_rs }}</td>
-                    <td class="text-end text-muted">{{ row.valor_devolvido|brl_rs }}</td>
-                  </tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
 
-  <div class="row g-3 mb-3">
-    <div class="col-lg-6">
-      <div class="card shadow-sm h-100">
-        <div class="sv-card-body">
-          <div class="d-flex justify-content-between align-items-center mb-2">
-            <h5 class="m-0">Ranking por EMP</h5>
-            <span class="text-muted small">Comparação rápida do período</span>
+    {% if dashboard_emp %}
+      <div class="sv-dash-panel mb-3" id="emp-analise">
+        <div class="sv-dash-panel__head">
+          <div>
+            <h5 class="m-0">EMP {{ dashboard_emp.emp }}{% if dashboard_emp.emp_nome %} — {{ dashboard_emp.emp_nome }}{% endif %}</h5>
+            <div class="sv-dash-muted small">Análise comercial rápida da loja selecionada.</div>
           </div>
-          <div class="sv-tablewrap">
-            <table class="sv-table align-middle">
-              <thead>
-                <tr>
-                  <th>EMP</th>
-                  <th class="text-end">Líquido</th>
-                  <th class="text-end">Bruto</th>
-                  <th class="text-end">Devolução</th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for row in (dados_admin.ranking_emp_list or [])[:12] %}
-                  <tr class="sv-row-click" onclick="window.location='{{ url_for('dashboard') }}?emp={{ row.emp }}&mes={{ mes }}&ano={{ ano }}#emp-analise'">
-                    <td class="fw-semibold">{{ row.emp or '—' }}</td>
-                    <td class="text-end fw-semibold">{{ row.valor_atual|brl_rs }}</td>
-                    <td class="text-end text-muted">{{ row.valor_bruto|brl_rs }}</td>
-                    <td class="text-end text-muted">{{ row.valor_devolvido|brl_rs }}</td>
-                  </tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
+          <a class="sv-dash-btn sv-dash-btn-ghost" href="/relatorios/cidades-clientes?emp={{ dashboard_emp.emp }}&mes={{ mes }}&ano={{ ano }}">Cidades &amp; Clientes</a>
         </div>
-      </div>
-    </div>
-    <div class="col-lg-6">
-      <div class="card shadow-sm h-100">
-        <div class="sv-card-body">
-          <div class="d-flex justify-content-between align-items-center mb-2">
-            <h5 class="m-0">Top vendedores do mês</h5>
-            <span class="text-muted small">Liquidez geral</span>
+        <div class="sv-dash-panel__body">
+          <div class="sv-dash-kpis mb-3">
+            {{ kpi_card('Líquido da EMP', dashboard_emp.atual.liquido|default(0)|brl_rs, 'Acumulado do mês', '💰') }}
+            {{ kpi_card('Clientes', dashboard_emp.clientes_total, 'Compradores no período', '👥') }}
+            {{ kpi_card('Com venda', dashboard_emp.total_vendedores_com_venda, 'Vendedores ativos no mês', '✅') }}
+            {{ kpi_card('Sem venda', dashboard_emp.total_vendedores_sem_venda, 'Cadastro vinculado à EMP', '⚠️') }}
           </div>
-          <div class="sv-tablewrap">
-            <table class="sv-table align-middle">
-              <thead>
-                <tr>
-                  <th>Vendedor</th>
-                  <th class="text-end">Líquido</th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for row in (dados_admin.ranking_vendedores_list or [])[:12] %}
-                  <tr class="sv-row-click" onclick="window.location='/dashboard?vendedor={{ row.vendedor }}&mes={{ mes }}&ano={{ ano }}'">
-                    <td class="fw-semibold">{{ row.vendedor }}</td>
-                    <td class="text-end fw-semibold">{{ row.valor|brl_rs }}</td>
-                  </tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
 
-  {% if dashboard_emp %}
-  <div id="emp-analise" class="sv-card mb-3">
-    <div class="sv-card-body">
-      <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
-        <div>
-          <div class="small text-muted">Janela comercial da EMP</div>
-          <div class="sv-h2 mb-1">EMP {{ dashboard_emp.emp }}{% if dashboard_emp.emp_nome %} — {{ dashboard_emp.emp_nome }}{% endif %}</div>
-          <div class="text-muted small">Vendedores que mais venderam, quem não vendeu e quantos clientes compraram no período.</div>
-        </div>
-        <a class="sv-btn sv-btn-ghost sv-btn-sm" href="/relatorios/cidades-clientes?emp={{ dashboard_emp.emp }}&mes={{ mes }}&ano={{ ano }}">Abrir Cidades &amp; Clientes</a>
-      </div>
-
-      <div class="row g-3 mb-3">
-        <div class="col-md-3"><div class="card shadow-sm h-100"><div class="sv-card-body"><div class="text-muted small">Líquido da EMP</div><div class="fs-4 fw-bold">{{ dashboard_emp.atual.liquido|default(0)|brl_rs }}</div></div></div></div>
-        <div class="col-md-3"><div class="card shadow-sm h-100"><div class="sv-card-body"><div class="text-muted small">Clientes compradores</div><div class="fs-4 fw-bold">{{ dashboard_emp.clientes_total }}</div></div></div></div>
-        <div class="col-md-3"><div class="card shadow-sm h-100"><div class="sv-card-body"><div class="text-muted small">Vendedores com venda</div><div class="fs-4 fw-bold">{{ dashboard_emp.total_vendedores_com_venda }}</div></div></div></div>
-        <div class="col-md-3"><div class="card shadow-sm h-100"><div class="sv-card-body"><div class="text-muted small">Vendedores sem venda</div><div class="fs-4 fw-bold">{{ dashboard_emp.total_vendedores_sem_venda }}</div></div></div></div>
-      </div>
-
-      <div class="row g-3 mb-3">
-        <div class="col-lg-6">
-          <div class="card shadow-sm h-100"><div class="sv-card-body">
-            <div class="d-flex justify-content-between align-items-center mb-2"><h5 class="m-0">Vendedores que mais venderam</h5><span class="text-muted small">Ranking da EMP</span></div>
-            <div class="sv-tablewrap"><table class="sv-table align-middle"><thead><tr><th>Vendedor</th><th class="text-end">Líquido</th><th class="text-end">Mix</th><th class="text-end">Clientes</th></tr></thead><tbody>
-              {% for row in dashboard_emp.top_vendedores %}
-              <tr class="sv-row-click" onclick="window.location='/dashboard?vendedor={{ row.vendedor }}&mes={{ mes }}&ano={{ ano }}'"><td class="fw-semibold">{{ row.vendedor }}</td><td class="text-end fw-semibold">{{ row.valor|brl_rs }}</td><td class="text-end">{{ row.qtd|round(0)|int }}</td><td class="text-end">{{ row.clientes }}</td></tr>
-              {% endfor %}
-              {% if not dashboard_emp.top_vendedores %}<tr><td colspan="4" class="text-muted">Sem vendedores com venda.</td></tr>{% endif %}
-            </tbody></table></div>
-          </div></div>
-        </div>
-        <div class="col-lg-6">
-          <div class="card shadow-sm h-100"><div class="sv-card-body">
-            <div class="d-flex justify-content-between align-items-center mb-2"><h5 class="m-0">Vendedores sem venda</h5><span class="text-muted small">Cadastro vinculado à EMP</span></div>
-            <div class="d-flex flex-wrap gap-2">
-              {% for vendedor_nome in dashboard_emp.vendedores_sem_venda %}
-                <span class="badge text-bg-dark">{{ vendedor_nome }}</span>
-              {% endfor %}
-              {% if not dashboard_emp.vendedores_sem_venda %}<span class="text-muted">Todos venderam no período.</span>{% endif %}
+          <div class="sv-dash-grid-2 mb-3">
+            <div class="sv-dash-panel">
+              <div class="sv-dash-panel__body">
+                <h5 class="mb-2">Vendedores que mais venderam</h5>
+                <div class="sv-dash-tablewrap">
+                  <table class="sv-dash-table">
+                    <thead><tr><th>Vendedor</th><th class="text-end">Líquido</th><th class="text-end">Mix</th><th class="text-end">Clientes</th></tr></thead>
+                    <tbody>
+                    {% for row in dashboard_emp.top_vendedores %}
+                      <tr class="sv-row-click" onclick="window.location='/dashboard?vendedor={{ row.vendedor }}&mes={{ mes }}&ano={{ ano }}'">
+                        <td class="fw-bold">{{ row.vendedor }}</td><td class="text-end fw-bold">{{ row.valor|brl_rs }}</td><td class="text-end">{{ row.qtd|round(0)|int }}</td><td class="text-end">{{ row.clientes }}</td>
+                      </tr>
+                    {% endfor %}
+                    {% if not dashboard_emp.top_vendedores %}<tr><td colspan="4">Sem vendedores com venda.</td></tr>{% endif %}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             </div>
-          </div></div>
-        </div>
-      </div>
-
-      <div class="row g-3 mb-3">
-        <div class="col-lg-5">
-          <div class="card shadow-sm h-100"><div class="sv-card-body">
-            <div class="d-flex justify-content-between align-items-center mb-2"><h5 class="m-0">Produtos que mais venderam</h5><span class="text-muted small">EMP selecionada</span></div>
-            <div class="sv-tablewrap"><table class="sv-table align-middle"><thead><tr><th>Produto</th><th class="text-end">Valor</th><th class="text-end">Mix</th></tr></thead><tbody>
-              {% for row in dashboard_emp.top_produtos %}
-              <tr><td><div class="fw-semibold">{{ row.descricao }}</div><div class="text-muted small">{{ row.codigo }}</div></td><td class="text-end fw-semibold">{{ row.valor|brl_rs }}</td><td class="text-end">{{ row.qtd|round(0)|int }}</td></tr>
-              {% endfor %}
-              {% if not dashboard_emp.top_produtos %}<tr><td colspan="3" class="text-muted">Sem produtos para o período.</td></tr>{% endif %}
-            </tbody></table></div>
-          </div></div>
-        </div>
-        <div class="col-lg-3">
-          <div class="card shadow-sm h-100"><div class="sv-card-body">
-            <div class="d-flex justify-content-between align-items-center mb-2"><h5 class="m-0">Marcas líderes</h5><span class="text-muted small">Participação</span></div>
-            {% for row in dashboard_emp.top_linhas %}
-              <div class="mb-3"><div class="d-flex justify-content-between mb-1"><div class="fw-semibold">{{ row.linha }}</div><div class="small">{{ '%.1f'|format(row.pct) }}%</div></div><div class="progress" style="height:8px;background:rgba(255,255,255,.06);"><div class="progress-bar" style="width:{{ row.pct|round(1) }}%; background: linear-gradient(90deg, rgba(255,140,0,.9), rgba(255,184,77,.95));"></div></div><div class="d-flex justify-content-between mt-1 text-muted small"><span>{{ row.valor|brl_rs }}</span><span>{{ row.qtd|round(0)|int }} itens</span></div></div>
-            {% endfor %}
-            {% if not dashboard_emp.top_linhas %}<div class="text-muted">Sem marcas para o período.</div>{% endif %}
-          </div></div>
-        </div>
-        <div class="col-lg-4">
-          <div class="card shadow-sm h-100"><div class="sv-card-body">
-            <div class="d-flex justify-content-between align-items-center mb-2"><h5 class="m-0">Clientes que compraram</h5><span class="text-muted small">Top clientes da EMP</span></div>
-            <div class="sv-tablewrap"><table class="sv-table align-middle"><thead><tr><th>Cliente</th><th class="text-end">Valor</th><th class="text-end">Mix</th></tr></thead><tbody>
-              {% for row in dashboard_emp.top_clientes %}
-              <tr><td class="fw-semibold">{{ row.cliente }}</td><td class="text-end fw-semibold">{{ row.valor|brl_rs }}</td><td class="text-end">{{ row.qtd|round(0)|int }}</td></tr>
-              {% endfor %}
-              {% if not dashboard_emp.top_clientes %}<tr><td colspan="3" class="text-muted">Sem clientes no período.</td></tr>{% endif %}
-            </tbody></table></div>
-          </div></div>
-        </div>
-      </div>
-    </div>
-  </div>
-  {% endif %}
-
-{% elif dados %}
-  <div class="row g-3 mb-4">
-    <div class="col-12 col-sm-6 col-lg-3">
-      <div class="sv-card h-100">
-        <div class="sv-card-body">
-          <div class="text-muted small">💰 Valor líquido</div>
-          <div class="fs-4 fw-bold">{{ dados.valor_atual|brl_rs }}</div>
-          <div class="text-muted small mt-1">Mês anterior: {{ dados.valor_mes_anterior|brl_rs }}</div>
-        </div>
-      </div>
-    </div>
-    <div class="col-12 col-sm-6 col-lg-3">
-      <div class="sv-card h-100">
-        <div class="sv-card-body">
-          <div class="text-muted small">📈 Crescimento</div>
-          <div class="fs-4 fw-bold">
-            {% if dados.crescimento is not none %}
-              {{ (dados.crescimento*100)|round(2) }}%
-            {% else %}
-              —
-            {% endif %}
+            <div class="sv-dash-panel">
+              <div class="sv-dash-panel__body">
+                <h5 class="mb-2">Vendedores sem venda</h5>
+                <div class="d-flex flex-wrap gap-2">
+                  {% for vendedor_nome in dashboard_emp.vendedores_sem_venda %}
+                    <span class="sv-dash-pill">{{ vendedor_nome }}</span>
+                  {% endfor %}
+                  {% if not dashboard_emp.vendedores_sem_venda %}<span class="sv-dash-muted">Todos venderam no período.</span>{% endif %}
+                </div>
+              </div>
+            </div>
           </div>
-          <div class="text-muted small mt-1">Ano passado: {{ dados.valor_ano_passado|brl_rs }}</div>
-        </div>
-      </div>
-    </div>
-    <div class="col-12 col-sm-6 col-lg-3">
-      <div class="sv-card h-100">
-        <div class="sv-card-body">
-          <div class="text-muted small">🧺 Mix (itens)</div>
-          <div class="fs-4 fw-bold">{{ dados.mix_atual|default(0) }}</div>
-          <div class="text-muted small mt-1">Ano passado: {{ dados.mix_ano_passado|default(0) }}</div>
-        </div>
-      </div>
-    </div>
-    <div class="col-12 col-sm-6 col-lg-3">
-      <div class="sv-card h-100">
-        <div class="sv-card-body">
-          <div class="text-muted small">↩️ Devolução</div>
-          <div class="fs-4 fw-bold">{{ (dados.pct_devolucao or 0)|round(2) }}%</div>
-          <div class="text-muted small mt-1">Devolvido: {{ dados.valor_devolvido|brl_rs }}</div>
-        </div>
-      </div>
-    </div>
-  </div>
-{% endif %}
-</div>
-    </div>
 
-    {% if role and role|lower == "admin" %}
-      <div class="alert alert-info shadow-sm">
-        Você está logado como <strong>ADMIN</strong>. Use os filtros para acompanhar a visão geral, abrir a análise comercial da EMP e consultar vendedores detalhadamente.
-      </div>
-    {% elif role and role|lower == "supervisor" %}
-      <div class="alert alert-info shadow-sm">
-        Você está logado como <strong>SUPERVISOR</strong>{% if emp %} da EMP <strong>{{ emp }}</strong>{% endif %}. Use a análise da EMP para ver vendedores que venderam, quem ficou sem venda e os principais clientes do período.
+          <div class="sv-dash-grid-3">
+            <div class="sv-dash-panel"><div class="sv-dash-panel__body">
+              <h5 class="mb-2">Produtos da EMP</h5>
+              <div class="sv-dash-tablewrap"><table class="sv-dash-table"><thead><tr><th>Produto</th><th class="text-end">Valor</th><th class="text-end">Mix</th></tr></thead><tbody>
+              {% for row in dashboard_emp.top_produtos %}<tr><td><div class="fw-bold">{{ row.descricao }}</div><div class="sv-dash-muted small">{{ row.codigo }}</div></td><td class="text-end fw-bold">{{ row.valor|brl_rs }}</td><td class="text-end">{{ row.qtd|round(0)|int }}</td></tr>{% endfor %}
+              {% if not dashboard_emp.top_produtos %}<tr><td colspan="3">Sem produtos.</td></tr>{% endif %}
+              </tbody></table></div>
+            </div></div>
+            <div class="sv-dash-panel"><div class="sv-dash-panel__body">
+              <h5 class="mb-2">Marcas da EMP</h5>
+              {% for row in dashboard_emp.top_linhas %}
+                <div class="mb-3"><div class="d-flex justify-content-between mb-1"><div class="fw-bold text-white">{{ row.linha }}</div><div>{{ '%.1f'|format(row.pct) }}%</div></div><div class="sv-dash-progress"><span style="width:{{ row.pct|round(1) }}%;"></span></div><div class="d-flex justify-content-between mt-1 sv-dash-muted small"><span>{{ row.valor|brl_rs }}</span><span>{{ row.qtd|round(0)|int }}</span></div></div>
+              {% endfor %}
+              {% if not dashboard_emp.top_linhas %}{{ empty_state('Sem marcas.') }}{% endif %}
+            </div></div>
+            <div class="sv-dash-panel"><div class="sv-dash-panel__body">
+              <h5 class="mb-2">Clientes da EMP</h5>
+              <div class="sv-dash-tablewrap"><table class="sv-dash-table"><thead><tr><th>Cliente</th><th class="text-end">Valor</th><th class="text-end">Mix</th></tr></thead><tbody>
+              {% for row in dashboard_emp.top_clientes %}<tr><td class="fw-bold">{{ row.cliente }}</td><td class="text-end fw-bold">{{ row.valor|brl_rs }}</td><td class="text-end">{{ row.qtd|round(0)|int }}</td></tr>{% endfor %}
+              {% if not dashboard_emp.top_clientes %}<tr><td colspan="3">Sem clientes.</td></tr>{% endif %}
+              </tbody></table></div>
+            </div></div>
+          </div>
+        </div>
       </div>
     {% endif %}
 
-    <div class="card mb-3 shadow-sm">
-      <div class="sv-card-body">
-        <form id="filtersForm" method="get" action="{{ url_for('dashboard') }}" class="row g-2 align-items-end">
-
-          {% if role and role|lower in ["admin", "supervisor"] %}
-            <div class="col-md-4">
-              <label class="form-label">Vendedor</label>
-              <select class="sv-select" name="vendedor">
-                {% if role and role|lower in ["admin", "supervisor"] %}
-                <option value="" {% if not vendedor_selecionado %}selected{% endif %}>Todos vendedores</option>
-                {% endif %}
-                <option value="" disabled>{% if vendedores and (vendedores|length) > 0 %}Selecione um vendedor específico{% else %}Nenhum vendedor encontrado{% endif %}</option>
-                {% for v in vendedores %}
-                  <option value="{{ v }}" {% if vendedor_selecionado == v %}selected{% endif %}>{{ v }}</option>
-                {% endfor %}
-              </select>
-            </div>
-            <div class="col-md-3">
-              <label class="form-label">EMP</label>
-              <select class="sv-select" name="emp">
-                <option value="" {% if not emp_selecionada %}selected{% endif %}>Todas / visão geral</option>
-                {% for code in emp_options %}
-                  <option value="{{ code }}" {% if emp_selecionada == code %}selected{% endif %}>EMP {{ code }}</option>
-                {% endfor %}
-              </select>
-            </div>
-          {% endif %}
-
-          <div class="col-auto">
-            <label class="form-label">Mês</label>
-            <input class="sv-input" type="number" name="mes" min="1" max="12" value="{{ mes }}" required>
-          </div>
-          <div class="col-auto">
-            <label class="form-label">Ano</label>
-            <input class="sv-input" type="number" name="ano" min="2000" max="2100" value="{{ ano }}" required>
-          </div>
-          <div class="col-auto">
-            <button id="filtersSubmit" class="sv-btn sv-btn-primary" type="submit">
-              <span class="btn-label">Atualizar</span>
-              <span class="spinner-border spinner-border-sm ms-2 d-none" role="status" aria-hidden="true"></span>
-            </button>
-          </div>
-          <div class="col">
-            <div class="text-end text-muted">Período selecionado: <strong>{{ mes }}/{{ ano }}</strong></div>
-          </div>
-        </form>
+  {% elif dados %}
+    {% if insights %}
+      <div class="sv-dash-kpis mb-3">
+        {{ kpi_card('Cidade destaque', insights.cidade_destaque.cidade_norm|default('—'), insights.cidade_destaque.total_vendido|default(0)|brl_rs, '🏆') }}
+        {{ kpi_card('Cidade em queda', (insights.cidade_queda.cidade_norm if insights.cidade_queda else '—'), (insights.cidade_queda.variacao|brl_rs if insights.cidade_queda else 'Sem base comparativa'), '📉') }}
+        {{ kpi_card('Clientes novos', insights.clientes_novos|default(0), 'Primeira compra no período', '🆕') }}
+        {{ kpi_card('Recorrentes', insights.clientes_recorrentes|default(0), 'Clientes que retornaram', '🔁') }}
       </div>
+    {% endif %}
+
+    <div class="sv-dash-kpis mb-3">
+      {{ kpi_card('Valor líquido', dados.valor_atual|brl_rs, 'Mês anterior: ' ~ (dados.valor_mes_anterior|brl_rs), '💰') }}
+      {{ kpi_card('Crescimento', ((('+' if dados.crescimento and dados.crescimento >= 0 else '') ~ ('%.2f'|format(dados.crescimento)) ~ '%') if dados.crescimento is not none else '—'), 'Comparação com mês anterior', '📈') }}
+      {{ kpi_card('Mix', dados.mix_atual|default(0), 'Ano passado: ' ~ (dados.mix_ano_passado|default(0)), '🧺') }}
+      {{ kpi_card('Devolução', ((dados.pct_devolucao or 0)|round(2)) ~ '%', 'Devolvido: ' ~ (dados.valor_devolvido|brl_rs), '↩️') }}
     </div>
 
-    {% if dados %}
-      <div class="row g-3 mb-3">
-        <div class="col-md-6">
-          <div class="card shadow-sm">
-            <div class="sv-card-body">
-              <div class="text-muted">💰 Valor líquido (com DS/CA)</div>
-              <div class="display-6">{{ dados.valor_atual|brl_rs }}</div>
-              <div class="text-muted mt-1">Ano passado: {{ dados.valor_ano_passado|brl_rs }}</div>
-            </div>
-          </div>
-        </div>
-
-        <div class="col-md-6">
-          <div class="card shadow-sm">
-            <div class="sv-card-body">
-              <div class="text-muted">📦 Mix de produtos</div>
-              <div class="display-6">{{ dados.mix_atual }}</div>
-              <div class="text-muted mt-1">Ano passado: {{ dados.mix_ano_passado }}</div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div class="row g-3 mb-3">
-        <div class="col-md-4">
-          <div class="card shadow-sm">
-            <div class="sv-card-body">
-              <div class="text-muted">🧾 Valor bruto (sem DS/CA)</div>
-              <div class="h3 m-0">{{ dados.valor_bruto|brl_rs }}</div>
-              <div class="text-muted">Somente vendas</div>
-            </div>
-          </div>
-        </div>
-
-        <div class="col-md-4">
-          <div class="card shadow-sm">
-            <div class="sv-card-body">
-              <div class="text-muted">↩️ Devoluções/Cancelamentos (DS/CA)</div>
-              <div class="h3 m-0">{{ dados.valor_devolvido|brl_rs }}</div>
-              <div class="text-muted">Total abatido</div>
-            </div>
-          </div>
-        </div>
-
-        <div class="col-md-4">
-          <div class="card shadow-sm">
-            <div class="sv-card-body">
-              <div class="text-muted">📉 % devolução (sobre bruto)</div>
-              {% if dados.pct_devolucao is not none %}
-                <div class="h3 m-0">{{ "%.2f"|format(dados.pct_devolucao) }}%</div>
-              {% else %}
-                <div class="h3 m-0">—</div>
-                <div class="text-muted">Sem base</div>
-              {% endif %}
-              <div class="text-muted">Devolvido ÷ Bruto</div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div class="card mb-3 shadow-sm">
-        <div class="sv-card-body d-flex justify-content-between align-items-center">
+    <div class="sv-dash-grid-2 mb-3">
+      <div class="sv-dash-panel">
+        <div class="sv-dash-panel__head">
           <div>
-            <div class="text-muted">📈 Crescimento vs mês anterior (líquido)</div>
-            <div class="text-muted">Comparação do líquido do mês selecionado com o mês anterior</div>
+            <h5 class="m-0">Resumo do vendedor</h5>
+            <div class="sv-dash-muted small">Bruto, abatimentos, líquido e comparação histórica.</div>
           </div>
-          <div class="text-end">
-            {% if dados.crescimento is not none %}
-              {% if dados.crescimento >= 0 %}
-                <span class="badge text-bg-success fs-6">+{{ "%.2f"|format(dados.crescimento) }}%</span>
-              {% else %}
-                <span class="badge text-bg-danger fs-6">{{ "%.2f"|format(dados.crescimento) }}%</span>
-              {% endif %}
-            {% else %}
-              <span class="badge text-bg-secondary fs-6">Sem base</span>
-            {% endif %}
+        </div>
+        <div class="sv-dash-panel__body">
+          <div class="row g-2">
+            <div class="col-md-6"><div class="sv-dash-kpi"><div class="sv-dash-kpi__label">Bruto</div><div class="sv-dash-kpi__value">{{ dados.valor_bruto|brl_rs }}</div><div class="sv-dash-kpi__meta">Somente vendas</div></div></div>
+            <div class="col-md-6"><div class="sv-dash-kpi"><div class="sv-dash-kpi__label">Ano passado</div><div class="sv-dash-kpi__value">{{ dados.valor_ano_passado|brl_rs }}</div><div class="sv-dash-kpi__meta">Mesmo mês do ano anterior</div></div></div>
+          </div>
+          <div class="mt-3 d-flex flex-wrap gap-2">
+            <a href="/percentuais?mes={{ mes }}&ano={{ ano }}{% if vendedor_selecionado %}&vendedor={{ vendedor_selecionado }}{% endif %}" class="sv-dash-btn sv-dash-btn-ghost">Ranking completo</a>
+            <a href="/devolucoes?mes={{ mes }}&ano={{ ano }}{% if vendedor_selecionado %}&vendedor={{ vendedor_selecionado }}{% endif %}" class="sv-dash-btn sv-dash-btn-ghost">Devoluções DS/CA</a>
+            <a href="/marcas?mes={{ mes }}&ano={{ ano }}{% if vendedor_selecionado %}&vendedor={{ vendedor_selecionado }}{% endif %}" class="sv-dash-btn sv-dash-btn-ghost">Marcas</a>
           </div>
         </div>
       </div>
 
-      <div class="card shadow-sm">
-        <div class="sv-card-body">
-          <div class="d-flex justify-content-between align-items-center">
-            <h5 class="m-0">📊 Top 15 marcas — Valor + % do total (líquido)</h5>
-            <a href="/percentuais?mes={{ mes }}&ano={{ ano }}{% if vendedor_selecionado %}&vendedor={{ vendedor_selecionado }}{% endif %}" class="sv-btn sv-btn-xs sv-btn-ghost">Ver ranking completo</a>
+      <div class="sv-dash-panel">
+        <div class="sv-dash-panel__head">
+          <div>
+            <h5 class="m-0">Top marcas</h5>
+            <div class="sv-dash-muted small">Valor e participação no total líquido.</div>
           </div>
-          <hr class="my-2">
-
+        </div>
+        <div class="sv-dash-panel__body">
           {% if dados.ranking_top15_list is not none and (dados.ranking_top15_list|length) > 0 %}
-            <div class="sv-tablewrap">
-              <table class="sv-table align-middle mb-0">
-                <thead>
-                  <tr>
-                    <th style="width:60px;">#</th>
-                    <th>Marca</th>
-                    <th class="text-end">Valor</th>
-                    <th class="text-end">% do total</th>
-                  </tr>
-                </thead>
+            <div class="sv-dash-tablewrap">
+              <table class="sv-dash-table">
+                <thead><tr><th style="width:60px;">#</th><th>Marca</th><th class="text-end">Valor</th><th class="text-end">%</th></tr></thead>
                 <tbody>
                   {% for row in dados.ranking_top15_list %}
-                    <tr>
-                      <td class="text-muted">{{ loop.index }}</td>
-                      <td>{{ row.marca }}</td>
-                      <td class="text-end">{{ row.valor|brl_rs }}</td>
-                      <td class="text-end">{{ "%.2f"|format(row.pct) }}%</td>
-                    </tr>
+                    <tr><td><span class="sv-dash-rank-badge">{{ loop.index }}</span></td><td class="fw-bold">{{ row.marca }}</td><td class="text-end fw-bold">{{ row.valor|brl_rs }}</td><td class="text-end">{{ '%.2f'|format(row.pct) }}%</td></tr>
                   {% endfor %}
                 </tbody>
               </table>
             </div>
           {% else %}
-            <div class="text-muted">Sem dados no período.</div>
+            {{ empty_state('Sem ranking de marcas no período.') }}
           {% endif %}
         </div>
       </div>
+    </div>
 
-      <div class="mt-3 d-flex flex-wrap gap-2">
-        <a href="/percentuais?mes={{ mes }}&ano={{ ano }}{% if vendedor_selecionado %}&vendedor={{ vendedor_selecionado }}{% endif %}" class="sv-btn sv-btn-ghost">Ver ranking completo</a>
-        <a href="/devolucoes?mes={{ mes }}&ano={{ ano }}{% if vendedor_selecionado %}&vendedor={{ vendedor_selecionado }}{% endif %}" class="sv-btn sv-btn-ghost">Ver devoluções (DS/CA)</a>
-      </div>
-
-    {% else %}
-      <div class="alert alert-warning shadow-sm">
-        {% if mensagem_role %}{{ mensagem_role }}{% else %}Nenhum dado encontrado para este vendedor.{% endif %}
+    {% if insights and insights.clientes_destaque %}
+      <div class="sv-dash-grid-2 mb-3">
+        <div class="sv-dash-panel"><div class="sv-dash-panel__body">
+          <h5 class="mb-2">Cliente destaque</h5>
+          {% set c = (insights.clientes_destaque.crescimento[0] if insights.clientes_destaque.crescimento and insights.clientes_destaque.crescimento|length>0 else None) %}
+          {% if c %}
+            <div class="fw-bold text-white fs-5">{{ c.cliente }}</div>
+            <div class="text-success fw-bold">+ {{ c.delta|brl_rs }}{% if c.pct is not none %} ({{ c.pct|round(1) }}%){% endif %}</div>
+            <div class="sv-dash-muted small">Atual: {{ c.atual|brl_rs }} • Anterior: {{ c.anterior|brl_rs }}</div>
+          {% else %}{{ empty_state('Sem cliente com crescimento comparativo.') }}{% endif %}
+        </div></div>
+        <div class="sv-dash-panel"><div class="sv-dash-panel__body">
+          <h5 class="mb-2">Cliente em queda</h5>
+          {% set q = (insights.clientes_destaque.queda[0] if insights.clientes_destaque.queda and insights.clientes_destaque.queda|length>0 else None) %}
+          {% if q %}
+            <div class="fw-bold text-white fs-5">{{ q.cliente }}</div>
+            <div class="text-danger fw-bold">{{ q.delta|brl_rs }}{% if q.pct is not none %} ({{ q.pct|round(1) }}%){% endif %}</div>
+            <div class="sv-dash-muted small">Atual: {{ q.atual|brl_rs }} • Anterior: {{ q.anterior|brl_rs }}</div>
+          {% else %}{{ empty_state('Sem cliente em queda comparativa.') }}{% endif %}
+        </div></div>
       </div>
     {% endif %}
 
-  </div>
+  {% else %}
+    <div class="sv-dash-panel">
+      <div class="sv-dash-panel__body">
+        {{ empty_state(mensagem_role if mensagem_role else 'Nenhum dado encontrado para o período selecionado.') }}
+      </div>
+    </div>
+  {% endif %}
+</div>
 {% endblock %}
