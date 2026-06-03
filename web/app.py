@@ -2360,6 +2360,49 @@ def _calc_resultado_all_vendedores(
     )
 
 
+
+def _get_gerentes_emp(emp: str) -> list[str]:
+    """Retorna os usuários GERENTE vinculados à EMP.
+
+    Usado no recálculo das campanhas por loja. A regra comercial atual é
+    1 gerente por loja, mas retornamos lista para manter o cálculo robusto.
+    """
+    emp_s = str(emp or "").strip()
+    if not emp_s:
+        return []
+    with SessionLocal() as db:
+        try:
+            rows = (
+                db.query(Usuario.username)
+                .join(UsuarioEmp, UsuarioEmp.usuario_id == Usuario.id)
+                .filter(func.lower(func.trim(cast(Usuario.role, String))) == "gerente")
+                .filter(UsuarioEmp.ativo.is_(True))
+                .filter(cast(UsuarioEmp.emp, String) == emp_s)
+                .order_by(Usuario.username.asc())
+                .all()
+            )
+            out = sorted({str(r[0] or "").strip().upper() for r in rows if r and str(r[0] or "").strip()})
+            if out:
+                return out
+        except Exception:
+            try:
+                db.rollback()
+            except Exception:
+                pass
+
+        # Fallback legado: usuarios.emp
+        try:
+            rows = (
+                db.query(Usuario.username)
+                .filter(func.lower(func.trim(cast(Usuario.role, String))) == "gerente")
+                .filter(cast(Usuario.emp, String) == emp_s)
+                .order_by(Usuario.username.asc())
+                .all()
+            )
+            return sorted({str(r[0] or "").strip().upper() for r in rows if r and str(r[0] or "").strip()})
+        except Exception:
+            return []
+
 def _resolver_emp_scope_para_usuario(vendedor: str, role: str, emp_usuario: str | None) -> list[str]:
     """Retorna lista de EMPs que o usuário pode visualizar (para campanhas e relatórios).
 
@@ -2868,6 +2911,12 @@ def _recalcular_resultados_campanhas_para_scope(ano: int, mes: int, emps: list[s
             campanhas_gerente = [c for c in campanhas if _campanha_tipo_qtd(c) == "GERENTE"]
 
             gerentes_emp = _get_gerentes_emp(emp)
+            # Campanhas de gerente não dependem de o gerente ter venda própria no mês.
+            # Por isso o gerente precisa entrar no escopo do recálculo mesmo quando
+            # não aparece em vendas.vendedor para a competência.
+            for _g in gerentes_emp:
+                if _g and _g not in vendedores_emp:
+                    vendedores_emp.append(_g)
             vendedores_base = [v for v in vendedores_emp if v not in set(gerentes_emp)] or vendedores_emp
 
             # campanhas escolhidas por vendedor (aplica override)

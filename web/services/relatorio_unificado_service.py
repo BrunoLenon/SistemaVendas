@@ -21,6 +21,7 @@ from sqlalchemy import String, cast, func, or_
 from db import (
     SessionLocal,
     Venda,
+    CampanhaQtd,
     CampanhaQtdResultado,
     CampanhaComboResultado,
     CampanhaCombo,
@@ -641,6 +642,126 @@ def _append_metas_unificadas(
                 )
             )
 
+
+def _get_gerentes_emp_relatorio(db: Any, emp: str) -> list[str]:
+    """Retorna gerentes vinculados à EMP para garantir exibição no relatório.
+
+    O gerente pode não ter venda própria no período; mesmo assim deve receber
+    campanha de loja quando houver campanha GERENTE cadastrada.
+    """
+    emp_s = str(emp or '').strip()
+    if not emp_s:
+        return []
+    try:
+        from db import Usuario, UsuarioEmp  # import local para evitar acoplamento no boot
+        rows = (
+            db.query(Usuario.username)
+            .join(UsuarioEmp, UsuarioEmp.usuario_id == Usuario.id)
+            .filter(func.lower(func.trim(cast(Usuario.role, String))) == 'gerente')
+            .filter(UsuarioEmp.ativo.is_(True))
+            .filter(cast(UsuarioEmp.emp, String) == emp_s)
+            .order_by(Usuario.username.asc())
+            .all()
+        )
+        out = sorted({str(r[0] or '').strip().upper() for r in rows if r and str(r[0] or '').strip()})
+        if out:
+            return out
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+    try:
+        from db import Usuario
+        rows = (
+            db.query(Usuario.username)
+            .filter(func.lower(func.trim(cast(Usuario.role, String))) == 'gerente')
+            .filter(cast(Usuario.emp, String) == emp_s)
+            .order_by(Usuario.username.asc())
+            .all()
+        )
+        return sorted({str(r[0] or '').strip().upper() for r in rows if r and str(r[0] or '').strip()})
+    except Exception:
+        return []
+
+
+def _campanha_tipo_qtd_relatorio(campanha: Any) -> str:
+    return str(getattr(campanha, 'campanha_tipo', '') or 'VENDEDOR').strip().upper()
+
+
+def _ensure_snapshots_gerente_loja(
+    db: Any,
+    *,
+    ano: int,
+    mes: int,
+    emp: str,
+    vendedores_escopo: list[str],
+    periodo_ini: date,
+    periodo_fim: date,
+) -> None:
+    """Garante snapshots de campanha GERENTE antes de montar /relatorios/campanhas.
+
+    O recálculo principal é feito em app.py; esta proteção evita que a linha do
+    gerente suma quando o relatório é aberto sem recalc ou quando o gerente não
+    teve venda própria no mês.
+    """
+    emp_s = str(emp or '').strip()
+    if not emp_s:
+        return
+    try:
+        gerentes = _get_gerentes_emp_relatorio(db, emp_s)
+        if not gerentes:
+            return
+        escopo = {_upper(v) for v in (vendedores_escopo or []) if str(v or '').strip()}
+        gerentes = [g for g in gerentes if (not escopo or g in escopo)]
+        if not gerentes:
+            return
+
+        campanhas = (
+            db.query(CampanhaQtd)
+            .filter(CampanhaQtd.ativo == 1)
+            .filter(or_(cast(CampanhaQtd.emp, String) == emp_s, CampanhaQtd.emp.in_(['ALL', '*', ''])))
+            .filter(CampanhaQtd.data_inicio <= periodo_fim)
+            .filter(CampanhaQtd.data_fim >= periodo_ini)
+            .filter(func.upper(func.trim(cast(CampanhaQtd.campanha_tipo, String))) == 'GERENTE')
+            .order_by(CampanhaQtd.emp.asc(), CampanhaQtd.data_inicio.asc())
+            .all()
+        )
+        if not campanhas:
+            return
+
+        # Reutiliza a regra oficial da campanha QTD, que para GERENTE soma a EMP inteira.
+        try:
+            from campanhas_qtd_helpers import _upsert_resultado as _upsert_qtd_resultado
+        except Exception:
+            _upsert_qtd_resultado = None
+        if _upsert_qtd_resultado is None:
+            return
+
+        changed = False
+        for gerente in gerentes:
+            for c in campanhas:
+                pi = max(getattr(c, 'data_inicio'), periodo_ini)
+                pf = min(getattr(c, 'data_fim'), periodo_fim)
+                res = _upsert_qtd_resultado(db, c, gerente, emp_s, int(ano), int(mes), pi, pf)
+                try:
+                    res.campanha_tipo = 'GERENTE'
+                except Exception:
+                    pass
+                changed = True
+        if changed:
+            db.commit()
+    except Exception as exc:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        try:
+            print(f"[RELATORIO_UNIFICADO] erro snapshot gerente emp={emp}: {exc}")
+        except Exception:
+            pass
+
+
 def build_unified_rows(
     *,
     ano: int,
@@ -662,8 +783,29 @@ def build_unified_rows(
 
             vendedores = [_upper(v) for v in (vendedores_por_emp.get(emp) or []) if str(v or '').strip()]
             vendedores = [v for v in vendedores if v]
+
+            # Garante que o gerente da loja entre no relatório mesmo quando ele não
+            # aparece como vendedor nas vendas do período. Isso é indispensável para
+            # campanhas do tipo GERENTE, que pagam sobre a venda total da EMP.
+            try:
+                for _g in _get_gerentes_emp_relatorio(db, str(emp)):
+                    if _g and _g not in vendedores:
+                        vendedores.append(_g)
+            except Exception:
+                pass
+
             if not vendedores:
                 continue
+
+            _ensure_snapshots_gerente_loja(
+                db,
+                ano=int(ano),
+                mes=int(mes),
+                emp=str(emp),
+                vendedores_escopo=vendedores,
+                periodo_ini=periodo_ini,
+                periodo_fim=periodo_fim,
+            )
 
             # -------- QTD (snapshot) --------
             q_qtd = (
