@@ -57,6 +57,13 @@ def _fmt_num(v: object) -> str:
     return f'{num:,.2f}'.replace(',', 'X').replace('.', ',').replace('X', '.')
 
 
+def _fmt_pct(v: object) -> str:
+    try:
+        return f"{float(v or 0):,.2f}%".replace(',', 'X').replace('.', ',').replace('X', '.')
+    except Exception:
+        return '0,00%'
+
+
 def _status_text(status: str) -> str:
     return str(status or 'PENDENTE').strip().upper().replace('_', ' ')
 
@@ -263,6 +270,24 @@ def _campaign_title(camp: dict, *, prefix: str = '') -> str:
     code = _safe_text(camp.get('item_codigo'), default='')
     if code and code != '—':
         title = f'{code} • {title}'
+
+    if str(camp.get('tipo_key') or '').upper() == 'META':
+        reqs = []
+        if camp.get('faturamento_minimo_meta'):
+            if camp.get('bloqueado_minimo'):
+                reqs.append(f"fat. mínimo pendente ({_fmt_money(camp.get('faturamento_minimo_meta'))})")
+            else:
+                reqs.append('fat. mínimo OK')
+        if camp.get('margem_minima'):
+            atual = 'sem margem' if camp.get('margem_percentual') is None else _fmt_pct(camp.get('margem_percentual'))
+            minimo = _fmt_pct(camp.get('margem_minima'))
+            if camp.get('bloqueado_margem'):
+                reqs.append(f"margem abaixo ({atual} / mín. {minimo})")
+            else:
+                reqs.append(f"margem OK ({atual} / mín. {minimo})")
+        if reqs:
+            title = f"{title} | {'; '.join(reqs)}"
+
     return f'{prefix}{title}'
 
 

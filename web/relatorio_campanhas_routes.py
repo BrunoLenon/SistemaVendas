@@ -40,6 +40,49 @@ def _to_float(x):
         return 0.0
 
 
+def _fmt_pct_br(x, casas: int = 2) -> str:
+    try:
+        return (f"{float(x or 0):.{casas}f}".replace('.', ',') + '%')
+    except Exception:
+        return '0,00%'
+
+
+def _fmt_num_br(x, casas: int = 2) -> str:
+    try:
+        val = float(x or 0)
+        if abs(val - round(val)) < 0.000001:
+            return str(int(round(val)))
+        return f"{val:.{casas}f}".replace('.', ',')
+    except Exception:
+        return '0'
+
+
+def _meta_display_labels(row, item_codigo: str, *, qtd_base, qtd_minima, recompensa_unit) -> dict[str, str]:
+    item = str(item_codigo or '').strip().upper()
+    if item == 'CRESCIMENTO':
+        return {
+            'qtd_vendida_label': _fmt_pct_br(qtd_base),
+            'qtd_minima_label': ('≥ ' + _fmt_pct_br(qtd_minima)) if qtd_minima is not None else '-',
+            'recompensa_label': _fmt_pct_br(recompensa_unit),
+            'metrica_label': 'Crescimento',
+        }
+    if item == 'MIX':
+        return {
+            'qtd_vendida_label': f"{_fmt_num_br(qtd_base, 0)} únicos",
+            'qtd_minima_label': f"≥ {_fmt_num_br(qtd_minima, 0)}" if qtd_minima is not None else '-',
+            'recompensa_label': '',
+            'metrica_label': 'Mix',
+        }
+    if item in ('MARCAS', 'SHARE_MARCA'):
+        return {
+            'qtd_vendida_label': _fmt_pct_br(qtd_base),
+            'qtd_minima_label': ('≥ ' + _fmt_pct_br(qtd_minima)) if qtd_minima is not None else '-',
+            'recompensa_label': _fmt_pct_br(recompensa_unit),
+            'metrica_label': 'Participação marcas',
+        }
+    return {}
+
+
 def _norm_status(s: str) -> str:
     s = (s or "PENDENTE").strip().upper()
     if s in ("A PAGAR", "A_PAGAR", "APAGAR"):
@@ -148,12 +191,18 @@ def _group_rows(rows):
         g['status_counts'][st if st in g['status_counts'] else 'OUTROS'] += 1
         tipo_raw = str(getattr(r, 'tipo', '') or '').strip().upper()
         tipo_meta = _tipo_meta(tipo_raw)
-        g['campanhas'].append({
+        item_codigo = getattr(r, 'item_codigo', None)
+        qtd_minima = getattr(r, 'qtd_minima', None)
+        recompensa_unit = getattr(r, 'recompensa_unit', None)
+        qtd_base = float(getattr(r, 'qtd_base', 0) or 0)
+        bloqueado_margem = bool(getattr(r, 'bloqueado_margem', False))
+        bloqueado_minimo = bool(getattr(r, 'bloqueado_minimo', False))
+        row_c = {
             'titulo': titulo,
-            'item_codigo': getattr(r, 'item_codigo', None),
-            'qtd_minima': getattr(r, 'qtd_minima', None),
-            'recompensa_unit': getattr(r, 'recompensa_unit', None),
-            'qtd_vendida': float(getattr(r, 'qtd_base', 0) or 0),
+            'item_codigo': item_codigo,
+            'qtd_minima': qtd_minima,
+            'recompensa_unit': recompensa_unit,
+            'qtd_vendida': qtd_base,
             'vendeu_rs': float(getattr(r, 'valor_vendido', 0) or 0),
             'valor': valor,
             'premio_potencial': premio_potencial,
@@ -161,15 +210,35 @@ def _group_rows(rows):
             'faturamento_emp': _to_float(getattr(r, 'faturamento_emp', 0) or 0),
             'faltante_faturamento_emp': _to_float(getattr(r, 'faltante_faturamento_emp', 0) or 0),
             'bloqueado_faturamento_emp': bloqueado_emp,
+            'faturamento_minimo_meta': _to_float(getattr(r, 'faturamento_minimo_meta', 0) or 0),
+            'bloqueado_minimo': bloqueado_minimo,
+            'margem_percentual': (None if getattr(r, 'margem_percentual', None) is None else _to_float(getattr(r, 'margem_percentual', None))),
+            'margem_minima': _to_float(getattr(r, 'margem_minima', 0) or 0),
+            'margem_minima_origem': str(getattr(r, 'margem_minima_origem', '') or ''),
+            'margem_atingida': getattr(r, 'margem_atingida', None),
+            'bloqueado_margem': bloqueado_margem,
+            'margem_faltante_pp': _to_float(getattr(r, 'margem_faltante_pp', 0) or 0),
+            'tipo_meta': str(getattr(r, 'tipo_meta', '') or ''),
             'status': st,
-            'atingiu': bool(getattr(r, 'atingiu', False)) and not bloqueado_emp,
+            'atingiu': bool(getattr(r, 'atingiu', False)) and not bloqueado_emp and not bloqueado_margem and not bloqueado_minimo,
             'tipo': tipo_raw,
             'tipo_key': tipo_meta['key'],
             'tipo_label': tipo_meta['label'],
             'tipo_class': tipo_meta['class'],
             'tipo_short': tipo_meta['short'],
             'origem_id': int(getattr(r, 'origem_id', 0) or 0),
-        })
+        }
+        if tipo_meta['key'] == 'META':
+            row_c.update(_meta_display_labels(r, str(item_codigo or ''), qtd_base=qtd_base, qtd_minima=qtd_minima, recompensa_unit=recompensa_unit))
+            if row_c.get('margem_percentual') is None:
+                row_c['margem_percentual_label'] = 'sem margem'
+            else:
+                row_c['margem_percentual_label'] = _fmt_pct_br(row_c.get('margem_percentual'))
+            row_c['margem_minima_label'] = _fmt_pct_br(row_c.get('margem_minima'))
+            row_c['margem_faltante_label'] = _fmt_pct_br(row_c.get('margem_faltante_pp'))
+            origem = str(row_c.get('margem_minima_origem') or '').lower()
+            row_c['margem_origem_label'] = 'Individual' if origem == 'individual' else ('Padrão' if origem == 'padrao' else '—')
+        g['campanhas'].append(row_c)
 
     rows_grouped = list(groups_map.values())
     for g in rows_grouped:
@@ -529,7 +598,7 @@ def register_relatorio_campanhas_routes(
 
         sio = StringIO()
         w = csv.writer(sio, delimiter=';')
-        w.writerow(['tipo', 'competencia', 'emp', 'vendedor', 'titulo', 'atingiu_gate', 'qtd_base', 'qtd_premiada', 'premio_potencial', 'valor_recompensa_liberado', 'bloqueado_faturamento_emp', 'faturamento_emp', 'faturamento_minimo_emp', 'faltante_faturamento_emp', 'status_pagamento', 'pago_em'])
+        w.writerow(['tipo', 'competencia', 'emp', 'vendedor', 'titulo', 'atingiu_gate', 'qtd_base', 'qtd_premiada', 'premio_potencial', 'valor_recompensa_liberado', 'bloqueado_faturamento_emp', 'faturamento_emp', 'faturamento_minimo_emp', 'faltante_faturamento_emp', 'bloqueado_minimo_meta', 'faturamento_minimo_meta', 'margem_percentual', 'margem_minima', 'margem_minima_origem', 'bloqueado_margem', 'margem_faltante_pp', 'status_pagamento', 'pago_em'])
         ano = int(ctx.get('ano') or 0)
         mes = int(ctx.get('mes') or 0)
         for r in (ctx.get('rows') or []):
@@ -549,6 +618,13 @@ def register_relatorio_campanhas_routes(
                 getattr(r, 'faturamento_emp', 0.0),
                 getattr(r, 'faturamento_minimo_emp', 0.0),
                 getattr(r, 'faltante_faturamento_emp', 0.0),
+                'SIM' if getattr(r, 'bloqueado_minimo', False) else 'NÃO',
+                getattr(r, 'faturamento_minimo_meta', 0.0),
+                '' if getattr(r, 'margem_percentual', None) is None else getattr(r, 'margem_percentual', ''),
+                getattr(r, 'margem_minima', 0.0),
+                getattr(r, 'margem_minima_origem', '') or '',
+                'SIM' if getattr(r, 'bloqueado_margem', False) else 'NÃO',
+                getattr(r, 'margem_faltante_pp', 0.0),
                 getattr(r, 'status_pagamento', 'PENDENTE'),
                 getattr(r, 'pago_em', '') or '',
             ])
