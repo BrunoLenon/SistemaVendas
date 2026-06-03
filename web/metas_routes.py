@@ -27,6 +27,7 @@ from db import (
     MetaPrograma,
     MetaProgramaEmp,
     SessionLocal,
+    Usuario,
     ensure_metas_lojas_schema,
 )
 from metas_helpers import (
@@ -390,26 +391,53 @@ def admin_metas():
         sim_vendedor = vendedor_selected if vendedor_selected else None
         metas_sim, resultados_sim = montar_resultados_periodo(db, ano, mes, emps=sim_emps, vendedor=sim_vendedor, persist=False)
 
-        margens_q = db.query(MetaMargemVendedor).filter(MetaMargemVendedor.ano == ano, MetaMargemVendedor.mes == mes)
-        if emp_selected:
-            margens_q = margens_q.filter(MetaMargemVendedor.emp == emp_selected)
+        # Margem atual é individual por vendedor, não por EMP.
+        # Quando uma EMP estiver filtrada, mostramos apenas os vendedores daquela EMP,
+        # mas a busca da margem continua usando ANO + MÊS + VENDEDOR.
+        vendedores_margem_filtro: list[str] = []
         if vendedor_selected:
-            margens_q = margens_q.filter(MetaMargemVendedor.vendedor == vendedor_selected)
-        margens_rows_db = margens_q.order_by(MetaMargemVendedor.emp.asc(), MetaMargemVendedor.vendedor.asc()).limit(600).all()
+            vendedores_margem_filtro = [vendedor_selected]
+        elif emp_selected:
+            vendedores_margem_filtro = [normalize_text(v) for v in get_vendedores_para_metas(db, ano, mes, [emp_selected])]
+
+        margens_q = db.query(MetaMargemVendedor).filter(MetaMargemVendedor.ano == ano, MetaMargemVendedor.mes == mes)
+        if vendedores_margem_filtro:
+            margens_q = margens_q.filter(MetaMargemVendedor.vendedor.in_(vendedores_margem_filtro))
+        margens_rows_db_all = (
+            margens_q
+            .order_by(MetaMargemVendedor.vendedor.asc(), MetaMargemVendedor.importado_em.desc(), MetaMargemVendedor.id.desc())
+            .limit(1200)
+            .all()
+        )
+
+        # Pode existir histórico legado por EMP. Para a nova regra, mantém só a última margem por vendedor.
+        margens_rows_db = []
+        vistos_vendedores = set()
+        for item in margens_rows_db_all:
+            vend_key = normalize_text(getattr(item, "vendedor", ""))
+            if not vend_key or vend_key in vistos_vendedores:
+                continue
+            vistos_vendedores.add(vend_key)
+            margens_rows_db.append(item)
+            if len(margens_rows_db) >= 600:
+                break
+
         margens_rows = []
         crescimento_meta_id = int(crescimento_meta.id) if crescimento_meta else None
         for r in margens_rows_db:
+            vend_norm = normalize_text(r.vendedor)
+            emp_para_regra = emp_selected or normalize_emp(getattr(r, "emp", ""))
             margem_efetiva, margem_origem = _margem_minima_efetiva(
                 db,
                 crescimento_meta_id,
-                normalize_emp(r.emp),
-                normalize_text(r.vendedor),
+                emp_para_regra,
+                vend_norm,
                 margem_minima_ativa,
             )
             margem_atual = float(getattr(r, "margem_percentual", 0.0) or 0.0)
             margens_rows.append({
-                "emp": normalize_emp(r.emp),
-                "vendedor": normalize_text(r.vendedor),
+                "emp": emp_para_regra if emp_para_regra and emp_para_regra != "GERAL" else "Geral",
+                "vendedor": vend_norm,
                 "margem_percentual": margem_atual,
                 "margem_minima_efetiva": margem_efetiva,
                 "margem_minima_origem": margem_origem,
@@ -420,11 +448,11 @@ def admin_metas():
 
         margens_pendentes = []
         if emp_selected:
-            margem_keys = {(normalize_emp(r.get("emp")), normalize_text(r.get("vendedor"))) for r in margens_rows}
+            margem_vendedores = {normalize_text(r.get("vendedor")) for r in margens_rows}
             for vend in get_vendedores_para_metas(db, ano, mes, [emp_selected]):
-                key = (emp_selected, normalize_text(vend))
-                if key not in margem_keys:
-                    margens_pendentes.append({"emp": emp_selected, "vendedor": normalize_text(vend)})
+                vend_norm = normalize_text(vend)
+                if vend_norm not in margem_vendedores:
+                    margens_pendentes.append({"emp": emp_selected, "vendedor": vend_norm})
 
         totais = {
             "metas": len(metas_db),
@@ -624,12 +652,12 @@ def admin_metas_margens_modelo():
         wb = Workbook()
         ws = wb.active
         ws.title = "Modelo Margens"
-        headers = ["ANO", "MES", "EMP", "VENDEDOR", "MARGEM_PERCENTUAL", "OBSERVACAO"]
+        headers = ["ANO", "MES", "VENDEDOR", "MARGEM_PERCENTUAL"]
         ws.append(headers)
         exemplos = [
-            [ano, mes, "102", "CARLOS_SALDANHA", 8.35, "Margem atual importada"],
-            [ano, mes, "123", "JOAO_MASO", 7.80, "Abaixo da mínima"],
-            [ano, mes, "124", "VENDEDOR_EXEMPLO", -1.20, "Margem negativa também é aceita"],
+            [ano, mes, "CARLOS_SALDANHA", 8.35],
+            [ano, mes, "JOAO_MASO", 7.80],
+            [ano, mes, "VENDEDOR_EXEMPLO", -1.20],
         ]
         for row in exemplos:
             ws.append(row)
@@ -640,17 +668,18 @@ def admin_metas_margens_modelo():
             cell.fill = header_fill
             cell.alignment = Alignment(horizontal="center")
             cell.border = Border(top=thin, left=thin, right=thin, bottom=thin)
-        widths = [10, 10, 14, 28, 22, 44]
+        widths = [10, 10, 34, 24]
         for idx, width in enumerate(widths, start=1):
             ws.column_dimensions[get_column_letter(idx)].width = width
         ws.freeze_panes = "A2"
-        ws["H1"] = "Instruções"
-        ws["H1"].font = Font(bold=True)
-        ws["H2"] = "A margem é individual por vendedor. A última margem importada substitui a anterior para ANO+MES+EMP+VENDEDOR."
-        ws["H3"] = "Informe a margem como percentual. Ex.: 8,35 representa 8,35%."
-        ws["H4"] = "Não soma, não acumula e não faz média."
-        ws["H5"] = "VENDEDOR deve bater com o usuário/vendedor do sistema. Cada vendedor precisa ter sua própria linha."
-        ws.column_dimensions["H"].width = 72
+        ws["F1"] = "Instruções"
+        ws["F1"].font = Font(bold=True)
+        ws["F2"] = "A margem é individual por vendedor. A última margem importada substitui a anterior para ANO+MES+VENDEDOR."
+        ws["F3"] = "Informe a margem como percentual. Ex.: 8,35 representa 8,35%."
+        ws["F4"] = "Não informe EMP. O sistema identifica pelo usuário/vendedor cadastrado, que é único."
+        ws["F5"] = "Não soma, não acumula e não faz média. Só a última margem importada vale."
+        ws["F6"] = "VENDEDOR deve bater com o usuário/vendedor do sistema."
+        ws.column_dimensions["F"].width = 78
         bio = BytesIO()
         wb.save(bio)
         bio.seek(0)
@@ -697,37 +726,35 @@ def admin_metas_margens_importar():
 
     c_ano = col("ANO")
     c_mes = col("MES")
-    c_emp = col("EMP", "EMPRESA", "LOJA")
     c_vendedor = col("VENDEDOR", "USUARIO", "LOGIN")
     c_margem = col("MARGEM_PERCENTUAL", "MARGEM", "MARGEM%", "PERCENTUAL_MARGEM")
-    c_obs = col("OBSERVACAO", "OBS", "COMENTARIO")
 
-    if not c_emp or not c_vendedor or not c_margem:
-        flash("Planilha inválida. Colunas obrigatórias: EMP, VENDEDOR e MARGEM_PERCENTUAL. ANO/MES podem vir na planilha ou no filtro.", "danger")
+    if not c_ano or not c_mes or not c_vendedor or not c_margem:
+        flash("Planilha inválida. Colunas obrigatórias: ANO, MES, VENDEDOR e MARGEM_PERCENTUAL.", "danger")
         return redirect(url_for("admin_metas", ano=ano_req, mes=mes_req))
 
-    upserts: dict[tuple[int, int, str, str], dict] = {}
+    upserts: dict[tuple[int, int, str], dict] = {}
     erros: list[str] = []
+    vendedores_planilha: set[str] = set()
     for idx, row in df.iterrows():
         try:
-            ano = _safe_int(row.get(c_ano), ano_req) if c_ano else ano_req
-            mes = _safe_int(row.get(c_mes), mes_req) if c_mes else mes_req
-            emp_codigo = normalize_emp(row.get(c_emp))
+            ano = _safe_int(row.get(c_ano), 0)
+            mes = _safe_int(row.get(c_mes), 0)
             vendedor = normalize_text(row.get(c_vendedor))
             margem = _parse_margem_percentual(row.get(c_margem), None)
-            obs = str(row.get(c_obs) or "").strip()[:240] if c_obs else ""
             if not (1 <= int(mes) <= 12) or int(ano) <= 2000:
                 raise ValueError("competência inválida")
-            if not emp_codigo or not vendedor:
-                raise ValueError("EMP/VENDEDOR vazio")
+            if not vendedor:
+                raise ValueError("VENDEDOR vazio")
             if margem is None:
                 raise ValueError("margem inválida")
-            upserts[(int(ano), int(mes), emp_codigo, vendedor)] = {
+            vendedores_planilha.add(vendedor)
+            # Se houver duplicidade do mesmo vendedor na própria planilha, a última linha vence.
+            upserts[(int(ano), int(mes), vendedor)] = {
                 "margem": float(margem),
-                "observacao": obs,
             }
         except Exception as exc:
-            if len(erros) < 8:
+            if len(erros) < 10:
                 erros.append(f"Linha {idx + 2}: {exc}")
 
     if not upserts:
@@ -738,15 +765,42 @@ def admin_metas_margens_importar():
     atualizados = 0
     agora = datetime.utcnow()
     usuario = normalize_text(session.get("usuario"))
-    competencias = set()
+    vendedores_nao_encontrados: list[str] = []
+    emp_global = "GERAL"
+
     with SessionLocal() as db:
-        for (ano, mes, emp_codigo, vendedor), payload in upserts.items():
+        def _compact_user_key(value: object) -> str:
+            return re.sub(r"[^A-Z0-9]", "", normalize_text(value))
+
+        usuarios_lookup: dict[str, str] = {}
+        for u in db.query(Usuario).filter(Usuario.username.isnot(None)).all():
+            username = normalize_text(u.username)
+            if not username:
+                continue
+            usuarios_lookup.setdefault(username, username)
+            usuarios_lookup.setdefault(_compact_user_key(username), username)
+
+        def _resolve_vendedor_importado(vendedor_raw: str) -> str | None:
+            vendedor_raw = normalize_text(vendedor_raw)
+            return usuarios_lookup.get(vendedor_raw) or usuarios_lookup.get(_compact_user_key(vendedor_raw))
+
+        for vendedor in sorted(vendedores_planilha):
+            if not _resolve_vendedor_importado(vendedor):
+                vendedores_nao_encontrados.append(vendedor)
+
+        for (ano, mes, vendedor_importado), payload in upserts.items():
+            vendedor = _resolve_vendedor_importado(vendedor_importado)
+            if not vendedor:
+                continue
+
+            # Nova regra: uma única margem por vendedor/competência, independente da EMP.
+            # Mantém emp="GERAL" por compatibilidade com a tabela atual.
             item = (
                 db.query(MetaMargemVendedor)
                 .filter(
                     MetaMargemVendedor.ano == ano,
                     MetaMargemVendedor.mes == mes,
-                    MetaMargemVendedor.emp == emp_codigo,
+                    MetaMargemVendedor.emp == emp_global,
                     MetaMargemVendedor.vendedor == vendedor,
                 )
                 .first()
@@ -754,23 +808,24 @@ def admin_metas_margens_importar():
             if item:
                 atualizados += 1
             else:
-                item = MetaMargemVendedor(ano=ano, mes=mes, emp=emp_codigo, vendedor=vendedor)
+                item = MetaMargemVendedor(ano=ano, mes=mes, emp=emp_global, vendedor=vendedor)
                 importados += 1
             item.margem_percentual = float(payload["margem"])
-            item.observacao = payload.get("observacao") or ""
+            item.observacao = "Margem individual por vendedor"
             item.arquivo_origem = filename[:255]
             item.importado_por = usuario
             item.importado_em = agora
             db.add(item)
-            competencias.add((ano, mes))
         db.commit()
 
     msg = f"Margens importadas com sucesso. Novas: {importados}. Atualizadas: {atualizados}."
+    if vendedores_nao_encontrados:
+        msg += " Vendedores não encontrados/ignorados: " + ", ".join(vendedores_nao_encontrados[:10])
+        if len(vendedores_nao_encontrados) > 10:
+            msg += f" e mais {len(vendedores_nao_encontrados) - 10}."
     if erros:
         msg += " Algumas linhas foram ignoradas: " + " | ".join(erros)
-        flash(msg, "warning")
-    else:
-        flash(msg, "success")
+    flash(msg, "warning" if vendedores_nao_encontrados or erros else "success")
     # Volta para a competência do filtro; se a planilha tinha outra competência, o usuário pode filtrar depois.
     return redirect(url_for("admin_metas", ano=ano_req, mes=mes_req))
 

@@ -352,19 +352,24 @@ def get_base_manual(db, meta_id: int, emp: str, vendedor: str) -> MetaBaseManual
 
 
 def get_margem_vendedor(db, ano: int, mes: int, emp: str, vendedor: str) -> MetaMargemVendedor | None:
-    """Retorna a última margem percentual importada para ano/mês/EMP/vendedor.
+    """Retorna a margem percentual vigente do vendedor na competência.
 
-    A tabela possui uma linha por competência e vendedor; importações novas substituem
-    o percentual anterior.
+    A regra atual da margem é individual por vendedor, não por EMP.
+    Portanto a busca usa apenas ANO + MÊS + VENDEDOR e considera a última
+    margem importada. O parâmetro ``emp`` fica preservado por compatibilidade
+    com chamadas antigas, mas não restringe o resultado.
     """
+    vendedor_n = normalize_text(vendedor)
+    if not vendedor_n:
+        return None
     return (
         db.query(MetaMargemVendedor)
         .filter(
             MetaMargemVendedor.ano == int(ano),
             MetaMargemVendedor.mes == int(mes),
-            MetaMargemVendedor.emp == normalize_emp(emp),
-            MetaMargemVendedor.vendedor == normalize_text(vendedor),
+            MetaMargemVendedor.vendedor == vendedor_n,
         )
+        .order_by(MetaMargemVendedor.importado_em.desc(), MetaMargemVendedor.id.desc())
         .first()
     )
 

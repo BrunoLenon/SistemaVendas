@@ -670,10 +670,12 @@ class MetaBaseManual(Base):
 
 
 class MetaMargemVendedor(Base):
-    """Margem percentual importada por vendedor/EMP/competência.
+    """Margem percentual importada por vendedor/competência.
 
-    Regra: vale sempre a última margem importada para (ano, mes, emp, vendedor).
-    Não soma, não faz média e não acumula por dia.
+    Regra atual: vale sempre a última margem importada para (ano, mes, vendedor).
+    A coluna ``emp`` é mantida por compatibilidade com versões anteriores e recebe
+    "GERAL" nas novas importações. A margem não soma, não faz média e não
+    acumula por dia.
     """
 
     __tablename__ = "metas_margens_vendedores"
@@ -1340,6 +1342,7 @@ def criar_tabelas():
             """))
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_meta_margem_emp_periodo ON metas_margens_vendedores (emp, ano, mes);"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_meta_margem_vendedor_periodo ON metas_margens_vendedores (vendedor, ano, mes);"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_meta_margem_periodo_vendedor ON metas_margens_vendedores (ano, mes, vendedor);"))
             conn.execute(text("ALTER TABLE metas_resultados ADD COLUMN IF NOT EXISTS margem_percentual double precision;"))
             conn.execute(text("ALTER TABLE metas_resultados ADD COLUMN IF NOT EXISTS margem_minima double precision;"))
             conn.execute(text("ALTER TABLE metas_resultados ADD COLUMN IF NOT EXISTS margem_atingida boolean;"))
@@ -1682,6 +1685,7 @@ def ensure_metas_lojas_schema():
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_metas_bases_meta_emp_vendedor ON metas_bases_manuais (meta_id, emp, vendedor);"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_meta_margem_emp_periodo ON metas_margens_vendedores (emp, ano, mes);"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_meta_margem_vendedor_periodo ON metas_margens_vendedores (vendedor, ano, mes);"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_meta_margem_periodo_vendedor ON metas_margens_vendedores (ano, mes, vendedor);"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_metas_resultados_emp_periodo ON metas_resultados (emp, ano, mes);"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_metas_resultados_meta_periodo ON metas_resultados (meta_id, ano, mes);"))
     except Exception:

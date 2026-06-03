@@ -220,7 +220,7 @@ VEI</textarea></div>
               <div class="mb-3">
                 <div class="meta-label">Planilha de margens</div>
                 <input class="form-control form-control-sm meta-input" type="file" name="arquivo_margens" accept=".xlsx,.xls,.csv" required>
-                <div class="meta-help mt-1">Colunas: ANO, MES, EMP, VENDEDOR, MARGEM_PERCENTUAL e OBSERVACAO. Cada linha representa a margem atual daquele vendedor.</div>
+                <div class="meta-help mt-1">Colunas obrigatórias: ANO, MES, VENDEDOR e MARGEM_PERCENTUAL. Não informe EMP: a margem é individual do vendedor e vale para ele em qualquer loja vinculada.</div>
               </div>
               <div class="meta-actions">
                 <button class="btn btn-meta-primary btn-sm">Importar margens</button>
@@ -234,7 +234,7 @@ VEI</textarea></div>
               <div class="d-flex justify-content-between align-items-start gap-2 flex-wrap mb-2">
                 <div>
                   <h6>📊 Margens individuais atuais {{ '%02d'|format(mes) }}/{{ ano }}</h6>
-                  <p class="mb-0">Mostra a margem válida por vendedor. Se importar novamente o mesmo EMP + vendedor, a linha é atualizada.</p>
+                  <p class="mb-0">Mostra a margem válida por vendedor. Se importar novamente o mesmo vendedor no mesmo mês/ano, a última margem substitui a anterior.</p>
                 </div>
                 {% if emp_selected %}<span class="meta-chip">EMP {{ emp_selected }}</span>{% endif %}
               </div>
@@ -243,7 +243,7 @@ VEI</textarea></div>
               {% else %}
                 <div class="meta-table-wrap" style="max-height:360px">
                   <table class="table table-sm meta-table">
-                    <thead><tr><th>EMP</th><th>Vendedor</th><th class="text-end">Margem importada</th><th class="text-end">Mínima efetiva</th><th>Origem</th><th>Status</th><th>Importado em</th><th>Obs.</th></tr></thead>
+                    <thead><tr><th>Escopo</th><th>Vendedor</th><th class="text-end">Margem importada</th><th class="text-end">Mínima efetiva</th><th>Origem</th><th>Status</th><th>Importado em</th><th>Obs.</th></tr></thead>
                     <tbody>
                       {% for r in margens_rows %}
                         <tr>
@@ -266,7 +266,7 @@ VEI</textarea></div>
           <div class="col-12">
             <div class="meta-card">
               <h6>⚠️ Vendedores sem margem no filtro</h6>
-              <p>Quando uma Meta Crescimento exige margem mínima, cada vendedor precisa ter a sua margem individual importada. Vendedor sem margem fica bloqueado até nova importação.</p>
+              <p>Quando uma Meta Crescimento exige margem mínima, cada vendedor precisa ter a sua margem individual importada. A margem é buscada por ANO + MÊS + VENDEDOR, independente da EMP.</p>
               {% if not emp_selected %}
                 <div class="meta-empty">Selecione uma EMP no filtro superior para conferir vendedores sem margem.</div>
               {% elif margens_pendentes|length == 0 %}

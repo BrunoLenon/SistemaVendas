@@ -119,6 +119,7 @@ CREATE INDEX IF NOT EXISTS ix_metas_marcas_marca ON metas_marcas (marca);
 CREATE INDEX IF NOT EXISTS ix_metas_bases_meta_emp_vendedor ON metas_bases_manuais (meta_id, emp, vendedor);
 CREATE INDEX IF NOT EXISTS ix_meta_margem_emp_periodo ON metas_margens_vendedores (emp, ano, mes);
 CREATE INDEX IF NOT EXISTS ix_meta_margem_vendedor_periodo ON metas_margens_vendedores (vendedor, ano, mes);
+CREATE INDEX IF NOT EXISTS ix_meta_margem_periodo_vendedor ON metas_margens_vendedores (ano, mes, vendedor);
 CREATE INDEX IF NOT EXISTS ix_metas_resultados_emp_periodo ON metas_resultados (emp, ano, mes);
 CREATE INDEX IF NOT EXISTS ix_metas_resultados_meta_periodo ON metas_resultados (meta_id, ano, mes);
 
