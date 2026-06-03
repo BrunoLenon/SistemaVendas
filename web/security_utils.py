@@ -23,6 +23,8 @@ def normalize_role(role: str | None) -> str:
         return "admin"
     if r in ("supervisor", "sup"):
         return "supervisor"
+    if r in ("gerente", "ger", "manager"):
+        return "gerente"
     if r in ("financeiro", "fin", "finance"):
         return "financeiro"
     return "vendedor"

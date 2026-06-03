@@ -174,7 +174,7 @@ def _admin_required():
 
 def _admin_or_supervisor_required():
     """Garante acesso ADMIN ou SUPERVISOR."""
-    if (_role() or "").lower() not in ["admin", "supervisor"]:
+    if (_role() or "").lower() not in ["admin", "supervisor", "gerente"]:
         flash("Acesso restrito.", "warning")
         audit("forbidden", path=request.path)
         return redirect(url_for("dashboard"))

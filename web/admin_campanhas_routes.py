@@ -12,13 +12,6 @@ from typing import Any, Callable
 
 from flask import redirect, render_template, request
 
-from services.visao_operacional import (
-    filter_campaigns_operational,
-    get_fechamento_status_map,
-    normalize_status_filter,
-    status_filter_label,
-)
-
 
 def register_admin_campanhas_routes(
     app,
@@ -62,7 +55,6 @@ def register_admin_campanhas_routes(
         hoje = date.today()
         mes = int(request.values.get("mes") or hoje.month)
         ano = int(request.values.get("ano") or hoje.year)
-        status_visao = normalize_status_filter(request.values.get("status"), default="abertas")
 
         with SessionLocal() as db:
             if request.method == "POST":
@@ -92,6 +84,9 @@ def register_admin_campanhas_routes(
                         emp = (request.form.get("emp") or "").strip()
                         vendedor = (request.form.get("vendedor") or "").strip().upper() or None
                         titulo = (request.form.get("titulo") or "").strip() or None
+                        campanha_tipo = (request.form.get("campanha_tipo") or "VENDEDOR").strip().upper()
+                        if campanha_tipo not in {"VENDEDOR", "GERENTE"}:
+                            campanha_tipo = "VENDEDOR"
 
                         campo_match = (request.form.get("campo_match") or "codigo").strip().lower()
                         if campo_match not in {"codigo", "descricao"}:
@@ -104,11 +99,12 @@ def register_admin_campanhas_routes(
                         recompensa_raw = (request.form.get("recompensa_unit") or "").strip().replace(",", ".")
                         qtd_min_raw = (request.form.get("qtd_minima") or "").strip().replace(",", ".")
                         valor_min_raw = (request.form.get("valor_minimo") or "").strip().replace(",", ".")
-                        faturamento_min_emp_raw = (request.form.get("faturamento_minimo_emp") or "").strip().replace(",", ".")
 
                         data_ini_raw = (request.form.get("data_inicio") or "").strip()
                         data_fim_raw = (request.form.get("data_fim") or "").strip()
 
+                        if campanha_tipo == "GERENTE":
+                            vendedor = None
                         if not emp:
                             raise ValueError("Informe a EMP.")
                         if campo_match == "descricao":
@@ -142,18 +138,12 @@ def register_admin_campanhas_routes(
                         if valor_minimo is not None and valor_minimo < 0:
                             raise ValueError("Valor mínimo não pode ser negativo.")
 
-                        faturamento_minimo_emp = _to_dec(faturamento_min_emp_raw) if faturamento_min_emp_raw else None
-                        if faturamento_minimo_emp is not None and faturamento_minimo_emp < 0:
-                            raise ValueError("Faturamento mínimo da EMP não pode ser negativo.")
-
                         # Persistimos como float (compatibilidade), mas com precisão controlada
                         recompensa_unit = float(recompensa_unit.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP))
                         if qtd_minima is not None:
                             qtd_minima = float(qtd_minima)
                         if valor_minimo is not None:
                             valor_minimo = float(valor_minimo)
-                        if faturamento_minimo_emp is not None:
-                            faturamento_minimo_emp = float(faturamento_minimo_emp)
                         data_inicio = datetime.strptime(data_ini_raw, "%Y-%m-%d").date()
                         data_fim = datetime.strptime(data_fim_raw, "%Y-%m-%d").date()
                         if data_fim < data_inicio:
@@ -162,6 +152,7 @@ def register_admin_campanhas_routes(
                         db.add(
                             CampanhaQtd(
                                 emp=str(emp),
+                                campanha_tipo=campanha_tipo,
                                 vendedor=vendedor,
                                 titulo=titulo,
                                 produto_prefixo=(produto_prefixo or '').upper(),
@@ -171,7 +162,6 @@ def register_admin_campanhas_routes(
                                 recompensa_unit=float(recompensa_unit),
                                 qtd_minima=float(qtd_minima) if qtd_minima is not None else None,
                                 valor_minimo=float(valor_minimo) if valor_minimo is not None else None,
-                                faturamento_minimo_emp=float(faturamento_minimo_emp) if faturamento_minimo_emp is not None else None,
                                 data_inicio=data_inicio,
                                 data_fim=data_fim,
                                 ativo=1,
@@ -226,17 +216,8 @@ def register_admin_campanhas_routes(
                     erro = str(e)
                     app.logger.exception("Erro ao gerenciar campanhas")
 
-            status_map = get_fechamento_status_map(db, ano, mes)
-
-            campanhas_base = (
-                db.query(CampanhaQtd)
-                .order_by(CampanhaQtd.emp.asc(), CampanhaQtd.data_inicio.desc())
-                .all()
-            )
-            campanhas_total_base = len(campanhas_base or [])
-            campanhas = filter_campaigns_operational(campanhas_base, ano, mes, status_visao, status_map)
-
-            resultados_base = (
+            campanhas = db.query(CampanhaQtd).order_by(CampanhaQtd.emp.asc(), CampanhaQtd.data_inicio.desc()).all()
+            resultados = (
                 db.query(CampanhaQtdResultado)
                 .filter(
                     CampanhaQtdResultado.competencia_ano == int(ano),
@@ -245,12 +226,6 @@ def register_admin_campanhas_routes(
                 .order_by(CampanhaQtdResultado.valor_recompensa.desc())
                 .all()
             )
-            if status_visao == "abertas":
-                resultados = [r for r in (resultados_base or []) if status_map.get(str(getattr(r, "emp", "") or "").strip(), {}).get("status", "aberto") == "aberto" and not bool(status_map.get(str(getattr(r, "emp", "") or "").strip(), {}).get("fechado", False))]
-            elif status_visao == "encerradas":
-                resultados = [r for r in (resultados_base or []) if str(getattr(r, "emp", "") or "").strip() in status_map and (status_map.get(str(getattr(r, "emp", "") or "").strip(), {}).get("status") != "aberto" or bool(status_map.get(str(getattr(r, "emp", "") or "").strip(), {}).get("fechado", False)))]
-            else:
-                resultados = resultados_base
 
     
         # UX: agrupa por competência (mês/ano) na lista
@@ -273,9 +248,6 @@ def register_admin_campanhas_routes(
                 mes=mes,
                 erro=erro,
                 ok=ok,
-                status_visao=status_visao,
-                status_label=status_filter_label(status_visao),
-                campanhas_total_base=campanhas_total_base,
             )
 
     app.add_url_rule(

@@ -48,16 +48,6 @@
   .sv-mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace}
   .sv-empty{padding:22px;text-align:center;color:rgba(255,255,255,.65);border:1px dashed rgba(255,140,0,.22);border-radius:16px;background:rgba(255,255,255,.025);margin-top:12px}
   .sv-top-actions{display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end}
-  .sv-chip--lock{border-color:rgba(255,177,66,.42);background:rgba(255,177,66,.13);color:#ffe0ad}
-  .sv-gate-box{border:1px solid rgba(255,177,66,.28);background:rgba(255,177,66,.08);border-radius:14px;padding:10px 12px;margin:10px 0;color:#fff}
-  .sv-gate-title{font-weight:900;margin-bottom:6px;color:#ffe0ad}
-  .sv-gate-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
-  .sv-gate-item{border:1px solid rgba(255,255,255,.08);background:rgba(0,0,0,.16);border-radius:12px;padding:8px 10px}
-  .sv-gate-item small{display:block;color:rgba(255,255,255,.62);font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.04em}
-  .sv-gate-item strong{font-size:.95rem;color:#fff}
-  @media(max-width:900px){.sv-gate-grid{grid-template-columns:1fr 1fr}}
-  @media(max-width:600px){.sv-gate-grid{grid-template-columns:1fr}}
-
 </style>
 {% endblock %}
 
@@ -69,13 +59,13 @@
       <div class="sv-breadcrumb">Operação / Campanhas</div>
       <div class="sv-h1">Campanhas e Metas</div>
       <div class="sv-sub sv-muted">
-        Acompanhamento por EMP e vendedor • Período <b>{{ "%02d"|format(mes|int) }}/{{ ano }}</b> • Situação <b>{{ status_label|default('Abertas') }}</b> • Total liberado <b>{{ total_recompensa|brl_rs }}</b>
+        Acompanhamento por EMP e vendedor • Período <b>{{ "%02d"|format(mes|int) }}/{{ ano }}</b> • Total <b>{{ total_recompensa|brl_rs }}</b>
       </div>
     </div>
 
     <div class="sv-pagehead__right">
       <a class="sv-btn sv-btn-ghost" href="{{ url_for('dashboard') }}">Voltar</a>
-      <a class="sv-btn sv-btn-primary" href="{{ url_for('campanhas_qtd_pdf', mes=mes, ano=ano, status=status_visao|default('abertas')) }}">Exportar PDF</a>
+      <a class="sv-btn sv-btn-primary" href="{{ url_for('campanhas_qtd_pdf', mes=mes, ano=ano) }}">Exportar PDF</a>
     </div>
   </div>
 
@@ -100,11 +90,6 @@
         <div class="sv-kpi__label">Total recompensa</div>
         <div class="sv-kpi__value">{{ total_recompensa|brl_rs }}</div>
         <div class="sv-kpi__meta">Valor parcial do período</div>
-      </div>
-      <div class="sv-kpi sv-glass">
-        <div class="sv-kpi__label">Potencial bloqueado</div>
-        <div class="sv-kpi__value">{{ (total_bloqueado_emp or 0)|brl_rs }}</div>
-        <div class="sv-kpi__meta">Libera ao bater mínimo da EMP</div>
       </div>
     </div>
   </div>
@@ -143,15 +128,6 @@
             <select class="sv-select" name="visao">
               <option value="detalhado" {% if (visao or "") == "detalhado" %}selected{% endif %}>Detalhado</option>
               <option value="resumo" {% if (visao or "") == "resumo" %}selected{% endif %}>Resumo</option>
-            </select>
-          </div>
-
-          <div>
-            <label class="sv-label">Situação</label>
-            <select class="sv-select" name="status">
-              <option value="abertas" {% if (status_visao|default('abertas')) == 'abertas' %}selected{% endif %}>Abertas</option>
-              <option value="encerradas" {% if (status_visao|default('abertas')) == 'encerradas' %}selected{% endif %}>Histórico</option>
-              <option value="todas" {% if (status_visao|default('abertas')) == 'todas' %}selected{% endif %}>Todas</option>
             </select>
           </div>
 
@@ -223,28 +199,11 @@
                 <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
                   <span class="sv-chip sv-chip--muted">Vendedores <b>{{ (emp.vendedores or [])|length }}</b></span>
                   <span class="sv-chip">Recompensa <b>{{ (emp.total_recompensa or 0)|float|brl_rs }}</b></span>
-                  {% if (emp.total_bloqueado_emp or 0) > 0 %}
-                    <span class="sv-chip sv-chip--lock">Bloqueado <b>{{ (emp.total_bloqueado_emp or 0)|float|brl_rs }}</b></span>
-                    <span class="sv-chip sv-chip--muted">Potencial <b>{{ (emp.total_potencial or 0)|float|brl_rs }}</b></span>
-                  {% endif %}
                   <span class="sv-chip sv-chip--muted">Campanhas/metas <b>{{ (emp.total_campanhas or 0)|int }}</b></span>
                 </div>
               </div>
 
               <div class="sv-acc-body">
-                {% if emp.faturamento_refs and emp.faturamento_refs|length > 0 %}
-                  {% set gate = emp.faturamento_refs|sort(attribute='faltante', reverse=True)|first %}
-                  <div class="sv-gate-box">
-                    <div class="sv-gate-title">🔒 Trava de faturamento da loja</div>
-                    <div class="sv-gate-grid">
-                      <div class="sv-gate-item"><small>Faturamento atual</small><strong>{{ (gate.atual or 0)|float|brl_rs }}</strong></div>
-                      <div class="sv-gate-item"><small>Mínimo exigido</small><strong>{{ (gate.minimo or 0)|float|brl_rs }}</strong></div>
-                      <div class="sv-gate-item"><small>Falta para liberar</small><strong>{{ (gate.faltante or 0)|float|brl_rs }}</strong></div>
-                      <div class="sv-gate-item"><small>Prêmio potencial</small><strong>{{ (emp.total_bloqueado_emp or 0)|float|brl_rs }}</strong></div>
-                    </div>
-                    <div class="sv-mini" style="margin-top:6px">Quando a EMP atingir o mínimo, os prêmios potenciais dos vendedores serão liberados no cálculo.</div>
-                  </div>
-                {% endif %}
                 {% if (emp.vendedores or [])|length == 0 %}
                   <div class="sv-empty">Sem vendedores/campanhas neste período.</div>
                 {% else %}
@@ -252,15 +211,11 @@
                     <div class="sv-vendor-card">
                       <div class="sv-vendor-head">
                         <div>
-                          <div style="font-weight:900;font-size:1.02rem;color:rgba(255,255,255,.96)">{{ vend.vendedor }}</div>
+                          <div style="font-weight:900;font-size:1.02rem;color:rgba(255,255,255,.96)">{{ vend.vendedor }}{% if (vend.perfil or '') == 'GERENTE' %} <span class="sv-chip" style="font-size:.72rem;padding:.12rem .45rem">GERENTE</span>{% endif %}</div>
                           <div class="sv-mini">Campanhas/metas: <b>{{ (vend.campanhas or [])|length }}</b></div>
                         </div>
                         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
                           <span class="sv-chip">Recompensa <b>{{ (vend.total_recompensa or 0)|float|brl_rs }}</b></span>
-                          {% if (vend.total_bloqueado_emp or 0) > 0 %}
-                            <span class="sv-chip sv-chip--lock">Potencial bloqueado <b>{{ (vend.total_bloqueado_emp or 0)|float|brl_rs }}</b></span>
-                            <span class="sv-chip sv-chip--muted">Se liberar <b>{{ (vend.total_potencial or 0)|float|brl_rs }}</b></span>
-                          {% endif %}
                         </div>
                       </div>
 
@@ -273,9 +228,7 @@
                                 <th>Campanha / Meta</th>
                                 <th class="sv-nowrap">Marca</th>
                                 <th class="sv-right sv-nowrap">Qtd</th>
-                                <th class="sv-right sv-nowrap">Liberado</th>
-                                <th class="sv-right sv-nowrap">Potencial</th>
-                                <th class="sv-nowrap">Status loja</th>
+                                <th class="sv-right sv-nowrap">Recompensa</th>
                                 <th class="sv-nowrap">Vigência</th>
                               </tr>
                             </thead>
@@ -285,7 +238,7 @@
                                   <td>
                                     <div style="font-weight:850;display:flex;gap:8px;align-items:center;flex-wrap:wrap;color:rgba(255,255,255,.95)">
                                       <span>{{ c.titulo or c.nome or "Campanha" }}</span>
-                                      {% if (c.tipo or '') == 'META' %}<span class="sv-chip sv-chip--meta" style="font-size:.72rem;padding:.12rem .45rem">META</span>{% endif %}
+                                      {% if (c.tipo or '') == 'META' %}<span class="sv-chip sv-chip--meta" style="font-size:.72rem;padding:.12rem .45rem">META</span>{% endif %}{% if (c.campanha_tipo or '') == 'GERENTE' %}<span class="sv-chip" style="font-size:.72rem;padding:.12rem .45rem">LOJA</span>{% endif %}
                                     </div>
                                     {% if c.base %}
                                       <div class="sv-mini">{{ 'Status' if (c.tipo or '') == 'META' else 'Base' }}: {{ c.base }}</div>
@@ -293,20 +246,7 @@
                                   </td>
                                   <td class="sv-nowrap">{{ c.marca or "-" }}</td>
                                   <td class="sv-right sv-mono">{{ c.qtd_total or c.qtd or 0 }}</td>
-                                  {% set bloqueado_emp = (c.bloqueado_faturamento_emp or 0)|int == 1 %}
-                                  {% set potencial = c.premio_potencial if c.premio_potencial is not none else c.valor_recompensa %}
                                   <td class="sv-right sv-mono">{{ (c.valor_recompensa or 0)|float|brl_rs }}</td>
-                                  <td class="sv-right sv-mono">{{ (potencial or 0)|float|brl_rs }}</td>
-                                  <td class="sv-small sv-nowrap">
-                                    {% if bloqueado_emp %}
-                                      <span class="sv-chip sv-chip--lock">Aguardando EMP</span>
-                                      <div class="sv-mini">Faltam {{ (c.faltante_faturamento_emp or 0)|float|brl_rs }}</div>
-                                    {% elif c.faturamento_minimo_emp %}
-                                      <span class="sv-chip sv-chip--meta">EMP liberada</span>
-                                    {% else %}
-                                      <span class="sv-chip sv-chip--muted">Sem trava</span>
-                                    {% endif %}
-                                  </td>
                                   <td class="sv-small sv-nowrap">{{ c.inicio or "" }}{% if c.fim %}<br>{{ c.fim }}{% endif %}</td>
                                 </tr>
                               {% endfor %}

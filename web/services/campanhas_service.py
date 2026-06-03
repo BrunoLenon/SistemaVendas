@@ -5,6 +5,8 @@ from datetime import date
 from typing import Any, Callable
 from types import SimpleNamespace
 from services.campanhas_v2_service import list_resultados_v2
+from sqlalchemy import func, cast, String
+from db import Usuario, UsuarioEmp
 
 
 @dataclass(frozen=True)
@@ -71,6 +73,43 @@ def _meta_metric_label(calc: Any) -> str:
     return "0"
 
 
+
+def _campanha_tipo_qtd(campanha: Any) -> str:
+    return (getattr(campanha, "campanha_tipo", None) or "VENDEDOR").strip().upper()
+
+
+def _get_gerentes_emp(db, emp: str) -> list[str]:
+    emp_s = str(emp or "").strip()
+    if not emp_s:
+        return []
+    try:
+        rows = (
+            db.query(Usuario.username)
+            .join(UsuarioEmp, UsuarioEmp.usuario_id == Usuario.id)
+            .filter(func.lower(func.trim(cast(Usuario.role, String))) == "gerente")
+            .filter(UsuarioEmp.ativo.is_(True))
+            .filter(UsuarioEmp.emp == emp_s)
+            .order_by(Usuario.username.asc())
+            .all()
+        )
+        out = sorted({str(r[0] or "").strip().upper() for r in rows if r and str(r[0] or "").strip()})
+        if out:
+            return out
+    except Exception:
+        pass
+    try:
+        rows = (
+            db.query(Usuario.username)
+            .filter(func.lower(func.trim(cast(Usuario.role, String))) == "gerente")
+            .filter(cast(Usuario.emp, String) == emp_s)
+            .order_by(Usuario.username.asc())
+            .all()
+        )
+        return sorted({str(r[0] or "").strip().upper() for r in rows if r and str(r[0] or "").strip()})
+    except Exception:
+        return []
+
+
 def _build_meta_cards_for_vendedor(db: Any, *, ano: int, mes: int, emp: str, vendedor: str, incluir_zeradas: bool = True) -> list[Any]:
     """Monta linhas de metas para a tela /campanhas sem acoplar template ao módulo /metas."""
     try:
@@ -101,20 +140,10 @@ def _build_meta_cards_for_vendedor(db: Any, *, ano: int, mes: int, emp: str, ven
 
             tipo = (getattr(meta, "tipo", "") or "").strip().upper()
             titulo_base = (getattr(meta, "nome", "") or _meta_tipo_label_public(tipo)).strip()
-            bloqueado = bool(getattr(calc, "bloqueado_minimo", False) or getattr(calc, "bloqueado_margem", False))
-            if getattr(calc, "bloqueado_margem", False):
-                subtitulo = "Margem mínima não atingida"
-            elif getattr(calc, "bloqueado_minimo", False):
-                subtitulo = "Mínimo não atingido"
-            else:
-                subtitulo = "Meta ativa"
+            bloqueado = bool(getattr(calc, "bloqueado_minimo", False))
+            subtitulo = "Mínimo não atingido" if bloqueado else "Meta ativa"
             if tipo == "CRESCIMENTO" and getattr(calc, "base_valor", None) is not None:
-                base_txt = f"Base R$ {float(getattr(calc, 'base_valor', 0.0) or 0.0):,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
-                if getattr(calc, "bloqueado_margem", False):
-                    margem_txt = "sem margem" if getattr(calc, "margem_percentual", None) is None else f"margem {float(getattr(calc, 'margem_percentual', 0.0) or 0.0):.2f}%"
-                    subtitulo = f"{base_txt} • {margem_txt}"
-                elif not bloqueado:
-                    subtitulo = base_txt
+                subtitulo = f"Base R$ {float(getattr(calc, 'base_valor', 0.0) or 0.0):,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
             elif tipo == "MIX":
                 subtitulo = "Itens únicos vendidos"
             elif tipo == "SHARE_MARCA":
@@ -213,7 +242,7 @@ def build_campanhas_page_context(
         if not emp_s:
             continue
 
-        if role_l in ("admin", "supervisor", "financeiro"):
+        if role_l in ("admin", "supervisor", "gerente", "financeiro"):
             vendedores_emp = deps.get_vendedores_emp_no_periodo(emp_s, ano, mes)
             vendedores_emp = [str(v).strip().upper() for v in (vendedores_emp or []) if str(v).strip()]
             if vendedores_sel and "__ALL__" not in set(vendedores_sel):
@@ -240,6 +269,8 @@ def build_campanhas_page_context(
 
             vendedores_emp = vendedores_por_emp.get(emp) or []
             campanhas = deps.campanhas_mes_overlap(ano, mes, emp) if vendedores_emp else []
+            campanhas_vendedor = [c for c in (campanhas or []) if _campanha_tipo_qtd(c) != "GERENTE"]
+            campanhas_gerente = [c for c in (campanhas or []) if _campanha_tipo_qtd(c) == "GERENTE"]
 
             vendedores_rows: list[dict[str, Any]] = []
             emp_total = 0.0
@@ -251,7 +282,7 @@ def build_campanhas_page_context(
 
                 # Prioridade por chave (campo_match + prefixo + marca)
                 by_key: dict[tuple[str, str, str], Any] = {}
-                for c in (campanhas or []):
+                for c in (campanhas_vendedor or []):
                     campo_match = (getattr(c, "campo_match", None) or "codigo").strip().lower()
                     if campo_match == "descricao":
                         pref = (getattr(c, "descricao_prefixo", "") or "").strip() or (getattr(c, "produto_prefixo", "") or "").strip()
@@ -294,7 +325,38 @@ def build_campanhas_page_context(
                     "vendedor": vend,
                     "total_recompensa": vend_total,
                     "resultados": resultados_calc,
+                    "campanhas": resultados_calc,
                 })
+
+            # Campanhas GERENTE: uma linha do gerente da loja com base no total vendido pela EMP.
+            if campanhas_gerente and role_l in ("admin", "supervisor", "gerente", "financeiro"):
+                gerentes_emp = _get_gerentes_emp(db, emp)
+                if role_l == "gerente":
+                    gerentes_emp = [g for g in gerentes_emp if g == (vendedor_logado or "").strip().upper()]
+                for gerente in gerentes_emp:
+                    resultados_gerente: list[Any] = []
+                    gerente_total = 0.0
+                    for c in campanhas_gerente:
+                        periodo_ini = max(getattr(c, "data_inicio"), inicio_mes)
+                        periodo_fim = min(getattr(c, "data_fim"), fim_mes)
+                        res = deps.upsert_resultado(db, c, gerente, emp, ano, mes, periodo_ini, periodo_fim)
+                        try:
+                            res.campanha_tipo = "GERENTE"
+                        except Exception:
+                            pass
+                        resultados_gerente.append(res)
+                        gerente_total += float(getattr(res, "valor_recompensa", 0.0) or 0.0)
+                    if resultados_gerente:
+                        total_campanhas += len(resultados_gerente)
+                        total_recompensa += gerente_total
+                        emp_total += gerente_total
+                        vendedores_rows.append({
+                            "vendedor": gerente,
+                            "perfil": "GERENTE",
+                            "total_recompensa": gerente_total,
+                            "resultados": resultados_gerente,
+                            "campanhas": resultados_gerente,
+                        })
 
             vendedores_rows.sort(key=lambda x: float(x.get("total_recompensa", 0.0) or 0.0), reverse=True)
 
@@ -365,7 +427,7 @@ def build_relatorio_campanhas_scope(
     if role_l == "admin":
         emps_scope = deps.get_emps_com_vendas_no_periodo(ano, mes)
         # emps_sel é apenas filtro; não deve reduzir emps_scope (senão some do dropdown)
-    elif role_l == "supervisor":
+    elif role_l in ("supervisor", "gerente"):
         allowed = [str(e).strip() for e in (deps.resolver_emp_scope_para_usuario(vendedor_logado, role_l, emp_usuario) or []) if str(e).strip()]
         allowed = sorted(set(allowed))
         if not allowed:
@@ -399,13 +461,24 @@ def build_relatorio_campanhas_scope(
                 allowed_set = {v.strip().upper() for v in vendedores}
                 pick = [v for v in vendedores_sel if v in allowed_set]
                 vendedores = pick if pick else []
-        elif role_l == "supervisor":
+        elif role_l in ("supervisor", "gerente"):
             vendedores = deps.get_vendedores_emp_no_periodo(emp, ano, mes)
             if vendedores_sel and "__ALL__" not in vendedores_sel:
                 allowed_set = {v.strip().upper() for v in vendedores}
                 vendedores = [v for v in vendedores_sel if v in allowed_set]
         else:
             vendedores = [vendedor_logado]
+        try:
+            with deps.SessionLocal() as _db:
+                gerentes = _get_gerentes_emp(_db, emp)
+            if role_l == "gerente":
+                me = (vendedor_logado or "").strip().upper()
+                gerentes = [g for g in gerentes if g == me]
+            for g in gerentes:
+                if g and g not in vendedores:
+                    vendedores.append(g)
+        except Exception:
+            pass
         vendedores_por_emp[emp] = vendedores
 
     return {

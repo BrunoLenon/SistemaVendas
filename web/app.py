@@ -15,7 +15,6 @@ from services.campanhas_service import (
 )
 from services.relatorio_campanhas_service import build_relatorio_campanhas_context, build_relatorio_campanhas_unificado_context
 from services.campanhas_v2_engine import recalc_v2_competencia
-from services.campanhas_qtd_gate import calcular_faturamento_emp_periodo, aplicar_trava_faturamento_emp
 import os
 import re
 import mimetypes
@@ -775,7 +774,7 @@ def _admin_required():
 
 def _admin_or_supervisor_required():
     """Garante acesso ADMIN ou SUPERVISOR."""
-    if (_role() or "").lower() not in ["admin", "supervisor"]:
+    if (_role() or "").lower() not in ["admin", "supervisor", "gerente"]:
         flash("Acesso restrito.", "warning")
         audit("forbidden", path=request.path)
         return redirect(url_for("dashboard"))
@@ -796,7 +795,7 @@ def _get_vendedores_db(role: str, emp_usuario: str | None) -> list[str]:
             vendedores_cadastrados = set()
 
         q = db.query(func.distinct(Venda.vendedor))
-        if role == "supervisor":
+        if role in ("supervisor", "gerente"):
             emps = _allowed_emps()
             if emps:
                 q = q.filter(Venda.emp.in_(emps))
@@ -2166,20 +2165,24 @@ def _upsert_resultado(
         cond_prefix = campo_item.like(prefix_up + "%")
     cond_marca = func.upper(func.trim(cast(Venda.marca, String))) == (campanha.marca or "").strip().upper()
 
+    tipo_campanha = _campanha_tipo_qtd(campanha)
+    filtros_venda = [
+        Venda.emp == emp,
+        Venda.movimento >= periodo_ini,
+        Venda.movimento <= periodo_fim,
+        ~Venda.mov_tipo_movto.in_(["DS", "CA"]),
+        cond_prefix,
+        cond_marca,
+    ]
+    if tipo_campanha != "GERENTE":
+        filtros_venda.append(Venda.vendedor == vendedor)
+
     base = (
         db.query(
             func.coalesce(func.sum(Venda.qtdade_vendida), 0.0).label("qtd"),
             func.coalesce(func.sum(Venda.valor_total), 0.0).label("valor"),
         )
-        .filter(
-            Venda.emp == emp,
-            Venda.vendedor == vendedor,
-            Venda.movimento >= periodo_ini,
-            Venda.movimento <= periodo_fim,
-            ~Venda.mov_tipo_movto.in_(["DS", "CA"]),
-            cond_prefix,
-            cond_marca,
-        )
+        .filter(*filtros_venda)
         .first()
     )
     qtd_vendida = float(base.qtd or 0.0)
@@ -2202,19 +2205,9 @@ def _upsert_resultado(
     if atingiu:
         valor_recomp_dec = (Decimal(str(qtd_vendida)) * recompensa_unit_dec)
         # arredondamento monetário
-        premio_potencial = float(valor_recomp_dec.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+        valor_recomp = float(valor_recomp_dec.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
     else:
-        premio_potencial = 0.0
-
-    faturamento_emp = calcular_faturamento_emp_periodo(db, emp=emp, periodo_ini=periodo_ini, periodo_fim=periodo_fim)
-    gate_emp = aplicar_trava_faturamento_emp(
-        campanha=campanha,
-        emp=emp,
-        faturamento_emp=faturamento_emp,
-        premio_potencial=premio_potencial,
-        atingiu_regras_item=bool(atingiu),
-    )
-    valor_recomp = float(gate_emp.get("valor_recompensa", 0.0) or 0.0)
+        valor_recomp = 0.0
 
     # Upsert por chave única
     res = (
@@ -2240,6 +2233,10 @@ def _upsert_resultado(
         db.add(res)
 
     # snapshot
+    try:
+        res.campanha_tipo = tipo_campanha
+    except Exception:
+        pass
     res.titulo = campanha.titulo
     res.produto_prefixo = (locals().get('prefix_raw') or prefix)
     res.marca = (campanha.marca or "").strip()
@@ -2250,12 +2247,7 @@ def _upsert_resultado(
 
     res.qtd_vendida = qtd_vendida
     res.valor_vendido = valor_vendido
-    res.atingiu_minimo = int(gate_emp.get("atingiu_final", False))
-    res.premio_potencial = float(gate_emp.get("premio_potencial", premio_potencial) or 0.0)
-    res.faturamento_minimo_emp = float(gate_emp.get("faturamento_minimo_emp", 0.0) or 0.0) or None
-    res.faturamento_emp = float(gate_emp.get("faturamento_emp", 0.0) or 0.0)
-    res.faltante_faturamento_emp = float(gate_emp.get("faltante_faturamento_emp", 0.0) or 0.0)
-    res.bloqueado_faturamento_emp = 1 if gate_emp.get("bloqueado_faturamento_emp") else 0
+    res.atingiu_minimo = int(atingiu)
     res.valor_recompensa = float(valor_recomp)
     res.atualizado_em = datetime.utcnow()
     return res
@@ -2339,19 +2331,9 @@ def _calc_resultado_all_vendedores(
 
     if atingiu:
         valor_recomp_dec = (Decimal(str(qtd_vendida)) * recompensa_unit_dec)
-        premio_potencial = float(valor_recomp_dec.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+        valor_recomp = float(valor_recomp_dec.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
     else:
-        premio_potencial = 0.0
-
-    faturamento_emp = calcular_faturamento_emp_periodo(db, emp=emp, periodo_ini=periodo_ini, periodo_fim=periodo_fim)
-    gate_emp = aplicar_trava_faturamento_emp(
-        campanha=campanha,
-        emp=emp,
-        faturamento_emp=faturamento_emp,
-        premio_potencial=premio_potencial,
-        atingiu_regras_item=bool(atingiu),
-    )
-    valor_recomp = float(gate_emp.get("valor_recompensa", 0.0) or 0.0)
+        valor_recomp = 0.0
 
     # Objeto leve com os mesmos campos que o template usa
     from types import SimpleNamespace
@@ -2362,6 +2344,7 @@ def _calc_resultado_all_vendedores(
         competencia_ano=int(competencia_ano),
         competencia_mes=int(competencia_mes),
         status_pagamento="PENDENTE",
+        campanha_tipo=_campanha_tipo_qtd(campanha),
         titulo=campanha.titulo,
         produto_prefixo=prefix_raw,
         marca=(campanha.marca or "").strip(),
@@ -2371,12 +2354,7 @@ def _calc_resultado_all_vendedores(
         data_fim=campanha.data_fim,
         qtd_vendida=qtd_vendida,
         valor_vendido=valor_vendido,
-        atingiu_minimo=int(gate_emp.get("atingiu_final", False)),
-        premio_potencial=float(gate_emp.get("premio_potencial", premio_potencial) or 0.0),
-        faturamento_minimo_emp=float(gate_emp.get("faturamento_minimo_emp", 0.0) or 0.0) or None,
-        faturamento_emp=float(gate_emp.get("faturamento_emp", 0.0) or 0.0),
-        faltante_faturamento_emp=float(gate_emp.get("faltante_faturamento_emp", 0.0) or 0.0),
-        bloqueado_faturamento_emp=1 if gate_emp.get("bloqueado_faturamento_emp") else 0,
+        atingiu_minimo=int(atingiu),
         valor_recompensa=float(valor_recomp),
         atualizado_em=datetime.utcnow(),
     )
@@ -2393,12 +2371,12 @@ def _resolver_emp_scope_para_usuario(vendedor: str, role: str, emp_usuario: str 
     if role == "admin":
         return []
 
-    if role in ("supervisor", "vendedor"):
+    if role in ("supervisor", "gerente", "vendedor"):
         emps = _allowed_emps()
         if emps:
             return emps
 
-    if role == "supervisor":
+    if role in ("supervisor", "gerente"):
         return [str(emp_usuario)] if emp_usuario else []
 
     return _get_emps_vendedor(vendedor)
@@ -2886,9 +2864,14 @@ def _recalcular_resultados_campanhas_para_scope(ano: int, mes: int, emps: list[s
 
             # campanhas que intersectam o mês (inclui globais se houver)
             campanhas = _campanhas_mes_overlap(int(ano), int(mes), emp)
+            campanhas_vendedor = [c for c in campanhas if _campanha_tipo_qtd(c) != "GERENTE"]
+            campanhas_gerente = [c for c in campanhas if _campanha_tipo_qtd(c) == "GERENTE"]
+
+            gerentes_emp = _get_gerentes_emp(emp)
+            vendedores_base = [v for v in vendedores_emp if v not in set(gerentes_emp)] or vendedores_emp
 
             # campanhas escolhidas por vendedor (aplica override)
-            escolhidas_por_vendedor = _build_campanhas_escolhidas_por_vendedor(campanhas, vendedores_emp)
+            escolhidas_por_vendedor = _build_campanhas_escolhidas_por_vendedor(campanhas_vendedor, vendedores_base)
 
             # União de campanhas realmente usadas
             campanhas_usadas: dict[int, CampanhaQtd] = {}
@@ -2913,28 +2896,14 @@ def _recalcular_resultados_campanhas_para_scope(ano: int, mes: int, emps: list[s
 
             # Insere novos snapshots
             novos = []
-            for v in vendedores_emp:
+            for v in vendedores_base:
                 for c in escolhidas_por_vendedor.get(v, []):
                     qtd, valor = vendas_por_campanha.get(c.id, {}).get(v, (0.0, 0.0))
                     minimo = c.qtd_minima
-                    min_val = getattr(c, "valor_minimo", None)
                     atingiu = 1
                     if minimo is not None and float(minimo) > 0:
                         atingiu = 1 if float(qtd) >= float(minimo) else 0
-                    if atingiu and min_val is not None and float(min_val) > 0:
-                        atingiu = 1 if float(valor) >= float(min_val) else 0
-                    premio_potencial = (float(qtd) * float(c.recompensa_unit or 0.0)) if atingiu else 0.0
-                    periodo_ini = max(c.data_inicio, inicio_mes)
-                    periodo_fim = min(c.data_fim, fim_mes)
-                    faturamento_emp = calcular_faturamento_emp_periodo(db, emp=emp, periodo_ini=periodo_ini, periodo_fim=periodo_fim)
-                    gate_emp = aplicar_trava_faturamento_emp(
-                        campanha=c,
-                        emp=emp,
-                        faturamento_emp=faturamento_emp,
-                        premio_potencial=premio_potencial,
-                        atingiu_regras_item=bool(atingiu),
-                    )
-                    valor_recomp = float(gate_emp.get("valor_recompensa", 0.0) or 0.0)
+                    valor_recomp = (float(qtd) * float(c.recompensa_unit or 0.0)) if atingiu else 0.0
 
                     novos.append(CampanhaQtdResultado(
                         campanha_id=c.id,
@@ -2951,16 +2920,21 @@ def _recalcular_resultados_campanhas_para_scope(ano: int, mes: int, emps: list[s
                         data_fim=c.data_fim,
                         qtd_vendida=float(qtd),
                         valor_vendido=float(valor),
-                        atingiu_minimo=int(gate_emp.get("atingiu_final", False)),
-                        premio_potencial=float(gate_emp.get("premio_potencial", premio_potencial) or 0.0),
-                        faturamento_minimo_emp=float(gate_emp.get("faturamento_minimo_emp", 0.0) or 0.0) or None,
-                        faturamento_emp=float(gate_emp.get("faturamento_emp", 0.0) or 0.0),
-                        faltante_faturamento_emp=float(gate_emp.get("faltante_faturamento_emp", 0.0) or 0.0),
-                        bloqueado_faturamento_emp=1 if gate_emp.get("bloqueado_faturamento_emp") else 0,
+                        atingiu_minimo=int(atingiu),
                         valor_recompensa=float(valor_recomp),
                         status_pagamento="PENDENTE",
+                        campanha_tipo=_campanha_tipo_qtd(c),
                         atualizado_em=datetime.utcnow(),
                     ))
+
+            # Campanhas GERENTE: remuneração sobre o total vendido pela EMP, paga ao gerente vinculado à loja.
+            for gerente in gerentes_emp:
+                for c in campanhas_gerente:
+                    periodo_ini = max(c.data_inicio, inicio_mes)
+                    periodo_fim = min(c.data_fim, fim_mes)
+                    res = _upsert_resultado(db, c, gerente, emp, ano, mes, periodo_ini, periodo_fim)
+                    # já está em sessão via upsert; sem bulk_save para preservar upsert/status existente
+
             if novos:
                 db.bulk_save_objects(novos)
             db.commit()

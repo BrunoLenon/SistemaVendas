@@ -7,7 +7,6 @@ from __future__ import annotations
 
 from typing import Callable, Optional, Any
 from datetime import date
-import time
 
 from flask import (
     flash,
@@ -21,43 +20,6 @@ from sqlalchemy import func, case
 
 from db import SessionLocal, Venda, Usuario, UsuarioEmp, Emp
 from sv_utils import _periodo_bounds
-
-
-_DASHBOARD_RUNTIME_CACHE: dict[tuple, tuple[float, object]] = {}
-_DASHBOARD_RUNTIME_TTL_SECONDS = 120
-
-
-def _runtime_cache_get(key: tuple, ttl_seconds: int = _DASHBOARD_RUNTIME_TTL_SECONDS):
-    cached = _DASHBOARD_RUNTIME_CACHE.get(key)
-    if not cached:
-        return None
-    created_at, value = cached
-    if (time.time() - created_at) > ttl_seconds:
-        _DASHBOARD_RUNTIME_CACHE.pop(key, None)
-        return None
-    return value
-
-
-def _runtime_cache_set(key: tuple, value: object):
-    # Mantém o cache em memória pequeno para não pesar no Render.
-    if len(_DASHBOARD_RUNTIME_CACHE) > 80:
-        oldest = sorted(_DASHBOARD_RUNTIME_CACHE.items(), key=lambda kv: kv[1][0])[:20]
-        for old_key, _ in oldest:
-            _DASHBOARD_RUNTIME_CACHE.pop(old_key, None)
-    _DASHBOARD_RUNTIME_CACHE[key] = (time.time(), value)
-    return value
-
-
-def _cache_bypass_requested() -> bool:
-    return (request.args.get("recalc") == "1" or request.args.get("refresh") == "1")
-
-
-def _get_or_build_runtime(key: tuple, builder):
-    if not _cache_bypass_requested():
-        cached = _runtime_cache_get(key)
-        if cached is not None:
-            return cached
-    return _runtime_cache_set(key, builder())
 
 
 def _meses_referencia(ano: int, mes: int, quantidade: int = 3) -> list[tuple[int, int]]:
@@ -361,13 +323,13 @@ def register_dashboard_routes(
             vendedor_req = (request.args.get("vendedor") or "").strip().upper() or None
             vendedor_alvo = vendedor_req if (vendedor_req and vendedor_req in vendedores_lista) else None
             msg = None
-            if role == "supervisor" and not allowed_emps:
-                msg = "Supervisor sem EMP vinculada. Cadastre EMPs do supervisor em usuario_emps."
+            if role in ("supervisor", "gerente") and not allowed_emps:
+                msg = "Supervisor/Gerente sem EMP vinculada. Cadastre EMPs do usuário em usuario_emps."
 
         dados = None
         if vendedor_alvo:
             try:
-                emp_scope = (allowed_emps if (role or "").lower() in ["supervisor", "vendedor"] else None)
+                emp_scope = (allowed_emps if (role or "").lower() in ["supervisor", "gerente", "vendedor"] else None)
                 dados = dados_from_cache_fn(vendedor_alvo, mes, ano, emp_scope)
             except Exception:
                 app.logger.exception("Erro ao carregar dashboard do cache")
@@ -376,7 +338,7 @@ def register_dashboard_routes(
             # Fallback: calcula ao vivo (sem pandas) se cache ainda não existe
             if dados is None:
                 try:
-                    emp_scope = (allowed_emps if (role or "").lower() in ["supervisor", "vendedor"] else None)
+                    emp_scope = (allowed_emps if (role or "").lower() in ["supervisor", "gerente", "vendedor"] else None)
                     dados = dados_ao_vivo_fn(vendedor_alvo, mes, ano, emp_scope)
                 except Exception:
                     app.logger.exception("Erro ao calcular dashboard ao vivo")
@@ -385,7 +347,7 @@ def register_dashboard_routes(
         insights = None
         if vendedor_alvo:
             try:
-                emp_scope = (allowed_emps if (role or "").lower() in ["supervisor", "vendedor"] else None)
+                emp_scope = (allowed_emps if (role or "").lower() in ["supervisor", "gerente", "vendedor"] else None)
                 insights = dashboard_insights_fn(vendedor_alvo, ano=ano, mes=mes, emp_scope=emp_scope)
             except Exception:
                 app.logger.exception("Erro ao calcular insights do dashboard")
@@ -399,14 +361,8 @@ def register_dashboard_routes(
         if (role or "").lower() == "admin" and not vendedor_alvo:
             emp_selecionada = (request.args.get("emp") or "").strip() or None
             try:
-                dados_admin = _get_or_build_runtime(
-                    ("dash_admin", int(ano), int(mes)),
-                    lambda: dados_admin_geral_fn(mes=mes, ano=ano),
-                )
-                global_analysis = _get_or_build_runtime(
-                    ("dash_global_analysis", int(ano), int(mes)),
-                    lambda: _build_global_sales_analysis(ano=ano, mes=mes),
-                )
+                dados_admin = dados_admin_geral_fn(mes=mes, ano=ano)
+                global_analysis = _build_global_sales_analysis(ano=ano, mes=mes)
             except Exception:
                 app.logger.exception("Erro ao carregar dashboard geral do admin")
                 dados_admin = None
@@ -414,23 +370,17 @@ def register_dashboard_routes(
             emp_options = [str((row or {}).get("emp") or "").strip() for row in (dados_admin or {}).get("ranking_emp_list", []) if str((row or {}).get("emp") or "").strip()]
             if emp_selecionada:
                 try:
-                    dashboard_emp = _get_or_build_runtime(
-                        ("dash_emp", str(emp_selecionada), int(ano), int(mes)),
-                        lambda: _build_emp_dashboard(ano=ano, mes=mes, emp=emp_selecionada),
-                    )
+                    dashboard_emp = _build_emp_dashboard(ano=ano, mes=mes, emp=emp_selecionada)
                 except Exception:
                     app.logger.exception("Erro ao carregar dashboard detalhado por EMP")
                     dashboard_emp = None
-        elif (role or "").lower() == "supervisor" and not vendedor_alvo and allowed_emps:
+        elif (role or "").lower() in ("supervisor", "gerente") and not vendedor_alvo and allowed_emps:
             emp_selecionada = ((request.args.get("emp") or "").strip() or allowed_emps[0])
             if emp_selecionada not in allowed_emps:
                 emp_selecionada = allowed_emps[0]
             emp_options = list(allowed_emps)
             try:
-                dashboard_emp = _get_or_build_runtime(
-                    ("dash_emp", str(emp_selecionada), int(ano), int(mes)),
-                    lambda: _build_emp_dashboard(ano=ano, mes=mes, emp=emp_selecionada),
-                )
+                dashboard_emp = _build_emp_dashboard(ano=ano, mes=mes, emp=emp_selecionada)
             except Exception:
                 app.logger.exception("Erro ao carregar dashboard detalhado por EMP do supervisor")
                 dashboard_emp = None
@@ -441,7 +391,7 @@ def register_dashboard_routes(
             vendedor=vendedor_alvo or "",
             usuario=usuario_logado_fn(),
             role=role_fn(),
-            emp=(" / ".join(allowed_emps) if (role or "").lower() == "supervisor" and allowed_emps else emp_usuario),
+            emp=(" / ".join(allowed_emps) if (role or "").lower() in ("supervisor", "gerente") and allowed_emps else emp_usuario),
             vendedores=vendedores_lista,
             vendedor_selecionado=vendedor_alvo or "",
             mensagem_role=msg,
@@ -464,10 +414,10 @@ def register_dashboard_routes(
 
         mes, ano = mes_ano_from_request_fn()
         role = (role_fn() or "").lower()
-        emp_scope = emp_fn() if role == "supervisor" else None
+        emp_scope = emp_fn() if role in ("supervisor", "gerente") else None
 
         # resolve vendedor
-        if role in {"admin", "supervisor"}:
+        if role in {"admin", "supervisor", "gerente"}:
             vendedores = get_vendedores_db_fn(role, emp_scope)
             vendedor_req = (request.args.get("vendedor") or "").strip().upper() or None
             vendedor_alvo = vendedor_req if (vendedor_req and vendedor_req in vendedores) else None
@@ -503,9 +453,9 @@ def register_dashboard_routes(
 
         mes, ano = mes_ano_from_request_fn()
         role = (role_fn() or "").lower()
-        emp_scope = emp_fn() if role == "supervisor" else None
+        emp_scope = emp_fn() if role in ("supervisor", "gerente") else None
 
-        if role in {"admin", "supervisor"}:
+        if role in {"admin", "supervisor", "gerente"}:
             vendedores = get_vendedores_db_fn(role, emp_scope)
             vendedor_req = (request.args.get("vendedor") or "").strip().upper() or None
             vendedor_alvo = vendedor_req if (vendedor_req and vendedor_req in vendedores) else None
@@ -539,10 +489,10 @@ def register_dashboard_routes(
 
         mes, ano = mes_ano_from_request_fn()
         role = (role_fn() or "").lower()
-        emp_scope = emp_fn() if role == "supervisor" else None
+        emp_scope = emp_fn() if role in ("supervisor", "gerente") else None
 
         # resolve vendedor
-        if role in {"admin", "supervisor"}:
+        if role in {"admin", "supervisor", "gerente"}:
             vendedores = get_vendedores_db_fn(role, emp_scope)
             vendedor_req = (request.args.get("vendedor") or "").strip().upper() or None
             vendedor_alvo = vendedor_req if (vendedor_req and vendedor_req in vendedores) else None

@@ -14,8 +14,7 @@ from typing import Callable
 from sqlalchemy import and_, or_, func, cast, String
 
 from sv_utils import _periodo_bounds
-from db import SessionLocal, CampanhaQtd, CampanhaQtdResultado, Venda
-from services.campanhas_qtd_gate import calcular_faturamento_emp_periodo, aplicar_trava_faturamento_emp
+from db import SessionLocal, CampanhaQtd, CampanhaQtdResultado, Venda, Usuario, UsuarioEmp
 
 
 def resolver_emp_scope_para_usuario_impl(
@@ -36,16 +35,56 @@ def resolver_emp_scope_para_usuario_impl(
     if role == "admin":
         return []
 
-    if role in ("supervisor", "vendedor"):
+    if role in ("supervisor", "gerente", "vendedor"):
         emps = allowed_emps_fn()
         if emps:
             return emps
 
-    if role == "supervisor":
+    if role in ("supervisor", "gerente"):
         return [str(emp_usuario)] if emp_usuario else []
 
     return get_emps_vendedor_fn(vendedor)
 
+
+
+def _campanha_tipo(campanha: CampanhaQtd) -> str:
+    return (getattr(campanha, "campanha_tipo", None) or "VENDEDOR").strip().upper()
+
+
+def get_gerentes_emp(db, emp: str) -> list[str]:
+    """Retorna gerentes ativos/vinculados à EMP. Regra operacional: 1 gerente por loja.
+
+    Mantemos lista para ficar robusto se houver cadastro temporário duplicado.
+    """
+    emp_s = str(emp or "").strip()
+    if not emp_s:
+        return []
+    try:
+        rows = (
+            db.query(Usuario.username)
+            .join(UsuarioEmp, UsuarioEmp.usuario_id == Usuario.id)
+            .filter(func.lower(func.trim(cast(Usuario.role, String))) == "gerente")
+            .filter(UsuarioEmp.ativo.is_(True))
+            .filter(UsuarioEmp.emp == emp_s)
+            .order_by(Usuario.username.asc())
+            .all()
+        )
+        out = sorted({str(r[0] or "").strip().upper() for r in rows if r and str(r[0] or "").strip()})
+        if out:
+            return out
+    except Exception:
+        pass
+    try:
+        rows = (
+            db.query(Usuario.username)
+            .filter(func.lower(func.trim(cast(Usuario.role, String))) == "gerente")
+            .filter(cast(Usuario.emp, String) == emp_s)
+            .order_by(Usuario.username.asc())
+            .all()
+        )
+        return sorted({str(r[0] or "").strip().upper() for r in rows if r and str(r[0] or "").strip()})
+    except Exception:
+        return []
 
 
 def _campanhas_mes_overlap(ano: int, mes: int, emp: str | None) -> list[CampanhaQtd]:
@@ -104,20 +143,26 @@ def _upsert_resultado(
         cond_prefix = campo_item.like(prefix_up + "%")
     cond_marca = func.upper(func.trim(cast(Venda.marca, String))) == (campanha.marca or "").strip().upper()
 
+    tipo_campanha = _campanha_tipo(campanha)
+    filtros_venda = [
+        Venda.emp == emp,
+        Venda.movimento >= periodo_ini,
+        Venda.movimento <= periodo_fim,
+        ~Venda.mov_tipo_movto.in_(["DS", "CA"]),
+        cond_prefix,
+        cond_marca,
+    ]
+    # Campanha GERENTE remunera pelo total da loja, independente do vendedor que vendeu.
+    # Campanha VENDEDOR mantém a regra individual já existente.
+    if tipo_campanha != "GERENTE":
+        filtros_venda.append(Venda.vendedor == vendedor)
+
     base = (
         db.query(
             func.coalesce(func.sum(Venda.qtdade_vendida), 0.0).label("qtd"),
             func.coalesce(func.sum(Venda.valor_total), 0.0).label("valor"),
         )
-        .filter(
-            Venda.emp == emp,
-            Venda.vendedor == vendedor,
-            Venda.movimento >= periodo_ini,
-            Venda.movimento <= periodo_fim,
-            ~Venda.mov_tipo_movto.in_(["DS", "CA"]),
-            cond_prefix,
-            cond_marca,
-        )
+        .filter(*filtros_venda)
         .first()
     )
     qtd_vendida = float(base.qtd or 0.0)
@@ -140,19 +185,9 @@ def _upsert_resultado(
     if atingiu:
         valor_recomp_dec = (Decimal(str(qtd_vendida)) * recompensa_unit_dec)
         # arredondamento monetário
-        premio_potencial = float(valor_recomp_dec.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+        valor_recomp = float(valor_recomp_dec.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
     else:
-        premio_potencial = 0.0
-
-    faturamento_emp = calcular_faturamento_emp_periodo(db, emp=emp, periodo_ini=periodo_ini, periodo_fim=periodo_fim)
-    gate_emp = aplicar_trava_faturamento_emp(
-        campanha=campanha,
-        emp=emp,
-        faturamento_emp=faturamento_emp,
-        premio_potencial=premio_potencial,
-        atingiu_regras_item=bool(atingiu),
-    )
-    valor_recomp = float(gate_emp.get("valor_recompensa", 0.0) or 0.0)
+        valor_recomp = 0.0
 
     # Upsert por chave única
     res = (
@@ -178,6 +213,10 @@ def _upsert_resultado(
         db.add(res)
 
     # snapshot
+    try:
+        res.campanha_tipo = tipo_campanha
+    except Exception:
+        pass
     res.titulo = campanha.titulo
     res.produto_prefixo = (locals().get('prefix_raw') or prefix)
     res.marca = (campanha.marca or "").strip()
@@ -188,12 +227,7 @@ def _upsert_resultado(
 
     res.qtd_vendida = qtd_vendida
     res.valor_vendido = valor_vendido
-    res.atingiu_minimo = int(gate_emp.get("atingiu_final", False))
-    res.premio_potencial = float(gate_emp.get("premio_potencial", premio_potencial) or 0.0)
-    res.faturamento_minimo_emp = float(gate_emp.get("faturamento_minimo_emp", 0.0) or 0.0) or None
-    res.faturamento_emp = float(gate_emp.get("faturamento_emp", 0.0) or 0.0)
-    res.faltante_faturamento_emp = float(gate_emp.get("faltante_faturamento_emp", 0.0) or 0.0)
-    res.bloqueado_faturamento_emp = 1 if gate_emp.get("bloqueado_faturamento_emp") else 0
+    res.atingiu_minimo = int(atingiu)
     res.valor_recompensa = float(valor_recomp)
     res.atualizado_em = datetime.utcnow()
     return res
@@ -275,19 +309,9 @@ def _calc_resultado_all_vendedores(
 
     if atingiu:
         valor_recomp_dec = (Decimal(str(qtd_vendida)) * recompensa_unit_dec)
-        premio_potencial = float(valor_recomp_dec.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+        valor_recomp = float(valor_recomp_dec.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
     else:
-        premio_potencial = 0.0
-
-    faturamento_emp = calcular_faturamento_emp_periodo(db, emp=emp, periodo_ini=periodo_ini, periodo_fim=periodo_fim)
-    gate_emp = aplicar_trava_faturamento_emp(
-        campanha=campanha,
-        emp=emp,
-        faturamento_emp=faturamento_emp,
-        premio_potencial=premio_potencial,
-        atingiu_regras_item=bool(atingiu),
-    )
-    valor_recomp = float(gate_emp.get("valor_recompensa", 0.0) or 0.0)
+        valor_recomp = 0.0
 
     # Objeto leve com os mesmos campos que o template usa
     from types import SimpleNamespace
@@ -298,6 +322,7 @@ def _calc_resultado_all_vendedores(
         competencia_ano=int(competencia_ano),
         competencia_mes=int(competencia_mes),
         status_pagamento="PENDENTE",
+        campanha_tipo=_campanha_tipo(campanha),
         titulo=campanha.titulo,
         produto_prefixo=prefix_raw,
         marca=(campanha.marca or "").strip(),
@@ -307,12 +332,7 @@ def _calc_resultado_all_vendedores(
         data_fim=campanha.data_fim,
         qtd_vendida=qtd_vendida,
         valor_vendido=valor_vendido,
-        atingiu_minimo=int(gate_emp.get("atingiu_final", False)),
-        premio_potencial=float(gate_emp.get("premio_potencial", premio_potencial) or 0.0),
-        faturamento_minimo_emp=float(gate_emp.get("faturamento_minimo_emp", 0.0) or 0.0) or None,
-        faturamento_emp=float(gate_emp.get("faturamento_emp", 0.0) or 0.0),
-        faltante_faturamento_emp=float(gate_emp.get("faltante_faturamento_emp", 0.0) or 0.0),
-        bloqueado_faturamento_emp=1 if gate_emp.get("bloqueado_faturamento_emp") else 0,
+        atingiu_minimo=int(atingiu),
         valor_recompensa=float(valor_recomp),
         atualizado_em=datetime.utcnow(),
     )

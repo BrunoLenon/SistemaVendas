@@ -253,7 +253,7 @@ def build_relatorio_campanhas_context(
                     CampanhaQtdResultado.competencia_mes == int(mes),
                     CampanhaQtdResultado.emp == emp,
                     CampanhaQtdResultado.vendedor.in_(vendedores),
-                    or_(CampanhaQtdResultado.valor_recompensa > 0, CampanhaQtdResultado.bloqueado_faturamento_emp == 1),
+                    CampanhaQtdResultado.valor_recompensa > 0,
                 )
                 .all()
             )
@@ -389,19 +389,14 @@ def build_relatorio_campanhas_context(
                     atingiu = float(getattr(r, "valor_recompensa", 0) or 0) > 0
 
                 by_vend.setdefault((r.vendedor or "").strip().upper(), []).append({
-                    "tipo": "QTD",
+                    "tipo": ("GERENTE" if str(getattr(r, "campanha_tipo", "") or "").strip().upper() == "GERENTE" else "QTD"),
                     "titulo": getattr(r, "titulo", None) or getattr(r, "campanha_titulo", None) or "Campanha QTD",
                     "marca": marca,
                     "item": item_desc,
                     "qtd_vendida": float(getattr(r, "qtd_vendida", 0) or 0),
                     "valor_vendido": float(getattr(r, "valor_vendido", 0) or 0),
                     "valor_recompensa": float(getattr(r, "valor_recompensa", 0) or 0),
-                    "premio_potencial": float(getattr(r, "premio_potencial", None) if getattr(r, "premio_potencial", None) is not None else getattr(r, "valor_recompensa", 0) or 0),
-                    "faturamento_minimo_emp": float(getattr(r, "faturamento_minimo_emp", 0) or 0),
-                    "faturamento_emp": float(getattr(r, "faturamento_emp", 0) or 0),
-                    "faltante_faturamento_emp": float(getattr(r, "faltante_faturamento_emp", 0) or 0),
-                    "bloqueado_faturamento_emp": bool(getattr(r, "bloqueado_faturamento_emp", False)),
-                    "atingiu": bool(atingiu) and not bool(getattr(r, "bloqueado_faturamento_emp", False)),
+                    "atingiu": bool(atingiu),
                     "vigencia": vig,
                     "status_pagamento": getattr(r, "status_pagamento", None) or "PENDENTE",
                     "origem": "QTD",
@@ -575,7 +570,7 @@ def _relatorio_vendedores_key(vendedores_por_emp: dict[str, list[str]] | None, e
 
 def _relatorio_cache_key(*, role: str, vendedor_logado: str, ano: int, mes: int, emps: list[str], vendedores_por_emp: dict[str, list[str]]) -> tuple:
     return (
-        "relatorio_campanhas_unificado_v3_metas_margem",
+        "relatorio_campanhas_unificado_v2",
         str(role or "").strip().lower(),
         str(vendedor_logado or "").strip().upper(),
         int(ano),

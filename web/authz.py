@@ -32,6 +32,9 @@ class UserScope:
     def is_supervisor(self) -> bool:
         return self.role == "supervisor"
 
+    def is_gerente(self) -> bool:
+        return self.role == "gerente"
+
     def is_vendedor(self) -> bool:
         return self.role == "vendedor"
 
@@ -143,9 +146,9 @@ def admin_or_supervisor_required(fn: Callable):
         red = require_login_redirect()
         if red:
             return red
-        red = require_role(["admin", "supervisor"])
+        red = require_role(["admin", "supervisor", "gerente"])
         if red:
-            flash("Acesso restrito ao administrador/supervisor.", "warning")
+            flash("Acesso restrito ao administrador/supervisor/gerente.", "warning")
             audit("admin_or_supervisor_forbidden")
             return red
         return fn(*args, **kwargs)
@@ -183,7 +186,7 @@ def can_view_emp(user: UserScope, emp: Any) -> bool:
 
     - admin: sempre
     - financeiro: visão centralizada (se tiver lista de EMPs, respeita; se não tiver, libera)
-    - supervisor/vendedor: precisa estar em `user.emps` (quando definido) ou bater com `emp_default`
+    - supervisor/gerente/vendedor: precisa estar em `user.emps` (quando definido) ou bater com `emp_default`
     """
     emp_s = _norm_emp(emp)
     if not emp_s:
@@ -213,7 +216,7 @@ def can_edit_campaign(user: UserScope) -> bool:
 def can_view_vendedor(user: UserScope, vendedor: Any) -> bool:
     """Regra única: usuário pode ver esse vendedor?
 
-    - admin/supervisor/financeiro: permitido (o recorte final deve vir do filtro de EMP)
+    - admin/supervisor/gerente/financeiro: permitido (o recorte final deve vir do filtro de EMP)
     - vendedor: apenas ele mesmo (session['vendedor'])
     """
     v = (str(vendedor or "").strip().upper())

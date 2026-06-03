@@ -51,7 +51,7 @@
         <span class="sv-admin-eyebrow">Administração · Campanhas</span>
         <h1 class="sv-admin-title">Campanhas Qtd / Recompensa</h1>
         <div class="sv-admin-subtitle">
-          Cadastre campanhas por <b>código/prefixo</b> ou por <b>descrição iniciada por</b>. Por padrão, a tela mostra somente a visão operacional <b>{{ status_label|default('Abertas') }}</b> de {{ '%02d'|format(mes|int) }}/{{ ano }}.
+          Cadastre campanhas por <b>código/prefixo</b> ou por <b>descrição iniciada por</b>, mantendo marca obrigatória, mínimos e vigência para apuração comercial.
         </div>
       </div>
       <div class="sv-action-row">
@@ -64,12 +64,12 @@
       <div class="sv-kpi-card">
         <small>Campanhas</small>
         <strong>{{ campanhas|length }}</strong>
-        <span>Visíveis de {{ campanhas_total_base|default(campanhas|length) }} cadastradas</span>
+        <span>Total cadastrado</span>
       </div>
       <div class="sv-kpi-card">
         <small>Ativas</small>
         <strong>{{ campanhas|selectattr('ativo')|list|length }}</strong>
-        <span>{{ status_label|default('Abertas') }} no filtro</span>
+        <span>Disponíveis para cálculo</span>
       </div>
       <div class="sv-kpi-card">
         <small>Resultados</small>
@@ -111,15 +111,12 @@
         <div class="sv-help-box mb-3 sv-help-text">
           <b>Código:</b> use prefixo, exemplo <code>406</code>, para considerar todos os códigos iniciados com esse valor.<br>
           <b>Descrição:</b> use o início exato, exemplo <code>JOGO JUNTA</code>, sempre combinando com a marca.<br>
-          <b>Mínimos:</b> quantidade e valor do item são opcionais. Se preencher o faturamento mínimo da EMP, o pagamento só libera quando a loja atingir esse valor no período.
+          <b>Mínimos:</b> quantidade e valor são opcionais. Se preencher ambos, os dois serão exigidos.
         </div>
       </div>
 
       <form method="post" id="frmCampanha">
         <input type="hidden" name="acao" value="criar">
-        <input type="hidden" name="mes" value="{{ mes }}">
-        <input type="hidden" name="ano" value="{{ ano }}">
-        <input type="hidden" name="status" value="{{ status_visao|default('abertas') }}">
 
         <div class="sv-form-grid sv-form-grid-4">
           <div class="sv-field">
@@ -128,6 +125,15 @@
           </div>
 
           <div class="sv-field">
+            <label class="sv-form-label">Tipo de campanha *</label>
+            <select class="form-select" name="campanha_tipo" id="campanha_tipo">
+              <option value="VENDEDOR" selected>Vendedor — venda individual</option>
+              <option value="GERENTE">Gerente — venda total da loja</option>
+            </select>
+            <div class="sv-help-text mt-1">Gerente recebe sobre tudo que a EMP vendeu.</div>
+          </div>
+
+          <div class="sv-field" id="wrap_vendedor">
             <label class="sv-form-label">Vendedor</label>
             <input class="form-control" type="text" name="vendedor" placeholder="Vazio = todos">
             <div class="sv-help-text mt-1">Opcional.</div>
@@ -173,14 +179,8 @@
           </div>
 
           <div class="sv-field">
-            <label class="sv-form-label">Valor mínimo do item</label>
+            <label class="sv-form-label">Valor mínimo</label>
             <input class="form-control" type="text" name="valor_minimo" placeholder="Ex: 1000,00">
-          </div>
-
-          <div class="sv-field span-2">
-            <label class="sv-form-label">Faturamento mínimo da EMP</label>
-            <input class="form-control" type="text" name="faturamento_minimo_emp" placeholder="Ex: 500000,00">
-            <div class="sv-help-text mt-1">Opcional. Se preencher, a loja precisa atingir esse faturamento para liberar as recompensas dos vendedores.</div>
           </div>
 
           <div class="sv-field">
@@ -210,26 +210,7 @@
         <h2 class="sv-panel-title">Campanhas cadastradas</h2>
         <div class="sv-panel-subtitle">Use busca e filtro por EMP para localizar campanhas rapidamente.</div>
       </div>
-      <div class="sv-action-row" style="align-items:end;">
-        <form method="get" class="sv-action-row" style="align-items:end;">
-          <div>
-            <label class="sv-form-label mb-1">Mês</label>
-            <input class="form-control form-control-sm" type="number" name="mes" min="1" max="12" value="{{ mes }}" style="width:86px;">
-          </div>
-          <div>
-            <label class="sv-form-label mb-1">Ano</label>
-            <input class="form-control form-control-sm" type="number" name="ano" min="2000" max="2100" value="{{ ano }}" style="width:104px;">
-          </div>
-          <div>
-            <label class="sv-form-label mb-1">Situação</label>
-            <select class="form-select form-select-sm" name="status" style="min-width:150px;">
-              <option value="abertas" {% if (status_visao|default('abertas')) == 'abertas' %}selected{% endif %}>Abertas</option>
-              <option value="encerradas" {% if (status_visao|default('abertas')) == 'encerradas' %}selected{% endif %}>Histórico</option>
-              <option value="todas" {% if (status_visao|default('abertas')) == 'todas' %}selected{% endif %}>Todas</option>
-            </select>
-          </div>
-          <button class="btn btn-sv-primary btn-sm" type="submit">Filtrar</button>
-        </form>
+      <div class="sv-action-row">
         <input type="text" class="form-control" id="qSearch" placeholder="Buscar título, vendedor, marca..." style="min-width:280px;">
         <select class="form-select" id="empFilter" style="width:auto;min-width:160px;">
           <option value="ALL" selected>Todas EMP</option>
@@ -244,7 +225,7 @@
     </div>
     <div class="sv-panel-body">
       {% if campanhas|length == 0 %}
-        <div class="sv-empty-state">Nenhuma campanha encontrada para a situação <b>{{ status_label|default('Abertas') }}</b> em {{ '%02d'|format(mes|int) }}/{{ ano }}. Use o filtro <b>Histórico</b> ou <b>Todas</b> para consultar períodos encerrados.</div>
+        <div class="sv-empty-state">Nenhuma campanha cadastrada.</div>
       {% else %}
         <div class="sv-table-card">
           <table class="sv-data-table sv-campaign-table" id="tblCampanhas">
@@ -253,10 +234,10 @@
                 <th>#</th>
                 <th>EMP</th>
                 <th>Título / Base</th>
-                <th>Vendedor</th>
+                <th>Tipo</th>
+                <th>Beneficiário</th>
                 <th>Marca</th>
                 <th class="text-end">Mínimos</th>
-                <th class="text-end">Mínimo EMP</th>
                 <th class="text-end">R$/un</th>
                 <th>Vigência</th>
                 <th class="text-end">Ação</th>
@@ -270,7 +251,7 @@
                   </td>
                 </tr>
                 {% for c in grp.list %}
-                  <tr data-emp="{{ c.emp or '' }}" data-search="{{ (c.titulo or '') ~ ' ' ~ (c.vendedor or '') ~ ' ' ~ (c.marca or '') ~ ' ' ~ (c.produto_prefixo or '') ~ ' ' ~ (c.descricao_prefixo or '') }}">
+                  <tr data-emp="{{ c.emp or '' }}" data-search="{{ (c.titulo or '') ~ ' ' ~ (c.campanha_tipo or '') ~ ' ' ~ (c.vendedor or '') ~ ' ' ~ (c.marca or '') ~ ' ' ~ (c.produto_prefixo or '') ~ ' ' ~ (c.descricao_prefixo or '') }}">
                     <td class="sv-number">{{ c.id }}</td>
                     <td><span class="sv-chip">EMP {{ c.emp or '-' }}</span></td>
                     <td>
@@ -285,15 +266,13 @@
                         {% endif %}
                       </div>
                     </td>
-                    <td>{{ c.vendedor or 'TODOS' }}</td>
+                    <td>{% if (c.campanha_tipo or 'VENDEDOR') == 'GERENTE' %}<span class="sv-chip sv-chip--warning">GERENTE</span>{% else %}<span class="sv-chip sv-chip--info">VENDEDOR</span>{% endif %}</td>
+                    <td>{% if (c.campanha_tipo or 'VENDEDOR') == 'GERENTE' %}Gerente da EMP{% else %}{{ c.vendedor or 'TODOS' }}{% endif %}</td>
                     <td><span class="sv-money">{{ c.marca or '-' }}</span></td>
                     <td class="text-end sv-money">
                       {% if c.qtd_minima %}{{ c.qtd_minima }}{% else %}-{% endif %}
                       <span class="text-muted"> / </span>
                       {% if c.valor_minimo %}{{ c.valor_minimo|brl_rs }}{% else %}-{% endif %}
-                    </td>
-                    <td class="text-end sv-money">
-                      {% if c.faturamento_minimo_emp %}{{ c.faturamento_minimo_emp|brl_rs }}{% else %}-{% endif %}
                     </td>
                     <td class="text-end sv-money">{% if c.recompensa_unit %}{{ c.recompensa_unit|brl_rs }}{% else %}{{ 0|brl_rs }}{% endif %}</td>
                     <td class="sv-help-text">
@@ -337,9 +316,6 @@
       <div class="modal-footer">
         <form method="post" id="delForm" class="m-0">
           <input type="hidden" name="acao" value="remover">
-          <input type="hidden" name="mes" value="{{ mes }}">
-          <input type="hidden" name="ano" value="{{ ano }}">
-          <input type="hidden" name="status" value="{{ status_visao|default('abertas') }}">
           <input type="hidden" name="campanha_id" id="delId" value="">
           <button class="btn btn-sv-soft" type="button" data-bs-dismiss="modal">Cancelar</button>
           <button class="btn btn-outline-danger" type="submit">Excluir</button>
@@ -383,6 +359,22 @@
     var sel = document.getElementById('campo_match');
     if(sel){ sel.addEventListener('change', toggleMatchFields); }
     toggleMatchFields();
+
+    function toggleTipoCampanha(){
+      var tipo = document.getElementById('campanha_tipo');
+      var vendWrap = document.getElementById('wrap_vendedor');
+      var vendInput = vendWrap ? vendWrap.querySelector('input[name="vendedor"]') : null;
+      var isGerente = tipo && tipo.value === 'GERENTE';
+      if(vendWrap){ vendWrap.classList.toggle('sv-field-disabled', !!isGerente); }
+      if(vendInput){
+        vendInput.disabled = !!isGerente;
+        if(isGerente){ vendInput.value = ''; vendInput.placeholder = 'Não usado para gerente'; }
+        else { vendInput.placeholder = 'Vazio = todos'; }
+      }
+    }
+    var tipoCamp = document.getElementById('campanha_tipo');
+    if(tipoCamp){ tipoCamp.addEventListener('change', toggleTipoCampanha); }
+    toggleTipoCampanha();
 
     var q = document.getElementById('qSearch');
     var f = document.getElementById('empFilter');

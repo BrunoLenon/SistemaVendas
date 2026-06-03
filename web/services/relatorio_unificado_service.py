@@ -66,25 +66,6 @@ class UnifiedRow:
     pago_em: Any | None = None
     origem_id: int | None = None
 
-    # Campos opcionais para travas, valores potenciais e metas.
-    # Mantêm o relatório unificado capaz de mostrar prêmios bloqueados
-    # por faturamento da EMP ou margem mínima sem transformar isso em valor a pagar.
-    premio_potencial: float | None = None
-    faturamento_minimo_emp: float | None = None
-    faturamento_emp: float | None = None
-    faltante_faturamento_emp: float | None = None
-    bloqueado_faturamento_emp: bool = False
-
-    tipo_meta: str | None = None
-    faturamento_minimo_meta: float | None = None
-    bloqueado_minimo: bool = False
-    margem_percentual: float | None = None
-    margem_minima: float | None = None
-    margem_minima_origem: str | None = None
-    margem_atingida: bool | None = None
-    bloqueado_margem: bool = False
-    margem_faltante_pp: float | None = None
-
     def get(self, key: str, default: Any = None) -> Any:
         if key is None:
             return default
@@ -542,36 +523,6 @@ def _meta_unified_title(meta: Any, calc: Any) -> str:
     return f"{prefix} • {nome}" if nome else prefix
 
 
-def _meta_premio_potencial(tipo_meta: str, calc: Any) -> float:
-    """Calcula o prêmio potencial antes de travas de mínimo/margem.
-
-    O calc.premio pode estar zerado quando a meta foi bloqueada por
-    faturamento mínimo ou margem. Para relatório/financeiro precisamos mostrar
-    o que o vendedor teria para receber caso o requisito fosse liberado.
-    """
-    tipo = str(tipo_meta or '').strip().upper()
-    bonus = _safe_float(getattr(calc, 'bonus_percentual', 0.0) or 0.0)
-    if bonus <= 0:
-        return 0.0
-    if tipo == 'MIX':
-        return _round2(bonus)
-    valor_mes = _safe_float(getattr(calc, 'valor_mes', 0.0) or 0.0)
-    if valor_mes <= 0:
-        return 0.0
-    return _round2(valor_mes * bonus / 100.0)
-
-
-def _meta_deve_entrar_no_relatorio(calc: Any, *, premio: float, potencial: float, incluir_zerados: bool) -> bool:
-    if incluir_zerados:
-        return True
-    if premio > 0:
-        return True
-    # Metas bloqueadas com prêmio potencial precisam aparecer para conferência.
-    if potencial > 0 and (bool(getattr(calc, 'bloqueado_minimo', False)) or bool(getattr(calc, 'bloqueado_margem', False))):
-        return True
-    return False
-
-
 def _append_metas_unificadas(
     db: Any,
     rows: list[UnifiedRow],
@@ -639,8 +590,7 @@ def _append_metas_unificadas(
                 continue
 
             valor_premio = _safe_float(getattr(calc, 'premio', 0.0) or 0.0)
-            premio_potencial = _meta_premio_potencial(tipo_meta, calc)
-            if not _meta_deve_entrar_no_relatorio(calc, premio=valor_premio, potencial=premio_potencial, incluir_zerados=incluir_zerados):
+            if valor_premio <= 0 and not incluir_zerados:
                 continue
 
             if tipo_meta == 'CRESCIMENTO':
@@ -668,7 +618,7 @@ def _append_metas_unificadas(
                 valor_vendido = _safe_float(getattr(calc, 'valor_mes', 0.0) or 0.0)
                 item_codigo = 'META'
 
-            atingiu = bool(valor_premio > 0 and not bool(getattr(calc, 'bloqueado_minimo', False)) and not bool(getattr(calc, 'bloqueado_margem', False)))
+            atingiu = bool(valor_premio > 0 and not bool(getattr(calc, 'bloqueado_minimo', False)))
             rows.append(
                 UnifiedRow(
                     tipo='META',
@@ -688,16 +638,6 @@ def _append_metas_unificadas(
                     status_pagamento='PENDENTE',
                     pago_em=None,
                     origem_id=meta_id,
-                    premio_potencial=premio_potencial if premio_potencial > 0 else valor_premio,
-                    tipo_meta=tipo_meta,
-                    faturamento_minimo_meta=_safe_float(getattr(calc, 'faturamento_minimo', 0.0) or 0.0),
-                    bloqueado_minimo=bool(getattr(calc, 'bloqueado_minimo', False)),
-                    margem_percentual=(None if getattr(calc, 'margem_percentual', None) is None else _safe_float(getattr(calc, 'margem_percentual', 0.0))),
-                    margem_minima=_safe_float(getattr(calc, 'margem_minima', 0.0) or 0.0),
-                    margem_minima_origem=str(getattr(calc, 'margem_minima_origem', '') or ''),
-                    margem_atingida=bool(getattr(calc, 'margem_atingida', True)),
-                    bloqueado_margem=bool(getattr(calc, 'bloqueado_margem', False)),
-                    margem_faltante_pp=_safe_float(getattr(calc, 'margem_faltante_pp', 0.0) or 0.0),
                 )
             )
 
@@ -749,7 +689,7 @@ def build_unified_rows(
 
                 rows.append(
                     UnifiedRow(
-                        tipo='QTD',
+                        tipo=('GERENTE' if str(getattr(r, 'campanha_tipo', '') or '').strip().upper() == 'GERENTE' else 'QTD'),
                         competencia_ano=int(getattr(r, 'competencia_ano', ano)),
                         competencia_mes=int(getattr(r, 'competencia_mes', mes)),
                         emp=str(getattr(r, 'emp', emp)),

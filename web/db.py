@@ -456,7 +456,9 @@ class CampanhaQtd(Base):
     id = Column(Integer, primary_key=True)
 
     emp = Column(String(30), nullable=False, index=True)
-    vendedor = Column(String(80), nullable=True, index=True)  # NULL = todos
+    # VENDEDOR = recompensa sobre a venda individual; GERENTE = recompensa sobre a venda total da EMP.
+    campanha_tipo = Column(String(20), nullable=False, default="VENDEDOR", index=True)
+    vendedor = Column(String(80), nullable=True, index=True)  # NULL = todos / não usado em campanha GERENTE
 
     titulo = Column(String(120), nullable=True)
     produto_prefixo = Column(String(200), nullable=False)
@@ -501,6 +503,7 @@ class CampanhaQtdResultado(Base):
 
     emp = Column(String(30), nullable=False, index=True)
     vendedor = Column(String(80), nullable=False, index=True)
+    campanha_tipo = Column(String(20), nullable=False, default="VENDEDOR", index=True)
 
     # Duplicamos campos da campanha para auditoria
     titulo = Column(String(120), nullable=True)
@@ -655,8 +658,6 @@ class MetaBaseManual(Base):
     vendedor = Column(String(80), nullable=False, index=True)
 
     base_valor = Column(Float, nullable=False, default=0.0)
-    # Margem mínima individual exigida para este vendedor na Meta Crescimento.
-    # Se vazio/zero, o cálculo usa a margem mínima padrão cadastrada na meta.
     margem_percentual = Column(Float, nullable=True)
     bonus_extra_percentual = Column(Float, nullable=True, default=0.0)
     observacao = Column(String(200), nullable=True)
@@ -666,35 +667,6 @@ class MetaBaseManual(Base):
     __table_args__ = (
         UniqueConstraint("meta_id", "emp", "vendedor", name="uq_meta_base_manual"),
         Index("ix_meta_base_manual_emp_vend", "emp", "vendedor"),
-    )
-
-
-class MetaMargemVendedor(Base):
-    """Margem percentual importada por vendedor/competência.
-
-    Regra atual: vale sempre a última margem importada para (ano, mes, vendedor).
-    A coluna ``emp`` é mantida por compatibilidade com versões anteriores e recebe
-    "GERAL" nas novas importações. A margem não soma, não faz média e não
-    acumula por dia.
-    """
-
-    __tablename__ = "metas_margens_vendedores"
-
-    id = Column(Integer, primary_key=True)
-    ano = Column(Integer, nullable=False, index=True)
-    mes = Column(Integer, nullable=False, index=True)
-    emp = Column(String(30), nullable=False, index=True)
-    vendedor = Column(String(80), nullable=False, index=True)
-    margem_percentual = Column(Float, nullable=False, default=0.0)
-    observacao = Column(String(240), nullable=True)
-    arquivo_origem = Column(String(255), nullable=True)
-    importado_por = Column(String(80), nullable=True)
-    importado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
-
-    __table_args__ = (
-        UniqueConstraint("ano", "mes", "emp", "vendedor", name="uq_meta_margem_vendedor_periodo"),
-        Index("ix_meta_margem_emp_periodo", "emp", "ano", "mes"),
-        Index("ix_meta_margem_vendedor_periodo", "vendedor", "ano", "mes"),
     )
 
 
@@ -722,10 +694,6 @@ class MetaResultado(Base):
     mix_itens_unicos = Column(Float, nullable=True)
     share_pct = Column(Float, nullable=True)
     valor_marcas = Column(Float, nullable=True)
-    margem_percentual = Column(Float, nullable=True)
-    margem_minima = Column(Float, nullable=True)
-    margem_atingida = Column(Boolean, nullable=True)
-    bloqueado_margem = Column(Boolean, nullable=False, default=False)
 
     bonus_percentual = Column(Float, nullable=False, default=0.0)
     premio = Column(Float, nullable=False, default=0.0)
@@ -1325,28 +1293,14 @@ def criar_tabelas():
             conn.execute(text("UPDATE metas_programas_emps SET ativo = true WHERE ativo IS NULL;"))
             conn.execute(text("ALTER TABLE metas_bases_manuais ADD COLUMN IF NOT EXISTS margem_percentual double precision;"))
             conn.execute(text("ALTER TABLE metas_bases_manuais ADD COLUMN IF NOT EXISTS bonus_extra_percentual double precision;"))
-            conn.execute(text("""
-                CREATE TABLE IF NOT EXISTS metas_margens_vendedores (
-                    id SERIAL PRIMARY KEY,
-                    ano INTEGER NOT NULL,
-                    mes INTEGER NOT NULL,
-                    emp VARCHAR(30) NOT NULL,
-                    vendedor VARCHAR(80) NOT NULL,
-                    margem_percentual DOUBLE PRECISION NOT NULL DEFAULT 0,
-                    observacao VARCHAR(240),
-                    arquivo_origem VARCHAR(255),
-                    importado_por VARCHAR(80),
-                    importado_em TIMESTAMP NOT NULL DEFAULT NOW(),
-                    CONSTRAINT uq_meta_margem_vendedor_periodo UNIQUE (ano, mes, emp, vendedor)
-                );
-            """))
-            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_meta_margem_emp_periodo ON metas_margens_vendedores (emp, ano, mes);"))
-            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_meta_margem_vendedor_periodo ON metas_margens_vendedores (vendedor, ano, mes);"))
-            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_meta_margem_periodo_vendedor ON metas_margens_vendedores (ano, mes, vendedor);"))
-            conn.execute(text("ALTER TABLE metas_resultados ADD COLUMN IF NOT EXISTS margem_percentual double precision;"))
-            conn.execute(text("ALTER TABLE metas_resultados ADD COLUMN IF NOT EXISTS margem_minima double precision;"))
-            conn.execute(text("ALTER TABLE metas_resultados ADD COLUMN IF NOT EXISTS margem_atingida boolean;"))
-            conn.execute(text("ALTER TABLE metas_resultados ADD COLUMN IF NOT EXISTS bloqueado_margem boolean NOT NULL DEFAULT false;"))
+            # Campanhas QTD: tipo de beneficiário (vendedor individual ou gerente da loja)
+            conn.execute(text("ALTER TABLE campanhas_qtd ADD COLUMN IF NOT EXISTS campanha_tipo varchar(20) NOT NULL DEFAULT 'VENDEDOR';"))
+            conn.execute(text("ALTER TABLE campanhas_qtd_resultados ADD COLUMN IF NOT EXISTS campanha_tipo varchar(20) NOT NULL DEFAULT 'VENDEDOR';"))
+            conn.execute(text("UPDATE campanhas_qtd SET campanha_tipo='VENDEDOR' WHERE campanha_tipo IS NULL OR campanha_tipo='';"))
+            conn.execute(text("UPDATE campanhas_qtd_resultados SET campanha_tipo='VENDEDOR' WHERE campanha_tipo IS NULL OR campanha_tipo='';"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_campanhas_qtd_tipo ON campanhas_qtd (campanha_tipo);"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_campanhas_qtd_resultados_tipo ON campanhas_qtd_resultados (campanha_tipo);"))
+
             # Compatibilidade: se existir tabela antiga usuario_emp, copia vínculos (não derruba se falhar)
             conn.execute(text("""
                 DO $$
@@ -1616,21 +1570,6 @@ def ensure_metas_lojas_schema():
                 );
             """))
             conn.execute(text("""
-                CREATE TABLE IF NOT EXISTS metas_margens_vendedores (
-                    id SERIAL PRIMARY KEY,
-                    ano INTEGER NOT NULL,
-                    mes INTEGER NOT NULL,
-                    emp VARCHAR(30) NOT NULL,
-                    vendedor VARCHAR(80) NOT NULL,
-                    margem_percentual DOUBLE PRECISION NOT NULL DEFAULT 0,
-                    observacao VARCHAR(240),
-                    arquivo_origem VARCHAR(255),
-                    importado_por VARCHAR(80),
-                    importado_em TIMESTAMP NOT NULL DEFAULT NOW(),
-                    CONSTRAINT uq_meta_margem_vendedor_periodo UNIQUE (ano, mes, emp, vendedor)
-                );
-            """))
-            conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS metas_resultados (
                     id SERIAL PRIMARY KEY,
                     meta_id INTEGER NOT NULL,
@@ -1644,10 +1583,6 @@ def ensure_metas_lojas_schema():
                     mix_itens_unicos DOUBLE PRECISION,
                     share_pct DOUBLE PRECISION,
                     valor_marcas DOUBLE PRECISION,
-                    margem_percentual DOUBLE PRECISION,
-                    margem_minima DOUBLE PRECISION,
-                    margem_atingida BOOLEAN,
-                    bloqueado_margem BOOLEAN NOT NULL DEFAULT FALSE,
                     bonus_percentual DOUBLE PRECISION NOT NULL DEFAULT 0,
                     premio DOUBLE PRECISION NOT NULL DEFAULT 0,
                     calculado_em TIMESTAMP NOT NULL DEFAULT NOW()
@@ -1669,10 +1604,6 @@ def ensure_metas_lojas_schema():
             conn.execute(text("ALTER TABLE metas_bases_manuais ADD COLUMN IF NOT EXISTS margem_percentual double precision;"))
             conn.execute(text("ALTER TABLE metas_bases_manuais ADD COLUMN IF NOT EXISTS bonus_extra_percentual double precision;"))
             conn.execute(text("ALTER TABLE metas_bases_manuais ADD COLUMN IF NOT EXISTS observacao varchar(200);"))
-            conn.execute(text("ALTER TABLE metas_resultados ADD COLUMN IF NOT EXISTS margem_percentual double precision;"))
-            conn.execute(text("ALTER TABLE metas_resultados ADD COLUMN IF NOT EXISTS margem_minima double precision;"))
-            conn.execute(text("ALTER TABLE metas_resultados ADD COLUMN IF NOT EXISTS margem_atingida boolean;"))
-            conn.execute(text("ALTER TABLE metas_resultados ADD COLUMN IF NOT EXISTS bloqueado_margem boolean NOT NULL DEFAULT false;"))
 
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_metas_programas_periodo ON metas_programas (ano, mes);"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_metas_programas_tipo_periodo ON metas_programas (tipo, ano, mes);"))
@@ -1683,9 +1614,6 @@ def ensure_metas_lojas_schema():
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_metas_marcas_meta ON metas_marcas (meta_id);"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_metas_marcas_marca ON metas_marcas (marca);"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_metas_bases_meta_emp_vendedor ON metas_bases_manuais (meta_id, emp, vendedor);"))
-            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_meta_margem_emp_periodo ON metas_margens_vendedores (emp, ano, mes);"))
-            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_meta_margem_vendedor_periodo ON metas_margens_vendedores (vendedor, ano, mes);"))
-            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_meta_margem_periodo_vendedor ON metas_margens_vendedores (ano, mes, vendedor);"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_metas_resultados_emp_periodo ON metas_resultados (emp, ano, mes);"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_metas_resultados_meta_periodo ON metas_resultados (meta_id, ano, mes);"))
     except Exception:

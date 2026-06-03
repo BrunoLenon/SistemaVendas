@@ -174,6 +174,8 @@ def _norm_status(v: str | None) -> str:
 
 def _norm_tipo(v: str | None) -> str:
     s = (v or '').strip().upper()
+    if s in ('GERENTE', 'GERENTE_LOJA', 'LOJA'):
+        return 'GERENTE'
     if s in ('QTD', 'CAMPANHA', 'PRODUTO'):
         return 'QTD'
     if s in ('COMBO', 'COMBO_CARD'):
@@ -189,6 +191,7 @@ def _tipo_to_origem(tipo: str | None) -> str:
     t = _norm_tipo(tipo)
     return {
         'QTD': 'V1_QTD',
+        'GERENTE': 'V1_GERENTE',
         'COMBO': 'V1_COMBO',
         'PARADO': 'V1_PARADOS',
         'META': 'V1_META',
@@ -450,10 +453,6 @@ def build_financeiro_campanhas_context(
         emp = str(getattr(r, 'emp', '') or '').strip() or '0'
         vendedor = (getattr(r, 'vendedor', '') or '').strip().upper()
         valor = _round2(getattr(r, 'valor_recompensa', 0) or 0)
-        # Segurança: campanhas QTD bloqueadas por faturamento mínimo da EMP
-        # não entram no financeiro, mesmo que apareçam no relatório como potencial.
-        if bool(getattr(r, 'bloqueado_faturamento_emp', False)):
-            continue
         if valor <= 0:
             continue
         pay = payments_map.get((origem_tipo, origem_id, _safe_emp_int(emp), vendedor))

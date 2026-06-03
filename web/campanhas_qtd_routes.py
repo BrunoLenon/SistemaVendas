@@ -7,11 +7,6 @@ from typing import Callable, Any
 from flask import render_template, request, send_file
 
 from services.campanhas_service import build_campanhas_page_context
-from services.visao_operacional import (
-    filter_emps_by_status,
-    get_fechamento_status_map,
-    normalize_status_filter,
-)
 
 
 def register_campanhas_qtd_routes(
@@ -51,7 +46,7 @@ def register_campanhas_qtd_routes(
         # Flags de permissão para a UI (templates)
         ctx_role = role
         ctx_is_admin = (ctx_role == "admin")
-        ctx_is_supervisor = (ctx_role == "supervisor")
+        ctx_is_supervisor = (ctx_role in ("supervisor", "gerente"))
         ctx_is_vendedor = (ctx_role == "vendedor")
         ctx_is_financeiro = (ctx_role == "financeiro")
 
@@ -77,10 +72,9 @@ def register_campanhas_qtd_routes(
         hoje = date.today()
         mes = int(request.args.get("mes") or hoje.month)
         ano = int(request.args.get("ano") or hoje.year)
-        status_visao = normalize_status_filter(request.args.get("status"), default="abertas")
 
         vendedor_logado = (usuario_logado_fn() or "").strip().upper()
-        if (role or "").lower() == "supervisor":
+        if (role or "").lower() in ("supervisor", "gerente"):
             vendedor_sel = (request.args.get("vendedor") or "__ALL__").strip().upper()
             if vendedor_sel == "__ALL__":
                 try:
@@ -98,13 +92,6 @@ def register_campanhas_qtd_routes(
             emps_scope = [emp_param] if emp_param else get_emps_vendedor_fn(vendedor_sel)
         else:
             emps_scope = resolver_emp_scope_fn(vendedor_sel, role, emp_usuario)
-
-        try:
-            with SessionLocal() as db_status:
-                status_map = get_fechamento_status_map(db_status, ano, mes)
-            emps_scope = filter_emps_by_status(emps_scope, status_visao, status_map)
-        except Exception:
-            pass
 
         from reportlab.lib.pagesizes import A4
         from reportlab.pdfgen import canvas
