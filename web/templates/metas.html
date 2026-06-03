@@ -74,12 +74,12 @@
                     {% if d %}
                       <div class="metas-value">{{ d.premio|brl_rs }}</div>
                       {% if d.bloqueado_minimo %}<div class="metas-warning-text">Mínimo {{ d.faturamento_minimo|brl_rs }} não atingido</div>{% endif %}
-                      {% if d.bloqueado_margem %}<div class="metas-warning-text">Margem mínima {{ (d.margem_minima or 0)|brl }}% não atingida</div>{% endif %}
+                      {% if d.bloqueado_margem %}<div class="metas-warning-text">Sua margem mínima {{ (d.margem_minima or 0)|brl }}% não foi atingida</div>{% endif %}
                       {% if m.tipo == 'CRESCIMENTO' %}
                         <div class="metas-detail">Base: {{ (d.base_valor or 0)|brl_rs }}</div>
                         <div class="metas-detail">Cresc.: {{ (d.crescimento_pct or 0)|brl }}% · Prêmio: {{ (d.bonus_percentual or 0)|brl }}%</div>
                         {% if d.margem_minima and d.margem_minima > 0 %}
-                          <div class="metas-detail">Margem: {% if d.margem_percentual is not none %}{{ d.margem_percentual|brl }}%{% else %}não importada{% endif %} · Mínima: {{ d.margem_minima|brl }}%</div>
+                          <div class="metas-detail">Sua margem: {% if d.margem_percentual is not none %}{{ d.margem_percentual|brl }}%{% else %}não importada{% endif %} · Mínima: {{ d.margem_minima|brl }}%</div>
                           {% if d.bloqueado_margem %}<div class="metas-detail">Faltam {{ d.margem_faltante_pp|brl }} ponto(s) percentuais de margem.</div>{% endif %}
                         {% endif %}
                         {% if d.regra_teto_aplicada %}<span class="metas-chip ok">Faixa máxima por teto</span>{% endif %}

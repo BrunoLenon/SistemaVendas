@@ -327,6 +327,7 @@ def admin_metas():
         metas_payload = [_meta_payload(db, m) for m in metas_db]
 
         crescimento_meta = next((p["meta"] for p in metas_payload if normalize_text(p["meta"].tipo) == "CRESCIMENTO" and p["meta"].ativo), None)
+        margem_minima_ativa = float(getattr(crescimento_meta, "margem_minima", 0.0) or 0.0) if crescimento_meta else 0.0
         base_rows = []
         vendedores_base = []
         if crescimento_meta and emp_selected:
@@ -396,6 +397,7 @@ def admin_metas():
             metas_sim=metas_sim,
             resultados_sim=resultados_sim,
             margens_rows=margens_rows,
+            margem_minima_ativa=margem_minima_ativa,
             margens_pendentes=margens_pendentes,
             totais=totais,
             tipo_label=_tipo_label,
@@ -589,10 +591,10 @@ def admin_metas_margens_modelo():
         ws.freeze_panes = "A2"
         ws["H1"] = "Instruções"
         ws["H1"].font = Font(bold=True)
-        ws["H2"] = "A última margem importada substitui a anterior para ANO+MES+EMP+VENDEDOR."
+        ws["H2"] = "A margem é individual por vendedor. A última margem importada substitui a anterior para ANO+MES+EMP+VENDEDOR."
         ws["H3"] = "Informe a margem como percentual. Ex.: 8,35 representa 8,35%."
         ws["H4"] = "Não soma, não acumula e não faz média."
-        ws["H5"] = "VENDEDOR deve bater com o usuário/vendedor do sistema."
+        ws["H5"] = "VENDEDOR deve bater com o usuário/vendedor do sistema. Cada vendedor precisa ter sua própria linha."
         ws.column_dimensions["H"].width = 72
         bio = BytesIO()
         wb.save(bio)

@@ -121,7 +121,7 @@
                       <input type="hidden" name="ano" value="{{ ano }}"><input type="hidden" name="mes" value="{{ mes }}"><input type="hidden" name="emp_sel" value="{{ emp_selected }}"><input type="hidden" name="vendedor" value="{{ vendedor_selected }}">
                       <div class="meta-edit-grid">
                         <div><div class="meta-label">Faturamento mínimo</div><input class="form-control form-control-sm meta-input" name="faturamento_minimo" value="{{ (m.faturamento_minimo or 0)|brl if m.faturamento_minimo else '70.000,00' }}"></div>
-                        {% if m.tipo == 'CRESCIMENTO' %}<div><div class="meta-label">Margem mínima %</div><input class="form-control form-control-sm meta-input" name="margem_minima" value="{{ (m.margem_minima or 0)|brl if m.margem_minima else '8,00' }}"><div class="meta-help mt-1">Ex.: 8,00 libera a meta apenas com margem atual ≥ 8%.</div></div>{% endif %}
+                        {% if m.tipo == 'CRESCIMENTO' %}<div><div class="meta-label">Margem mínima individual do vendedor (%)</div><input class="form-control form-control-sm meta-input" name="margem_minima" value="{{ (m.margem_minima or 0)|brl if m.margem_minima else '8,00' }}"><div class="meta-help mt-1">Ex.: 8,00. Esse é apenas o mínimo exigido; a margem atual vem individualmente da planilha por EMP + VENDEDOR.</div></div>{% endif %}
                         {% if m.tipo == 'CRESCIMENTO' %}<div><div class="meta-label">Venda que ativa faixa máxima</div><input class="form-control form-control-sm meta-input" name="teto_faturamento" value="{{ (m.teto_faturamento or 0)|brl if m.teto_faturamento else '' }}"></div>{% endif %}
                       </div>
                       <div class="meta-help mt-2">Se o vendedor não atingir o faturamento mínimo ou, no Crescimento, a margem mínima configurada, a premiação dessa meta fica zerada.</div>
@@ -144,7 +144,7 @@
               <div class="mb-2"><div class="meta-label">Nome</div><input class="form-control form-control-sm meta-input" name="nome" value="Meta Crescimento {{ '%02d'|format(mes) }}/{{ ano }}"></div>
               <div class="mb-2"><div class="meta-label">EMPs participantes</div><div class="meta-emp-box">{% for e in emps_rows %}<label class="meta-emp-check"><input type="checkbox" name="emps" value="{{ e.codigo }}" {% if emp_selected and emp_selected==e.codigo|string %}checked{% endif %}> <span>{{ e.codigo }} - {{ e.nome }}</span></label>{% endfor %}</div></div>
               <div class="mb-2"><div class="meta-label">Faturamento mínimo para participar</div><input class="form-control form-control-sm meta-input" name="faturamento_minimo" value="70.000,00"><div class="meta-help mt-1">Abaixo desse valor, a premiação desta meta fica zerada.</div></div>
-              <div class="mb-2"><div class="meta-label">Margem mínima %</div><input class="form-control form-control-sm meta-input" name="margem_minima" value="8,00"><div class="meta-help mt-1">Crescimento só paga quando a margem atual importada for igual ou superior a este percentual.</div></div>
+              <div class="mb-2"><div class="meta-label">Margem mínima individual do vendedor (%)</div><input class="form-control form-control-sm meta-input" name="margem_minima" value="8,00"><div class="meta-help mt-1">Crescimento só paga quando a margem importada daquele vendedor for igual ou superior a este percentual.</div></div>
               <div class="mb-2"><div class="meta-label">Faixas: crescimento % = prêmio %</div><textarea class="form-control meta-textarea" name="escalas">5=0,10
 10=0,20
 15=0,30
@@ -215,26 +215,26 @@ VEI</textarea></div>
           <div class="col-12 col-xl-5">
             <form class="meta-card" method="post" action="{{ url_for('admin_metas_margens_importar') }}" enctype="multipart/form-data">
               <input type="hidden" name="ano" value="{{ ano }}"><input type="hidden" name="mes" value="{{ mes }}">
-              <h6>📥 Importar margens percentuais</h6>
-              <p>A última margem importada para <b>ANO + MÊS + EMP + VENDEDOR</b> substitui a anterior. Não soma, não faz média e não acumula.</p>
+              <h6>📥 Importar margens individuais por vendedor</h6>
+              <p>A última margem importada para <b>ANO + MÊS + EMP + VENDEDOR</b> substitui a anterior. A margem é <b>individual por vendedor</b>; não é fixa por loja, não soma, não faz média e não acumula.</p>
               <div class="mb-3">
                 <div class="meta-label">Planilha de margens</div>
                 <input class="form-control form-control-sm meta-input" type="file" name="arquivo_margens" accept=".xlsx,.xls,.csv" required>
-                <div class="meta-help mt-1">Colunas: ANO, MES, EMP, VENDEDOR, MARGEM_PERCENTUAL e OBSERVACAO.</div>
+                <div class="meta-help mt-1">Colunas: ANO, MES, EMP, VENDEDOR, MARGEM_PERCENTUAL e OBSERVACAO. Cada linha representa a margem atual daquele vendedor.</div>
               </div>
               <div class="meta-actions">
                 <button class="btn btn-meta-primary btn-sm">Importar margens</button>
                 <a class="btn btn-sm btn-outline-light" href="{{ url_for('admin_metas_margens_modelo', ano=ano, mes=mes) }}">Baixar modelo .xlsx</a>
               </div>
-              <div class="meta-help mt-3"><b>Regra:</b> na Meta Crescimento, se houver margem mínima configurada, o vendedor só recebe quando crescimento + faturamento mínimo + margem mínima forem atingidos.</div>
+              <div class="meta-help mt-3"><b>Regra:</b> na Meta Crescimento, se houver margem mínima configurada, cada vendedor só recebe quando o seu próprio crescimento + faturamento mínimo + sua margem individual importada forem atingidos.</div>
             </form>
           </div>
           <div class="col-12 col-xl-7">
             <div class="meta-card">
               <div class="d-flex justify-content-between align-items-start gap-2 flex-wrap mb-2">
                 <div>
-                  <h6>📊 Margens atuais {{ '%02d'|format(mes) }}/{{ ano }}</h6>
-                  <p class="mb-0">Mostra a margem válida atualmente no filtro. Se importar novamente, a linha é atualizada.</p>
+                  <h6>📊 Margens individuais atuais {{ '%02d'|format(mes) }}/{{ ano }}</h6>
+                  <p class="mb-0">Mostra a margem válida por vendedor. Se importar novamente o mesmo EMP + vendedor, a linha é atualizada.</p>
                 </div>
                 {% if emp_selected %}<span class="meta-chip">EMP {{ emp_selected }}</span>{% endif %}
               </div>
@@ -243,13 +243,15 @@ VEI</textarea></div>
               {% else %}
                 <div class="meta-table-wrap" style="max-height:360px">
                   <table class="table table-sm meta-table">
-                    <thead><tr><th>EMP</th><th>Vendedor</th><th class="text-end">Margem</th><th>Importado em</th><th>Obs.</th></tr></thead>
+                    <thead><tr><th>EMP</th><th>Vendedor</th><th class="text-end">Margem individual</th><th class="text-end">Mínima da meta</th><th>Status</th><th>Importado em</th><th>Obs.</th></tr></thead>
                     <tbody>
                       {% for r in margens_rows %}
                         <tr>
                           <td>{{ r.emp }}</td>
                           <td class="fw-semibold">{{ r.vendedor }}</td>
-                          <td class="text-end fw-bold {% if (r.margem_percentual or 0) < 8 %}text-warning{% else %}text-success{% endif %}">{{ (r.margem_percentual or 0)|brl }}%</td>
+                          <td class="text-end fw-bold {% if margem_minima_ativa and (r.margem_percentual or 0) < margem_minima_ativa %}text-warning{% else %}text-success{% endif %}">{{ (r.margem_percentual or 0)|brl }}%</td>
+                          <td class="text-end">{% if margem_minima_ativa %}{{ margem_minima_ativa|brl }}%{% else %}-{% endif %}</td>
+                          <td>{% if margem_minima_ativa and (r.margem_percentual or 0) < margem_minima_ativa %}<span class="meta-chip warn">Abaixo</span>{% elif margem_minima_ativa %}<span class="meta-chip ok">Atingida</span>{% else %}<span class="meta-chip">Informativa</span>{% endif %}</td>
                           <td>{{ r.importado_em.strftime('%d/%m/%Y %H:%M') if r.importado_em else '-' }}</td>
                           <td>{{ r.observacao or '-' }}</td>
                         </tr>
@@ -263,7 +265,7 @@ VEI</textarea></div>
           <div class="col-12">
             <div class="meta-card">
               <h6>⚠️ Vendedores sem margem no filtro</h6>
-              <p>Quando uma Meta Crescimento exige margem mínima, vendedor sem margem importada fica bloqueado até nova importação.</p>
+              <p>Quando uma Meta Crescimento exige margem mínima, cada vendedor precisa ter a sua margem individual importada. Vendedor sem margem fica bloqueado até nova importação.</p>
               {% if not emp_selected %}
                 <div class="meta-empty">Selecione uma EMP no filtro superior para conferir vendedores sem margem.</div>
               {% elif margens_pendentes|length == 0 %}
@@ -300,7 +302,7 @@ VEI</textarea></div>
                         {% if d %}
                           <div class="fw-bold">{{ d.premio|brl_rs }}</div>
                           {% if d.bloqueado_minimo %}<div class="small meta-warning-text">Mínimo {{ d.faturamento_minimo|brl_rs }} não atingido</div>{% endif %}
-                          {% if m.tipo == 'CRESCIMENTO' %}<div class="small text-muted">{{ d.crescimento_pct|brl }}% · {{ d.bonus_percentual|brl }}%</div>{% endif %}
+                          {% if m.tipo == 'CRESCIMENTO' %}<div class="small text-muted">Cresc. {{ d.crescimento_pct|brl }}% · prêmio {{ d.bonus_percentual|brl }}%</div>{% if d.margem_minima and d.margem_minima > 0 %}<div class="small {% if d.bloqueado_margem %}meta-warning-text{% else %}text-success{% endif %}">Margem vendedor: {% if d.margem_percentual is not none %}{{ d.margem_percentual|brl }}%{% else %}não importada{% endif %} · mínima {{ d.margem_minima|brl }}%</div>{% endif %}{% endif %}
                           {% if m.tipo == 'MIX' %}<div class="small text-muted">{{ d.mix_itens_unicos or 0 }} únicos · {% if d.faixa_limite is not none %}faixa {{ d.faixa_limite|round(0)|int }}{% else %}sem faixa atingida{% endif %}</div>{% endif %}
                           {% if m.tipo == 'SHARE_MARCA' %}<div class="small text-muted">{{ d.share_pct|brl }}% · {{ d.bonus_percentual|brl }}%</div>{% endif %}
                         {% else %}<span class="text-muted">-</span>{% endif %}
