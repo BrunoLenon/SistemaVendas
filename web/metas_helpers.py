@@ -369,11 +369,15 @@ def get_margem_vendedor(db, ano: int, mes: int, emp: str, vendedor: str) -> Meta
     )
 
 
-def upsert_base_manual(db, meta_id: int, emp: str, vendedor: str, base_valor: float, observacao: str | None = None) -> MetaBaseManual:
+def upsert_base_manual(db, meta_id: int, emp: str, vendedor: str, base_valor: float, observacao: str | None = None, margem_minima_individual: float | None = None) -> MetaBaseManual:
     item = get_base_manual(db, meta_id, emp, vendedor)
     if not item:
         item = MetaBaseManual(meta_id=int(meta_id), emp=normalize_emp(emp), vendedor=normalize_text(vendedor))
     item.base_valor = float(base_valor or 0.0)
+    # Neste módulo, metas_bases_manuais.margem_percentual representa a margem mínima individual
+    # exigida para este vendedor na Meta Crescimento. Se ficar vazia/zero, usa a margem padrão da meta.
+    margem_ind = float(margem_minima_individual or 0.0) if margem_minima_individual is not None else 0.0
+    item.margem_percentual = margem_ind if margem_ind > 0 else None
     item.observacao = (observacao or "").strip()[:200]
     db.add(item)
     return item
@@ -413,6 +417,7 @@ class MetaCalc:
     faturamento_minimo_atingido: bool = True
     bloqueado_minimo: bool = False
     margem_minima: float = 0.0
+    margem_minima_origem: str = ""  # "individual", "padrao" ou vazio
     margem_percentual: float | None = None
     margem_importada_em: datetime | None = None
     margem_atingida: bool = True
@@ -429,14 +434,27 @@ def calcular_meta(db, meta: MetaPrograma, emp: str, vendedor: str, persist: bool
 
     calc = MetaCalc(meta_id=int(meta.id), tipo=tipo, emp=emp_n, vendedor=vendedor_n)
     faturamento_minimo = float(getattr(meta, "faturamento_minimo", 0.0) or 0.0)
-    margem_minima = float(getattr(meta, "margem_minima", 0.0) or 0.0)
+    margem_minima_padrao = float(getattr(meta, "margem_minima", 0.0) or 0.0)
+    margem_minima = margem_minima_padrao
     calc.faturamento_minimo = faturamento_minimo
-    calc.margem_minima = margem_minima if tipo == "CRESCIMENTO" else 0.0
 
     if tipo == "CRESCIMENTO":
         valor_mes = Decimal(str(query_valor_mes(db, meta.ano, meta.mes, emp_n, vendedor_n)))
         base = get_base_manual(db, int(meta.id), emp_n, vendedor_n)
         base_valor = Decimal(str(getattr(base, "base_valor", 0.0) or 0.0)) if base else Decimal("0")
+
+        margem_individual = float(getattr(base, "margem_percentual", 0.0) or 0.0) if base else 0.0
+        if margem_individual > 0:
+            margem_minima = margem_individual
+            calc.margem_minima_origem = "individual"
+        elif margem_minima_padrao > 0:
+            margem_minima = margem_minima_padrao
+            calc.margem_minima_origem = "padrao"
+        else:
+            margem_minima = 0.0
+            calc.margem_minima_origem = ""
+        calc.margem_minima = margem_minima
+
         margem_row = get_margem_vendedor(db, meta.ano, meta.mes, emp_n, vendedor_n) if margem_minima > 0 else None
         if margem_row is not None:
             calc.margem_percentual = float(getattr(margem_row, "margem_percentual", 0.0) or 0.0)

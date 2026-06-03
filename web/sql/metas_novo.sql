@@ -129,3 +129,8 @@ CREATE INDEX IF NOT EXISTS ix_vendas_metas_marca ON vendas (emp, vendedor, marca
 CREATE INDEX IF NOT EXISTS ix_vendas_metas_mestre ON vendas (emp, vendedor, mestre);
 
 CREATE INDEX IF NOT EXISTS ix_metas_programas_emps_ativo ON metas_programas_emps (meta_id, ativo, emp);
+
+-- Margem mínima individual por vendedor:
+-- metas_programas.margem_minima = margem padrão da Meta Crescimento.
+-- metas_bases_manuais.margem_percentual = margem mínima individual opcional por vendedor.
+-- Se metas_bases_manuais.margem_percentual estiver NULL/0, usa a margem padrão da meta.

@@ -120,6 +120,35 @@ def _format_ptbr_percent(value: float) -> str:
     except Exception:
         return "0,00"
 
+def _margem_minima_efetiva(db, meta_id: int | None, emp: str, vendedor: str, margem_padrao: float = 0.0) -> tuple[float, str]:
+    """Retorna (margem mínima efetiva, origem).
+
+    Origem:
+    - individual: cadastrada em Bases dos Vendedores
+    - padrao: regra geral cadastrada na Meta Crescimento
+    - vazio: sem exigência de margem
+    """
+    margem_padrao = float(margem_padrao or 0.0)
+    if meta_id:
+        try:
+            base = (
+                db.query(MetaBaseManual)
+                .filter(
+                    MetaBaseManual.meta_id == int(meta_id),
+                    MetaBaseManual.emp == normalize_emp(emp),
+                    MetaBaseManual.vendedor == normalize_text(vendedor),
+                )
+                .first()
+            )
+            margem_individual = float(getattr(base, "margem_percentual", 0.0) or 0.0) if base else 0.0
+            if margem_individual > 0:
+                return margem_individual, "individual"
+        except Exception:
+            pass
+    if margem_padrao > 0:
+        return margem_padrao, "padrao"
+    return 0.0, ""
+
 
 def _tipo_label(tipo: str) -> str:
     tipo = normalize_text(tipo)
@@ -343,12 +372,17 @@ def admin_metas():
                 venda_mes = query_valor_mes(db, ano, mes, emp_selected, vend)
                 base_valor = float(getattr(base, "base_valor", 0.0) or 0.0) if base else 0.0
                 crescimento_pct = ((venda_mes - base_valor) / base_valor * 100.0) if base_valor > 0 else 0.0
+                margem_individual = float(getattr(base, "margem_percentual", 0.0) or 0.0) if base else 0.0
+                margem_efetiva, margem_origem = _margem_minima_efetiva(db, crescimento_meta.id, emp_selected, vend, margem_minima_ativa)
                 base_rows.append({
                     "emp": emp_selected,
                     "vendedor": vend,
                     "venda_mes": venda_mes,
                     "base_valor": base_valor,
                     "crescimento_pct": crescimento_pct,
+                    "margem_minima_individual": margem_individual,
+                    "margem_minima_efetiva": margem_efetiva,
+                    "margem_minima_origem": margem_origem,
                     "observacao": getattr(base, "observacao", "") if base else "",
                 })
 
@@ -361,11 +395,32 @@ def admin_metas():
             margens_q = margens_q.filter(MetaMargemVendedor.emp == emp_selected)
         if vendedor_selected:
             margens_q = margens_q.filter(MetaMargemVendedor.vendedor == vendedor_selected)
-        margens_rows = margens_q.order_by(MetaMargemVendedor.emp.asc(), MetaMargemVendedor.vendedor.asc()).limit(600).all()
+        margens_rows_db = margens_q.order_by(MetaMargemVendedor.emp.asc(), MetaMargemVendedor.vendedor.asc()).limit(600).all()
+        margens_rows = []
+        crescimento_meta_id = int(crescimento_meta.id) if crescimento_meta else None
+        for r in margens_rows_db:
+            margem_efetiva, margem_origem = _margem_minima_efetiva(
+                db,
+                crescimento_meta_id,
+                normalize_emp(r.emp),
+                normalize_text(r.vendedor),
+                margem_minima_ativa,
+            )
+            margem_atual = float(getattr(r, "margem_percentual", 0.0) or 0.0)
+            margens_rows.append({
+                "emp": normalize_emp(r.emp),
+                "vendedor": normalize_text(r.vendedor),
+                "margem_percentual": margem_atual,
+                "margem_minima_efetiva": margem_efetiva,
+                "margem_minima_origem": margem_origem,
+                "margem_atingida": True if margem_efetiva <= 0 else margem_atual >= margem_efetiva,
+                "importado_em": getattr(r, "importado_em", None),
+                "observacao": getattr(r, "observacao", "") or "",
+            })
 
         margens_pendentes = []
         if emp_selected:
-            margem_keys = {(normalize_emp(r.emp), normalize_text(r.vendedor)) for r in margens_rows}
+            margem_keys = {(normalize_emp(r.get("emp")), normalize_text(r.get("vendedor"))) for r in margens_rows}
             for vend in get_vendedores_para_metas(db, ano, mes, [emp_selected]):
                 key = (emp_selected, normalize_text(vend))
                 if key not in margem_keys:
@@ -809,12 +864,19 @@ def admin_meta_bases(meta_id: int):
             venda_mes = query_valor_mes(db, meta.ano, meta.mes, emp_selected, vend)
             base_valor = float(getattr(base, "base_valor", 0.0) or 0.0) if base else 0.0
             crescimento_pct = ((venda_mes - base_valor) / base_valor * 100.0) if base_valor > 0 else 0.0
+            margem_individual = float(getattr(base, "margem_percentual", 0.0) or 0.0) if base else 0.0
+            margem_padrao = float(getattr(meta, "margem_minima", 0.0) or 0.0)
+            margem_efetiva = margem_individual if margem_individual > 0 else margem_padrao
+            margem_origem = "individual" if margem_individual > 0 else ("padrao" if margem_padrao > 0 else "")
             linhas.append({
                 "emp": emp_selected,
                 "vendedor": vend,
                 "venda_mes": venda_mes,
                 "base_valor": base_valor,
                 "crescimento_pct": crescimento_pct,
+                "margem_minima_individual": margem_individual,
+                "margem_minima_efetiva": margem_efetiva,
+                "margem_minima_origem": margem_origem,
                 "observacao": getattr(base, "observacao", "") if base else "",
             })
 
@@ -826,6 +888,7 @@ def admin_meta_bases(meta_id: int):
             emps=emps,
             emp_selected=emp_selected,
             linhas=linhas,
+            margem_minima_padrao=float(getattr(meta, "margem_minima", 0.0) or 0.0),
             tipo_label=_tipo_badge,
         )
 
@@ -852,8 +915,9 @@ def admin_meta_bases_salvar(meta_id: int):
                 continue
             vendedor = normalize_text(key.replace("base__", "", 1))
             base_valor = _safe_float(value, 0.0)
+            margem_individual = _safe_float(request.form.get(f"margem__{vendedor}"), 0.0)
             obs = request.form.get(f"obs__{vendedor}") or ""
-            upsert_base_manual(db, meta.id, emp_selected, vendedor, base_valor, obs)
+            upsert_base_manual(db, meta.id, emp_selected, vendedor, base_valor, obs, margem_individual)
             salvos += 1
         db.commit()
 

@@ -655,6 +655,8 @@ class MetaBaseManual(Base):
     vendedor = Column(String(80), nullable=False, index=True)
 
     base_valor = Column(Float, nullable=False, default=0.0)
+    # Margem mínima individual exigida para este vendedor na Meta Crescimento.
+    # Se vazio/zero, o cálculo usa a margem mínima padrão cadastrada na meta.
     margem_percentual = Column(Float, nullable=True)
     bonus_extra_percentual = Column(Float, nullable=True, default=0.0)
     observacao = Column(String(200), nullable=True)

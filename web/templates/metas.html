@@ -79,7 +79,7 @@
                         <div class="metas-detail">Base: {{ (d.base_valor or 0)|brl_rs }}</div>
                         <div class="metas-detail">Cresc.: {{ (d.crescimento_pct or 0)|brl }}% · Prêmio: {{ (d.bonus_percentual or 0)|brl }}%</div>
                         {% if d.margem_minima and d.margem_minima > 0 %}
-                          <div class="metas-detail">Sua margem: {% if d.margem_percentual is not none %}{{ d.margem_percentual|brl }}%{% else %}não importada{% endif %} · Mínima: {{ d.margem_minima|brl }}%</div>
+                          <div class="metas-detail">Sua margem: {% if d.margem_percentual is not none %}{{ d.margem_percentual|brl }}%{% else %}não importada{% endif %} · Mínima: {{ d.margem_minima|brl }}%{% if d.margem_minima_origem %} ({{ 'individual' if d.margem_minima_origem == 'individual' else 'padrão' }}){% endif %}</div>
                           {% if d.bloqueado_margem %}<div class="metas-detail">Faltam {{ d.margem_faltante_pp|brl }} ponto(s) percentuais de margem.</div>{% endif %}
                         {% endif %}
                         {% if d.regra_teto_aplicada %}<span class="metas-chip ok">Faixa máxima por teto</span>{% endif %}
