@@ -1,5 +1,127 @@
 <div class="sv-subcard sv-subcard--full">
-  <table class="sv-subtable sv-subtable--wide">
+  <style>
+    .sv-detail-block{border:1px solid rgba(255,255,255,.10);border-radius:18px;margin:0 0 16px;overflow:hidden;background:rgba(255,255,255,.025)}
+    .sv-detail-block__head{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;padding:14px 16px;border-bottom:1px solid rgba(255,255,255,.08);background:linear-gradient(135deg,rgba(255,143,22,.12),rgba(255,255,255,.02))}
+    .sv-detail-block__title{display:flex;align-items:center;gap:10px;font-weight:900;color:#fff;font-size:15px;letter-spacing:.02em}
+    .sv-detail-block__desc{margin-top:4px;color:rgba(255,255,255,.64);font-size:12px;line-height:1.35}
+    .sv-detail-block__sum{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+    .sv-detail-mini{border:1px solid rgba(255,255,255,.10);border-radius:999px;padding:6px 10px;background:rgba(0,0,0,.28);font-size:12px;color:rgba(255,255,255,.76);white-space:nowrap}
+    .sv-detail-mini strong{color:#fff;margin-left:4px}
+    .sv-detail-block--gerente .sv-detail-block__head{background:linear-gradient(135deg,rgba(16,185,129,.13),rgba(255,255,255,.02))}
+    .sv-detail-block--metas .sv-detail-block__head{background:linear-gradient(135deg,rgba(59,130,246,.13),rgba(255,255,255,.02))}
+    .sv-detail-empty{padding:14px 16px;color:rgba(255,255,255,.58);font-size:13px}
+    @media (max-width: 900px){.sv-detail-block__head{display:block}.sv-detail-block__sum{justify-content:flex-start;margin-top:10px}}
+  </style>
+
+  {% set campanhas_lista = g.campanhas if g.campanhas is defined and g.campanhas else [] %}
+  {% set totals = namespace(vendeu=0, premio=0, potencial=0, vendedor=0, gerente=0, metas=0) %}
+
+  {% macro render_linha(c, idx, bloco, emp, vendedor) %}
+    {% set tipo_atual = (c.tipo if c.tipo is defined and c.tipo else '') %}
+    {% set potencial_atual = c.premio_potencial if c.premio_potencial is defined and c.premio_potencial is not none else (c.valor or 0) %}
+    {% if tipo_atual == 'COMBO_CARD' %}
+      {% set combo_dom_id = 'sv-combo-' ~ (bloco or 'bloco') ~ '-' ~ (emp|replace(' ', '_')) ~ '-' ~ (vendedor|replace(' ', '_')) ~ '-' ~ idx ~ '-' ~ (c.origem_id or 0) %}
+      <tr class="sv-combo-head">
+        <td>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+            <span class="sv-typechip sv-typechip--soft {{ c.tipo_class or 'sv-type--outros' }}">{{ c.tipo_label or c.tipo or 'COMBO' }}</span>
+            <button type="button"
+                    class="sv-combo-toggle js-toggle-combo"
+                    data-target="{{ combo_dom_id }}"
+                    data-detail-url="{{ c.detail_url or '' }}"
+                    aria-expanded="false">
+              {{ c.titulo }}
+              <span class="sv-muted"> • ver itens</span>
+              <span class="sv-chev" aria-hidden="true">▾</span>
+            </button>
+          </div>
+        </td>
+        <td class="sv-center">-</td>
+        <td class="sv-right">-</td>
+        <td class="sv-center">-</td>
+        <td class="sv-right">{{ (c.vendeu_rs or 0)|brl_rs }}</td>
+        <td class="sv-right">{{ (c.valor or 0)|brl_rs }}</td>
+        <td class="sv-right">{{ potencial_atual|brl_rs }}</td>
+        <td class="sv-center"><span class="sv-pill">-</span></td>
+        <td class="sv-center">
+          {% if c.atingiu %}
+            <span class="sv-pill sv-pill--ok">ATINGIU</span>
+          {% else %}
+            <span class="sv-pill sv-pill--warn">NÃO ATINGIU</span>
+          {% endif %}
+        </td>
+      </tr>
+    {% else %}
+      <tr>
+        <td>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+            <span class="sv-typechip sv-typechip--soft {{ c.tipo_class or 'sv-type--outros' }}">{{ c.tipo_label or c.tipo or 'CAMPANHA' }}</span>
+            <span class="sv-nowrap">{{ c.titulo }}</span>
+          </div>
+          {% if c.item_codigo %}
+            <div class="sv-muted sv-small" style="margin-top:4px;">Código: {{ c.item_codigo }}</div>
+          {% endif %}
+        </td>
+        <td class="sv-center">{{ c.qtd_minima_label if c.qtd_minima_label is defined and c.qtd_minima_label else (c.qtd_minima or '-') }}</td>
+        <td class="sv-right">
+          {% if c.recompensa_label is defined and c.recompensa_label %}
+            {{ c.recompensa_label }}
+          {% else %}
+            {{ (c.recompensa_unit or 0)|brl_rs }}
+          {% endif %}
+        </td>
+        <td class="sv-center">{{ c.qtd_vendida_label if c.qtd_vendida_label is defined and c.qtd_vendida_label else (c.qtd_vendida or 0) }}</td>
+        <td class="sv-right">{{ (c.vendeu_rs or 0)|brl_rs }}</td>
+        <td class="sv-right">{{ (c.valor or 0)|brl_rs }}</td>
+        <td class="sv-right">{{ potencial_atual|brl_rs }}</td>
+        <td class="sv-center">
+          {% if c.tipo_key is defined and c.tipo_key == 'META' %}
+            {% if c.bloqueado_minimo %}
+              <span class="sv-pill sv-pill--warn">FAT. MÍN.</span>
+              <div class="sv-muted sv-small">Mín. {{ (c.faturamento_minimo_meta or 0)|brl_rs }}</div>
+            {% elif c.faturamento_minimo_meta %}
+              <span class="sv-pill sv-pill--ok">FAT. OK</span>
+            {% endif %}
+
+            {% if c.margem_minima %}
+              {% if c.bloqueado_margem %}
+                <span class="sv-pill sv-pill--warn" style="margin-top:4px;">MARGEM ABAIXO</span>
+              {% else %}
+                <span class="sv-pill sv-pill--ok" style="margin-top:4px;">MARGEM OK</span>
+              {% endif %}
+              <div class="sv-muted sv-small" style="margin-top:4px;">
+                Atual: {{ c.margem_percentual_label or 'sem margem' }} · Exigida: {{ c.margem_minima_label }}
+              </div>
+              <div class="sv-muted sv-small">Origem: {{ c.margem_origem_label or '—' }}</div>
+              {% if c.bloqueado_margem %}
+                <div class="sv-muted sv-small">Faltam {{ c.margem_faltante_label }} p.p.</div>
+              {% endif %}
+            {% elif not c.faturamento_minimo_meta %}
+              <span class="sv-pill">SEM TRAVA</span>
+            {% endif %}
+          {% else %}
+            {% if c.bloqueado_faturamento_emp %}
+              <span class="sv-pill sv-pill--warn">EMP ABAIXO</span>
+              <div class="sv-muted sv-small">Faltam {{ (c.faltante_faturamento_emp or 0)|brl_rs }}</div>
+            {% elif c.faturamento_minimo_emp %}
+              <span class="sv-pill sv-pill--ok">LIBERADA</span>
+            {% else %}
+              <span class="sv-pill">SEM TRAVA</span>
+            {% endif %}
+          {% endif %}
+        </td>
+        <td class="sv-center">
+          {% if c.atingiu %}
+            <span class="sv-pill sv-pill--ok">ATINGIU</span>
+          {% else %}
+            <span class="sv-pill sv-pill--warn">NÃO ATINGIU</span>
+          {% endif %}
+        </td>
+      </tr>
+    {% endif %}
+  {% endmacro %}
+
+  {% macro cabecalho_tabela() %}
     <thead>
       <tr>
         <th>Campanha / Item</th>
@@ -13,129 +135,170 @@
         <th class="sv-center">Status</th>
       </tr>
     </thead>
-    <tbody>
-      {% set totals = namespace(vendeu=0, premio=0, potencial=0) %}
-      {% if g.campanhas and g.campanhas|length > 0 %}
-        {% for c in g.campanhas %}
-          {% if (c.tipo or '') == 'COMBO_CARD' %}
-            {% set combo_dom_id = 'sv-combo-' ~ (g.emp|replace(' ', '_')) ~ '-' ~ (g.vendedor|replace(' ', '_')) ~ '-' ~ loop.index0 ~ '-' ~ (c.origem_id or 0) %}
-            {% set totals.vendeu = totals.vendeu + (c.vendeu_rs or 0) %}
-            {% set totals.premio = totals.premio + (c.valor or 0) %}
-            {% set totals.potencial = totals.potencial + (c.premio_potencial if c.premio_potencial is defined and c.premio_potencial is not none else (c.valor or 0)) %}
-            <tr class="sv-combo-head">
-              <td>
-                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-                  <span class="sv-typechip sv-typechip--soft {{ c.tipo_class or 'sv-type--outros' }}">{{ c.tipo_label or c.tipo or 'COMBO' }}</span>
-                  <button type="button"
-                          class="sv-combo-toggle js-toggle-combo"
-                          data-target="{{ combo_dom_id }}"
-                          data-detail-url="{{ c.detail_url or '' }}"
-                          aria-expanded="false">
-                    {{ c.titulo }}
-                    <span class="sv-muted"> • ver itens</span>
-                    <span class="sv-chev" aria-hidden="true">▾</span>
-                  </button>
-                </div>
-              </td>
-              <td class="sv-center">-</td>
-              <td class="sv-right">-</td>
-              <td class="sv-center">-</td>
-              <td class="sv-right">{{ (c.vendeu_rs or 0)|brl_rs }}</td>
-              <td class="sv-right">{{ (c.valor or 0)|brl_rs }}</td>
-              <td class="sv-right">{{ (c.premio_potencial if c.premio_potencial is defined and c.premio_potencial is not none else (c.valor or 0))|brl_rs }}</td>
-              <td class="sv-center"><span class="sv-pill">-</span></td>
-              <td class="sv-center">
-                {% if c.atingiu %}
-                  <span class="sv-pill sv-pill--ok">ATINGIU</span>
-                {% else %}
-                  <span class="sv-pill sv-pill--warn">NÃO ATINGIU</span>
-                {% endif %}
-              </td>
-            </tr>
-          {% else %}
-            {% set totals.vendeu = totals.vendeu + (c.vendeu_rs or 0) %}
-            {% set totals.premio = totals.premio + (c.valor or 0) %}
-            {% set totals.potencial = totals.potencial + (c.premio_potencial if c.premio_potencial is defined and c.premio_potencial is not none else (c.valor or 0)) %}
-            <tr>
-              <td>
-                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-                  <span class="sv-typechip sv-typechip--soft {{ c.tipo_class or 'sv-type--outros' }}">{{ c.tipo_label or c.tipo or 'CAMPANHA' }}</span>
-                  <span class="sv-nowrap">{{ c.titulo }}</span>
-                </div>
-                {% if c.item_codigo %}
-                  <div class="sv-muted sv-small" style="margin-top:4px;">Código: {{ c.item_codigo }}</div>
-                {% endif %}
-              </td>
-              <td class="sv-center">{{ c.qtd_minima_label if c.qtd_minima_label is defined and c.qtd_minima_label else (c.qtd_minima or '-') }}</td>
-              <td class="sv-right">
-                {% if c.recompensa_label is defined and c.recompensa_label %}
-                  {{ c.recompensa_label }}
-                {% else %}
-                  {{ (c.recompensa_unit or 0)|brl_rs }}
-                {% endif %}
-              </td>
-              <td class="sv-center">{{ c.qtd_vendida_label if c.qtd_vendida_label is defined and c.qtd_vendida_label else (c.qtd_vendida or 0) }}</td>
-              <td class="sv-right">{{ (c.vendeu_rs or 0)|brl_rs }}</td>
-              <td class="sv-right">{{ (c.valor or 0)|brl_rs }}</td>
-              <td class="sv-right">{{ (c.premio_potencial if c.premio_potencial is defined and c.premio_potencial is not none else (c.valor or 0))|brl_rs }}</td>
-              <td class="sv-center">
-                {% if c.tipo_key == 'META' %}
-                  {% if c.bloqueado_minimo %}
-                    <span class="sv-pill sv-pill--warn">FAT. MÍN.</span>
-                    <div class="sv-muted sv-small">Mín. {{ (c.faturamento_minimo_meta or 0)|brl_rs }}</div>
-                  {% elif c.faturamento_minimo_meta %}
-                    <span class="sv-pill sv-pill--ok">FAT. OK</span>
-                  {% endif %}
+  {% endmacro %}
 
-                  {% if c.margem_minima %}
-                    {% if c.bloqueado_margem %}
-                      <span class="sv-pill sv-pill--warn" style="margin-top:4px;">MARGEM ABAIXO</span>
-                    {% else %}
-                      <span class="sv-pill sv-pill--ok" style="margin-top:4px;">MARGEM OK</span>
-                    {% endif %}
-                    <div class="sv-muted sv-small" style="margin-top:4px;">
-                      Atual: {{ c.margem_percentual_label or 'sem margem' }} · Exigida: {{ c.margem_minima_label }}
-                    </div>
-                    <div class="sv-muted sv-small">Origem: {{ c.margem_origem_label or '—' }}</div>
-                    {% if c.bloqueado_margem %}
-                      <div class="sv-muted sv-small">Faltam {{ c.margem_faltante_label }} p.p.</div>
-                    {% endif %}
-                  {% elif not c.faturamento_minimo_meta %}
-                    <span class="sv-pill">SEM TRAVA</span>
-                  {% endif %}
-                {% else %}
-                  {% if c.bloqueado_faturamento_emp %}
-                    <span class="sv-pill sv-pill--warn">EMP ABAIXO</span>
-                    <div class="sv-muted sv-small">Faltam {{ (c.faltante_faturamento_emp or 0)|brl_rs }}</div>
-                  {% elif c.faturamento_minimo_emp %}
-                    <span class="sv-pill sv-pill--ok">LIBERADA</span>
-                  {% else %}
-                    <span class="sv-pill">SEM TRAVA</span>
-                  {% endif %}
-                {% endif %}
-              </td>
-              <td class="sv-center">
-                {% if c.atingiu %}
-                  <span class="sv-pill sv-pill--ok">ATINGIU</span>
-                {% else %}
-                  <span class="sv-pill sv-pill--warn">NÃO ATINGIU</span>
-                {% endif %}
-              </td>
-            </tr>
+  <div class="sv-detail-block sv-detail-block--campanhas">
+    <div class="sv-detail-block__head">
+      <div>
+        <div class="sv-detail-block__title">📦 Campanhas do vendedor</div>
+        <div class="sv-detail-block__desc">Premiações calculadas somente sobre as vendas próprias do vendedor.</div>
+      </div>
+      <div class="sv-detail-block__sum">
+        {% set sec = namespace(has=false, vendeu=0, premio=0, potencial=0, count=0) %}
+        {% for c in campanhas_lista %}
+          {% set tipo_key = (c.tipo_key if c.tipo_key is defined and c.tipo_key else (c.tipo if c.tipo is defined and c.tipo else ''))|upper %}
+          {% set tipo_label = (c.tipo_label if c.tipo_label is defined and c.tipo_label else tipo_key)|upper %}
+          {% set is_gerente = tipo_key == 'GERENTE' or tipo_label == 'GERENTE' %}
+          {% set is_meta = tipo_key == 'META' or tipo_label == 'META' or tipo_key[:4] == 'META' %}
+          {% if not is_gerente and not is_meta %}
+            {% set sec.has = true %}
+            {% set sec.count = sec.count + 1 %}
+            {% set sec.vendeu = sec.vendeu + (c.vendeu_rs or 0) %}
+            {% set sec.premio = sec.premio + (c.valor or 0) %}
+            {% set sec.potencial = sec.potencial + (c.premio_potencial if c.premio_potencial is defined and c.premio_potencial is not none else (c.valor or 0)) %}
           {% endif %}
         {% endfor %}
-      {% else %}
-        <tr>
-          <td colspan="9" class="sv-muted">Sem campanhas para este vendedor.</td>
-        </tr>
-      {% endif %}
-    </tbody>
-  </table>
+        <span class="sv-detail-mini">Itens <strong>{{ sec.count }}</strong></span>
+        <span class="sv-detail-mini">Liberado <strong>{{ sec.premio|brl_rs }}</strong></span>
+        <span class="sv-detail-mini">Potencial <strong>{{ sec.potencial|brl_rs }}</strong></span>
+      </div>
+    </div>
+    {% if sec.has %}
+      <table class="sv-subtable sv-subtable--wide">
+        {{ cabecalho_tabela() }}
+        <tbody>
+          {% for c in campanhas_lista %}
+            {% set tipo_key = (c.tipo_key if c.tipo_key is defined and c.tipo_key else (c.tipo if c.tipo is defined and c.tipo else ''))|upper %}
+            {% set tipo_label = (c.tipo_label if c.tipo_label is defined and c.tipo_label else tipo_key)|upper %}
+            {% set is_gerente = tipo_key == 'GERENTE' or tipo_label == 'GERENTE' %}
+            {% set is_meta = tipo_key == 'META' or tipo_label == 'META' or tipo_key[:4] == 'META' %}
+            {% if not is_gerente and not is_meta %}
+              {% set totals.vendeu = totals.vendeu + (c.vendeu_rs or 0) %}
+              {% set totals.premio = totals.premio + (c.valor or 0) %}
+              {% set totals.potencial = totals.potencial + (c.premio_potencial if c.premio_potencial is defined and c.premio_potencial is not none else (c.valor or 0)) %}
+              {% set totals.vendedor = totals.vendedor + (c.valor or 0) %}
+              {{ render_linha(c, loop.index0, 'campanhas', g.emp, g.vendedor) }}
+            {% endif %}
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <div class="sv-detail-empty">Sem campanhas próprias para este vendedor no período.</div>
+    {% endif %}
+  </div>
+
+  <div class="sv-detail-block sv-detail-block--gerente">
+    <div class="sv-detail-block__head">
+      <div>
+        <div class="sv-detail-block__title">🏬 Campanhas como gerente</div>
+        <div class="sv-detail-block__desc">Premiações calculadas sobre o total vendido pela loja/EMP, independente do vendedor da venda.</div>
+      </div>
+      <div class="sv-detail-block__sum">
+        {% set sec_g = namespace(has=false, vendeu=0, premio=0, potencial=0, count=0) %}
+        {% for c in campanhas_lista %}
+          {% set tipo_key = (c.tipo_key if c.tipo_key is defined and c.tipo_key else (c.tipo if c.tipo is defined and c.tipo else ''))|upper %}
+          {% set tipo_label = (c.tipo_label if c.tipo_label is defined and c.tipo_label else tipo_key)|upper %}
+          {% set is_gerente = tipo_key == 'GERENTE' or tipo_label == 'GERENTE' %}
+          {% if is_gerente %}
+            {% set sec_g.has = true %}
+            {% set sec_g.count = sec_g.count + 1 %}
+            {% set sec_g.vendeu = sec_g.vendeu + (c.vendeu_rs or 0) %}
+            {% set sec_g.premio = sec_g.premio + (c.valor or 0) %}
+            {% set sec_g.potencial = sec_g.potencial + (c.premio_potencial if c.premio_potencial is defined and c.premio_potencial is not none else (c.valor or 0)) %}
+          {% endif %}
+        {% endfor %}
+        <span class="sv-detail-mini">Itens <strong>{{ sec_g.count }}</strong></span>
+        <span class="sv-detail-mini">Liberado <strong>{{ sec_g.premio|brl_rs }}</strong></span>
+        <span class="sv-detail-mini">Potencial <strong>{{ sec_g.potencial|brl_rs }}</strong></span>
+      </div>
+    </div>
+    {% if sec_g.has %}
+      <table class="sv-subtable sv-subtable--wide">
+        {{ cabecalho_tabela() }}
+        <tbody>
+          {% for c in campanhas_lista %}
+            {% set tipo_key = (c.tipo_key if c.tipo_key is defined and c.tipo_key else (c.tipo if c.tipo is defined and c.tipo else ''))|upper %}
+            {% set tipo_label = (c.tipo_label if c.tipo_label is defined and c.tipo_label else tipo_key)|upper %}
+            {% set is_gerente = tipo_key == 'GERENTE' or tipo_label == 'GERENTE' %}
+            {% if is_gerente %}
+              {% set totals.vendeu = totals.vendeu + (c.vendeu_rs or 0) %}
+              {% set totals.premio = totals.premio + (c.valor or 0) %}
+              {% set totals.potencial = totals.potencial + (c.premio_potencial if c.premio_potencial is defined and c.premio_potencial is not none else (c.valor or 0)) %}
+              {% set totals.gerente = totals.gerente + (c.valor or 0) %}
+              {{ render_linha(c, loop.index0, 'gerente', g.emp, g.vendedor) }}
+            {% endif %}
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <div class="sv-detail-empty">Sem campanhas de gerente para este usuário no período.</div>
+    {% endif %}
+  </div>
+
+  <div class="sv-detail-block sv-detail-block--metas">
+    <div class="sv-detail-block__head">
+      <div>
+        <div class="sv-detail-block__title">🎯 Metas</div>
+        <div class="sv-detail-block__desc">Crescimento, Mix e Marcas, respeitando faturamento mínimo, margem e regras cadastradas em /admin/metas.</div>
+      </div>
+      <div class="sv-detail-block__sum">
+        {% set sec_m = namespace(has=false, vendeu=0, premio=0, potencial=0, count=0) %}
+        {% for c in campanhas_lista %}
+          {% set tipo_key = (c.tipo_key if c.tipo_key is defined and c.tipo_key else (c.tipo if c.tipo is defined and c.tipo else ''))|upper %}
+          {% set tipo_label = (c.tipo_label if c.tipo_label is defined and c.tipo_label else tipo_key)|upper %}
+          {% set is_meta = tipo_key == 'META' or tipo_label == 'META' or tipo_key[:4] == 'META' %}
+          {% if is_meta %}
+            {% set sec_m.has = true %}
+            {% set sec_m.count = sec_m.count + 1 %}
+            {% set sec_m.vendeu = sec_m.vendeu + (c.vendeu_rs or 0) %}
+            {% set sec_m.premio = sec_m.premio + (c.valor or 0) %}
+            {% set sec_m.potencial = sec_m.potencial + (c.premio_potencial if c.premio_potencial is defined and c.premio_potencial is not none else (c.valor or 0)) %}
+          {% endif %}
+        {% endfor %}
+        <span class="sv-detail-mini">Itens <strong>{{ sec_m.count }}</strong></span>
+        <span class="sv-detail-mini">Liberado <strong>{{ sec_m.premio|brl_rs }}</strong></span>
+        <span class="sv-detail-mini">Potencial <strong>{{ sec_m.potencial|brl_rs }}</strong></span>
+      </div>
+    </div>
+    {% if sec_m.has %}
+      <table class="sv-subtable sv-subtable--wide">
+        {{ cabecalho_tabela() }}
+        <tbody>
+          {% for c in campanhas_lista %}
+            {% set tipo_key = (c.tipo_key if c.tipo_key is defined and c.tipo_key else (c.tipo if c.tipo is defined and c.tipo else ''))|upper %}
+            {% set tipo_label = (c.tipo_label if c.tipo_label is defined and c.tipo_label else tipo_key)|upper %}
+            {% set is_meta = tipo_key == 'META' or tipo_label == 'META' or tipo_key[:4] == 'META' %}
+            {% if is_meta %}
+              {% set totals.vendeu = totals.vendeu + (c.vendeu_rs or 0) %}
+              {% set totals.premio = totals.premio + (c.valor or 0) %}
+              {% set totals.potencial = totals.potencial + (c.premio_potencial if c.premio_potencial is defined and c.premio_potencial is not none else (c.valor or 0)) %}
+              {% set totals.metas = totals.metas + (c.valor or 0) %}
+              {{ render_linha(c, loop.index0, 'metas', g.emp, g.vendedor) }}
+            {% endif %}
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <div class="sv-detail-empty">Sem metas para este vendedor no período.</div>
+    {% endif %}
+  </div>
+
+  {% if not campanhas_lista %}
+    <div class="sv-detail-empty">Sem campanhas para este vendedor.</div>
+  {% endif %}
 
   <div class="sv-subtotals">
     <div class="sv-subtotals__line">
-      <span>Total vendido em campanhas:</span>
-      <strong>{{ totals.vendeu|brl_rs }}</strong>
+      <span>Total como vendedor:</span>
+      <strong>{{ totals.vendedor|brl_rs }}</strong>
+    </div>
+    <div class="sv-subtotals__line">
+      <span>Total como gerente:</span>
+      <strong>{{ totals.gerente|brl_rs }}</strong>
+    </div>
+    <div class="sv-subtotals__line">
+      <span>Total em metas:</span>
+      <strong>{{ totals.metas|brl_rs }}</strong>
     </div>
     <div class="sv-subtotals__line">
       <span>Total premiação liberada:</span>
@@ -148,6 +311,6 @@
   </div>
 
   <div class="sv-note">
-    Obs.: “Valor liberado” mostra a premiação efetiva do período. “Potencial” mostra o valor acumulado que poderá ser liberado quando a EMP atingir o faturamento mínimo configurado ou quando a margem mínima individual/padrão for atingida. Em campanhas do tipo combo, a recompensa só é liberada quando todos os requisitos do combo forem atingidos. Em Itens Parados, a coluna “Qtd vendida” representa os pontos do período e “Recomp. (R$/un)” representa o valor por ponto. “Vendeu (R$)” = soma do valor total vendido dos itens da campanha na competência. Em Itens Parados, a premiação base considera apenas os pontos fechados para baixo, e faixas extras entram conforme a configuração da EMP ou do escopo global. Em Metas, a linha representa Crescimento, Mix ou Marcas conforme a regra cadastrada em /admin/metas, respeitando faturamento mínimo e EMPs ativas.
+    Obs.: “Campanhas do vendedor” mostra apenas premiações pelas vendas próprias. “Campanhas como gerente” mostra premiações calculadas sobre o total vendido pela loja/EMP, independente de quem realizou a venda. “Valor liberado” mostra a premiação efetiva do período. “Potencial” mostra o valor acumulado que poderá ser liberado quando a EMP atingir o faturamento mínimo configurado ou quando a margem mínima individual/padrão for atingida. Em campanhas do tipo combo, a recompensa só é liberada quando todos os requisitos do combo forem atingidos. Em Itens Parados, a coluna “Qtd vendida” representa os pontos do período e “Recomp. (R$/un)” representa o valor por ponto. “Vendeu (R$)” = soma do valor total vendido dos itens da campanha na competência. Em Metas, a linha representa Crescimento, Mix ou Marcas conforme a regra cadastrada em /admin/metas.
   </div>
 </div>
