@@ -10,8 +10,11 @@ from __future__ import annotations
 
 import re
 from datetime import date, datetime
+from io import BytesIO
+import unicodedata
 
-from flask import flash, redirect, render_template, request, session, url_for
+import pandas as pd
+from flask import flash, redirect, render_template, request, send_file, session, url_for
 from sqlalchemy import func, text
 
 from auth_helpers import _allowed_emps, _emp, _login_required, _role
@@ -20,17 +23,11 @@ from db import (
     MetaBaseManual,
     MetaEscala,
     MetaMarca,
+    MetaMargemVendedor,
     MetaPrograma,
     MetaProgramaEmp,
     SessionLocal,
     ensure_metas_lojas_schema,
-)
-from services.visao_operacional import (
-    filter_emps_by_status,
-    get_fechamento_status_map,
-    is_emp_period_open,
-    normalize_status_filter,
-    status_filter_label,
 )
 from metas_helpers import (
     calcular_meta,
@@ -38,6 +35,7 @@ from metas_helpers import (
     get_meta_emps,
     get_meta_escalas,
     get_meta_marcas,
+    get_margem_vendedor,
     get_vendedores_para_metas,
     metas_ativas_periodo,
     montar_resultados_periodo,
@@ -61,6 +59,8 @@ def register_metas_routes(app) -> None:
     app.add_url_rule("/admin/metas/recalcular", endpoint="admin_metas_recalcular", view_func=admin_metas_recalcular, methods=["POST"])
     app.add_url_rule("/admin/metas/bases/<int:meta_id>", endpoint="admin_meta_bases", view_func=admin_meta_bases, methods=["GET"])
     app.add_url_rule("/admin/metas/bases/<int:meta_id>/salvar", endpoint="admin_meta_bases_salvar", view_func=admin_meta_bases_salvar, methods=["POST"])
+    app.add_url_rule("/admin/metas/margens/modelo", endpoint="admin_metas_margens_modelo", view_func=admin_metas_margens_modelo, methods=["GET"])
+    app.add_url_rule("/admin/metas/margens/importar", endpoint="admin_metas_margens_importar", view_func=admin_metas_margens_importar, methods=["POST"])
 
 
 def _safe_int(v, default):
@@ -91,6 +91,34 @@ def _safe_float(v, default=0.0):
         return float(s)
     except Exception:
         return default
+
+
+def _norm_col_name(value: object) -> str:
+    raw = str(value or "").strip().upper()
+    raw = "".join(ch for ch in unicodedata.normalize("NFKD", raw) if not unicodedata.combining(ch))
+    return re.sub(r"[^A-Z0-9]", "", raw)
+
+
+def _parse_margem_percentual(value, default=None):
+    if value is None:
+        return default
+    raw = str(value).strip()
+    if not raw or raw.lower() in ("nan", "none", "null"):
+        return default
+    raw = raw.replace("%", "").replace(" ", "")
+    try:
+        if "," in raw:
+            raw = raw.replace(".", "").replace(",", ".")
+        return float(raw)
+    except Exception:
+        return default
+
+
+def _format_ptbr_percent(value: float) -> str:
+    try:
+        return f"{float(value):.2f}".replace(".", ",")
+    except Exception:
+        return "0,00"
 
 
 def _tipo_label(tipo: str) -> str:
@@ -207,7 +235,6 @@ def metas():
         return red
 
     ano, mes = _period_from_request()
-    status_visao = normalize_status_filter(request.args.get("status"), default="abertas")
     role = (_role() or "").lower()
     usuario = normalize_text(session.get("usuario"))
 
@@ -240,11 +267,6 @@ def metas():
             if vendedor_filtro and vendedor_filtro not in vendedores_choices:
                 vendedor_filtro = ""
 
-        status_map = get_fechamento_status_map(db, ano, mes)
-        if status_visao != "todas":
-            base_status_emps = emps_calc or emps_choices
-            emps_calc = filter_emps_by_status(base_status_emps, status_visao, status_map)
-
         metas_list, resultados = montar_resultados_periodo(
             db,
             ano,
@@ -268,8 +290,6 @@ def metas():
             emp=_emp(),
             ano=ano,
             mes=mes,
-            status_visao=status_visao,
-            status_label=status_filter_label(status_visao),
             emp_filtro=emp_filtro,
             vendedor_filtro=vendedor_filtro,
             emps_choices=emps_choices,
@@ -289,7 +309,6 @@ def admin_metas():
         return red
 
     ano, mes = _period_from_request()
-    status_visao = normalize_status_filter(request.args.get("status"), default="abertas")
     emp_selected = normalize_emp(request.args.get("emp_sel"))
     vendedor_selected = normalize_text(request.args.get("vendedor"))
 
@@ -299,28 +318,13 @@ def admin_metas():
         if emp_selected and emp_selected not in set(emps_codes):
             emp_selected = ""
 
-        status_map = get_fechamento_status_map(db, ano, mes)
-        metas_db_all = (
+        metas_db = (
             db.query(MetaPrograma)
             .filter(MetaPrograma.ano == ano, MetaPrograma.mes == mes)
             .order_by(MetaPrograma.tipo.asc(), MetaPrograma.nome.asc(), MetaPrograma.id.asc())
             .all()
         )
-        metas_payload_all = [_meta_payload(db, m) for m in metas_db_all]
-
-        def _payload_operacional_aberto(payload):
-            meta_obj = payload.get("meta")
-            if not bool(getattr(meta_obj, "ativo", False)):
-                return False
-            return any(is_emp_period_open(status_map, e) for e in (payload.get("emps") or []))
-
-        if status_visao == "abertas":
-            metas_payload = [p for p in metas_payload_all if _payload_operacional_aberto(p)]
-        elif status_visao == "encerradas":
-            metas_payload = [p for p in metas_payload_all if not _payload_operacional_aberto(p)]
-        else:
-            metas_payload = metas_payload_all
-        metas_db = [p["meta"] for p in metas_payload]
+        metas_payload = [_meta_payload(db, m) for m in metas_db]
 
         crescimento_meta = next((p["meta"] for p in metas_payload if normalize_text(p["meta"].tipo) == "CRESCIMENTO" and p["meta"].ativo), None)
         base_rows = []
@@ -348,11 +352,23 @@ def admin_metas():
                 })
 
         sim_emps = [emp_selected] if emp_selected else []
-        if status_visao != "todas":
-            sim_base_emps = sim_emps or emps_codes
-            sim_emps = filter_emps_by_status(sim_base_emps, status_visao, status_map)
         sim_vendedor = vendedor_selected if vendedor_selected else None
         metas_sim, resultados_sim = montar_resultados_periodo(db, ano, mes, emps=sim_emps, vendedor=sim_vendedor, persist=False)
+
+        margens_q = db.query(MetaMargemVendedor).filter(MetaMargemVendedor.ano == ano, MetaMargemVendedor.mes == mes)
+        if emp_selected:
+            margens_q = margens_q.filter(MetaMargemVendedor.emp == emp_selected)
+        if vendedor_selected:
+            margens_q = margens_q.filter(MetaMargemVendedor.vendedor == vendedor_selected)
+        margens_rows = margens_q.order_by(MetaMargemVendedor.emp.asc(), MetaMargemVendedor.vendedor.asc()).limit(600).all()
+
+        margens_pendentes = []
+        if emp_selected:
+            margem_keys = {(normalize_emp(r.emp), normalize_text(r.vendedor)) for r in margens_rows}
+            for vend in get_vendedores_para_metas(db, ano, mes, [emp_selected]):
+                key = (emp_selected, normalize_text(vend))
+                if key not in margem_keys:
+                    margens_pendentes.append({"emp": emp_selected, "vendedor": normalize_text(vend)})
 
         totais = {
             "metas": len(metas_db),
@@ -360,6 +376,8 @@ def admin_metas():
             "bases": sum(int(p["bases_count"] or 0) for p in metas_payload),
             "premio_simulado": round(sum(float(r.get("total_premios") or 0.0) for r in resultados_sim), 2),
             "vendedores_simulados": len(resultados_sim),
+            "margens": len(margens_rows),
+            "margens_pendentes": len(margens_pendentes),
         }
 
         return render_template(
@@ -368,8 +386,6 @@ def admin_metas():
             emp=_emp(),
             ano=ano,
             mes=mes,
-            status_visao=status_visao,
-            status_label=status_filter_label(status_visao),
             emp_selected=emp_selected,
             vendedor_selected=vendedor_selected,
             emps_rows=emps_rows,
@@ -379,6 +395,8 @@ def admin_metas():
             vendedores_choices=get_vendedores_para_metas(db, ano, mes, [emp_selected] if emp_selected else emps_codes),
             metas_sim=metas_sim,
             resultados_sim=resultados_sim,
+            margens_rows=margens_rows,
+            margens_pendentes=margens_pendentes,
             totais=totais,
             tipo_label=_tipo_label,
             tipo_badge=_tipo_badge,
@@ -398,6 +416,7 @@ def admin_metas_criar():
     escalas = _parse_escalas(request.form.get("escalas"), tipo)
     marcas = _parse_marcas(request.form.get("marcas"))
     teto_faturamento = _safe_float(request.form.get("teto_faturamento"), 0.0)
+    margem_minima = _safe_float(request.form.get("margem_minima"), 0.0)
     faturamento_minimo = _safe_float(request.form.get("faturamento_minimo"), 70000.0)
 
     if tipo not in TIPOS_META:
@@ -422,6 +441,7 @@ def admin_metas_criar():
             ativo=True,
             escopo="VENDEDOR",
             faturamento_minimo=faturamento_minimo if faturamento_minimo > 0 else 0.0,
+            margem_minima=margem_minima if tipo == "CRESCIMENTO" and margem_minima > 0 else 0.0,
             # No crescimento, este campo representa a trava: venda >= teto aplica maior faixa.
             teto_faturamento=teto_faturamento if tipo == "CRESCIMENTO" and teto_faturamento > 0 else None,
             teto_bonus_percentual=None,
@@ -509,6 +529,7 @@ def admin_metas_regra_salvar(meta_id: int):
     emp_selected = normalize_emp(request.form.get("emp_sel"))
     vendedor_selected = normalize_text(request.form.get("vendedor"))
     faturamento_minimo = _safe_float(request.form.get("faturamento_minimo"), 0.0)
+    margem_minima = _safe_float(request.form.get("margem_minima"), 0.0)
     teto_faturamento = _safe_float(request.form.get("teto_faturamento"), 0.0)
 
     with SessionLocal() as db:
@@ -519,12 +540,182 @@ def admin_metas_regra_salvar(meta_id: int):
 
         meta.faturamento_minimo = faturamento_minimo if faturamento_minimo > 0 else 0.0
         if normalize_text(meta.tipo) == "CRESCIMENTO":
+            meta.margem_minima = margem_minima if margem_minima > 0 else 0.0
             meta.teto_faturamento = teto_faturamento if teto_faturamento > 0 else None
+        else:
+            meta.margem_minima = 0.0
         db.add(meta)
         db.commit()
 
     flash("Regras da meta atualizadas.", "success")
     return redirect(url_for("admin_metas", ano=ano, mes=mes, emp_sel=emp_selected, vendedor=vendedor_selected))
+
+
+
+def admin_metas_margens_modelo():
+    ensure_metas_lojas_schema()
+    red = _admin_guard()
+    if red:
+        return red
+
+    ano, mes = _period_from_request()
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import Font, PatternFill, Border, Side, Alignment
+        from openpyxl.utils import get_column_letter
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Modelo Margens"
+        headers = ["ANO", "MES", "EMP", "VENDEDOR", "MARGEM_PERCENTUAL", "OBSERVACAO"]
+        ws.append(headers)
+        exemplos = [
+            [ano, mes, "102", "CARLOS_SALDANHA", 8.35, "Margem atual importada"],
+            [ano, mes, "123", "JOAO_MASO", 7.80, "Abaixo da mínima"],
+            [ano, mes, "124", "VENDEDOR_EXEMPLO", -1.20, "Margem negativa também é aceita"],
+        ]
+        for row in exemplos:
+            ws.append(row)
+        header_fill = PatternFill("solid", fgColor="FF8A00")
+        thin = Side(style="thin", color="333333")
+        for cell in ws[1]:
+            cell.font = Font(bold=True, color="1E1200")
+            cell.fill = header_fill
+            cell.alignment = Alignment(horizontal="center")
+            cell.border = Border(top=thin, left=thin, right=thin, bottom=thin)
+        widths = [10, 10, 14, 28, 22, 44]
+        for idx, width in enumerate(widths, start=1):
+            ws.column_dimensions[get_column_letter(idx)].width = width
+        ws.freeze_panes = "A2"
+        ws["H1"] = "Instruções"
+        ws["H1"].font = Font(bold=True)
+        ws["H2"] = "A última margem importada substitui a anterior para ANO+MES+EMP+VENDEDOR."
+        ws["H3"] = "Informe a margem como percentual. Ex.: 8,35 representa 8,35%."
+        ws["H4"] = "Não soma, não acumula e não faz média."
+        ws["H5"] = "VENDEDOR deve bater com o usuário/vendedor do sistema."
+        ws.column_dimensions["H"].width = 72
+        bio = BytesIO()
+        wb.save(bio)
+        bio.seek(0)
+        return send_file(
+            bio,
+            as_attachment=True,
+            download_name=f"modelo_importacao_margens_{mes:02d}_{ano}.xlsx",
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+    except Exception as exc:
+        flash(f"Não foi possível gerar o modelo de margens: {exc}", "danger")
+        return redirect(url_for("admin_metas", ano=ano, mes=mes))
+
+
+def admin_metas_margens_importar():
+    ensure_metas_lojas_schema()
+    red = _admin_guard()
+    if red:
+        return red
+
+    ano_req, mes_req = _period_from_request()
+    arquivo = request.files.get("arquivo_margens")
+    if not arquivo or not arquivo.filename:
+        flash("Selecione uma planilha de margens para importar.", "warning")
+        return redirect(url_for("admin_metas", ano=ano_req, mes=mes_req))
+
+    filename = arquivo.filename or "margens"
+    try:
+        if filename.lower().endswith(".csv"):
+            df = pd.read_csv(arquivo, dtype=str, sep=None, engine="python")
+        else:
+            df = pd.read_excel(arquivo, dtype=str)
+    except Exception as exc:
+        flash(f"Não foi possível ler a planilha de margens: {exc}", "danger")
+        return redirect(url_for("admin_metas", ano=ano_req, mes=mes_req))
+
+    col_map = {_norm_col_name(c): c for c in df.columns}
+    def col(*names):
+        for name in names:
+            key = _norm_col_name(name)
+            if key in col_map:
+                return col_map[key]
+        return None
+
+    c_ano = col("ANO")
+    c_mes = col("MES")
+    c_emp = col("EMP", "EMPRESA", "LOJA")
+    c_vendedor = col("VENDEDOR", "USUARIO", "LOGIN")
+    c_margem = col("MARGEM_PERCENTUAL", "MARGEM", "MARGEM%", "PERCENTUAL_MARGEM")
+    c_obs = col("OBSERVACAO", "OBS", "COMENTARIO")
+
+    if not c_emp or not c_vendedor or not c_margem:
+        flash("Planilha inválida. Colunas obrigatórias: EMP, VENDEDOR e MARGEM_PERCENTUAL. ANO/MES podem vir na planilha ou no filtro.", "danger")
+        return redirect(url_for("admin_metas", ano=ano_req, mes=mes_req))
+
+    upserts: dict[tuple[int, int, str, str], dict] = {}
+    erros: list[str] = []
+    for idx, row in df.iterrows():
+        try:
+            ano = _safe_int(row.get(c_ano), ano_req) if c_ano else ano_req
+            mes = _safe_int(row.get(c_mes), mes_req) if c_mes else mes_req
+            emp_codigo = normalize_emp(row.get(c_emp))
+            vendedor = normalize_text(row.get(c_vendedor))
+            margem = _parse_margem_percentual(row.get(c_margem), None)
+            obs = str(row.get(c_obs) or "").strip()[:240] if c_obs else ""
+            if not (1 <= int(mes) <= 12) or int(ano) <= 2000:
+                raise ValueError("competência inválida")
+            if not emp_codigo or not vendedor:
+                raise ValueError("EMP/VENDEDOR vazio")
+            if margem is None:
+                raise ValueError("margem inválida")
+            upserts[(int(ano), int(mes), emp_codigo, vendedor)] = {
+                "margem": float(margem),
+                "observacao": obs,
+            }
+        except Exception as exc:
+            if len(erros) < 8:
+                erros.append(f"Linha {idx + 2}: {exc}")
+
+    if not upserts:
+        flash("Nenhuma margem válida foi encontrada na planilha. " + (" | ".join(erros) if erros else ""), "danger")
+        return redirect(url_for("admin_metas", ano=ano_req, mes=mes_req))
+
+    importados = 0
+    atualizados = 0
+    agora = datetime.utcnow()
+    usuario = normalize_text(session.get("usuario"))
+    competencias = set()
+    with SessionLocal() as db:
+        for (ano, mes, emp_codigo, vendedor), payload in upserts.items():
+            item = (
+                db.query(MetaMargemVendedor)
+                .filter(
+                    MetaMargemVendedor.ano == ano,
+                    MetaMargemVendedor.mes == mes,
+                    MetaMargemVendedor.emp == emp_codigo,
+                    MetaMargemVendedor.vendedor == vendedor,
+                )
+                .first()
+            )
+            if item:
+                atualizados += 1
+            else:
+                item = MetaMargemVendedor(ano=ano, mes=mes, emp=emp_codigo, vendedor=vendedor)
+                importados += 1
+            item.margem_percentual = float(payload["margem"])
+            item.observacao = payload.get("observacao") or ""
+            item.arquivo_origem = filename[:255]
+            item.importado_por = usuario
+            item.importado_em = agora
+            db.add(item)
+            competencias.add((ano, mes))
+        db.commit()
+
+    msg = f"Margens importadas com sucesso. Novas: {importados}. Atualizadas: {atualizados}."
+    if erros:
+        msg += " Algumas linhas foram ignoradas: " + " | ".join(erros)
+        flash(msg, "warning")
+    else:
+        flash(msg, "success")
+    # Volta para a competência do filtro; se a planilha tinha outra competência, o usuário pode filtrar depois.
+    return redirect(url_for("admin_metas", ano=ano_req, mes=mes_req))
 
 
 def admin_metas_toggle(meta_id: int):

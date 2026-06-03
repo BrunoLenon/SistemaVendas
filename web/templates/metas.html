@@ -17,7 +17,7 @@
     <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
       <div>
         <h1 class="metas-title">🎯 Metas</h1>
-        <div class="metas-sub">Acompanhe suas metas do mês. Por padrão aparecem apenas competências abertas no financeiro; use o filtro de situação para consultar histórico.</div>
+        <div class="metas-sub">Acompanhe suas metas do mês: crescimento sobre base manual, mix de itens únicos e participação das marcas cadastradas. Resultados consideram OA/VV/SV como venda e DS/CA como desconto.</div>
       </div>
       <form class="metas-filter" method="get" action="{{ url_for('metas') }}">
         <div><div class="metas-label">Mês</div><input class="form-control form-control-sm" name="mes" value="{{ '%02d'|format(mes) }}" style="width:86px"></div>
@@ -26,7 +26,6 @@
           <div><div class="metas-label">EMP</div><select class="form-select form-select-sm" name="emp" style="min-width:160px"><option value="">Todas</option>{% for e in emps_choices %}<option value="{{ e }}" {% if emp_filtro==e %}selected{% endif %}>{{ e }}</option>{% endfor %}</select></div>
           <div><div class="metas-label">Vendedor</div><select class="form-select form-select-sm" name="vendedor" style="min-width:220px"><option value="">Todos</option>{% for v in vendedores_choices %}<option value="{{ v }}" {% if vendedor_filtro==v %}selected{% endif %}>{{ v }}</option>{% endfor %}</select></div>
         {% endif %}
-        <div><div class="metas-label">Situação</div><select class="form-select form-select-sm" name="status" style="min-width:145px"><option value="abertas" {% if (status_visao|default('abertas')) == 'abertas' %}selected{% endif %}>Abertas</option><option value="encerradas" {% if (status_visao|default('abertas')) == 'encerradas' %}selected{% endif %}>Histórico</option><option value="todas" {% if (status_visao|default('abertas')) == 'todas' %}selected{% endif %}>Todas</option></select></div>
         <button class="btn btn-sm btn-warning fw-bold px-3">Filtrar</button>
       </form>
     </div>
@@ -34,14 +33,14 @@
       <div class="metas-kpi"><small>Venda analisada</small><strong>{{ totais.venda|brl_rs }}</strong><span>No filtro atual</span></div>
       <div class="metas-kpi"><small>Prêmio parcial</small><strong>{{ totais.premio|brl_rs }}</strong><span>Soma das metas atingidas</span></div>
       <div class="metas-kpi"><small>Vendedores/EMP</small><strong>{{ totais.vendedores }}</strong><span>Linhas calculadas</span></div>
-      <div class="metas-kpi"><small>Metas exibidas</small><strong>{{ totais.metas }}</strong><span>{{ status_label|default('Abertas') }} · {{ '%02d'|format(mes) }}/{{ ano }}</span></div>
+      <div class="metas-kpi"><small>Metas ativas</small><strong>{{ totais.metas }}</strong><span>{{ '%02d'|format(mes) }}/{{ ano }}</span></div>
     </div>
   </section>
 
   {% if metas_list|length == 0 %}
-    <div class="metas-empty">Nenhuma meta encontrada na visão <b>{{ status_label|default('Abertas') }}</b> para {{ '%02d'|format(mes) }}/{{ ano }}.</div>
+    <div class="metas-empty">Nenhuma meta ativa cadastrada para {{ '%02d'|format(mes) }}/{{ ano }}.</div>
   {% elif resultados|length == 0 %}
-    <div class="metas-empty">Nenhum resultado encontrado para a visão <b>{{ status_label|default('Abertas') }}</b>. Para períodos já fechados, use <b>Histórico</b> ou <b>Todas</b>.</div>
+    <div class="metas-empty">Nenhum resultado encontrado para o filtro atual.</div>
   {% else %}
     <section class="metas-card">
       <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
@@ -75,9 +74,14 @@
                     {% if d %}
                       <div class="metas-value">{{ d.premio|brl_rs }}</div>
                       {% if d.bloqueado_minimo %}<div class="metas-warning-text">Mínimo {{ d.faturamento_minimo|brl_rs }} não atingido</div>{% endif %}
+                      {% if d.bloqueado_margem %}<div class="metas-warning-text">Margem mínima {{ (d.margem_minima or 0)|brl }}% não atingida</div>{% endif %}
                       {% if m.tipo == 'CRESCIMENTO' %}
                         <div class="metas-detail">Base: {{ (d.base_valor or 0)|brl_rs }}</div>
                         <div class="metas-detail">Cresc.: {{ (d.crescimento_pct or 0)|brl }}% · Prêmio: {{ (d.bonus_percentual or 0)|brl }}%</div>
+                        {% if d.margem_minima and d.margem_minima > 0 %}
+                          <div class="metas-detail">Margem: {% if d.margem_percentual is not none %}{{ d.margem_percentual|brl }}%{% else %}não importada{% endif %} · Mínima: {{ d.margem_minima|brl }}%</div>
+                          {% if d.bloqueado_margem %}<div class="metas-detail">Faltam {{ d.margem_faltante_pp|brl }} ponto(s) percentuais de margem.</div>{% endif %}
+                        {% endif %}
                         {% if d.regra_teto_aplicada %}<span class="metas-chip ok">Faixa máxima por teto</span>{% endif %}
                       {% elif m.tipo == 'MIX' %}
                         <div class="metas-detail">{{ d.mix_itens_unicos or 0 }} códigos MESTRE únicos</div>

@@ -53,6 +53,20 @@ CREATE TABLE IF NOT EXISTS metas_bases_manuais (
     created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS metas_margens_vendedores (
+    id SERIAL PRIMARY KEY,
+    ano INTEGER NOT NULL,
+    mes INTEGER NOT NULL,
+    emp VARCHAR(30) NOT NULL,
+    vendedor VARCHAR(80) NOT NULL,
+    margem_percentual DOUBLE PRECISION NOT NULL DEFAULT 0,
+    observacao VARCHAR(240),
+    arquivo_origem VARCHAR(255),
+    importado_por VARCHAR(80),
+    importado_em TIMESTAMP NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_meta_margem_vendedor_periodo UNIQUE (ano, mes, emp, vendedor)
+);
+
 CREATE TABLE IF NOT EXISTS metas_resultados (
     id SERIAL PRIMARY KEY,
     meta_id INTEGER NOT NULL,
@@ -66,6 +80,10 @@ CREATE TABLE IF NOT EXISTS metas_resultados (
     mix_itens_unicos DOUBLE PRECISION,
     share_pct DOUBLE PRECISION,
     valor_marcas DOUBLE PRECISION,
+    margem_percentual DOUBLE PRECISION,
+    margem_minima DOUBLE PRECISION,
+    margem_atingida BOOLEAN,
+    bloqueado_margem BOOLEAN NOT NULL DEFAULT FALSE,
     bonus_percentual DOUBLE PRECISION NOT NULL DEFAULT 0,
     premio DOUBLE PRECISION NOT NULL DEFAULT 0,
     calculado_em TIMESTAMP NOT NULL DEFAULT NOW()
@@ -86,6 +104,10 @@ UPDATE metas_programas_emps SET ativo = true WHERE ativo IS NULL;
 ALTER TABLE metas_bases_manuais ADD COLUMN IF NOT EXISTS margem_percentual double precision;
 ALTER TABLE metas_bases_manuais ADD COLUMN IF NOT EXISTS bonus_extra_percentual double precision;
 ALTER TABLE metas_bases_manuais ADD COLUMN IF NOT EXISTS observacao varchar(200);
+ALTER TABLE metas_resultados ADD COLUMN IF NOT EXISTS margem_percentual double precision;
+ALTER TABLE metas_resultados ADD COLUMN IF NOT EXISTS margem_minima double precision;
+ALTER TABLE metas_resultados ADD COLUMN IF NOT EXISTS margem_atingida boolean;
+ALTER TABLE metas_resultados ADD COLUMN IF NOT EXISTS bloqueado_margem boolean NOT NULL DEFAULT false;
 
 CREATE INDEX IF NOT EXISTS ix_metas_programas_periodo ON metas_programas (ano, mes);
 CREATE INDEX IF NOT EXISTS ix_metas_programas_tipo_periodo ON metas_programas (tipo, ano, mes);
@@ -95,6 +117,8 @@ CREATE INDEX IF NOT EXISTS ix_metas_escalas_meta ON metas_escalas (meta_id);
 CREATE INDEX IF NOT EXISTS ix_metas_marcas_meta ON metas_marcas (meta_id);
 CREATE INDEX IF NOT EXISTS ix_metas_marcas_marca ON metas_marcas (marca);
 CREATE INDEX IF NOT EXISTS ix_metas_bases_meta_emp_vendedor ON metas_bases_manuais (meta_id, emp, vendedor);
+CREATE INDEX IF NOT EXISTS ix_meta_margem_emp_periodo ON metas_margens_vendedores (emp, ano, mes);
+CREATE INDEX IF NOT EXISTS ix_meta_margem_vendedor_periodo ON metas_margens_vendedores (vendedor, ano, mes);
 CREATE INDEX IF NOT EXISTS ix_metas_resultados_emp_periodo ON metas_resultados (emp, ano, mes);
 CREATE INDEX IF NOT EXISTS ix_metas_resultados_meta_periodo ON metas_resultados (meta_id, ano, mes);
 

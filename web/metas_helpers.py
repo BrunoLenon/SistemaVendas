@@ -28,6 +28,7 @@ from db import (
     MetaBaseManual,
     MetaEscala,
     MetaMarca,
+    MetaMargemVendedor,
     MetaPrograma,
     MetaProgramaEmp,
     MetaResultado,
@@ -350,6 +351,24 @@ def get_base_manual(db, meta_id: int, emp: str, vendedor: str) -> MetaBaseManual
     )
 
 
+def get_margem_vendedor(db, ano: int, mes: int, emp: str, vendedor: str) -> MetaMargemVendedor | None:
+    """Retorna a última margem percentual importada para ano/mês/EMP/vendedor.
+
+    A tabela possui uma linha por competência e vendedor; importações novas substituem
+    o percentual anterior.
+    """
+    return (
+        db.query(MetaMargemVendedor)
+        .filter(
+            MetaMargemVendedor.ano == int(ano),
+            MetaMargemVendedor.mes == int(mes),
+            MetaMargemVendedor.emp == normalize_emp(emp),
+            MetaMargemVendedor.vendedor == normalize_text(vendedor),
+        )
+        .first()
+    )
+
+
 def upsert_base_manual(db, meta_id: int, emp: str, vendedor: str, base_valor: float, observacao: str | None = None) -> MetaBaseManual:
     item = get_base_manual(db, meta_id, emp, vendedor)
     if not item:
@@ -393,6 +412,12 @@ class MetaCalc:
     faturamento_minimo: float = 0.0
     faturamento_minimo_atingido: bool = True
     bloqueado_minimo: bool = False
+    margem_minima: float = 0.0
+    margem_percentual: float | None = None
+    margem_importada_em: datetime | None = None
+    margem_atingida: bool = True
+    bloqueado_margem: bool = False
+    margem_faltante_pp: float = 0.0
 
 
 def calcular_meta(db, meta: MetaPrograma, emp: str, vendedor: str, persist: bool = False) -> MetaCalc:
@@ -404,12 +429,20 @@ def calcular_meta(db, meta: MetaPrograma, emp: str, vendedor: str, persist: bool
 
     calc = MetaCalc(meta_id=int(meta.id), tipo=tipo, emp=emp_n, vendedor=vendedor_n)
     faturamento_minimo = float(getattr(meta, "faturamento_minimo", 0.0) or 0.0)
+    margem_minima = float(getattr(meta, "margem_minima", 0.0) or 0.0)
     calc.faturamento_minimo = faturamento_minimo
+    calc.margem_minima = margem_minima if tipo == "CRESCIMENTO" else 0.0
 
     if tipo == "CRESCIMENTO":
         valor_mes = Decimal(str(query_valor_mes(db, meta.ano, meta.mes, emp_n, vendedor_n)))
         base = get_base_manual(db, int(meta.id), emp_n, vendedor_n)
         base_valor = Decimal(str(getattr(base, "base_valor", 0.0) or 0.0)) if base else Decimal("0")
+        margem_row = get_margem_vendedor(db, meta.ano, meta.mes, emp_n, vendedor_n) if margem_minima > 0 else None
+        if margem_row is not None:
+            calc.margem_percentual = float(getattr(margem_row, "margem_percentual", 0.0) or 0.0)
+            calc.margem_importada_em = getattr(margem_row, "importado_em", None)
+        elif margem_minima > 0:
+            calc.margem_percentual = None
         crescimento = Decimal("0")
         if base_valor > 0:
             crescimento = (valor_mes - base_valor) / base_valor * Decimal("100")
@@ -469,6 +502,27 @@ def calcular_meta(db, meta: MetaPrograma, emp: str, vendedor: str, persist: bool
         calc.faturamento_minimo_atingido = True
         calc.bloqueado_minimo = False
 
+    if tipo == "CRESCIMENTO" and margem_minima > 0:
+        margem_atual = calc.margem_percentual
+        if margem_atual is None:
+            calc.margem_atingida = False
+            calc.bloqueado_margem = True
+            calc.margem_faltante_pp = float(margem_minima)
+            calc.premio = 0.0
+        elif float(margem_atual) < float(margem_minima):
+            calc.margem_atingida = False
+            calc.bloqueado_margem = True
+            calc.margem_faltante_pp = round(float(margem_minima) - float(margem_atual), 2)
+            calc.premio = 0.0
+        else:
+            calc.margem_atingida = True
+            calc.bloqueado_margem = False
+            calc.margem_faltante_pp = 0.0
+    else:
+        calc.margem_atingida = True
+        calc.bloqueado_margem = False
+        calc.margem_faltante_pp = 0.0
+
     if persist:
         upsert_resultado(db, calc)
 
@@ -501,6 +555,14 @@ def upsert_resultado(db, calc: MetaCalc) -> MetaResultado:
     res.mix_itens_unicos = float(calc.mix_itens_unicos) if calc.mix_itens_unicos is not None else None
     res.valor_marcas = calc.valor_marcas
     res.share_pct = calc.share_pct
+    if hasattr(res, "margem_percentual"):
+        res.margem_percentual = calc.margem_percentual
+    if hasattr(res, "margem_minima"):
+        res.margem_minima = float(calc.margem_minima or 0.0)
+    if hasattr(res, "margem_atingida"):
+        res.margem_atingida = bool(calc.margem_atingida)
+    if hasattr(res, "bloqueado_margem"):
+        res.bloqueado_margem = bool(calc.bloqueado_margem)
     res.bonus_percentual = float(calc.bonus_percentual or 0.0)
     res.premio = float(calc.premio or 0.0)
     res.calculado_em = datetime.utcnow()
