@@ -21,7 +21,7 @@
             {% set combo_dom_id = 'sv-combo-' ~ (g.emp|replace(' ', '_')) ~ '-' ~ (g.vendedor|replace(' ', '_')) ~ '-' ~ loop.index0 ~ '-' ~ (c.origem_id or 0) %}
             {% set totals.vendeu = totals.vendeu + (c.vendeu_rs or 0) %}
             {% set totals.premio = totals.premio + (c.valor or 0) %}
-            {% set totals.potencial = totals.potencial + (c.premio_potencial if c.premio_potencial is not none else c.valor or 0) %}
+            {% set totals.potencial = totals.potencial + (c.premio_potencial if c.premio_potencial is defined and c.premio_potencial is not none else (c.valor or 0)) %}
             <tr class="sv-combo-head">
               <td>
                 <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
@@ -42,7 +42,7 @@
               <td class="sv-center">-</td>
               <td class="sv-right">{{ (c.vendeu_rs or 0)|brl_rs }}</td>
               <td class="sv-right">{{ (c.valor or 0)|brl_rs }}</td>
-              <td class="sv-right">{{ (c.premio_potencial if c.premio_potencial is not none else c.valor or 0)|brl_rs }}</td>
+              <td class="sv-right">{{ (c.premio_potencial if c.premio_potencial is defined and c.premio_potencial is not none else (c.valor or 0))|brl_rs }}</td>
               <td class="sv-center"><span class="sv-pill">-</span></td>
               <td class="sv-center">
                 {% if c.atingiu %}
@@ -55,7 +55,7 @@
           {% else %}
             {% set totals.vendeu = totals.vendeu + (c.vendeu_rs or 0) %}
             {% set totals.premio = totals.premio + (c.valor or 0) %}
-            {% set totals.potencial = totals.potencial + (c.premio_potencial if c.premio_potencial is not none else c.valor or 0) %}
+            {% set totals.potencial = totals.potencial + (c.premio_potencial if c.premio_potencial is defined and c.premio_potencial is not none else (c.valor or 0)) %}
             <tr>
               <td>
                 <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
@@ -77,7 +77,7 @@
               <td class="sv-center">{{ c.qtd_vendida_label if c.qtd_vendida_label is defined and c.qtd_vendida_label else (c.qtd_vendida or 0) }}</td>
               <td class="sv-right">{{ (c.vendeu_rs or 0)|brl_rs }}</td>
               <td class="sv-right">{{ (c.valor or 0)|brl_rs }}</td>
-              <td class="sv-right">{{ (c.premio_potencial if c.premio_potencial is not none else c.valor or 0)|brl_rs }}</td>
+              <td class="sv-right">{{ (c.premio_potencial if c.premio_potencial is defined and c.premio_potencial is not none else (c.valor or 0))|brl_rs }}</td>
               <td class="sv-center">
                 {% if c.tipo_key == 'META' %}
                   {% if c.bloqueado_minimo %}
