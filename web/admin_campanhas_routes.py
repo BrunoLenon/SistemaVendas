@@ -6,6 +6,7 @@ Refatoração pura: extraído do app.py sem alterar comportamento externo.
 """
 from __future__ import annotations
 
+from calendar import monthrange
 from datetime import date, datetime
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any, Callable
@@ -323,8 +324,26 @@ def register_admin_campanhas_routes(
         ok = None
 
         hoje = date.today()
-        mes = int(request.values.get("mes") or hoje.month)
-        ano = int(request.values.get("ano") or hoje.year)
+        try:
+            mes = int(request.values.get("mes") or hoje.month)
+        except Exception:
+            mes = hoje.month
+        try:
+            ano = int(request.values.get("ano") or hoje.year)
+        except Exception:
+            ano = hoje.year
+        if mes < 1 or mes > 12:
+            mes = hoje.month
+        if ano < 2000 or ano > 2100:
+            ano = hoje.year
+
+        # Lista gerencial: por padrão mostra somente campanhas com vigência cruzando
+        # a competência selecionada. Mantém opção de consulta histórica com escopo=todas.
+        lista_escopo = (request.values.get("escopo") or "periodo").strip().lower()
+        if lista_escopo not in {"periodo", "todas"}:
+            lista_escopo = "periodo"
+        periodo_inicio = date(int(ano), int(mes), 1)
+        periodo_fim = date(int(ano), int(mes), monthrange(int(ano), int(mes))[1])
 
         with SessionLocal() as db:
             if request.method == "POST":
@@ -450,7 +469,20 @@ def register_admin_campanhas_routes(
                     erro = str(e)
                     app.logger.exception("Erro ao gerenciar campanhas")
 
-            campanhas = db.query(CampanhaQtd).order_by(CampanhaQtd.emp.asc(), CampanhaQtd.data_inicio.desc()).all()
+            campanhas_total_geral = 0
+            try:
+                campanhas_total_geral = db.query(func.count(CampanhaQtd.id)).scalar() or 0
+            except Exception:
+                campanhas_total_geral = 0
+
+            campanhas_query = db.query(CampanhaQtd)
+            if lista_escopo == "periodo":
+                campanhas_query = campanhas_query.filter(
+                    CampanhaQtd.data_inicio <= periodo_fim,
+                    CampanhaQtd.data_fim >= periodo_inicio,
+                )
+
+            campanhas = campanhas_query.order_by(CampanhaQtd.emp.asc(), CampanhaQtd.data_inicio.desc()).all()
             resultados = (
                 db.query(CampanhaQtdResultado)
                 .filter(
@@ -462,6 +494,8 @@ def register_admin_campanhas_routes(
             )
 
             assisted_options = _load_assisted_options(db)
+
+        campanhas_total_geral = int(campanhas_total_geral or 0)
 
         # UX: agrupa por competência (mês/ano) na lista.
         try:
@@ -484,6 +518,10 @@ def register_admin_campanhas_routes(
             erro=erro,
             ok=ok,
             assisted_options=assisted_options,
+            lista_escopo=lista_escopo,
+            periodo_inicio=periodo_inicio,
+            periodo_fim=periodo_fim,
+            campanhas_total_geral=campanhas_total_geral,
         )
 
     app.add_url_rule(

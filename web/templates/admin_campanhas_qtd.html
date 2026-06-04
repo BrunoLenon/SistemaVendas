@@ -274,6 +274,32 @@
     color:#fff;
   }
 
+  .sv-admin-page--campanhas .sv-period-form{
+    display:flex;
+    align-items:end;
+    justify-content:flex-end;
+    gap:10px;
+    flex-wrap:wrap;
+  }
+  .sv-admin-page--campanhas .sv-period-form .sv-period-field{
+    min-width:118px;
+  }
+  .sv-admin-page--campanhas .sv-period-form .sv-period-field--year{
+    width:104px;
+    min-width:104px;
+  }
+  .sv-admin-page--campanhas .sv-current-period-note{
+    border:1px solid rgba(255,140,0,.16);
+    background:rgba(255,140,0,.07);
+    border-radius:16px;
+    padding:12px 14px;
+    color:rgba(248,250,252,.78);
+    line-height:1.45;
+  }
+  .sv-admin-page--campanhas .sv-current-period-note b{
+    color:#fff;
+  }
+
   .sv-modal-dark .modal-content{
     border:1px solid rgba(255,255,255,.10);
     background:#141414;
@@ -336,7 +362,10 @@
     .sv-admin-page--campanhas .sv-toolbar-inline{ justify-content:stretch; }
     .sv-admin-page--campanhas .sv-toolbar-inline .form-control,
     .sv-admin-page--campanhas .sv-toolbar-inline .form-select,
-    .sv-admin-page--campanhas .sv-toolbar-inline .btn{ width:100%!important; min-width:0!important; }
+    .sv-admin-page--campanhas .sv-toolbar-inline .btn,
+    .sv-admin-page--campanhas .sv-period-form,
+    .sv-admin-page--campanhas .sv-period-form .sv-period-field,
+    .sv-admin-page--campanhas .sv-period-form .sv-period-field--year{ width:100%!important; min-width:0!important; }
     .sv-admin-page--campanhas .sv-campaign-grid,
     .sv-admin-page--campanhas .sv-campaign-grid-2,
     .sv-admin-page--campanhas .sv-type-selector{ grid-template-columns:1fr; }
@@ -355,6 +384,8 @@
 {% set assisted_vendedores = assist.get('vendedores', []) %}
 {% set assisted_marcas = assist.get('marcas', []) %}
 {% set assist_has_faturamento = assist.get('has_faturamento_minimo_emp', false) %}
+{% set view_scope = lista_escopo if lista_escopo is defined else 'periodo' %}
+{% set total_geral = campanhas_total_geral if campanhas_total_geral is defined else campanhas|length %}
 {% set kpi = namespace(ativas=0, inativas=0, gerente=0, vendedor=0) %}
 {% for item in campanhas %}
   {% if item.ativo %}
@@ -401,16 +432,36 @@
         </div>
       </div>
       <div class="sv-action-row">
-        <a class="btn btn-sv-soft" href="{{ url_for('dashboard') }}">Voltar ao dashboard</a>
-        <a class="btn btn-outline-light" href="/logout">Sair</a>
+        <form method="get" class="sv-period-form" aria-label="Filtrar competência das campanhas">
+          <div class="sv-period-field">
+            <label class="sv-form-label mb-1">Mês</label>
+            <select class="form-select" name="mes">
+              {% for n in range(1, 13) %}
+                <option value="{{ n }}" {% if n == mes|int %}selected{% endif %}>{{ '%02d'|format(n) }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="sv-period-field sv-period-field--year">
+            <label class="sv-form-label mb-1">Ano</label>
+            <input class="form-control" type="number" name="ano" min="2020" max="2100" value="{{ ano }}">
+          </div>
+          <div class="sv-period-field">
+            <label class="sv-form-label mb-1">Lista</label>
+            <select class="form-select" name="escopo">
+              <option value="periodo" {% if view_scope != 'todas' %}selected{% endif %}>Do mês</option>
+              <option value="todas" {% if view_scope == 'todas' %}selected{% endif %}>Todas</option>
+            </select>
+          </div>
+          <button class="btn btn-sv-primary" type="submit">Aplicar</button>
+        </form>
       </div>
     </div>
 
     <div class="sv-admin-kpis mt-3">
       <div class="sv-kpi-card">
-        <small>Total</small>
+        <small>{{ 'Histórico' if view_scope == 'todas' else 'No mês' }}</small>
         <strong>{{ campanhas|length }}</strong>
-        <span>Campanhas cadastradas</span>
+        <span>{% if view_scope == 'todas' %}Todas cadastradas{% else %}Vigentes em {{ '%02d'|format(mes|int) }}/{{ ano }}{% endif %}</span>
       </div>
       <div class="sv-kpi-card">
         <small>Ativas</small>
@@ -474,6 +525,7 @@
         <input type="hidden" name="acao" value="criar">
         <input type="hidden" name="mes" value="{{ mes }}">
         <input type="hidden" name="ano" value="{{ ano }}">
+        <input type="hidden" name="escopo" value="{{ view_scope }}">
 
         <div class="sv-campaign-layout">
           <div class="sv-form-block">
@@ -616,21 +668,44 @@
     <div class="sv-panel-head">
       <div>
         <h2 class="sv-panel-title">Campanhas cadastradas</h2>
-        <div class="sv-panel-subtitle">Controle por competência, EMP, status, tipo e base de apuração com leitura mais rápida da regra comercial.</div>
+        <div class="sv-panel-subtitle">Por padrão, esta lista mostra somente campanhas cuja vigência cruza a competência selecionada. Use “Todas” apenas para consulta histórica.</div>
       </div>
       <div class="sv-toolbar-inline">
+        <div class="sv-mini-metric">
+          <small>Competência</small>
+          <strong>{{ '%02d'|format(mes|int) }}/{{ ano }}</strong>
+        </div>
         <div class="sv-mini-metric">
           <small>Mostrando</small>
           <strong><span id="rowCount">{{ campanhas|length }}</span>/{{ campanhas|length }}</strong>
         </div>
+        {% if view_scope != 'todas' and total_geral > campanhas|length %}
+          <a class="btn btn-sv-soft btn-sm" href="{{ url_for('admin_campanhas_qtd', mes=mes, ano=ano, escopo='todas') }}">Ver todas</a>
+        {% endif %}
       </div>
     </div>
 
     <div class="sv-panel-body">
       {% if campanhas|length == 0 %}
-        <div class="sv-empty-state">Nenhuma campanha cadastrada.</div>
+        <div class="sv-empty-state">
+          {% if view_scope == 'todas' %}
+            Nenhuma campanha cadastrada.
+          {% else %}
+            Nenhuma campanha vigente em {{ '%02d'|format(mes|int) }}/{{ ano }}.
+            {% if total_geral > 0 %}
+              <div class="mt-2"><a class="btn btn-sv-soft btn-sm" href="{{ url_for('admin_campanhas_qtd', mes=mes, ano=ano, escopo='todas') }}">Ver histórico completo</a></div>
+            {% endif %}
+          {% endif %}
+        </div>
       {% else %}
         <div class="sv-help-box mb-3">
+          <div class="sv-current-period-note mb-3">
+            {% if view_scope == 'todas' %}
+              <b>Consulta histórica:</b> exibindo todas as campanhas cadastradas. Para uso diário, volte para “Do mês” para reduzir ruído visual e deixar a tela mais leve.
+            {% else %}
+              <b>Lista do mês:</b> exibindo apenas campanhas com vigência entre {{ periodo_inicio.strftime('%d/%m/%Y') if periodo_inicio is defined else '' }} e {{ periodo_fim.strftime('%d/%m/%Y') if periodo_fim is defined else '' }}. Campanhas antigas continuam salvas e podem ser acessadas em “Ver todas”.
+            {% endif %}
+          </div>
           <div class="sv-toolbar-inline" style="justify-content:space-between;">
             <input type="text" class="form-control" id="qSearch" placeholder="Buscar título, vendedor, marca, código ou descrição..." style="min-width:300px;flex:1;">
 
@@ -782,6 +857,7 @@
                           <input type="hidden" name="campanha_id" value="{{ c.id }}">
                           <input type="hidden" name="mes" value="{{ mes }}">
                           <input type="hidden" name="ano" value="{{ ano }}">
+        <input type="hidden" name="escopo" value="{{ view_scope }}">
                           <button class="btn btn-sv-soft btn-sm" type="submit">{{ 'Desativar' if c.ativo else 'Ativar' }}</button>
                         </form>
                         <button class="btn btn-outline-danger btn-sm" type="button"
@@ -800,7 +876,7 @@
 
         <div class="sv-filter-empty" id="filterEmpty">
           <strong>Nenhuma campanha encontrada</strong>
-          Ajuste os filtros ou limpe a busca para visualizar todas as campanhas cadastradas.
+          Ajuste os filtros ou limpe a busca. Para campanhas antigas, use “Ver todas”.
         </div>
       {% endif %}
     </div>
@@ -816,6 +892,7 @@
         <input type="hidden" name="campanha_id" id="editCampanhaId" value="">
         <input type="hidden" name="mes" value="{{ mes }}">
         <input type="hidden" name="ano" value="{{ ano }}">
+        <input type="hidden" name="escopo" value="{{ view_scope }}">
 
         <div class="modal-header">
           <div>
@@ -928,6 +1005,7 @@
         <input type="hidden" name="campanha_id" id="dupCampanhaId" value="">
         <input type="hidden" name="mes" value="{{ mes }}">
         <input type="hidden" name="ano" value="{{ ano }}">
+        <input type="hidden" name="escopo" value="{{ view_scope }}">
 
         <div class="modal-header">
           <div>
@@ -993,6 +1071,7 @@
           <input type="hidden" name="campanha_id" id="delId" value="">
           <input type="hidden" name="mes" value="{{ mes }}">
           <input type="hidden" name="ano" value="{{ ano }}">
+        <input type="hidden" name="escopo" value="{{ view_scope }}">
           <button class="btn btn-sv-soft" type="button" data-bs-dismiss="modal">Cancelar</button>
           <button class="btn btn-outline-danger" type="submit">Excluir</button>
         </form>
