@@ -6,7 +6,7 @@ from typing import Any, Callable
 from types import SimpleNamespace
 from services.campanhas_v2_service import list_resultados_v2
 from sqlalchemy import func, cast, String
-from db import Usuario, UsuarioEmp
+from db import Usuario, UsuarioEmp, Venda
 
 
 @dataclass(frozen=True)
@@ -398,6 +398,86 @@ def build_campanhas_page_context(
     }
 
 
+
+
+def _get_vendedores_por_emp_no_periodo_batch(
+    deps: CampanhasDeps,
+    *,
+    emps: list[str],
+    ano: int,
+    mes: int,
+) -> dict[str, list[str]]:
+    """Carrega vendedores de todas as EMPs do relatório em lote.
+
+    Antes o escopo chamava `get_vendedores_emp_no_periodo()` para cada EMP,
+    gerando N queries em `vendas` a cada abertura do relatório. Este helper
+    preserva a mesma ideia de filtrar por vendedores cadastrados/vinculados,
+    mas faz a leitura principal de vendas em uma única consulta.
+    """
+    emps_norm = sorted({str(e or '').strip() for e in (emps or []) if str(e or '').strip()})
+    if not emps_norm:
+        return {}
+
+    inicio_mes, fim_mes = deps.periodo_bounds(int(ano), int(mes))
+    out: dict[str, set[str]] = {emp: set() for emp in emps_norm}
+
+    try:
+        with deps.SessionLocal() as db:
+            rows = (
+                db.query(Venda.emp, Venda.vendedor)
+                .filter(Venda.emp.in_(emps_norm))
+                .filter(Venda.movimento >= inicio_mes, Venda.movimento <= fim_mes)
+                .filter(Venda.vendedor.isnot(None))
+                .distinct()
+                .all()
+            )
+            for emp_raw, vend_raw in rows:
+                emp_s = str(emp_raw or '').strip()
+                vend_u = str(vend_raw or '').strip().upper()
+                if emp_s in out and vend_u:
+                    out[emp_s].add(vend_u)
+
+            # Mapa de vendedores vinculados por EMP. Se houver vínculo, aplica o mesmo
+            # comportamento do helper legado: só considera vendedores cadastrados naquela EMP.
+            vinculados: dict[str, set[str]] = {emp: set() for emp in emps_norm}
+            try:
+                vinc_rows = (
+                    db.query(cast(UsuarioEmp.emp, String), Usuario.username)
+                    .join(Usuario, Usuario.id == UsuarioEmp.usuario_id)
+                    .filter(func.lower(func.trim(cast(Usuario.role, String))) == 'vendedor')
+                    .filter(UsuarioEmp.ativo.is_(True))
+                    .filter(cast(UsuarioEmp.emp, String).in_(emps_norm))
+                    .all()
+                )
+                for emp_raw, username in vinc_rows:
+                    emp_s = str(emp_raw or '').strip()
+                    vend_u = str(username or '').strip().upper()
+                    if emp_s in vinculados and vend_u:
+                        vinculados[emp_s].add(vend_u)
+            except Exception:
+                vinculados = {emp: set() for emp in emps_norm}
+
+            try:
+                glob_rows = (
+                    db.query(Usuario.username)
+                    .filter(func.lower(func.trim(cast(Usuario.role, String))) == 'vendedor')
+                    .all()
+                )
+                vendedores_globais = {str(r[0] or '').strip().upper() for r in glob_rows if r and str(r[0] or '').strip()}
+            except Exception:
+                vendedores_globais = set()
+
+            final: dict[str, list[str]] = {}
+            for emp_s, vendedores in out.items():
+                if vinculados.get(emp_s):
+                    vendedores = {v for v in vendedores if v in vinculados[emp_s]}
+                elif vendedores_globais:
+                    vendedores = {v for v in vendedores if v in vendedores_globais}
+                final[emp_s] = sorted(vendedores)
+            return final
+    except Exception:
+        return {}
+
 def build_relatorio_campanhas_scope(
     deps: CampanhasDeps,
     *,
@@ -453,16 +533,24 @@ def build_relatorio_campanhas_scope(
             flash("Não foi possível identificar a EMP do vendedor.", "warning")
 
     # Vendedores por EMP
+    vendedores_periodo_batch: dict[str, list[str]] = {}
+    if role_l in ("admin", "supervisor", "gerente") and emps_scope:
+        vendedores_periodo_batch = _get_vendedores_por_emp_no_periodo_batch(deps, emps=emps_scope, ano=ano, mes=mes)
+
     for emp in emps_scope:
         emp = str(emp)
         if role_l == "admin":
-            vendedores = deps.get_vendedores_emp_no_periodo(emp, ano, mes)
+            vendedores = list(vendedores_periodo_batch.get(emp) or [])
+            if not vendedores:
+                vendedores = deps.get_vendedores_emp_no_periodo(emp, ano, mes)
             if vendedores_sel:
                 allowed_set = {v.strip().upper() for v in vendedores}
                 pick = [v for v in vendedores_sel if v in allowed_set]
                 vendedores = pick if pick else []
         elif role_l in ("supervisor", "gerente"):
-            vendedores = deps.get_vendedores_emp_no_periodo(emp, ano, mes)
+            vendedores = list(vendedores_periodo_batch.get(emp) or [])
+            if not vendedores:
+                vendedores = deps.get_vendedores_emp_no_periodo(emp, ano, mes)
             if vendedores_sel and "__ALL__" not in vendedores_sel:
                 allowed_set = {v.strip().upper() for v in vendedores}
                 vendedores = [v for v in vendedores_sel if v in allowed_set]

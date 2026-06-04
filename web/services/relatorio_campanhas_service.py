@@ -549,9 +549,9 @@ _RELATORIO_UNIFICADO_CACHE_LOCK = threading.Lock()
 
 def _relatorio_cache_ttl_seconds() -> int:
     try:
-        return max(0, int(os.environ.get("RELATORIO_CAMPANHAS_CACHE_TTL_SECONDS", "45") or 0))
+        return max(0, int(os.environ.get("RELATORIO_CAMPANHAS_CACHE_TTL_SECONDS", "300") or 0))
     except Exception:
-        return 45
+        return 300
 
 
 def _relatorio_vendedores_key(vendedores_por_emp: dict[str, list[str]] | None, emps: list[str]) -> tuple:
@@ -570,7 +570,7 @@ def _relatorio_vendedores_key(vendedores_por_emp: dict[str, list[str]] | None, e
 
 def _relatorio_cache_key(*, role: str, vendedor_logado: str, ano: int, mes: int, emps: list[str], vendedores_por_emp: dict[str, list[str]]) -> tuple:
     return (
-        "relatorio_campanhas_unificado_v2",
+        "relatorio_campanhas_unificado_v3",
         str(role or "").strip().lower(),
         str(vendedor_logado or "").strip().upper(),
         int(ano),

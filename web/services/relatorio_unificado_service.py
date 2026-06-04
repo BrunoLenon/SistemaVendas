@@ -730,6 +730,44 @@ def _ensure_snapshots_gerente_loja(
         if not campanhas:
             return
 
+        campanha_ids = [int(getattr(c, 'id', 0) or 0) for c in campanhas if int(getattr(c, 'id', 0) or 0) > 0]
+        if not campanha_ids:
+            return
+
+        # Modo rápido: em abertura comum da página, NÃO recalcula snapshots que já existem.
+        # A atualização oficial continua sendo feita pelo botão "Recalcular" após importar vendas.
+        # Aqui só geramos o que estiver faltando para evitar que campanha GERENTE suma da tela.
+        existing_keys: set[tuple[int, str]] = set()
+        try:
+            existing = (
+                db.query(CampanhaQtdResultado.campanha_id, CampanhaQtdResultado.vendedor)
+                .filter(
+                    CampanhaQtdResultado.competencia_ano == int(ano),
+                    CampanhaQtdResultado.competencia_mes == int(mes),
+                    cast(CampanhaQtdResultado.emp, String) == emp_s,
+                    CampanhaQtdResultado.campanha_id.in_(campanha_ids),
+                    CampanhaQtdResultado.vendedor.in_(gerentes),
+                )
+                .all()
+            )
+            for cid, vend in existing:
+                existing_keys.add((int(cid or 0), _upper(vend)))
+        except Exception:
+            existing_keys = set()
+
+        missing_pairs: list[tuple[str, Any]] = []
+        for gerente in gerentes:
+            gerente_u = _upper(gerente)
+            for c in campanhas:
+                cid = int(getattr(c, 'id', 0) or 0)
+                if cid <= 0:
+                    continue
+                if (cid, gerente_u) not in existing_keys:
+                    missing_pairs.append((gerente_u, c))
+
+        if not missing_pairs:
+            return
+
         # Reutiliza a regra oficial da campanha QTD, que para GERENTE soma a EMP inteira.
         try:
             from campanhas_qtd_helpers import _upsert_resultado as _upsert_qtd_resultado
@@ -739,18 +777,18 @@ def _ensure_snapshots_gerente_loja(
             return
 
         changed = False
-        for gerente in gerentes:
-            for c in campanhas:
-                pi = max(getattr(c, 'data_inicio'), periodo_ini)
-                pf = min(getattr(c, 'data_fim'), periodo_fim)
-                res = _upsert_qtd_resultado(db, c, gerente, emp_s, int(ano), int(mes), pi, pf)
-                try:
-                    res.campanha_tipo = 'GERENTE'
-                except Exception:
-                    pass
-                changed = True
+        for gerente, c in missing_pairs:
+            pi = max(getattr(c, 'data_inicio'), periodo_ini)
+            pf = min(getattr(c, 'data_fim'), periodo_fim)
+            res = _upsert_qtd_resultado(db, c, gerente, emp_s, int(ano), int(mes), pi, pf)
+            try:
+                res.campanha_tipo = 'GERENTE'
+            except Exception:
+                pass
+            changed = True
         if changed:
             db.commit()
+
     except Exception as exc:
         try:
             db.rollback()

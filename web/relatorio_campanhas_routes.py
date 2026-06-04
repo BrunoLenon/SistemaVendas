@@ -9,6 +9,9 @@ Extraído do app.py como refatoração pura (sem alterar comportamento externo).
 from __future__ import annotations
 
 from io import BytesIO
+import os
+import threading
+import time
 from typing import Any, Callable
 
 from werkzeug.datastructures import MultiDict
@@ -17,6 +20,92 @@ from flask import Response, flash, render_template, request, send_file, url_for
 
 from services.campanhas_service import build_relatorio_campanhas_scope
 from services.relatorio_campanhas_service import build_relatorio_campanhas_unificado_context
+
+
+_RELATORIO_SCOPE_CACHE: dict[tuple, tuple[float, dict[str, Any]]] = {}
+_RELATORIO_SCOPE_CACHE_LOCK = threading.Lock()
+
+
+def _scope_cache_ttl_seconds() -> int:
+    try:
+        return max(0, int(os.environ.get("RELATORIO_CAMPANHAS_SCOPE_CACHE_TTL_SECONDS", "300") or 0))
+    except Exception:
+        return 300
+
+
+def _args_values(args, key: str) -> tuple[str, ...]:
+    try:
+        vals = args.getlist(key)
+    except Exception:
+        try:
+            v = args.get(key)
+            vals = [v] if v is not None else []
+        except Exception:
+            vals = []
+    return tuple(sorted({str(v).strip() for v in (vals or []) if str(v).strip()}))
+
+
+def _scope_cache_key(*, role: str, emp_usuario: str | None, vendedor_logado: str, request_args) -> tuple:
+    return (
+        "relatorio_campanhas_scope_v1",
+        str(role or '').strip().lower(),
+        str(emp_usuario or '').strip(),
+        str(vendedor_logado or '').strip().upper(),
+        str(request_args.get('ano') or '').strip(),
+        str(request_args.get('mes') or '').strip(),
+        _args_values(request_args, 'emp'),
+        _args_values(request_args, 'vendedor'),
+    )
+
+
+def _scope_cache_get(key: tuple) -> dict[str, Any] | None:
+    ttl = _scope_cache_ttl_seconds()
+    if ttl <= 0:
+        return None
+    now = time.monotonic()
+    with _RELATORIO_SCOPE_CACHE_LOCK:
+        item = _RELATORIO_SCOPE_CACHE.get(key)
+        if not item:
+            return None
+        created, scope = item
+        if now - created > ttl:
+            _RELATORIO_SCOPE_CACHE.pop(key, None)
+            return None
+        # Cópia rasa + cópias das listas/dicts para evitar mutação entre requests.
+        out = dict(scope or {})
+        for k in ('emps_sel', 'vendedores_sel', 'emps_scope'):
+            out[k] = list(out.get(k) or [])
+        out['vendedores_por_emp'] = {str(emp): list(vs or []) for emp, vs in (out.get('vendedores_por_emp') or {}).items()}
+        return out
+
+
+def _scope_cache_set(key: tuple, scope: dict[str, Any]) -> None:
+    ttl = _scope_cache_ttl_seconds()
+    if ttl <= 0:
+        return
+    with _RELATORIO_SCOPE_CACHE_LOCK:
+        if len(_RELATORIO_SCOPE_CACHE) > 64:
+            oldest = sorted(_RELATORIO_SCOPE_CACHE.items(), key=lambda kv: kv[1][0])[:16]
+            for old_key, _ in oldest:
+                _RELATORIO_SCOPE_CACHE.pop(old_key, None)
+        safe = dict(scope or {})
+        for k in ('emps_sel', 'vendedores_sel', 'emps_scope'):
+            safe[k] = list(safe.get(k) or [])
+        safe['vendedores_por_emp'] = {str(emp): list(vs or []) for emp, vs in (safe.get('vendedores_por_emp') or {}).items()}
+        _RELATORIO_SCOPE_CACHE[key] = (time.monotonic(), safe)
+
+
+def _scope_cache_clear() -> None:
+    with _RELATORIO_SCOPE_CACHE_LOCK:
+        _RELATORIO_SCOPE_CACHE.clear()
+
+
+def _default_per_page(role: str) -> int:
+    fallback = 50 if str(role or '').strip().lower() in ('admin', 'supervisor', 'financeiro') else 25
+    try:
+        return max(10, min(500, int(os.environ.get('RELATORIO_CAMPANHAS_DEFAULT_PER_PAGE', str(fallback)) or fallback)))
+    except Exception:
+        return fallback
 
 
 def _pick(obj, *keys):
@@ -288,14 +377,14 @@ def _augment_ctx(ctx, *, role: str, vendedor_logado: str, vendedores_por_emp: di
 
     if include_pagination:
         try:
-            default_per_page = 100 if role in ('admin', 'supervisor') else 50
+            default_per_page = _default_per_page(role)
             page = int(request_args.get('page') or 1)
             per_page = int(request_args.get('per_page') or default_per_page)
             page = max(page, 1)
-            per_page = max(25, min(per_page, 500))
+            per_page = max(10, min(per_page, 500))
         except Exception:
             page = 1
-            per_page = 100 if role in ('admin', 'supervisor') else 50
+            per_page = _default_per_page(role)
         total_rows = len(rows_grouped)
         start = (page - 1) * per_page
         end = start + per_page
@@ -347,7 +436,7 @@ def _augment_ctx(ctx, *, role: str, vendedor_logado: str, vendedores_por_emp: di
             )
     except Exception:
         pass
-    per_page_opts = [50, 100, 200, 500]
+    per_page_opts = [25, 50, 100, 200, 500]
     ctx['per_page_opts'] = per_page_opts
     ctx['per_page_urls'] = {opt: _make_url('relatorio_campanhas', per_page=opt, page=1) for opt in per_page_opts}
     ctx['prev_url'] = _make_url('relatorio_campanhas', page=max(1, int(ctx.get('page') or 1) - 1))
@@ -356,14 +445,23 @@ def _augment_ctx(ctx, *, role: str, vendedor_logado: str, vendedores_por_emp: di
 
 
 def _build_relatorio_ctx(deps, *, role: str, emp_usuario: str | None, vendedor_logado: str, request_args, flash_fn, recalc_override: bool | None = None):
-    scope = build_relatorio_campanhas_scope(
-        deps,
-        role=role,
-        emp_usuario=emp_usuario,
-        vendedor_logado=vendedor_logado,
-        args=request_args,
-        flash=flash_fn,
-    )
+    recalc_flag = str(request_args.get('recalc') or '').strip() in ('1', 'true', 'True', 'sim', 'SIM', 'yes', 'on')
+    if recalc_override is True or recalc_flag:
+        _scope_cache_clear()
+
+    scope_key = _scope_cache_key(role=role, emp_usuario=emp_usuario, vendedor_logado=vendedor_logado, request_args=request_args)
+    scope = None if (recalc_override is True or recalc_flag) else _scope_cache_get(scope_key)
+    if scope is None:
+        scope = build_relatorio_campanhas_scope(
+            deps,
+            role=role,
+            emp_usuario=emp_usuario,
+            vendedor_logado=vendedor_logado,
+            args=request_args,
+            flash=flash_fn,
+        )
+        _scope_cache_set(scope_key, scope)
+
     ano = int(scope['ano'])
     mes = int(scope['mes'])
     emps_sel = scope['emps_sel']
@@ -373,7 +471,7 @@ def _build_relatorio_ctx(deps, *, role: str, emp_usuario: str | None, vendedor_l
 
     recalc = recalc_override
     if recalc is None:
-        recalc = str(request_args.get('recalc') or '').strip() in ('1', 'true', 'True', 'sim', 'SIM', 'yes', 'on')
+        recalc = recalc_flag
 
     ctx = build_relatorio_campanhas_unificado_context(
         deps,
@@ -447,45 +545,58 @@ def register_relatorio_campanhas_routes(
         if not detail_emp or not detail_vendedor:
             return Response('<div class="sv-muted">Detalhe inválido.</div>', mimetype='text/html; charset=utf-8', status=400)
 
-        # Reaplica a regra de escopo usando somente o vendedor/EMP solicitado.
-        # A própria função de escopo impede admin/supervisor/vendedor de enxergar fora do permitido.
-        detail_args = MultiDict()
-        try:
-            for key, values in request.args.lists():
-                detail_args.setlist(key, list(values or []))
-            detail_args.poplist('emp')
-            detail_args.poplist('vendedor')
-            detail_args.poplist('page')
-            detail_args.poplist('per_page')
-            detail_args.poplist('recalc')
-        except Exception:
-            pass
-        detail_args.add('emp', detail_emp)
-        detail_args.add('vendedor', detail_vendedor)
+        def _make_args_for_cached_full_scope():
+            out = MultiDict()
+            try:
+                for key, values in request.args.lists():
+                    if key in ('detail_emp', 'detail_vendedor', 'page', 'per_page', 'recalc'):
+                        continue
+                    out.setlist(key, list(values or []))
+            except Exception:
+                pass
+            return out
 
-        ctx, vendedores_por_emp = _build_relatorio_ctx(
-            deps,
-            role=role,
-            emp_usuario=emp_usuario,
-            vendedor_logado=vendedor_logado,
-            request_args=detail_args,
-            flash_fn=flash,
-            recalc_override=False,
-        )
-        ctx = _augment_ctx(
-            ctx,
-            role=role,
-            vendedor_logado=vendedor_logado,
-            vendedores_por_emp=vendedores_por_emp,
-            request_args=detail_args,
-            include_pagination=False,
-        )
+        def _make_args_for_single_detail():
+            out = _make_args_for_cached_full_scope()
+            try:
+                out.poplist('emp')
+                out.poplist('vendedor')
+            except Exception:
+                pass
+            out.add('emp', detail_emp)
+            out.add('vendedor', detail_vendedor)
+            return out
 
-        group = None
-        for g in (ctx.get('rows_grouped') or []):
-            if str(g.get('emp') or '').strip() == detail_emp and str(g.get('vendedor') or '').strip().upper() == detail_vendedor:
-                group = g
-                break
+        def _load_group(detail_args, *, paginated: bool):
+            ctx, vendedores_por_emp = _build_relatorio_ctx(
+                deps,
+                role=role,
+                emp_usuario=emp_usuario,
+                vendedor_logado=vendedor_logado,
+                request_args=detail_args,
+                flash_fn=flash,
+                recalc_override=False,
+            )
+            ctx = _augment_ctx(
+                ctx,
+                role=role,
+                vendedor_logado=vendedor_logado,
+                vendedores_por_emp=vendedores_por_emp,
+                request_args=detail_args,
+                include_pagination=paginated,
+            )
+            for g in (ctx.get('rows_grouped') or []):
+                if str(g.get('emp') or '').strip() == detail_emp and str(g.get('vendedor') or '').strip().upper() == detail_vendedor:
+                    return g
+            return None
+
+        # Primeiro tenta reaproveitar o mesmo escopo da página principal.
+        # Normalmente isso bate no cache em memória e evita nova consulta pesada no banco a cada clique.
+        group = _load_group(_make_args_for_cached_full_scope(), paginated=False)
+
+        # Fallback seguro: se o usuário abriu o detalhe direto ou o cache expirou, carrega apenas EMP/vendedor pedido.
+        if group is None:
+            group = _load_group(_make_args_for_single_detail(), paginated=False)
 
         if group is None:
             group = {
