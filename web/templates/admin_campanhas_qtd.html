@@ -4,14 +4,48 @@
 
 {% block extra_head %}
 <style>
-  .sv-admin-page--campanhas .sv-form-grid .span-2{ grid-column:1/-1; }
-  .sv-admin-page--campanhas .sv-campaign-table{ min-width:1120px; table-layout:auto; }
-  .sv-admin-page--campanhas .sv-campaign-title{ max-width:360px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .sv-admin-page--campanhas .sv-field-disabled{ opacity:.58; }
-  .sv-admin-page--campanhas .sv-field-disabled input{ cursor:not-allowed; }
+  .sv-admin-page--campanhas{
+    --camp-orange: #ff8c00;
+    --camp-orange-soft: rgba(255,140,0,.12);
+    --camp-border: rgba(255,255,255,.10);
+    --camp-muted: rgba(248,250,252,.68);
+  }
+
+  .sv-admin-page--campanhas .sv-admin-hero{
+    position:relative;
+    overflow:hidden;
+  }
+  .sv-admin-page--campanhas .sv-admin-hero::after{
+    content:"";
+    position:absolute;
+    inset:auto -80px -120px auto;
+    width:360px;
+    height:360px;
+    background:radial-gradient(circle, rgba(255,140,0,.22), transparent 62%);
+    pointer-events:none;
+  }
+  .sv-admin-page--campanhas .sv-admin-title{
+    letter-spacing:-.045em;
+  }
+  .sv-admin-page--campanhas .sv-admin-subtitle{
+    max-width:980px;
+  }
+
+  .sv-admin-page--campanhas .sv-toolbar-inline{
+    display:flex;
+    flex-wrap:wrap;
+    gap:10px;
+    align-items:center;
+    justify-content:flex-end;
+  }
+  .sv-admin-page--campanhas .sv-toolbar-inline .form-control,
+  .sv-admin-page--campanhas .sv-toolbar-inline .form-select{
+    min-height:40px;
+  }
+
   .sv-admin-page--campanhas .sv-help-box{
     border:1px solid rgba(255,140,0,.18);
-    background:rgba(255,140,0,.06);
+    background:linear-gradient(135deg, rgba(255,140,0,.08), rgba(255,255,255,.025));
     border-radius:18px;
     padding:14px 16px;
   }
@@ -22,6 +56,192 @@
     padding:.16rem .42rem;
     border-radius:8px;
   }
+
+  .sv-admin-page--campanhas .sv-campaign-layout{
+    display:grid;
+    grid-template-columns:1fr;
+    gap:16px;
+  }
+  .sv-admin-page--campanhas .sv-form-block{
+    border:1px solid rgba(255,255,255,.085);
+    background:rgba(255,255,255,.025);
+    border-radius:20px;
+    padding:16px;
+  }
+  .sv-admin-page--campanhas .sv-form-block-head{
+    display:flex;
+    align-items:flex-start;
+    justify-content:space-between;
+    gap:14px;
+    margin-bottom:14px;
+  }
+  .sv-admin-page--campanhas .sv-form-block-title{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    font-weight:900;
+    color:#f8fafc;
+    letter-spacing:-.02em;
+  }
+  .sv-admin-page--campanhas .sv-step-pill{
+    width:30px;
+    height:30px;
+    border-radius:12px;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    color:#111;
+    background:linear-gradient(135deg, #ffb347, #ff7a00);
+    box-shadow:0 10px 24px rgba(255,140,0,.18);
+    font-size:.78rem;
+    font-weight:1000;
+  }
+  .sv-admin-page--campanhas .sv-form-block-note{
+    color:var(--camp-muted);
+    font-size:.82rem;
+    line-height:1.35;
+  }
+
+  .sv-admin-page--campanhas .sv-campaign-grid{
+    display:grid;
+    gap:14px;
+    grid-template-columns:repeat(4, minmax(0, 1fr));
+  }
+  .sv-admin-page--campanhas .sv-campaign-grid-2{
+    display:grid;
+    gap:12px;
+    grid-template-columns:repeat(2, minmax(0, 1fr));
+  }
+  .sv-admin-page--campanhas .sv-col-2{ grid-column:span 2; }
+  .sv-admin-page--campanhas .sv-col-3{ grid-column:span 3; }
+  .sv-admin-page--campanhas .sv-col-full{ grid-column:1/-1; }
+
+  .sv-admin-page--campanhas .sv-type-selector{
+    display:grid;
+    grid-template-columns:repeat(2, minmax(0, 1fr));
+    gap:10px;
+  }
+  .sv-admin-page--campanhas .sv-type-card{
+    width:100%;
+    border:1px solid rgba(255,255,255,.10);
+    background:rgba(255,255,255,.035);
+    color:#f8fafc;
+    border-radius:18px;
+    padding:13px 14px;
+    text-align:left;
+    transition:transform .15s ease, border-color .15s ease, background .15s ease, box-shadow .15s ease;
+  }
+  .sv-admin-page--campanhas .sv-type-card:hover{
+    transform:translateY(-1px);
+    border-color:rgba(255,140,0,.28);
+  }
+  .sv-admin-page--campanhas .sv-type-card.is-active{
+    border-color:rgba(255,140,0,.55);
+    background:linear-gradient(135deg, rgba(255,140,0,.16), rgba(255,255,255,.035));
+    box-shadow:0 16px 36px rgba(255,140,0,.10);
+  }
+  .sv-admin-page--campanhas .sv-type-card strong{
+    display:block;
+    font-size:.92rem;
+    margin-bottom:2px;
+  }
+  .sv-admin-page--campanhas .sv-type-card span{
+    display:block;
+    color:var(--camp-muted);
+    font-size:.78rem;
+    line-height:1.28;
+  }
+
+  .sv-admin-page--campanhas .sv-field-disabled{ opacity:.58; }
+  .sv-admin-page--campanhas .sv-field-disabled input{ cursor:not-allowed; }
+
+  .sv-admin-page--campanhas .sv-campaign-table{
+    min-width:1180px;
+    table-layout:auto;
+  }
+  .sv-admin-page--campanhas .sv-campaign-title{
+    max-width:420px;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    font-weight:900;
+    color:#f8fafc;
+  }
+  .sv-admin-page--campanhas .sv-campaign-subline{
+    display:flex;
+    flex-wrap:wrap;
+    gap:6px;
+    align-items:center;
+    margin-top:6px;
+  }
+  .sv-admin-page--campanhas .sv-row-actions{
+    display:flex;
+    align-items:center;
+    justify-content:flex-end;
+    gap:8px;
+    flex-wrap:nowrap;
+  }
+  .sv-admin-page--campanhas .sv-row-actions form{ margin:0; }
+  .sv-admin-page--campanhas .sv-status-dot{
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+    font-weight:900;
+  }
+  .sv-admin-page--campanhas .sv-status-dot::before{
+    content:"";
+    width:7px;
+    height:7px;
+    border-radius:999px;
+    background:#22c55e;
+    box-shadow:0 0 0 4px rgba(34,197,94,.10);
+  }
+  .sv-admin-page--campanhas .sv-status-dot.is-off::before{
+    background:#94a3b8;
+    box-shadow:0 0 0 4px rgba(148,163,184,.10);
+  }
+  .sv-admin-page--campanhas .sv-filter-empty{
+    display:none;
+    border:1px dashed rgba(255,255,255,.16);
+    border-radius:18px;
+    padding:20px;
+    text-align:center;
+    color:var(--camp-muted);
+    background:rgba(255,255,255,.025);
+    margin-top:14px;
+  }
+  .sv-admin-page--campanhas .sv-filter-empty strong{
+    display:block;
+    color:#f8fafc;
+    margin-bottom:4px;
+  }
+
+  .sv-admin-page--campanhas .sv-group-row td{
+    background:linear-gradient(90deg, rgba(255,140,0,.10), rgba(255,255,255,.025))!important;
+    color:#ffd39b!important;
+    font-weight:1000;
+    letter-spacing:.02em;
+  }
+
+  .sv-admin-page--campanhas .sv-mini-metric{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:10px;
+    border:1px solid rgba(255,255,255,.08);
+    background:rgba(255,255,255,.025);
+    border-radius:16px;
+    padding:10px 12px;
+    min-width:150px;
+  }
+  .sv-admin-page--campanhas .sv-mini-metric small{
+    color:var(--camp-muted);
+    font-weight:800;
+  }
+  .sv-admin-page--campanhas .sv-mini-metric strong{
+    color:#fff;
+  }
+
   .sv-modal-dark .modal-content{
     border:1px solid rgba(255,255,255,.10);
     background:#141414;
@@ -36,22 +256,51 @@
     border-color:rgba(255,177,66,.28);
     color:#ffd098;
   }
+
+  @media(max-width:1100px){
+    .sv-admin-page--campanhas .sv-campaign-grid{ grid-template-columns:repeat(2, minmax(0, 1fr)); }
+    .sv-admin-page--campanhas .sv-col-3{ grid-column:1/-1; }
+  }
   @media(max-width:760px){
+    .sv-admin-page--campanhas .sv-toolbar-inline{ justify-content:stretch; }
+    .sv-admin-page--campanhas .sv-toolbar-inline .form-control,
+    .sv-admin-page--campanhas .sv-toolbar-inline .form-select,
+    .sv-admin-page--campanhas .sv-toolbar-inline .btn{ width:100%!important; min-width:0!important; }
+    .sv-admin-page--campanhas .sv-campaign-grid,
+    .sv-admin-page--campanhas .sv-campaign-grid-2,
+    .sv-admin-page--campanhas .sv-type-selector{ grid-template-columns:1fr; }
+    .sv-admin-page--campanhas .sv-col-2,
+    .sv-admin-page--campanhas .sv-col-3{ grid-column:1/-1; }
     .sv-admin-page--campanhas .sv-campaign-title{ max-width:260px; }
+    .sv-admin-page--campanhas .sv-form-block-head{ flex-direction:column; }
   }
 </style>
 {% endblock %}
 
 {% block content %}
+{% set kpi = namespace(ativas=0, inativas=0, gerente=0, vendedor=0) %}
+{% for item in campanhas %}
+  {% if item.ativo %}
+    {% set kpi.ativas = kpi.ativas + 1 %}
+  {% else %}
+    {% set kpi.inativas = kpi.inativas + 1 %}
+  {% endif %}
+  {% if (item.campanha_tipo or 'VENDEDOR') == 'GERENTE' %}
+    {% set kpi.gerente = kpi.gerente + 1 %}
+  {% else %}
+    {% set kpi.vendedor = kpi.vendedor + 1 %}
+  {% endif %}
+{% endfor %}
+
 <div class="sv-admin-page sv-admin-page--campanhas">
 
   <section class="sv-admin-hero">
     <div class="sv-admin-hero-row">
       <div>
-        <span class="sv-admin-eyebrow">Administração · Campanhas</span>
-        <h1 class="sv-admin-title">Campanhas Qtd / Recompensa</h1>
+        <span class="sv-admin-eyebrow">Administração · Motor comercial</span>
+        <h1 class="sv-admin-title">Central de Campanhas Qtd</h1>
         <div class="sv-admin-subtitle">
-          Cadastre campanhas por <b>código/prefixo</b> ou por <b>descrição iniciada por</b>, mantendo marca obrigatória, mínimos e vigência para apuração comercial.
+          Gestão profissional das campanhas por <b>código/prefixo</b> ou <b>descrição iniciada por</b>, com escopo por EMP, premiação por vendedor ou gerente e vigência controlada.
         </div>
       </div>
       <div class="sv-action-row">
@@ -62,29 +311,29 @@
 
     <div class="sv-admin-kpis mt-3">
       <div class="sv-kpi-card">
-        <small>Campanhas</small>
+        <small>Total</small>
         <strong>{{ campanhas|length }}</strong>
-        <span>Total cadastrado</span>
+        <span>Campanhas cadastradas</span>
       </div>
       <div class="sv-kpi-card">
         <small>Ativas</small>
-        <strong>{{ campanhas|selectattr('ativo')|list|length }}</strong>
+        <strong>{{ kpi.ativas }}</strong>
         <span>Disponíveis para cálculo</span>
+      </div>
+      <div class="sv-kpi-card">
+        <small>Vendedor</small>
+        <strong>{{ kpi.vendedor }}</strong>
+        <span>Venda individual</span>
+      </div>
+      <div class="sv-kpi-card">
+        <small>Gerente</small>
+        <strong>{{ kpi.gerente }}</strong>
+        <span>Total vendido pela EMP</span>
       </div>
       <div class="sv-kpi-card">
         <small>Resultados</small>
         <strong>{{ resultados|length }}</strong>
         <span>{{ '%02d'|format(mes|int) }}/{{ ano }}</span>
-      </div>
-      <div class="sv-kpi-card">
-        <small>Competência</small>
-        <strong>{{ '%02d'|format(mes|int) }}/{{ ano }}</strong>
-        <span>Referência atual</span>
-      </div>
-      <div class="sv-kpi-card">
-        <small>Escopo</small>
-        <strong>EMP</strong>
-        <span>Controle por empresa</span>
       </div>
     </div>
   </section>
@@ -100,17 +349,19 @@
     <div class="sv-panel-head">
       <div>
         <h2 class="sv-panel-title">Nova campanha</h2>
-        <div class="sv-panel-subtitle">Preencha os campos obrigatórios e defina a regra de apuração. Se o vendedor ficar vazio, a campanha vale para todos da EMP.</div>
+        <div class="sv-panel-subtitle">Cadastro guiado por etapas para reduzir erros de EMP, tipo, base de apuração, mínimos e vigência.</div>
       </div>
       <button class="btn btn-sv-soft" type="button" data-bs-toggle="collapse" data-bs-target="#tipsCollapse" aria-expanded="false">
         Ver boas práticas
       </button>
     </div>
+
     <div class="sv-panel-body">
       <div class="collapse" id="tipsCollapse">
         <div class="sv-help-box mb-3 sv-help-text">
           <b>Código:</b> use prefixo, exemplo <code>406</code>, para considerar todos os códigos iniciados com esse valor.<br>
           <b>Descrição:</b> use o início exato, exemplo <code>JOGO JUNTA</code>, sempre combinando com a marca.<br>
+          <b>Gerente:</b> não usa vendedor específico; a premiação considera o total vendido pela EMP nos produtos da campanha.<br>
           <b>Mínimos:</b> quantidade e valor são opcionais. Se preencher ambos, os dois serão exigidos.
         </div>
       </div>
@@ -118,86 +369,128 @@
       <form method="post" id="frmCampanha">
         <input type="hidden" name="acao" value="criar">
 
-        <div class="sv-form-grid sv-form-grid-4">
-          <div class="sv-field">
-            <label class="sv-form-label">EMP *</label>
-            <input class="form-control" type="text" name="emp" placeholder="Ex: 101" required>
+        <div class="sv-campaign-layout">
+          <div class="sv-form-block">
+            <div class="sv-form-block-head">
+              <div>
+                <div class="sv-form-block-title"><span class="sv-step-pill">01</span> Escopo da campanha</div>
+                <div class="sv-form-block-note mt-1">Defina em qual EMP a campanha será apurada e se o pagamento será individual ou gerencial.</div>
+              </div>
+            </div>
+
+            <div class="sv-campaign-grid">
+              <div class="sv-field">
+                <label class="sv-form-label">EMP *</label>
+                <input class="form-control" type="text" name="emp" placeholder="Ex: 101" required>
+              </div>
+
+              <div class="sv-field sv-col-2">
+                <label class="sv-form-label">Tipo de campanha *</label>
+                <select class="form-select d-none" name="campanha_tipo" id="campanha_tipo" aria-hidden="true">
+                  <option value="VENDEDOR" selected>Vendedor — venda individual</option>
+                  <option value="GERENTE">Gerente — venda total da loja</option>
+                </select>
+                <div class="sv-type-selector" role="group" aria-label="Tipo de campanha">
+                  <button class="sv-type-card is-active" type="button" data-campaign-type="VENDEDOR">
+                    <strong>Vendedor</strong>
+                    <span>Premiação pela venda individual ou para todos da EMP.</span>
+                  </button>
+                  <button class="sv-type-card" type="button" data-campaign-type="GERENTE">
+                    <strong>Gerente</strong>
+                    <span>Premiação sobre o total vendido pela loja/EMP.</span>
+                  </button>
+                </div>
+              </div>
+
+              <div class="sv-field" id="wrap_vendedor">
+                <label class="sv-form-label">Vendedor</label>
+                <input class="form-control" type="text" name="vendedor" placeholder="Vazio = todos">
+                <div class="sv-help-text mt-1">Opcional para campanha de vendedor.</div>
+              </div>
+
+              <div class="sv-field sv-col-full">
+                <label class="sv-form-label">Título da campanha</label>
+                <input class="form-control" type="text" name="titulo" placeholder="Ex: Semana do Pneu · Junho">
+              </div>
+            </div>
           </div>
 
-          <div class="sv-field">
-            <label class="sv-form-label">Tipo de campanha *</label>
-            <select class="form-select" name="campanha_tipo" id="campanha_tipo">
-              <option value="VENDEDOR" selected>Vendedor — venda individual</option>
-              <option value="GERENTE">Gerente — venda total da loja</option>
-            </select>
-            <div class="sv-help-text mt-1">Gerente recebe sobre tudo que a EMP vendeu.</div>
+          <div class="sv-form-block">
+            <div class="sv-form-block-head">
+              <div>
+                <div class="sv-form-block-title"><span class="sv-step-pill">02</span> Produto e regra de apuração</div>
+                <div class="sv-form-block-note mt-1">Escolha se a campanha procura pelo código/prefixo do produto ou pelo início da descrição.</div>
+              </div>
+            </div>
+
+            <div class="sv-campaign-grid">
+              <div class="sv-field sv-col-2">
+                <label class="sv-form-label">Base de apuração *</label>
+                <select class="form-select" name="campo_match" id="campo_match">
+                  <option value="codigo" selected>Código / Prefixo</option>
+                  <option value="descricao">Descrição começa com...</option>
+                </select>
+                <div class="sv-help-text mt-1">O campo não utilizado será desativado automaticamente.</div>
+              </div>
+
+              <div class="sv-field" id="wrap_produto_prefixo">
+                <label class="sv-form-label">Produto / Prefixo</label>
+                <input class="form-control" type="text" name="produto_prefixo" id="produto_prefixo" placeholder="Ex: 406">
+              </div>
+
+              <div class="sv-field" id="wrap_descricao_prefixo">
+                <label class="sv-form-label">Descrição / Início</label>
+                <input class="form-control" type="text" name="descricao_prefixo" id="descricao_prefixo" placeholder="Ex: JOGO JUNTA">
+              </div>
+
+              <div class="sv-field sv-col-full">
+                <label class="sv-form-label">Marca *</label>
+                <input class="form-control" type="text" name="marca" placeholder="Ex: COFAP" required>
+              </div>
+            </div>
           </div>
 
-          <div class="sv-field" id="wrap_vendedor">
-            <label class="sv-form-label">Vendedor</label>
-            <input class="form-control" type="text" name="vendedor" placeholder="Vazio = todos">
-            <div class="sv-help-text mt-1">Opcional.</div>
-          </div>
+          <div class="sv-form-block">
+            <div class="sv-form-block-head">
+              <div>
+                <div class="sv-form-block-title"><span class="sv-step-pill">03</span> Premiação, mínimos e vigência</div>
+                <div class="sv-form-block-note mt-1">Configure o valor pago por unidade, travas comerciais e período válido para apuração.</div>
+              </div>
+            </div>
 
-          <div class="sv-field span-2">
-            <label class="sv-form-label">Título</label>
-            <input class="form-control" type="text" name="titulo" placeholder="Ex: Semana do Pneu">
-          </div>
+            <div class="sv-campaign-grid">
+              <div class="sv-field">
+                <label class="sv-form-label">Recompensa R$/un *</label>
+                <input class="form-control" type="text" name="recompensa_unit" placeholder="1,00" required>
+              </div>
 
-          <div class="sv-field span-2">
-            <label class="sv-form-label">Base de apuração *</label>
-            <select class="form-select" name="campo_match" id="campo_match">
-              <option value="codigo" selected>Código / Prefixo</option>
-              <option value="descricao">Descrição começa com...</option>
-            </select>
-            <div class="sv-help-text mt-1">Escolha uma base. O outro campo será desativado automaticamente.</div>
-          </div>
+              <div class="sv-field">
+                <label class="sv-form-label">Qtd mínima</label>
+                <input class="form-control" type="text" name="qtd_minima" inputmode="numeric" placeholder="Ex: 50">
+              </div>
 
-          <div class="sv-field" id="wrap_produto_prefixo">
-            <label class="sv-form-label">Produto / Prefixo</label>
-            <input class="form-control" type="text" name="produto_prefixo" id="produto_prefixo" placeholder="Ex: 406">
-          </div>
+              <div class="sv-field">
+                <label class="sv-form-label">Valor mínimo</label>
+                <input class="form-control" type="text" name="valor_minimo" placeholder="Ex: 1000,00">
+              </div>
 
-          <div class="sv-field" id="wrap_descricao_prefixo">
-            <label class="sv-form-label">Descrição / Início</label>
-            <input class="form-control" type="text" name="descricao_prefixo" id="descricao_prefixo" placeholder="Ex: JOGO JUNTA">
-          </div>
+              <div class="sv-field">
+                <label class="sv-form-label">Início *</label>
+                <input class="form-control" type="date" name="data_inicio" required>
+              </div>
 
-          <div class="sv-field">
-            <label class="sv-form-label">Marca *</label>
-            <input class="form-control" type="text" name="marca" placeholder="Ex: COFAP" required>
-          </div>
+              <div class="sv-field">
+                <label class="sv-form-label">Fim *</label>
+                <input class="form-control" type="date" name="data_fim" required>
+              </div>
 
-          <div class="sv-field">
-            <label class="sv-form-label">Recompensa R$/un *</label>
-            <input class="form-control" type="text" name="recompensa_unit" placeholder="1,00" required>
-          </div>
-
-          <div class="sv-field">
-            <label class="sv-form-label">Qtd mínima</label>
-            <input class="form-control" type="text" name="qtd_minima" inputmode="numeric" placeholder="Ex: 50">
-          </div>
-
-          <div class="sv-field">
-            <label class="sv-form-label">Valor mínimo</label>
-            <input class="form-control" type="text" name="valor_minimo" placeholder="Ex: 1000,00">
-          </div>
-
-          <div class="sv-field">
-            <label class="sv-form-label">Início *</label>
-            <input class="form-control" type="date" name="data_inicio" required>
-          </div>
-
-          <div class="sv-field">
-            <label class="sv-form-label">Fim *</label>
-            <input class="form-control" type="date" name="data_fim" required>
-          </div>
-
-          <div class="sv-field span-2 d-flex align-items-end">
-            <button class="btn btn-sv-primary w-100" type="submit" id="btnSalvar">
-              <span class="spinner-border spinner-border-sm d-none" id="spSalvar" role="status" aria-hidden="true"></span>
-              <span id="txSalvar">Salvar campanha</span>
-            </button>
+              <div class="sv-field sv-col-3 d-flex align-items-end">
+                <button class="btn btn-sv-primary w-100" type="submit" id="btnSalvar">
+                  <span class="spinner-border spinner-border-sm d-none" id="spSalvar" role="status" aria-hidden="true"></span>
+                  <span id="txSalvar">Salvar campanha</span>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </form>
@@ -208,56 +501,92 @@
     <div class="sv-panel-head">
       <div>
         <h2 class="sv-panel-title">Campanhas cadastradas</h2>
-        <div class="sv-panel-subtitle">Use busca e filtro por EMP para localizar campanhas rapidamente.</div>
+        <div class="sv-panel-subtitle">Controle por competência, EMP, status, tipo e base de apuração com leitura mais rápida da regra comercial.</div>
       </div>
-      <div class="sv-action-row">
-        <input type="text" class="form-control" id="qSearch" placeholder="Buscar título, vendedor, marca..." style="min-width:280px;">
-        <select class="form-select" id="empFilter" style="width:auto;min-width:160px;">
-          <option value="ALL" selected>Todas EMP</option>
-          {% set grouped_emps = campanhas|groupby('emp') %}
-          {% for g in grouped_emps %}
-            {% if g.grouper %}
-              <option value="{{ g.grouper }}">EMP {{ g.grouper }}</option>
-            {% endif %}
-          {% endfor %}
-        </select>
+      <div class="sv-toolbar-inline">
+        <div class="sv-mini-metric">
+          <small>Mostrando</small>
+          <strong><span id="rowCount">{{ campanhas|length }}</span>/{{ campanhas|length }}</strong>
+        </div>
       </div>
     </div>
+
     <div class="sv-panel-body">
       {% if campanhas|length == 0 %}
         <div class="sv-empty-state">Nenhuma campanha cadastrada.</div>
       {% else %}
+        <div class="sv-help-box mb-3">
+          <div class="sv-toolbar-inline" style="justify-content:space-between;">
+            <input type="text" class="form-control" id="qSearch" placeholder="Buscar título, vendedor, marca, código ou descrição..." style="min-width:300px;flex:1;">
+
+            <select class="form-select" id="empFilter" style="width:auto;min-width:145px;">
+              <option value="ALL" selected>Todas EMP</option>
+              {% set grouped_emps = campanhas|groupby('emp') %}
+              {% for g in grouped_emps %}
+                {% if g.grouper %}
+                  <option value="{{ g.grouper }}">EMP {{ g.grouper }}</option>
+                {% endif %}
+              {% endfor %}
+            </select>
+
+            <select class="form-select" id="statusFilter" style="width:auto;min-width:135px;">
+              <option value="ALL" selected>Status</option>
+              <option value="ATIVA">Ativas</option>
+              <option value="INATIVA">Inativas</option>
+            </select>
+
+            <select class="form-select" id="typeFilter" style="width:auto;min-width:145px;">
+              <option value="ALL" selected>Tipo</option>
+              <option value="VENDEDOR">Vendedor</option>
+              <option value="GERENTE">Gerente</option>
+            </select>
+
+            <select class="form-select" id="baseFilter" style="width:auto;min-width:145px;">
+              <option value="ALL" selected>Base</option>
+              <option value="codigo">Código</option>
+              <option value="descricao">Descrição</option>
+            </select>
+
+            <button class="btn btn-sv-soft" type="button" id="resetFilters">Limpar</button>
+          </div>
+        </div>
+
         <div class="sv-table-card">
           <table class="sv-data-table sv-campaign-table" id="tblCampanhas">
             <thead>
               <tr>
                 <th>#</th>
-                <th>EMP</th>
-                <th>Título / Base</th>
+                <th>Campanha / Regra</th>
+                <th>EMP / Status</th>
                 <th>Tipo</th>
                 <th>Beneficiário</th>
                 <th>Marca</th>
                 <th class="text-end">Mínimos</th>
                 <th class="text-end">R$/un</th>
                 <th>Vigência</th>
-                <th class="text-end">Ação</th>
+                <th class="text-end">Ações</th>
               </tr>
             </thead>
             <tbody>
               {% for grp in campanhas|sort(attribute='data_inicio', reverse=True)|groupby('competencia_label') %}
-                <tr class="sv-group-row">
-                  <td colspan="10" style="background:rgba(255,140,0,.075)!important;color:#ffd39b!important;font-weight:900;">
-                    Competência {{ grp.grouper or 'Sem competência' }}
-                  </td>
+                <tr class="sv-group-row" data-group-row="1">
+                  <td colspan="10">Competência {{ grp.grouper or 'Sem competência' }}</td>
                 </tr>
                 {% for c in grp.list %}
-                  <tr data-emp="{{ c.emp or '' }}" data-search="{{ (c.titulo or '') ~ ' ' ~ (c.campanha_tipo or '') ~ ' ' ~ (c.vendedor or '') ~ ' ' ~ (c.marca or '') ~ ' ' ~ (c.produto_prefixo or '') ~ ' ' ~ (c.descricao_prefixo or '') }}">
+                  {% set c_tipo = c.campanha_tipo or 'VENDEDOR' %}
+                  {% set c_base = c.campo_match or 'codigo' %}
+                  {% set c_status = 'ATIVA' if c.ativo else 'INATIVA' %}
+                  <tr data-campaign-row="1"
+                      data-emp="{{ c.emp or '' }}"
+                      data-status="{{ c_status }}"
+                      data-tipo="{{ c_tipo }}"
+                      data-base="{{ c_base }}"
+                      data-search="{{ ((c.titulo or '') ~ ' ' ~ c_tipo ~ ' ' ~ (c.vendedor or '') ~ ' ' ~ (c.marca or '') ~ ' ' ~ (c.produto_prefixo or '') ~ ' ' ~ (c.descricao_prefixo or '') ~ ' ' ~ (c.emp or ''))|e }}">
                     <td class="sv-number">{{ c.id }}</td>
-                    <td><span class="sv-chip">EMP {{ c.emp or '-' }}</span></td>
                     <td>
-                      <div class="sv-campaign-title" title="{{ c.titulo or '' }}"><b>{{ c.titulo or '-' }}</b></div>
-                      <div class="sv-help-text mt-1">
-                        {% if c.campo_match == 'codigo' %}
+                      <div class="sv-campaign-title" title="{{ c.titulo or '' }}">{{ c.titulo or ('Campanha #' ~ c.id) }}</div>
+                      <div class="sv-campaign-subline sv-help-text">
+                        {% if c_base == 'codigo' %}
                           <span class="sv-chip sv-chip--info">Código</span>
                           <span class="sv-money">{{ c.produto_prefixo or '-' }}</span>
                         {% else %}
@@ -266,25 +595,51 @@
                         {% endif %}
                       </div>
                     </td>
-                    <td>{% if (c.campanha_tipo or 'VENDEDOR') == 'GERENTE' %}<span class="sv-chip sv-chip--warning">GERENTE</span>{% else %}<span class="sv-chip sv-chip--info">VENDEDOR</span>{% endif %}</td>
-                    <td>{% if (c.campanha_tipo or 'VENDEDOR') == 'GERENTE' %}Gerente da EMP{% else %}{{ c.vendedor or 'TODOS' }}{% endif %}</td>
+                    <td>
+                      <div><span class="sv-chip">EMP {{ c.emp or '-' }}</span></div>
+                      <div class="sv-help-text mt-2">
+                        <span class="sv-status-dot {% if not c.ativo %}is-off{% endif %}">{{ 'Ativa' if c.ativo else 'Inativa' }}</span>
+                      </div>
+                    </td>
+                    <td>
+                      {% if c_tipo == 'GERENTE' %}
+                        <span class="sv-chip sv-chip--warning">GERENTE</span>
+                      {% else %}
+                        <span class="sv-chip sv-chip--info">VENDEDOR</span>
+                      {% endif %}
+                    </td>
+                    <td>
+                      {% if c_tipo == 'GERENTE' %}
+                        <b>Gerente da EMP</b>
+                        <div class="sv-help-text">Total da loja</div>
+                      {% else %}
+                        <b>{{ c.vendedor or 'TODOS' }}</b>
+                        <div class="sv-help-text">Venda individual</div>
+                      {% endif %}
+                    </td>
                     <td><span class="sv-money">{{ c.marca or '-' }}</span></td>
                     <td class="text-end sv-money">
-                      {% if c.qtd_minima %}{{ c.qtd_minima }}{% else %}-{% endif %}
-                      <span class="text-muted"> / </span>
-                      {% if c.valor_minimo %}{{ c.valor_minimo|brl_rs }}{% else %}-{% endif %}
+                      <div>Qtd: {% if c.qtd_minima %}{{ c.qtd_minima }}{% else %}-{% endif %}</div>
+                      <div class="sv-help-text">Valor: {% if c.valor_minimo %}{{ c.valor_minimo|brl_rs }}{% else %}-{% endif %}</div>
                     </td>
                     <td class="text-end sv-money">{% if c.recompensa_unit %}{{ c.recompensa_unit|brl_rs }}{% else %}{{ 0|brl_rs }}{% endif %}</td>
                     <td class="sv-help-text">
-                      {{ c.data_inicio.strftime('%d/%m/%Y') if c.data_inicio else '-' }}<br>
-                      {{ c.data_fim.strftime('%d/%m/%Y') if c.data_fim else '-' }}
+                      <b>{{ c.data_inicio.strftime('%d/%m/%Y') if c.data_inicio else '-' }}</b><br>
+                      até {{ c.data_fim.strftime('%d/%m/%Y') if c.data_fim else '-' }}
                     </td>
                     <td class="text-end">
-                      <button class="btn btn-outline-danger btn-sm" type="button"
-                              data-bs-toggle="modal" data-bs-target="#delModal"
-                              data-id="{{ c.id }}" data-title="{{ c.titulo or ('Campanha #' ~ c.id) }}">
-                        Excluir
-                      </button>
+                      <div class="sv-row-actions">
+                        <form method="post">
+                          <input type="hidden" name="acao" value="toggle">
+                          <input type="hidden" name="campanha_id" value="{{ c.id }}">
+                          <button class="btn btn-sv-soft btn-sm" type="submit">{{ 'Desativar' if c.ativo else 'Ativar' }}</button>
+                        </form>
+                        <button class="btn btn-outline-danger btn-sm" type="button"
+                                data-bs-toggle="modal" data-bs-target="#delModal"
+                                data-id="{{ c.id }}" data-title="{{ c.titulo or ('Campanha #' ~ c.id) }}">
+                          Excluir
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 {% endfor %}
@@ -292,8 +647,10 @@
             </tbody>
           </table>
         </div>
-        <div class="sv-help-text mt-3">
-          Mostrando <span class="sv-money" id="rowCount">{{ campanhas|length }}</span> campanha(s).
+
+        <div class="sv-filter-empty" id="filterEmpty">
+          <strong>Nenhuma campanha encontrada</strong>
+          Ajuste os filtros ou limpe a busca para visualizar todas as campanhas cadastradas.
         </div>
       {% endif %}
     </div>
@@ -311,7 +668,9 @@
         <button type="button" class="btn btn-sv-soft btn-sm" data-bs-dismiss="modal">Fechar</button>
       </div>
       <div class="modal-body">
-        <div class="alert alert-warning mb-0">Essa ação não pode ser desfeita.</div>
+        <div class="alert alert-warning mb-0">
+          Essa ação não pode ser desfeita. Para preservar histórico, prefira <b>Desativar</b> quando a campanha não deve mais entrar no cálculo.
+        </div>
       </div>
       <div class="modal-footer">
         <form method="post" id="delForm" class="m-0">
@@ -355,57 +714,113 @@
     }
   }
 
+  function syncTypeCards(){
+    var tipo = document.getElementById('campanha_tipo');
+    var value = tipo && tipo.value ? tipo.value : 'VENDEDOR';
+    document.querySelectorAll('[data-campaign-type]').forEach(function(btn){
+      btn.classList.toggle('is-active', btn.getAttribute('data-campaign-type') === value);
+    });
+  }
+
+  function toggleTipoCampanha(){
+    var tipo = document.getElementById('campanha_tipo');
+    var vendWrap = document.getElementById('wrap_vendedor');
+    var vendInput = vendWrap ? vendWrap.querySelector('input[name="vendedor"]') : null;
+    var isGerente = tipo && tipo.value === 'GERENTE';
+    if(vendWrap){ vendWrap.classList.toggle('sv-field-disabled', !!isGerente); }
+    if(vendInput){
+      vendInput.disabled = !!isGerente;
+      if(isGerente){ vendInput.value = ''; vendInput.placeholder = 'Não usado para gerente'; }
+      else { vendInput.placeholder = 'Vazio = todos'; }
+    }
+    syncTypeCards();
+  }
+
   document.addEventListener('DOMContentLoaded', function(){
     var sel = document.getElementById('campo_match');
     if(sel){ sel.addEventListener('change', toggleMatchFields); }
     toggleMatchFields();
 
-    function toggleTipoCampanha(){
-      var tipo = document.getElementById('campanha_tipo');
-      var vendWrap = document.getElementById('wrap_vendedor');
-      var vendInput = vendWrap ? vendWrap.querySelector('input[name="vendedor"]') : null;
-      var isGerente = tipo && tipo.value === 'GERENTE';
-      if(vendWrap){ vendWrap.classList.toggle('sv-field-disabled', !!isGerente); }
-      if(vendInput){
-        vendInput.disabled = !!isGerente;
-        if(isGerente){ vendInput.value = ''; vendInput.placeholder = 'Não usado para gerente'; }
-        else { vendInput.placeholder = 'Vazio = todos'; }
-      }
-    }
+    document.querySelectorAll('[data-campaign-type]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var tipo = document.getElementById('campanha_tipo');
+        if(tipo){ tipo.value = btn.getAttribute('data-campaign-type') || 'VENDEDOR'; }
+        toggleTipoCampanha();
+      });
+    });
     var tipoCamp = document.getElementById('campanha_tipo');
     if(tipoCamp){ tipoCamp.addEventListener('change', toggleTipoCampanha); }
     toggleTipoCampanha();
 
     var q = document.getElementById('qSearch');
-    var f = document.getElementById('empFilter');
+    var emp = document.getElementById('empFilter');
+    var status = document.getElementById('statusFilter');
+    var type = document.getElementById('typeFilter');
+    var base = document.getElementById('baseFilter');
+    var reset = document.getElementById('resetFilters');
     var tbl = document.getElementById('tblCampanhas');
     var rc = document.getElementById('rowCount');
+    var empty = document.getElementById('filterEmpty');
+
+    function updateGroupRows(){
+      if(!tbl) return;
+      var rows = Array.prototype.slice.call(tbl.querySelectorAll('tbody tr'));
+      rows.forEach(function(row, idx){
+        if(row.getAttribute('data-group-row') !== '1') return;
+        var hasVisible = false;
+        for(var i = idx + 1; i < rows.length; i++){
+          var next = rows[i];
+          if(next.getAttribute('data-group-row') === '1') break;
+          if(next.getAttribute('data-campaign-row') === '1' && next.style.display !== 'none'){
+            hasVisible = true;
+            break;
+          }
+        }
+        row.style.display = hasVisible ? '' : 'none';
+      });
+    }
 
     function applyFilters(){
       if(!tbl) return;
-      var rows = tbl.querySelectorAll('tbody tr');
+      var rows = tbl.querySelectorAll('tbody tr[data-campaign-row="1"]');
       var term = (q && q.value) ? q.value.toLowerCase().trim() : '';
-      var empv = (f && f.value) ? f.value : 'ALL';
+      var empv = (emp && emp.value) ? emp.value : 'ALL';
+      var statusv = (status && status.value) ? status.value : 'ALL';
+      var typev = (type && type.value) ? type.value : 'ALL';
+      var basev = (base && base.value) ? base.value : 'ALL';
       var count = 0;
 
       rows.forEach(function(tr){
-        var ds = tr.getAttribute('data-search');
-        if(!ds){
-          tr.style.display = '';
-          return;
-        }
-        var okTerm = !term || (ds.toLowerCase().indexOf(term) !== -1);
+        var ds = (tr.getAttribute('data-search') || '').toLowerCase();
+        var okTerm = !term || (ds.indexOf(term) !== -1);
         var okEmp = (empv === 'ALL') || ((tr.getAttribute('data-emp') || '') === empv);
-        var show = okTerm && okEmp;
+        var okStatus = (statusv === 'ALL') || ((tr.getAttribute('data-status') || '') === statusv);
+        var okType = (typev === 'ALL') || ((tr.getAttribute('data-tipo') || '') === typev);
+        var okBase = (basev === 'ALL') || ((tr.getAttribute('data-base') || '') === basev);
+        var show = okTerm && okEmp && okStatus && okType && okBase;
         tr.style.display = show ? '' : 'none';
         if(show) count++;
       });
 
+      updateGroupRows();
       if(rc) rc.textContent = String(count);
+      if(empty) empty.style.display = count === 0 ? 'block' : 'none';
     }
 
-    if(q) q.addEventListener('input', applyFilters);
-    if(f) f.addEventListener('change', applyFilters);
+    [q, emp, status, type, base].forEach(function(el){
+      if(!el) return;
+      el.addEventListener(el.tagName === 'INPUT' ? 'input' : 'change', applyFilters);
+    });
+    if(reset){
+      reset.addEventListener('click', function(){
+        if(q) q.value = '';
+        if(emp) emp.value = 'ALL';
+        if(status) status.value = 'ALL';
+        if(type) type.value = 'ALL';
+        if(base) base.value = 'ALL';
+        applyFilters();
+      });
+    }
     applyFilters();
 
     var delModal = document.getElementById('delModal');
