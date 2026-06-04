@@ -182,6 +182,38 @@
     flex-wrap:nowrap;
   }
   .sv-admin-page--campanhas .sv-row-actions form{ margin:0; }
+  .sv-admin-page--campanhas .sv-row-actions .btn{ white-space:nowrap; }
+  .sv-admin-page--campanhas .sv-action-primary{
+    border-color:rgba(255,140,0,.34)!important;
+    background:rgba(255,140,0,.10)!important;
+  }
+  .sv-admin-page--campanhas .sv-muted-divider{
+    width:1px;
+    height:26px;
+    background:rgba(255,255,255,.10);
+    margin:0 1px;
+  }
+  .sv-admin-page--campanhas .sv-modal-grid{
+    display:grid;
+    grid-template-columns:repeat(2, minmax(0, 1fr));
+    gap:12px;
+  }
+  .sv-admin-page--campanhas .sv-modal-grid .sv-col-full{ grid-column:1/-1; }
+  .sv-admin-page--campanhas .sv-duplicate-summary{
+    border:1px solid rgba(255,140,0,.18);
+    background:rgba(255,140,0,.08);
+    border-radius:16px;
+    padding:12px 14px;
+    color:rgba(248,250,252,.82);
+    line-height:1.45;
+  }
+  .sv-admin-page--campanhas .sv-status-note{
+    border:1px solid rgba(148,163,184,.20);
+    background:rgba(148,163,184,.08);
+    border-radius:16px;
+    padding:12px 14px;
+    color:rgba(248,250,252,.74);
+  }
   .sv-admin-page--campanhas .sv-status-dot{
     display:inline-flex;
     align-items:center;
@@ -273,6 +305,7 @@
     .sv-admin-page--campanhas .sv-col-3{ grid-column:1/-1; }
     .sv-admin-page--campanhas .sv-campaign-title{ max-width:260px; }
     .sv-admin-page--campanhas .sv-form-block-head{ flex-direction:column; }
+    .sv-admin-page--campanhas .sv-modal-grid{ grid-template-columns:1fr; }
   }
 </style>
 {% endblock %}
@@ -368,6 +401,8 @@
 
       <form method="post" id="frmCampanha">
         <input type="hidden" name="acao" value="criar">
+        <input type="hidden" name="mes" value="{{ mes }}">
+        <input type="hidden" name="ano" value="{{ ano }}">
 
         <div class="sv-campaign-layout">
           <div class="sv-form-block">
@@ -629,14 +664,47 @@
                     </td>
                     <td class="text-end">
                       <div class="sv-row-actions">
+                        <button class="btn btn-sv-soft btn-sm sv-action-primary" type="button"
+                                data-bs-toggle="modal" data-bs-target="#editModal"
+                                data-id="{{ c.id }}"
+                                data-title="{{ (c.titulo or '')|e }}"
+                                data-emp="{{ (c.emp or '')|e }}"
+                                data-tipo="{{ c_tipo }}"
+                                data-vendedor="{{ (c.vendedor or '')|e }}"
+                                data-campo-match="{{ c_base }}"
+                                data-produto="{{ (c.produto_prefixo or '')|e }}"
+                                data-descricao="{{ (c.descricao_prefixo or '')|e }}"
+                                data-marca="{{ (c.marca or '')|e }}"
+                                data-recompensa="{{ c.recompensa_unit if c.recompensa_unit is not none else '' }}"
+                                data-qtd="{{ c.qtd_minima if c.qtd_minima is not none else '' }}"
+                                data-valor="{{ c.valor_minimo if c.valor_minimo is not none else '' }}"
+                                data-data-inicio="{{ c.data_inicio.isoformat() if c.data_inicio else '' }}"
+                                data-data-fim="{{ c.data_fim.isoformat() if c.data_fim else '' }}">
+                          Editar
+                        </button>
+                        <button class="btn btn-outline-light btn-sm" type="button"
+                                data-bs-toggle="modal" data-bs-target="#dupModal"
+                                data-id="{{ c.id }}"
+                                data-title="{{ (c.titulo or ('Campanha #' ~ c.id))|e }}"
+                                data-emp="{{ (c.emp or '')|e }}"
+                                data-tipo="{{ c_tipo }}"
+                                data-marca="{{ (c.marca or '')|e }}"
+                                data-produto="{{ (c.produto_prefixo or c.descricao_prefixo or '')|e }}"
+                                data-data-inicio="{{ c.data_inicio.isoformat() if c.data_inicio else '' }}"
+                                data-data-fim="{{ c.data_fim.isoformat() if c.data_fim else '' }}">
+                          Duplicar
+                        </button>
+                        <span class="sv-muted-divider" aria-hidden="true"></span>
                         <form method="post">
                           <input type="hidden" name="acao" value="toggle">
                           <input type="hidden" name="campanha_id" value="{{ c.id }}">
+                          <input type="hidden" name="mes" value="{{ mes }}">
+                          <input type="hidden" name="ano" value="{{ ano }}">
                           <button class="btn btn-sv-soft btn-sm" type="submit">{{ 'Desativar' if c.ativo else 'Ativar' }}</button>
                         </form>
                         <button class="btn btn-outline-danger btn-sm" type="button"
                                 data-bs-toggle="modal" data-bs-target="#delModal"
-                                data-id="{{ c.id }}" data-title="{{ c.titulo or ('Campanha #' ~ c.id) }}">
+                                data-id="{{ c.id }}" data-title="{{ (c.titulo or ('Campanha #' ~ c.id))|e }}">
                           Excluir
                         </button>
                       </div>
@@ -655,6 +723,164 @@
       {% endif %}
     </div>
   </section>
+</div>
+
+
+<div class="modal fade sv-modal-dark" id="editModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content">
+      <form method="post" id="editForm" class="js-campaign-scope-form">
+        <input type="hidden" name="acao" value="editar">
+        <input type="hidden" name="campanha_id" id="editCampanhaId" value="">
+        <input type="hidden" name="mes" value="{{ mes }}">
+        <input type="hidden" name="ano" value="{{ ano }}">
+
+        <div class="modal-header">
+          <div>
+            <div class="fw-bold">Editar campanha</div>
+            <div class="text-muted small" id="editSubtitle">Ajuste os dados comerciais sem recriar a campanha.</div>
+          </div>
+          <button type="button" class="btn btn-sv-soft btn-sm" data-bs-dismiss="modal">Fechar</button>
+        </div>
+
+        <div class="modal-body">
+          <div class="sv-status-note mb-3">
+            Alterações em campanhas ativas podem impactar os próximos cálculos. Para preservar histórico, revise competência, EMP e vigência antes de salvar.
+          </div>
+
+          <div class="sv-modal-grid">
+            <div class="sv-field">
+              <label class="sv-form-label">EMP *</label>
+              <input class="form-control" type="text" name="emp" required>
+            </div>
+
+            <div class="sv-field">
+              <label class="sv-form-label">Tipo de campanha *</label>
+              <select class="form-select" name="campanha_tipo">
+                <option value="VENDEDOR">Vendedor — venda individual</option>
+                <option value="GERENTE">Gerente — venda total da loja</option>
+              </select>
+            </div>
+
+            <div class="sv-field" data-vendedor-wrap="1">
+              <label class="sv-form-label">Vendedor</label>
+              <input class="form-control" type="text" name="vendedor" placeholder="Vazio = todos">
+            </div>
+
+            <div class="sv-field">
+              <label class="sv-form-label">Base de apuração *</label>
+              <select class="form-select" name="campo_match">
+                <option value="codigo">Código / Prefixo</option>
+                <option value="descricao">Descrição começa com...</option>
+              </select>
+            </div>
+
+            <div class="sv-field sv-col-full">
+              <label class="sv-form-label">Título da campanha</label>
+              <input class="form-control" type="text" name="titulo" placeholder="Ex: Semana do Pneu · Junho">
+            </div>
+
+            <div class="sv-field" data-produto-wrap="1">
+              <label class="sv-form-label">Produto / Prefixo</label>
+              <input class="form-control" type="text" name="produto_prefixo" placeholder="Ex: 406">
+            </div>
+
+            <div class="sv-field" data-descricao-wrap="1">
+              <label class="sv-form-label">Descrição / Início</label>
+              <input class="form-control" type="text" name="descricao_prefixo" placeholder="Ex: JOGO JUNTA">
+            </div>
+
+            <div class="sv-field">
+              <label class="sv-form-label">Marca *</label>
+              <input class="form-control" type="text" name="marca" required>
+            </div>
+
+            <div class="sv-field">
+              <label class="sv-form-label">Recompensa R$/un *</label>
+              <input class="form-control" type="text" name="recompensa_unit" required>
+            </div>
+
+            <div class="sv-field">
+              <label class="sv-form-label">Qtd mínima</label>
+              <input class="form-control" type="text" name="qtd_minima" inputmode="numeric">
+            </div>
+
+            <div class="sv-field">
+              <label class="sv-form-label">Valor mínimo</label>
+              <input class="form-control" type="text" name="valor_minimo">
+            </div>
+
+            <div class="sv-field">
+              <label class="sv-form-label">Início *</label>
+              <input class="form-control" type="date" name="data_inicio" required>
+            </div>
+
+            <div class="sv-field">
+              <label class="sv-form-label">Fim *</label>
+              <input class="form-control" type="date" name="data_fim" required>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button class="btn btn-sv-soft" type="button" data-bs-dismiss="modal">Cancelar</button>
+          <button class="btn btn-sv-primary" type="submit">Salvar alterações</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade sv-modal-dark" id="dupModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form method="post" id="dupForm">
+        <input type="hidden" name="acao" value="duplicar">
+        <input type="hidden" name="campanha_id" id="dupCampanhaId" value="">
+        <input type="hidden" name="mes" value="{{ mes }}">
+        <input type="hidden" name="ano" value="{{ ano }}">
+
+        <div class="modal-header">
+          <div>
+            <div class="fw-bold">Duplicar campanha</div>
+            <div class="text-muted small">A cópia será criada inativa para revisão antes de entrar no cálculo.</div>
+          </div>
+          <button type="button" class="btn btn-sv-soft btn-sm" data-bs-dismiss="modal">Fechar</button>
+        </div>
+
+        <div class="modal-body">
+          <div class="sv-duplicate-summary mb-3" id="dupSummary">
+            Campanha selecionada.
+          </div>
+
+          <div class="sv-field mb-3">
+            <label class="sv-form-label">Título da cópia</label>
+            <input class="form-control" type="text" name="titulo" id="dupTitulo" placeholder="Cópia — campanha original">
+          </div>
+
+          <div class="sv-modal-grid">
+            <div class="sv-field">
+              <label class="sv-form-label">Novo início</label>
+              <input class="form-control" type="date" name="data_inicio" id="dupDataInicio">
+            </div>
+            <div class="sv-field">
+              <label class="sv-form-label">Novo fim</label>
+              <input class="form-control" type="date" name="data_fim" id="dupDataFim">
+            </div>
+          </div>
+
+          <div class="sv-status-note mt-3">
+            Depois de duplicar, use <b>Editar</b> para revisar valores, marca, código, EMP ou vendedor. Só então clique em <b>Ativar</b>.
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button class="btn btn-sv-soft" type="button" data-bs-dismiss="modal">Cancelar</button>
+          <button class="btn btn-sv-primary" type="submit">Duplicar como inativa</button>
+        </div>
+      </form>
+    </div>
+  </div>
 </div>
 
 <div class="modal fade sv-modal-dark" id="delModal" tabindex="-1" aria-hidden="true">
@@ -676,6 +902,8 @@
         <form method="post" id="delForm" class="m-0">
           <input type="hidden" name="acao" value="remover">
           <input type="hidden" name="campanha_id" id="delId" value="">
+          <input type="hidden" name="mes" value="{{ mes }}">
+          <input type="hidden" name="ano" value="{{ ano }}">
           <button class="btn btn-sv-soft" type="button" data-bs-dismiss="modal">Cancelar</button>
           <button class="btn btn-outline-danger" type="submit">Excluir</button>
         </form>
@@ -822,6 +1050,113 @@
       });
     }
     applyFilters();
+
+
+    function field(form, name){
+      return form ? form.querySelector('[name="' + name + '"]') : null;
+    }
+
+    function setField(form, name, value){
+      var el = field(form, name);
+      if(el) el.value = value || '';
+    }
+
+    function syncCampaignForm(form){
+      if(!form) return;
+      var tipo = field(form, 'campanha_tipo');
+      var vendedor = field(form, 'vendedor');
+      var vendedorWrap = form.querySelector('[data-vendedor-wrap]');
+      var isGerente = tipo && tipo.value === 'GERENTE';
+      if(vendedorWrap){ vendedorWrap.classList.toggle('sv-field-disabled', !!isGerente); }
+      if(vendedor){
+        vendedor.disabled = !!isGerente;
+        if(isGerente){ vendedor.value = ''; vendedor.placeholder = 'Não usado para gerente'; }
+        else { vendedor.placeholder = 'Vazio = todos'; }
+      }
+
+      var base = field(form, 'campo_match');
+      var produto = field(form, 'produto_prefixo');
+      var descricao = field(form, 'descricao_prefixo');
+      var produtoWrap = form.querySelector('[data-produto-wrap]');
+      var descricaoWrap = form.querySelector('[data-descricao-wrap]');
+      var isDescricao = base && base.value === 'descricao';
+      if(produto){
+        produto.required = !isDescricao;
+        produto.disabled = !!isDescricao;
+        if(isDescricao) produto.value = '';
+      }
+      if(descricao){
+        descricao.required = !!isDescricao;
+        descricao.disabled = !isDescricao;
+        if(!isDescricao) descricao.value = '';
+      }
+      if(produtoWrap){ produtoWrap.classList.toggle('sv-field-disabled', !!isDescricao); }
+      if(descricaoWrap){ descricaoWrap.classList.toggle('sv-field-disabled', !isDescricao); }
+    }
+
+    document.querySelectorAll('.js-campaign-scope-form').forEach(function(form){
+      ['campanha_tipo', 'campo_match'].forEach(function(name){
+        var el = field(form, name);
+        if(el){ el.addEventListener('change', function(){ syncCampaignForm(form); }); }
+      });
+      syncCampaignForm(form);
+    });
+
+    var editModal = document.getElementById('editModal');
+    if(editModal){
+      editModal.addEventListener('show.bs.modal', function(ev){
+        var btn = ev.relatedTarget;
+        var form = document.getElementById('editForm');
+        if(!btn || !form) return;
+        var id = btn.getAttribute('data-id') || '';
+        var title = btn.getAttribute('data-title') || '';
+        var subtitle = document.getElementById('editSubtitle');
+        var editId = document.getElementById('editCampanhaId');
+        if(editId) editId.value = id;
+        if(subtitle) subtitle.textContent = title ? ('Editando: ' + title) : ('Editando campanha #' + id);
+
+        setField(form, 'emp', btn.getAttribute('data-emp'));
+        setField(form, 'campanha_tipo', btn.getAttribute('data-tipo') || 'VENDEDOR');
+        setField(form, 'vendedor', btn.getAttribute('data-vendedor'));
+        setField(form, 'campo_match', btn.getAttribute('data-campo-match') || 'codigo');
+        setField(form, 'titulo', title);
+        setField(form, 'produto_prefixo', btn.getAttribute('data-produto'));
+        setField(form, 'descricao_prefixo', btn.getAttribute('data-descricao'));
+        setField(form, 'marca', btn.getAttribute('data-marca'));
+        setField(form, 'recompensa_unit', btn.getAttribute('data-recompensa'));
+        setField(form, 'qtd_minima', btn.getAttribute('data-qtd'));
+        setField(form, 'valor_minimo', btn.getAttribute('data-valor'));
+        setField(form, 'data_inicio', btn.getAttribute('data-data-inicio'));
+        setField(form, 'data_fim', btn.getAttribute('data-data-fim'));
+        syncCampaignForm(form);
+      });
+    }
+
+    var dupModal = document.getElementById('dupModal');
+    if(dupModal){
+      dupModal.addEventListener('show.bs.modal', function(ev){
+        var btn = ev.relatedTarget;
+        if(!btn) return;
+        var id = btn.getAttribute('data-id') || '';
+        var title = btn.getAttribute('data-title') || ('Campanha #' + id);
+        var empText = btn.getAttribute('data-emp') || '-';
+        var tipoText = btn.getAttribute('data-tipo') || 'VENDEDOR';
+        var marcaText = btn.getAttribute('data-marca') || '-';
+        var produtoText = btn.getAttribute('data-produto') || '-';
+        var dupId = document.getElementById('dupCampanhaId');
+        var dupTitle = document.getElementById('dupTitulo');
+        var dupIni = document.getElementById('dupDataInicio');
+        var dupFim = document.getElementById('dupDataFim');
+        var summary = document.getElementById('dupSummary');
+        if(dupId) dupId.value = id;
+        if(dupTitle) dupTitle.value = ('Cópia — ' + title).slice(0, 120);
+        if(dupIni) dupIni.value = btn.getAttribute('data-data-inicio') || '';
+        if(dupFim) dupFim.value = btn.getAttribute('data-data-fim') || '';
+        if(summary){
+          summary.innerHTML = '<b>' + title + '</b><br>EMP ' + empText + ' · ' + tipoText + ' · ' + marcaText + ' · Regra: ' + produtoText;
+        }
+      });
+    }
 
     var delModal = document.getElementById('delModal');
     if(delModal){
