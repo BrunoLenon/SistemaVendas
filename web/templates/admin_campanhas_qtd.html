@@ -289,6 +289,45 @@
     color:#ffd098;
   }
 
+  .sv-admin-page--campanhas .sv-assisted-strip{
+    display:flex;
+    flex-wrap:wrap;
+    gap:8px;
+    align-items:center;
+    margin-top:12px;
+  }
+  .sv-admin-page--campanhas .sv-assisted-pill{
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+    border:1px solid rgba(255,255,255,.10);
+    background:rgba(255,255,255,.035);
+    color:#f8fafc;
+    border-radius:999px;
+    padding:6px 10px;
+    font-size:.78rem;
+    font-weight:850;
+  }
+  .sv-admin-page--campanhas .sv-assisted-pill small{
+    color:var(--camp-muted);
+    font-weight:800;
+  }
+  .sv-admin-page--campanhas .sv-input-assisted{
+    position:relative;
+  }
+  .sv-admin-page--campanhas .sv-input-assisted::after{
+    content:"assistido";
+    position:absolute;
+    right:10px;
+    top:32px;
+    color:rgba(255,255,255,.45);
+    font-size:.68rem;
+    font-weight:900;
+    pointer-events:none;
+    text-transform:uppercase;
+    letter-spacing:.04em;
+  }
+
   @media(max-width:1100px){
     .sv-admin-page--campanhas .sv-campaign-grid{ grid-template-columns:repeat(2, minmax(0, 1fr)); }
     .sv-admin-page--campanhas .sv-col-3{ grid-column:1/-1; }
@@ -311,6 +350,11 @@
 {% endblock %}
 
 {% block content %}
+{% set assist = assisted_options if assisted_options is defined else {} %}
+{% set assisted_emps = assist.get('emps', []) %}
+{% set assisted_vendedores = assist.get('vendedores', []) %}
+{% set assisted_marcas = assist.get('marcas', []) %}
+{% set assist_has_faturamento = assist.get('has_faturamento_minimo_emp', false) %}
 {% set kpi = namespace(ativas=0, inativas=0, gerente=0, vendedor=0) %}
 {% for item in campanhas %}
   {% if item.ativo %}
@@ -326,6 +370,26 @@
 {% endfor %}
 
 <div class="sv-admin-page sv-admin-page--campanhas">
+
+  <datalist id="campanhaEmpOptions">
+    {% for emp_opt in assisted_emps %}
+      <option value="{{ emp_opt.codigo }}">{{ emp_opt.codigo }}{% if emp_opt.nome %} · {{ emp_opt.nome }}{% endif %}{% if emp_opt.cidade or emp_opt.uf %} · {{ emp_opt.cidade }}{% if emp_opt.uf %}/{{ emp_opt.uf }}{% endif %}{% endif %}</option>
+    {% endfor %}
+  </datalist>
+
+  <datalist id="campanhaMarcaOptions">
+    {% for marca_opt in assisted_marcas %}
+      <option value="{{ marca_opt }}"></option>
+    {% endfor %}
+  </datalist>
+
+  <datalist id="campanhaVendedorOptions">
+    {% for vendedor_opt in assisted_vendedores %}
+      <option value="{{ vendedor_opt.nome }}"></option>
+    {% endfor %}
+  </datalist>
+
+  <script type="application/json" id="campanhaVendedoresPayload">{{ assisted_vendedores|tojson }}</script>
 
   <section class="sv-admin-hero">
     <div class="sv-admin-hero-row">
@@ -383,6 +447,12 @@
       <div>
         <h2 class="sv-panel-title">Nova campanha</h2>
         <div class="sv-panel-subtitle">Cadastro guiado por etapas para reduzir erros de EMP, tipo, base de apuração, mínimos e vigência.</div>
+        <div class="sv-assisted-strip">
+          <span class="sv-assisted-pill"><small>EMPs</small> {{ assisted_emps|length }}</span>
+          <span class="sv-assisted-pill"><small>Vendedores</small> {{ assisted_vendedores|length }}</span>
+          <span class="sv-assisted-pill"><small>Marcas</small> {{ assisted_marcas|length }}</span>
+          {% if assist_has_faturamento %}<span class="sv-assisted-pill"><small>Trava EMP</small> disponível</span>{% endif %}
+        </div>
       </div>
       <button class="btn btn-sv-soft" type="button" data-bs-toggle="collapse" data-bs-target="#tipsCollapse" aria-expanded="false">
         Ver boas práticas
@@ -395,7 +465,8 @@
           <b>Código:</b> use prefixo, exemplo <code>406</code>, para considerar todos os códigos iniciados com esse valor.<br>
           <b>Descrição:</b> use o início exato, exemplo <code>JOGO JUNTA</code>, sempre combinando com a marca.<br>
           <b>Gerente:</b> não usa vendedor específico; a premiação considera o total vendido pela EMP nos produtos da campanha.<br>
-          <b>Mínimos:</b> quantidade e valor são opcionais. Se preencher ambos, os dois serão exigidos.
+          <b>Mínimos:</b> quantidade e valor são opcionais. Se preencher ambos, os dois serão exigidos.<br>
+          <b>Dados assistidos:</b> EMPs, vendedores e marcas aparecem como sugestões reais do sistema, mas o campo continua editável para casos novos.
         </div>
       </div>
 
@@ -414,9 +485,10 @@
             </div>
 
             <div class="sv-campaign-grid">
-              <div class="sv-field">
+              <div class="sv-field sv-input-assisted">
                 <label class="sv-form-label">EMP *</label>
-                <input class="form-control" type="text" name="emp" placeholder="Ex: 101" required>
+                <input class="form-control js-emp-input" type="text" name="emp" list="campanhaEmpOptions" autocomplete="off" placeholder="Ex: 101" required>
+                <div class="sv-help-text mt-1">Sugestões do cadastro de EMPs e vendas importadas.</div>
               </div>
 
               <div class="sv-field sv-col-2">
@@ -437,10 +509,10 @@
                 </div>
               </div>
 
-              <div class="sv-field" id="wrap_vendedor">
+              <div class="sv-field sv-input-assisted" id="wrap_vendedor">
                 <label class="sv-form-label">Vendedor</label>
-                <input class="form-control" type="text" name="vendedor" placeholder="Vazio = todos">
-                <div class="sv-help-text mt-1">Opcional para campanha de vendedor.</div>
+                <input class="form-control js-vendedor-input js-uppercase" type="text" name="vendedor" list="campanhaVendedorOptions" autocomplete="off" placeholder="Vazio = todos">
+                <div class="sv-help-text mt-1">Sugestões filtram pela EMP quando possível. Opcional para campanha de vendedor.</div>
               </div>
 
               <div class="sv-field sv-col-full">
@@ -478,9 +550,9 @@
                 <input class="form-control" type="text" name="descricao_prefixo" id="descricao_prefixo" placeholder="Ex: JOGO JUNTA">
               </div>
 
-              <div class="sv-field sv-col-full">
+              <div class="sv-field sv-col-full sv-input-assisted">
                 <label class="sv-form-label">Marca *</label>
-                <input class="form-control" type="text" name="marca" placeholder="Ex: COFAP" required>
+                <input class="form-control js-uppercase" type="text" name="marca" list="campanhaMarcaOptions" autocomplete="off" placeholder="Ex: COFAP" required>
               </div>
             </div>
           </div>
@@ -508,6 +580,14 @@
                 <label class="sv-form-label">Valor mínimo</label>
                 <input class="form-control" type="text" name="valor_minimo" placeholder="Ex: 1000,00">
               </div>
+
+              {% if assist_has_faturamento %}
+              <div class="sv-field">
+                <label class="sv-form-label">Faturamento mínimo EMP</label>
+                <input class="form-control" type="text" name="faturamento_minimo_emp" placeholder="Ex: 50000,00">
+                <div class="sv-help-text mt-1">Trava da loja: só libera se a EMP atingir este faturamento no período.</div>
+              </div>
+              {% endif %}
 
               <div class="sv-field">
                 <label class="sv-form-label">Início *</label>
@@ -656,6 +736,7 @@
                     <td class="text-end sv-money">
                       <div>Qtd: {% if c.qtd_minima %}{{ c.qtd_minima }}{% else %}-{% endif %}</div>
                       <div class="sv-help-text">Valor: {% if c.valor_minimo %}{{ c.valor_minimo|brl_rs }}{% else %}-{% endif %}</div>
+                      {% if assist_has_faturamento %}<div class="sv-help-text">EMP: {% if c.faturamento_minimo_emp %}{{ c.faturamento_minimo_emp|brl_rs }}{% else %}-{% endif %}</div>{% endif %}
                     </td>
                     <td class="text-end sv-money">{% if c.recompensa_unit %}{{ c.recompensa_unit|brl_rs }}{% else %}{{ 0|brl_rs }}{% endif %}</td>
                     <td class="sv-help-text">
@@ -678,6 +759,7 @@
                                 data-recompensa="{{ c.recompensa_unit if c.recompensa_unit is not none else '' }}"
                                 data-qtd="{{ c.qtd_minima if c.qtd_minima is not none else '' }}"
                                 data-valor="{{ c.valor_minimo if c.valor_minimo is not none else '' }}"
+                                {% if assist_has_faturamento %}data-faturamento="{{ c.faturamento_minimo_emp if c.faturamento_minimo_emp is not none else '' }}"{% endif %}
                                 data-data-inicio="{{ c.data_inicio.isoformat() if c.data_inicio else '' }}"
                                 data-data-fim="{{ c.data_fim.isoformat() if c.data_fim else '' }}">
                           Editar
@@ -749,9 +831,9 @@
           </div>
 
           <div class="sv-modal-grid">
-            <div class="sv-field">
+            <div class="sv-field sv-input-assisted">
               <label class="sv-form-label">EMP *</label>
-              <input class="form-control" type="text" name="emp" required>
+              <input class="form-control js-emp-input" type="text" name="emp" list="campanhaEmpOptions" autocomplete="off" required>
             </div>
 
             <div class="sv-field">
@@ -762,9 +844,9 @@
               </select>
             </div>
 
-            <div class="sv-field" data-vendedor-wrap="1">
+            <div class="sv-field sv-input-assisted" data-vendedor-wrap="1">
               <label class="sv-form-label">Vendedor</label>
-              <input class="form-control" type="text" name="vendedor" placeholder="Vazio = todos">
+              <input class="form-control js-vendedor-input js-uppercase" type="text" name="vendedor" list="campanhaVendedorOptions" autocomplete="off" placeholder="Vazio = todos">
             </div>
 
             <div class="sv-field">
@@ -790,9 +872,9 @@
               <input class="form-control" type="text" name="descricao_prefixo" placeholder="Ex: JOGO JUNTA">
             </div>
 
-            <div class="sv-field">
+            <div class="sv-field sv-input-assisted">
               <label class="sv-form-label">Marca *</label>
-              <input class="form-control" type="text" name="marca" required>
+              <input class="form-control js-uppercase" type="text" name="marca" list="campanhaMarcaOptions" autocomplete="off" required>
             </div>
 
             <div class="sv-field">
@@ -809,6 +891,13 @@
               <label class="sv-form-label">Valor mínimo</label>
               <input class="form-control" type="text" name="valor_minimo">
             </div>
+
+            {% if assist_has_faturamento %}
+            <div class="sv-field">
+              <label class="sv-form-label">Faturamento mínimo EMP</label>
+              <input class="form-control" type="text" name="faturamento_minimo_emp">
+            </div>
+            {% endif %}
 
             <div class="sv-field">
               <label class="sv-form-label">Início *</label>
@@ -979,6 +1068,7 @@
     var tipoCamp = document.getElementById('campanha_tipo');
     if(tipoCamp){ tipoCamp.addEventListener('change', toggleTipoCampanha); }
     toggleTipoCampanha();
+    bindAssistedInputs();
 
     var q = document.getElementById('qSearch');
     var emp = document.getElementById('empFilter');
@@ -1061,6 +1151,48 @@
       if(el) el.value = value || '';
     }
 
+    var vendedoresPayload = [];
+    try{
+      var payloadEl = document.getElementById('campanhaVendedoresPayload');
+      vendedoresPayload = payloadEl ? JSON.parse(payloadEl.textContent || '[]') : [];
+    }catch(err){ vendedoresPayload = []; }
+
+    function renderVendedoresForEmp(empValue){
+      var list = document.getElementById('campanhaVendedorOptions');
+      if(!list) return;
+      var empCode = (empValue || '').trim();
+      var html = [];
+      vendedoresPayload.forEach(function(item){
+        var nome = item && item.nome ? String(item.nome) : '';
+        if(!nome) return;
+        var emps = Array.isArray(item.emps) ? item.emps.map(String) : [];
+        if(empCode && emps.length && emps.indexOf(empCode) === -1) return;
+        html.push('<option value="' + nome.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;') + '"></option>');
+      });
+      list.innerHTML = html.join('');
+    }
+
+    function bindAssistedInputs(){
+      document.querySelectorAll('input[name="emp"]').forEach(function(input){
+        input.addEventListener('input', function(){
+          var form = input.closest('form');
+          if(form) renderVendedoresForEmp(input.value);
+        });
+        input.addEventListener('focus', function(){ renderVendedoresForEmp(input.value); });
+      });
+      document.querySelectorAll('input[name="vendedor"]').forEach(function(input){
+        input.addEventListener('focus', function(){
+          var form = input.closest('form');
+          var empInput = form ? form.querySelector('input[name="emp"]') : null;
+          renderVendedoresForEmp(empInput ? empInput.value : '');
+        });
+      });
+      document.querySelectorAll('.js-uppercase').forEach(function(input){
+        input.addEventListener('blur', function(){ input.value = (input.value || '').trim().toUpperCase(); });
+      });
+      renderVendedoresForEmp('');
+    }
+
     function syncCampaignForm(form){
       if(!form) return;
       var tipo = field(form, 'campanha_tipo');
@@ -1126,6 +1258,7 @@
         setField(form, 'recompensa_unit', btn.getAttribute('data-recompensa'));
         setField(form, 'qtd_minima', btn.getAttribute('data-qtd'));
         setField(form, 'valor_minimo', btn.getAttribute('data-valor'));
+        setField(form, 'faturamento_minimo_emp', btn.getAttribute('data-faturamento'));
         setField(form, 'data_inicio', btn.getAttribute('data-data-inicio'));
         setField(form, 'data_fim', btn.getAttribute('data-data-fim'));
         syncCampaignForm(form);

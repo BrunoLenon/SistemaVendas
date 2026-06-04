@@ -11,6 +11,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from typing import Any, Callable
 
 from flask import redirect, render_template, request
+from sqlalchemy import func
 
 
 def register_admin_campanhas_routes(
@@ -132,6 +133,182 @@ def register_admin_campanhas_routes(
 
     def _get_campaign_id_from_form(form) -> int:
         return int(form.get("campanha_id") or form.get("id") or 0)
+
+
+    def _safe_upper(value: Any) -> str:
+        return str(value or "").strip().upper()
+
+    def _load_assisted_options(db) -> dict[str, Any]:
+        """Carrega listas de apoio para reduzir erro de digitação no cadastro.
+
+        Conservador por desenho: qualquer falha em tabela auxiliar não bloqueia a tela.
+        """
+        options: dict[str, Any] = {
+            "emps": [],
+            "vendedores": [],
+            "marcas": [],
+            "has_faturamento_minimo_emp": hasattr(CampanhaQtd, "faturamento_minimo_emp"),
+        }
+
+        try:
+            from db import Emp, Usuario, UsuarioEmp, Venda  # type: ignore
+        except Exception:
+            Emp = Usuario = UsuarioEmp = Venda = None  # type: ignore
+
+        emp_map: dict[str, dict[str, Any]] = {}
+
+        def add_emp(codigo: Any, *, nome: Any = None, cidade: Any = None, uf: Any = None, ativo: Any = True) -> None:
+            cod = str(codigo or "").strip()
+            if not cod:
+                return
+            current = emp_map.get(cod) or {"codigo": cod, "nome": "", "cidade": "", "uf": "", "ativo": True}
+            if nome and not current.get("nome"):
+                current["nome"] = str(nome or "").strip()
+            if cidade and not current.get("cidade"):
+                current["cidade"] = str(cidade or "").strip()
+            if uf and not current.get("uf"):
+                current["uf"] = str(uf or "").strip().upper()
+            current["ativo"] = bool(ativo)
+            emp_map[cod] = current
+
+        # EMPs oficiais cadastradas.
+        if Emp is not None:
+            try:
+                for e in db.query(Emp).order_by(Emp.ativo.desc(), Emp.codigo.asc()).all():
+                    add_emp(getattr(e, "codigo", None), nome=getattr(e, "nome", None), cidade=getattr(e, "cidade", None), uf=getattr(e, "uf", None), ativo=getattr(e, "ativo", True))
+            except Exception:
+                pass
+
+        # Fallback/complemento: EMPs que já aparecem em campanhas.
+        try:
+            rows = (
+                db.query(CampanhaQtd.emp)
+                .filter(CampanhaQtd.emp.isnot(None))
+                .distinct()
+                .order_by(CampanhaQtd.emp.asc())
+                .limit(250)
+                .all()
+            )
+            for row in rows:
+                add_emp(row[0])
+        except Exception:
+            pass
+
+        # Fallback/complemento: EMPs que já aparecem nas vendas.
+        if Venda is not None:
+            try:
+                rows = (
+                    db.query(Venda.emp)
+                    .filter(Venda.emp.isnot(None))
+                    .filter(Venda.emp != "")
+                    .distinct()
+                    .order_by(Venda.emp.asc())
+                    .limit(300)
+                    .all()
+                )
+                for row in rows:
+                    add_emp(row[0])
+            except Exception:
+                pass
+
+        options["emps"] = sorted(emp_map.values(), key=lambda x: str(x.get("codigo") or ""))
+
+        vendedor_map: dict[str, set[str]] = {}
+
+        def add_vendedor(nome: Any, emp: Any = None) -> None:
+            vend = str(nome or "").strip().upper()
+            if not vend:
+                return
+            vendedor_map.setdefault(vend, set())
+            emp_code = str(emp or "").strip()
+            if emp_code:
+                vendedor_map[vend].add(emp_code)
+
+        # Vendedores oficiais por usuário e vínculo multi-EMP.
+        if Usuario is not None:
+            try:
+                for u in db.query(Usuario).filter(func.lower(Usuario.role) == "vendedor").order_by(Usuario.username.asc()).limit(500).all():
+                    add_vendedor(getattr(u, "username", None), getattr(u, "emp", None))
+            except Exception:
+                pass
+
+        if Usuario is not None and UsuarioEmp is not None:
+            try:
+                rows = (
+                    db.query(Usuario.username, UsuarioEmp.emp)
+                    .join(UsuarioEmp, UsuarioEmp.usuario_id == Usuario.id)
+                    .filter(func.lower(Usuario.role) == "vendedor")
+                    .filter(UsuarioEmp.ativo.is_(True))
+                    .order_by(UsuarioEmp.emp.asc(), Usuario.username.asc())
+                    .limit(1200)
+                    .all()
+                )
+                for username, emp in rows:
+                    add_vendedor(username, emp)
+            except Exception:
+                pass
+
+        # Vendedores reais das vendas importadas. Importante porque campanha precisa bater com Venda.vendedor.
+        if Venda is not None:
+            try:
+                rows = (
+                    db.query(Venda.emp, Venda.vendedor)
+                    .filter(Venda.vendedor.isnot(None))
+                    .filter(Venda.vendedor != "")
+                    .distinct()
+                    .order_by(Venda.emp.asc(), Venda.vendedor.asc())
+                    .limit(1800)
+                    .all()
+                )
+                for emp, vendedor in rows:
+                    add_vendedor(vendedor, emp)
+            except Exception:
+                pass
+
+        options["vendedores"] = [
+            {"nome": nome, "emps": sorted(emps)}
+            for nome, emps in sorted(vendedor_map.items(), key=lambda item: item[0])
+        ]
+
+        marcas: set[str] = set()
+
+        def add_marca(value: Any) -> None:
+            marca = str(value or "").strip().upper()
+            if marca:
+                marcas.add(marca)
+
+        try:
+            rows = (
+                db.query(CampanhaQtd.marca)
+                .filter(CampanhaQtd.marca.isnot(None))
+                .distinct()
+                .order_by(CampanhaQtd.marca.asc())
+                .limit(300)
+                .all()
+            )
+            for row in rows:
+                add_marca(row[0])
+        except Exception:
+            pass
+
+        if Venda is not None:
+            try:
+                rows = (
+                    db.query(Venda.marca)
+                    .filter(Venda.marca.isnot(None))
+                    .filter(Venda.marca != "")
+                    .distinct()
+                    .order_by(Venda.marca.asc())
+                    .limit(500)
+                    .all()
+                )
+                for row in rows:
+                    add_marca(row[0])
+            except Exception:
+                pass
+
+        options["marcas"] = sorted(marcas)
+        return options
 
     def admin_campanhas_qtd():
         """Cadastro e administração de campanhas de recompensa por quantidade."""
@@ -284,6 +461,8 @@ def register_admin_campanhas_routes(
                 .all()
             )
 
+            assisted_options = _load_assisted_options(db)
+
         # UX: agrupa por competência (mês/ano) na lista.
         try:
             for c in (campanhas or []):
@@ -304,6 +483,7 @@ def register_admin_campanhas_routes(
             mes=mes,
             erro=erro,
             ok=ok,
+            assisted_options=assisted_options,
         )
 
     app.add_url_rule(
