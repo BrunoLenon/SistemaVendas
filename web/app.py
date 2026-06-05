@@ -1391,10 +1391,14 @@ def _vendedores_from_db(role: str, emp_usuario: str | None):
 
     with SessionLocal() as db:
         q = db.query(Venda.vendedor).distinct()
-        if role == 'supervisor':
-            if not emp_usuario:
+        if role in ('supervisor', 'gerente'):
+            emps = _allowed_emps()
+            if emps:
+                q = q.filter(Venda.emp.in_(emps))
+            elif emp_usuario:
+                q = q.filter(Venda.emp == str(emp_usuario))
+            else:
                 return []
-            q = q.filter(Venda.emp == str(emp_usuario))
         vendedores = [ (v[0] or '').strip().upper() for v in q.all() ]
     vendedores = sorted([v for v in vendedores if v])
     return vendedores
@@ -1767,10 +1771,14 @@ def _resolver_vendedor_e_lista(df: pd.DataFrame | None) -> tuple[str | None, lis
         return vendedor_alvo, vendedores, _emp(), None
 
     emp_usuario = _emp()
-    if role == "supervisor":
-        if not emp_usuario:
-            return None, [], None, "Supervisor sem EMP cadastrada. Cadastre a EMP do supervisor na tabela usuarios."
-        df_scope = df[df["EMP"] == str(emp_usuario)] if "EMP" in df.columns else df.iloc[0:0]
+    if role in ("supervisor", "gerente"):
+        allowed_emps = _allowed_emps()
+        if allowed_emps and "EMP" in df.columns:
+            df_scope = df[df["EMP"].astype(str).isin([str(e) for e in allowed_emps])]
+        elif emp_usuario and "EMP" in df.columns:
+            df_scope = df[df["EMP"] == str(emp_usuario)]
+        else:
+            return None, [], None, "Gerente/Supervisor sem EMP vinculada. Cadastre os vínculos em usuario_emps."
     elif role == "admin":
         df_scope = df
     else:
@@ -1789,8 +1797,9 @@ def _resolver_vendedor_e_lista(df: pd.DataFrame | None) -> tuple[str | None, lis
 
     if not vendedores:
         # Ajuda a diagnosticar: existe EMP no df?
-        if role == "supervisor" and emp_usuario:
-            return None, [], emp_usuario, f"Nenhum vendedor encontrado para EMP {emp_usuario}. Verifique se a coluna EMP na tabela vendas está preenchida com {emp_usuario}."
+        if role in ("supervisor", "gerente") and (allowed_emps or emp_usuario):
+            escopo_txt = ", ".join([str(e) for e in (allowed_emps or [emp_usuario])])
+            return None, [], emp_usuario, f"Nenhum vendedor encontrado para EMP(s) {escopo_txt}. Verifique se a coluna EMP na tabela vendas está preenchida corretamente."
         return None, [], emp_usuario, "Nenhum vendedor encontrado."
 
     return vendedor_alvo, vendedores, emp_usuario, None

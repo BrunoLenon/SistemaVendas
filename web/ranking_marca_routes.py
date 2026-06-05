@@ -247,8 +247,8 @@ def register_ranking_marca_routes(
                                 campanha = None
                                 info = "Você não tem acesso a esta campanha."
                         else:
-                            # allowed_emps vazio => treat as all
-                            pass
+                            campanha = None
+                            info = "Você não tem EMP vinculada para acessar esta campanha."
                     else:
                         scope_emps = get_scope_emps(db, cid)
 

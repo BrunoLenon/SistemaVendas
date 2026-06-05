@@ -237,8 +237,8 @@ def admin_mensagens():
 
     with SessionLocal() as db:
         emps_q = db.query(Emp).filter(Emp.ativo.is_(True)).order_by(Emp.codigo.asc()).all()
-        # Supervisor só pode ver/usar as empresas dele
-        if role == "supervisor":
+        # Supervisor/Gerente só pode ver/usar as empresas vinculadas a ele
+        if role in ("supervisor", "gerente"):
             emps_q = [e for e in emps_q if str(e.codigo) in set(allowed_emps or [])]
 
         users_q = []
@@ -246,8 +246,8 @@ def admin_mensagens():
         if role == "admin":
             users_q = db.query(Usuario).order_by(Usuario.username.asc()).all()
             allowed_user_ids = {u.id for u in users_q}
-        elif role == "supervisor":
-            # Supervisor pode enviar para usuários individuais, mas apenas dentro das empresas dele
+        elif role in ("supervisor", "gerente"):
+            # Supervisor/Gerente pode enviar para usuários individuais, mas apenas dentro das empresas vinculadas
             allowed_set = set(allowed_emps or [])
             if allowed_set:
                 users_q = (
@@ -277,13 +277,13 @@ def admin_mensagens():
                 erros.append("Informe um título.")
             if not conteudo:
                 erros.append("Informe a mensagem.")
-            if role == "supervisor" and (not empresas_sel and not usuario_dest):
+            if role in ("supervisor", "gerente") and (not empresas_sel and not usuario_dest):
                 erros.append("Selecione ao menos 1 empresa ou 1 usuário.")
             if role == "admin" and (not empresas_sel and not usuario_dest):
                 erros.append("Selecione ao menos 1 empresa ou 1 usuário.")
 
-            # restringe empresas do supervisor
-            if role == "supervisor":
+            # restringe empresas de supervisor/gerente
+            if role in ("supervisor", "gerente"):
                 allowed_set = set(allowed_emps or [])
                 empresas_sel = [e for e in empresas_sel if str(e) in allowed_set]
 
@@ -341,8 +341,8 @@ def admin_mensagens():
             .limit(300)
             .all()
         )
-        # supervisor vê apenas as mensagens que ele criou
-        if role == "supervisor":
+        # supervisor/gerente vê apenas as mensagens que ele criou
+        if role in ("supervisor", "gerente"):
             mensagens = [m for m in mensagens if m.created_by_user_id == int(user_id)]
 
         # Enriquecer destinos para exibição
@@ -381,8 +381,8 @@ def admin_mensagens_toggle(mensagem_id: int):
             flash("Mensagem não encontrada.", "warning")
             return redirect(url_for("admin_mensagens"))
 
-        if role == "supervisor":
-            # supervisor só pode alterar mensagens que ele mesmo criou
+        if role in ("supervisor", "gerente"):
+            # supervisor/gerente só pode alterar mensagens que ele mesmo criou
             if msg.created_by_user_id != int(session.get("user_id") or 0):
                 flash("Acesso restrito.", "danger")
                 return redirect(url_for("admin_mensagens"))

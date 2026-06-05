@@ -511,7 +511,7 @@ def build_relatorio_campanhas_scope(
         allowed = [str(e).strip() for e in (deps.resolver_emp_scope_para_usuario(vendedor_logado, role_l, emp_usuario) or []) if str(e).strip()]
         allowed = sorted(set(allowed))
         if not allowed:
-            flash("Supervisor sem EMP vinculada. Ajuste o vínculo do usuário (usuario_emps).", "warning")
+            flash("Gerente/Supervisor sem EMP vinculada. Ajuste o vínculo do usuário (usuario_emps).", "warning")
             emps_scope = []
         else:
             if emps_sel:

@@ -2,7 +2,8 @@
 {% set r = (r_raw|string|lower) %}
 {% set path = request.path %}
 {% set is_admin = (r == 'admin') %}
-{% set is_supervisor = (r == 'supervisor') %}
+{% set is_supervisor = (r in ['supervisor', 'gerente']) %}
+{% set is_gerente = (r == 'gerente') %}
 {% set is_vendedor = (r == 'vendedor') %}
 {% set is_financeiro = (r == 'financeiro') %}
 

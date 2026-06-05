@@ -46,6 +46,7 @@ def login():
         session.clear()
         session["user_id"] = u.id
         session["usuario"] = u.username
+        session["vendedor"] = u.username
         session["role"] = role
         # EMP pode não existir em versões antigas do schema
         session["emp"] = str(getattr(u, "emp", "")) if getattr(u, "emp", None) is not None else ""

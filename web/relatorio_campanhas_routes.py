@@ -101,7 +101,7 @@ def _scope_cache_clear() -> None:
 
 
 def _default_per_page(role: str) -> int:
-    fallback = 50 if str(role or '').strip().lower() in ('admin', 'supervisor', 'financeiro') else 25
+    fallback = 50 if str(role or '').strip().lower() in ('admin', 'gerente', 'supervisor', 'financeiro') else 25
     try:
         return max(10, min(500, int(os.environ.get('RELATORIO_CAMPANHAS_DEFAULT_PER_PAGE', str(fallback)) or fallback)))
     except Exception:
@@ -372,7 +372,8 @@ def _calc_resumo_financeiro(rows):
 def _augment_ctx(ctx, *, role: str, vendedor_logado: str, vendedores_por_emp: dict[str, list[str]], request_args, include_pagination: bool):
     ctx['role'] = role
     ctx['is_admin'] = role == 'admin'
-    ctx['is_supervisor'] = role == 'supervisor'
+    ctx['is_supervisor'] = role in ('supervisor', 'gerente')
+    ctx['is_gerente'] = role == 'gerente'
     ctx['is_vendedor'] = role == 'vendedor'
     ctx['is_financeiro'] = role == 'financeiro'
     try:

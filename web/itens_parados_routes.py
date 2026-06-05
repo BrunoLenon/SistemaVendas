@@ -184,9 +184,12 @@ def _emp_scope_for_role(role: str, vendedor_alvo: str | None) -> list[str]:
                     .distinct()
                     .all()
                 ]
-    elif role == "supervisor":
+    elif role in ("supervisor", "gerente"):
         emps = _allowed_emps() if _allowed_emps else []
-        emp_scopes = emps if emps else ([str(_emp())] if (_emp and _emp()) else [])
+        if emp_param and str(emp_param) in {str(e) for e in (emps or [])}:
+            emp_scopes = [str(emp_param)]
+        else:
+            emp_scopes = emps if emps else ([str(_emp())] if (_emp and _emp()) else [])
     else:
         emps = _allowed_emps() if _allowed_emps else []
         if emps:
@@ -215,9 +218,9 @@ def _load_campaign_view():
     vendedor_alvo = None
     vendedores_lista: list[str] = []
 
-    if role in {"admin", "supervisor"}:
-        emp_supervisor = (_emp() if _emp else None) if role == "supervisor" else None
-        if role == "supervisor" and not emp_supervisor:
+    if role in {"admin", "gerente", "supervisor"}:
+        emp_supervisor = (_emp() if _emp else None) if role in ("supervisor", "gerente") else None
+        if role in ("supervisor", "gerente") and not (emp_supervisor or (_allowed_emps() if _allowed_emps else [])):
             return {
                 "mes": mes,
                 "ano": ano,
@@ -232,7 +235,7 @@ def _load_campaign_view():
                 "data_inicio_param": "",
                 "data_fim_param": "",
                 "periodo_label": f"{date(int(ano), int(mes), 1).strftime('%d/%m/%Y')} até {date(int(ano), int(mes), monthrange(int(ano), int(mes))[1]).strftime('%d/%m/%Y')}",
-                "flash": ("Seu usuário supervisor não possui EMP cadastrada. Solicite ao ADMIN para cadastrar.", "warning"),
+                "flash": ("Seu usuário gerente/supervisor não possui EMP vinculada. Solicite ao ADMIN para cadastrar.", "warning"),
             }
 
         vendedores_lista = _get_vendedores_db(role, emp_supervisor) if _get_vendedores_db else []

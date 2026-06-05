@@ -20,7 +20,7 @@
   <form method="get" class="card shadow-sm mb-3">
     <div class="card-body">
       <div class="row g-2 align-items-end filter-bar">
-        {% if role in ['admin','supervisor'] %}
+        {% if role in ['admin','gerente','supervisor'] %}
           <div class="col-md-4">
             {{ multiselect("emp", emps_options or [], emps_sel or [], label="EMP(s)", placeholder="Todas") }}
             <div class="form-text">Filtre o resumo por EMP (dentro do seu acesso).</div>

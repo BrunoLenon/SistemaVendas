@@ -285,7 +285,7 @@ def metas():
                 emps_calc = [emp_filtro]
             else:
                 emps_calc = emps_user
-        elif role == "supervisor":
+        elif role in ("supervisor", "gerente"):
             allowed = set([normalize_emp(e) for e in (allowed_emps or []) if normalize_emp(e)])
             emps_calc = [emp_filtro] if emp_filtro and emp_filtro in allowed else list(allowed)
         else:

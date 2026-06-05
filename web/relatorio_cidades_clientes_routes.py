@@ -37,7 +37,7 @@ def register_relatorio_cidades_clientes_routes(
 
         Permissões:
         - ADMIN: todas as EMPs (pode filtrar por EMP e vendedor)
-        - SUPERVISOR: apenas EMP vinculada (pode filtrar por vendedor)
+        - SUPERVISOR/GERENTE: apenas EMPs vinculadas (pode filtrar por vendedor)
         - VENDEDOR: apenas o próprio vendedor (agrupado por EMP)
         """
         red = login_required_fn()
@@ -80,7 +80,7 @@ def register_relatorio_cidades_clientes_routes(
                     base_hist = base_hist.filter(func.upper(Venda.vendedor) == vendedor_filtro)
                     escopo_label = (escopo_label + " • " if escopo_label else "") + f"Vendedor {vendedor_filtro}"
 
-            elif role == "supervisor":
+            elif role in ("supervisor", "gerente"):
                 # Supervisor: acesso às Empresas vinculadas via usuario_emps (pode ser 1 ou várias)
                 allowed_emps = allowed_emps_fn()
                 if allowed_emps:
@@ -298,7 +298,7 @@ def register_relatorio_cidades_clientes_routes(
                 vendedor_filtro=vendedor_filtro,
                 emp_cards=emp_cards,
                 role=role,
-                emp=(" / ".join(allowed_emps_fn()) if role == "supervisor" and allowed_emps_fn() else emp_usuario),
+                emp=(" / ".join(allowed_emps_fn()) if role in ("supervisor", "gerente") and allowed_emps_fn() else emp_usuario),
             )
         finally:
             db.close()
@@ -330,9 +330,9 @@ def register_relatorio_cidades_clientes_routes(
             return jsonify({"error": "Parâmetros inválidos"}), 400
 
         # Permissões
-        if role == "supervisor":
+        if role in ("supervisor", "gerente"):
             allowed_emps = allowed_emps_fn()
-            if allowed_emps and str(emp) not in set(allowed_emps):
+            if (not allowed_emps) or str(emp) not in {str(e) for e in allowed_emps}:
                 return jsonify({"error": "Acesso negado"}), 403
         elif role == "vendedor":
             vendedor = vendedor_logado
@@ -413,8 +413,8 @@ def register_relatorio_cidades_clientes_routes(
             return jsonify({"error": "Parâmetros inválidos"}), 400
 
         # Permissões
-        if role == "supervisor":
-            if allowed_emps and str(emp) not in [str(e) for e in allowed_emps]:
+        if role in ("supervisor", "gerente"):
+            if (not allowed_emps) or str(emp) not in [str(e) for e in allowed_emps]:
                 return jsonify({"error": "Acesso negado"}), 403
         elif role == "vendedor":
             vendedor = vendedor_logado  # vendedor não pode consultar outro vendedor
@@ -509,8 +509,8 @@ def register_relatorio_cidades_clientes_routes(
             return jsonify({"error": "Parâmetros inválidos"}), 400
 
         # Permissões
-        if role == "supervisor":
-            if allowed_emps and str(emp) not in [str(e) for e in allowed_emps]:
+        if role in ("supervisor", "gerente"):
+            if (not allowed_emps) or str(emp) not in [str(e) for e in allowed_emps]:
                 return jsonify({"error": "Acesso negado"}), 403
         elif role == "vendedor":
             vendedor = vendedor_logado  # vendedor não pode consultar outro vendedor
@@ -615,8 +615,8 @@ def register_relatorio_cidades_clientes_routes(
             return jsonify({"error": "Parâmetros inválidos"}), 400
 
         # Permissões
-        if role == "supervisor":
-            if allowed_emps and str(emp) not in [str(e) for e in allowed_emps]:
+        if role in ("supervisor", "gerente"):
+            if (not allowed_emps) or str(emp) not in [str(e) for e in allowed_emps]:
                 return jsonify({"error": "Acesso negado"}), 403
         elif role == "vendedor":
             vendedor = vendedor_logado  # vendedor não pode consultar outro vendedor

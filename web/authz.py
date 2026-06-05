@@ -85,7 +85,7 @@ def get_user_scope() -> UserScope:
         emp_default = int(emp_default) if emp_default is not None and str(emp_default).strip() != "" else None
     except Exception:
         emp_default = None
-    vendedor = session.get("vendedor")
+    vendedor = session.get("vendedor") or session.get("usuario")
     return UserScope(usuario=usuario, role=role, emps=emps, emp_default=emp_default, vendedor=vendedor)
 
 

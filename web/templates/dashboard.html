@@ -169,7 +169,7 @@
   <div class="sv-dash-panel mb-3">
     <div class="sv-dash-panel__body">
       <form id="filtersForm" method="get" action="{{ url_for('dashboard') }}" class="sv-dash-form">
-        {% if role and role|lower in ["admin", "supervisor"] %}
+        {% if role and role|lower in ["admin", "gerente", "supervisor"] %}
           <div>
             <label class="sv-dash-label">Vendedor</label>
             <select class="sv-dash-select" name="vendedor">

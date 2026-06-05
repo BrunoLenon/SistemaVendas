@@ -24,7 +24,7 @@
   #}
   {% set r_raw = role if (role is defined and role) else (session.get('role') or session.get('perfil') or '') %}
   {% set r = (r_raw|string|lower) %}
-  {% set is_logged = (r in ['admin','supervisor','vendedor','financeiro']) %}
+  {% set is_logged = (r in ['admin','gerente','supervisor','vendedor','financeiro']) %}
 
   {% if is_logged %}
     <!-- Offcanvas menu (mobile) -->
