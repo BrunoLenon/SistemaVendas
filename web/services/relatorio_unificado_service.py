@@ -63,6 +63,11 @@ class UnifiedRow:
     qtd_premiada: float | None = None
 
     valor_recompensa: float = 0.0
+    premio_potencial: float | None = None
+    faturamento_minimo_emp: float | None = None
+    faturamento_emp: float | None = None
+    faltante_faturamento_emp: float | None = None
+    bloqueado_faturamento_emp: bool | None = None
     status_pagamento: str = "PENDENTE"
     pago_em: Any | None = None
     origem_id: int | None = None
@@ -856,16 +861,27 @@ def build_unified_rows(
                 )
             )
             if not incluir_zerados:
-                q_qtd = q_qtd.filter(CampanhaQtdResultado.valor_recompensa > 0)
+                q_qtd = q_qtd.filter(
+                    or_(
+                        CampanhaQtdResultado.valor_recompensa > 0,
+                        CampanhaQtdResultado.premio_potencial > 0,
+                        CampanhaQtdResultado.bloqueado_faturamento_emp == 1,
+                    )
+                )
 
             for r in q_qtd.all():
                 recompensa_unit = _safe_float(getattr(r, 'recompensa_unit', 0.0))
                 valor_recompensa = _safe_float(getattr(r, 'valor_recompensa', 0.0))
                 qtd_minima = getattr(r, 'qtd_minima', None)
                 valor_vendido = _safe_float(getattr(r, 'valor_vendido', 0.0))
+                premio_potencial = _safe_float(getattr(r, 'premio_potencial', None)) if getattr(r, 'premio_potencial', None) is not None else valor_recompensa
+                faturamento_minimo_emp = _safe_float(getattr(r, 'faturamento_minimo_emp', None)) if getattr(r, 'faturamento_minimo_emp', None) is not None else None
+                faturamento_emp = _safe_float(getattr(r, 'faturamento_emp', None)) if getattr(r, 'faturamento_emp', None) is not None else None
+                faltante_faturamento_emp = _safe_float(getattr(r, 'faltante_faturamento_emp', None)) if getattr(r, 'faltante_faturamento_emp', None) is not None else None
+                bloqueado_faturamento_emp = bool(int(getattr(r, 'bloqueado_faturamento_emp', 0) or 0))
                 qtd_prem = None
-                if recompensa_unit > 0 and valor_recompensa > 0:
-                    qtd_prem = valor_recompensa / recompensa_unit
+                if recompensa_unit > 0 and premio_potencial > 0:
+                    qtd_prem = premio_potencial / recompensa_unit
 
                 rows.append(
                     UnifiedRow(
@@ -883,6 +899,11 @@ def build_unified_rows(
                         qtd_base=_safe_float(getattr(r, 'qtd_vendida', None)),
                         qtd_premiada=qtd_prem,
                         valor_recompensa=valor_recompensa,
+                        premio_potencial=premio_potencial,
+                        faturamento_minimo_emp=faturamento_minimo_emp,
+                        faturamento_emp=faturamento_emp,
+                        faltante_faturamento_emp=faltante_faturamento_emp,
+                        bloqueado_faturamento_emp=bloqueado_faturamento_emp,
                         status_pagamento=str(getattr(r, 'status_pagamento', 'PENDENTE') or 'PENDENTE'),
                         pago_em=getattr(r, 'pago_em', None),
                         origem_id=int(getattr(r, 'campanha_id', 0) or 0),

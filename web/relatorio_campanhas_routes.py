@@ -47,7 +47,7 @@ def _args_values(args, key: str) -> tuple[str, ...]:
 
 def _scope_cache_key(*, role: str, emp_usuario: str | None, vendedor_logado: str, request_args) -> tuple:
     return (
-        "relatorio_campanhas_scope_v1",
+        "relatorio_campanhas_scope_v2_gate",
         str(role or '').strip().lower(),
         str(emp_usuario or '').strip(),
         str(vendedor_logado or '').strip().upper(),
@@ -218,6 +218,14 @@ def _group_rows(rows):
         vend_r = str(_pick(r, 'vendedor', 'VENDEDOR') or '').strip() or '—'
         titulo = str(_pick(r, 'titulo', 'campanha', 'CAMPANHA') or '').strip() or '—'
         valor = _to_float(_pick(r, 'valor_recompensa', 'valor', 'VALOR_RECOMPENSA') or 0)
+        premio_potencial = _pick(r, 'premio_potencial', 'POTENCIAL', 'premio_potencial')
+        if premio_potencial is None:
+            premio_potencial = valor
+        premio_potencial = _to_float(premio_potencial or 0)
+        faturamento_minimo_emp = _pick(r, 'faturamento_minimo_emp', 'FATURAMENTO_MINIMO_EMP')
+        faturamento_emp = _pick(r, 'faturamento_emp', 'FATURAMENTO_EMP')
+        faltante_faturamento_emp = _pick(r, 'faltante_faturamento_emp', 'FALTANTE_FATURAMENTO_EMP')
+        bloqueado_faturamento_emp = bool(_to_float(_pick(r, 'bloqueado_faturamento_emp', 'BLOQUEADO_FATURAMENTO_EMP') or 0))
         st = _norm_status(_pick(r, 'status_pagamento', 'status', 'STATUS_PAGAMENTO') or 'PENDENTE')
 
         key = (emp_r, vend_r)
@@ -244,6 +252,11 @@ def _group_rows(rows):
             'qtd_vendida': float(getattr(r, 'qtd_base', 0) or 0),
             'vendeu_rs': float(getattr(r, 'valor_vendido', 0) or 0),
             'valor': valor,
+            'premio_potencial': premio_potencial,
+            'faturamento_minimo_emp': _to_float(faturamento_minimo_emp or 0) if faturamento_minimo_emp is not None else None,
+            'faturamento_emp': _to_float(faturamento_emp or 0) if faturamento_emp is not None else None,
+            'faltante_faturamento_emp': _to_float(faltante_faturamento_emp or 0) if faltante_faturamento_emp is not None else None,
+            'bloqueado_faturamento_emp': bloqueado_faturamento_emp,
             'status': st,
             'atingiu': bool(getattr(r, 'atingiu', False)),
             'tipo': tipo_raw,
