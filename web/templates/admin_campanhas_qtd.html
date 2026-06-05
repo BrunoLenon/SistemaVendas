@@ -255,6 +255,93 @@
     letter-spacing:.02em;
   }
 
+  .sv-admin-page--campanhas .sv-emp-picker{
+    border:1px solid rgba(255,255,255,.10);
+    background:rgba(255,255,255,.026);
+    border-radius:18px;
+    padding:12px;
+  }
+  .sv-admin-page--campanhas .sv-emp-picker-head{
+    display:flex;
+    gap:10px;
+    align-items:center;
+    flex-wrap:wrap;
+    margin-bottom:12px;
+  }
+  .sv-admin-page--campanhas .sv-emp-picker-head .form-control{
+    flex:1 1 260px;
+    min-width:220px;
+  }
+  .sv-admin-page--campanhas .sv-emp-counter{
+    border:1px solid rgba(255,140,0,.20);
+    background:rgba(255,140,0,.10);
+    color:#ffd39b;
+    border-radius:999px;
+    padding:8px 12px;
+    font-weight:900;
+    font-size:.78rem;
+    white-space:nowrap;
+  }
+  .sv-admin-page--campanhas .sv-emp-options{
+    display:grid;
+    grid-template-columns:repeat(6, minmax(0, 1fr));
+    gap:8px;
+    max-height:185px;
+    overflow:auto;
+    padding-right:4px;
+  }
+  .sv-admin-page--campanhas .sv-emp-option{
+    display:flex;
+    gap:8px;
+    align-items:flex-start;
+    border:1px solid rgba(255,255,255,.10);
+    background:rgba(255,255,255,.035);
+    border-radius:14px;
+    padding:9px 10px;
+    cursor:pointer;
+    min-height:44px;
+    transition:border-color .15s ease, background .15s ease, transform .15s ease;
+  }
+  .sv-admin-page--campanhas .sv-emp-option:hover{
+    border-color:rgba(255,140,0,.32);
+    transform:translateY(-1px);
+  }
+  .sv-admin-page--campanhas .sv-emp-option input{
+    margin-top:3px;
+    accent-color:#ff8c00;
+  }
+  .sv-admin-page--campanhas .sv-emp-option strong{
+    display:block;
+    color:#f8fafc;
+    font-size:.86rem;
+    line-height:1.1;
+  }
+  .sv-admin-page--campanhas .sv-emp-option small{
+    display:block;
+    color:rgba(248,250,252,.62);
+    font-size:.72rem;
+    line-height:1.18;
+    margin-top:2px;
+  }
+  .sv-admin-page--campanhas .sv-emp-option.is-checked{
+    border-color:rgba(255,140,0,.55);
+    background:linear-gradient(135deg, rgba(255,140,0,.16), rgba(255,255,255,.035));
+  }
+  .sv-admin-page--campanhas .sv-emp-manual-row{
+    margin-top:10px;
+    display:grid;
+    gap:6px;
+  }
+  .sv-admin-page--campanhas .sv-emp-warning{
+    border:1px solid rgba(255,140,0,.18);
+    background:rgba(255,140,0,.08);
+    color:rgba(248,250,252,.78);
+    border-radius:14px;
+    padding:10px 12px;
+    font-size:.78rem;
+    line-height:1.35;
+  }
+
   .sv-admin-page--campanhas .sv-mini-metric{
     display:flex;
     align-items:center;
@@ -374,6 +461,8 @@
     .sv-admin-page--campanhas .sv-campaign-title{ max-width:260px; }
     .sv-admin-page--campanhas .sv-form-block-head{ flex-direction:column; }
     .sv-admin-page--campanhas .sv-modal-grid{ grid-template-columns:1fr; }
+    .sv-admin-page--campanhas .sv-emp-options{ grid-template-columns:repeat(2, minmax(0, 1fr)); max-height:240px; }
+    .sv-admin-page--campanhas .sv-emp-picker-head .form-control{ min-width:0; flex-basis:100%; }
   }
 </style>
 {% endblock %}
@@ -517,6 +606,7 @@
           <b>Descrição:</b> use o início exato, exemplo <code>JOGO JUNTA</code>, sempre combinando com a marca.<br>
           <b>Gerente:</b> não usa vendedor específico; a premiação considera o total vendido pela EMP nos produtos da campanha.<br>
           <b>Mínimos:</b> quantidade e valor são opcionais. Se preencher ambos, os dois serão exigidos.<br>
+          <b>Multi-EMP:</b> selecione várias empresas para criar a mesma campanha em lote. O sistema cria uma campanha por EMP e bloqueia duplicidade antes de salvar qualquer registro.<br>
           <b>Dados assistidos:</b> EMPs, vendedores e marcas aparecem como sugestões reais do sistema, mas o campo continua editável para casos novos.
         </div>
       </div>
@@ -537,10 +627,44 @@
             </div>
 
             <div class="sv-campaign-grid">
-              <div class="sv-field sv-input-assisted">
-                <label class="sv-form-label">EMP *</label>
-                <input class="form-control js-emp-input" type="text" name="emp" list="campanhaEmpOptions" autocomplete="off" placeholder="Ex: 101" required>
-                <div class="sv-help-text mt-1">Sugestões do cadastro de EMPs e vendas importadas.</div>
+              <div class="sv-field sv-col-full">
+                <label class="sv-form-label">Empresas *</label>
+                <div class="sv-emp-picker" data-emp-picker>
+                  <div class="sv-emp-picker-head">
+                    <input class="form-control" type="search" data-emp-search autocomplete="off" placeholder="Buscar EMP pelo código, nome ou cidade...">
+                    <span class="sv-emp-counter" data-emp-counter>0 selecionada(s)</span>
+                    <button class="btn btn-sv-soft btn-sm" type="button" data-emp-select-all>Marcar visíveis</button>
+                    <button class="btn btn-sv-soft btn-sm" type="button" data-emp-clear>Limpar</button>
+                  </div>
+
+                  {% if assisted_emps|length > 0 %}
+                    <div class="sv-emp-options" data-emp-options>
+                      {% for emp_opt in assisted_emps %}
+                        {% set emp_label = emp_opt.codigo ~ (' · ' ~ emp_opt.nome if emp_opt.nome else '') ~ (' · ' ~ emp_opt.cidade if emp_opt.cidade else '') ~ ('/' ~ emp_opt.uf if emp_opt.uf else '') %}
+                        <label class="sv-emp-option" data-emp-option data-search="{{ emp_label|lower }}">
+                          <input type="checkbox" name="emps" value="{{ emp_opt.codigo }}">
+                          <span>
+                            <strong>{{ emp_opt.codigo }}</strong>
+                            {% if emp_opt.nome or emp_opt.cidade or emp_opt.uf %}
+                              <small>{% if emp_opt.nome %}{{ emp_opt.nome }}{% endif %}{% if emp_opt.cidade %} · {{ emp_opt.cidade }}{% endif %}{% if emp_opt.uf %}/{{ emp_opt.uf }}{% endif %}</small>
+                            {% else %}
+                              <small>EMP disponível</small>
+                            {% endif %}
+                          </span>
+                        </label>
+                      {% endfor %}
+                    </div>
+                  {% else %}
+                    <div class="sv-empty-state py-3">Nenhuma EMP assistida carregada. Use o campo manual abaixo.</div>
+                  {% endif %}
+
+                  <div class="sv-emp-manual-row">
+                    <input class="form-control" type="text" name="emp_manual" autocomplete="off" placeholder="Opcional: digite EMPs separadas por vírgula. Ex: 101, 102, 1001">
+                    <div class="sv-emp-warning">
+                      Ao salvar, será criado <b>um cadastro por EMP</b>. Se qualquer EMP já tiver campanha igual com vigência sobreposta, o sistema bloqueia tudo e não salva nenhuma campanha duplicada.
+                    </div>
+                  </div>
+                </div>
               </div>
 
               <div class="sv-field sv-col-2">
@@ -1151,6 +1275,7 @@
     if(tipoCamp){ tipoCamp.addEventListener('change', toggleTipoCampanha); }
     toggleTipoCampanha();
     bindAssistedInputs();
+    bindEmpPicker();
 
     var q = document.getElementById('qSearch');
     var emp = document.getElementById('empFilter');
@@ -1252,6 +1377,68 @@
         html.push('<option value="' + nome.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;') + '"></option>');
       });
       list.innerHTML = html.join('');
+    }
+
+    function bindEmpPicker(){
+      document.querySelectorAll('[data-emp-picker]').forEach(function(picker){
+        var search = picker.querySelector('[data-emp-search]');
+        var options = Array.prototype.slice.call(picker.querySelectorAll('[data-emp-option]'));
+        var checks = Array.prototype.slice.call(picker.querySelectorAll('input[name="emps"]'));
+        var manual = picker.querySelector('input[name="emp_manual"]');
+        var counter = picker.querySelector('[data-emp-counter]');
+        var selectAll = picker.querySelector('[data-emp-select-all]');
+        var clear = picker.querySelector('[data-emp-clear]');
+
+        function updateCounter(){
+          var selected = checks.filter(function(ch){ return ch.checked; }).length;
+          var manualHasValue = manual && manual.value.trim();
+          if(counter){
+            counter.textContent = selected + ' selecionada(s)' + (manualHasValue ? ' + manual' : '');
+          }
+          options.forEach(function(opt){
+            var ch = opt.querySelector('input[name="emps"]');
+            opt.classList.toggle('is-checked', !!(ch && ch.checked));
+          });
+        }
+
+        function applySearch(){
+          var term = search ? search.value.toLowerCase().trim() : '';
+          options.forEach(function(opt){
+            var text = opt.getAttribute('data-search') || '';
+            opt.style.display = (!term || text.indexOf(term) !== -1) ? '' : 'none';
+          });
+        }
+
+        checks.forEach(function(ch){ ch.addEventListener('change', updateCounter); });
+        if(manual){ manual.addEventListener('input', updateCounter); }
+        if(search){ search.addEventListener('input', applySearch); }
+        if(selectAll){
+          selectAll.addEventListener('click', function(){
+            options.forEach(function(opt){
+              if(opt.style.display === 'none') return;
+              var ch = opt.querySelector('input[name="emps"]');
+              if(ch) ch.checked = true;
+            });
+            updateCounter();
+          });
+        }
+        if(clear){
+          clear.addEventListener('click', function(){
+            checks.forEach(function(ch){ ch.checked = false; });
+            if(manual) manual.value = '';
+            updateCounter();
+          });
+        }
+        applySearch();
+        updateCounter();
+      });
+    }
+
+    function hasSelectedEmpForCreate(form){
+      if(!form) return true;
+      var checked = form.querySelectorAll('input[name="emps"]:checked').length;
+      var manual = form.querySelector('input[name="emp_manual"]');
+      return checked > 0 || !!(manual && manual.value.trim());
     }
 
     function bindAssistedInputs(){
@@ -1389,7 +1576,12 @@
 
     var frm = document.getElementById('frmCampanha');
     if(frm){
-      frm.addEventListener('submit', function(){
+      frm.addEventListener('submit', function(ev){
+        if(!hasSelectedEmpForCreate(frm)){
+          ev.preventDefault();
+          alert('Selecione ao menos uma EMP ou digite uma EMP no campo manual.');
+          return false;
+        }
         var sp = document.getElementById('spSalvar');
         var tx = document.getElementById('txSalvar');
         var bt = document.getElementById('btnSalvar');

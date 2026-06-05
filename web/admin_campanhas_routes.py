@@ -12,7 +12,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from typing import Any, Callable
 
 from flask import redirect, render_template, request
-from sqlalchemy import func
+from sqlalchemy import func, or_
 
 
 def register_admin_campanhas_routes(
@@ -39,9 +39,42 @@ def register_admin_campanhas_routes(
         except Exception:
             raise ValueError(f"{field_label} inválido.")
 
+    def _get_selected_emps(form) -> list[str]:
+        """Lê EMPs selecionadas no cadastro em lote, mantendo compatibilidade com o campo legado `emp`."""
+        values: list[str] = []
+
+        def add_raw(raw: Any) -> None:
+            text = str(raw or "").strip()
+            if not text:
+                return
+            # Aceita valores vindos de checkboxes, campo legado ou digitação manual: "101, 102;103".
+            normalized = text.replace(";", ",").replace("\n", ",").replace("\t", ",")
+            for part in normalized.split(","):
+                emp_code = str(part or "").strip()
+                if emp_code:
+                    values.append(emp_code)
+
+        for key in ("emps", "emp", "emp_manual"):
+            try:
+                for raw in form.getlist(key):
+                    add_raw(raw)
+            except Exception:
+                add_raw(form.get(key))
+
+        seen: set[str] = set()
+        result: list[str] = []
+        for emp_code in values:
+            key = emp_code.upper()
+            if key in seen:
+                continue
+            seen.add(key)
+            result.append(emp_code)
+        return result
+
     def _parse_campaign_payload(form, *, current_obj=None) -> dict[str, Any]:
         """Valida e normaliza dados do formulário de campanha."""
-        emp = (form.get("emp") or "").strip()
+        selected_emps = _get_selected_emps(form)
+        emp = (selected_emps[0] if selected_emps else (form.get("emp") or "")).strip()
         vendedor = (form.get("vendedor") or "").strip().upper() or None
         titulo = (form.get("titulo") or "").strip() or None
         campanha_tipo = (form.get("campanha_tipo") or "VENDEDOR").strip().upper()
@@ -131,6 +164,62 @@ def register_admin_campanhas_routes(
                 setattr(obj, key, value)
         if hasattr(obj, "updated_at"):
             obj.updated_at = datetime.utcnow()
+
+    def _find_duplicate_campaign(db, payload: dict[str, Any], *, exclude_id: int | None = None):
+        """Localiza campanha QTD com mesma regra comercial e vigência sobreposta.
+
+        A trava é propositalmente conservadora: evita duas campanhas na mesma EMP,
+        mesmo produto/descrição, mesma marca, mesmo tipo/beneficiário e datas que se cruzam.
+        Isso previne pagamento duplicado no recálculo e no financeiro.
+        """
+        emp = str(payload.get("emp") or "").strip()
+        marca = _safe_upper(payload.get("marca"))
+        tipo = _safe_upper(payload.get("campanha_tipo") or "VENDEDOR") or "VENDEDOR"
+        campo_match = str(payload.get("campo_match") or "codigo").strip().lower()
+        data_inicio = payload.get("data_inicio")
+        data_fim = payload.get("data_fim")
+
+        if not emp or not marca or not data_inicio or not data_fim:
+            return None
+
+        q = (
+            db.query(CampanhaQtd)
+            .filter(CampanhaQtd.emp == emp)
+            .filter(func.upper(func.coalesce(CampanhaQtd.marca, "")) == marca)
+            .filter(func.upper(func.coalesce(CampanhaQtd.campanha_tipo, "VENDEDOR")) == tipo)
+            .filter(func.lower(func.coalesce(CampanhaQtd.campo_match, "codigo")) == campo_match)
+            .filter(CampanhaQtd.data_inicio <= data_fim)
+            .filter(CampanhaQtd.data_fim >= data_inicio)
+        )
+        if exclude_id:
+            q = q.filter(CampanhaQtd.id != int(exclude_id))
+
+        if tipo == "GERENTE":
+            q = q.filter(or_(CampanhaQtd.vendedor.is_(None), CampanhaQtd.vendedor == ""))
+        else:
+            vendedor = _safe_upper(payload.get("vendedor"))
+            if vendedor:
+                q = q.filter(func.upper(func.coalesce(CampanhaQtd.vendedor, "")) == vendedor)
+            else:
+                q = q.filter(or_(CampanhaQtd.vendedor.is_(None), CampanhaQtd.vendedor == ""))
+
+        if campo_match == "descricao":
+            descricao = _safe_upper(payload.get("descricao_prefixo"))
+            q = q.filter(func.upper(func.coalesce(CampanhaQtd.descricao_prefixo, "")) == descricao)
+        else:
+            produto = _safe_upper(payload.get("produto_prefixo"))
+            q = q.filter(func.upper(func.coalesce(CampanhaQtd.produto_prefixo, "")) == produto)
+
+        return q.order_by(CampanhaQtd.id.asc()).first()
+
+    def _format_duplicate_message(duplicates: list[tuple[str, Any]]) -> str:
+        details = []
+        for emp_code, dup in duplicates[:8]:
+            details.append(f"EMP {emp_code}: já existe a campanha #{getattr(dup, 'id', '?')} ({getattr(dup, 'titulo', '') or 'sem título'}).")
+        extra = ""
+        if len(duplicates) > 8:
+            extra = f" + {len(duplicates) - 8} outra(s)."
+        return "Campanha duplicada bloqueada. Nenhuma campanha foi criada/alterada. " + " ".join(details) + extra
 
     def _get_campaign_id_from_form(form) -> int:
         raw = form.get("campanha_id") or form.get("id") or ""
@@ -359,24 +448,53 @@ def register_admin_campanhas_routes(
 
                 # Se a competência estiver FECHADA, bloqueia alterações de campanhas (mantém integridade do fechamento).
                 try:
-                    emp_post = (request.form.get("emp") or "").strip()
-                    if not emp_post:
-                        cid_check = _get_campaign_id_from_form(request.form)
-                        if cid_check:
-                            obj_check = db.query(CampanhaQtd).filter(CampanhaQtd.id == cid_check).first()
-                            if obj_check:
-                                emp_post = (obj_check.emp or "").strip()
-                    if emp_post and competencia_fechada_fn(db, emp_post, ano, mes):
-                        return redirect('/admin/fechamento' + f'?emp={emp_post}&mes={mes}&ano={ano}')
+                    emps_post: list[str] = []
+                    if acao == "criar":
+                        emps_post = _get_selected_emps(request.form)
+                    else:
+                        emp_post = (request.form.get("emp") or "").strip()
+                        if not emp_post:
+                            cid_check = _get_campaign_id_from_form(request.form)
+                            if cid_check:
+                                obj_check = db.query(CampanhaQtd).filter(CampanhaQtd.id == cid_check).first()
+                                if obj_check:
+                                    emp_post = (obj_check.emp or "").strip()
+                        if emp_post:
+                            emps_post = [emp_post]
+                    for emp_post in emps_post:
+                        if emp_post and competencia_fechada_fn(db, emp_post, ano, mes):
+                            return redirect('/admin/fechamento' + f'?emp={emp_post}&mes={mes}&ano={ano}')
                 except Exception:
                     pass
 
                 try:
                     if acao == "criar":
-                        payload = _parse_campaign_payload(request.form)
-                        db.add(CampanhaQtd(**payload, ativo=1))
+                        selected_emps = _get_selected_emps(request.form)
+                        if not selected_emps:
+                            raise ValueError("Selecione ao menos uma EMP para a campanha.")
+
+                        base_payload = _parse_campaign_payload(request.form)
+                        payloads: list[dict[str, Any]] = []
+                        duplicates: list[tuple[str, Any]] = []
+
+                        for emp_code in selected_emps:
+                            payload = dict(base_payload)
+                            payload["emp"] = str(emp_code).strip()
+                            dup = _find_duplicate_campaign(db, payload)
+                            if dup:
+                                duplicates.append((payload["emp"], dup))
+                            payloads.append(payload)
+
+                        if duplicates:
+                            raise ValueError(_format_duplicate_message(duplicates))
+
+                        for payload in payloads:
+                            db.add(CampanhaQtd(**payload, ativo=1))
                         db.commit()
-                        ok = "Campanha cadastrada com sucesso."
+                        if len(payloads) == 1:
+                            ok = "Campanha cadastrada com sucesso."
+                        else:
+                            ok = f"Campanha cadastrada para {len(payloads)} EMPs com sucesso."
 
                     elif acao == "editar":
                         cid = _get_campaign_id_from_form(request.form)
@@ -385,6 +503,9 @@ def register_admin_campanhas_routes(
                             app.logger.warning("Campanha QTD não encontrada para editar cid=%s form=%s", cid, dict(request.form))
                             raise ValueError(f"Campanha não encontrada para o ID {cid}.")
                         payload = _parse_campaign_payload(request.form, current_obj=c)
+                        dup = _find_duplicate_campaign(db, payload, exclude_id=cid)
+                        if dup:
+                            raise ValueError(_format_duplicate_message([(payload.get("emp"), dup)]))
                         _apply_campaign_payload(c, payload)
                         db.commit()
                         ok = "Campanha atualizada com sucesso."
@@ -425,6 +546,10 @@ def register_admin_campanhas_routes(
                         }
                         if hasattr(CampanhaQtd, "faturamento_minimo_emp"):
                             payload["faturamento_minimo_emp"] = getattr(c, "faturamento_minimo_emp", None)
+
+                        dup = _find_duplicate_campaign(db, payload)
+                        if dup:
+                            raise ValueError(_format_duplicate_message([(payload.get("emp"), dup)]))
 
                         # Segurança: cópia nasce inativa para evitar pagamento/cálculo duplicado sem revisão.
                         db.add(CampanhaQtd(**payload, ativo=0))
