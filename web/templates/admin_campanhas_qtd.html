@@ -441,7 +441,46 @@
     letter-spacing:.04em;
   }
 
-
+  .sv-admin-page--campanhas .sv-rule-grid .sv-field{
+    min-width:0;
+    display:flex;
+    flex-direction:column;
+    justify-content:flex-end;
+  }
+  .sv-admin-page--campanhas .sv-rule-grid .sv-form-label{
+    min-height:31px;
+    display:flex;
+    align-items:flex-end;
+    line-height:1.08;
+    margin-bottom:6px;
+  }
+  .sv-admin-page--campanhas .sv-rule-grid .form-control,
+  .sv-admin-page--campanhas .sv-rule-grid .form-select{
+    min-height:42px;
+  }
+  .sv-admin-page--campanhas .sv-money-wrap{
+    position:relative;
+    display:flex;
+    align-items:center;
+  }
+  .sv-admin-page--campanhas .sv-money-prefix{
+    position:absolute;
+    left:12px;
+    z-index:2;
+    color:rgba(248,250,252,.68);
+    font-weight:900;
+    font-size:.78rem;
+    pointer-events:none;
+  }
+  .sv-admin-page--campanhas .sv-money-wrap .form-control{
+    padding-left:38px;
+    text-align:right;
+    font-variant-numeric:tabular-nums;
+  }
+  .sv-admin-page--campanhas .sv-number-br{
+    text-align:right;
+    font-variant-numeric:tabular-nums;
+  }
 
   .sv-admin-page--campanhas .sv-rule-builder{
     display:grid;
@@ -466,7 +505,7 @@
   }
   .sv-admin-page--campanhas .sv-rule-grid{
     display:grid;
-    grid-template-columns:1.05fr 1.1fr 1.3fr 1.15fr .85fr .85fr .95fr .95fr;
+    grid-template-columns:1.12fr 1.08fr 1.28fr 1.14fr .86fr .88fr .96fr 1.12fr;
     gap:10px;
     align-items:start;
   }
@@ -784,23 +823,32 @@
 
                   <div class="sv-field">
                     <label class="sv-form-label">R$/un *</label>
-                    <input class="form-control" type="text" name="regra_recompensa_unit" placeholder="1,00" required>
+                    <div class="sv-money-wrap">
+                      <span class="sv-money-prefix">R$</span>
+                      <input class="form-control js-money-br" type="text" name="regra_recompensa_unit" inputmode="decimal" placeholder="1,00" required>
+                    </div>
                   </div>
 
                   <div class="sv-field">
                     <label class="sv-form-label">Qtd mínima</label>
-                    <input class="form-control" type="text" name="regra_qtd_minima" inputmode="numeric" placeholder="Opcional">
+                    <input class="form-control sv-number-br js-number-br" type="text" name="regra_qtd_minima" inputmode="decimal" placeholder="Opcional">
                   </div>
 
                   <div class="sv-field">
                     <label class="sv-form-label">Valor mínimo</label>
-                    <input class="form-control" type="text" name="regra_valor_minimo" placeholder="Opcional">
+                    <div class="sv-money-wrap">
+                      <span class="sv-money-prefix">R$</span>
+                      <input class="form-control js-money-br" type="text" name="regra_valor_minimo" inputmode="decimal" placeholder="Opcional">
+                    </div>
                   </div>
 
                   {% if assist_has_faturamento %}
                   <div class="sv-field">
                     <label class="sv-form-label">Faturamento mínimo EMP</label>
-                    <input class="form-control" type="text" name="regra_faturamento_minimo_emp" placeholder="Opcional">
+                    <div class="sv-money-wrap">
+                      <span class="sv-money-prefix">R$</span>
+                      <input class="form-control js-money-br" type="text" name="regra_faturamento_minimo_emp" inputmode="decimal" placeholder="Opcional">
+                    </div>
                   </div>
                   {% endif %}
                 </div>
@@ -1135,23 +1183,32 @@
 
             <div class="sv-field">
               <label class="sv-form-label">Recompensa R$/un *</label>
-              <input class="form-control" type="text" name="recompensa_unit" required>
+              <div class="sv-money-wrap">
+                <span class="sv-money-prefix">R$</span>
+                <input class="form-control js-money-br" type="text" name="recompensa_unit" inputmode="decimal" required>
+              </div>
             </div>
 
             <div class="sv-field">
               <label class="sv-form-label">Qtd mínima</label>
-              <input class="form-control" type="text" name="qtd_minima" inputmode="numeric">
+              <input class="form-control sv-number-br js-number-br" type="text" name="qtd_minima" inputmode="decimal">
             </div>
 
             <div class="sv-field">
               <label class="sv-form-label">Valor mínimo</label>
-              <input class="form-control" type="text" name="valor_minimo">
+              <div class="sv-money-wrap">
+                <span class="sv-money-prefix">R$</span>
+                <input class="form-control js-money-br" type="text" name="valor_minimo" inputmode="decimal">
+              </div>
             </div>
 
             {% if assist_has_faturamento %}
             <div class="sv-field">
               <label class="sv-form-label">Faturamento mínimo EMP</label>
-              <input class="form-control" type="text" name="faturamento_minimo_emp">
+              <div class="sv-money-wrap">
+                <span class="sv-money-prefix">R$</span>
+                <input class="form-control js-money-br" type="text" name="faturamento_minimo_emp" inputmode="decimal">
+              </div>
             </div>
             {% endif %}
 
@@ -1311,7 +1368,66 @@
     syncTypeCards();
   }
 
+  function parsePtBrNumber(raw){
+    var text = String(raw || '').trim();
+    if(!text) return null;
+    text = text.replace(/R\$/gi, '').replace(/\s+/g, '');
+    text = text.replace(/[^0-9,.-]/g, '');
+    if(!text) return null;
+    var normalized;
+    if(text.indexOf(',') >= 0){
+      normalized = text.replace(/\./g, '').replace(',', '.');
+    }else if(text.indexOf('.') >= 0){
+      var sign = text.charAt(0) === '-' ? '-' : '';
+      var body = sign ? text.slice(1) : text;
+      var parts = body.split('.');
+      var looksLikeThousands = parts.length > 1 && parts.slice(1).every(function(part){ return /^\d{3}$/.test(part); });
+      normalized = looksLikeThousands ? sign + parts.join('') : text;
+    }else{
+      normalized = text;
+    }
+    var n = Number(normalized);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  function formatPtBr(value, decimals){
+    var n = parsePtBrNumber(value);
+    if(n === null) return '';
+    return n.toLocaleString('pt-BR', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+  }
+
+  function bindPtBrFormatting(context){
+    var root = context || document;
+    root.querySelectorAll('.js-money-br').forEach(function(input){
+      if(input.dataset.ptbrBound === '1') return;
+      input.dataset.ptbrBound = '1';
+      input.addEventListener('blur', function(){
+        var formatted = formatPtBr(input.value, 2);
+        if(formatted) input.value = formatted;
+      });
+    });
+    root.querySelectorAll('.js-number-br').forEach(function(input){
+      if(input.dataset.ptbrBound === '1') return;
+      input.dataset.ptbrBound = '1';
+      input.addEventListener('blur', function(){
+        var n = parsePtBrNumber(input.value);
+        if(n === null) return;
+        var decimals = Math.abs(n % 1) > 0.000001 ? 2 : 0;
+        input.value = n.toLocaleString('pt-BR', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+      });
+    });
+  }
+
+  function normalizePtBrFieldsForSubmit(form){
+    if(!form) return;
+    form.querySelectorAll('.js-money-br').forEach(function(input){
+      var formatted = formatPtBr(input.value, 2);
+      if(formatted) input.value = formatted;
+    });
+  }
+
   document.addEventListener('DOMContentLoaded', function(){
+    bindPtBrFormatting(document);
     var sel = document.getElementById('campo_match');
     if(sel){ sel.addEventListener('change', toggleMatchFields); }
     toggleMatchFields();
@@ -1362,6 +1478,7 @@
       row.querySelectorAll('.js-uppercase').forEach(function(input){
         input.addEventListener('blur', function(){ input.value = (input.value || '').trim().toUpperCase(); });
       });
+      bindPtBrFormatting(row);
       syncRuleRow(row);
     }
 
@@ -1662,6 +1779,11 @@
         setField(form, 'faturamento_minimo_emp', btn.getAttribute('data-faturamento'));
         setField(form, 'data_inicio', btn.getAttribute('data-data-inicio'));
         setField(form, 'data_fim', btn.getAttribute('data-data-fim'));
+        bindPtBrFormatting(form);
+        form.querySelectorAll('.js-money-br').forEach(function(input){
+          var formatted = formatPtBr(input.value, 2);
+          if(formatted) input.value = formatted;
+        });
         syncCampaignForm(form);
       });
     }
@@ -1714,12 +1836,20 @@
           alert('Selecione ao menos uma EMP ou digite uma EMP no campo manual.');
           return false;
         }
+        normalizePtBrFieldsForSubmit(frm);
         var sp = document.getElementById('spSalvar');
         var tx = document.getElementById('txSalvar');
         var bt = document.getElementById('btnSalvar');
         if(sp) sp.classList.remove('d-none');
         if(tx) tx.textContent = 'Salvando...';
         if(bt) bt.disabled = true;
+      });
+    }
+
+    var editForm = document.getElementById('editForm');
+    if(editForm){
+      editForm.addEventListener('submit', function(){
+        normalizePtBrFieldsForSubmit(editForm);
       });
     }
   });

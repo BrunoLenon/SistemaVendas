@@ -33,9 +33,43 @@ def register_admin_campanhas_routes(
     """
 
     def _to_dec(raw: str, *, field_label: str = "Número") -> Decimal:
-        value = (raw or "").strip().replace(".", "").replace(",", ".") if "," in (raw or "") else (raw or "").strip().replace(",", ".")
+        """Converte números no padrão pt-BR ou técnico para Decimal.
+
+        Aceita formatos como:
+        - 1,00
+        - 1.000,00
+        - R$ 1.000,00
+        - 1000.00
+        - 1000
+
+        Importante: quando não há vírgula e os pontos parecem separadores de milhar
+        (ex.: 1.000 ou 10.000), eles são removidos.
+        """
+        text = str(raw or "").strip()
+        text = text.replace("R$", "").replace("r$", "").replace(" ", "")
+        value = "".join(ch for ch in text if ch.isdigit() or ch in ",.-")
+
+        if not value:
+            raise ValueError(f"{field_label} inválido.")
+
+        if "," in value:
+            normalized = value.replace(".", "").replace(",", ".")
+        else:
+            if "." in value:
+                sign = "-" if value.startswith("-") else ""
+                body = value[1:] if sign else value
+                parts = body.split(".")
+                # 1.000 / 10.000 / 1.000.000 => milhar pt-BR
+                if len(parts) > 1 and all(len(part) == 3 and part.isdigit() for part in parts[1:]):
+                    normalized = sign + "".join(parts)
+                else:
+                    # 1000.00 / 1.5 => decimal técnico
+                    normalized = value
+            else:
+                normalized = value
+
         try:
-            return Decimal(value)
+            return Decimal(normalized)
         except Exception:
             raise ValueError(f"{field_label} inválido.")
 
