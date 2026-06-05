@@ -2122,6 +2122,17 @@ def _campanhas_mes_overlap(ano: int, mes: int, emp: str | None) -> list[Campanha
         q = q.filter(and_(CampanhaQtd.data_inicio <= fim_mes, CampanhaQtd.data_fim >= inicio_mes))
         return q.order_by(CampanhaQtd.emp.asc(), CampanhaQtd.data_inicio.asc()).all()
 
+
+def _campanha_tipo_qtd(campanha: CampanhaQtd) -> str:
+    """Normaliza o tipo da campanha QTD.
+
+    Hotfix: alguns pontos do recálculo usam `_campanha_tipo_qtd`,
+    mas a função não existia no app.py. Isso fazia o recálculo manual
+    do relatório falhar antes de gravar `campanhas_qtd_resultados`,
+    deixando a tela `/relatorios/campanhas` sem dados mesmo com vendas válidas.
+    """
+    return (getattr(campanha, "campanha_tipo", None) or "VENDEDOR").strip().upper()
+
 def _upsert_resultado(
     db,
     campanha: CampanhaQtd,
@@ -2903,12 +2914,14 @@ def _recalcular_resultados_campanhas_para_scope(ano: int, mes: int, emps: list[s
 
             vendedores_emp = [v.strip().upper() for v in (vendedores_por_emp.get(emp) or []) if (v or '').strip()]
             if not vendedores_emp:
+                print(f"[CAMPANHAS_QTD_RECALC] emp={emp} ano={ano} mes={mes} sem vendedores no escopo; pulando recálculo QTD")
                 continue
 
             # campanhas que intersectam o mês (inclui globais se houver)
             campanhas = _campanhas_mes_overlap(int(ano), int(mes), emp)
             campanhas_vendedor = [c for c in campanhas if _campanha_tipo_qtd(c) != "GERENTE"]
             campanhas_gerente = [c for c in campanhas if _campanha_tipo_qtd(c) == "GERENTE"]
+            print(f"[CAMPANHAS_QTD_RECALC] emp={emp} ano={ano} mes={mes} vendedores={len(vendedores_emp)} campanhas={len(campanhas)} vendedor={len(campanhas_vendedor)} gerente={len(campanhas_gerente)}")
 
             gerentes_emp = _get_gerentes_emp(emp)
             # Campanhas de gerente não dependem de o gerente ter venda própria no mês.
@@ -2987,6 +3000,7 @@ def _recalcular_resultados_campanhas_para_scope(ano: int, mes: int, emps: list[s
             if novos:
                 db.bulk_save_objects(novos)
             db.commit()
+            print(f"[CAMPANHAS_QTD_RECALC] emp={emp} ano={ano} mes={mes} resultados_qtd_gravados={len(novos)}")
 
 
 
