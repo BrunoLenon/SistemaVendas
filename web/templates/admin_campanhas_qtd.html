@@ -860,11 +860,14 @@
         <input type="hidden" name="escopo" value="{{ view_scope }}">
                           <button class="btn btn-sv-soft btn-sm" type="submit">{{ 'Desativar' if c.ativo else 'Ativar' }}</button>
                         </form>
-                        <button class="btn btn-outline-danger btn-sm" type="button"
-                                data-bs-toggle="modal" data-bs-target="#delModal"
-                                data-id="{{ c.id }}" data-title="{{ (c.titulo or ('Campanha #' ~ c.id))|e }}">
-                          Excluir
-                        </button>
+                        <form method="post" class="m-0" onsubmit="return confirm('Excluir esta campanha? Esta ação remove também os resultados/snapshots desta campanha. Para preservar histórico, prefira desativar.');">
+                          <input type="hidden" name="acao" value="remover">
+                          <input type="hidden" name="campanha_id" value="{{ c.id }}">
+                          <input type="hidden" name="mes" value="{{ mes }}">
+                          <input type="hidden" name="ano" value="{{ ano }}">
+                          <input type="hidden" name="escopo" value="{{ view_scope }}">
+                          <button class="btn btn-outline-danger btn-sm" type="submit">Excluir</button>
+                        </form>
                       </div>
                     </td>
                   </tr>

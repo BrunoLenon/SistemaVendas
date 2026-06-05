@@ -133,7 +133,15 @@ def register_admin_campanhas_routes(
             obj.updated_at = datetime.utcnow()
 
     def _get_campaign_id_from_form(form) -> int:
-        return int(form.get("campanha_id") or form.get("id") or 0)
+        raw = form.get("campanha_id") or form.get("id") or ""
+        raw_s = str(raw or "").strip()
+        try:
+            cid = int(raw_s)
+        except Exception:
+            raise ValueError(f"ID da campanha inválido ou não enviado pelo formulário: {raw_s!r}")
+        if cid <= 0:
+            raise ValueError("ID da campanha não enviado pelo formulário.")
+        return cid
 
 
     def _safe_upper(value: Any) -> str:
@@ -374,7 +382,8 @@ def register_admin_campanhas_routes(
                         cid = _get_campaign_id_from_form(request.form)
                         c = db.query(CampanhaQtd).filter(CampanhaQtd.id == cid).first()
                         if not c:
-                            raise ValueError("Campanha não encontrada.")
+                            app.logger.warning("Campanha QTD não encontrada para editar cid=%s form=%s", cid, dict(request.form))
+                            raise ValueError(f"Campanha não encontrada para o ID {cid}.")
                         payload = _parse_campaign_payload(request.form, current_obj=c)
                         _apply_campaign_payload(c, payload)
                         db.commit()
@@ -384,7 +393,8 @@ def register_admin_campanhas_routes(
                         cid = _get_campaign_id_from_form(request.form)
                         c = db.query(CampanhaQtd).filter(CampanhaQtd.id == cid).first()
                         if not c:
-                            raise ValueError("Campanha não encontrada.")
+                            app.logger.warning("Campanha QTD não encontrada para duplicar cid=%s form=%s", cid, dict(request.form))
+                            raise ValueError(f"Campanha não encontrada para o ID {cid}.")
 
                         clone_title = (request.form.get("titulo") or "").strip()
                         if not clone_title:
@@ -425,7 +435,8 @@ def register_admin_campanhas_routes(
                         cid = _get_campaign_id_from_form(request.form)
                         c = db.query(CampanhaQtd).filter(CampanhaQtd.id == cid).first()
                         if not c:
-                            raise ValueError("Campanha não encontrada.")
+                            app.logger.warning("Campanha QTD não encontrada para toggle cid=%s form=%s", cid, dict(request.form))
+                            raise ValueError(f"Campanha não encontrada para o ID {cid}.")
                         c.ativo = 0 if int(c.ativo or 0) == 1 else 1
                         if hasattr(c, "updated_at"):
                             c.updated_at = datetime.utcnow()
@@ -436,7 +447,8 @@ def register_admin_campanhas_routes(
                         cid = _get_campaign_id_from_form(request.form)
                         c = db.query(CampanhaQtd).filter(CampanhaQtd.id == cid).first()
                         if not c:
-                            raise ValueError("Campanha não encontrada.")
+                            app.logger.warning("Campanha QTD não encontrada para remover cid=%s form=%s", cid, dict(request.form))
+                            raise ValueError(f"Campanha não encontrada para o ID {cid}.")
 
                         # Remove também o histórico/snapshot mensal dessa campanha.
                         db.query(CampanhaQtdResultado).filter(CampanhaQtdResultado.campanha_id == cid).delete(synchronize_session=False)
