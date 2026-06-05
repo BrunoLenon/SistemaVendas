@@ -71,8 +71,8 @@ def register_admin_campanhas_routes(
             result.append(emp_code)
         return result
 
-    def _parse_campaign_payload(form, *, current_obj=None) -> dict[str, Any]:
-        """Valida e normaliza dados do formulário de campanha."""
+    def _parse_common_payload(form, *, current_obj=None) -> dict[str, Any]:
+        """Valida e normaliza os dados comuns da campanha (escopo/vigência)."""
         selected_emps = _get_selected_emps(form)
         emp = (selected_emps[0] if selected_emps else (form.get("emp") or "")).strip()
         vendedor = (form.get("vendedor") or "").strip().upper() or None
@@ -80,39 +80,83 @@ def register_admin_campanhas_routes(
         campanha_tipo = (form.get("campanha_tipo") or "VENDEDOR").strip().upper()
         if campanha_tipo not in {"VENDEDOR", "GERENTE"}:
             campanha_tipo = "VENDEDOR"
-
-        campo_match = (form.get("campo_match") or "codigo").strip().lower()
-        if campo_match not in {"codigo", "descricao"}:
-            campo_match = "codigo"
-
-        produto_prefixo = (form.get("produto_prefixo") or "").strip()
-        descricao_prefixo = (form.get("descricao_prefixo") or "").strip()
-        marca = (form.get("marca") or "").strip()
-
-        recompensa_raw = (form.get("recompensa_unit") or "").strip()
-        qtd_min_raw = (form.get("qtd_minima") or "").strip()
-        valor_min_raw = (form.get("valor_minimo") or "").strip()
-        fat_min_emp_raw = (form.get("faturamento_minimo_emp") or "").strip()
-
-        data_ini_raw = (form.get("data_inicio") or "").strip()
-        data_fim_raw = (form.get("data_fim") or "").strip()
-
         if campanha_tipo == "GERENTE":
             vendedor = None
         if not emp:
             raise ValueError("Informe a EMP.")
-        if campo_match == "descricao":
-            if not descricao_prefixo and not produto_prefixo:
-                raise ValueError("Informe a descrição (início).")
-        else:
-            if not produto_prefixo:
-                raise ValueError("Informe o código/prefixo do produto.")
-        if not marca:
-            raise ValueError("Informe a marca.")
-        if not recompensa_raw:
-            raise ValueError("Informe a recompensa (R$/un).")
+
+        data_ini_raw = (form.get("data_inicio") or "").strip()
+        data_fim_raw = (form.get("data_fim") or "").strip()
         if not data_ini_raw or not data_fim_raw:
             raise ValueError("Informe data início e fim.")
+        data_inicio = datetime.strptime(data_ini_raw, "%Y-%m-%d").date()
+        data_fim = datetime.strptime(data_fim_raw, "%Y-%m-%d").date()
+        if data_fim < data_inicio:
+            raise ValueError("Data fim não pode ser menor que data início.")
+
+        payload = {
+            "emp": str(emp),
+            "campanha_tipo": campanha_tipo,
+            "vendedor": vendedor,
+            "titulo": titulo,
+            "data_inicio": data_inicio,
+            "data_fim": data_fim,
+        }
+        return payload
+
+    def _get_list_value(form, name: str, idx: int | None, *, fallback_name: str | None = None) -> str:
+        """Lê campo simples ou campo de regra em lista, mantendo compatibilidade com o formulário antigo."""
+        if idx is not None:
+            values = form.getlist(name)
+            if idx < len(values):
+                return str(values[idx] or "")
+            return ""
+        return str(form.get(fallback_name or name) or "")
+
+    def _parse_rule_payload(
+        form,
+        *,
+        base_payload: dict[str, Any],
+        idx: int | None = None,
+        current_obj=None,
+    ) -> dict[str, Any]:
+        """Valida uma regra/item da campanha.
+
+        Cada regra vira uma linha em campanhas_qtd. Isso mantém o motor atual seguro:
+        1 campanha por EMP + produto/descrição + critérios opcionais.
+        """
+        prefix = "regra_" if idx is not None else ""
+
+        campo_match = (_get_list_value(form, prefix + "campo_match", idx, fallback_name="campo_match") or "codigo").strip().lower()
+        if campo_match not in {"codigo", "descricao"}:
+            campo_match = "codigo"
+
+        produto_prefixo = _get_list_value(form, prefix + "produto_prefixo", idx, fallback_name="produto_prefixo").strip()
+        descricao_prefixo = _get_list_value(form, prefix + "descricao_prefixo", idx, fallback_name="descricao_prefixo").strip()
+        marca = _get_list_value(form, prefix + "marca", idx, fallback_name="marca").strip()
+
+        recompensa_raw = _get_list_value(form, prefix + "recompensa_unit", idx, fallback_name="recompensa_unit").strip()
+        qtd_min_raw = _get_list_value(form, prefix + "qtd_minima", idx, fallback_name="qtd_minima").strip()
+        valor_min_raw = _get_list_value(form, prefix + "valor_minimo", idx, fallback_name="valor_minimo").strip()
+
+        # Faturamento mínimo pode ser por item/regra; se vier em branco, usa o campo global legado.
+        fat_min_emp_raw = _get_list_value(form, prefix + "faturamento_minimo_emp", idx, fallback_name="faturamento_minimo_emp").strip()
+        if idx is not None and not fat_min_emp_raw:
+            fat_min_emp_raw = (form.get("faturamento_minimo_emp") or "").strip()
+
+        if campo_match == "descricao":
+            if not descricao_prefixo:
+                raise ValueError("Informe a descrição/início em todas as regras por descrição.")
+            # Mantém produto_prefixo preenchido para compatibilidade com coluna NOT NULL e relatórios antigos.
+            if not produto_prefixo:
+                produto_prefixo = descricao_prefixo
+        else:
+            if not produto_prefixo:
+                raise ValueError("Informe o código/prefixo em todas as regras por código.")
+            descricao_prefixo = ""
+
+        if not recompensa_raw:
+            raise ValueError("Informe a recompensa (R$/un) em todas as regras.")
 
         recompensa_unit = _to_dec(recompensa_raw, field_label="Recompensa")
         if recompensa_unit < 0:
@@ -134,29 +178,119 @@ def register_admin_campanhas_routes(
         elif current_obj is not None and hasattr(current_obj, "faturamento_minimo_emp"):
             faturamento_minimo_emp = getattr(current_obj, "faturamento_minimo_emp", None)
 
-        data_inicio = datetime.strptime(data_ini_raw, "%Y-%m-%d").date()
-        data_fim = datetime.strptime(data_fim_raw, "%Y-%m-%d").date()
-        if data_fim < data_inicio:
-            raise ValueError("Data fim não pode ser menor que data início.")
-
-        payload = {
-            "emp": str(emp),
-            "campanha_tipo": campanha_tipo,
-            "vendedor": vendedor,
-            "titulo": titulo,
+        payload = dict(base_payload)
+        payload.update({
             "produto_prefixo": (produto_prefixo or "").upper(),
             "descricao_prefixo": (descricao_prefixo or "").strip(),
             "campo_match": campo_match,
-            "marca": marca.upper(),
+            # Marca em branco significa: considerar TODAS as marcas.
+            "marca": (marca or "").upper(),
             "recompensa_unit": float(recompensa_unit.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)),
             "qtd_minima": float(qtd_minima) if qtd_minima is not None else None,
             "valor_minimo": float(valor_minimo) if valor_minimo is not None else None,
-            "data_inicio": data_inicio,
-            "data_fim": data_fim,
-        }
+        })
         if hasattr(CampanhaQtd, "faturamento_minimo_emp"):
             payload["faturamento_minimo_emp"] = float(faturamento_minimo_emp) if faturamento_minimo_emp not in (None, "") else None
         return payload
+
+    def _rule_has_content(form, idx: int) -> bool:
+        names = [
+            "regra_produto_prefixo",
+            "regra_descricao_prefixo",
+            "regra_marca",
+            "regra_recompensa_unit",
+            "regra_qtd_minima",
+            "regra_valor_minimo",
+            "regra_faturamento_minimo_emp",
+        ]
+        for name in names:
+            vals = form.getlist(name)
+            if idx < len(vals) and str(vals[idx] or "").strip():
+                return True
+        return False
+
+    def _parse_campaign_payload(form, *, current_obj=None) -> dict[str, Any]:
+        """Compatibilidade: valida uma única regra/campanha."""
+        base_payload = _parse_common_payload(form, current_obj=current_obj)
+        return _parse_rule_payload(form, base_payload=base_payload, current_obj=current_obj)
+
+    def _parse_campaign_payloads(form, *, current_obj=None) -> list[dict[str, Any]]:
+        """Valida uma ou várias regras no cadastro.
+
+        Quando o formulário envia arrays `regra_*`, cada item preenchido vira uma campanha.
+        Se não houver arrays, mantém o comportamento antigo de uma única campanha.
+        """
+        rule_lengths = [len(form.getlist(name)) for name in (
+            "regra_campo_match",
+            "regra_produto_prefixo",
+            "regra_descricao_prefixo",
+            "regra_marca",
+            "regra_recompensa_unit",
+        )]
+        total_rules = max(rule_lengths or [0])
+        if total_rules <= 0:
+            return [_parse_campaign_payload(form, current_obj=current_obj)]
+
+        base_payload = _parse_common_payload(form, current_obj=current_obj)
+        payloads: list[dict[str, Any]] = []
+        for idx in range(total_rules):
+            if not _rule_has_content(form, idx):
+                continue
+            payloads.append(_parse_rule_payload(form, base_payload=base_payload, idx=idx, current_obj=current_obj))
+        if not payloads:
+            raise ValueError("Inclua ao menos uma regra/item da campanha.")
+        return payloads
+
+    def _prefixes_overlap(a: Any, b: Any) -> bool:
+        """Retorna True quando dois prefixos podem alcançar o mesmo item.
+
+        Ex.: 30015 conflita com 300157; BLOCO conflita com BLOCO TITAN.
+        """
+        aa = _safe_upper(a)
+        bb = _safe_upper(b)
+        if not aa or not bb:
+            return False
+        return aa.startswith(bb) or bb.startswith(aa)
+
+    def _payloads_overlap(a: dict[str, Any], b: dict[str, Any]) -> bool:
+        """Confere duplicidade dentro do mesmo lote antes de gravar.
+
+        Marca em branco é curinga e conflita com qualquer marca na mesma regra.
+        """
+        if str(a.get("emp") or "") != str(b.get("emp") or ""):
+            return False
+        if _safe_upper(a.get("campanha_tipo") or "VENDEDOR") != _safe_upper(b.get("campanha_tipo") or "VENDEDOR"):
+            return False
+        if (a.get("campo_match") or "codigo") != (b.get("campo_match") or "codigo"):
+            return False
+        if (a.get("data_inicio") or date.min) > (b.get("data_fim") or date.max):
+            return False
+        if (a.get("data_fim") or date.max) < (b.get("data_inicio") or date.min):
+            return False
+
+        tipo = _safe_upper(a.get("campanha_tipo") or "VENDEDOR")
+        if tipo != "GERENTE":
+            if _safe_upper(a.get("vendedor")) != _safe_upper(b.get("vendedor")):
+                return False
+
+        if (a.get("campo_match") or "codigo") == "descricao":
+            if not _prefixes_overlap(a.get("descricao_prefixo"), b.get("descricao_prefixo")):
+                return False
+        else:
+            if not _prefixes_overlap(a.get("produto_prefixo"), b.get("produto_prefixo")):
+                return False
+
+        ma = _safe_upper(a.get("marca"))
+        mb = _safe_upper(b.get("marca"))
+        return (not ma) or (not mb) or ma == mb
+
+    def _find_batch_duplicates(payloads: list[dict[str, Any]]) -> list[tuple[str, int, int]]:
+        conflicts: list[tuple[str, int, int]] = []
+        for i in range(len(payloads)):
+            for j in range(i + 1, len(payloads)):
+                if _payloads_overlap(payloads[i], payloads[j]):
+                    conflicts.append((str(payloads[i].get("emp") or ""), i + 1, j + 1))
+        return conflicts
 
     def _apply_campaign_payload(obj, payload: dict[str, Any]) -> None:
         for key, value in payload.items():
@@ -166,11 +300,11 @@ def register_admin_campanhas_routes(
             obj.updated_at = datetime.utcnow()
 
     def _find_duplicate_campaign(db, payload: dict[str, Any], *, exclude_id: int | None = None):
-        """Localiza campanha QTD com mesma regra comercial e vigência sobreposta.
+        """Localiza campanha QTD duplicada/concorrente com vigência sobreposta.
 
-        A trava é propositalmente conservadora: evita duas campanhas na mesma EMP,
-        mesmo produto/descrição, mesma marca, mesmo tipo/beneficiário e datas que se cruzam.
-        Isso previne pagamento duplicado no recálculo e no financeiro.
+        Marca em branco significa "todas as marcas". Por isso:
+        - nova campanha sem marca conflita com qualquer marca existente na mesma regra;
+        - nova campanha com marca conflita com campanha da mesma marca ou campanha sem marca.
         """
         emp = str(payload.get("emp") or "").strip()
         marca = _safe_upper(payload.get("marca"))
@@ -179,13 +313,12 @@ def register_admin_campanhas_routes(
         data_inicio = payload.get("data_inicio")
         data_fim = payload.get("data_fim")
 
-        if not emp or not marca or not data_inicio or not data_fim:
+        if not emp or not data_inicio or not data_fim:
             return None
 
         q = (
             db.query(CampanhaQtd)
             .filter(CampanhaQtd.emp == emp)
-            .filter(func.upper(func.coalesce(CampanhaQtd.marca, "")) == marca)
             .filter(func.upper(func.coalesce(CampanhaQtd.campanha_tipo, "VENDEDOR")) == tipo)
             .filter(func.lower(func.coalesce(CampanhaQtd.campo_match, "codigo")) == campo_match)
             .filter(CampanhaQtd.data_inicio <= data_fim)
@@ -193,6 +326,14 @@ def register_admin_campanhas_routes(
         )
         if exclude_id:
             q = q.filter(CampanhaQtd.id != int(exclude_id))
+
+        # Trava de marca: marca vazia é curinga.
+        if marca:
+            q = q.filter(or_(
+                func.upper(func.coalesce(CampanhaQtd.marca, "")) == marca,
+                func.coalesce(CampanhaQtd.marca, "") == "",
+            ))
+        # se marca está vazia, não filtra marca: conflita com qualquer marca na mesma regra.
 
         if tipo == "GERENTE":
             q = q.filter(or_(CampanhaQtd.vendedor.is_(None), CampanhaQtd.vendedor == ""))
@@ -204,13 +345,24 @@ def register_admin_campanhas_routes(
                 q = q.filter(or_(CampanhaQtd.vendedor.is_(None), CampanhaQtd.vendedor == ""))
 
         if campo_match == "descricao":
-            descricao = _safe_upper(payload.get("descricao_prefixo"))
-            q = q.filter(func.upper(func.coalesce(CampanhaQtd.descricao_prefixo, "")) == descricao)
+            alvo = _safe_upper(payload.get("descricao_prefixo"))
+            if not alvo:
+                return None
         else:
-            produto = _safe_upper(payload.get("produto_prefixo"))
-            q = q.filter(func.upper(func.coalesce(CampanhaQtd.produto_prefixo, "")) == produto)
+            alvo = _safe_upper(payload.get("produto_prefixo"))
+            if not alvo:
+                return None
 
-        return q.order_by(CampanhaQtd.id.asc()).first()
+        # Prefixo sempre é regra "começa com". Portanto 30015 conflita com 300157
+        # e BLOCO conflita com BLOCO TITAN. Filtramos candidatos leves e confirmamos em Python.
+        for cand in q.order_by(CampanhaQtd.id.asc()).limit(1000).all():
+            if campo_match == "descricao":
+                cand_regra = getattr(cand, "descricao_prefixo", None) or getattr(cand, "produto_prefixo", None)
+            else:
+                cand_regra = getattr(cand, "produto_prefixo", None)
+            if _prefixes_overlap(alvo, cand_regra):
+                return cand
+        return None
 
     def _format_duplicate_message(duplicates: list[tuple[str, Any]]) -> str:
         details = []
@@ -473,17 +625,23 @@ def register_admin_campanhas_routes(
                         if not selected_emps:
                             raise ValueError("Selecione ao menos uma EMP para a campanha.")
 
-                        base_payload = _parse_campaign_payload(request.form)
+                        base_rules = _parse_campaign_payloads(request.form)
                         payloads: list[dict[str, Any]] = []
                         duplicates: list[tuple[str, Any]] = []
 
                         for emp_code in selected_emps:
-                            payload = dict(base_payload)
-                            payload["emp"] = str(emp_code).strip()
-                            dup = _find_duplicate_campaign(db, payload)
-                            if dup:
-                                duplicates.append((payload["emp"], dup))
-                            payloads.append(payload)
+                            for rule_payload in base_rules:
+                                payload = dict(rule_payload)
+                                payload["emp"] = str(emp_code).strip()
+                                dup = _find_duplicate_campaign(db, payload)
+                                if dup:
+                                    duplicates.append((payload["emp"], dup))
+                                payloads.append(payload)
+
+                        batch_conflicts = _find_batch_duplicates(payloads)
+                        if batch_conflicts:
+                            exemplos = ", ".join([f"EMP {emp} regras {a}/{b}" for emp, a, b in batch_conflicts[:6]])
+                            raise ValueError("Há regras duplicadas/conflitantes no próprio lote. Ajuste antes de salvar: " + exemplos)
 
                         if duplicates:
                             raise ValueError(_format_duplicate_message(duplicates))
@@ -494,7 +652,9 @@ def register_admin_campanhas_routes(
                         if len(payloads) == 1:
                             ok = "Campanha cadastrada com sucesso."
                         else:
-                            ok = f"Campanha cadastrada para {len(payloads)} EMPs com sucesso."
+                            qtd_emps = len(selected_emps)
+                            qtd_regras = len(base_rules)
+                            ok = f"Campanha cadastrada com sucesso: {qtd_regras} regra(s) aplicada(s) em {qtd_emps} EMP(s), total de {len(payloads)} cadastro(s)."
 
                     elif acao == "editar":
                         cid = _get_campaign_id_from_form(request.form)

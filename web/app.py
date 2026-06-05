@@ -2174,7 +2174,8 @@ def _upsert_resultado(
         prefix_up = prefix.upper()
         campo_item = func.upper(func.trim(cast(Venda.mestre, String)))
         cond_prefix = campo_item.like(prefix_up + "%")
-    cond_marca = func.upper(func.trim(cast(Venda.marca, String))) == (campanha.marca or "").strip().upper()
+    marca_ref = (campanha.marca or "").strip().upper()
+    cond_marca = func.upper(func.trim(cast(Venda.marca, String))) == marca_ref
 
     tipo_campanha = _campanha_tipo_qtd(campanha)
     filtros_venda = [
@@ -2183,8 +2184,9 @@ def _upsert_resultado(
         Venda.movimento <= periodo_fim,
         ~Venda.mov_tipo_movto.in_(["DS", "CA"]),
         cond_prefix,
-        cond_marca,
     ]
+    if marca_ref:
+        filtros_venda.append(cond_marca)
     if tipo_campanha != "GERENTE":
         filtros_venda.append(Venda.vendedor == vendedor)
 
@@ -2305,21 +2307,25 @@ def _calc_resultado_all_vendedores(
         campo_item = func.upper(func.trim(cast(Venda.mestre, String)))
         cond_prefix = campo_item.like(prefix_up + "%")
 
-    cond_marca = func.upper(func.trim(cast(Venda.marca, String))) == (campanha.marca or "").strip().upper()
+    marca_ref = (campanha.marca or "").strip().upper()
+    cond_marca = func.upper(func.trim(cast(Venda.marca, String))) == marca_ref
+
+    filtros_venda = [
+        Venda.emp == emp,
+        Venda.movimento >= periodo_ini,
+        Venda.movimento <= periodo_fim,
+        ~Venda.mov_tipo_movto.in_(["DS", "CA"]),
+        cond_prefix,
+    ]
+    if marca_ref:
+        filtros_venda.append(cond_marca)
 
     base = (
         db.query(
             func.coalesce(func.sum(Venda.qtdade_vendida), 0.0).label("qtd"),
             func.coalesce(func.sum(Venda.valor_total), 0.0).label("valor"),
         )
-        .filter(
-            Venda.emp == emp,
-            Venda.movimento >= periodo_ini,
-            Venda.movimento <= periodo_fim,
-            ~Venda.mov_tipo_movto.in_(["DS", "CA"]),
-            cond_prefix,
-            cond_marca,
-        )
+        .filter(*filtros_venda)
         .first()
     )
 
@@ -2671,7 +2677,18 @@ def _calc_vendas_por_vendedor_para_campanha(db, emp: str, campanha: CampanhaQtd,
         campo_item = func.upper(func.trim(cast(Venda.mestre, String)))
         cond_prefix = campo_item.like(prefix_up + "%")
 
-    cond_marca = func.upper(func.trim(cast(Venda.marca, String))) == (campanha.marca or "").strip().upper()
+    marca_ref = (campanha.marca or "").strip().upper()
+    cond_marca = func.upper(func.trim(cast(Venda.marca, String))) == marca_ref
+
+    filtros_venda = [
+        Venda.emp == emp,
+        Venda.movimento >= periodo_ini,
+        Venda.movimento <= periodo_fim,
+        ~Venda.mov_tipo_movto.in_(["DS", "CA"]),
+        cond_prefix,
+    ]
+    if marca_ref:
+        filtros_venda.append(cond_marca)
 
     q = (
         db.query(
@@ -2679,14 +2696,7 @@ def _calc_vendas_por_vendedor_para_campanha(db, emp: str, campanha: CampanhaQtd,
             func.coalesce(func.sum(Venda.qtdade_vendida), 0.0).label("qtd"),
             func.coalesce(func.sum(Venda.valor_total), 0.0).label("valor"),
         )
-        .filter(
-            Venda.emp == emp,
-            Venda.movimento >= periodo_ini,
-            Venda.movimento <= periodo_fim,
-            ~Venda.mov_tipo_movto.in_(["DS", "CA"]),
-            cond_prefix,
-            cond_marca,
-        )
+        .filter(*filtros_venda)
         .group_by(func.upper(func.trim(cast(Venda.vendedor, String))))
     )
     rows = q.all()

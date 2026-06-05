@@ -441,8 +441,42 @@
     letter-spacing:.04em;
   }
 
+
+
+  .sv-admin-page--campanhas .sv-rule-builder{
+    display:grid;
+    gap:12px;
+  }
+  .sv-admin-page--campanhas .sv-rule-card{
+    border:1px solid rgba(255,255,255,.10);
+    background:rgba(255,255,255,.028);
+    border-radius:18px;
+    padding:14px;
+  }
+  .sv-admin-page--campanhas .sv-rule-card-head{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:10px;
+    margin-bottom:12px;
+    color:#f8fafc;
+  }
+  .sv-admin-page--campanhas .sv-rule-card-head strong{
+    letter-spacing:-.02em;
+  }
+  .sv-admin-page--campanhas .sv-rule-grid{
+    display:grid;
+    grid-template-columns:1.05fr 1.1fr 1.3fr 1.15fr .85fr .85fr .95fr .95fr;
+    gap:10px;
+    align-items:start;
+  }
+  .sv-admin-page--campanhas .sv-rule-card:first-child [data-rule-remove]{
+    visibility:hidden;
+  }
+
   @media(max-width:1100px){
     .sv-admin-page--campanhas .sv-campaign-grid{ grid-template-columns:repeat(2, minmax(0, 1fr)); }
+    .sv-admin-page--campanhas .sv-rule-grid{ grid-template-columns:repeat(2, minmax(0, 1fr)); }
     .sv-admin-page--campanhas .sv-col-3{ grid-column:1/-1; }
   }
   @media(max-width:760px){
@@ -455,6 +489,7 @@
     .sv-admin-page--campanhas .sv-period-form .sv-period-field--year{ width:100%!important; min-width:0!important; }
     .sv-admin-page--campanhas .sv-campaign-grid,
     .sv-admin-page--campanhas .sv-campaign-grid-2,
+    .sv-admin-page--campanhas .sv-rule-grid,
     .sv-admin-page--campanhas .sv-type-selector{ grid-template-columns:1fr; }
     .sv-admin-page--campanhas .sv-col-2,
     .sv-admin-page--campanhas .sv-col-3{ grid-column:1/-1; }
@@ -603,10 +638,10 @@
       <div class="collapse" id="tipsCollapse">
         <div class="sv-help-box mb-3 sv-help-text">
           <b>Código:</b> use prefixo, exemplo <code>406</code>, para considerar todos os códigos iniciados com esse valor.<br>
-          <b>Descrição:</b> use o início exato, exemplo <code>JOGO JUNTA</code>, sempre combinando com a marca.<br>
+          <b>Descrição:</b> use o início exato, exemplo <code>BLOCO</code>. Marca é opcional; em branco considera todas.<br>
           <b>Gerente:</b> não usa vendedor específico; a premiação considera o total vendido pela EMP nos produtos da campanha.<br>
           <b>Mínimos:</b> quantidade e valor são opcionais. Se preencher ambos, os dois serão exigidos.<br>
-          <b>Multi-EMP:</b> selecione várias empresas para criar a mesma campanha em lote. O sistema cria uma campanha por EMP e bloqueia duplicidade antes de salvar qualquer registro.<br>
+          <b>Multi-EMP e multi-itens:</b> selecione várias empresas e cadastre vários itens/regras. O sistema cria uma campanha por EMP/item e bloqueia duplicidade antes de salvar qualquer registro.<br>
           <b>Dados assistidos:</b> EMPs, vendedores e marcas aparecem como sugestões reais do sistema, mas o campo continua editável para casos novos.
         </div>
       </div>
@@ -701,34 +736,74 @@
           <div class="sv-form-block">
             <div class="sv-form-block-head">
               <div>
-                <div class="sv-form-block-title"><span class="sv-step-pill">02</span> Produto e regra de apuração</div>
-                <div class="sv-form-block-note mt-1">Escolha se a campanha procura pelo código/prefixo do produto ou pelo início da descrição.</div>
+                <div class="sv-form-block-title"><span class="sv-step-pill">02</span> Itens / regras da campanha</div>
+                <div class="sv-form-block-note mt-1">
+                  Cadastre vários produtos na mesma ação. Cada linha vira uma campanha por EMP, sempre com regra <b>começa com</b> para código ou descrição.
+                </div>
+              </div>
+              <div class="d-flex gap-2 flex-wrap justify-content-end">
+                <button class="btn btn-sv-soft btn-sm" type="button" id="btnAddRegra">+ Adicionar item</button>
+                <button class="btn btn-sv-soft btn-sm" type="button" id="btnDuplicarRegra">Duplicar último</button>
               </div>
             </div>
 
-            <div class="sv-campaign-grid">
-              <div class="sv-field sv-col-2">
-                <label class="sv-form-label">Base de apuração *</label>
-                <select class="form-select" name="campo_match" id="campo_match">
-                  <option value="codigo" selected>Código / Prefixo</option>
-                  <option value="descricao">Descrição começa com...</option>
-                </select>
-                <div class="sv-help-text mt-1">O campo não utilizado será desativado automaticamente.</div>
-              </div>
+            <div class="sv-current-period-note mb-3">
+              <b>Marca opcional:</b> se informar marca, calcula somente aquela marca. Se deixar em branco, calcula <b>todas as marcas</b> que começarem com o código ou descrição informado.<br>
+              <b>Mínimos opcionais:</b> quantidade, valor e faturamento mínimo só são considerados quando preenchidos.
+            </div>
 
-              <div class="sv-field" id="wrap_produto_prefixo">
-                <label class="sv-form-label">Produto / Prefixo</label>
-                <input class="form-control" type="text" name="produto_prefixo" id="produto_prefixo" placeholder="Ex: 406">
-              </div>
+            <div class="sv-rule-builder" id="campanhaRegras">
+              <div class="sv-rule-card" data-rule-row>
+                <div class="sv-rule-card-head">
+                  <strong><span data-rule-number>1</span>º item/regra</strong>
+                  <button type="button" class="btn btn-sv-soft btn-sm" data-rule-remove>Remover</button>
+                </div>
+                <div class="sv-rule-grid">
+                  <div class="sv-field">
+                    <label class="sv-form-label">Base *</label>
+                    <select class="form-select" name="regra_campo_match" data-rule-match>
+                      <option value="codigo" selected>Código começa com</option>
+                      <option value="descricao">Descrição começa com</option>
+                    </select>
+                  </div>
 
-              <div class="sv-field" id="wrap_descricao_prefixo">
-                <label class="sv-form-label">Descrição / Início</label>
-                <input class="form-control" type="text" name="descricao_prefixo" id="descricao_prefixo" placeholder="Ex: JOGO JUNTA">
-              </div>
+                  <div class="sv-field" data-rule-codigo-wrap>
+                    <label class="sv-form-label">Código / Prefixo</label>
+                    <input class="form-control" type="text" name="regra_produto_prefixo" data-rule-codigo placeholder="Ex: 30015">
+                  </div>
 
-              <div class="sv-field sv-col-full sv-input-assisted">
-                <label class="sv-form-label">Marca *</label>
-                <input class="form-control js-uppercase" type="text" name="marca" list="campanhaMarcaOptions" autocomplete="off" placeholder="Ex: COFAP" required>
+                  <div class="sv-field sv-field-disabled" data-rule-descricao-wrap>
+                    <label class="sv-form-label">Descrição / Início</label>
+                    <input class="form-control" type="text" name="regra_descricao_prefixo" data-rule-descricao placeholder="Ex: BIELA">
+                  </div>
+
+                  <div class="sv-field sv-input-assisted">
+                    <label class="sv-form-label">Marca</label>
+                    <input class="form-control js-uppercase" type="text" name="regra_marca" list="campanhaMarcaOptions" autocomplete="off" placeholder="Vazio = todas as marcas">
+                  </div>
+
+                  <div class="sv-field">
+                    <label class="sv-form-label">R$/un *</label>
+                    <input class="form-control" type="text" name="regra_recompensa_unit" placeholder="1,00" required>
+                  </div>
+
+                  <div class="sv-field">
+                    <label class="sv-form-label">Qtd mínima</label>
+                    <input class="form-control" type="text" name="regra_qtd_minima" inputmode="numeric" placeholder="Opcional">
+                  </div>
+
+                  <div class="sv-field">
+                    <label class="sv-form-label">Valor mínimo</label>
+                    <input class="form-control" type="text" name="regra_valor_minimo" placeholder="Opcional">
+                  </div>
+
+                  {% if assist_has_faturamento %}
+                  <div class="sv-field">
+                    <label class="sv-form-label">Faturamento mínimo EMP</label>
+                    <input class="form-control" type="text" name="regra_faturamento_minimo_emp" placeholder="Opcional">
+                  </div>
+                  {% endif %}
+                </div>
               </div>
             </div>
           </div>
@@ -736,35 +811,12 @@
           <div class="sv-form-block">
             <div class="sv-form-block-head">
               <div>
-                <div class="sv-form-block-title"><span class="sv-step-pill">03</span> Premiação, mínimos e vigência</div>
-                <div class="sv-form-block-note mt-1">Configure o valor pago por unidade, travas comerciais e período válido para apuração.</div>
+                <div class="sv-form-block-title"><span class="sv-step-pill">03</span> Vigência e salvar</div>
+                <div class="sv-form-block-note mt-1">A vigência abaixo será aplicada a todas as EMPs e a todos os itens/regras cadastrados acima.</div>
               </div>
             </div>
 
             <div class="sv-campaign-grid">
-              <div class="sv-field">
-                <label class="sv-form-label">Recompensa R$/un *</label>
-                <input class="form-control" type="text" name="recompensa_unit" placeholder="1,00" required>
-              </div>
-
-              <div class="sv-field">
-                <label class="sv-form-label">Qtd mínima</label>
-                <input class="form-control" type="text" name="qtd_minima" inputmode="numeric" placeholder="Ex: 50">
-              </div>
-
-              <div class="sv-field">
-                <label class="sv-form-label">Valor mínimo</label>
-                <input class="form-control" type="text" name="valor_minimo" placeholder="Ex: 1000,00">
-              </div>
-
-              {% if assist_has_faturamento %}
-              <div class="sv-field">
-                <label class="sv-form-label">Faturamento mínimo EMP</label>
-                <input class="form-control" type="text" name="faturamento_minimo_emp" placeholder="Ex: 50000,00">
-                <div class="sv-help-text mt-1">Trava da loja: só libera se a EMP atingir este faturamento no período.</div>
-              </div>
-              {% endif %}
-
               <div class="sv-field">
                 <label class="sv-form-label">Início *</label>
                 <input class="form-control" type="date" name="data_inicio" required>
@@ -775,7 +827,7 @@
                 <input class="form-control" type="date" name="data_fim" required>
               </div>
 
-              <div class="sv-field sv-col-3 d-flex align-items-end">
+              <div class="sv-field sv-col-2 d-flex align-items-end">
                 <button class="btn btn-sv-primary w-100" type="submit" id="btnSalvar">
                   <span class="spinner-border spinner-border-sm d-none" id="spSalvar" role="status" aria-hidden="true"></span>
                   <span id="txSalvar">Salvar campanha</span>
@@ -931,7 +983,7 @@
                         <div class="sv-help-text">Venda individual</div>
                       {% endif %}
                     </td>
-                    <td><span class="sv-money">{{ c.marca or '-' }}</span></td>
+                    <td><span class="sv-money">{{ c.marca or 'TODAS' }}</span></td>
                     <td class="text-end sv-money">
                       <div>Qtd: {% if c.qtd_minima %}{{ c.qtd_minima }}{% else %}-{% endif %}</div>
                       <div class="sv-help-text">Valor: {% if c.valor_minimo %}{{ c.valor_minimo|brl_rs }}{% else %}-{% endif %}</div>
@@ -1077,8 +1129,8 @@
             </div>
 
             <div class="sv-field sv-input-assisted">
-              <label class="sv-form-label">Marca *</label>
-              <input class="form-control js-uppercase" type="text" name="marca" list="campanhaMarcaOptions" autocomplete="off" required>
+              <label class="sv-form-label">Marca</label>
+              <input class="form-control js-uppercase" type="text" name="marca" list="campanhaMarcaOptions" autocomplete="off" placeholder="Vazio = todas">
             </div>
 
             <div class="sv-field">
@@ -1263,6 +1315,86 @@
     var sel = document.getElementById('campo_match');
     if(sel){ sel.addEventListener('change', toggleMatchFields); }
     toggleMatchFields();
+
+    function syncRuleRow(row){
+      if(!row) return;
+      var match = row.querySelector('[data-rule-match]');
+      var tipo = match && match.value ? match.value : 'codigo';
+      var cod = row.querySelector('[data-rule-codigo]');
+      var desc = row.querySelector('[data-rule-descricao]');
+      var wrapCod = row.querySelector('[data-rule-codigo-wrap]');
+      var wrapDesc = row.querySelector('[data-rule-descricao-wrap]');
+      if(tipo === 'descricao'){
+        if(cod){ cod.required = false; cod.readOnly = true; cod.value = ''; }
+        if(desc){ desc.required = true; desc.readOnly = false; }
+        if(wrapCod) wrapCod.classList.add('sv-field-disabled');
+        if(wrapDesc) wrapDesc.classList.remove('sv-field-disabled');
+      }else{
+        if(desc){ desc.required = false; desc.readOnly = true; desc.value = ''; }
+        if(cod){ cod.required = true; cod.readOnly = false; }
+        if(wrapDesc) wrapDesc.classList.add('sv-field-disabled');
+        if(wrapCod) wrapCod.classList.remove('sv-field-disabled');
+      }
+    }
+
+    function renumberRuleRows(){
+      document.querySelectorAll('[data-rule-row]').forEach(function(row, idx){
+        var n = row.querySelector('[data-rule-number]');
+        if(n) n.textContent = String(idx + 1);
+        var remove = row.querySelector('[data-rule-remove]');
+        if(remove) remove.style.visibility = idx === 0 ? 'hidden' : '';
+      });
+    }
+
+    function bindRuleRow(row){
+      if(!row) return;
+      var match = row.querySelector('[data-rule-match]');
+      if(match){ match.addEventListener('change', function(){ syncRuleRow(row); }); }
+      var remove = row.querySelector('[data-rule-remove]');
+      if(remove){
+        remove.addEventListener('click', function(){
+          var rows = document.querySelectorAll('[data-rule-row]');
+          if(rows.length <= 1) return;
+          row.remove();
+          renumberRuleRows();
+        });
+      }
+      row.querySelectorAll('.js-uppercase').forEach(function(input){
+        input.addEventListener('blur', function(){ input.value = (input.value || '').trim().toUpperCase(); });
+      });
+      syncRuleRow(row);
+    }
+
+    function cloneRuleRow(opts){
+      var holder = document.getElementById('campanhaRegras');
+      var rows = holder ? holder.querySelectorAll('[data-rule-row]') : [];
+      if(!holder || !rows.length) return;
+      var source = rows[rows.length - 1];
+      var clone = source.cloneNode(true);
+      clone.querySelectorAll('input, select').forEach(function(el){
+        var sourceEl = source.querySelector('[name="' + el.name + '"]');
+        if(opts && opts.keepValues && sourceEl){
+          el.value = sourceEl.value;
+        }else{
+          if(el.tagName === 'SELECT') el.value = 'codigo';
+          else el.value = '';
+        }
+        el.readOnly = false;
+        el.disabled = false;
+        el.required = false;
+      });
+      holder.appendChild(clone);
+      bindRuleRow(clone);
+      renumberRuleRows();
+      syncRuleRow(clone);
+    }
+
+    document.querySelectorAll('[data-rule-row]').forEach(bindRuleRow);
+    renumberRuleRows();
+    var btnAddRegra = document.getElementById('btnAddRegra');
+    if(btnAddRegra){ btnAddRegra.addEventListener('click', function(){ cloneRuleRow({keepValues:false}); }); }
+    var btnDupRegra = document.getElementById('btnDuplicarRegra');
+    if(btnDupRegra){ btnDupRegra.addEventListener('click', function(){ cloneRuleRow({keepValues:true}); }); }
 
     document.querySelectorAll('[data-campaign-type]').forEach(function(btn){
       btn.addEventListener('click', function(){
@@ -1543,7 +1675,7 @@
         var title = btn.getAttribute('data-title') || ('Campanha #' + id);
         var empText = btn.getAttribute('data-emp') || '-';
         var tipoText = btn.getAttribute('data-tipo') || 'VENDEDOR';
-        var marcaText = btn.getAttribute('data-marca') || '-';
+        var marcaText = btn.getAttribute('data-marca') || 'TODAS';
         var produtoText = btn.getAttribute('data-produto') || '-';
         var dupId = document.getElementById('dupCampanhaId');
         var dupTitle = document.getElementById('dupTitulo');
