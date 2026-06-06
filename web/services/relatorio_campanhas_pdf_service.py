@@ -268,8 +268,18 @@ def _make_status_paragraph(status: str, style):
 def _campaign_title(camp: dict, *, prefix: str = '') -> str:
     title = _safe_text(camp.get('titulo'))
     code = _safe_text(camp.get('item_codigo'), default='')
-    if code and code != '—':
-        title = f'{code} • {title}'
+    desc = _safe_text(camp.get('item_descricao'), default='')
+    marca = _safe_text(camp.get('item_marca') or camp.get('marca'), default='')
+
+    criterios = []
+    if desc and desc != '—':
+        criterios.append(f'Desc.: {desc}')
+    elif code and code != '—':
+        criterios.append(f'Cód.: {code}')
+    if marca and marca != '—':
+        criterios.append(f'Marca: {marca}')
+    if criterios:
+        title = f"{title} | {' • '.join(criterios)}"
 
     if str(camp.get('tipo_key') or '').upper() == 'META':
         reqs = []

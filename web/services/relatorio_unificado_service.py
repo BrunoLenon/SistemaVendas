@@ -47,6 +47,9 @@ class UnifiedRow:
     titulo: str
 
     item_codigo: str | None = None
+    item_descricao: str | None = None
+    item_marca: str | None = None
+    item_match_tipo: str | None = None
     qtd_minima: float | None = None
     recompensa_unit: float | None = None
     valor_vendido: float | None = None
@@ -105,6 +108,40 @@ def _periodo_bounds(ano: int, mes: int) -> tuple[date, date]:
 
 def _upper(v: Any) -> str:
     return str(v or "").strip().upper()
+
+
+def _clean_text(v: Any) -> str:
+    return str(v or "").strip()
+
+
+def _campanha_qtd_item_meta(resultado: Any, campanha: Any | None) -> dict[str, str | None]:
+    """Retorna os dados de exibição do critério da campanha QTD.
+
+    A tabela de resultados guarda o prefixo usado no cálculo, mas em bancos antigos
+    não guarda `campo_match`/`descricao_prefixo`. Por isso buscamos a campanha-mãe
+    quando disponível para mostrar corretamente Código x Descrição e a Marca referência.
+    """
+    campo_match = _clean_text(getattr(campanha, "campo_match", None) or getattr(resultado, "campo_match", None) or "codigo").lower()
+    marca = _clean_text(getattr(resultado, "marca", None) or getattr(campanha, "marca", None)).upper() or None
+
+    produto_prefixo = _clean_text(getattr(resultado, "produto_prefixo", None) or getattr(campanha, "produto_prefixo", None))
+    descricao_prefixo = _clean_text(getattr(campanha, "descricao_prefixo", None) or getattr(resultado, "descricao_prefixo", None))
+
+    if campo_match == "descricao":
+        descricao = descricao_prefixo or produto_prefixo
+        return {
+            "item_codigo": None,
+            "item_descricao": descricao or None,
+            "item_marca": marca,
+            "item_match_tipo": "descricao",
+        }
+
+    return {
+        "item_codigo": produto_prefixo or None,
+        "item_descricao": None,
+        "item_marca": marca,
+        "item_match_tipo": "codigo",
+    }
 
 
 def _d(v: Any) -> Decimal:
@@ -869,7 +906,18 @@ def build_unified_rows(
                     )
                 )
 
-            for r in q_qtd.all():
+            qtd_rows = q_qtd.all()
+            qtd_camp_map: dict[int, Any] = {}
+            try:
+                qtd_ids = {int(getattr(r, 'campanha_id', 0) or 0) for r in qtd_rows if int(getattr(r, 'campanha_id', 0) or 0) > 0}
+                if qtd_ids:
+                    qtd_camp_map = {int(getattr(c, 'id', 0) or 0): c for c in db.query(CampanhaQtd).filter(CampanhaQtd.id.in_(qtd_ids)).all()}
+            except Exception:
+                qtd_camp_map = {}
+
+            for r in qtd_rows:
+                campanha_def = qtd_camp_map.get(int(getattr(r, 'campanha_id', 0) or 0))
+                item_meta = _campanha_qtd_item_meta(r, campanha_def)
                 recompensa_unit = _safe_float(getattr(r, 'recompensa_unit', 0.0))
                 valor_recompensa = _safe_float(getattr(r, 'valor_recompensa', 0.0))
                 qtd_minima = getattr(r, 'qtd_minima', None)
@@ -891,7 +939,10 @@ def build_unified_rows(
                         emp=str(getattr(r, 'emp', emp)),
                         vendedor=_upper(getattr(r, 'vendedor', '')),
                         titulo=str(getattr(r, 'titulo', '') or '').strip() or f"Campanha #{getattr(r, 'campanha_id', '')}",
-                        item_codigo=str(getattr(r, 'produto_prefixo', '') or '').strip() or None,
+                        item_codigo=item_meta.get('item_codigo'),
+                        item_descricao=item_meta.get('item_descricao'),
+                        item_marca=item_meta.get('item_marca'),
+                        item_match_tipo=item_meta.get('item_match_tipo'),
                         qtd_minima=_safe_float(qtd_minima) if qtd_minima is not None else None,
                         recompensa_unit=recompensa_unit,
                         valor_vendido=valor_vendido,
@@ -1019,6 +1070,7 @@ def build_unified_rows(
                             or f'Combo #{combo_id}'
                         )
                         titulo_combo_ui = f'COMBO {emp} {titulo_combo}'.strip()
+                        combo_marca = _clean_text(getattr(combo, 'marca', None)).upper() or None
 
                         item_rows: list[UnifiedRow] = []
                         total_vendeu = 0.0
@@ -1056,6 +1108,9 @@ def build_unified_rows(
                                     vendedor=vend,
                                     titulo=item_titulo,
                                     item_codigo=item_codigo,
+                                    item_descricao=(descricao_contains or None) if not item_codigo else None,
+                                    item_marca=combo_marca,
+                                    item_match_tipo='descricao' if (descricao_contains and not item_codigo) else 'codigo',
                                     qtd_minima=float(minimo) if minimo > 0 else None,
                                     recompensa_unit=float(recompensa_unit or 0.0),
                                     qtd_base=float(qtd_vendida or 0.0),
@@ -1085,6 +1140,9 @@ def build_unified_rows(
                                     vendedor=ir.vendedor,
                                     titulo=ir.titulo,
                                     item_codigo=ir.item_codigo,
+                                    item_descricao=ir.item_descricao,
+                                    item_marca=ir.item_marca,
+                                    item_match_tipo=ir.item_match_tipo,
                                     qtd_minima=ir.qtd_minima,
                                     recompensa_unit=ir.recompensa_unit,
                                     qtd_base=ir.qtd_base,
@@ -1111,6 +1169,9 @@ def build_unified_rows(
                                 vendedor=vend,
                                 titulo=titulo_combo_ui,
                                 item_codigo=None,
+                                item_descricao=None,
+                                item_marca=combo_marca,
+                                item_match_tipo=None,
                                 qtd_minima=None,
                                 recompensa_unit=0.0,
                                 qtd_base=float(itens_atingidos),

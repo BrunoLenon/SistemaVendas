@@ -10,6 +10,9 @@
     .sv-detail-block--gerente .sv-detail-block__head{background:linear-gradient(135deg,rgba(16,185,129,.13),rgba(255,255,255,.02))}
     .sv-detail-block--metas .sv-detail-block__head{background:linear-gradient(135deg,rgba(59,130,246,.13),rgba(255,255,255,.02))}
     .sv-detail-empty{padding:14px 16px;color:rgba(255,255,255,.58);font-size:13px}
+    .sv-itemmeta{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:4px;color:rgba(255,255,255,.64);font-size:11px;line-height:1.35}
+    .sv-itemmeta__main{color:rgba(255,255,255,.72)}
+    .sv-itemmeta__chip{display:inline-flex;align-items:center;border:1px solid rgba(56,189,248,.28);background:rgba(14,165,233,.10);color:#bae6fd;border-radius:999px;padding:2px 7px;font-size:10px;font-weight:900;letter-spacing:.03em;text-transform:uppercase}
     @media (max-width: 900px){.sv-detail-block__head{display:block}.sv-detail-block__sum{justify-content:flex-start;margin-top:10px}}
   </style>
 
@@ -58,8 +61,21 @@
             <span class="sv-typechip sv-typechip--soft {{ c.tipo_class or 'sv-type--outros' }}">{{ c.tipo_label or c.tipo or 'CAMPANHA' }}</span>
             <span class="sv-nowrap">{{ c.titulo }}</span>
           </div>
-          {% if c.item_codigo %}
-            <div class="sv-muted sv-small" style="margin-top:4px;">Código: {{ c.item_codigo }}</div>
+          {% set marca_ref = c.item_marca if c.item_marca is defined and c.item_marca else '' %}
+          {% if c.item_descricao is defined and c.item_descricao %}
+            <div class="sv-itemmeta">
+              <span class="sv-itemmeta__main">Descrição: {{ c.item_descricao }}</span>
+              {% if marca_ref %}<span class="sv-itemmeta__chip">Marca: {{ marca_ref }}</span>{% endif %}
+            </div>
+          {% elif c.item_codigo %}
+            <div class="sv-itemmeta">
+              <span class="sv-itemmeta__main">Código: {{ c.item_codigo }}</span>
+              {% if marca_ref %}<span class="sv-itemmeta__chip">Marca: {{ marca_ref }}</span>{% endif %}
+            </div>
+          {% elif marca_ref %}
+            <div class="sv-itemmeta">
+              <span class="sv-itemmeta__chip">Marca: {{ marca_ref }}</span>
+            </div>
           {% endif %}
         </td>
         <td class="sv-center">{{ c.qtd_minima_label if c.qtd_minima_label is defined and c.qtd_minima_label else (c.qtd_minima or '-') }}</td>

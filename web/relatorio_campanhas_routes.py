@@ -246,7 +246,10 @@ def _group_rows(rows):
         tipo_meta = _tipo_meta(tipo_raw)
         g['campanhas'].append({
             'titulo': titulo,
-            'item_codigo': getattr(r, 'item_codigo', None),
+            'item_codigo': _pick(r, 'item_codigo', 'codigo', 'produto_prefixo'),
+            'item_descricao': _pick(r, 'item_descricao', 'descricao_prefixo', 'descricao'),
+            'item_marca': _pick(r, 'item_marca', 'marca', 'campanha_marca'),
+            'item_match_tipo': _pick(r, 'item_match_tipo', 'campo_match'),
             'qtd_minima': getattr(r, 'qtd_minima', None),
             'recompensa_unit': getattr(r, 'recompensa_unit', None),
             'qtd_vendida': float(getattr(r, 'qtd_base', 0) or 0),
