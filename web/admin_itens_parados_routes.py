@@ -3,12 +3,19 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from io import BytesIO
+import json
+import os
+import re
+import tempfile
 import threading
 import time
+import unicodedata
+from uuid import uuid4
 from decimal import Decimal, ROUND_FLOOR, ROUND_HALF_UP
 from typing import Callable, Type
 
-from flask import current_app, redirect, render_template, request, session, url_for
+from flask import current_app, redirect, render_template, request, send_file, session, url_for
 from sqlalchemy import func, inspect, or_, text
 
 from db import (
@@ -30,10 +37,14 @@ _SCHEMA_TTL_SECONDS = 1800
 _AUX_CACHE_LOCK = threading.Lock()
 _AUX_CACHE = {"payload": None, "ready_at": 0.0}
 _AUX_CACHE_TTL_SECONDS = 60
+_IMPORT_CACHE_PREFIX = "itens_parados_import_"
+_IMPORT_CACHE_TTL_SECONDS = 60 * 60
+_IMPORT_MAX_ROWS = 5000
 
 
 SCHEMA_SQL = """
 ALTER TABLE IF EXISTS itens_parados
+  ADD COLUMN IF NOT EXISTS interno varchar(120) NULL,
   ADD COLUMN IF NOT EXISTS modo varchar(20) NOT NULL DEFAULT 'PONTOS',
   ADD COLUMN IF NOT EXISTS data_inicio date NULL,
   ADD COLUMN IF NOT EXISTS data_fim date NULL,
@@ -85,6 +96,8 @@ CREATE TABLE IF NOT EXISTS itens_parados_pontos_resultados (
   atualizado_em timestamptz NOT NULL DEFAULT now()
 );
 
+CREATE INDEX IF NOT EXISTS ix_itens_parados_emp_codigo ON itens_parados(emp, codigo);
+CREATE INDEX IF NOT EXISTS ix_itens_parados_interno ON itens_parados(interno);
 CREATE INDEX IF NOT EXISTS ix_itens_parados_pontos_cfg_emp ON itens_parados_pontos_config(emp);
 CREATE INDEX IF NOT EXISTS ix_itens_parados_pontos_bonus_emp ON itens_parados_pontos_bonus(emp);
 CREATE INDEX IF NOT EXISTS ix_itens_parados_pontos_bonus_min ON itens_parados_pontos_bonus(min_pontos);
@@ -220,6 +233,287 @@ def _d(value) -> Decimal:
 
 def _round2(value: Decimal) -> Decimal:
     return value.quantize(TWOPLACES, rounding=ROUND_HALF_UP)
+
+
+def _import_cache_dir() -> str:
+    base = os.path.join(tempfile.gettempdir(), "sistemavendas_itens_parados_imports")
+    os.makedirs(base, exist_ok=True)
+    return base
+
+
+def _cleanup_import_cache() -> None:
+    base = _import_cache_dir()
+    now = time.time()
+    for name in os.listdir(base):
+        if not name.startswith(_IMPORT_CACHE_PREFIX) or not name.endswith(".json"):
+            continue
+        path = os.path.join(base, name)
+        try:
+            if now - os.path.getmtime(path) > _IMPORT_CACHE_TTL_SECONDS:
+                os.remove(path)
+        except OSError:
+            pass
+
+
+def _save_import_payload(payload: dict) -> str:
+    _cleanup_import_cache()
+    token = uuid4().hex
+    path = os.path.join(_import_cache_dir(), f"{_IMPORT_CACHE_PREFIX}{token}.json")
+    payload = dict(payload or {})
+    payload["created_at"] = time.time()
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(payload, fh, ensure_ascii=False)
+    return token
+
+
+def _load_import_payload(token: str) -> dict:
+    token = re.sub(r"[^a-fA-F0-9]", "", str(token or ""))
+    if not token:
+        raise ValueError("Importação expirada ou inválida. Valide a planilha novamente.")
+    path = os.path.join(_import_cache_dir(), f"{_IMPORT_CACHE_PREFIX}{token}.json")
+    if not os.path.exists(path):
+        raise ValueError("Importação expirada. Valide a planilha novamente.")
+    if time.time() - os.path.getmtime(path) > _IMPORT_CACHE_TTL_SECONDS:
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+        raise ValueError("Importação expirada. Valide a planilha novamente.")
+    with open(path, "r", encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+def _discard_import_payload(token: str) -> None:
+    token = re.sub(r"[^a-fA-F0-9]", "", str(token or ""))
+    if not token:
+        return
+    path = os.path.join(_import_cache_dir(), f"{_IMPORT_CACHE_PREFIX}{token}.json")
+    try:
+        os.remove(path)
+    except OSError:
+        pass
+
+
+def _norm_import_header(value) -> str:
+    txt = unicodedata.normalize("NFKD", str(value or ""))
+    txt = "".join(ch for ch in txt if not unicodedata.combining(ch))
+    txt = re.sub(r"[^A-Za-z0-9]+", "", txt).upper()
+    return txt
+
+
+def _clean_import_text(value) -> str:
+    if value is None:
+        return ""
+    txt = str(value).replace("\xa0", " ").strip()
+    if txt.lower() in {"nan", "none", "null"}:
+        return ""
+    return re.sub(r"\s+", " ", txt)
+
+
+def _clean_import_code(value) -> str:
+    txt = _clean_import_text(value)
+    if re.fullmatch(r"\d+\.0+", txt):
+        txt = txt.split(".", 1)[0]
+    return txt.strip()
+
+
+def _read_itens_import_file(file_storage) -> tuple[list[dict], dict[str, str]]:
+    filename = (getattr(file_storage, "filename", "") or "").lower().strip()
+    if not filename:
+        raise ValueError("Selecione uma planilha para validar.")
+    if not filename.endswith((".xlsx", ".xls", ".csv")):
+        raise ValueError("Formato inválido. Envie .xlsx, .xls ou .csv.")
+
+    try:
+        import pandas as pd
+    except Exception as exc:
+        raise ValueError("Pandas não está disponível no ambiente para ler a planilha.") from exc
+
+    try:
+        file_storage.stream.seek(0)
+        if filename.endswith(".csv"):
+            df = pd.read_csv(file_storage.stream, dtype=str, keep_default_na=False, sep=None, engine="python")
+        else:
+            df = pd.read_excel(file_storage.stream, dtype=str, keep_default_na=False)
+    except Exception as exc:
+        raise ValueError(f"Não foi possível ler a planilha: {exc}") from exc
+
+    if df is None or df.empty:
+        raise ValueError("A planilha está vazia.")
+    if len(df.index) > _IMPORT_MAX_ROWS:
+        raise ValueError(f"A planilha possui {len(df.index)} linhas. Limite atual: {_IMPORT_MAX_ROWS} linhas por importação.")
+
+    aliases = {
+        "mestre": {"MESTRE", "CODIGO", "CODIGOPRODUTO", "CODPRODUTO", "CODIGOMESTRE", "CODMESTRE", "PRODUTO"},
+        "interno": {"INTERNO", "CODIGOINTERNO", "CODINTERNO", "PROCODGINTERNO", "PROCODINTERNO", "PRO_CODG_INTERNO"},
+        "descricao": {"DESCRICAO", "DESCRICAOPRODUTO", "DESCRICAOCOMPLETA", "DESC", "NOME", "NOMEPRODUTO"},
+    }
+    col_map: dict[str, str] = {}
+    for col in df.columns:
+        norm = _norm_import_header(col)
+        for target, names in aliases.items():
+            if norm in names and target not in col_map:
+                col_map[target] = col
+
+    if "mestre" not in col_map:
+        raise ValueError("A planilha precisa ter a coluna MESTRE. Baixe o modelo e tente novamente.")
+
+    rows: list[dict] = []
+    for idx, row in df.iterrows():
+        mestre = _clean_import_code(row.get(col_map.get("mestre")))
+        interno = _clean_import_code(row.get(col_map.get("interno"))) if col_map.get("interno") else ""
+        descricao = _clean_import_text(row.get(col_map.get("descricao"))) if col_map.get("descricao") else ""
+        if not mestre and not interno and not descricao:
+            continue
+        rows.append({
+            "linha": int(idx) + 2,
+            "mestre": mestre,
+            "interno": interno,
+            "descricao": descricao,
+        })
+    if not rows:
+        raise ValueError("Nenhuma linha preenchida foi encontrada na planilha.")
+    return rows, col_map
+
+
+def _validar_importacao_itens_parados(db, file_storage) -> dict:
+    rows, col_map = _read_itens_import_file(file_storage)
+
+    validos: list[dict] = []
+    invalidos: list[dict] = []
+    seen: set[str] = set()
+    for item in rows:
+        mestre = _clean_import_code(item.get("mestre"))
+        interno = _clean_import_code(item.get("interno"))
+        descricao = _clean_import_text(item.get("descricao"))
+        if not mestre:
+            invalidos.append({**item, "motivo": "MESTRE vazio. O cálculo de itens parados cruza com vendas.mestre."})
+            continue
+        key = mestre.upper()
+        if key in seen:
+            invalidos.append({**item, "motivo": "MESTRE duplicado na planilha. Mantida apenas a primeira ocorrência."})
+            continue
+        seen.add(key)
+        validos.append({
+            "linha": int(item.get("linha") or 0),
+            "mestre": mestre,
+            "interno": interno,
+            "descricao": descricao,
+            "encontrado": False,
+            "descricao_base": "",
+            "marca_base": "",
+            "vendas_base": 0,
+            "alerta": "",
+        })
+
+    keys = [x["mestre"].upper() for x in validos]
+    base_by_key: dict[str, dict] = {}
+    if keys:
+        rows_base = (
+            db.query(
+                func.upper(func.trim(Venda.mestre)).label("mestre_key"),
+                func.max(Venda.descricao).label("descricao_base"),
+                func.max(Venda.marca).label("marca_base"),
+                func.count(Venda.id).label("qtd"),
+            )
+            .filter(func.upper(func.trim(Venda.mestre)).in_(keys))
+            .group_by(func.upper(func.trim(Venda.mestre)))
+            .all()
+        )
+        for mestre_key, descricao_base, marca_base, qtd in rows_base:
+            base_by_key[str(mestre_key or "").upper()] = {
+                "descricao_base": _clean_import_text(descricao_base),
+                "marca_base": _clean_import_text(marca_base),
+                "vendas_base": int(qtd or 0),
+            }
+
+    alertas = 0
+    for item in validos:
+        base = base_by_key.get(item["mestre"].upper())
+        if base:
+            item["encontrado"] = True
+            item["descricao_base"] = base.get("descricao_base") or ""
+            item["marca_base"] = base.get("marca_base") or ""
+            item["vendas_base"] = int(base.get("vendas_base") or 0)
+            if not item["descricao"] and item["descricao_base"]:
+                item["descricao"] = item["descricao_base"]
+        else:
+            alertas += 1
+            item["alerta"] = "MESTRE ainda não localizado na base de vendas. Será importado, mas só calculará quando houver venda futura com este MESTRE."
+
+    return {
+        "token": "",
+        "validos": validos,
+        "invalidos": invalidos,
+        "total_linhas": len(rows),
+        "total_validos": len(validos),
+        "total_invalidos": len(invalidos),
+        "total_alertas": alertas,
+        "colunas_lidas": sorted(col_map.keys()),
+    }
+
+
+def _parse_emp_list(values: list[str], manual: str = "") -> list[str]:
+    emps = []
+    for value in list(values or []) + re.split(r"[,;\s]+", manual or ""):
+        txt = str(value or "").strip()
+        if txt:
+            emps.append(txt)
+    return sorted(set(emps), key=lambda x: (len(x), x))
+
+
+def _create_modelo_itens_parados_workbook() -> BytesIO:
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import Alignment, Font, PatternFill, Border, Side
+        from openpyxl.worksheet.table import Table, TableStyleInfo
+    except Exception as exc:
+        raise RuntimeError("openpyxl não está disponível para gerar o modelo.") from exc
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Itens Parados"
+    ws.append(["MESTRE", "INTERNO", "DESCRICAO"])
+    ws.append(["30015", "", "Descrição opcional para facilitar conferência"])
+    ws.append(["PNEU", "", "Exemplo: use o código MESTRE que cruza com vendas.mestre"])
+
+    header_fill = PatternFill("solid", fgColor="111827")
+    header_font = Font(color="FFFFFF", bold=True)
+    thin = Side(style="thin", color="D1D5DB")
+    for row in ws.iter_rows(min_row=1, max_row=3, min_col=1, max_col=3):
+        for cell in row:
+            cell.alignment = Alignment(vertical="center", wrap_text=True)
+            cell.border = Border(left=thin, right=thin, top=thin, bottom=thin)
+            if cell.row == 1:
+                cell.fill = header_fill
+                cell.font = header_font
+    ws.column_dimensions["A"].width = 18
+    ws.column_dimensions["B"].width = 18
+    ws.column_dimensions["C"].width = 52
+    ws.freeze_panes = "A2"
+    tab = Table(displayName="ModeloItensParados", ref="A1:C3")
+    style = TableStyleInfo(name="TableStyleMedium2", showFirstColumn=False, showLastColumn=False, showRowStripes=True, showColumnStripes=False)
+    tab.tableStyleInfo = style
+    ws.add_table(tab)
+
+    info = wb.create_sheet("Instrucoes")
+    info.append(["Como preencher"])
+    info.append(["MESTRE", "Obrigatório. É o código que será cruzado com vendas.mestre para cálculo."])
+    info.append(["INTERNO", "Opcional. Campo de referência interna para conferência."])
+    info.append(["DESCRICAO", "Opcional. Se ficar vazio, o sistema tenta sugerir pela base de vendas quando encontrar o MESTRE."])
+    info.append(["Lojas e vigência", "Serão selecionadas depois da validação, dentro do sistema."])
+    info.column_dimensions["A"].width = 24
+    info.column_dimensions["B"].width = 90
+    for row in info.iter_rows(min_row=1, max_row=5, min_col=1, max_col=2):
+        for cell in row:
+            cell.alignment = Alignment(vertical="top", wrap_text=True)
+            if cell.row == 1:
+                cell.font = Font(bold=True, color="FFFFFF")
+                cell.fill = header_fill
+    bio = BytesIO()
+    wb.save(bio)
+    bio.seek(0)
+    return bio
 
 
 def _bonus_base_from_pontos(pontos: Decimal, valor_por_ponto: Decimal) -> Decimal:
@@ -457,6 +751,7 @@ def register_admin_itens_parados_routes(
         erro = None
         ok = None
         ver_fech = (request.args.get("ver_fech") or "").strip()
+        import_preview = None
 
         with SessionLocal() as db:
             try:
@@ -466,6 +761,7 @@ def register_admin_itens_parados_routes(
                         emp = (request.form.get("emp") or "").strip()
                         codigo = (request.form.get("codigo") or "").strip()
                         descricao = (request.form.get("descricao") or "").strip()
+                        interno = (request.form.get("interno") or "").strip()
                         mult_raw = (request.form.get("multiplicador_pontos") or "").strip().replace(",", ".")
                         di_raw = (request.form.get("data_inicio") or "").strip()
                         df_raw = (request.form.get("data_fim") or "").strip()
@@ -488,6 +784,7 @@ def register_admin_itens_parados_routes(
                             ItemParado(
                                 emp=str(emp),
                                 codigo=str(codigo),
+                                interno=interno or None,
                                 descricao=descricao or None,
                                 quantidade=None,
                                 recompensa_pct=0.0,
@@ -592,6 +889,93 @@ def register_admin_itens_parados_routes(
                         _invalidate_admin_itens_parados_aux_cache()
                         ok = "Faixa de bônus removida."
 
+                    elif acao == "validar_importacao":
+                        arquivo = request.files.get("arquivo_itens")
+                        if not arquivo:
+                            raise ValueError("Selecione a planilha de itens parados.")
+                        import_preview = _validar_importacao_itens_parados(db, arquivo)
+                        token = _save_import_payload({"validos": import_preview.get("validos") or []})
+                        import_preview["token"] = token
+                        ok = f"Planilha validada: {import_preview['total_validos']} item(ns) válido(s), {import_preview['total_invalidos']} inválido(s)."
+
+                    elif acao == "confirmar_importacao":
+                        token = (request.form.get("import_token") or "").strip()
+                        payload = _load_import_payload(token)
+                        rows_validos = payload.get("validos") or []
+                        if not rows_validos:
+                            raise ValueError("Nenhum item válido encontrado na importação. Valide a planilha novamente.")
+
+                        emps = _parse_emp_list(request.form.getlist("import_emps"), request.form.get("import_emps_manual") or "")
+                        if not emps:
+                            raise ValueError("Selecione pelo menos uma loja/EMP para aplicar os itens validados.")
+
+                        di_raw = (request.form.get("import_data_inicio") or "").strip()
+                        df_raw = (request.form.get("import_data_fim") or "").strip()
+                        if not di_raw or not df_raw:
+                            raise ValueError("Informe a data inicial e final de vigência.")
+                        di = date.fromisoformat(di_raw)
+                        df = date.fromisoformat(df_raw)
+                        if df < di:
+                            di, df = df, di
+
+                        criados = 0
+                        atualizados = 0
+                        utc_now = datetime.utcnow()
+                        has_interno = hasattr(ItemParado, "interno")
+                        for emp_item in emps:
+                            emp_txt = str(emp_item).strip()
+                            if not emp_txt:
+                                continue
+                            for row in rows_validos:
+                                codigo = _clean_import_code(row.get("mestre"))
+                                if not codigo:
+                                    continue
+                                descricao = _clean_import_text(row.get("descricao")) or _clean_import_text(row.get("descricao_base")) or None
+                                interno = _clean_import_code(row.get("interno")) or None
+                                it = (
+                                    db.query(ItemParado)
+                                    .filter(ItemParado.emp == emp_txt)
+                                    .filter(ItemParado.codigo == codigo)
+                                    .filter(ItemParado.data_inicio == di)
+                                    .filter(ItemParado.data_fim == df)
+                                    .first()
+                                )
+                                if it:
+                                    if has_interno:
+                                        setattr(it, "interno", interno)
+                                    it.descricao = descricao
+                                    it.quantidade = None
+                                    it.recompensa_pct = 0.0
+                                    it.modo = "PONTOS"
+                                    it.multiplicador_pontos = 1.0
+                                    it.ativo = True
+                                    it.atualizado_em = utc_now
+                                    atualizados += 1
+                                else:
+                                    kwargs = {
+                                        "emp": emp_txt,
+                                        "codigo": codigo,
+                                        "descricao": descricao,
+                                        "quantidade": None,
+                                        "recompensa_pct": 0.0,
+                                        "modo": "PONTOS",
+                                        "multiplicador_pontos": 1.0,
+                                        "data_inicio": di,
+                                        "data_fim": df,
+                                        "ativo": True,
+                                        "criado_em": utc_now,
+                                        "atualizado_em": utc_now,
+                                    }
+                                    if has_interno:
+                                        kwargs["interno"] = interno
+                                    db.add(ItemParado(**kwargs))
+                                    criados += 1
+
+                        db.commit()
+                        _discard_import_payload(token)
+                        _invalidate_admin_itens_parados_aux_cache()
+                        ok = f"Importação concluída: {criados} item(ns) criado(s) e {atualizados} atualizado(s) em {len(emps)} loja(s)."
+
                     elif acao == "fechar_periodo":
                         emp = (request.form.get("fech_emp") or "").strip() or None
                         di_raw = (request.form.get("fech_di") or "").strip()
@@ -678,6 +1062,18 @@ def register_admin_itens_parados_routes(
                     .all()
                 )
 
+            emps_vendas = [
+                str(x[0]).strip()
+                for x in db.query(Venda.emp).filter(Venda.emp.isnot(None)).distinct().order_by(Venda.emp.asc()).all()
+                if x and x[0] and str(x[0]).strip()
+            ]
+            emps_itens = [
+                str(x[0]).strip()
+                for x in db.query(ItemParado.emp).filter(ItemParado.emp.isnot(None)).distinct().all()
+                if x and x[0] and str(x[0]).strip()
+            ]
+            emps_options = sorted(set(emps_vendas + emps_itens), key=lambda x: (len(x), x))
+
         total_paginas = max((total_itens + limite - 1) // limite, 1) if total_itens is not None else max(pagina + (1 if has_next else 0), 1)
 
         return render_template(
@@ -702,9 +1098,33 @@ def register_admin_itens_parados_routes(
             total_paginas=total_paginas,
             has_next=has_next,
             total_itens_label=(str(total_itens) if total_itens is not None else f"mais de {offset + len(itens)}"),
+            import_preview=import_preview,
+            emps_options=emps_options,
             role=(session.get("role") or ""),
             emp=session.get("emp"),
         )
+
+    def admin_itens_parados_modelo():
+        red = login_required_fn()
+        if red:
+            return red
+        red = admin_required_fn()
+        if red:
+            return red
+        bio = _create_modelo_itens_parados_workbook()
+        return send_file(
+            bio,
+            as_attachment=True,
+            download_name="modelo_importacao_itens_parados.xlsx",
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+
+    app.add_url_rule(
+        "/admin/itens_parados/modelo",
+        endpoint="admin_itens_parados_modelo",
+        view_func=admin_itens_parados_modelo,
+        methods=["GET"],
+    )
 
     app.add_url_rule(
         "/admin/itens_parados",

@@ -32,8 +32,33 @@
     background:rgba(255,77,79,.055);
   }
   .sv-admin-page--itens .sv-mini-stack{ display:grid; gap:14px; }
+  .sv-admin-page--itens .sv-import-card{
+    border-color:rgba(52,211,153,.22);
+    background:linear-gradient(135deg,rgba(16,185,129,.08),rgba(255,140,0,.055));
+  }
+  .sv-admin-page--itens .sv-import-steps{
+    display:grid;
+    grid-template-columns:repeat(3,minmax(0,1fr));
+    gap:10px;
+    margin-top:12px;
+  }
+  .sv-admin-page--itens .sv-import-step{
+    border:1px solid rgba(255,255,255,.09);
+    border-radius:14px;
+    padding:10px 12px;
+    background:rgba(0,0,0,.18);
+    min-height:78px;
+  }
+  .sv-admin-page--itens .sv-import-step strong{display:block;color:#fff;font-size:.86rem;}
+  .sv-admin-page--itens .sv-import-step span{display:block;color:#b8c0cc;font-size:.78rem;margin-top:3px;line-height:1.35;}
+  .sv-admin-page--itens .sv-modal-table{min-width:920px;}
+  .sv-admin-page--itens .sv-emp-checks{display:grid;grid-template-columns:repeat(auto-fill,minmax(94px,1fr));gap:8px;max-height:180px;overflow:auto;padding:10px;border:1px solid rgba(255,255,255,.10);border-radius:14px;background:rgba(0,0,0,.16);}
+  .sv-admin-page--itens .sv-emp-check{display:flex;gap:7px;align-items:center;font-size:.84rem;color:#e8edf5;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:7px 9px;}
   @media(max-width:1280px){
     .sv-admin-page--itens .sv-admin-layout{ grid-template-columns:1fr; }
+  }
+  @media(max-width:760px){
+    .sv-admin-page--itens .sv-import-steps{ grid-template-columns:1fr; }
   }
 </style>
 {% endblock %}
@@ -51,6 +76,7 @@
         </div>
       </div>
       <div class="sv-action-row">
+        <a class="btn btn-sv-soft" href="{{ url_for('admin_itens_parados_modelo') }}">📥 Baixar modelo</a>
         <a class="btn btn-sv-soft" href="{{ url_for('dashboard') }}">Voltar ao dashboard</a>
       </div>
     </div>
@@ -92,6 +118,35 @@
   {% endif %}
 
   <div class="sv-admin-section sv-admin-layout">
+    <section class="sv-panel sv-admin-layout-full sv-import-card">
+      <div class="sv-panel-head">
+        <div>
+          <h2 class="sv-panel-title">Importação assistida de itens parados</h2>
+          <div class="sv-panel-subtitle">Importe a planilha, valide os MESTREs e depois selecione lojas e vigência em uma janela flutuante.</div>
+        </div>
+        <span class="sv-chip sv-chip--success">Novo fluxo</span>
+      </div>
+      <div class="sv-panel-body">
+        <form method="post" enctype="multipart/form-data" class="sv-filter-grid">
+          <input type="hidden" name="acao" value="validar_importacao">
+          <div class="sv-field" style="min-width:min(100%,360px);">
+            <label class="sv-form-label">Planilha de itens</label>
+            <input class="form-control" type="file" name="arquivo_itens" accept=".xlsx,.xls,.csv" required>
+            <div class="sv-help-text mt-1">Colunas aceitas: <b>MESTRE</b>, <b>INTERNO</b> e <b>DESCRICAO</b>. A loja e a vigência entram somente depois da validação.</div>
+          </div>
+          <div class="sv-action-row align-items-end">
+            <button class="btn btn-sv-primary">Validar planilha</button>
+            <a class="btn btn-sv-soft" href="{{ url_for('admin_itens_parados_modelo') }}">Baixar modelo</a>
+          </div>
+        </form>
+        <div class="sv-import-steps">
+          <div class="sv-import-step"><strong>1. Importar</strong><span>Envie uma planilha simples apenas com os produtos.</span></div>
+          <div class="sv-import-step"><strong>2. Validar</strong><span>O sistema confere MESTRE vazio, duplicidade e existência na base de vendas.</span></div>
+          <div class="sv-import-step"><strong>3. Aplicar</strong><span>Escolha as lojas/EMPs e o período de vigência para gravar os itens.</span></div>
+        </div>
+      </div>
+    </section>
+
     <section class="sv-panel">
       <div class="sv-panel-head">
         <div>
@@ -111,8 +166,12 @@
               <input class="form-control" name="emp" required>
             </div>
             <div class="sv-field">
-              <label class="sv-form-label">Código</label>
+              <label class="sv-form-label">MESTRE</label>
               <input class="form-control" name="codigo" required>
+            </div>
+            <div class="sv-field">
+              <label class="sv-form-label">INTERNO</label>
+              <input class="form-control" name="interno" placeholder="Opcional">
             </div>
             <div class="sv-field" style="grid-column:1/-1;">
               <label class="sv-form-label">Descrição</label>
@@ -244,7 +303,8 @@
               <tr>
                 <th>ID</th>
                 <th>EMP</th>
-                <th>Código</th>
+                <th>MESTRE</th>
+                <th>INTERNO</th>
                 <th>Descrição</th>
                 <th>Vigência</th>
                 <th>Status</th>
@@ -257,6 +317,7 @@
                   <td class="sv-number">{{ it.id }}</td>
                   <td><span class="sv-chip">EMP {{ it.emp }}</span></td>
                   <td><span class="sv-code">{{ it.codigo }}</span></td>
+                  <td>{{ it.interno or '-' }}</td>
                   <td>{{ it.descricao or '-' }}</td>
                   <td class="sv-help-text">
                     {% if it.data_inicio or it.data_fim %}
@@ -286,7 +347,7 @@
                   </td>
                 </tr>
               {% else %}
-                <tr><td colspan="7"><div class="sv-empty-state">Nenhum item cadastrado.</div></td></tr>
+                <tr><td colspan="8"><div class="sv-empty-state">Nenhum item cadastrado.</div></td></tr>
               {% endfor %}
             </tbody>
           </table>
@@ -500,4 +561,165 @@
     </section>
   </div>
 </div>
+
+{% if import_preview %}
+<div class="modal fade" id="importItensParadosModal" tabindex="-1" aria-labelledby="importItensParadosModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content" style="background:#111317;border:1px solid rgba(255,255,255,.12);color:#eef2f7;">
+      <form method="post">
+        <input type="hidden" name="acao" value="confirmar_importacao">
+        <input type="hidden" name="import_token" value="{{ import_preview.token }}">
+        <div class="modal-header" style="border-bottom-color:rgba(255,255,255,.10);">
+          <div>
+            <h5 class="modal-title" id="importItensParadosModalLabel">Validação da importação</h5>
+            <div class="sv-help-text">Confira os itens validados. Depois selecione as lojas e a vigência para gravar.</div>
+          </div>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Fechar"></button>
+        </div>
+        <div class="modal-body">
+          <div class="sv-admin-kpis mb-3">
+            <div class="sv-kpi-card"><small>Linhas lidas</small><strong>{{ import_preview.total_linhas }}</strong><span>Total da planilha</span></div>
+            <div class="sv-kpi-card"><small>Válidos</small><strong>{{ import_preview.total_validos }}</strong><span>Prontos para aplicar</span></div>
+            <div class="sv-kpi-card"><small>Alertas</small><strong>{{ import_preview.total_alertas }}</strong><span>MESTRE sem venda histórica</span></div>
+            <div class="sv-kpi-card"><small>Inválidos</small><strong>{{ import_preview.total_invalidos }}</strong><span>Não serão importados</span></div>
+          </div>
+
+          <section class="sv-panel mb-3">
+            <div class="sv-panel-head">
+              <div>
+                <h2 class="sv-panel-title">Aplicar em lojas e vigência</h2>
+                <div class="sv-panel-subtitle">A mesma lista validada será cadastrada para todas as EMPs selecionadas.</div>
+              </div>
+              <button type="button" class="btn btn-sv-soft btn-sm" id="btnToggleImportEmps">Selecionar todas</button>
+            </div>
+            <div class="sv-panel-body">
+              <div class="sv-form-grid sv-form-grid-3">
+                <div class="sv-field" style="grid-column:1/-1;">
+                  <label class="sv-form-label">Lojas/EMPs</label>
+                  {% if emps_options %}
+                    <div class="sv-emp-checks" id="importEmpChecks">
+                      {% for emp_item in emps_options %}
+                        <label class="sv-emp-check"><input type="checkbox" name="import_emps" value="{{ emp_item }}"> EMP {{ emp_item }}</label>
+                      {% endfor %}
+                    </div>
+                  {% else %}
+                    <div class="sv-empty-state">Nenhuma EMP localizada automaticamente. Informe manualmente abaixo.</div>
+                  {% endif %}
+                  <input class="form-control mt-2" name="import_emps_manual" placeholder="Ou informe EMPs manualmente, separadas por vírgula. Ex.: 101, 201">
+                </div>
+                <div class="sv-field">
+                  <label class="sv-form-label">Data início</label>
+                  <input class="form-control" type="date" name="import_data_inicio" required>
+                </div>
+                <div class="sv-field">
+                  <label class="sv-form-label">Data fim</label>
+                  <input class="form-control" type="date" name="import_data_fim" required>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="sv-panel mb-3">
+            <div class="sv-panel-head">
+              <div>
+                <h2 class="sv-panel-title">Itens validados</h2>
+                <div class="sv-panel-subtitle">Mostrando até 150 itens na prévia. Todos os válidos serão gravados na confirmação.</div>
+              </div>
+              <span class="sv-chip sv-chip--success">{{ import_preview.total_validos }} válido(s)</span>
+            </div>
+            <div class="sv-panel-body">
+              <div class="sv-table-card">
+                <table class="sv-data-table sv-modal-table">
+                  <thead><tr><th>Linha</th><th>MESTRE</th><th>INTERNO</th><th>Descrição</th><th>Marca base</th><th>Status</th></tr></thead>
+                  <tbody>
+                    {% for row in import_preview.validos[:150] %}
+                      <tr>
+                        <td class="sv-number">{{ row.linha }}</td>
+                        <td><span class="sv-code">{{ row.mestre }}</span></td>
+                        <td>{{ row.interno or '-' }}</td>
+                        <td>{{ row.descricao or row.descricao_base or '-' }}</td>
+                        <td>{{ row.marca_base or '-' }}</td>
+                        <td>
+                          {% if row.encontrado %}
+                            <span class="sv-status sv-status--success">Encontrado</span>
+                          {% else %}
+                            <span class="sv-status sv-status--warning">Alerta</span>
+                            <div class="sv-help-text">{{ row.alerta }}</div>
+                          {% endif %}
+                        </td>
+                      </tr>
+                    {% else %}
+                      <tr><td colspan="6"><div class="sv-empty-state">Nenhum item válido na planilha.</div></td></tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+
+          {% if import_preview.invalidos %}
+          <section class="sv-panel sv-danger-zone">
+            <div class="sv-panel-head">
+              <div>
+                <h2 class="sv-panel-title">Linhas não importadas</h2>
+                <div class="sv-panel-subtitle">Corrija a planilha se quiser incluir esses itens.</div>
+              </div>
+              <span class="sv-chip sv-chip--danger">{{ import_preview.total_invalidos }} inválida(s)</span>
+            </div>
+            <div class="sv-panel-body">
+              <div class="sv-table-card">
+                <table class="sv-data-table sv-modal-table">
+                  <thead><tr><th>Linha</th><th>MESTRE</th><th>INTERNO</th><th>Descrição</th><th>Motivo</th></tr></thead>
+                  <tbody>
+                    {% for row in import_preview.invalidos[:120] %}
+                      <tr>
+                        <td class="sv-number">{{ row.linha }}</td>
+                        <td>{{ row.mestre or '-' }}</td>
+                        <td>{{ row.interno or '-' }}</td>
+                        <td>{{ row.descricao or '-' }}</td>
+                        <td>{{ row.motivo }}</td>
+                      </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+          {% endif %}
+        </div>
+        <div class="modal-footer" style="border-top-color:rgba(255,255,255,.10);">
+          <button type="button" class="btn btn-sv-soft" data-bs-dismiss="modal">Voltar e revisar</button>
+          <button class="btn btn-sv-primary" {% if not import_preview.total_validos %}disabled{% endif %}>Confirmar importação</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}
+
+
+{% block extra_scripts %}
+<script>
+(function(){
+  const toggleBtn = document.getElementById('btnToggleImportEmps');
+  const checksWrap = document.getElementById('importEmpChecks');
+  if (toggleBtn && checksWrap) {
+    toggleBtn.addEventListener('click', function(){
+      const checks = Array.from(checksWrap.querySelectorAll('input[type="checkbox"]'));
+      const shouldCheck = checks.some(function(c){ return !c.checked; });
+      checks.forEach(function(c){ c.checked = shouldCheck; });
+      toggleBtn.textContent = shouldCheck ? 'Limpar seleção' : 'Selecionar todas';
+    });
+  }
+  {% if import_preview %}
+    const modalEl = document.getElementById('importItensParadosModal');
+    if (modalEl && window.bootstrap) {
+      const modal = new bootstrap.Modal(modalEl, {backdrop: 'static'});
+      modal.show();
+    }
+  {% endif %}
+})();
+</script>
 {% endblock %}

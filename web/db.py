@@ -289,6 +289,9 @@ class ItemParado(Base):
     # Código do produto (cruza com Venda.mestre)
     codigo = Column(String(120), nullable=False, index=True)
 
+    # Código interno opcional do produto. Usado para conferência em importações em lote.
+    interno = Column(String(120), nullable=True, index=True)
+
     descricao = Column(String(255), nullable=True)
     quantidade = Column(Integer, nullable=True)
 
