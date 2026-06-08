@@ -1,5 +1,6 @@
 import os
 import sys
+import base64
 
 # --- Path shim: permite rodar tanto como 'app:app' (--chdir web) quanto 'web.app:app' ---
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -399,6 +400,59 @@ def _set_setting(db, key: str, value: str | None):
     else:
         s.value = value
 
+
+
+def _to_data_uri_for_branding(content: bytes, content_type: str) -> str:
+    ctype = content_type or "application/octet-stream"
+    encoded = base64.b64encode(content).decode("ascii")
+    return f"data:{ctype};base64,{encoded}"
+
+
+def _safe_store_branding_file(filename: str, data: bytes, ctype: str, folder: str) -> tuple[str, str]:
+    """Salva no Storage quando possível e faz fallback no banco.
+
+    Evita o problema de arquivo subir para o bucket, mas o AppSetting não ser gravado
+    por falha posterior/temporária de storage.
+    """
+    try:
+        return _supabase_storage_upload(filename, data, ctype, folder=folder), "storage"
+    except Exception:
+        return _to_data_uri_for_branding(data, ctype), "db"
+
+
+def _read_config_upload(f, max_bytes: int, allowed_ext: set[str], label: str):
+    if not f or not getattr(f, "filename", ""):
+        return None
+    filename = str(f.filename or "").strip()
+    ext = (os.path.splitext(filename)[1] or "").lower()
+    if not ext or ext not in allowed_ext:
+        raise ValueError(f"{label}: arquivo inválido ({ext or 'sem extensão'}). Permitidos: {', '.join(sorted(allowed_ext))}")
+    data = f.read()
+    if not data:
+        raise ValueError(f"{label}: arquivo vazio.")
+    if len(data) > max_bytes:
+        raise ValueError(f"{label}: arquivo muito grande.")
+    ctype = f.mimetype or mimetypes.guess_type(filename)[0] or "application/octet-stream"
+    if ext == ".svg" and ctype == "application/octet-stream":
+        ctype = "image/svg+xml"
+    elif ext == ".ico" and ctype == "application/octet-stream":
+        ctype = "image/x-icon"
+    return filename, data, ctype
+
+
+def _maintenance_snapshot_appmain(db) -> dict:
+    db_mode = (_get_setting(db, "maintenance_mode", "off") or "off").strip().lower()
+    env_raw = (os.getenv("MAINTENANCE_MODE") or "").strip()
+    env_mode = env_raw.lower() if env_raw else ""
+    effective = env_mode or db_mode
+    return {
+        "db_mode": db_mode,
+        "env_raw": env_raw,
+        "env_mode": env_mode,
+        "effective": effective,
+        "forced_by_env": bool(env_raw),
+    }
+
 def _branding_is_data_url(value: str | None) -> bool:
     return bool(value and str(value).strip().lower().startswith("data:"))
 
@@ -548,42 +602,39 @@ def admin_configuracoes():
         # Upload padrão (sempre disponível)
         if request.method == 'POST' and (request.form.get('acao') or '') == 'upload_default':
             try:
-                logo_file = request.files.get('default_logo')
-                fav_file = request.files.get('default_favicon')
+                storage_modes: list[str] = []
+                logo = _read_config_upload(request.files.get('default_logo'), 2_000_000, {'.png', '.jpg', '.jpeg', '.webp', '.svg'}, 'Logo principal')
+                fav = _read_config_upload(request.files.get('default_favicon'), 400_000, {'.png', '.ico', '.jpg', '.jpeg', '.webp', '.svg'}, 'Favicon')
+                login_left = _read_config_upload(request.files.get('login_logo_left'), 2_000_000, {'.png', '.jpg', '.jpeg', '.webp', '.svg'}, 'Logo do login — lado esquerdo')
+                login_right = _read_config_upload(request.files.get('login_logo_right'), 2_000_000, {'.png', '.jpg', '.jpeg', '.webp', '.svg'}, 'Logo do login — lado direito')
 
-                def _read_file(f, max_bytes: int, allowed_ext: set[str]):
-                    if not f or not getattr(f, 'filename', ''):
-                        return None
-                    filename = f.filename
-                    ext = (os.path.splitext(filename)[1] or '').lower()
-                    if ext and ext not in allowed_ext:
-                        raise ValueError(f"Arquivo inválido ({ext}). Permitidos: {', '.join(sorted(allowed_ext))}")
-                    data = f.read()
-                    if len(data) > max_bytes:
-                        raise ValueError("Arquivo muito grande.")
-                    ctype = f.mimetype or mimetypes.guess_type(filename)[0] or "application/octet-stream"
-                    return filename, data, ctype
-
-                logo = _read_file(logo_file, max_bytes=2_000_000, allowed_ext={'.png', '.jpg', '.jpeg', '.webp', '.svg'})
-                fav = _read_file(fav_file, max_bytes=400_000, allowed_ext={'.png', '.ico', '.jpg', '.jpeg', '.webp', '.svg'})
-
-                if not logo and not fav:
-                    raise ValueError("Envie uma logo e/ou um favicon.")
+                if not logo and not fav and not login_left and not login_right:
+                    raise ValueError("Envie ao menos uma logo e/ou um favicon.")
 
                 if logo:
-                    url = _supabase_storage_upload(logo[0], logo[1], logo[2], folder="default")
+                    url, mode = _safe_store_branding_file(logo[0], logo[1], logo[2], folder="default")
+                    storage_modes.append(mode)
                     _set_setting(db, "branding.default_logo_url", url)
                 if fav:
-                    url = _supabase_storage_upload(fav[0], fav[1], fav[2], folder="default")
+                    url, mode = _safe_store_branding_file(fav[0], fav[1], fav[2], folder="default")
+                    storage_modes.append(mode)
                     _set_setting(db, "branding.default_favicon_url", url)
+                if login_left:
+                    url, mode = _safe_store_branding_file(login_left[0], login_left[1], login_left[2], folder="login-left")
+                    storage_modes.append(mode)
+                    _set_setting(db, "branding.login_logo_left_url", url)
+                if login_right:
+                    url, mode = _safe_store_branding_file(login_right[0], login_right[1], login_right[2], folder="login-right")
+                    storage_modes.append(mode)
+                    _set_setting(db, "branding.login_logo_right_url", url)
 
                 # bump version para cache bust
                 _set_setting(db, "branding.default_version", datetime.utcnow().isoformat())
                 db.commit()
-                msgs.append("Arquivos padrão atualizados com sucesso.")
+                msgs.append("Branding salvo com sucesso" + (" com fallback no banco." if "db" in storage_modes else " no Storage e registrado no banco."))
             except Exception as e:
                 db.rollback()
-                msgs.append(f"Erro ao salvar: {e}")
+                msgs.append(f"Erro ao salvar branding: {e}")
 
         # Criar tema sazonal
         if request.method == 'POST' and (request.form.get('acao') or '') == 'create_theme':
@@ -607,13 +658,13 @@ def admin_configuracoes():
                     if len(data) > 2_000_000:
                         raise ValueError("Logo do tema muito grande.")
                     ctype = logo_file.mimetype or mimetypes.guess_type(logo_file.filename)[0] or "application/octet-stream"
-                    logo_url = _supabase_storage_upload(logo_file.filename, data, ctype, folder="themes")
+                    logo_url, _mode = _safe_store_branding_file(logo_file.filename, data, ctype, folder="themes")
                 if fav_file and fav_file.filename:
                     data = fav_file.read()
                     if len(data) > 400_000:
                         raise ValueError("Favicon do tema muito grande.")
                     ctype = fav_file.mimetype or mimetypes.guess_type(fav_file.filename)[0] or "application/octet-stream"
-                    fav_url = _supabase_storage_upload(fav_file.filename, data, ctype, folder="themes")
+                    fav_url, _mode = _safe_store_branding_file(fav_file.filename, data, ctype, folder="themes")
 
                 t = BrandingTheme(
                     name=name,
@@ -664,13 +715,13 @@ def admin_configuracoes():
                         if len(data) > 2_000_000:
                             raise ValueError("Logo do tema muito grande.")
                         ctype = logo_file.mimetype or mimetypes.guess_type(logo_file.filename)[0] or "application/octet-stream"
-                        t.logo_url = _supabase_storage_upload(logo_file.filename, data, ctype, folder="themes")
+                        t.logo_url, _mode = _safe_store_branding_file(logo_file.filename, data, ctype, folder="themes")
                     if fav_file and fav_file.filename:
                         data = fav_file.read()
                         if len(data) > 400_000:
                             raise ValueError("Favicon do tema muito grande.")
                         ctype = fav_file.mimetype or mimetypes.guess_type(fav_file.filename)[0] or "application/octet-stream"
-                        t.favicon_url = _supabase_storage_upload(fav_file.filename, data, ctype, folder="themes")
+                        t.favicon_url, _mode = _safe_store_branding_file(fav_file.filename, data, ctype, folder="themes")
 
                     db.commit()
                     msgs.append("Tema atualizado com sucesso.")
@@ -705,10 +756,17 @@ def admin_configuracoes():
                 msgs.append(f"Erro: {e}")
 
         # Dados para tela
+        maintenance = _maintenance_snapshot_appmain(db)
         branding = _current_branding(db)
         default_logo = _get_setting(db, "branding.default_logo_url")
         default_favicon = _get_setting(db, "branding.default_favicon_url")
+        login_logo_left = _get_setting(db, "branding.login_logo_left_url")
+        login_logo_right = _get_setting(db, "branding.login_logo_right_url")
         themes = db.query(BrandingTheme).order_by(BrandingTheme.start_date.desc(), BrandingTheme.id.desc()).all()
+        active_theme_id = branding.get("theme_id") if isinstance(branding, dict) else None
+        storage_url = (os.getenv("SUPABASE_URL") or "").rstrip("/")
+        storage_key = (os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_KEY") or os.getenv("SUPABASE_ANON_KEY") or "")
+        storage_bucket = os.getenv("SUPABASE_STORAGE_BUCKET", "branding")
 
     return render_template(
         "admin_configuracoes.html",
@@ -716,8 +774,18 @@ def admin_configuracoes():
         branding=branding,
         default_logo=default_logo,
         default_favicon=default_favicon,
+        login_logo_left=login_logo_left,
+        login_logo_right=login_logo_right,
         themes=themes,
         today=today.isoformat(),
+        active_theme_id=active_theme_id,
+        maintenance_mode=maintenance["effective"],
+        maintenance_db_mode=maintenance["db_mode"],
+        maintenance_env_mode=maintenance["env_mode"],
+        maintenance_env_raw=maintenance["env_raw"],
+        maintenance_forced_by_env=maintenance["forced_by_env"],
+        storage_configured=bool(storage_url and storage_key),
+        storage_bucket=storage_bucket,
     )
 
 def _supabase_storage_upload(filename: str, content: bytes, content_type: str, folder: str) -> str:
