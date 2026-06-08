@@ -418,6 +418,43 @@ def register_admin_campanhas_routes(
             raise ValueError("ID da campanha não enviado pelo formulário.")
         return cid
 
+    def _get_campaign_ids_from_form(form) -> list[int]:
+        """Lê seleção múltipla de campanhas com sanitização e remoção de duplicados.
+
+        Aceita tanto vários campos `campanha_ids` quanto um campo legado/auxiliar
+        separado por vírgula. Isso deixa o backend robusto caso a UI mude depois.
+        """
+        raw_values: list[Any] = []
+        try:
+            raw_values.extend(form.getlist("campanha_ids"))
+        except Exception:
+            pass
+        try:
+            raw_values.extend(form.getlist("campanha_id"))
+        except Exception:
+            pass
+        raw_values.append(form.get("campanha_ids_raw") or "")
+
+        ids: list[int] = []
+        seen: set[int] = set()
+        for raw in raw_values:
+            text = str(raw or "").replace(";", ",").replace("\n", ",").strip()
+            if not text:
+                continue
+            for part in text.split(","):
+                piece = str(part or "").strip()
+                if not piece:
+                    continue
+                try:
+                    cid = int(piece)
+                except Exception:
+                    continue
+                if cid <= 0 or cid in seen:
+                    continue
+                seen.add(cid)
+                ids.append(cid)
+        return ids
+
 
     def _safe_upper(value: Any) -> str:
         return str(value or "").strip().upper()
@@ -637,6 +674,16 @@ def register_admin_campanhas_routes(
                     emps_post: list[str] = []
                     if acao == "criar":
                         emps_post = _get_selected_emps(request.form)
+                    elif acao == "remover_lote":
+                        ids_check = _get_campaign_ids_from_form(request.form)
+                        if ids_check:
+                            rows_check = (
+                                db.query(CampanhaQtd.emp)
+                                .filter(CampanhaQtd.id.in_(ids_check))
+                                .distinct()
+                                .all()
+                            )
+                            emps_post = [str(row[0] or "").strip() for row in rows_check if str(row[0] or "").strip()]
                     else:
                         emp_post = (request.form.get("emp") or "").strip()
                         if not emp_post:
@@ -775,6 +822,32 @@ def register_admin_campanhas_routes(
                         db.delete(c)
                         db.commit()
                         ok = "Campanha removida."
+
+                    elif acao == "remover_lote":
+                        ids = _get_campaign_ids_from_form(request.form)
+                        if not ids:
+                            raise ValueError("Selecione ao menos uma campanha para excluir.")
+
+                        found_rows = (
+                            db.query(CampanhaQtd.id)
+                            .filter(CampanhaQtd.id.in_(ids))
+                            .all()
+                        )
+                        found_ids = [int(row[0]) for row in found_rows]
+                        if not found_ids:
+                            raise ValueError("Nenhuma campanha selecionada foi encontrada.")
+
+                        # Remove também o histórico/snapshot mensal das campanhas selecionadas.
+                        db.query(CampanhaQtdResultado).filter(
+                            CampanhaQtdResultado.campanha_id.in_(found_ids)
+                        ).delete(synchronize_session=False)
+
+                        deleted = db.query(CampanhaQtd).filter(
+                            CampanhaQtd.id.in_(found_ids)
+                        ).delete(synchronize_session=False)
+
+                        db.commit()
+                        ok = f"{int(deleted or 0)} campanha(s) removida(s) com sucesso."
 
                     elif acao == "pagar":
                         rid = int(request.form.get("resultado_id") or 0)
