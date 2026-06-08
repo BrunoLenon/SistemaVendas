@@ -8,14 +8,147 @@
 
 {% block extra_head %}
 <style>
+  .sv-admin-page--itens{
+    --itens-orange:#ff8c00;
+    --itens-orange-2:#ffb347;
+    --itens-green:#34d399;
+    --itens-red:#ff4d4f;
+    --itens-blue:#38bdf8;
+    --itens-panel:rgba(255,255,255,.035);
+    --itens-panel-strong:rgba(255,255,255,.065);
+    --itens-border:rgba(255,255,255,.10);
+    --itens-border-strong:rgba(255,140,0,.26);
+    --itens-muted:#aab4c3;
+  }
+
+  .sv-admin-page--itens .sv-admin-hero{
+    position:relative;
+    isolation:isolate;
+    border-color:rgba(255,140,0,.16);
+  }
+  .sv-admin-page--itens .sv-admin-hero::after{
+    content:"";
+    position:absolute;
+    right:-110px;
+    bottom:-150px;
+    width:430px;
+    height:430px;
+    border-radius:999px;
+    background:radial-gradient(circle, rgba(255,140,0,.24), rgba(255,140,0,.08) 38%, transparent 68%);
+    pointer-events:none;
+    z-index:0;
+  }
+  .sv-admin-page--itens .sv-admin-title{
+    letter-spacing:-.05em;
+  }
+  .sv-admin-page--itens .sv-admin-subtitle{
+    max-width:980px;
+  }
+
   .sv-admin-page--itens .sv-admin-layout{
     display:grid;
     grid-template-columns:minmax(0,1.04fr) minmax(360px,.96fr);
-    gap:14px;
+    gap:16px;
     align-items:start;
   }
   .sv-admin-page--itens .sv-admin-layout-full{ grid-column:1/-1; }
-  .sv-admin-page--itens .sv-item-table{ min-width:1020px; table-layout:auto; }
+  .sv-admin-page--itens .sv-mini-stack{ display:grid; gap:16px; }
+
+  .sv-admin-page--itens .sv-panel{
+    border-color:var(--itens-border);
+    background:
+      linear-gradient(180deg, rgba(255,255,255,.045), rgba(255,255,255,.020));
+  }
+  .sv-admin-page--itens .sv-panel-head{
+    gap:14px;
+  }
+
+  .sv-admin-page--itens .sv-import-card{
+    position:relative;
+    overflow:hidden;
+    border-color:rgba(52,211,153,.22);
+    background:
+      radial-gradient(circle at 12% 0%, rgba(52,211,153,.13), transparent 34%),
+      radial-gradient(circle at 92% 10%, rgba(255,140,0,.18), transparent 30%),
+      linear-gradient(135deg, rgba(255,255,255,.055), rgba(255,255,255,.020));
+    box-shadow:0 18px 52px rgba(0,0,0,.30), inset 0 1px 0 rgba(255,255,255,.035);
+  }
+  .sv-admin-page--itens .sv-import-card::before{
+    content:"";
+    position:absolute;
+    inset:-1px;
+    background:linear-gradient(90deg, transparent, rgba(255,140,0,.12), transparent);
+    pointer-events:none;
+    opacity:.70;
+  }
+  .sv-admin-page--itens .sv-import-card > *{
+    position:relative;
+    z-index:1;
+  }
+
+  .sv-admin-page--itens .sv-import-form-shell{
+    display:grid;
+    grid-template-columns:minmax(0,1fr) auto;
+    gap:14px;
+    align-items:end;
+    padding:14px;
+    border:1px solid rgba(255,255,255,.09);
+    border-radius:20px;
+    background:rgba(0,0,0,.20);
+  }
+  .sv-admin-page--itens .sv-import-form-shell .form-control{
+    min-height:44px;
+    border-color:rgba(52,211,153,.22);
+    background:rgba(0,0,0,.30);
+  }
+
+  .sv-admin-page--itens .sv-import-steps{
+    display:grid;
+    grid-template-columns:repeat(3,minmax(0,1fr));
+    gap:10px;
+    margin-top:12px;
+  }
+  .sv-admin-page--itens .sv-import-step{
+    position:relative;
+    border:1px solid rgba(255,255,255,.09);
+    border-radius:16px;
+    padding:12px 13px 12px 46px;
+    background:linear-gradient(180deg, rgba(0,0,0,.22), rgba(0,0,0,.12));
+    min-height:82px;
+    overflow:hidden;
+  }
+  .sv-admin-page--itens .sv-import-step::before{
+    content:attr(data-step);
+    position:absolute;
+    left:12px;
+    top:13px;
+    width:24px;
+    height:24px;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    border-radius:9px;
+    color:#111;
+    background:linear-gradient(135deg, var(--itens-orange-2), var(--itens-orange));
+    box-shadow:0 10px 22px rgba(255,140,0,.18);
+    font-weight:1000;
+    font-size:.74rem;
+  }
+  .sv-admin-page--itens .sv-import-step strong{
+    display:block;
+    color:#fff;
+    font-size:.88rem;
+    letter-spacing:-.01em;
+  }
+  .sv-admin-page--itens .sv-import-step span{
+    display:block;
+    color:var(--itens-muted);
+    font-size:.78rem;
+    margin-top:4px;
+    line-height:1.35;
+  }
+
+  .sv-admin-page--itens .sv-item-table{ min-width:1060px; table-layout:auto; }
   .sv-admin-page--itens .sv-compact-table{ min-width:660px; }
   .sv-admin-page--itens .sv-result-table{ min-width:850px; }
   .sv-admin-page--itens .sv-code{
@@ -31,34 +164,165 @@
     border-color:rgba(255,77,79,.26);
     background:rgba(255,77,79,.055);
   }
-  .sv-admin-page--itens .sv-mini-stack{ display:grid; gap:14px; }
-  .sv-admin-page--itens .sv-import-card{
-    border-color:rgba(52,211,153,.22);
-    background:linear-gradient(135deg,rgba(16,185,129,.08),rgba(255,140,0,.055));
+  .sv-admin-page--itens .sv-field .sv-help-text,
+  .sv-admin-page--itens .sv-panel-subtitle{
+    line-height:1.42;
   }
-  .sv-admin-page--itens .sv-import-steps{
+
+  .sv-import-itens-modal{
+    --itens-modal-bg:#0b0f16;
+    --itens-modal-panel:rgba(255,255,255,.045);
+    --itens-modal-border:rgba(255,255,255,.11);
+    --itens-modal-orange:#ff8c00;
+    --itens-modal-muted:#aab4c3;
+  }
+  .sv-import-itens-modal .modal-dialog{
+    max-width:min(1280px, calc(100vw - 24px));
+    height:calc(100vh - 2rem);
+    margin:1rem auto;
+  }
+  .sv-import-itens-modal .modal-content{
+    height:100%;
+    max-height:calc(100vh - 2rem);
+    background:
+      radial-gradient(circle at top right, rgba(255,140,0,.16), transparent 32%),
+      radial-gradient(circle at top left, rgba(52,211,153,.10), transparent 30%),
+      linear-gradient(180deg, #111722, #090b10);
+    border:1px solid rgba(255,255,255,.12);
+    color:#eef2f7;
+    border-radius:24px;
+    overflow:hidden;
+    box-shadow:0 28px 90px rgba(0,0,0,.58);
+  }
+  .sv-import-itens-modal .modal-content > form{
+    height:100%;
+    min-height:0;
+    display:flex;
+    flex-direction:column;
+  }
+  .sv-import-itens-modal .modal-header{
+    flex:0 0 auto;
+    border-bottom:1px solid rgba(255,255,255,.10);
+    background:linear-gradient(180deg, rgba(255,255,255,.065), rgba(255,255,255,.025));
+    padding:16px 18px;
+  }
+  .sv-import-itens-modal .modal-title{
+    color:#fff;
+    font-weight:1000;
+    letter-spacing:-.025em;
+  }
+  .sv-import-itens-modal .modal-body{
+    flex:1 1 auto;
+    min-height:0;
+    overflow-y:auto;
+    overflow-x:hidden;
+    overscroll-behavior:contain;
+    padding:16px;
+    scrollbar-width:thin;
+    scrollbar-color:rgba(255,140,0,.48) rgba(255,255,255,.06);
+  }
+  .sv-import-itens-modal .modal-body::-webkit-scrollbar{ width:10px; height:10px; }
+  .sv-import-itens-modal .modal-body::-webkit-scrollbar-track{ background:rgba(255,255,255,.055); border-radius:999px; }
+  .sv-import-itens-modal .modal-body::-webkit-scrollbar-thumb{ background:rgba(255,140,0,.42); border-radius:999px; border:2px solid rgba(0,0,0,.25); }
+  .sv-import-itens-modal .modal-footer{
+    flex:0 0 auto;
+    border-top:1px solid rgba(255,255,255,.10);
+    background:linear-gradient(180deg, rgba(11,15,22,.92), rgba(11,15,22,.98));
+    padding:13px 18px;
+  }
+  .sv-import-itens-modal .sv-panel{
+    border:1px solid var(--itens-modal-border);
+    border-radius:20px;
+    background:linear-gradient(180deg, rgba(255,255,255,.050), rgba(255,255,255,.022));
+    box-shadow:0 12px 32px rgba(0,0,0,.18);
+    overflow:hidden;
+  }
+  .sv-import-itens-modal .sv-panel-head{
+    padding:14px 16px;
+    border-bottom:1px solid rgba(255,255,255,.075);
+    background:rgba(255,255,255,.025);
+  }
+  .sv-import-itens-modal .sv-panel-body{ padding:14px 16px; }
+  .sv-import-itens-modal .sv-admin-kpis{
     display:grid;
-    grid-template-columns:repeat(3,minmax(0,1fr));
+    grid-template-columns:repeat(4,minmax(0,1fr));
     gap:10px;
-    margin-top:12px;
   }
-  .sv-admin-page--itens .sv-import-step{
+  .sv-import-itens-modal .sv-kpi-card{
     border:1px solid rgba(255,255,255,.09);
-    border-radius:14px;
-    padding:10px 12px;
-    background:rgba(0,0,0,.18);
-    min-height:78px;
+    background:rgba(0,0,0,.20);
   }
-  .sv-admin-page--itens .sv-import-step strong{display:block;color:#fff;font-size:.86rem;}
-  .sv-admin-page--itens .sv-import-step span{display:block;color:#b8c0cc;font-size:.78rem;margin-top:3px;line-height:1.35;}
-  .sv-admin-page--itens .sv-modal-table{min-width:920px;}
-  .sv-admin-page--itens .sv-emp-checks{display:grid;grid-template-columns:repeat(auto-fill,minmax(94px,1fr));gap:8px;max-height:180px;overflow:auto;padding:10px;border:1px solid rgba(255,255,255,.10);border-radius:14px;background:rgba(0,0,0,.16);}
-  .sv-admin-page--itens .sv-emp-check{display:flex;gap:7px;align-items:center;font-size:.84rem;color:#e8edf5;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:7px 9px;}
+
+  .sv-import-itens-modal .sv-code{
+    color:#ffd39b;
+    background:rgba(255,140,0,.10);
+    border:1px solid rgba(255,140,0,.16);
+    padding:.20rem .48rem;
+    border-radius:9px;
+    font-weight:900;
+    white-space:nowrap;
+  }
+  .sv-import-itens-modal .sv-danger-zone{
+    border-color:rgba(255,77,79,.28);
+    background:rgba(255,77,79,.055);
+  }
+  .sv-import-itens-modal .sv-modal-table{ min-width:930px; }
+  .sv-import-itens-modal .sv-table-card{
+    max-height:360px;
+    overflow:auto;
+    scrollbar-width:thin;
+    scrollbar-color:rgba(255,140,0,.48) rgba(255,255,255,.06);
+  }
+  .sv-import-itens-modal .sv-table-card thead th{
+    position:sticky;
+    top:0;
+    z-index:2;
+  }
+  .sv-import-itens-modal .sv-emp-checks{
+    display:grid;
+    grid-template-columns:repeat(auto-fill,minmax(94px,1fr));
+    gap:8px;
+    max-height:180px;
+    overflow:auto;
+    padding:10px;
+    border:1px solid rgba(255,255,255,.10);
+    border-radius:14px;
+    background:rgba(0,0,0,.16);
+  }
+  .sv-import-itens-modal .sv-emp-check{
+    display:flex;
+    gap:7px;
+    align-items:center;
+    font-size:.84rem;
+    color:#e8edf5;
+    background:rgba(255,255,255,.04);
+    border:1px solid rgba(255,255,255,.08);
+    border-radius:10px;
+    padding:7px 9px;
+    cursor:pointer;
+    user-select:none;
+  }
+  .sv-import-itens-modal .sv-emp-check:hover{
+    border-color:rgba(255,140,0,.25);
+    background:rgba(255,140,0,.065);
+  }
+
   @media(max-width:1280px){
     .sv-admin-page--itens .sv-admin-layout{ grid-template-columns:1fr; }
   }
+  @media(max-width:900px){
+    .sv-import-itens-modal .sv-admin-kpis{ grid-template-columns:repeat(2,minmax(0,1fr)); }
+  }
   @media(max-width:760px){
     .sv-admin-page--itens .sv-import-steps{ grid-template-columns:1fr; }
+    .sv-admin-page--itens .sv-import-form-shell{ grid-template-columns:1fr; }
+    .sv-import-itens-modal .modal-dialog{
+      max-width:calc(100vw - 10px);
+      height:calc(100vh - 10px);
+      margin:5px auto;
+    }
+    .sv-import-itens-modal .modal-content{ max-height:calc(100vh - 10px); border-radius:18px; }
+    .sv-import-itens-modal .sv-admin-kpis{ grid-template-columns:1fr; }
   }
 </style>
 {% endblock %}
@@ -127,7 +391,7 @@
         <span class="sv-chip sv-chip--success">Novo fluxo</span>
       </div>
       <div class="sv-panel-body">
-        <form method="post" enctype="multipart/form-data" class="sv-filter-grid">
+        <form method="post" enctype="multipart/form-data" class="sv-import-form-shell">
           <input type="hidden" name="acao" value="validar_importacao">
           <div class="sv-field" style="min-width:min(100%,360px);">
             <label class="sv-form-label">Planilha de itens</label>
@@ -140,9 +404,9 @@
           </div>
         </form>
         <div class="sv-import-steps">
-          <div class="sv-import-step"><strong>1. Importar</strong><span>Envie uma planilha simples apenas com os produtos.</span></div>
-          <div class="sv-import-step"><strong>2. Validar</strong><span>O sistema confere MESTRE vazio, duplicidade e existência na base de vendas.</span></div>
-          <div class="sv-import-step"><strong>3. Aplicar</strong><span>Escolha as lojas/EMPs e o período de vigência para gravar os itens.</span></div>
+          <div class="sv-import-step" data-step="1"><strong>Importar</strong><span>Envie uma planilha simples apenas com os produtos.</span></div>
+          <div class="sv-import-step" data-step="2"><strong>Validar</strong><span>O sistema confere MESTRE vazio, duplicidade e existência na base de vendas.</span></div>
+          <div class="sv-import-step" data-step="3"><strong>Aplicar</strong><span>Escolha as lojas/EMPs e o período de vigência para gravar os itens.</span></div>
         </div>
       </div>
     </section>
@@ -563,13 +827,13 @@
 </div>
 
 {% if import_preview %}
-<div class="modal fade" id="importItensParadosModal" tabindex="-1" aria-labelledby="importItensParadosModalLabel" aria-hidden="true">
+<div class="modal fade sv-import-itens-modal" id="importItensParadosModal" tabindex="-1" aria-labelledby="importItensParadosModalLabel" aria-hidden="true">
   <div class="modal-dialog modal-xl modal-dialog-scrollable">
-    <div class="modal-content" style="background:#111317;border:1px solid rgba(255,255,255,.12);color:#eef2f7;">
+    <div class="modal-content">
       <form method="post">
         <input type="hidden" name="acao" value="confirmar_importacao">
         <input type="hidden" name="import_token" value="{{ import_preview.token }}">
-        <div class="modal-header" style="border-bottom-color:rgba(255,255,255,.10);">
+        <div class="modal-header">
           <div>
             <h5 class="modal-title" id="importItensParadosModalLabel">Validação da importação</h5>
             <div class="sv-help-text">Confira os itens validados. Depois selecione as lojas e a vigência para gravar.</div>
@@ -687,7 +951,7 @@
           </section>
           {% endif %}
         </div>
-        <div class="modal-footer" style="border-top-color:rgba(255,255,255,.10);">
+        <div class="modal-footer">
           <button type="button" class="btn btn-sv-soft" data-bs-dismiss="modal">Voltar e revisar</button>
           <button class="btn btn-sv-primary" {% if not import_preview.total_validos %}disabled{% endif %}>Confirmar importação</button>
         </div>
