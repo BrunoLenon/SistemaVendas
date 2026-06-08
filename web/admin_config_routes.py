@@ -1,22 +1,36 @@
 from __future__ import annotations
 
+import base64
+import mimetypes
 import os
 import re
-import mimetypes
 from datetime import date, datetime
+from typing import Iterable
 
 import requests
-from flask import request, render_template
+from flask import render_template, request
 
 from auth_helpers import _admin_required
-from branding import _get_setting, _set_setting, _current_branding, clear_branding_cache
-from db import SessionLocal, BrandingTheme, Usuario
+from branding import _current_branding, _get_setting, _set_setting, clear_branding_cache
+from db import BrandingTheme, SessionLocal, Usuario
 
 
-def _supabase_storage_upload(filename: str, content: bytes, content_type: str, folder: str) -> str:
-    """Faz upload no Supabase Storage e retorna URL pública.
-    Requer SUPABASE_URL e uma key (preferencialmente service role).
-    """
+_ALLOWED_LOGO_EXT = {".png", ".jpg", ".jpeg", ".webp", ".svg"}
+_ALLOWED_FAVICON_EXT = {".png", ".ico", ".jpg", ".jpeg", ".webp", ".svg"}
+_TRUTHY = {"1", "true", "on", "yes", "y", "sim", "ativo"}
+_FALSEY = {"0", "false", "off", "no", "n", "nao", "não", "desativado"}
+
+
+def _normalize_flag(value: str | None, default: str = "off") -> str:
+    v = (value or "").strip().lower()
+    if v in _TRUTHY:
+        return "on"
+    if v in _FALSEY:
+        return "off"
+    return default
+
+
+def _storage_credentials() -> tuple[str, str, str]:
     supa_url = (os.getenv("SUPABASE_URL") or "").rstrip("/")
     key = (
         os.getenv("SUPABASE_SERVICE_ROLE_KEY")
@@ -25,12 +39,18 @@ def _supabase_storage_upload(filename: str, content: bytes, content_type: str, f
         or os.getenv("SUPABASE_ANON_KEY")
         or ""
     )
+    bucket = os.getenv("SUPABASE_STORAGE_BUCKET", "branding")
+    return supa_url, key, bucket
+
+
+def _supabase_storage_upload(filename: str, content: bytes, content_type: str, folder: str) -> str:
+    """Faz upload no Supabase Storage e retorna URL pública."""
+    supa_url, key, bucket = _storage_credentials()
     if not supa_url or not key:
         raise RuntimeError("SUPABASE_URL/SUPABASE_KEY não configurados no ambiente.")
 
-    bucket = os.getenv("SUPABASE_STORAGE_BUCKET", "branding")
     safe_name = re.sub(r"[^a-zA-Z0-9._-]", "_", filename)
-    ts = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+    ts = datetime.utcnow().strftime("%Y%m%d%H%M%S%f")
     path = f"{folder}/{ts}_{safe_name}"
     endpoint = f"{supa_url}/storage/v1/object/{bucket}/{path}"
 
@@ -43,12 +63,100 @@ def _supabase_storage_upload(filename: str, content: bytes, content_type: str, f
     r = requests.put(endpoint, headers=headers, data=content, timeout=30)
     if r.status_code not in (200, 201):
         raise RuntimeError(f"Falha upload storage: {r.status_code} {r.text[:200]}")
+
     public_url = f"{supa_url}/storage/v1/object/public/{bucket}/{path}"
+
+    # Se o bucket não estiver público, o upload pode salvar, mas a imagem não aparece.
+    # Validamos rapidamente e caímos para data URI quando o URL público não abre.
+    try:
+        check = requests.get(public_url, timeout=8)
+        if check.status_code >= 400:
+            raise RuntimeError(f"URL pública não acessível: HTTP {check.status_code}")
+    except Exception as exc:
+        raise RuntimeError(str(exc))
+
     return public_url
 
 
+def _to_data_uri(content: bytes, content_type: str) -> str:
+    ctype = content_type or "application/octet-stream"
+    encoded = base64.b64encode(content).decode("ascii")
+    return f"data:{ctype};base64,{encoded}"
+
+
+def _read_upload(file_obj, *, label: str, max_bytes: int, allowed_ext: Iterable[str]) -> tuple[str, bytes, str] | None:
+    if not file_obj or not getattr(file_obj, "filename", ""):
+        return None
+
+    filename = str(file_obj.filename or "").strip()
+    ext = (os.path.splitext(filename)[1] or "").lower()
+    allowed = set(allowed_ext)
+    if not ext or ext not in allowed:
+        raise ValueError(f"{label}: arquivo inválido. Permitidos: {', '.join(sorted(allowed))}.")
+
+    data = file_obj.read()
+    if not data:
+        raise ValueError(f"{label}: arquivo vazio.")
+    if len(data) > max_bytes:
+        limite_mb = max_bytes / 1_000_000
+        raise ValueError(f"{label}: arquivo muito grande. Limite: {limite_mb:.1f}MB.")
+
+    ctype = file_obj.mimetype or mimetypes.guess_type(filename)[0] or "application/octet-stream"
+    if ext == ".svg" and ctype == "application/octet-stream":
+        ctype = "image/svg+xml"
+    elif ext == ".ico" and ctype == "application/octet-stream":
+        ctype = "image/x-icon"
+
+    if not (ctype.startswith("image/") or ctype in {"image/svg+xml", "image/x-icon"}):
+        raise ValueError(f"{label}: o arquivo precisa ser uma imagem válida.")
+
+    return filename, data, ctype
+
+
+def _store_branding_upload(upload: tuple[str, bytes, str], *, folder: str) -> tuple[str, str]:
+    """Salva imagem no Supabase Storage quando possível; usa DB/data URI como fallback.
+
+    Isso resolve o caso comum em que o bucket não existe, não está público ou a variável
+    de ambiente não foi configurada. O sistema continua funcionando e exibindo a logo.
+    """
+    filename, data, ctype = upload
+    mode = (os.getenv("BRANDING_UPLOAD_MODE") or "auto").strip().lower()
+
+    if mode in {"storage", "supabase", "auto"}:
+        try:
+            return _supabase_storage_upload(filename, data, ctype, folder=folder), "storage"
+        except Exception:
+            if mode in {"storage", "supabase"}:
+                raise
+
+    return _to_data_uri(data, ctype), "db"
+
+
+def _parse_date(value: str | None, label: str) -> date:
+    if not value:
+        raise ValueError(f"Informe {label}.")
+    try:
+        return datetime.fromisoformat(value).date()
+    except Exception:
+        raise ValueError(f"{label} inválida.")
+
+
+def _maintenance_snapshot(db) -> dict:
+    db_mode = _normalize_flag(_get_setting(db, "maintenance_mode", "off"), "off")
+    env_raw = (os.getenv("MAINTENANCE_MODE") or "").strip()
+    env_mode = _normalize_flag(env_raw, "") if env_raw else ""
+    effective = env_mode or db_mode
+    return {
+        "db_mode": db_mode,
+        "env_raw": env_raw,
+        "env_mode": env_mode,
+        "effective": effective,
+        "forced_by_env": bool(env_raw),
+    }
+
+
 def register_admin_config_routes(app):
-    """Registra as rotas de /admin/configuracoes sem alterar endpoints/contratos."""
+    """Registra as rotas de /admin/configuracoes sem alterar endpoint."""
 
     def admin_configuracoes():
         red = _admin_required()
@@ -56,16 +164,16 @@ def register_admin_config_routes(app):
             return red
 
         msgs: list[str] = []
-        today = date.today()
+        today_obj = date.today()
+        today_iso = today_obj.isoformat()
 
         with SessionLocal() as db:
-
-            # Modo manutenção (admin-only)
-            maintenance_mode = (_get_setting(db, "maintenance_mode", "off") or "off").strip().lower()
+            maintenance = _maintenance_snapshot(db)
 
             if request.method == "POST":
                 acao = (request.form.get("acao") or "").strip()
 
+                # Modo manutenção
                 if acao in ("toggle_maintenance", "maintenance_on", "maintenance_off"):
                     try:
                         if acao == "maintenance_on":
@@ -73,173 +181,199 @@ def register_admin_config_routes(app):
                         elif acao == "maintenance_off":
                             new_val = "off"
                         else:
-                            # toggle on/off (compatibilidade)
-                            new_val = (request.form.get("maintenance_mode") or "").strip().lower()
-                            if new_val not in ("on", "off"):
-                                new_val = "off"
+                            new_val = _normalize_flag(request.form.get("maintenance_mode"), "off")
 
                         _set_setting(db, "maintenance_mode", new_val)
                         db.commit()
-                        maintenance_mode = new_val
-                        msgs.append(f"Modo manutenção {'ativado' if new_val == 'on' else 'desativado'}.")
+                        maintenance = _maintenance_snapshot(db)
+                        msgs.append(f"Modo manutenção salvo como {'ativado' if new_val == 'on' else 'desativado'}.")
+                        if maintenance["forced_by_env"]:
+                            msgs.append("Atenção: a variável MAINTENANCE_MODE da Render está com prioridade sobre o valor salvo no banco.")
 
-                    except Exception:
+                    except Exception as e:
                         db.rollback()
-                        msgs.append("Falha ao atualizar modo manutenção.")
+                        msgs.append(f"Falha ao atualizar modo manutenção: {e}")
 
-            # Upload padrão (sempre disponível)
-            if request.method == "POST" and (request.form.get("acao") or "") == "upload_default":
-                try:
-                    logo_file = request.files.get("default_logo")
-                    fav_file = request.files.get("default_favicon")
-                    login_logo_left_file = request.files.get("login_logo_left")
-                    login_logo_right_file = request.files.get("login_logo_right")
+                # Upload padrão
+                elif acao == "upload_default":
+                    storage_modes: list[str] = []
+                    try:
+                        logo = _read_upload(
+                            request.files.get("default_logo"),
+                            label="Logo principal",
+                            max_bytes=2_000_000,
+                            allowed_ext=_ALLOWED_LOGO_EXT,
+                        )
+                        fav = _read_upload(
+                            request.files.get("default_favicon"),
+                            label="Favicon",
+                            max_bytes=400_000,
+                            allowed_ext=_ALLOWED_FAVICON_EXT,
+                        )
+                        login_logo_left = _read_upload(
+                            request.files.get("login_logo_left"),
+                            label="Logo do login — lado esquerdo",
+                            max_bytes=2_000_000,
+                            allowed_ext=_ALLOWED_LOGO_EXT,
+                        )
+                        login_logo_right = _read_upload(
+                            request.files.get("login_logo_right"),
+                            label="Logo do login — lado direito",
+                            max_bytes=2_000_000,
+                            allowed_ext=_ALLOWED_LOGO_EXT,
+                        )
 
-                    def _read_file(f, max_bytes: int, allowed_ext: set[str]):
-                        if not f or not getattr(f, "filename", ""):
-                            return None
-                        filename = f.filename
-                        ext = (os.path.splitext(filename)[1] or "").lower()
-                        if ext and ext not in allowed_ext:
-                            raise ValueError(f"Arquivo inválido ({ext}). Permitidos: {', '.join(sorted(allowed_ext))}")
-                        data = f.read()
-                        if len(data) > max_bytes:
-                            raise ValueError("Arquivo muito grande.")
-                        ctype = f.mimetype or mimetypes.guess_type(filename)[0] or "application/octet-stream"
-                        return filename, data, ctype
+                        if not logo and not fav and not login_logo_left and not login_logo_right:
+                            raise ValueError("Envie ao menos uma logo e/ou um favicon.")
 
-                    logo = _read_file(logo_file, max_bytes=2_000_000, allowed_ext={".png", ".jpg", ".jpeg", ".webp", ".svg"})
-                    fav = _read_file(fav_file, max_bytes=400_000, allowed_ext={".png", ".ico", ".jpg", ".jpeg", ".webp", ".svg"})
-                    login_logo_left = _read_file(login_logo_left_file, max_bytes=2_000_000, allowed_ext={".png", ".jpg", ".jpeg", ".webp", ".svg"})
-                    login_logo_right = _read_file(login_logo_right_file, max_bytes=2_000_000, allowed_ext={".png", ".jpg", ".jpeg", ".webp", ".svg"})
+                        if logo:
+                            url, mode = _store_branding_upload(logo, folder="default")
+                            storage_modes.append(mode)
+                            _set_setting(db, "branding.default_logo_url", url)
+                        if fav:
+                            url, mode = _store_branding_upload(fav, folder="default")
+                            storage_modes.append(mode)
+                            _set_setting(db, "branding.default_favicon_url", url)
+                        if login_logo_left:
+                            url, mode = _store_branding_upload(login_logo_left, folder="login-left")
+                            storage_modes.append(mode)
+                            _set_setting(db, "branding.login_logo_left_url", url)
+                        if login_logo_right:
+                            url, mode = _store_branding_upload(login_logo_right, folder="login-right")
+                            storage_modes.append(mode)
+                            _set_setting(db, "branding.login_logo_right_url", url)
 
-                    if not logo and not fav and not login_logo_left and not login_logo_right:
-                        raise ValueError("Envie ao menos uma logo e/ou um favicon.")
-
-                    if logo:
-                        url = _supabase_storage_upload(logo[0], logo[1], logo[2], folder="default")
-                        _set_setting(db, "branding.default_logo_url", url)
-                    if fav:
-                        url = _supabase_storage_upload(fav[0], fav[1], fav[2], folder="default")
-                        _set_setting(db, "branding.default_favicon_url", url)
-                    if login_logo_left:
-                        url = _supabase_storage_upload(login_logo_left[0], login_logo_left[1], login_logo_left[2], folder="login-left")
-                        _set_setting(db, "branding.login_logo_left_url", url)
-                    if login_logo_right:
-                        url = _supabase_storage_upload(login_logo_right[0], login_logo_right[1], login_logo_right[2], folder="login-right")
-                        _set_setting(db, "branding.login_logo_right_url", url)
-
-                    # bump version para cache bust
-                    _set_setting(db, "branding.default_version", datetime.utcnow().isoformat())
-                    db.commit()
-                    msgs.append("Arquivos padrão atualizados com sucesso.")
-
-                except Exception as e:
-                    db.rollback()
-                    msgs.append(f"Erro ao salvar: {e}")
-
-            # Criar tema sazonal
-            if request.method == "POST" and (request.form.get("acao") or "") == "create_theme":
-                try:
-                    name = (request.form.get("name") or "").strip()
-                    sd = request.form.get("start_date")
-                    ed = request.form.get("end_date")
-                    if not name or not sd or not ed:
-                        raise ValueError("Informe nome, data início e data fim.")
-                    start_date = datetime.fromisoformat(sd).date()
-                    end_date = datetime.fromisoformat(ed).date()
-                    if end_date < start_date:
-                        raise ValueError("Data fim precisa ser >= data início.")
-
-                    logo_file = request.files.get("theme_logo")
-                    fav_file = request.files.get("theme_favicon")
-                    logo_url = None
-                    fav_url = None
-                    if logo_file and logo_file.filename:
-                        data = logo_file.read()
-                        if len(data) > 2_000_000:
-                            raise ValueError("Logo do tema muito grande.")
-                        ctype = logo_file.mimetype or mimetypes.guess_type(logo_file.filename)[0] or "application/octet-stream"
-                        logo_url = _supabase_storage_upload(logo_file.filename, data, ctype, folder="themes")
-                    if fav_file and fav_file.filename:
-                        data = fav_file.read()
-                        if len(data) > 400_000:
-                            raise ValueError("Favicon do tema muito grande.")
-                        ctype = fav_file.mimetype or mimetypes.guess_type(fav_file.filename)[0] or "application/octet-stream"
-                        fav_url = _supabase_storage_upload(fav_file.filename, data, ctype, folder="themes")
-
-                    t = BrandingTheme(
-                        name=name,
-                        start_date=start_date,
-                        end_date=end_date,
-                        logo_url=logo_url,
-                        favicon_url=fav_url,
-                        is_active=True,
-                    )
-                    db.add(t)
-                    db.commit()
-                    clear_branding_cache()
-                    msgs.append("Tema criado com sucesso.")
-
-                except Exception as e:
-                    db.rollback()
-                    msgs.append(f"Erro ao criar tema: {e}")
-
-            # Ações em tema existente
-            if request.method == "POST" and (request.form.get("acao") or "").startswith("theme_"):
-                try:
-                    theme_id = int(request.form.get("theme_id") or "0")
-                    t = db.query(BrandingTheme).filter(BrandingTheme.id == theme_id).first()
-                    if not t:
-                        raise ValueError("Tema não encontrado.")
-                    acao = request.form.get("acao")
-
-                    if acao == "theme_toggle":
-                        t.is_active = not bool(t.is_active)
+                        _set_setting(db, "branding.default_version", datetime.utcnow().isoformat())
                         db.commit()
                         clear_branding_cache()
-                        msgs.append("Status do tema atualizado.")
+                        if "db" in storage_modes:
+                            msgs.append("Arquivos salvos com sucesso. Observação: como o Storage público não respondeu corretamente, a imagem foi salva no banco como fallback seguro.")
+                        else:
+                            msgs.append("Arquivos padrão atualizados com sucesso.")
 
-                    elif acao == "theme_update":
+                    except Exception as e:
+                        db.rollback()
+                        msgs.append(f"Erro ao salvar branding: {e}")
+
+                # Criar tema sazonal
+                elif acao == "create_theme":
+                    storage_modes: list[str] = []
+                    try:
                         name = (request.form.get("name") or "").strip()
-                        sd = request.form.get("start_date")
-                        ed = request.form.get("end_date")
-                        if name:
-                            t.name = name
-                        if sd:
-                            t.start_date = datetime.fromisoformat(sd).date()
-                        if ed:
-                            t.end_date = datetime.fromisoformat(ed).date()
-                        if t.end_date < t.start_date:
-                            raise ValueError("Data fim precisa ser >= data início.")
+                        if not name:
+                            raise ValueError("Informe o nome do tema.")
+                        start_date = _parse_date(request.form.get("start_date"), "data início")
+                        end_date = _parse_date(request.form.get("end_date"), "data fim")
+                        if end_date < start_date:
+                            raise ValueError("Data fim precisa ser maior ou igual à data início.")
 
-                        logo_file = request.files.get("theme_logo")
-                        fav_file = request.files.get("theme_favicon")
-                        if logo_file and logo_file.filename:
-                            data = logo_file.read()
-                            if len(data) > 2_000_000:
-                                raise ValueError("Logo do tema muito grande.")
-                            ctype = logo_file.mimetype or mimetypes.guess_type(logo_file.filename)[0] or "application/octet-stream"
-                            t.logo_url = _supabase_storage_upload(logo_file.filename, data, ctype, folder="themes")
-                        if fav_file and fav_file.filename:
-                            data = fav_file.read()
-                            if len(data) > 400_000:
-                                raise ValueError("Favicon do tema muito grande.")
-                            ctype = fav_file.mimetype or mimetypes.guess_type(fav_file.filename)[0] or "application/octet-stream"
-                            t.favicon_url = _supabase_storage_upload(fav_file.filename, data, ctype, folder="themes")
+                        logo = _read_upload(
+                            request.files.get("theme_logo"),
+                            label="Logo do tema",
+                            max_bytes=2_000_000,
+                            allowed_ext=_ALLOWED_LOGO_EXT,
+                        )
+                        fav = _read_upload(
+                            request.files.get("theme_favicon"),
+                            label="Favicon do tema",
+                            max_bytes=400_000,
+                            allowed_ext=_ALLOWED_FAVICON_EXT,
+                        )
+                        logo_url = None
+                        fav_url = None
+                        if logo:
+                            logo_url, mode = _store_branding_upload(logo, folder="themes")
+                            storage_modes.append(mode)
+                        if fav:
+                            fav_url, mode = _store_branding_upload(fav, folder="themes")
+                            storage_modes.append(mode)
 
+                        t = BrandingTheme(
+                            name=name,
+                            start_date=start_date,
+                            end_date=end_date,
+                            logo_url=logo_url,
+                            favicon_url=fav_url,
+                            is_active=True,
+                        )
+                        db.add(t)
                         db.commit()
                         clear_branding_cache()
-                        msgs.append("Tema atualizado com sucesso.")
+                        if start_date <= today_obj <= end_date:
+                            msgs.append("Tema criado com sucesso e já está dentro da vigência atual.")
+                        else:
+                            msgs.append("Tema criado com sucesso. Ele será aplicado automaticamente dentro da vigência cadastrada.")
+                        if "db" in storage_modes:
+                            msgs.append("Observação: arquivo do tema salvo no banco como fallback porque o Storage público não respondeu corretamente.")
 
-                    elif acao == "theme_delete":
-                        db.delete(t)
-                        db.commit()
-                        clear_branding_cache()
-                        msgs.append("Tema removido.")
+                    except Exception as e:
+                        db.rollback()
+                        msgs.append(f"Erro ao criar tema: {e}")
 
-                    elif acao == "alterar_emp":
-                        # Atualiza o campo EMP "legado/padrão" do usuário (util para supervisor e como EMP padrão para multi-EMP)
+                # Ações em tema existente
+                elif acao in {"theme_toggle", "theme_update", "theme_delete"}:
+                    try:
+                        theme_id = int(request.form.get("theme_id") or "0")
+                        t = db.query(BrandingTheme).filter(BrandingTheme.id == theme_id).first()
+                        if not t:
+                            raise ValueError("Tema não encontrado.")
+
+                        if acao == "theme_toggle":
+                            t.is_active = not bool(t.is_active)
+                            db.commit()
+                            clear_branding_cache()
+                            msgs.append("Status do tema atualizado.")
+
+                        elif acao == "theme_update":
+                            storage_modes: list[str] = []
+                            name = (request.form.get("name") or "").strip()
+                            if name:
+                                t.name = name
+                            if request.form.get("start_date"):
+                                t.start_date = _parse_date(request.form.get("start_date"), "data início")
+                            if request.form.get("end_date"):
+                                t.end_date = _parse_date(request.form.get("end_date"), "data fim")
+                            if t.end_date < t.start_date:
+                                raise ValueError("Data fim precisa ser maior ou igual à data início.")
+
+                            logo = _read_upload(
+                                request.files.get("theme_logo"),
+                                label="Logo do tema",
+                                max_bytes=2_000_000,
+                                allowed_ext=_ALLOWED_LOGO_EXT,
+                            )
+                            fav = _read_upload(
+                                request.files.get("theme_favicon"),
+                                label="Favicon do tema",
+                                max_bytes=400_000,
+                                allowed_ext=_ALLOWED_FAVICON_EXT,
+                            )
+                            if logo:
+                                t.logo_url, mode = _store_branding_upload(logo, folder="themes")
+                                storage_modes.append(mode)
+                            if fav:
+                                t.favicon_url, mode = _store_branding_upload(fav, folder="themes")
+                                storage_modes.append(mode)
+
+                            db.commit()
+                            clear_branding_cache()
+                            msgs.append("Tema atualizado com sucesso.")
+                            if "db" in storage_modes:
+                                msgs.append("Observação: arquivo do tema salvo no banco como fallback porque o Storage público não respondeu corretamente.")
+
+                        elif acao == "theme_delete":
+                            db.delete(t)
+                            db.commit()
+                            clear_branding_cache()
+                            msgs.append("Tema removido.")
+
+                    except Exception as e:
+                        db.rollback()
+                        msgs.append(f"Erro no tema sazonal: {e}")
+
+                # Compatibilidade: ação antiga eventualmente enviada por formulário legado.
+                elif acao == "alterar_emp":
+                    try:
                         alvo = (request.form.get("alvo") or "").strip().upper()
                         emp_novo = (request.form.get("emp_novo") or "").strip()
                         if not alvo:
@@ -247,29 +381,23 @@ def register_admin_config_routes(app):
                         u = db.query(Usuario).filter(Usuario.username == alvo).first()
                         if not u:
                             raise ValueError("Usuário não encontrado.")
-                        # Admin pode alterar EMP de qualquer role (inclusive limpar)
-                        if emp_novo == "":
-                            setattr(u, "emp", None)
-                            db.commit()
-                            ok = f"EMP do usuário {alvo} removida."
-                        else:
-                            setattr(u, "emp", str(emp_novo))
-                            db.commit()
-                            ok = f"EMP do usuário {alvo} atualizada para {emp_novo}."
-                    else:
-                        raise ValueError("Ação inválida.")
-
-                except Exception as e:
-                    db.rollback()
-                    msgs.append(f"Erro: {e}")
+                        setattr(u, "emp", str(emp_novo) if emp_novo else None)
+                        db.commit()
+                        msgs.append(f"EMP do usuário {alvo} {'atualizada para ' + emp_novo if emp_novo else 'removida'}.")
+                    except Exception as e:
+                        db.rollback()
+                        msgs.append(f"Erro: {e}")
 
             # Dados para tela
+            maintenance = _maintenance_snapshot(db)
             branding = _current_branding(db)
             default_logo = _get_setting(db, "branding.default_logo_url")
             default_favicon = _get_setting(db, "branding.default_favicon_url")
-            login_logo_left = _get_setting(db, "branding.login_logo_left_url", default_logo)
-            login_logo_right = _get_setting(db, "branding.login_logo_right_url", default_logo)
+            login_logo_left = _get_setting(db, "branding.login_logo_left_url")
+            login_logo_right = _get_setting(db, "branding.login_logo_right_url")
             themes = db.query(BrandingTheme).order_by(BrandingTheme.start_date.desc(), BrandingTheme.id.desc()).all()
+            active_theme_id = branding.get("theme_id") if isinstance(branding, dict) else None
+            storage_url, storage_key, storage_bucket = _storage_credentials()
 
         return render_template(
             "admin_configuracoes.html",
@@ -280,7 +408,15 @@ def register_admin_config_routes(app):
             login_logo_left=login_logo_left,
             login_logo_right=login_logo_right,
             themes=themes,
-            today=today.isoformat(),
+            today=today_iso,
+            active_theme_id=active_theme_id,
+            maintenance_mode=maintenance["effective"],
+            maintenance_db_mode=maintenance["db_mode"],
+            maintenance_env_mode=maintenance["env_mode"],
+            maintenance_env_raw=maintenance["env_raw"],
+            maintenance_forced_by_env=maintenance["forced_by_env"],
+            storage_configured=bool(storage_url and storage_key),
+            storage_bucket=storage_bucket,
         )
 
     app.add_url_rule(

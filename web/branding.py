@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 import os
+import sys
 import time
 
 from db import AppSetting, BrandingTheme
@@ -39,10 +40,39 @@ def _cache_clear_prefix(prefix: str):
             _BRANDING_CACHE.pop(k, None)
 
 
+def _clear_prefix_everywhere(prefix: str):
+    """Limpa caches locais também quando app.py possui cache próprio.
+
+    O projeto passou por uma refatoração em que branding.py e app.py podem existir
+    com caches em memória separados. Sem essa limpeza cruzada, uploads/temas ficam
+    salvos no banco, mas a tela pode continuar exibindo a logo antiga até o TTL expirar.
+    """
+    _cache_clear_prefix(prefix)
+    for mod in list(sys.modules.values()):
+        for attr in ("_BRANDING_CACHE", "_PERF_CACHE"):
+            cache = getattr(mod, attr, None)
+            if not isinstance(cache, dict) or cache is _BRANDING_CACHE:
+                continue
+            for k in list(cache.keys()):
+                if isinstance(k, str) and k.startswith(prefix):
+                    cache.pop(k, None)
+
+
 def clear_branding_cache():
-    """Limpa cache local de branding/configurações usado por este worker."""
-    _cache_clear_prefix("branding:")
-    _cache_clear_prefix("setting:branding.")
+    """Limpa cache local de branding/configurações usado pelos workers."""
+    _clear_prefix_everywhere("branding:")
+    _clear_prefix_everywhere("setting:branding.")
+
+
+def _is_data_url(value: str | None) -> bool:
+    return bool(value and str(value).strip().lower().startswith("data:"))
+
+
+def _version_for_urls(version: str | None, *urls: str | None) -> str:
+    """Evita anexar ?v= em data URLs, pois isso quebra imagens base64."""
+    if any(_is_data_url(u) for u in urls):
+        return ""
+    return version or ""
 
 
 def _get_setting(db, key: str, default: str | None = None) -> str | None:
@@ -66,16 +96,30 @@ def _set_setting(db, key: str, value: str | None):
         db.add(s)
     else:
         s.value = value
-    _cache_clear_prefix(f"setting:{key}")
+
+    _clear_prefix_everywhere(f"setting:{key}")
     if key.startswith("branding."):
-        _cache_clear_prefix("branding:")
+        _clear_prefix_everywhere("branding:")
+        _clear_prefix_everywhere("setting:branding.")
 
 
 def _current_branding(db) -> dict:
-    """Retorna branding atual (tema sazonal ativo ou padrão)."""
+    """Retorna branding atual (tema sazonal ativo ou padrão).
+
+    Regra profissional:
+    - tema sazonal ativo substitui apenas o que ele tiver configurado;
+    - se o tema não tiver logo/favicon, usa fallback do branding padrão;
+    - data URL nunca recebe ?v= para não quebrar a imagem.
+    """
     cached = _cache_get("branding:current")
     if isinstance(cached, dict):
         return dict(cached)
+
+    default_logo = _get_setting_cached(db, "branding.default_logo_url")
+    default_favicon = _get_setting_cached(db, "branding.default_favicon_url")
+    default_login_left = _get_setting_cached(db, "branding.login_logo_left_url", default_logo)
+    default_login_right = _get_setting_cached(db, "branding.login_logo_right_url", default_logo)
+    default_version = _get_setting_cached(db, "branding.default_version", "")
 
     today = date.today()
     theme = (
@@ -83,34 +127,36 @@ def _current_branding(db) -> dict:
           .filter(BrandingTheme.is_active == True)
           .filter(BrandingTheme.start_date <= today)
           .filter(BrandingTheme.end_date >= today)
-          .order_by(BrandingTheme.start_date.desc(), BrandingTheme.updated_at.desc())
+          .order_by(BrandingTheme.start_date.desc(), BrandingTheme.updated_at.desc(), BrandingTheme.id.desc())
           .first()
     )
     if theme:
-        ver = theme.updated_at.isoformat() if theme.updated_at else ""
+        logo = theme.logo_url or default_logo
+        favicon = theme.favicon_url or default_favicon
+        login_left = default_login_left or logo
+        login_right = default_login_right or logo
+        raw_version = theme.updated_at.isoformat() if theme.updated_at else default_version
         b = {
-            "logo_url": theme.logo_url,
-            "login_logo_left_url": _get_setting_cached(db, "branding.login_logo_left_url", theme.logo_url),
-            "login_logo_right_url": _get_setting_cached(db, "branding.login_logo_right_url", theme.logo_url),
-            "favicon_url": theme.favicon_url,
+            "logo_url": logo,
+            "login_logo_left_url": login_left,
+            "login_logo_right_url": login_right,
+            "favicon_url": favicon,
             "theme_name": theme.name,
-            "version": ver,
+            "theme_id": theme.id,
+            "is_seasonal": True,
+            "version": _version_for_urls(raw_version, logo, favicon, login_left, login_right),
         }
         return dict(_cache_set("branding:current", b, BRANDING_CACHE_SECONDS))
 
-    # Padrão
-    logo = _get_setting_cached(db, "branding.default_logo_url")
-    favicon = _get_setting_cached(db, "branding.default_favicon_url")
-    login_logo_left = _get_setting_cached(db, "branding.login_logo_left_url", logo)
-    login_logo_right = _get_setting_cached(db, "branding.login_logo_right_url", logo)
-    ver = _get_setting_cached(db, "branding.default_version", "")
     b = {
-        "logo_url": logo,
-        "login_logo_left_url": login_logo_left,
-        "login_logo_right_url": login_logo_right,
-        "favicon_url": favicon,
+        "logo_url": default_logo,
+        "login_logo_left_url": default_login_left,
+        "login_logo_right_url": default_login_right,
+        "favicon_url": default_favicon,
         "theme_name": "default",
-        "version": ver,
+        "theme_id": None,
+        "is_seasonal": False,
+        "version": _version_for_urls(default_version, default_logo, default_favicon, default_login_left, default_login_right),
     }
     return dict(_cache_set("branding:current", b, BRANDING_CACHE_SECONDS))
 

@@ -121,6 +121,17 @@
   .sv-config-page details summary{list-style:none;cursor:pointer;}
   .sv-config-page details summary::-webkit-details-marker{display:none;}
 
+
+
+  .sv-config-status-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:12px;}
+  @media (max-width: 720px){.sv-config-status-grid{grid-template-columns:1fr}}
+  .sv-config-status-card{padding:12px;border-radius:16px;background:rgba(0,0,0,.22);border:1px solid rgba(255,140,0,.13);}
+  .sv-config-status-card__label{font-size:11px;text-transform:uppercase;letter-spacing:.06em;font-weight:900;color:rgba(255,255,255,.58);}
+  .sv-config-status-card__value{font-size:14px;font-weight:900;color:#fff;margin-top:3px;word-break:break-word;}
+  .sv-config-status-card__meta{font-size:12px;color:rgba(255,255,255,.58);margin-top:2px;}
+  .sv-config-theme-card--current{border-color:rgba(46,204,113,.38);box-shadow:0 0 0 1px rgba(46,204,113,.12),0 18px 45px rgba(0,0,0,.18);}
+  .sv-config-mini-note{font-size:12px;color:rgba(255,255,255,.66);padding:10px 12px;border-radius:14px;background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.08);}
+
   .sv-config-page .alert{border-radius:16px;border:1px solid rgba(255,140,0,.20);background:rgba(255,140,0,.08);color:#fff;}
   .sv-config-page code{color:#ffd28a;background:rgba(0,0,0,.26);padding:2px 6px;border-radius:8px;}
 </style>
@@ -130,7 +141,7 @@
 {% set mm = (maintenance_mode or 'off')|lower %}
 {% set is_maintenance_on = mm in ['on','true','1','yes','y'] %}
 {% set theme_count = themes|length if themes else 0 %}
-{% set default_files_count = (1 if default_logo else 0) + (1 if default_favicon else 0) + (1 if (login_logo_left|default(default_logo)) else 0) + (1 if (login_logo_right|default(default_logo)) else 0) %}
+{% set default_files_count = (1 if default_logo else 0) + (1 if default_favicon else 0) + (1 if login_logo_left else 0) + (1 if login_logo_right else 0) %}
 
 <div class="sv-config-page">
   <section class="sv-config-hero">
@@ -150,6 +161,11 @@
         </div>
       </div>
       <div class="sv-config-actions">
+        {% if storage_configured %}
+          <span class="sv-config-chip sv-config-chip--ok">Storage: {{ storage_bucket }}</span>
+        {% else %}
+          <span class="sv-config-chip sv-config-chip--warn">Storage não configurado</span>
+        {% endif %}
         <a class="btn sv-config-btn-outline" href="{{ url_for('dashboard') }}">← Voltar ao dashboard</a>
         <a class="btn sv-config-btn-danger" href="/logout">Sair</a>
       </div>
@@ -159,7 +175,7 @@
       <div class="sv-config-kpi">
         <div class="sv-config-kpi__label">Tema ativo</div>
         <div class="sv-config-kpi__value">{{ branding.theme_name if branding and branding.theme_name else 'Padrão' }}</div>
-        <div class="sv-config-kpi__meta">Aplicado automaticamente</div>
+        <div class="sv-config-kpi__meta">{% if branding and branding.is_seasonal %}Tema sazonal vigente{% else %}Sem tema sazonal vigente{% endif %}</div>
       </div>
       <div class="sv-config-kpi">
         <div class="sv-config-kpi__label">Manutenção</div>
@@ -222,7 +238,7 @@
             <div class="sv-config-preview-card">
               <div class="sv-config-preview-card__label">Login — lado esquerdo</div>
               <div class="sv-config-preview-card__imgwrap">
-                {% set login_left = login_logo_left|default(default_logo) %}
+                {% set login_left = login_logo_left or default_logo %}
                 {% if login_left %}
                   <img class="sv-config-preview-img" src="{{ login_left }}" alt="Logo login esquerda">
                 {% else %}
@@ -233,13 +249,26 @@
             <div class="sv-config-preview-card">
               <div class="sv-config-preview-card__label">Login — lado direito</div>
               <div class="sv-config-preview-card__imgwrap">
-                {% set login_right = login_logo_right|default(default_logo) %}
+                {% set login_right = login_logo_right or default_logo %}
                 {% if login_right %}
                   <img class="sv-config-preview-img" src="{{ login_right }}" alt="Logo login direita">
                 {% else %}
                   <span class="sv-config-empty">—</span>
                 {% endif %}
               </div>
+            </div>
+          </div>
+
+          <div class="sv-config-status-grid mb-3">
+            <div class="sv-config-status-card">
+              <div class="sv-config-status-card__label">Armazenamento</div>
+              <div class="sv-config-status-card__value">{% if storage_configured %}Supabase Storage configurado{% else %}Fallback automático no banco{% endif %}</div>
+              <div class="sv-config-status-card__meta">Se o bucket público falhar, a logo ainda será salva como imagem base64 no banco.</div>
+            </div>
+            <div class="sv-config-status-card">
+              <div class="sv-config-status-card__label">Cache visual</div>
+              <div class="sv-config-status-card__value">Atualização imediata</div>
+              <div class="sv-config-status-card__meta">Ao salvar logos ou tema, o cache local é limpo para refletir no login/sidebar.</div>
             </div>
           </div>
 
@@ -302,17 +331,20 @@
           <span class="sv-config-chip sv-config-chip--muted">{{ theme_count }} tema(s)</span>
         </div>
         <div class="sv-config-panel__body">
+          <div class="sv-config-mini-note mb-3">O tema sazonal só substitui logo/favicon quando estiver ativo e a data atual estiver dentro da vigência. Se o tema não tiver logo própria, o sistema usa automaticamente a identidade padrão.</div>
           {% if themes and themes|length > 0 %}
             {% for t in themes %}
-              <article class="sv-config-theme-card">
+              <article class="sv-config-theme-card {% if active_theme_id and t.id == active_theme_id %}sv-config-theme-card--current{% endif %}">
                 <div class="d-flex justify-content-between gap-3 flex-wrap">
                   <div>
                     <div class="d-flex align-items-center gap-2 flex-wrap mb-1">
                       <h3 class="h6 mb-0">{{ t.name }}</h3>
-                      {% if t.is_active %}
-                        <span class="sv-config-chip sv-config-chip--ok">Ativo</span>
+                      {% if active_theme_id and t.id == active_theme_id %}
+                        <span class="sv-config-chip sv-config-chip--ok">Aplicando agora</span>
+                      {% elif t.is_active %}
+                        <span class="sv-config-chip sv-config-chip--muted">Ativo aguardando vigência</span>
                       {% else %}
-                        <span class="sv-config-chip sv-config-chip--muted">Inativo</span>
+                        <span class="sv-config-chip sv-config-chip--danger">Inativo</span>
                       {% endif %}
                     </div>
                     <div class="sv-config-muted small">{{ t.start_date }} → {{ t.end_date }}</div>
@@ -408,6 +440,24 @@
         </div>
         <div class="sv-config-panel__body">
           <div class="sv-config-muted small mb-3">Use para atualizações durante o dia, manutenção técnica ou bloqueio temporário de acesso operacional.</div>
+
+          <div class="sv-config-status-grid mb-3">
+            <div class="sv-config-status-card">
+              <div class="sv-config-status-card__label">Status efetivo</div>
+              <div class="sv-config-status-card__value">{% if is_maintenance_on %}Manutenção ativa{% else %}Sistema liberado{% endif %}</div>
+              <div class="sv-config-status-card__meta">É esse valor que o bloqueio usa nas telas.</div>
+            </div>
+            <div class="sv-config-status-card">
+              <div class="sv-config-status-card__label">Origem</div>
+              <div class="sv-config-status-card__value">{% if maintenance_forced_by_env %}Render ENV{% else %}Banco de dados{% endif %}</div>
+              <div class="sv-config-status-card__meta">Banco: {{ maintenance_db_mode|upper }}{% if maintenance_forced_by_env %} · ENV: {{ maintenance_env_raw }}{% endif %}</div>
+            </div>
+          </div>
+
+          {% if maintenance_forced_by_env %}
+            <div class="alert mb-3">A variável <code>MAINTENANCE_MODE</code> está configurada na Render e tem prioridade. Os botões abaixo salvam a preferência no banco, mas o status efetivo seguirá a variável até ela ser removida/alterada.</div>
+          {% endif %}
+
           <div class="sv-config-actions">
             <form method="post" class="m-0">
               <input type="hidden" name="acao" value="maintenance_on">
@@ -432,6 +482,9 @@
         <div class="sv-config-panel__body">
           <form method="post" enctype="multipart/form-data" class="row g-3">
             <input type="hidden" name="acao" value="create_theme">
+            <div class="col-12">
+              <div class="sv-config-mini-note">Para aplicar imediatamente, mantenha a data de hoje dentro do intervalo. Logo e favicon são opcionais: quando vazios, o sistema usa o branding padrão.</div>
+            </div>
             <div class="col-12">
               <label class="form-label">Nome</label>
               <input class="form-control" name="name" placeholder="Ex.: Carnaval" required>

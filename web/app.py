@@ -393,14 +393,34 @@ def _set_setting(db, key: str, value: str | None):
     if key.startswith("branding."):
         _cache_clear_prefix("branding:")
 
+def _branding_is_data_url(value: str | None) -> bool:
+    return bool(value and str(value).strip().lower().startswith("data:"))
+
+
+def _branding_version_for_urls(version: str | None, *urls: str | None) -> str:
+    # Data URLs não podem receber ?v=, senão a imagem base64 quebra.
+    if any(_branding_is_data_url(u) for u in urls):
+        return ""
+    return version or ""
+
+
 def _current_branding(db) -> dict:
     """Retorna branding atual (tema sazonal ativo ou padrão).
 
-    Cache curto em memória por worker para evitar consulta de branding em toda renderização.
+    Regra profissional:
+    - tema sazonal ativo troca apenas o que estiver configurado nele;
+    - logo/favicon vazios no tema usam fallback do branding padrão;
+    - data URL nunca recebe cache-buster ?v= para não quebrar imagem.
     """
     cached = _cache_get("branding:current")
     if isinstance(cached, dict):
         return dict(cached)
+
+    default_logo = _get_setting_cached(db, "branding.default_logo_url")
+    default_favicon = _get_setting_cached(db, "branding.default_favicon_url")
+    default_version = _get_setting_cached(db, "branding.default_version", "")
+    default_login_left = _get_setting_cached(db, "branding.login_logo_left_url", default_logo)
+    default_login_right = _get_setting_cached(db, "branding.login_logo_right_url", default_logo)
 
     today = date.today()
     theme = (
@@ -408,36 +428,36 @@ def _current_branding(db) -> dict:
           .filter(BrandingTheme.is_active == True)
           .filter(BrandingTheme.start_date <= today)
           .filter(BrandingTheme.end_date >= today)
-          .order_by(BrandingTheme.start_date.desc(), BrandingTheme.updated_at.desc())
+          .order_by(BrandingTheme.start_date.desc(), BrandingTheme.updated_at.desc(), BrandingTheme.id.desc())
           .first()
     )
     if theme:
-        ver = theme.updated_at.isoformat() if theme.updated_at else ""
-        login_logo_left = _get_setting_cached(db, "branding.login_logo_left_url", theme.logo_url)
-        login_logo_right = _get_setting_cached(db, "branding.login_logo_right_url", theme.logo_url)
+        logo = theme.logo_url or default_logo
+        favicon = theme.favicon_url or default_favicon
+        login_logo_left = default_login_left or logo
+        login_logo_right = default_login_right or logo
+        raw_version = theme.updated_at.isoformat() if theme.updated_at else default_version
         b = {
-            "logo_url": theme.logo_url,
-            "favicon_url": theme.favicon_url,
+            "logo_url": logo,
+            "favicon_url": favicon,
             "theme_name": theme.name,
-            "version": ver,
+            "theme_id": theme.id,
+            "is_seasonal": True,
+            "version": _branding_version_for_urls(raw_version, logo, favicon, login_logo_left, login_logo_right),
             "login_logo_left_url": login_logo_left,
             "login_logo_right_url": login_logo_right,
         }
         return dict(_cache_set("branding:current", b, BRANDING_CACHE_SECONDS))
 
-    # Padrão
-    logo = _get_setting_cached(db, "branding.default_logo_url")
-    favicon = _get_setting_cached(db, "branding.default_favicon_url")
-    ver = _get_setting_cached(db, "branding.default_version", "")
-    login_logo_left = _get_setting_cached(db, "branding.login_logo_left_url", logo)
-    login_logo_right = _get_setting_cached(db, "branding.login_logo_right_url", logo)
     b = {
-        "logo_url": logo,
-        "favicon_url": favicon,
+        "logo_url": default_logo,
+        "favicon_url": default_favicon,
         "theme_name": "default",
-        "version": ver,
-        "login_logo_left_url": login_logo_left,
-        "login_logo_right_url": login_logo_right,
+        "theme_id": None,
+        "is_seasonal": False,
+        "version": _branding_version_for_urls(default_version, default_logo, default_favicon, default_login_left, default_login_right),
+        "login_logo_left_url": default_login_left,
+        "login_logo_right_url": default_login_right,
     }
     return dict(_cache_set("branding:current", b, BRANDING_CACHE_SECONDS))
 
