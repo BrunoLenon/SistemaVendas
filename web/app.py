@@ -2195,6 +2195,7 @@ def _upsert_resultado(
         Venda.movimento >= periodo_ini,
         Venda.movimento <= periodo_fim,
         ~Venda.mov_tipo_movto.in_(["DS", "CA"]),
+        func.coalesce(Venda.qtdade_vendida, 0.0) > 0,
         cond_prefix,
     ]
     if marca_ref:
@@ -2342,6 +2343,7 @@ def _calc_resultado_all_vendedores(
         Venda.movimento >= periodo_ini,
         Venda.movimento <= periodo_fim,
         ~Venda.mov_tipo_movto.in_(["DS", "CA"]),
+        func.coalesce(Venda.qtdade_vendida, 0.0) > 0,
         cond_prefix,
     ]
     if marca_ref:
@@ -2726,6 +2728,7 @@ def _calc_vendas_por_vendedor_para_campanha(db, emp: str, campanha: CampanhaQtd,
         Venda.movimento >= periodo_ini,
         Venda.movimento <= periodo_fim,
         ~Venda.mov_tipo_movto.in_(["DS", "CA"]),
+        func.coalesce(Venda.qtdade_vendida, 0.0) > 0,
         cond_prefix,
     ]
     if marca_ref:
@@ -2796,6 +2799,7 @@ def _calc_qtd_por_vendedor_para_combo_item(db, emp: str, item: CampanhaComboItem
         Venda.movimento >= periodo_ini,
         Venda.movimento <= periodo_fim,
         ~Venda.mov_tipo_movto.in_(["DS", "CA"]),
+        func.coalesce(Venda.qtdade_vendida, 0.0) > 0,
         ]
 
     mp = (item.mestre_prefixo or "").strip()

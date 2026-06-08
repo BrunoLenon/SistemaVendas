@@ -33,8 +33,14 @@ def month_bounds(ano: int, mes: int) -> Tuple[date, date]:
     return start, end
 
 
+def _qtd_positiva():
+    return func.coalesce(Venda.qtdade_vendida, 0.0) > 0
+
+
 def _signed_value():
-    return case((Venda.mov_tipo_movto.in_(DS_CA), -Venda.valor_total), else_=Venda.valor_total)
+    qtd_ok = _qtd_positiva()
+    valor = func.coalesce(Venda.valor_total, 0.0)
+    return case((qtd_ok & Venda.mov_tipo_movto.in_(DS_CA), -valor), (qtd_ok, valor), else_=0.0)
 
 
 def refresh_dashboard_cache(emp: str, ano: int, mes: int) -> Dict[str, int]:
@@ -50,12 +56,12 @@ def refresh_dashboard_cache(emp: str, ano: int, mes: int) -> Dict[str, int]:
         q = (
             db.query(
                 Venda.vendedor.label("vendedor"),
-                func.coalesce(func.sum(case((~Venda.mov_tipo_movto.in_(DS_CA), Venda.valor_total), else_=0.0)), 0.0).label("valor_bruto"),
-                func.coalesce(func.sum(case((Venda.mov_tipo_movto == "DS", Venda.valor_total), else_=0.0)), 0.0).label("devolucoes"),
-                func.coalesce(func.sum(case((Venda.mov_tipo_movto == "CA", Venda.valor_total), else_=0.0)), 0.0).label("cancelamentos"),
+                func.coalesce(func.sum(case((_qtd_positiva() & ~Venda.mov_tipo_movto.in_(DS_CA), func.coalesce(Venda.valor_total, 0.0)), else_=0.0)), 0.0).label("valor_bruto"),
+                func.coalesce(func.sum(case((_qtd_positiva() & (Venda.mov_tipo_movto == "DS"), func.coalesce(Venda.valor_total, 0.0)), else_=0.0)), 0.0).label("devolucoes"),
+                func.coalesce(func.sum(case((_qtd_positiva() & (Venda.mov_tipo_movto == "CA"), func.coalesce(Venda.valor_total, 0.0)), else_=0.0)), 0.0).label("cancelamentos"),
                 func.coalesce(func.sum(_signed_value()), 0.0).label("valor_liquido"),
-                func.count(func.distinct(case((~Venda.mov_tipo_movto.in_(DS_CA), Venda.mestre), else_=None))).label("mix_produtos"),
-                func.count(func.distinct(case((~Venda.mov_tipo_movto.in_(DS_CA), Venda.marca), else_=None))).label("mix_marcas"),
+                func.count(func.distinct(case((_qtd_positiva() & ~Venda.mov_tipo_movto.in_(DS_CA), Venda.mestre), else_=None))).label("mix_produtos"),
+                func.count(func.distinct(case((_qtd_positiva() & ~Venda.mov_tipo_movto.in_(DS_CA), Venda.marca), else_=None))).label("mix_marcas"),
             )
             .filter(Venda.emp == emp)
             .filter(Venda.movimento >= start)

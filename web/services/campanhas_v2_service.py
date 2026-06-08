@@ -358,6 +358,7 @@ def _calc_ranking_valor(session, campanha: CampanhaV2Master, ano: int, mes: int,
         func.coalesce(func.sum(Venda.valor_total), 0).label("total"),
     ).filter(
         Venda.mov_tipo_movto == "OA",
+        func.coalesce(Venda.qtdade_vendida, 0.0) > 0,
         Venda.ano == ano,
         Venda.mes == mes,
     )
@@ -448,6 +449,7 @@ def _calc_meta_percentual(session, campanha: CampanhaV2Master, ano: int, mes: in
         func.coalesce(func.sum(Venda.valor_total), 0).label("total"),
     ).filter(
         Venda.mov_tipo_movto == "OA",
+        func.coalesce(Venda.qtdade_vendida, 0.0) > 0,
         Venda.ano == ano,
         Venda.mes == mes,
     )
@@ -527,6 +529,7 @@ def _calc_meta_absoluta(session, campanha: CampanhaV2Master, ano: int, mes: int,
         func.coalesce(func.sum(Venda.valor_total), 0).label("total"),
     ).filter(
         Venda.mov_tipo_movto == "OA",
+        func.coalesce(Venda.qtdade_vendida, 0.0) > 0,
         Venda.ano == ano,
         Venda.mes == mes,
     )
@@ -573,6 +576,7 @@ def _calc_mix(session, campanha: CampanhaV2Master, ano: int, mes: int, regras: D
         func.count(func.distinct(Venda.mestre)).label("mix"),
     ).filter(
         Venda.mov_tipo_movto == "OA",
+        func.coalesce(Venda.qtdade_vendida, 0.0) > 0,
         Venda.ano == ano,
         Venda.mes == mes,
     )

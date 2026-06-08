@@ -60,6 +60,7 @@ def calcular_faturamento_emp_periodo(db: Any, *, emp: str, periodo_ini: Any, per
             Venda.movimento >= periodo_ini,
             Venda.movimento <= periodo_fim,
             ~Venda.mov_tipo_movto.in_(MOVIMENTOS_BLOQUEADOS),
+            func.coalesce(Venda.qtdade_vendida, 0.0) > 0,
         )
         .first()
     )

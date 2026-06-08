@@ -87,9 +87,11 @@ def signed_value_sql(column_name: str = "valor_total") -> str:
     """Expressao SQL de valor assinado conforme regra comercial de vendas."""
     return f"""
         CASE
-          WHEN UPPER(COALESCE(mov_tipo_movto,'')) = ANY(:negativos)
+          WHEN COALESCE(qtdade_vendida,0) > 0
+           AND UPPER(COALESCE(mov_tipo_movto,'')) = ANY(:negativos)
             THEN -ABS(COALESCE({column_name},0))
-          WHEN UPPER(COALESCE(mov_tipo_movto,'')) = ANY(:positivos)
+          WHEN COALESCE(qtdade_vendida,0) > 0
+           AND UPPER(COALESCE(mov_tipo_movto,'')) = ANY(:positivos)
             THEN COALESCE({column_name},0)
           ELSE 0
         END

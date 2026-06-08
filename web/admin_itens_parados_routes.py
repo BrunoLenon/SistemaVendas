@@ -316,6 +316,7 @@ def _iter_vendas_agrupadas(db, emps, di, df, codigos):
         .filter(Venda.movimento >= di)
         .filter(Venda.movimento <= df)
         .filter(func.upper(func.coalesce(Venda.mov_tipo_movto, "")).in_(ITENS_PARADOS_MOV_TIPOS_VENDA))
+        .filter(func.coalesce(Venda.qtdade_vendida, 0.0) > 0)
         .filter(Venda.mestre.in_(codigos))
         .group_by(Venda.emp, Venda.vendedor, Venda.mestre, Venda.movimento)
     )

@@ -141,9 +141,11 @@ def register_operacoes_vendas_produtos_routes(
                     campo_marca = func.lower(func.trim(func.coalesce(Venda.marca, "")))
                     conds.append(campo_marca.like(mn + "%"))
 
+                qtd_base = func.coalesce(Venda.qtdade_vendida, 0.0)
                 signed_qty = case(
-                    (Venda.mov_tipo_movto.in_(["DS", "CA"]), -func.coalesce(Venda.qtdade_vendida, 0.0)),
-                    else_=func.coalesce(Venda.qtdade_vendida, 0.0),
+                    ((qtd_base > 0) & Venda.mov_tipo_movto.in_(["DS", "CA"]), -qtd_base),
+                    (qtd_base > 0, qtd_base),
+                    else_=0.0,
                 )
                 q_year = func.extract("year", Venda.movimento).label("ano")
                 q_month = func.extract("month", Venda.movimento).label("mes")

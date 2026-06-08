@@ -313,6 +313,7 @@ def calcular_e_snapshot(
                         .filter(Venda.movimento >= start)
                         .filter(Venda.movimento < end)
                         .filter(Venda.mov_tipo_movto == "OA")
+                        .filter(func.coalesce(Venda.qtdade_vendida, 0.0) > 0)
                         .filter(Venda.mestre.in_(codigos))
                         .scalar()
                         or 0.0
@@ -339,6 +340,7 @@ def calcular_e_snapshot(
                         .filter(Venda.movimento >= start)
                         .filter(Venda.movimento < end)
                         .filter(Venda.mov_tipo_movto == "OA")
+                        .filter(func.coalesce(Venda.qtdade_vendida, 0.0) > 0)
                         .scalar()
                         or 0
                     )

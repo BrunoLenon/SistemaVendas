@@ -98,6 +98,26 @@ def _to_float(value: Any) -> Optional[float]:
         return None
 
 
+
+def _sanitize_qtd_valor(qtd_raw: Any, valor_raw: Any) -> tuple[float, float, bool]:
+    """Normaliza quantidade/valor de venda importada.
+
+    Regra de segurança: linha com QTDADE_VENDIDA vazia, nula ou 0 não pode gerar
+    faturamento, campanha, meta, mix ou qualquer cálculo operacional.
+    Mantemos a linha importável para rastreabilidade/atualização, mas zeramos
+    o valor_total dela.
+    """
+    qtd = _to_float(qtd_raw)
+    valor = _to_float(valor_raw) or 0.0
+    try:
+        qtd_f = float(qtd or 0.0)
+    except Exception:
+        qtd_f = 0.0
+    if abs(qtd_f) <= 1e-12:
+        return 0.0, 0.0, True
+    return qtd_f, float(valor or 0.0), False
+
+
 def _norm_str(value: Any) -> Optional[str]:
     if value is None or (isinstance(value, float) and pd.isna(value)):
         return None
@@ -400,6 +420,7 @@ def importar_planilha(
             total_bruto = 0.0
             total_ca = 0.0
             ca_linhas = 0
+            linhas_qtd_zero = 0
 
             for r in rows:
                 total_linhas += 1
@@ -425,6 +446,10 @@ def importar_planilha(
                         erros_linha += 1
                         continue
 
+                    qtd_importada, valor_importado, qtd_zero_calc = _sanitize_qtd_valor(get("QTDADE_VENDIDA"), get("VALOR_TOTAL"))
+                    if qtd_zero_calc:
+                        linhas_qtd_zero += 1
+
                     rec = {
                         "mestre": mestre,
                         "marca": _norm_str(get("MARCA")),
@@ -435,8 +460,8 @@ def importar_planilha(
                         "emp": emp,
                         "unit": _to_float(get("UNIT")),
                         "des": _to_float(get("DES")),
-                        "qtdade_vendida": _to_float(get("QTDADE_VENDIDA")),
-                        "valor_total": _to_float(get("VALOR_TOTAL")) or 0.0,
+                        "qtdade_vendida": qtd_importada,
+                        "valor_total": valor_importado,
                         "descricao": _norm_str(get("DESCRICAO")),
                         "razao": _norm_str(get("RAZAO")),
                         "cidade": _norm_str(get("CIDADE")),
@@ -514,6 +539,7 @@ def importar_planilha(
                 "total_ca": float(total_ca),
                 "total_liquido": float(total_bruto - total_ca),
                 "ca_linhas": int(ca_linhas),
+                "linhas_qtd_zero_ignoradas_calculo": int(linhas_qtd_zero),
                 "reprocessar": bool(reprocessar_competencia),
                 "reprocessamento": reprocess_info,
                 "linhas_reprocessadas_apagadas": int((reprocess_info or {}).get("linhas_apagadas") or 0),
@@ -544,6 +570,7 @@ def importar_planilha(
     total_bruto = 0.0
     total_ca = 0.0
     ca_linhas = 0
+    linhas_qtd_zero = 0
 
     if reprocessar_competencia:
         meta = scan_metadata_csv(filepath, check_required=True, csv_chunksize=csv_chunksize)
@@ -593,6 +620,10 @@ def importar_planilha(
                         erros_linha += 1
                         continue
 
+                    qtd_importada, valor_importado, qtd_zero_calc = _sanitize_qtd_valor(row.get("QTDADE_VENDIDA"), row.get("VALOR_TOTAL"))
+                    if qtd_zero_calc:
+                        linhas_qtd_zero += 1
+
                     rec = {
                         "mestre": mestre,
                         "marca": _norm_str(row.get("MARCA")),
@@ -603,8 +634,8 @@ def importar_planilha(
                         "emp": emp,
                         "unit": _to_float(row.get("UNIT")),
                         "des": _to_float(row.get("DES")),
-                        "qtdade_vendida": _to_float(row.get("QTDADE_VENDIDA")),
-                        "valor_total": _to_float(row.get("VALOR_TOTAL")) or 0.0,
+                        "qtdade_vendida": qtd_importada,
+                        "valor_total": valor_importado,
                         "descricao": _norm_str(row.get("DESCRICAO")),
                         "razao": _norm_str(row.get("RAZAO")),
                         "cidade": _norm_str(row.get("CIDADE")),
@@ -691,6 +722,7 @@ def importar_planilha(
         "total_ca": float(total_ca),
         "total_liquido": float(total_bruto - total_ca),
         "ca_linhas": int(ca_linhas),
+        "linhas_qtd_zero_ignoradas_calculo": int(linhas_qtd_zero),
         "reprocessar": bool(reprocessar_competencia),
         "reprocessamento": reprocess_info,
         "linhas_reprocessadas_apagadas": int((reprocess_info or {}).get("linhas_apagadas") or 0),

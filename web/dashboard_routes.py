@@ -37,13 +37,20 @@ def _meses_referencia(ano: int, mes: int, quantidade: int = 3) -> list[tuple[int
     return refs
 
 
+def _qtd_positiva_expr():
+    return func.coalesce(Venda.qtdade_vendida, 0.0) > 0
+
+
 def _signed_valor_expr():
-    return case((Venda.mov_tipo_movto.in_(["DS", "CA"]), -Venda.valor_total), else_=Venda.valor_total)
+    qtd_ok = _qtd_positiva_expr()
+    valor = func.coalesce(Venda.valor_total, 0.0)
+    return case((qtd_ok & Venda.mov_tipo_movto.in_(["DS", "CA"]), -valor), (qtd_ok, valor), else_=0.0)
 
 
 def _signed_qtd_expr():
     qtd = func.coalesce(Venda.qtdade_vendida, 0.0)
-    return case((Venda.mov_tipo_movto.in_(["DS", "CA"]), -qtd), else_=qtd)
+    qtd_ok = qtd > 0
+    return case((qtd_ok & Venda.mov_tipo_movto.in_(["DS", "CA"]), -qtd), (qtd_ok, qtd), else_=0.0)
 
 
 
@@ -131,10 +138,10 @@ def _build_emp_dashboard(ano: int, mes: int, emp: str | None) -> Optional[dict]:
                 Venda.emp == emp,
             )
             row = base.with_entities(
-                func.coalesce(func.sum(case((~Venda.mov_tipo_movto.in_(["DS", "CA"]), Venda.valor_total), else_=0.0)), 0.0),
-                func.coalesce(func.sum(case((Venda.mov_tipo_movto.in_(["DS", "CA"]), Venda.valor_total), else_=0.0)), 0.0),
+                func.coalesce(func.sum(case((_qtd_positiva_expr() & ~Venda.mov_tipo_movto.in_(["DS", "CA"]), func.coalesce(Venda.valor_total, 0.0)), else_=0.0)), 0.0),
+                func.coalesce(func.sum(case((_qtd_positiva_expr() & Venda.mov_tipo_movto.in_(["DS", "CA"]), func.coalesce(Venda.valor_total, 0.0)), else_=0.0)), 0.0),
                 func.coalesce(func.sum(signed_valor), 0.0),
-                func.coalesce(func.sum(case((~Venda.mov_tipo_movto.in_(["DS", "CA"]), func.coalesce(Venda.qtdade_vendida, 0.0)), else_=0.0)), 0.0),
+                func.coalesce(func.sum(case((_qtd_positiva_expr() & ~Venda.mov_tipo_movto.in_(["DS", "CA"]), func.coalesce(Venda.qtdade_vendida, 0.0)), else_=0.0)), 0.0),
                 func.coalesce(func.count(func.distinct(Venda.cliente_id_norm)), 0),
             ).first()
             bruto = float(row[0] or 0.0)

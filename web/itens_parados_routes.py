@@ -309,6 +309,7 @@ def _load_campaign_view():
             .filter(Venda.movimento >= periodo_inicio)
             .filter(Venda.movimento <= periodo_fim)
             .filter(func.upper(func.coalesce(Venda.mov_tipo_movto, "")).in_(ITENS_PARADOS_MOV_TIPOS_VENDA))
+            .filter(func.coalesce(Venda.qtdade_vendida, 0.0) > 0)
             .filter(Venda.mestre.in_(codigos))
         )
         if vendedor_alvo:

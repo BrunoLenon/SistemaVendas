@@ -140,6 +140,14 @@ def importar_vendas_xlsx(
 
     df = df.dropna(subset=["VALOR_TOTAL"]).copy()
 
+    # Segurança: item com quantidade zero/vazia não deve participar de faturamento,
+    # campanha, meta ou mix. Mantém a linha, mas sem valor de venda.
+    df["QTDADE_VENDIDA"] = df["QTDADE_VENDIDA"].fillna(0)
+    mask_qtd_zero = df["QTDADE_VENDIDA"].abs() <= 1e-12
+    if mask_qtd_zero.any():
+        df.loc[mask_qtd_zero, "QTDADE_VENDIDA"] = 0.0
+        df.loc[mask_qtd_zero, "VALOR_TOTAL"] = 0.0
+
     lidas = int(len(df))
     if lidas == 0:
         return ImportResult(lidas=0, inseridas=0, ignoradas=0, erros=0, aviso="Nada para importar.").asdict()

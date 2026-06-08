@@ -484,6 +484,7 @@ def _calc_mix_mestre(db, c: CampanhaMasterV2, ano: int, mes: int, emps_calc: lis
         )
         .filter(Venda.ano == int(ano), Venda.mes == int(mes))
         .filter(Venda.mov_tipo_movto == "OA")
+        .filter(func.coalesce(Venda.qtdade_vendida, 0.0) > 0)
     )
     if emps_calc:
         q = q.filter(Venda.emp.in_([str(e) for e in emps_calc]))
@@ -532,6 +533,7 @@ def _calc_acumulativa(db, c: CampanhaMasterV2, ano: int, mes: int, emps_calc: li
             func.sum(Venda.valor_total).label("total"),
         )
         .filter(Venda.mov_tipo_movto == "OA")
+        .filter(func.coalesce(Venda.qtdade_vendida, 0.0) > 0)
     )
     if emps_calc:
         q = q.filter(Venda.emp.in_([str(e) for e in emps_calc]))
@@ -571,6 +573,7 @@ def _sum_por_emp_vend(db, ano: int, mes: int, emps_calc: list[str]) -> dict[tupl
         )
         .filter(Venda.ano == int(ano), Venda.mes == int(mes))
         .filter(Venda.mov_tipo_movto == "OA")
+        .filter(func.coalesce(Venda.qtdade_vendida, 0.0) > 0)
     )
     if emps_calc:
         q = q.filter(Venda.emp.in_([str(e) for e in emps_calc]))

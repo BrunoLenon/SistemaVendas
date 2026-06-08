@@ -391,6 +391,7 @@ def recalc_ranking_marca(
         .filter(Venda.movimento >= ini)
         .filter(Venda.movimento <= fim)
         .filter(func.upper(Venda.marca) == marca)
+        .filter(func.coalesce(Venda.qtdade_vendida, 0.0) > 0)
         .scalar()
     ) or 0
 
@@ -432,14 +433,16 @@ def recalc_ranking_marca(
             Venda.emp.label("emp"),
             func.sum(
                 case(
-                    (func.upper(func.trim(Venda.mov_tipo_movto)) == "CA", -func.abs(Venda.valor_total)),
-                    else_=Venda.valor_total,
+                    ((func.coalesce(Venda.qtdade_vendida, 0.0) > 0) & (func.upper(func.trim(Venda.mov_tipo_movto)) == "CA"), -func.abs(func.coalesce(Venda.valor_total, 0.0))),
+                    (func.coalesce(Venda.qtdade_vendida, 0.0) > 0, func.coalesce(Venda.valor_total, 0.0)),
+                    else_=0.0,
                 )
             ).label("total"),
         )
         .filter(Venda.movimento >= ini)
         .filter(Venda.movimento <= fim)
         .filter(func.upper(Venda.marca) == marca)
+        .filter(func.coalesce(Venda.qtdade_vendida, 0.0) > 0)
     )
 
     # Aplica filtro de escopo EMP

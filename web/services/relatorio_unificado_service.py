@@ -407,6 +407,7 @@ def _compute_itens_parados_rows_live(
                     Venda.movimento >= periodo_ini,
                     Venda.movimento <= periodo_fim,
                     ~Venda.mov_tipo_movto.in_(['DS', 'CA']),
+                    func.coalesce(Venda.qtdade_vendida, 0.0) > 0,
                     Venda.mestre == codigo,
                     Venda.vendedor.in_(vendedores),
                 )
@@ -1025,12 +1026,15 @@ def build_unified_rows(
                     .filter(Venda.vendedor.in_(vendedores))
                     .filter(Venda.movimento >= periodo_ini, Venda.movimento <= periodo_fim)
                     .filter(~Venda.mov_tipo_movto.in_(['DS', 'CA']))
+                    .filter(func.coalesce(Venda.qtdade_vendida, 0.0) > 0)
                     .group_by(Venda.vendedor, Venda.mestre, func.coalesce(Venda.descricao, ''))
                     .all()
                 )
 
                 sales_by_vendor: dict[str, list[dict[str, Any]]] = {v: [] for v in vendedores}
                 for vend, mestre, descricao, qtd, val in vendas_rows:
+                    if float(qtd or 0.0) <= 0:
+                        continue
                     vend_u = _upper(vend)
                     sales_by_vendor.setdefault(vend_u, []).append({
                         'mestre': str(mestre or '').strip(),

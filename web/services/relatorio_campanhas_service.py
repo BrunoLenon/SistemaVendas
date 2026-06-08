@@ -79,6 +79,7 @@ def _calc_qtd_por_vendedor_para_combo_item(
         Venda.movimento >= periodo_ini,
         Venda.movimento <= periodo_fim,
         ~Venda.mov_tipo_movto.in_(["DS", "CA"]),
+        func.coalesce(Venda.qtdade_vendida, 0.0) > 0,
     ]
 
     mp = (getattr(item, "mestre_prefixo", None) or "").strip()
@@ -309,6 +310,7 @@ def build_relatorio_campanhas_context(
                                 Venda.movimento >= periodo_ini,
                                 Venda.movimento <= periodo_fim,
                                 ~Venda.mov_tipo_movto.in_(["DS", "CA"]),
+                                func.coalesce(Venda.qtdade_vendida, 0.0) > 0,
                                 Venda.mestre == codigo,
                                 Venda.vendedor.in_(vendedores),
                             )

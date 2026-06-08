@@ -61,8 +61,8 @@ def register_relatorio_cidades_clientes_routes(
 
         db = SessionLocal()
         try:
-            base = db.query(Venda).filter(Venda.movimento >= inicio, Venda.movimento < fim)
-            base_hist = db.query(Venda).filter(Venda.movimento.isnot(None))
+            base = db.query(Venda).filter(Venda.movimento >= inicio, Venda.movimento < fim, func.coalesce(Venda.qtdade_vendida, 0.0) > 0)
+            base_hist = db.query(Venda).filter(Venda.movimento.isnot(None), func.coalesce(Venda.qtdade_vendida, 0.0) > 0)
 
             escopo_label = None
             pode_filtrar_emp = False
@@ -178,9 +178,11 @@ def register_relatorio_cidades_clientes_routes(
                 )
 
             # Top clientes por EMP (por valor no período)
+            qtd_ok = func.coalesce(Venda.qtdade_vendida, 0.0) > 0
             signed_val = case(
-                (Venda.mov_tipo_movto.in_(["DS", "CA"]), -Venda.valor_total),
-                else_=Venda.valor_total,
+                (qtd_ok & Venda.mov_tipo_movto.in_(["DS", "CA"]), -func.coalesce(Venda.valor_total, 0.0)),
+                (qtd_ok, func.coalesce(Venda.valor_total, 0.0)),
+                else_=0.0,
             )
 
             cliente_rows = (
@@ -350,6 +352,7 @@ def register_relatorio_cidades_clientes_routes(
                 Venda.emp == str(emp),
                 Venda.movimento >= inicio,
                 Venda.movimento < fim,
+                func.coalesce(Venda.qtdade_vendida, 0.0) > 0,
             )
 
             if cidade_norm == "sem_cidade":
@@ -424,6 +427,7 @@ def register_relatorio_cidades_clientes_routes(
                 Venda.emp == str(emp),
                 extract("month", Venda.movimento) == mes,
                 extract("year", Venda.movimento) == ano,
+                func.coalesce(Venda.qtdade_vendida, 0.0) > 0,
             )
 
             # Identificação do cliente (compat)
@@ -446,9 +450,11 @@ def register_relatorio_cidades_clientes_routes(
             if vendedor:
                 base = base.filter(func.upper(Venda.vendedor) == vendedor)
 
+            qtd_ok = func.coalesce(Venda.qtdade_vendida, 0.0) > 0
             signed_val = case(
-                (Venda.mov_tipo_movto.in_(["DS", "CA"]), -Venda.valor_total),
-                else_=Venda.valor_total,
+                (qtd_ok & Venda.mov_tipo_movto.in_(["DS", "CA"]), -func.coalesce(Venda.valor_total, 0.0)),
+                (qtd_ok, func.coalesce(Venda.valor_total, 0.0)),
+                else_=0.0,
             )
 
             rows = (
@@ -520,6 +526,7 @@ def register_relatorio_cidades_clientes_routes(
                 Venda.emp == str(emp),
                 extract("month", Venda.movimento) == mes,
                 extract("year", Venda.movimento) == ano,
+                func.coalesce(Venda.qtdade_vendida, 0.0) > 0,
             )
 
             # Identificação do cliente (compat)
@@ -548,13 +555,16 @@ def register_relatorio_cidades_clientes_routes(
             else:
                 base = base.filter(Venda.marca == marca)
 
+            qtd_ok = func.coalesce(Venda.qtdade_vendida, 0.0) > 0
             signed_val = case(
-                (Venda.mov_tipo_movto.in_(["DS", "CA"]), -Venda.valor_total),
-                else_=Venda.valor_total,
+                (qtd_ok & Venda.mov_tipo_movto.in_(["DS", "CA"]), -func.coalesce(Venda.valor_total, 0.0)),
+                (qtd_ok, func.coalesce(Venda.valor_total, 0.0)),
+                else_=0.0,
             )
             signed_qtd = case(
-                (Venda.mov_tipo_movto.in_(["DS", "CA"]), -Venda.qtdade_vendida),
-                else_=Venda.qtdade_vendida,
+                (qtd_ok & Venda.mov_tipo_movto.in_(["DS", "CA"]), -func.coalesce(Venda.qtdade_vendida, 0.0)),
+                (qtd_ok, func.coalesce(Venda.qtdade_vendida, 0.0)),
+                else_=0.0,
             )
 
             itens_rows = (
@@ -626,6 +636,7 @@ def register_relatorio_cidades_clientes_routes(
                 Venda.emp == str(emp),
                 extract("month", Venda.movimento) == mes,
                 extract("year", Venda.movimento) == ano,
+                func.coalesce(Venda.qtdade_vendida, 0.0) > 0,
             )
 
             if cliente_id and razao_norm:
@@ -646,13 +657,16 @@ def register_relatorio_cidades_clientes_routes(
             if vendedor:
                 base = base.filter(func.upper(Venda.vendedor) == vendedor)
 
+            qtd_ok = func.coalesce(Venda.qtdade_vendida, 0.0) > 0
             signed_val = case(
-                (Venda.mov_tipo_movto.in_(["DS", "CA"]), -Venda.valor_total),
-                else_=Venda.valor_total,
+                (qtd_ok & Venda.mov_tipo_movto.in_(["DS", "CA"]), -func.coalesce(Venda.valor_total, 0.0)),
+                (qtd_ok, func.coalesce(Venda.valor_total, 0.0)),
+                else_=0.0,
             )
             signed_qtd = case(
-                (Venda.mov_tipo_movto.in_(["DS", "CA"]), -Venda.qtdade_vendida),
-                else_=Venda.qtdade_vendida,
+                (qtd_ok & Venda.mov_tipo_movto.in_(["DS", "CA"]), -func.coalesce(Venda.qtdade_vendida, 0.0)),
+                (qtd_ok, func.coalesce(Venda.qtdade_vendida, 0.0)),
+                else_=0.0,
             )
 
             itens_rows = (
