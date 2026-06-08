@@ -17,6 +17,8 @@ from db import BrandingTheme, SessionLocal, Usuario
 
 _ALLOWED_LOGO_EXT = {".png", ".jpg", ".jpeg", ".webp", ".svg"}
 _ALLOWED_FAVICON_EXT = {".png", ".ico", ".jpg", ".jpeg", ".webp", ".svg"}
+_MAX_LOGO_UPLOAD_BYTES = 6_000_000
+_MAX_FAVICON_UPLOAD_BYTES = 400_000
 _TRUTHY = {"1", "true", "on", "yes", "y", "sim", "ativo"}
 _FALSEY = {"0", "false", "off", "no", "n", "nao", "não", "desativado"}
 
@@ -44,14 +46,7 @@ def _storage_credentials() -> tuple[str, str, str]:
 
 
 def _supabase_storage_upload(filename: str, content: bytes, content_type: str, folder: str) -> str:
-    """Faz upload no Supabase Storage e retorna a URL pública esperada.
-
-    Importante: não bloqueamos o salvamento no banco por uma checagem HTTP da URL
-    pública logo após o upload. Em produção o Supabase pode levar alguns instantes para
-    propagar o arquivo ou a requisição externa da Render pode falhar momentaneamente.
-    O problema anterior era: o arquivo subia para o bucket, mas uma validação posterior
-    lançava erro e impedia o commit do AppSetting.
-    """
+    """Faz upload no Supabase Storage e retorna URL pública."""
     supa_url, key, bucket = _storage_credentials()
     if not supa_url or not key:
         raise RuntimeError("SUPABASE_URL/SUPABASE_KEY não configurados no ambiente.")
@@ -71,7 +66,18 @@ def _supabase_storage_upload(filename: str, content: bytes, content_type: str, f
     if r.status_code not in (200, 201):
         raise RuntimeError(f"Falha upload storage: {r.status_code} {r.text[:200]}")
 
-    return f"{supa_url}/storage/v1/object/public/{bucket}/{path}"
+    public_url = f"{supa_url}/storage/v1/object/public/{bucket}/{path}"
+
+    # Se o bucket não estiver público, o upload pode salvar, mas a imagem não aparece.
+    # Validamos rapidamente e caímos para data URI quando o URL público não abre.
+    try:
+        check = requests.get(public_url, timeout=8)
+        if check.status_code >= 400:
+            raise RuntimeError(f"URL pública não acessível: HTTP {check.status_code}")
+    except Exception as exc:
+        raise RuntimeError(str(exc))
+
+    return public_url
 
 
 def _to_data_uri(content: bytes, content_type: str) -> str:
@@ -112,40 +118,21 @@ def _read_upload(file_obj, *, label: str, max_bytes: int, allowed_ext: Iterable[
 def _store_branding_upload(upload: tuple[str, bytes, str], *, folder: str) -> tuple[str, str]:
     """Salva imagem no Supabase Storage quando possível; usa DB/data URI como fallback.
 
-    Mesmo que a Render esteja configurada para usar storage, não deixamos a tela sem
-    salvar a configuração visual. Se o Storage falhar, o fallback em base64 é gravado
-    no AppSetting. Para forçar erro em vez de fallback, use BRANDING_UPLOAD_MODE=strict_storage.
+    Isso resolve o caso comum em que o bucket não existe, não está público ou a variável
+    de ambiente não foi configurada. O sistema continua funcionando e exibindo a logo.
     """
     filename, data, ctype = upload
     mode = (os.getenv("BRANDING_UPLOAD_MODE") or "auto").strip().lower()
 
-    if mode in {"storage", "supabase", "auto", "strict_storage"}:
+    if mode in {"storage", "supabase", "auto"}:
         try:
             return _supabase_storage_upload(filename, data, ctype, folder=folder), "storage"
         except Exception:
-            if mode == "strict_storage":
+            if mode in {"storage", "supabase"}:
                 raise
 
     return _to_data_uri(data, ctype), "db"
 
-
-
-
-def _verify_saved_settings(db, saved: list[tuple[str, str]]) -> list[str]:
-    """Confirma após o commit se os AppSettings foram realmente persistidos."""
-    missing: list[str] = []
-    if not saved:
-        return missing
-    try:
-        db.expire_all()
-        for label, key in saved:
-            value = _get_setting(db, key)
-            if value is None or str(value).strip() == "":
-                missing.append(label)
-    except Exception:
-        # Não derruba a tela; a operação principal já foi executada.
-        return []
-    return missing
 
 def _parse_date(value: str | None, label: str) -> date:
     if not value:
@@ -212,30 +199,29 @@ def register_admin_config_routes(app):
                 # Upload padrão
                 elif acao == "upload_default":
                     storage_modes: list[str] = []
-                    saved_settings: list[tuple[str, str]] = []
                     try:
                         logo = _read_upload(
                             request.files.get("default_logo"),
                             label="Logo principal",
-                            max_bytes=2_000_000,
+                            max_bytes=_MAX_LOGO_UPLOAD_BYTES,
                             allowed_ext=_ALLOWED_LOGO_EXT,
                         )
                         fav = _read_upload(
                             request.files.get("default_favicon"),
                             label="Favicon",
-                            max_bytes=400_000,
+                            max_bytes=_MAX_FAVICON_UPLOAD_BYTES,
                             allowed_ext=_ALLOWED_FAVICON_EXT,
                         )
                         login_logo_left = _read_upload(
                             request.files.get("login_logo_left"),
                             label="Logo do login — lado esquerdo",
-                            max_bytes=2_000_000,
+                            max_bytes=_MAX_LOGO_UPLOAD_BYTES,
                             allowed_ext=_ALLOWED_LOGO_EXT,
                         )
                         login_logo_right = _read_upload(
                             request.files.get("login_logo_right"),
                             label="Logo do login — lado direito",
-                            max_bytes=2_000_000,
+                            max_bytes=_MAX_LOGO_UPLOAD_BYTES,
                             allowed_ext=_ALLOWED_LOGO_EXT,
                         )
 
@@ -246,33 +232,26 @@ def register_admin_config_routes(app):
                             url, mode = _store_branding_upload(logo, folder="default")
                             storage_modes.append(mode)
                             _set_setting(db, "branding.default_logo_url", url)
-                            saved_settings.append(("Logo principal", "branding.default_logo_url"))
                         if fav:
                             url, mode = _store_branding_upload(fav, folder="default")
                             storage_modes.append(mode)
                             _set_setting(db, "branding.default_favicon_url", url)
-                            saved_settings.append(("Favicon", "branding.default_favicon_url"))
                         if login_logo_left:
                             url, mode = _store_branding_upload(login_logo_left, folder="login-left")
                             storage_modes.append(mode)
                             _set_setting(db, "branding.login_logo_left_url", url)
-                            saved_settings.append(("Logo do login — lado esquerdo", "branding.login_logo_left_url"))
                         if login_logo_right:
                             url, mode = _store_branding_upload(login_logo_right, folder="login-right")
                             storage_modes.append(mode)
                             _set_setting(db, "branding.login_logo_right_url", url)
-                            saved_settings.append(("Logo do login — lado direito", "branding.login_logo_right_url"))
 
                         _set_setting(db, "branding.default_version", datetime.utcnow().isoformat())
                         db.commit()
-                        missing = _verify_saved_settings(db, saved_settings)
                         clear_branding_cache()
-                        if missing:
-                            msgs.append("Atenção: o upload foi processado, mas estes itens não apareceram gravados no banco: " + ", ".join(missing) + ".")
-                        elif "db" in storage_modes:
-                            msgs.append("Branding salvo com sucesso. Um ou mais arquivos foram gravados direto no banco como fallback seguro.")
+                        if "db" in storage_modes:
+                            msgs.append("Arquivos salvos com sucesso. Observação: como o Storage público não respondeu corretamente, a imagem foi salva no banco como fallback seguro.")
                         else:
-                            msgs.append("Branding salvo com sucesso no Storage e registrado no banco.")
+                            msgs.append("Arquivos padrão atualizados com sucesso.")
 
                     except Exception as e:
                         db.rollback()
@@ -293,13 +272,13 @@ def register_admin_config_routes(app):
                         logo = _read_upload(
                             request.files.get("theme_logo"),
                             label="Logo do tema",
-                            max_bytes=2_000_000,
+                            max_bytes=_MAX_LOGO_UPLOAD_BYTES,
                             allowed_ext=_ALLOWED_LOGO_EXT,
                         )
                         fav = _read_upload(
                             request.files.get("theme_favicon"),
                             label="Favicon do tema",
-                            max_bytes=400_000,
+                            max_bytes=_MAX_FAVICON_UPLOAD_BYTES,
                             allowed_ext=_ALLOWED_FAVICON_EXT,
                         )
                         logo_url = None
@@ -362,13 +341,13 @@ def register_admin_config_routes(app):
                             logo = _read_upload(
                                 request.files.get("theme_logo"),
                                 label="Logo do tema",
-                                max_bytes=2_000_000,
+                                max_bytes=_MAX_LOGO_UPLOAD_BYTES,
                                 allowed_ext=_ALLOWED_LOGO_EXT,
                             )
                             fav = _read_upload(
                                 request.files.get("theme_favicon"),
                                 label="Favicon do tema",
-                                max_bytes=400_000,
+                                max_bytes=_MAX_FAVICON_UPLOAD_BYTES,
                                 allowed_ext=_ALLOWED_FAVICON_EXT,
                             )
                             if logo:
