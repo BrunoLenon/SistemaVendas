@@ -543,9 +543,9 @@
 
 {% block content %}
 {% set assist = assisted_options if assisted_options is defined else {} %}
-{% set assisted_emps = assist.get('emps', []) %}
-{% set assisted_vendedores = assist.get('vendedores', []) %}
-{% set assisted_marcas = assist.get('marcas', []) %}
+{% set assisted_emps = assist.get('emps', []) or [] %}
+{% set assisted_vendedores = assist.get('vendedores', []) or [] %}
+{% set assisted_marcas = assist.get('marcas', []) or [] %}
 {% set assist_has_faturamento = assist.get('has_faturamento_minimo_emp', false) %}
 {% set view_scope = lista_escopo if lista_escopo is defined else 'periodo' %}
 {% set total_geral = campanhas_total_geral if campanhas_total_geral is defined else campanhas|length %}
@@ -1523,6 +1523,16 @@
     var tipoCamp = document.getElementById('campanha_tipo');
     if(tipoCamp){ tipoCamp.addEventListener('change', toggleTipoCampanha); }
     toggleTipoCampanha();
+
+    var vendedoresPayload = [];
+    try{
+      var payloadEl = document.getElementById('campanhaVendedoresPayload');
+      var parsedPayload = payloadEl ? JSON.parse(payloadEl.textContent || '[]') : [];
+      vendedoresPayload = Array.isArray(parsedPayload) ? parsedPayload : [];
+    }catch(err){
+      vendedoresPayload = [];
+    }
+
     bindAssistedInputs();
     bindEmpPicker();
 
@@ -1607,17 +1617,12 @@
       if(el) el.value = value || '';
     }
 
-    var vendedoresPayload = [];
-    try{
-      var payloadEl = document.getElementById('campanhaVendedoresPayload');
-      vendedoresPayload = payloadEl ? JSON.parse(payloadEl.textContent || '[]') : [];
-    }catch(err){ vendedoresPayload = []; }
-
     function renderVendedoresForEmp(empValue){
       var list = document.getElementById('campanhaVendedorOptions');
       if(!list) return;
       var empCode = (empValue || '').trim();
       var html = [];
+      if(!Array.isArray(vendedoresPayload)){ vendedoresPayload = []; }
       vendedoresPayload.forEach(function(item){
         var nome = item && item.nome ? String(item.nome) : '';
         if(!nome) return;
