@@ -13,8 +13,8 @@ from typing import Any
 from sqlalchemy import func
 
 from db import Venda
+from sv_utils import MOVIMENTOS_VENDA
 
-MOVIMENTOS_BLOQUEADOS = ("DS", "CA")
 
 
 def _safe_float(v: Any) -> float:
@@ -34,9 +34,9 @@ def _round_money(v: Any) -> float:
 def calcular_faturamento_emp_periodo(db: Any, *, emp: str, periodo_ini: Any, periodo_fim: Any) -> float:
     """Soma o faturamento da EMP no período usando a regra padrão do sistema.
 
-    Mantém compatibilidade com a apuração atual de campanhas: considera vendas
-    que não sejam DS/CA. Isso preserva SV/VV e demais movimentos positivos já
-    usados historicamente pelo sistema.
+    Regra oficial: considera somente movimentos positivos OA, OV, SV, VA e VV.
+    CA e DS abatem em relatórios líquidos, mas não entram como faturamento bruto
+    para destravar campanha. Outros movimentos ficam fora do cálculo.
     """
     emp_s = str(emp or "").strip()
     if not emp_s or not periodo_ini or not periodo_fim:
@@ -59,7 +59,7 @@ def calcular_faturamento_emp_periodo(db: Any, *, emp: str, periodo_ini: Any, per
             Venda.emp == emp_s,
             Venda.movimento >= periodo_ini,
             Venda.movimento <= periodo_fim,
-            ~Venda.mov_tipo_movto.in_(MOVIMENTOS_BLOQUEADOS),
+            func.upper(func.coalesce(Venda.mov_tipo_movto, "")).in_(MOVIMENTOS_VENDA),
             func.coalesce(Venda.qtdade_vendida, 0.0) > 0,
         )
         .first()

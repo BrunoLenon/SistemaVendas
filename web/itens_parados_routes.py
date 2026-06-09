@@ -10,6 +10,7 @@ from typing import Callable
 
 from flask import flash, redirect, render_template, request, send_file, url_for
 from sqlalchemy import func, inspect, or_, text
+from sv_utils import MOVIMENTOS_VENDA
 
 from db import (
     engine,
@@ -36,7 +37,7 @@ _periodo_bounds: Callable[[int, int], tuple[object, object]] | None = None
 
 TWOPLACES = Decimal("0.01")
 MIN_PONTOS_PAGAMENTO_ITENS_PARADOS = Decimal("10")
-ITENS_PARADOS_MOV_TIPOS_VENDA = ("OA", "VV", "SV")
+ITENS_PARADOS_MOV_TIPOS_VENDA = MOVIMENTOS_VENDA
 _SCHEMA_LOCK = threading.Lock()
 _SCHEMA_READY = False
 _SCHEMA_READY_AT = 0.0

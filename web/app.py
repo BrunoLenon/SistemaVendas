@@ -29,6 +29,7 @@ from decimal import Decimal, ROUND_HALF_UP
 import pandas as pd
 import requests
 from sqlalchemy import and_, or_, func, case, cast, String, text, extract
+from sv_utils import MOVIMENTOS_VENDA, MOVIMENTOS_NEGATIVOS
 from services.campanhas_qtd_gate import calcular_faturamento_emp_periodo, aplicar_trava_faturamento_emp
 # ---------------------------------------------------------------------------
 # Helpers de compatibilidade para "rows" que podem vir como dict, SQLAlchemy Row,
@@ -1527,12 +1528,14 @@ def _ano_passado_valor_mix(vendedor: str, ano: int, mes: int, emp_scope: str | N
             cnt = int(q_cnt.scalar() or 0)
 
             if cnt > 0:
+                mov = func.upper(func.coalesce(Venda.mov_tipo_movto, ""))
                 signed = case(
-                    (Venda.mov_tipo_movto.in_(['DS', 'CA']), -Venda.valor_total),
-                    else_=Venda.valor_total,
+                    (mov.in_(MOVIMENTOS_NEGATIVOS), -func.coalesce(Venda.valor_total, 0.0)),
+                    (mov.in_(MOVIMENTOS_VENDA), func.coalesce(Venda.valor_total, 0.0)),
+                    else_=0.0,
                 )
                 liquido = func.coalesce(func.sum(signed), 0.0)
-                mix = func.count(func.distinct(case((~Venda.mov_tipo_movto.in_(['DS', 'CA']), Venda.mestre), else_=None)))
+                mix = func.count(func.distinct(case((func.upper(func.coalesce(Venda.mov_tipo_movto, "")).in_(MOVIMENTOS_VENDA), Venda.mestre), else_=None)))
 
                 row = (
                     db.query(liquido, mix)
@@ -1628,7 +1631,8 @@ def _dados_from_cache(vendedor_alvo, mes, ano, emp_scope):
                     else:
                         q = q.filter(Venda.emp == str(emp_scope))
 
-                signed = case((Venda.mov_tipo_movto.in_(['DS','CA']), -Venda.valor_total), else_=Venda.valor_total)
+                mov = func.upper(func.coalesce(Venda.mov_tipo_movto, ""))
+                signed = case((mov.in_(MOVIMENTOS_NEGATIVOS), -func.coalesce(Venda.valor_total, 0.0)), (mov.in_(MOVIMENTOS_VENDA), func.coalesce(Venda.valor_total, 0.0)), else_=0.0)
                 valor_mes_anterior = float(q.filter(Venda.movimento >= s_ant, Venda.movimento < e_ant)
                                           .with_entities(func.coalesce(func.sum(signed), 0.0))
                                           .scalar() or 0.0)
@@ -1715,11 +1719,12 @@ def _dados_ao_vivo(vendedor: str, mes: int, ano: int, emp_scope: str | list[str]
                 base = base.filter(Venda.emp == str(emp_scope))
         def sums(s, e):
             q = base.filter(Venda.movimento >= s, Venda.movimento < e)
-            signed = case((Venda.mov_tipo_movto.in_(['DS','CA']), -Venda.valor_total), else_=Venda.valor_total)
-            bruto = func.coalesce(func.sum(case((~Venda.mov_tipo_movto.in_(['DS','CA']), Venda.valor_total), else_=0.0)), 0.0)
-            devol = func.coalesce(func.sum(case((Venda.mov_tipo_movto.in_(['DS','CA']), Venda.valor_total), else_=0.0)), 0.0)
+            mov = func.upper(func.coalesce(Venda.mov_tipo_movto, ""))
+            signed = case((mov.in_(MOVIMENTOS_NEGATIVOS), -func.coalesce(Venda.valor_total, 0.0)), (mov.in_(MOVIMENTOS_VENDA), func.coalesce(Venda.valor_total, 0.0)), else_=0.0)
+            bruto = func.coalesce(func.sum(case((func.upper(func.coalesce(Venda.mov_tipo_movto, "")).in_(MOVIMENTOS_VENDA), Venda.valor_total), else_=0.0)), 0.0)
+            devol = func.coalesce(func.sum(case((func.upper(func.coalesce(Venda.mov_tipo_movto, "")).in_(MOVIMENTOS_NEGATIVOS), Venda.valor_total), else_=0.0)), 0.0)
             liquido = func.coalesce(func.sum(signed), 0.0)
-            mix = func.count(func.distinct(case((~Venda.mov_tipo_movto.in_(['DS','CA']), Venda.mestre), else_=None)))
+            mix = func.count(func.distinct(case((func.upper(func.coalesce(Venda.mov_tipo_movto, "")).in_(MOVIMENTOS_VENDA), Venda.mestre), else_=None)))
 
             row = q.with_entities(bruto, devol, liquido, mix).first()
             return float(row[0] or 0.0), float(row[1] or 0.0), float(row[2] or 0.0), int(row[3] or 0)
@@ -1739,7 +1744,8 @@ def _dados_ao_vivo(vendedor: str, mes: int, ano: int, emp_scope: str | list[str]
             emp_scope=emp_scope,
         )
         # ranking por marca (líquido)
-        signed = case((Venda.mov_tipo_movto.in_(['DS','CA']), -Venda.valor_total), else_=Venda.valor_total)
+        mov = func.upper(func.coalesce(Venda.mov_tipo_movto, ""))
+        signed = case((mov.in_(MOVIMENTOS_NEGATIVOS), -func.coalesce(Venda.valor_total, 0.0)), (mov.in_(MOVIMENTOS_VENDA), func.coalesce(Venda.valor_total, 0.0)), else_=0.0)
         q_rank = base.filter(Venda.movimento >= start, Venda.movimento < end)\
             .with_entities(Venda.marca, func.coalesce(func.sum(signed), 0.0))\
             .group_by(Venda.marca)
@@ -1834,7 +1840,8 @@ def _dados_admin_geral(mes: int, ano: int, emp_scope: list[str] | None = None):
     start = date(ano, mes, 1)
     end = date(ano + 1, 1, 1) if mes == 12 else date(ano, mes + 1, 1)
 
-    signed = case((Venda.mov_tipo_movto.in_(['DS','CA']), -Venda.valor_total), else_=Venda.valor_total)
+    mov = func.upper(func.coalesce(Venda.mov_tipo_movto, ""))
+    signed = case((mov.in_(MOVIMENTOS_NEGATIVOS), -func.coalesce(Venda.valor_total, 0.0)), (mov.in_(MOVIMENTOS_VENDA), func.coalesce(Venda.valor_total, 0.0)), else_=0.0)
 
     with SessionLocal() as db:
         base = db.query(Venda).filter(Venda.movimento >= start, Venda.movimento < end)
@@ -1843,8 +1850,8 @@ def _dados_admin_geral(mes: int, ano: int, emp_scope: list[str] | None = None):
             if emps:
                 base = base.filter(Venda.emp.in_(emps))
 
-        bruto_expr = func.coalesce(func.sum(case((~Venda.mov_tipo_movto.in_(['DS','CA']), Venda.valor_total), else_=0.0)), 0.0)
-        devol_expr = func.coalesce(func.sum(case((Venda.mov_tipo_movto.in_(['DS','CA']), Venda.valor_total), else_=0.0)), 0.0)
+        bruto_expr = func.coalesce(func.sum(case((func.upper(func.coalesce(Venda.mov_tipo_movto, "")).in_(MOVIMENTOS_VENDA), Venda.valor_total), else_=0.0)), 0.0)
+        devol_expr = func.coalesce(func.sum(case((func.upper(func.coalesce(Venda.mov_tipo_movto, "")).in_(MOVIMENTOS_NEGATIVOS), Venda.valor_total), else_=0.0)), 0.0)
         liquido_expr = func.coalesce(func.sum(signed), 0.0)
 
         total_row = base.with_entities(bruto_expr, devol_expr, liquido_expr).first()
@@ -1893,7 +1900,8 @@ def _periodo_prev(ano: int, mes: int) -> tuple[int, int]:
     return int(ano), int(mes) - 1
 
 def _signed_expr():
-    return case((Venda.mov_tipo_movto.in_(["DS", "CA"]), -Venda.valor_total), else_=Venda.valor_total)
+    mov = func.upper(func.coalesce(Venda.mov_tipo_movto, ""))
+    return case((mov.in_(MOVIMENTOS_NEGATIVOS), -func.coalesce(Venda.valor_total, 0.0)), (mov.in_(MOVIMENTOS_VENDA), func.coalesce(Venda.valor_total, 0.0)), else_=0.0)
 
 def _clientes_destaque(vendedor: str, ano: int, mes: int, emp_scope: str | None, topn: int = 5) -> dict:
     """Top clientes por crescimento/queda vs mês anterior (ΔR$ e Δ%)."""
@@ -2214,7 +2222,7 @@ def _upsert_resultado(
         Venda.emp == emp,
         Venda.movimento >= periodo_ini,
         Venda.movimento <= periodo_fim,
-        ~Venda.mov_tipo_movto.in_(["DS", "CA"]),
+        func.upper(func.coalesce(Venda.mov_tipo_movto, "")).in_(MOVIMENTOS_VENDA),
         func.coalesce(Venda.qtdade_vendida, 0.0) > 0,
         cond_prefix,
     ]
@@ -2362,7 +2370,7 @@ def _calc_resultado_all_vendedores(
         Venda.emp == emp,
         Venda.movimento >= periodo_ini,
         Venda.movimento <= periodo_fim,
-        ~Venda.mov_tipo_movto.in_(["DS", "CA"]),
+        func.upper(func.coalesce(Venda.mov_tipo_movto, "")).in_(MOVIMENTOS_VENDA),
         func.coalesce(Venda.qtdade_vendida, 0.0) > 0,
         cond_prefix,
     ]
@@ -2747,7 +2755,7 @@ def _calc_vendas_por_vendedor_para_campanha(db, emp: str, campanha: CampanhaQtd,
         Venda.emp == emp,
         Venda.movimento >= periodo_ini,
         Venda.movimento <= periodo_fim,
-        ~Venda.mov_tipo_movto.in_(["DS", "CA"]),
+        func.upper(func.coalesce(Venda.mov_tipo_movto, "")).in_(MOVIMENTOS_VENDA),
         func.coalesce(Venda.qtdade_vendida, 0.0) > 0,
         cond_prefix,
     ]
@@ -2818,7 +2826,7 @@ def _calc_qtd_por_vendedor_para_combo_item(db, emp: str, item: CampanhaComboItem
         Venda.emp == emp,
         Venda.movimento >= periodo_ini,
         Venda.movimento <= periodo_fim,
-        ~Venda.mov_tipo_movto.in_(["DS", "CA"]),
+        func.upper(func.coalesce(Venda.mov_tipo_movto, "")).in_(MOVIMENTOS_VENDA),
         func.coalesce(Venda.qtdade_vendida, 0.0) > 0,
         ]
 

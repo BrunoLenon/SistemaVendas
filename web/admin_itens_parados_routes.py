@@ -17,6 +17,7 @@ from typing import Callable, Type
 
 from flask import current_app, redirect, render_template, request, send_file, session, url_for
 from sqlalchemy import func, inspect, or_, text
+from sv_utils import MOVIMENTOS_VENDA
 
 from db import (
     engine,
@@ -29,7 +30,7 @@ from db import (
 
 TWOPLACES = Decimal("0.01")
 MIN_PONTOS_PAGAMENTO_ITENS_PARADOS = Decimal("10")
-ITENS_PARADOS_MOV_TIPOS_VENDA = ("OA", "VV", "SV")
+ITENS_PARADOS_MOV_TIPOS_VENDA = MOVIMENTOS_VENDA
 _SCHEMA_LOCK = threading.Lock()
 _SCHEMA_READY = False
 _SCHEMA_READY_AT = 0.0

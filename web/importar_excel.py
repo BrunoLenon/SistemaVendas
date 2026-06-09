@@ -32,6 +32,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from db import SessionLocal, Venda
 from dashboard_cache import refresh_dashboard_cache
+from sv_utils import MOVIMENTOS_VENDA, MOVIMENTOS_NEGATIVOS, classificar_movimento
 
 
 REQUIRED_COLS = [
@@ -418,8 +419,12 @@ def importar_planilha(
             batch: List[dict] = []
             affected_periods = set()
             total_bruto = 0.0
-            total_ca = 0.0
-            ca_linhas = 0
+            total_cancelamentos = 0.0
+            total_devolucoes = 0.0
+            total_ignorados_movimento = 0.0
+            cancelamento_linhas = 0
+            devolucao_linhas = 0
+            movimentos_ignorados_linhas = 0
             linhas_qtd_zero = 0
 
             for r in rows:
@@ -479,10 +484,18 @@ def importar_planilha(
                         v = float(rec.get('valor_total') or 0.0)
                     except Exception:
                         v = 0.0
-                    total_bruto += v
-                    if mov_tipo == 'CA':
-                        total_ca += abs(v)
-                        ca_linhas += 1
+                    classe_mov = classificar_movimento(mov_tipo)
+                    if classe_mov == "VENDA":
+                        total_bruto += v
+                    elif classe_mov == "CANCELAMENTO":
+                        total_cancelamentos += abs(v)
+                        cancelamento_linhas += 1
+                    elif classe_mov == "DEVOLUCAO":
+                        total_devolucoes += abs(v)
+                        devolucao_linhas += 1
+                    else:
+                        total_ignorados_movimento += abs(v)
+                        movimentos_ignorados_linhas += 1
 
                     if len(batch) >= batch_size:
                         stmt = _build_stmt(batch, modo, conflict_cols)
@@ -536,9 +549,17 @@ def importar_planilha(
                 "conflict_cols": conflict_cols,
                 "cache": cache_info,
                 "total_bruto": float(total_bruto),
-                "total_ca": float(total_ca),
-                "total_liquido": float(total_bruto - total_ca),
-                "ca_linhas": int(ca_linhas),
+                "total_cancelamentos": float(total_cancelamentos),
+                "total_devolucoes": float(total_devolucoes),
+                "total_ca": float(total_cancelamentos + total_devolucoes),  # compatibilidade com telas antigas
+                "total_movimentos_ignorados": float(total_ignorados_movimento),
+                "total_liquido": float(total_bruto - total_cancelamentos - total_devolucoes),
+                "cancelamento_linhas": int(cancelamento_linhas),
+                "devolucao_linhas": int(devolucao_linhas),
+                "ca_linhas": int(cancelamento_linhas + devolucao_linhas),  # compatibilidade
+                "movimentos_ignorados_linhas": int(movimentos_ignorados_linhas),
+                "movimentos_venda_considerados": list(MOVIMENTOS_VENDA),
+                "movimentos_negativos_considerados": list(MOVIMENTOS_NEGATIVOS),
                 "linhas_qtd_zero_ignoradas_calculo": int(linhas_qtd_zero),
                 "reprocessar": bool(reprocessar_competencia),
                 "reprocessamento": reprocess_info,
@@ -568,8 +589,12 @@ def importar_planilha(
     atualizadas = 0
     affected_periods = set()
     total_bruto = 0.0
-    total_ca = 0.0
-    ca_linhas = 0
+    total_cancelamentos = 0.0
+    total_devolucoes = 0.0
+    total_ignorados_movimento = 0.0
+    cancelamento_linhas = 0
+    devolucao_linhas = 0
+    movimentos_ignorados_linhas = 0
     linhas_qtd_zero = 0
 
     if reprocessar_competencia:
@@ -660,10 +685,18 @@ def importar_planilha(
                         v = float(rec.get('valor_total') or 0.0)
                     except Exception:
                         v = 0.0
-                    total_bruto += v
-                    if mov_tipo == 'CA':
-                        total_ca += abs(v)
-                        ca_linhas += 1
+                    classe_mov = classificar_movimento(mov_tipo)
+                    if classe_mov == "VENDA":
+                        total_bruto += v
+                    elif classe_mov == "CANCELAMENTO":
+                        total_cancelamentos += abs(v)
+                        cancelamento_linhas += 1
+                    elif classe_mov == "DEVOLUCAO":
+                        total_devolucoes += abs(v)
+                        devolucao_linhas += 1
+                    else:
+                        total_ignorados_movimento += abs(v)
+                        movimentos_ignorados_linhas += 1
 
                     if len(records) >= batch_size:
                         stmt = _build_stmt(records, modo, conflict_cols)
@@ -719,9 +752,17 @@ def importar_planilha(
         "conflict_cols": conflict_cols,
         "cache": cache_info,
         "total_bruto": float(total_bruto),
-        "total_ca": float(total_ca),
-        "total_liquido": float(total_bruto - total_ca),
-        "ca_linhas": int(ca_linhas),
+        "total_cancelamentos": float(total_cancelamentos),
+        "total_devolucoes": float(total_devolucoes),
+        "total_ca": float(total_cancelamentos + total_devolucoes),  # compatibilidade com telas antigas
+        "total_movimentos_ignorados": float(total_ignorados_movimento),
+        "total_liquido": float(total_bruto - total_cancelamentos - total_devolucoes),
+        "cancelamento_linhas": int(cancelamento_linhas),
+        "devolucao_linhas": int(devolucao_linhas),
+        "ca_linhas": int(cancelamento_linhas + devolucao_linhas),  # compatibilidade
+        "movimentos_ignorados_linhas": int(movimentos_ignorados_linhas),
+        "movimentos_venda_considerados": list(MOVIMENTOS_VENDA),
+        "movimentos_negativos_considerados": list(MOVIMENTOS_NEGATIVOS),
         "linhas_qtd_zero_ignoradas_calculo": int(linhas_qtd_zero),
         "reprocessar": bool(reprocessar_competencia),
         "reprocessamento": reprocess_info,

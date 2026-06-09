@@ -19,7 +19,7 @@ from flask import (
 from sqlalchemy import func, case
 
 from db import SessionLocal, Venda, Usuario, UsuarioEmp, Emp
-from sv_utils import _periodo_bounds
+from sv_utils import _periodo_bounds, MOVIMENTOS_VENDA, MOVIMENTOS_NEGATIVOS
 
 
 def _meses_referencia(ano: int, mes: int, quantidade: int = 3) -> list[tuple[int, int]]:
@@ -44,13 +44,15 @@ def _qtd_positiva_expr():
 def _signed_valor_expr():
     qtd_ok = _qtd_positiva_expr()
     valor = func.coalesce(Venda.valor_total, 0.0)
-    return case((qtd_ok & Venda.mov_tipo_movto.in_(["DS", "CA"]), -valor), (qtd_ok, valor), else_=0.0)
+    mov = func.upper(func.coalesce(Venda.mov_tipo_movto, ""))
+    return case((qtd_ok & mov.in_(MOVIMENTOS_NEGATIVOS), -valor), (qtd_ok & mov.in_(MOVIMENTOS_VENDA), valor), else_=0.0)
 
 
 def _signed_qtd_expr():
     qtd = func.coalesce(Venda.qtdade_vendida, 0.0)
     qtd_ok = qtd > 0
-    return case((qtd_ok & Venda.mov_tipo_movto.in_(["DS", "CA"]), -qtd), (qtd_ok, qtd), else_=0.0)
+    mov = func.upper(func.coalesce(Venda.mov_tipo_movto, ""))
+    return case((qtd_ok & mov.in_(MOVIMENTOS_NEGATIVOS), -qtd), (qtd_ok & mov.in_(MOVIMENTOS_VENDA), qtd), else_=0.0)
 
 
 
@@ -138,10 +140,10 @@ def _build_emp_dashboard(ano: int, mes: int, emp: str | None) -> Optional[dict]:
                 Venda.emp == emp,
             )
             row = base.with_entities(
-                func.coalesce(func.sum(case((_qtd_positiva_expr() & ~Venda.mov_tipo_movto.in_(["DS", "CA"]), func.coalesce(Venda.valor_total, 0.0)), else_=0.0)), 0.0),
-                func.coalesce(func.sum(case((_qtd_positiva_expr() & Venda.mov_tipo_movto.in_(["DS", "CA"]), func.coalesce(Venda.valor_total, 0.0)), else_=0.0)), 0.0),
+                func.coalesce(func.sum(case((_qtd_positiva_expr() & func.upper(func.coalesce(Venda.mov_tipo_movto, "")).in_(MOVIMENTOS_VENDA), func.coalesce(Venda.valor_total, 0.0)), else_=0.0)), 0.0),
+                func.coalesce(func.sum(case((_qtd_positiva_expr() & func.upper(func.coalesce(Venda.mov_tipo_movto, "")).in_(MOVIMENTOS_NEGATIVOS), func.coalesce(Venda.valor_total, 0.0)), else_=0.0)), 0.0),
                 func.coalesce(func.sum(signed_valor), 0.0),
-                func.coalesce(func.sum(case((_qtd_positiva_expr() & ~Venda.mov_tipo_movto.in_(["DS", "CA"]), func.coalesce(Venda.qtdade_vendida, 0.0)), else_=0.0)), 0.0),
+                func.coalesce(func.sum(case((_qtd_positiva_expr() & func.upper(func.coalesce(Venda.mov_tipo_movto, "")).in_(MOVIMENTOS_VENDA), func.coalesce(Venda.qtdade_vendida, 0.0)), else_=0.0)), 0.0),
                 func.coalesce(func.count(func.distinct(Venda.cliente_id_norm)), 0),
             ).first()
             bruto = float(row[0] or 0.0)
@@ -517,7 +519,7 @@ def register_dashboard_routes(
                     .filter(Venda.vendedor == vendedor_alvo)
                     .filter(Venda.movimento >= start)
                     .filter(Venda.movimento < end)
-                    .filter(Venda.mov_tipo_movto.in_(["DS", "CA"]))
+                    .filter(func.upper(func.coalesce(Venda.mov_tipo_movto, "")).in_(MOVIMENTOS_NEGATIVOS))
                 )
                 if emp_scope:
                     q = q.filter(Venda.emp == str(emp_scope))

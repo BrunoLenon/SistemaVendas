@@ -7,8 +7,8 @@ Regras contempladas:
 - Marcas: mede a participacao de um grupo de marcas sobre a venda total do vendedor.
 
 Movimentos:
-- OA, VV e SV = venda positiva.
-- DS e CA = devolucao/cancelamento, entram como negativo.
+- OA, OV, SV, VA e VV = venda positiva.
+- CA = cancelamento e DS = devolucao; ambos entram como negativo.
 - Outros movimentos sao ignorados para manter o pagamento auditavel.
 """
 
@@ -22,7 +22,7 @@ from typing import Iterable
 
 from sqlalchemy import text
 
-from sv_utils import _emp_norm
+from sv_utils import _emp_norm, MOVIMENTOS_VENDA, MOVIMENTOS_NEGATIVOS
 from db import (
     Emp,
     MetaBaseManual,
@@ -36,8 +36,8 @@ from db import (
     UsuarioEmp,
 )
 
-POSITIVE_MOV_TYPES = ("OA", "VV", "SV")
-NEGATIVE_MOV_TYPES = ("DS", "CA")
+POSITIVE_MOV_TYPES = MOVIMENTOS_VENDA
+NEGATIVE_MOV_TYPES = MOVIMENTOS_NEGATIVOS
 META_GERENTE_ALIAS = "__GERENTE__"  # mantido por compatibilidade com telas antigas
 META_GERENTE_LABEL = "GERENTE"
 

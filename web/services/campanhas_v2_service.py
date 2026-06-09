@@ -6,11 +6,16 @@ from datetime import date, datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy import and_, func, or_
+from sv_utils import MOVIMENTOS_VENDA
 
 from db import SessionLocal, Venda, CampanhaV2Master, CampanhaV2Resultado, CampanhaV2Audit
 
 
 ALLOWED_STATUS = {"PENDENTE", "A_PAGAR", "PAGO"}
+
+
+def _movimento_positivo_expr():
+    return func.upper(func.coalesce(Venda.mov_tipo_movto, "")).in_(MOVIMENTOS_VENDA)
 
 
 @dataclass
@@ -333,7 +338,7 @@ def _base_vendas_query(session, ano: int, mes: int):
     return (
         session.query(Venda)
         .filter(
-            Venda.mov_tipo_movto == "OA",
+            _movimento_positivo_expr(),
             Venda.ano == ano,
             Venda.mes == mes,
         )
@@ -357,7 +362,7 @@ def _calc_ranking_valor(session, campanha: CampanhaV2Master, ano: int, mes: int,
         Venda.vendedor.label("vendedor"),
         func.coalesce(func.sum(Venda.valor_total), 0).label("total"),
     ).filter(
-        Venda.mov_tipo_movto == "OA",
+        _movimento_positivo_expr(),
         func.coalesce(Venda.qtdade_vendida, 0.0) > 0,
         Venda.ano == ano,
         Venda.mes == mes,
@@ -371,7 +376,7 @@ def _calc_ranking_valor(session, campanha: CampanhaV2Master, ano: int, mes: int,
             Venda.vendedor.label("vendedor"),
             func.coalesce(func.sum(Venda.valor_total), 0).label("total"),
         ).filter(
-            Venda.mov_tipo_movto == "OA",
+            _movimento_positivo_expr(),
             Venda.ano == ano,
             Venda.mes == mes,
         )
@@ -448,7 +453,7 @@ def _calc_meta_percentual(session, campanha: CampanhaV2Master, ano: int, mes: in
         Venda.vendedor.label("vendedor"),
         func.coalesce(func.sum(Venda.valor_total), 0).label("total"),
     ).filter(
-        Venda.mov_tipo_movto == "OA",
+        _movimento_positivo_expr(),
         func.coalesce(Venda.qtdade_vendida, 0.0) > 0,
         Venda.ano == ano,
         Venda.mes == mes,
@@ -470,7 +475,7 @@ def _calc_meta_percentual(session, campanha: CampanhaV2Master, ano: int, mes: in
         Venda.vendedor.label("vendedor"),
         func.coalesce(func.sum(Venda.valor_total), 0).label("total"),
     ).filter(
-        Venda.mov_tipo_movto == "OA",
+        _movimento_positivo_expr(),
         Venda.ano == ra,
         Venda.mes == rm,
     )
@@ -528,7 +533,7 @@ def _calc_meta_absoluta(session, campanha: CampanhaV2Master, ano: int, mes: int,
         Venda.vendedor.label("vendedor"),
         func.coalesce(func.sum(Venda.valor_total), 0).label("total"),
     ).filter(
-        Venda.mov_tipo_movto == "OA",
+        _movimento_positivo_expr(),
         func.coalesce(Venda.qtdade_vendida, 0.0) > 0,
         Venda.ano == ano,
         Venda.mes == mes,
@@ -575,7 +580,7 @@ def _calc_mix(session, campanha: CampanhaV2Master, ano: int, mes: int, regras: D
         Venda.vendedor.label("vendedor"),
         func.count(func.distinct(Venda.mestre)).label("mix"),
     ).filter(
-        Venda.mov_tipo_movto == "OA",
+        _movimento_positivo_expr(),
         func.coalesce(Venda.qtdade_vendida, 0.0) > 0,
         Venda.ano == ano,
         Venda.mes == mes,
@@ -630,7 +635,7 @@ def _calc_acumulativa(session, campanha: CampanhaV2Master, ano: int, mes: int, r
         Venda.vendedor.label("vendedor"),
         func.coalesce(func.sum(Venda.valor_total), 0).label("total"),
     ).filter(
-        Venda.mov_tipo_movto == "OA",
+        _movimento_positivo_expr(),
         or_(*[and_(Venda.ano == aa, Venda.mes == mm) for aa, mm in comps]),
     )
 

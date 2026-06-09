@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Callable
 
 from flask import request, render_template, send_file
+from sv_utils import MOVIMENTOS_VENDA, MOVIMENTOS_NEGATIVOS
 
 
 def register_operacoes_vendas_produtos_routes(
@@ -142,9 +143,10 @@ def register_operacoes_vendas_produtos_routes(
                     conds.append(campo_marca.like(mn + "%"))
 
                 qtd_base = func.coalesce(Venda.qtdade_vendida, 0.0)
+                mov = func.upper(func.coalesce(Venda.mov_tipo_movto, ""))
                 signed_qty = case(
-                    ((qtd_base > 0) & Venda.mov_tipo_movto.in_(["DS", "CA"]), -qtd_base),
-                    (qtd_base > 0, qtd_base),
+                    ((qtd_base > 0) & mov.in_(MOVIMENTOS_NEGATIVOS), -qtd_base),
+                    ((qtd_base > 0) & mov.in_(MOVIMENTOS_VENDA), qtd_base),
                     else_=0.0,
                 )
                 q_year = func.extract("year", Venda.movimento).label("ano")

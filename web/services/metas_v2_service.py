@@ -8,6 +8,7 @@ from sqlalchemy import text, func
 from sqlalchemy.orm import Session
 
 from db import Venda, ItemParado, VendasResumoPeriodo
+from sv_utils import MOVIMENTOS_VENDA, MOVIMENTOS_NEGATIVOS
 
 # =========================
 # Helpers
@@ -286,7 +287,7 @@ def calcular_e_snapshot(
                 .filter(Venda.vendedor == vendedor)
                 .filter(Venda.movimento >= start)
                 .filter(Venda.movimento < end)
-                .filter(Venda.mov_tipo_movto == "OA")
+                .filter(func.upper(func.coalesce(Venda.mov_tipo_movto, "")).in_(MOVIMENTOS_VENDA))
                 .scalar()
                 or 0.0
             )
@@ -296,7 +297,7 @@ def calcular_e_snapshot(
                 .filter(Venda.vendedor == vendedor)
                 .filter(Venda.movimento >= start)
                 .filter(Venda.movimento < end)
-                .filter(Venda.mov_tipo_movto.in_(["DS", "CA"]))
+                .filter(func.upper(func.coalesce(Venda.mov_tipo_movto, "")).in_(MOVIMENTOS_NEGATIVOS))
                 .scalar()
                 or 0.0
             )
@@ -312,7 +313,7 @@ def calcular_e_snapshot(
                         .filter(Venda.vendedor == vendedor)
                         .filter(Venda.movimento >= start)
                         .filter(Venda.movimento < end)
-                        .filter(Venda.mov_tipo_movto == "OA")
+                        .filter(func.upper(func.coalesce(Venda.mov_tipo_movto, "")).in_(MOVIMENTOS_VENDA))
                         .filter(func.coalesce(Venda.qtdade_vendida, 0.0) > 0)
                         .filter(Venda.mestre.in_(codigos))
                         .scalar()
@@ -339,7 +340,7 @@ def calcular_e_snapshot(
                         .filter(Venda.vendedor == vendedor)
                         .filter(Venda.movimento >= start)
                         .filter(Venda.movimento < end)
-                        .filter(Venda.mov_tipo_movto == "OA")
+                        .filter(func.upper(func.coalesce(Venda.mov_tipo_movto, "")).in_(MOVIMENTOS_VENDA))
                         .filter(func.coalesce(Venda.qtdade_vendida, 0.0) > 0)
                         .scalar()
                         or 0

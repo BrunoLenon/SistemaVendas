@@ -10,6 +10,38 @@ from datetime import date, datetime
 
 import pandas as pd
 
+# Regras oficiais de movimento para todos os cálculos comerciais.
+# Positivos entram como venda/faturamento; negativos abatem o líquido;
+# qualquer outro movimento deve ser importado para rastreabilidade, mas ignorado nos cálculos.
+MOVIMENTOS_VENDA = ("OA", "OV", "SV", "VA", "VV")
+MOVIMENTOS_CANCELAMENTO = ("CA",)
+MOVIMENTOS_DEVOLUCAO = ("DS",)
+MOVIMENTOS_NEGATIVOS = MOVIMENTOS_CANCELAMENTO + MOVIMENTOS_DEVOLUCAO
+MOVIMENTOS_CALCULO = MOVIMENTOS_VENDA + MOVIMENTOS_NEGATIVOS
+
+
+def normalizar_movimento(value: object) -> str:
+    return str(value or "").strip().upper()
+
+
+def classificar_movimento(value: object) -> str:
+    mov = normalizar_movimento(value)
+    if mov in MOVIMENTOS_VENDA:
+        return "VENDA"
+    if mov in MOVIMENTOS_CANCELAMENTO:
+        return "CANCELAMENTO"
+    if mov in MOVIMENTOS_DEVOLUCAO:
+        return "DEVOLUCAO"
+    return "IGNORADO"
+
+
+def is_movimento_venda(value: object) -> bool:
+    return normalizar_movimento(value) in MOVIMENTOS_VENDA
+
+
+def is_movimento_negativo(value: object) -> bool:
+    return normalizar_movimento(value) in MOVIMENTOS_NEGATIVOS
+
 
 def _obj_get(obj, key, default=None):
     """Acesso seguro estilo dict: tenta dict, RowMapping, atributos e chaves."""

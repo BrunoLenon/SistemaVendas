@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Any, Iterable
 
 from sqlalchemy import func, and_, or_
+from sv_utils import MOVIMENTOS_VENDA
 
 from db import (
     CampanhaMasterV2,
@@ -14,6 +15,14 @@ from db import (
 
 
 GLOBAL_EMP_TOKEN = "__GLOBAL__"
+
+
+def _filtro_movimento_positivo(mov_tipo_especifico: str | None = None):
+    mov = func.upper(func.coalesce(Venda.mov_tipo_movto, ""))
+    mov_tipo = str(mov_tipo_especifico or "").strip().upper()
+    if mov_tipo:
+        return mov == mov_tipo
+    return mov.in_(MOVIMENTOS_VENDA)
 
 
 def _safe_json_load(s: str | None, default: Any) -> Any:
@@ -308,7 +317,7 @@ def _upsert_resultados(db, c: CampanhaMasterV2, ano: int, mes: int, rows: list[C
 def _calc_ranking_valor(db, c: CampanhaMasterV2, ano: int, mes: int, emps_calc: list[str]) -> list[CampanhaV2ResultRow]:
     regras = _safe_json_load(c.regras_json, {})
     premiacao = _safe_json_load(c.premiacao_json, {})
-    mov_tipo = (regras.get("mov_tipo") or "OA").strip().upper()
+    mov_tipo = (regras.get("mov_tipo") or "").strip().upper()
     marca_alvo = (c.marca_alvo or regras.get("marca") or "").strip()
     escopo = (c.escopo or "EMP").strip().upper()
 
@@ -319,7 +328,7 @@ def _calc_ranking_valor(db, c: CampanhaMasterV2, ano: int, mes: int, emps_calc: 
             func.sum(Venda.valor_total).label("total"),
         )
         .filter(Venda.ano == int(ano), Venda.mes == int(mes))
-        .filter(Venda.mov_tipo_movto == mov_tipo)
+        .filter(_filtro_movimento_positivo(mov_tipo))
     )
     if emps_calc:
         q = q.filter(Venda.emp.in_([str(e) for e in emps_calc]))
@@ -483,7 +492,7 @@ def _calc_mix_mestre(db, c: CampanhaMasterV2, ano: int, mes: int, emps_calc: lis
             func.count(func.distinct(Venda.mestre)).label("mix"),
         )
         .filter(Venda.ano == int(ano), Venda.mes == int(mes))
-        .filter(Venda.mov_tipo_movto == "OA")
+        .filter(_filtro_movimento_positivo())
         .filter(func.coalesce(Venda.qtdade_vendida, 0.0) > 0)
     )
     if emps_calc:
@@ -532,7 +541,7 @@ def _calc_acumulativa(db, c: CampanhaMasterV2, ano: int, mes: int, emps_calc: li
             Venda.vendedor,
             func.sum(Venda.valor_total).label("total"),
         )
-        .filter(Venda.mov_tipo_movto == "OA")
+        .filter(_filtro_movimento_positivo())
         .filter(func.coalesce(Venda.qtdade_vendida, 0.0) > 0)
     )
     if emps_calc:
@@ -572,7 +581,7 @@ def _sum_por_emp_vend(db, ano: int, mes: int, emps_calc: list[str]) -> dict[tupl
             func.sum(Venda.valor_total).label("total"),
         )
         .filter(Venda.ano == int(ano), Venda.mes == int(mes))
-        .filter(Venda.mov_tipo_movto == "OA")
+        .filter(_filtro_movimento_positivo())
         .filter(func.coalesce(Venda.qtdade_vendida, 0.0) > 0)
     )
     if emps_calc:

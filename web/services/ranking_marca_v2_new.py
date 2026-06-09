@@ -21,6 +21,7 @@ from typing import Any, Iterable
 
 from sqlalchemy import func, and_, or_, cast, case
 from sqlalchemy.dialects.postgresql import JSONB
+from sv_utils import MOVIMENTOS_VENDA, MOVIMENTOS_NEGATIVOS
 
 from db import (
     SessionLocal,
@@ -433,8 +434,8 @@ def recalc_ranking_marca(
             Venda.emp.label("emp"),
             func.sum(
                 case(
-                    ((func.coalesce(Venda.qtdade_vendida, 0.0) > 0) & (func.upper(func.trim(Venda.mov_tipo_movto)) == "CA"), -func.abs(func.coalesce(Venda.valor_total, 0.0))),
-                    (func.coalesce(Venda.qtdade_vendida, 0.0) > 0, func.coalesce(Venda.valor_total, 0.0)),
+                    ((func.coalesce(Venda.qtdade_vendida, 0.0) > 0) & func.upper(func.coalesce(Venda.mov_tipo_movto, "")).in_(MOVIMENTOS_NEGATIVOS), -func.abs(func.coalesce(Venda.valor_total, 0.0))),
+                    ((func.coalesce(Venda.qtdade_vendida, 0.0) > 0) & func.upper(func.coalesce(Venda.mov_tipo_movto, "")).in_(MOVIMENTOS_VENDA), func.coalesce(Venda.valor_total, 0.0)),
                     else_=0.0,
                 )
             ).label("total"),

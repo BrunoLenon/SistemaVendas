@@ -34,7 +34,8 @@ import threading
 import time
 from typing import Any, Callable
 
-from sqlalchemy import or_
+from sqlalchemy import func, or_
+from sv_utils import MOVIMENTOS_VENDA
 
 from db import (
     SessionLocal,
@@ -78,7 +79,7 @@ def _calc_qtd_por_vendedor_para_combo_item(
         Venda.emp == emp,
         Venda.movimento >= periodo_ini,
         Venda.movimento <= periodo_fim,
-        ~Venda.mov_tipo_movto.in_(["DS", "CA"]),
+        func.upper(func.coalesce(Venda.mov_tipo_movto, "")).in_(MOVIMENTOS_VENDA),
         func.coalesce(Venda.qtdade_vendida, 0.0) > 0,
     ]
 
@@ -309,7 +310,7 @@ def build_relatorio_campanhas_context(
                                 Venda.emp == emp,
                                 Venda.movimento >= periodo_ini,
                                 Venda.movimento <= periodo_fim,
-                                ~Venda.mov_tipo_movto.in_(["DS", "CA"]),
+                                func.upper(func.coalesce(Venda.mov_tipo_movto, "")).in_(MOVIMENTOS_VENDA),
                                 func.coalesce(Venda.qtdade_vendida, 0.0) > 0,
                                 Venda.mestre == codigo,
                                 Venda.vendedor.in_(vendedores),

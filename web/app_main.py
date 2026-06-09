@@ -30,6 +30,7 @@ from decimal import Decimal, ROUND_HALF_UP
 import pandas as pd
 import requests
 from sqlalchemy import and_, or_, func, case, cast, String, text, extract
+from sv_utils import MOVIMENTOS_VENDA, MOVIMENTOS_NEGATIVOS
 # ---------------------------------------------------------------------------
 # Helpers de compatibilidade para "rows" que podem vir como dict, SQLAlchemy Row,
 # dataclass (ex.: UnifiedRow), ou objetos simples.
@@ -1727,12 +1728,14 @@ def _ano_passado_valor_mix(vendedor: str, ano: int, mes: int, emp_scope: str | N
             cnt = int(q_cnt.scalar() or 0)
 
             if cnt > 0:
+                mov = func.upper(func.coalesce(Venda.mov_tipo_movto, ""))
                 signed = case(
-                    (Venda.mov_tipo_movto.in_(['DS', 'CA']), -Venda.valor_total),
-                    else_=Venda.valor_total,
+                    (mov.in_(MOVIMENTOS_NEGATIVOS), -func.coalesce(Venda.valor_total, 0.0)),
+                    (mov.in_(MOVIMENTOS_VENDA), func.coalesce(Venda.valor_total, 0.0)),
+                    else_=0.0,
                 )
                 liquido = func.coalesce(func.sum(signed), 0.0)
-                mix = func.count(func.distinct(case((~Venda.mov_tipo_movto.in_(['DS', 'CA']), Venda.mestre), else_=None)))
+                mix = func.count(func.distinct(case((func.upper(func.coalesce(Venda.mov_tipo_movto, "")).in_(MOVIMENTOS_VENDA), Venda.mestre), else_=None)))
 
                 row = (
                     db.query(liquido, mix)
@@ -1828,7 +1831,8 @@ def _dados_from_cache(vendedor_alvo, mes, ano, emp_scope):
                     else:
                         q = q.filter(Venda.emp == str(emp_scope))
 
-                signed = case((Venda.mov_tipo_movto.in_(['DS','CA']), -Venda.valor_total), else_=Venda.valor_total)
+                mov = func.upper(func.coalesce(Venda.mov_tipo_movto, ""))
+                signed = case((mov.in_(MOVIMENTOS_NEGATIVOS), -func.coalesce(Venda.valor_total, 0.0)), (mov.in_(MOVIMENTOS_VENDA), func.coalesce(Venda.valor_total, 0.0)), else_=0.0)
                 valor_mes_anterior = float(q.filter(Venda.movimento >= s_ant, Venda.movimento < e_ant)
                                           .with_entities(func.coalesce(func.sum(signed), 0.0))
                                           .scalar() or 0.0)
@@ -1915,11 +1919,12 @@ def _dados_ao_vivo(vendedor: str, mes: int, ano: int, emp_scope: str | list[str]
                 base = base.filter(Venda.emp == str(emp_scope))
         def sums(s, e):
             q = base.filter(Venda.movimento >= s, Venda.movimento < e)
-            signed = case((Venda.mov_tipo_movto.in_(['DS','CA']), -Venda.valor_total), else_=Venda.valor_total)
-            bruto = func.coalesce(func.sum(case((~Venda.mov_tipo_movto.in_(['DS','CA']), Venda.valor_total), else_=0.0)), 0.0)
-            devol = func.coalesce(func.sum(case((Venda.mov_tipo_movto.in_(['DS','CA']), Venda.valor_total), else_=0.0)), 0.0)
+            mov = func.upper(func.coalesce(Venda.mov_tipo_movto, ""))
+            signed = case((mov.in_(MOVIMENTOS_NEGATIVOS), -func.coalesce(Venda.valor_total, 0.0)), (mov.in_(MOVIMENTOS_VENDA), func.coalesce(Venda.valor_total, 0.0)), else_=0.0)
+            bruto = func.coalesce(func.sum(case((func.upper(func.coalesce(Venda.mov_tipo_movto, "")).in_(MOVIMENTOS_VENDA), Venda.valor_total), else_=0.0)), 0.0)
+            devol = func.coalesce(func.sum(case((func.upper(func.coalesce(Venda.mov_tipo_movto, "")).in_(MOVIMENTOS_NEGATIVOS), Venda.valor_total), else_=0.0)), 0.0)
             liquido = func.coalesce(func.sum(signed), 0.0)
-            mix = func.count(func.distinct(case((~Venda.mov_tipo_movto.in_(['DS','CA']), Venda.mestre), else_=None)))
+            mix = func.count(func.distinct(case((func.upper(func.coalesce(Venda.mov_tipo_movto, "")).in_(MOVIMENTOS_VENDA), Venda.mestre), else_=None)))
 
             row = q.with_entities(bruto, devol, liquido, mix).first()
             return float(row[0] or 0.0), float(row[1] or 0.0), float(row[2] or 0.0), int(row[3] or 0)
@@ -1939,7 +1944,8 @@ def _dados_ao_vivo(vendedor: str, mes: int, ano: int, emp_scope: str | list[str]
             emp_scope=emp_scope,
         )
         # ranking por marca (líquido)
-        signed = case((Venda.mov_tipo_movto.in_(['DS','CA']), -Venda.valor_total), else_=Venda.valor_total)
+        mov = func.upper(func.coalesce(Venda.mov_tipo_movto, ""))
+        signed = case((mov.in_(MOVIMENTOS_NEGATIVOS), -func.coalesce(Venda.valor_total, 0.0)), (mov.in_(MOVIMENTOS_VENDA), func.coalesce(Venda.valor_total, 0.0)), else_=0.0)
         q_rank = base.filter(Venda.movimento >= start, Venda.movimento < end)\
             .with_entities(Venda.marca, func.coalesce(func.sum(signed), 0.0))\
             .group_by(Venda.marca)
@@ -2052,7 +2058,8 @@ def _dados_admin_geral(mes: int, ano: int, emp_scope: list[str] | None = None):
     start = date(ano, mes, 1)
     end = date(ano + 1, 1, 1) if mes == 12 else date(ano, mes + 1, 1)
 
-    signed = case((Venda.mov_tipo_movto.in_(['DS','CA']), -Venda.valor_total), else_=Venda.valor_total)
+    mov = func.upper(func.coalesce(Venda.mov_tipo_movto, ""))
+    signed = case((mov.in_(MOVIMENTOS_NEGATIVOS), -func.coalesce(Venda.valor_total, 0.0)), (mov.in_(MOVIMENTOS_VENDA), func.coalesce(Venda.valor_total, 0.0)), else_=0.0)
 
     with SessionLocal() as db:
         base = db.query(Venda).filter(Venda.movimento >= start, Venda.movimento < end)
@@ -2061,8 +2068,8 @@ def _dados_admin_geral(mes: int, ano: int, emp_scope: list[str] | None = None):
             if emps:
                 base = base.filter(Venda.emp.in_(emps))
 
-        bruto_expr = func.coalesce(func.sum(case((~Venda.mov_tipo_movto.in_(['DS','CA']), Venda.valor_total), else_=0.0)), 0.0)
-        devol_expr = func.coalesce(func.sum(case((Venda.mov_tipo_movto.in_(['DS','CA']), Venda.valor_total), else_=0.0)), 0.0)
+        bruto_expr = func.coalesce(func.sum(case((func.upper(func.coalesce(Venda.mov_tipo_movto, "")).in_(MOVIMENTOS_VENDA), Venda.valor_total), else_=0.0)), 0.0)
+        devol_expr = func.coalesce(func.sum(case((func.upper(func.coalesce(Venda.mov_tipo_movto, "")).in_(MOVIMENTOS_NEGATIVOS), Venda.valor_total), else_=0.0)), 0.0)
         liquido_expr = func.coalesce(func.sum(signed), 0.0)
 
         total_row = base.with_entities(bruto_expr, devol_expr, liquido_expr).first()
@@ -2111,7 +2118,8 @@ def _periodo_prev(ano: int, mes: int) -> tuple[int, int]:
     return int(ano), int(mes) - 1
 
 def _signed_expr():
-    return case((Venda.mov_tipo_movto.in_(["DS", "CA"]), -Venda.valor_total), else_=Venda.valor_total)
+    mov = func.upper(func.coalesce(Venda.mov_tipo_movto, ""))
+    return case((mov.in_(MOVIMENTOS_NEGATIVOS), -func.coalesce(Venda.valor_total, 0.0)), (mov.in_(MOVIMENTOS_VENDA), func.coalesce(Venda.valor_total, 0.0)), else_=0.0)
 
 def _clientes_destaque(vendedor: str, ano: int, mes: int, emp_scope: str | None, topn: int = 5) -> dict:
     """Top clientes por crescimento/queda vs mês anterior (ΔR$ e Δ%)."""
@@ -2426,7 +2434,7 @@ def devolucoes():
                 .filter(Venda.vendedor == vendedor_alvo)
                 .filter(Venda.movimento >= start)
                 .filter(Venda.movimento < end)
-                .filter(Venda.mov_tipo_movto.in_(['DS','CA']))
+                .filter(func.upper(func.coalesce(Venda.mov_tipo_movto, "")).in_(MOVIMENTOS_NEGATIVOS))
             )
             if emp_scope:
                 q = q.filter(Venda.emp == str(emp_scope))
@@ -2600,7 +2608,7 @@ def itens_parados():
                     .filter(Venda.emp.in_(emp_scopes))
                     .filter(Venda.movimento >= di)
                     .filter(Venda.movimento <= df)
-                    .filter(Venda.mov_tipo_movto.in_(["OA"]))  # vendas (ajuste aqui se você quiser somar DS/CA)
+                    .filter(func.upper(func.coalesce(Venda.mov_tipo_movto, "")).in_(MOVIMENTOS_VENDA))  # vendas (ajuste aqui se você quiser somar DS/CA)
                     .filter(Venda.mestre.in_(codigos))
                 )
                 if vendedor_alvo:
@@ -2782,7 +2790,7 @@ def itens_parados_pdf():
                     .filter(Venda.emp.in_(emp_scopes))
                     .filter(Venda.movimento >= di)
                     .filter(Venda.movimento <= df)
-                    .filter(Venda.mov_tipo_movto.in_(["OA"]))
+                    .filter(func.upper(func.coalesce(Venda.mov_tipo_movto, "")).in_(MOVIMENTOS_VENDA))
                     .filter(Venda.mestre.in_(codigos))
                 )
                 if vendedor_alvo:
@@ -3609,7 +3617,7 @@ def relatorio_cidades_clientes():
 
         # Top clientes por EMP (por valor no período)
         signed_val = case(
-            (Venda.mov_tipo_movto.in_(["DS", "CA"]), -Venda.valor_total),
+            (func.upper(func.coalesce(Venda.mov_tipo_movto, "")).in_(MOVIMENTOS_NEGATIVOS), -Venda.valor_total),
             else_=Venda.valor_total,
         )
 
@@ -3761,7 +3769,7 @@ def relatorio_cidade_clientes_api():
     fim = date(int(ano) + 1, 1, 1) if int(mes) == 12 else date(int(ano), int(mes) + 1, 1)
 
     signed_val = case(
-        (Venda.mov_tipo_movto.in_(["DS", "CA"]), -Venda.valor_total),
+        (func.upper(func.coalesce(Venda.mov_tipo_movto, "")).in_(MOVIMENTOS_NEGATIVOS), -Venda.valor_total),
         else_=Venda.valor_total,
     )
 
@@ -3865,7 +3873,7 @@ def relatorio_cliente_marcas_api():
             base = base.filter(func.upper(Venda.vendedor) == vendedor)
 
         signed_val = case(
-            (Venda.mov_tipo_movto.in_(["DS", "CA"]), -Venda.valor_total),
+            (func.upper(func.coalesce(Venda.mov_tipo_movto, "")).in_(MOVIMENTOS_NEGATIVOS), -Venda.valor_total),
             else_=Venda.valor_total,
         )
 
@@ -3989,11 +3997,11 @@ def relatorio_cliente_marca_itens_api():
             base = base.filter(Venda.marca == marca)
 
         signed_val = case(
-            (Venda.mov_tipo_movto.in_(["DS", "CA"]), -Venda.valor_total),
+            (func.upper(func.coalesce(Venda.mov_tipo_movto, "")).in_(MOVIMENTOS_NEGATIVOS), -Venda.valor_total),
             else_=Venda.valor_total,
         )
         signed_qtd = case(
-            (Venda.mov_tipo_movto.in_(["DS", "CA"]), -Venda.qtdade_vendida),
+            (func.upper(func.coalesce(Venda.mov_tipo_movto, "")).in_(MOVIMENTOS_NEGATIVOS), -Venda.qtdade_vendida),
             else_=Venda.qtdade_vendida,
         )
 
@@ -4096,7 +4104,7 @@ def relatorio_cliente_itens_api():
             base = base.filter(func.upper(Venda.vendedor) == vendedor)
 
         signed_val = case(
-            (Venda.mov_tipo_movto.in_(["DS", "CA"]), -Venda.valor_total),
+            (func.upper(func.coalesce(Venda.mov_tipo_movto, "")).in_(MOVIMENTOS_NEGATIVOS), -Venda.valor_total),
             else_=Venda.valor_total,
         )
 
@@ -4952,7 +4960,7 @@ def admin_itens_parados():
                         .filter(Venda.emp.in_(emps))
                         .filter(Venda.movimento >= di)
                         .filter(Venda.movimento <= df)
-                        .filter(Venda.mov_tipo_movto.in_(["OA"]))
+                        .filter(func.upper(func.coalesce(Venda.mov_tipo_movto, "")).in_(MOVIMENTOS_VENDA))
                         .filter(Venda.mestre.in_(codigos))
                         .group_by(Venda.emp, Venda.vendedor, Venda.mestre)
                     )
@@ -7193,11 +7201,11 @@ def operacoes_vendas_produto():
                 conds.append(campo_marca.like(mn + "%"))
 
             signed_qty = case(
-                (Venda.mov_tipo_movto.in_(["DS", "CA"]), -func.coalesce(Venda.qtdade_vendida, 0.0)),
+                (func.upper(func.coalesce(Venda.mov_tipo_movto, "")).in_(MOVIMENTOS_NEGATIVOS), -func.coalesce(Venda.qtdade_vendida, 0.0)),
                 else_=func.coalesce(Venda.qtdade_vendida, 0.0),
             )
             signed_val = case(
-                (Venda.mov_tipo_movto.in_(["DS", "CA"]), -func.coalesce(Venda.valor_total, 0.0)),
+                (func.upper(func.coalesce(Venda.mov_tipo_movto, "")).in_(MOVIMENTOS_NEGATIVOS), -func.coalesce(Venda.valor_total, 0.0)),
                 else_=func.coalesce(Venda.valor_total, 0.0),
             )
             q_year = func.extract("year", Venda.movimento).label("ano")

@@ -13,7 +13,7 @@ from typing import Callable
 
 from sqlalchemy import and_, or_, func, cast, String
 
-from sv_utils import _periodo_bounds
+from sv_utils import _periodo_bounds, MOVIMENTOS_VENDA
 from db import SessionLocal, CampanhaQtd, CampanhaQtdResultado, Venda, Usuario, UsuarioEmp
 from services.campanhas_qtd_gate import calcular_faturamento_emp_periodo, aplicar_trava_faturamento_emp
 
@@ -152,7 +152,7 @@ def _upsert_resultado(
         Venda.emp == emp,
         Venda.movimento >= periodo_ini,
         Venda.movimento <= periodo_fim,
-        ~Venda.mov_tipo_movto.in_(["DS", "CA"]),
+        func.upper(func.coalesce(Venda.mov_tipo_movto, "")).in_(MOVIMENTOS_VENDA),
         func.coalesce(Venda.qtdade_vendida, 0.0) > 0,
         cond_prefix,
     ]
@@ -300,7 +300,7 @@ def _calc_resultado_all_vendedores(
         Venda.emp == emp,
         Venda.movimento >= periodo_ini,
         Venda.movimento <= periodo_fim,
-        ~Venda.mov_tipo_movto.in_(["DS", "CA"]),
+        func.upper(func.coalesce(Venda.mov_tipo_movto, "")).in_(MOVIMENTOS_VENDA),
         func.coalesce(Venda.qtdade_vendida, 0.0) > 0,
         cond_prefix,
     ]
@@ -418,7 +418,7 @@ def _calc_vendas_por_vendedor_para_campanha(db, emp: str, campanha: CampanhaQtd,
         Venda.emp == emp,
         Venda.movimento >= periodo_ini,
         Venda.movimento <= periodo_fim,
-        ~Venda.mov_tipo_movto.in_(["DS", "CA"]),
+        func.upper(func.coalesce(Venda.mov_tipo_movto, "")).in_(MOVIMENTOS_VENDA),
         func.coalesce(Venda.qtdade_vendida, 0.0) > 0,
         cond_prefix,
     ]

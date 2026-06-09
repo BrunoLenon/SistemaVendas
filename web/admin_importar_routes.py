@@ -66,14 +66,24 @@ def register_admin_importar_routes(
 
             apagadas = int(resumo.get("linhas_reprocessadas_apagadas") or 0)
             recortes = int((resumo.get("reprocessamento") or {}).get("recortes") or 0)
+            total_bruto = float(resumo.get("total_bruto") or 0.0)
+            total_cancelamentos = float(resumo.get("total_cancelamentos") or 0.0)
+            total_devolucoes = float(resumo.get("total_devolucoes") or 0.0)
+            total_liquido = float(resumo.get("total_liquido") or 0.0)
+            mov_ignorados = int(resumo.get("movimentos_ignorados_linhas") or 0)
             flash(
                 (
                     f"Importação concluída. Válidas: {resumo['validas']} | "
                     f"Inseridas: {resumo['inseridas']} | "
                     f"Ignoradas: {resumo['ignoradas']} | "
                     f"Erros: {resumo['erros_linha']} | "
+                    f"Bruto vendas: R$ {total_bruto:,.2f} | "
+                    f"Cancelamentos: R$ {total_cancelamentos:,.2f} | "
+                    f"Devoluções: R$ {total_devolucoes:,.2f} | "
+                    f"Líquido: R$ {total_liquido:,.2f} | "
+                    f"Mov. fora da regra: {mov_ignorados} | "
                     f"Reprocessamento automático: {recortes} recorte(s), {apagadas} linha(s) substituída(s)"
-                ),
+                ).replace(",", "X").replace(".", ",").replace("X", "."),
                 "success",
             )
 

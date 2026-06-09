@@ -17,6 +17,7 @@ from decimal import Decimal, ROUND_FLOOR, ROUND_HALF_UP
 from typing import Any
 
 from sqlalchemy import String, cast, func, or_
+from sv_utils import MOVIMENTOS_VENDA
 
 from db import (
     SessionLocal,
@@ -151,7 +152,7 @@ def _d(v: Any) -> Decimal:
         return Decimal("0")
 
 
-ITENS_PARADOS_MOV_TIPOS_VENDA = ("OA", "VV", "SV")
+ITENS_PARADOS_MOV_TIPOS_VENDA = MOVIMENTOS_VENDA
 
 
 def _bonus_base_from_pontos(pontos: Decimal, valor_por_ponto: Decimal) -> Decimal:
@@ -406,7 +407,7 @@ def _compute_itens_parados_rows_live(
                     Venda.emp == str(emp),
                     Venda.movimento >= periodo_ini,
                     Venda.movimento <= periodo_fim,
-                    ~Venda.mov_tipo_movto.in_(['DS', 'CA']),
+                    func.upper(func.coalesce(Venda.mov_tipo_movto, "")).in_(MOVIMENTOS_VENDA),
                     func.coalesce(Venda.qtdade_vendida, 0.0) > 0,
                     Venda.mestre == codigo,
                     Venda.vendedor.in_(vendedores),
@@ -1025,7 +1026,7 @@ def build_unified_rows(
                     .filter(Venda.emp == str(emp))
                     .filter(Venda.vendedor.in_(vendedores))
                     .filter(Venda.movimento >= periodo_ini, Venda.movimento <= periodo_fim)
-                    .filter(~Venda.mov_tipo_movto.in_(['DS', 'CA']))
+                    .filter(func.upper(func.coalesce(Venda.mov_tipo_movto, "")).in_(MOVIMENTOS_VENDA))
                     .filter(func.coalesce(Venda.qtdade_vendida, 0.0) > 0)
                     .group_by(Venda.vendedor, Venda.mestre, func.coalesce(Venda.descricao, ''))
                     .all()

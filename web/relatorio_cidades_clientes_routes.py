@@ -15,6 +15,7 @@ from flask import jsonify, render_template, request, session
 from sqlalchemy import case, extract, func, or_, text
 
 from db import SessionLocal, Venda
+from sv_utils import MOVIMENTOS_VENDA, MOVIMENTOS_NEGATIVOS
 
 
 def register_relatorio_cidades_clientes_routes(
@@ -179,9 +180,10 @@ def register_relatorio_cidades_clientes_routes(
 
             # Top clientes por EMP (por valor no período)
             qtd_ok = func.coalesce(Venda.qtdade_vendida, 0.0) > 0
+            mov = func.upper(func.coalesce(Venda.mov_tipo_movto, ""))
             signed_val = case(
-                (qtd_ok & Venda.mov_tipo_movto.in_(["DS", "CA"]), -func.coalesce(Venda.valor_total, 0.0)),
-                (qtd_ok, func.coalesce(Venda.valor_total, 0.0)),
+                (qtd_ok & mov.in_(MOVIMENTOS_NEGATIVOS), -func.coalesce(Venda.valor_total, 0.0)),
+                (qtd_ok & mov.in_(MOVIMENTOS_VENDA), func.coalesce(Venda.valor_total, 0.0)),
                 else_=0.0,
             )
 
@@ -342,9 +344,11 @@ def register_relatorio_cidades_clientes_routes(
         inicio = date(int(ano), int(mes), 1)
         fim = date(int(ano) + 1, 1, 1) if int(mes) == 12 else date(int(ano), int(mes) + 1, 1)
 
+        mov = func.upper(func.coalesce(Venda.mov_tipo_movto, ""))
         signed_val = case(
-            (Venda.mov_tipo_movto.in_(["DS", "CA"]), -Venda.valor_total),
-            else_=Venda.valor_total,
+            (mov.in_(MOVIMENTOS_NEGATIVOS), -func.coalesce(Venda.valor_total, 0.0)),
+            (mov.in_(MOVIMENTOS_VENDA), func.coalesce(Venda.valor_total, 0.0)),
+            else_=0.0,
         )
 
         with SessionLocal() as db:
@@ -451,9 +455,10 @@ def register_relatorio_cidades_clientes_routes(
                 base = base.filter(func.upper(Venda.vendedor) == vendedor)
 
             qtd_ok = func.coalesce(Venda.qtdade_vendida, 0.0) > 0
+            mov = func.upper(func.coalesce(Venda.mov_tipo_movto, ""))
             signed_val = case(
-                (qtd_ok & Venda.mov_tipo_movto.in_(["DS", "CA"]), -func.coalesce(Venda.valor_total, 0.0)),
-                (qtd_ok, func.coalesce(Venda.valor_total, 0.0)),
+                (qtd_ok & mov.in_(MOVIMENTOS_NEGATIVOS), -func.coalesce(Venda.valor_total, 0.0)),
+                (qtd_ok & mov.in_(MOVIMENTOS_VENDA), func.coalesce(Venda.valor_total, 0.0)),
                 else_=0.0,
             )
 
@@ -556,14 +561,15 @@ def register_relatorio_cidades_clientes_routes(
                 base = base.filter(Venda.marca == marca)
 
             qtd_ok = func.coalesce(Venda.qtdade_vendida, 0.0) > 0
+            mov = func.upper(func.coalesce(Venda.mov_tipo_movto, ""))
             signed_val = case(
-                (qtd_ok & Venda.mov_tipo_movto.in_(["DS", "CA"]), -func.coalesce(Venda.valor_total, 0.0)),
-                (qtd_ok, func.coalesce(Venda.valor_total, 0.0)),
+                (qtd_ok & mov.in_(MOVIMENTOS_NEGATIVOS), -func.coalesce(Venda.valor_total, 0.0)),
+                (qtd_ok & mov.in_(MOVIMENTOS_VENDA), func.coalesce(Venda.valor_total, 0.0)),
                 else_=0.0,
             )
             signed_qtd = case(
-                (qtd_ok & Venda.mov_tipo_movto.in_(["DS", "CA"]), -func.coalesce(Venda.qtdade_vendida, 0.0)),
-                (qtd_ok, func.coalesce(Venda.qtdade_vendida, 0.0)),
+                (qtd_ok & mov.in_(MOVIMENTOS_NEGATIVOS), -func.coalesce(Venda.qtdade_vendida, 0.0)),
+                (qtd_ok & mov.in_(MOVIMENTOS_VENDA), func.coalesce(Venda.qtdade_vendida, 0.0)),
                 else_=0.0,
             )
 
@@ -658,14 +664,15 @@ def register_relatorio_cidades_clientes_routes(
                 base = base.filter(func.upper(Venda.vendedor) == vendedor)
 
             qtd_ok = func.coalesce(Venda.qtdade_vendida, 0.0) > 0
+            mov = func.upper(func.coalesce(Venda.mov_tipo_movto, ""))
             signed_val = case(
-                (qtd_ok & Venda.mov_tipo_movto.in_(["DS", "CA"]), -func.coalesce(Venda.valor_total, 0.0)),
-                (qtd_ok, func.coalesce(Venda.valor_total, 0.0)),
+                (qtd_ok & mov.in_(MOVIMENTOS_NEGATIVOS), -func.coalesce(Venda.valor_total, 0.0)),
+                (qtd_ok & mov.in_(MOVIMENTOS_VENDA), func.coalesce(Venda.valor_total, 0.0)),
                 else_=0.0,
             )
             signed_qtd = case(
-                (qtd_ok & Venda.mov_tipo_movto.in_(["DS", "CA"]), -func.coalesce(Venda.qtdade_vendida, 0.0)),
-                (qtd_ok, func.coalesce(Venda.qtdade_vendida, 0.0)),
+                (qtd_ok & mov.in_(MOVIMENTOS_NEGATIVOS), -func.coalesce(Venda.qtdade_vendida, 0.0)),
+                (qtd_ok & mov.in_(MOVIMENTOS_VENDA), func.coalesce(Venda.qtdade_vendida, 0.0)),
                 else_=0.0,
             )
 
