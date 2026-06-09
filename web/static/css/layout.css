@@ -248,3 +248,83 @@ body.sidebar-collapsed .sb-link{
 body.sidebar-collapsed .sb-link::first-letter{
   font-size:18px;
 }
+
+/* =====================================================================
+   Login mobile premium
+   Mostra as logos configuradas em /admin/configuracoes também no celular.
+   Antes elas eram escondidas por media query, deixando a tela mobile sem
+   identidade visual. O desktop continua com a composição em 3 colunas.
+   ===================================================================== */
+@media (max-width: 980px){
+  .sv-auth-body{
+    min-height: 100svh;
+    overflow-x: hidden;
+  }
+
+  .sv-auth-page{
+    min-height: 100svh;
+    align-items: flex-start;
+    justify-content: center;
+    padding: max(18px, env(safe-area-inset-top)) 14px max(18px, env(safe-area-inset-bottom));
+  }
+
+  .sv-auth-grid{
+    width: min(440px, 100%);
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 12px;
+    align-items: stretch;
+  }
+
+  .sv-auth-logo{
+    display: flex !important;
+    min-height: 0 !important;
+    height: auto;
+    padding: 14px 16px;
+    border-radius: 18px;
+  }
+
+  .sv-auth-grid > .sv-auth-logo:first-child{
+    order: 1;
+  }
+
+  .sv-auth-grid > .sv-auth-card{
+    order: 2;
+    width: 100%;
+    padding: 20px;
+    border-radius: 18px;
+  }
+
+  .sv-auth-grid > .sv-auth-logo:last-child{
+    order: 3;
+  }
+
+  .sv-auth-logo-img{
+    width: auto;
+    max-width: min(100%, 320px);
+    max-height: clamp(74px, 20svh, 140px) !important;
+    object-fit: contain;
+  }
+}
+
+@media (max-width: 420px){
+  .sv-auth-page{
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+
+  .sv-auth-grid{
+    gap: 10px;
+  }
+
+  .sv-auth-logo{
+    padding: 12px;
+  }
+
+  .sv-auth-logo-img{
+    max-height: clamp(64px, 17svh, 112px) !important;
+  }
+
+  .sv-auth-card{
+    padding: 18px !important;
+  }
+}
