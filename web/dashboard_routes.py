@@ -16,7 +16,7 @@ from flask import (
     url_for,
 )
 
-from sqlalchemy import func, case
+from sqlalchemy import func, case, cast, String
 
 from db import SessionLocal, Venda, Usuario, UsuarioEmp, Emp
 from sv_utils import _periodo_bounds, MOVIMENTOS_VENDA, MOVIMENTOS_NEGATIVOS
@@ -55,6 +55,47 @@ def _signed_qtd_expr():
     return case((qtd_ok & mov.in_(MOVIMENTOS_NEGATIVOS), -qtd), (qtd_ok & mov.in_(MOVIMENTOS_VENDA), qtd), else_=0.0)
 
 
+def _mix_liquido_mestre_query(db, q) -> int:
+    """Conta MESTREs com saldo líquido de quantidade maior que zero."""
+    por_produto = (
+        q.with_entities(
+            func.trim(cast(Venda.mestre, String)).label("mestre"),
+            func.coalesce(func.sum(_signed_qtd_expr()), 0.0).label("qtd_liquida"),
+        )
+        .filter(Venda.mestre.isnot(None))
+        .filter(func.trim(cast(Venda.mestre, String)) != "")
+        .group_by(func.trim(cast(Venda.mestre, String)))
+        .subquery()
+    )
+    return int(
+        db.query(func.count())
+        .select_from(por_produto)
+        .filter(por_produto.c.qtd_liquida > 0)
+        .scalar()
+        or 0
+    )
+
+
+def _mix_liquido_por_vendedor(db, q) -> dict[str, int]:
+    """Retorna {VENDEDOR: mix} para uma consulta base já filtrada por período/EMP."""
+    por_produto = (
+        q.with_entities(
+            func.coalesce(func.nullif(Venda.vendedor, ""), "SEM VENDEDOR").label("vendedor"),
+            func.trim(cast(Venda.mestre, String)).label("mestre"),
+            func.coalesce(func.sum(_signed_qtd_expr()), 0.0).label("qtd_liquida"),
+        )
+        .filter(Venda.mestre.isnot(None))
+        .filter(func.trim(cast(Venda.mestre, String)) != "")
+        .group_by(func.coalesce(func.nullif(Venda.vendedor, ""), "SEM VENDEDOR"), func.trim(cast(Venda.mestre, String)))
+        .subquery()
+    )
+    rows = (
+        db.query(por_produto.c.vendedor, func.count().label("mix"))
+        .filter(por_produto.c.qtd_liquida > 0)
+        .group_by(por_produto.c.vendedor)
+        .all()
+    )
+    return {(r.vendedor or "SEM VENDEDOR").strip().upper(): int(r.mix or 0) for r in rows}
 
 
 def _query_periodo(db, ano: int, mes: int, emp: str | None = None):
@@ -143,14 +184,13 @@ def _build_emp_dashboard(ano: int, mes: int, emp: str | None) -> Optional[dict]:
                 func.coalesce(func.sum(case((_qtd_positiva_expr() & func.upper(func.coalesce(Venda.mov_tipo_movto, "")).in_(MOVIMENTOS_VENDA), func.coalesce(Venda.valor_total, 0.0)), else_=0.0)), 0.0),
                 func.coalesce(func.sum(case((_qtd_positiva_expr() & func.upper(func.coalesce(Venda.mov_tipo_movto, "")).in_(MOVIMENTOS_NEGATIVOS), func.coalesce(Venda.valor_total, 0.0)), else_=0.0)), 0.0),
                 func.coalesce(func.sum(signed_valor), 0.0),
-                func.coalesce(func.sum(case((_qtd_positiva_expr() & func.upper(func.coalesce(Venda.mov_tipo_movto, "")).in_(MOVIMENTOS_VENDA), func.coalesce(Venda.qtdade_vendida, 0.0)), else_=0.0)), 0.0),
                 func.coalesce(func.count(func.distinct(Venda.cliente_id_norm)), 0),
             ).first()
             bruto = float(row[0] or 0.0)
             devol = float(row[1] or 0.0)
             liquido = float(row[2] or 0.0)
-            itens = float(row[3] or 0.0)
-            clientes = int(row[4] or 0)
+            itens = float(_mix_liquido_mestre_query(db, base) or 0.0)
+            clientes = int(row[3] or 0)
             ticket = (liquido / clientes) if clientes else 0.0
             meses.append({
                 "ano": int(a),
@@ -210,6 +250,8 @@ def _build_emp_dashboard(ano: int, mes: int, emp: str | None) -> Optional[dict]:
             for r in top_linhas_rows
         ]
 
+        mix_vendedores_map = _mix_liquido_por_vendedor(db, base_atual)
+
         vendedores_venda_rows = (
             base_atual.with_entities(
                 func.coalesce(func.nullif(Venda.vendedor, ""), "SEM VENDEDOR").label("vendedor"),
@@ -225,7 +267,7 @@ def _build_emp_dashboard(ano: int, mes: int, emp: str | None) -> Optional[dict]:
             {
                 "vendedor": (r.vendedor or "SEM VENDEDOR").strip().upper(),
                 "valor": float(r.valor or 0.0),
-                "qtd": float(r.qtd or 0.0),
+                "qtd": float(mix_vendedores_map.get((r.vendedor or "SEM VENDEDOR").strip().upper(), 0) or 0.0),
                 "clientes": int(r.clientes or 0),
             }
             for r in vendedores_venda_rows if float(r.valor or 0.0) > 0

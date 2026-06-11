@@ -959,6 +959,53 @@ def _fetch_cache_value(vendedor: str, ano: int, mes: int, emp_scope: str | None)
     row = _fetch_cache_row(vendedor, ano, mes, emp_scope)
     return float(row.get("valor_atual")) if row else None
 
+
+def _apply_emp_scope_query(q, emp_scope):
+    """Aplica filtro de EMP aceitando valor único ou lista de EMPs."""
+    if not emp_scope:
+        return q
+    if isinstance(emp_scope, (list, tuple, set)):
+        emps = [str(e).strip() for e in emp_scope if e is not None and str(e).strip()]
+        return q.filter(Venda.emp.in_(emps)) if emps else q
+    return q.filter(Venda.emp == str(emp_scope).strip())
+
+
+def _mix_liquido_mestre_query(db, q) -> int:
+    """Calcula MIX por MESTRE usando saldo líquido de quantidade.
+
+    Regra oficial:
+    - OA/OV/SV/VA/VV somam a quantidade vendida;
+    - CA/DS subtraem a quantidade;
+    - quantidade 0, nula ou movimento fora da regra oficial é ignorado;
+    - o produto só conta 1 vez no MIX se a quantidade líquida final for maior que zero.
+    """
+    qtd = func.coalesce(Venda.qtdade_vendida, 0.0)
+    qtd_ok = qtd > 0
+    mov = func.upper(func.coalesce(Venda.mov_tipo_movto, ""))
+    qtd_assinada = case(
+        (qtd_ok & mov.in_(MOVIMENTOS_NEGATIVOS), -qtd),
+        (qtd_ok & mov.in_(MOVIMENTOS_VENDA), qtd),
+        else_=0.0,
+    )
+
+    por_produto = (
+        q.with_entities(
+            func.trim(cast(Venda.mestre, String)).label("mestre"),
+            func.coalesce(func.sum(qtd_assinada), 0.0).label("qtd_liquida"),
+        )
+        .filter(Venda.mestre.isnot(None))
+        .filter(func.trim(cast(Venda.mestre, String)) != "")
+        .group_by(func.trim(cast(Venda.mestre, String)))
+        .subquery()
+    )
+    return int(
+        db.query(func.count())
+        .select_from(por_produto)
+        .filter(por_produto.c.qtd_liquida > 0)
+        .scalar()
+        or 0
+    )
+
 # NOTE: existe uma versão tipada desta função mais abaixo.
 # Mantemos apenas uma definição para evitar confusão/override.
 
@@ -974,9 +1021,15 @@ def _calcular_dados(df: pd.DataFrame, vendedor: str, mes: int, ano: int):
     if df_v.empty:
         return None
 
-    # DS/CA entram como negativo no líquido
-    neg = df_v["MOV_TIPO_MOVTO"].isin(["DS", "CA"])
-    df_v["VALOR_ASSINADO"] = df_v["VALOR_TOTAL"].where(~neg, -df_v["VALOR_TOTAL"])
+    # Regra oficial de movimentos: vendas somam, CA/DS abatem e demais movimentos não entram.
+    mov_norm = df_v["MOV_TIPO_MOVTO"].astype(str).str.strip().str.upper()
+    if "QTDADE_VENDIDA" in df_v.columns:
+        qtd_ok = pd.to_numeric(df_v["QTDADE_VENDIDA"], errors="coerce").fillna(0.0) > 0
+    else:
+        qtd_ok = pd.Series(True, index=df_v.index)
+    df_v["VALOR_ASSINADO"] = 0.0
+    df_v.loc[qtd_ok & mov_norm.isin(MOVIMENTOS_VENDA), "VALOR_ASSINADO"] = df_v.loc[qtd_ok & mov_norm.isin(MOVIMENTOS_VENDA), "VALOR_TOTAL"]
+    df_v.loc[qtd_ok & mov_norm.isin(MOVIMENTOS_NEGATIVOS), "VALOR_ASSINADO"] = -df_v.loc[qtd_ok & mov_norm.isin(MOVIMENTOS_NEGATIVOS), "VALOR_TOTAL"]
 
     # Filtra mês/ano
     df_mes = df_v[
@@ -999,38 +1052,66 @@ def _calcular_dados(df: pd.DataFrame, vendedor: str, mes: int, ano: int):
     ].copy()
 
     def _mix(df_in: pd.DataFrame) -> int:
-        """Mix de produtos (por MESTRE), abatendo DS/CA e sem ficar negativo.
+        """Mix oficial por MESTRE, usando quantidade líquida.
 
-        Regra:
-        - Movimentos normais contam +1 por MESTRE
-        - DS/CA contam -1 por MESTRE
-        - O mix final é a quantidade de MESTRES com saldo > 0
+        Exemplo:
+        - vendeu 50 un. do item 339401 e teve 1 CA/DS => saldo 49 => conta 1 no MIX;
+        - vendeu 1 un. do item 339402 e teve 1 CA/DS => saldo 0 => não conta no MIX.
         """
-        if df_in.empty:
+        if df_in.empty or "MESTRE" not in df_in.columns:
             return 0
-        tmp = df_in[["MESTRE", "MOV_TIPO_MOVTO"]].copy()
-        tmp["_s"] = 1
-        tmp.loc[tmp["MOV_TIPO_MOVTO"].isin(["DS", "CA"]), "_s"] = -1
-        saldo = tmp.groupby("MESTRE")["_s"].sum()
+
+        tmp_cols = ["MESTRE", "MOV_TIPO_MOVTO"]
+        tmp = df_in[tmp_cols].copy()
+        if "QTDADE_VENDIDA" in df_in.columns:
+            tmp["_qtd"] = pd.to_numeric(df_in["QTDADE_VENDIDA"], errors="coerce").fillna(0.0)
+        else:
+            # Compatibilidade com dataframes antigos sem quantidade: cada linha positiva vale 1.
+            tmp["_qtd"] = 1.0
+
+        tmp["MESTRE"] = tmp["MESTRE"].astype(str).str.strip()
+        tmp["MOV_TIPO_MOVTO"] = tmp["MOV_TIPO_MOVTO"].astype(str).str.strip().str.upper()
+        tmp = tmp[(tmp["MESTRE"] != "") & (tmp["_qtd"] > 0)]
+        if tmp.empty:
+            return 0
+
+        tmp["_qtd_assinada"] = 0.0
+        tmp.loc[tmp["MOV_TIPO_MOVTO"].isin(MOVIMENTOS_VENDA), "_qtd_assinada"] = tmp["_qtd"]
+        tmp.loc[tmp["MOV_TIPO_MOVTO"].isin(MOVIMENTOS_NEGATIVOS), "_qtd_assinada"] = -tmp["_qtd"]
+        saldo = tmp.groupby("MESTRE")["_qtd_assinada"].sum()
         return int((saldo > 0).sum())
+
+    def _qtd_ok_df(df_in: pd.DataFrame):
+        if "QTDADE_VENDIDA" in df_in.columns:
+            return pd.to_numeric(df_in["QTDADE_VENDIDA"], errors="coerce").fillna(0.0) > 0
+        return pd.Series(True, index=df_in.index)
 
     def _valor_liquido(df_in: pd.DataFrame) -> float:
         if df_in.empty:
             return 0.0
-        neg = df_in["MOV_TIPO_MOVTO"].isin(["DS", "CA"])
-        return float(df_in["VALOR_TOTAL"].where(~neg, -df_in["VALOR_TOTAL"]).sum())
+        mov = df_in["MOV_TIPO_MOVTO"].astype(str).str.strip().str.upper()
+        qtd_ok_local = _qtd_ok_df(df_in)
+        valor = pd.to_numeric(df_in["VALOR_TOTAL"], errors="coerce").fillna(0.0)
+        out = pd.Series(0.0, index=df_in.index)
+        out.loc[qtd_ok_local & mov.isin(MOVIMENTOS_VENDA)] = valor.loc[qtd_ok_local & mov.isin(MOVIMENTOS_VENDA)]
+        out.loc[qtd_ok_local & mov.isin(MOVIMENTOS_NEGATIVOS)] = -valor.loc[qtd_ok_local & mov.isin(MOVIMENTOS_NEGATIVOS)]
+        return float(out.sum())
 
     def _valor_bruto(df_in: pd.DataFrame) -> float:
         if df_in.empty:
             return 0.0
-        vendas = df_in[~df_in["MOV_TIPO_MOVTO"].isin(["DS", "CA"])]
-        return float(vendas["VALOR_TOTAL"].sum())
+        mov = df_in["MOV_TIPO_MOVTO"].astype(str).str.strip().str.upper()
+        qtd_ok_local = _qtd_ok_df(df_in)
+        vendas = df_in[qtd_ok_local & mov.isin(MOVIMENTOS_VENDA)]
+        return float(pd.to_numeric(vendas["VALOR_TOTAL"], errors="coerce").fillna(0.0).sum())
 
     def _valor_devolvido(df_in: pd.DataFrame) -> float:
         if df_in.empty:
             return 0.0
-        dev = df_in[df_in["MOV_TIPO_MOVTO"].isin(["DS", "CA"])]
-        return float(dev["VALOR_TOTAL"].sum())
+        mov = df_in["MOV_TIPO_MOVTO"].astype(str).str.strip().str.upper()
+        qtd_ok_local = _qtd_ok_df(df_in)
+        dev = df_in[qtd_ok_local & mov.isin(MOVIMENTOS_NEGATIVOS)]
+        return float(pd.to_numeric(dev["VALOR_TOTAL"], errors="coerce").fillna(0.0).sum())
 
     valor_atual = _valor_liquido(df_mes)
     valor_ano_passado = _valor_liquido(df_ano_passado)
@@ -1052,9 +1133,13 @@ def _calcular_dados(df: pd.DataFrame, vendedor: str, mes: int, ano: int):
     if df_mes.empty:
         ranking = pd.Series(dtype=float)
     else:
-        neg = df_mes["MOV_TIPO_MOVTO"].isin(["DS", "CA"])
         df_mes = df_mes.copy()
-        df_mes["VALOR_ASSINADO"] = df_mes["VALOR_TOTAL"].where(~neg, -df_mes["VALOR_TOTAL"])
+        mov_mes = df_mes["MOV_TIPO_MOVTO"].astype(str).str.strip().str.upper()
+        qtd_ok_mes = _qtd_ok_df(df_mes)
+        valor_mes = pd.to_numeric(df_mes["VALOR_TOTAL"], errors="coerce").fillna(0.0)
+        df_mes["VALOR_ASSINADO"] = 0.0
+        df_mes.loc[qtd_ok_mes & mov_mes.isin(MOVIMENTOS_VENDA), "VALOR_ASSINADO"] = valor_mes.loc[qtd_ok_mes & mov_mes.isin(MOVIMENTOS_VENDA)]
+        df_mes.loc[qtd_ok_mes & mov_mes.isin(MOVIMENTOS_NEGATIVOS), "VALOR_ASSINADO"] = -valor_mes.loc[qtd_ok_mes & mov_mes.isin(MOVIMENTOS_NEGATIVOS)]
         ranking = df_mes.groupby("MARCA")["VALOR_ASSINADO"].sum().sort_values(ascending=False)
 
     total = float(ranking.sum()) if not ranking.empty else 0.0
@@ -1523,33 +1608,31 @@ def _ano_passado_valor_mix(vendedor: str, ano: int, mes: int, emp_scope: str | N
                 Venda.movimento >= start,
                 Venda.movimento < end,
             )
-            if emp_scope:
-                q_cnt = q_cnt.filter(Venda.emp == str(emp_scope))
+            q_cnt = _apply_emp_scope_query(q_cnt, emp_scope)
             cnt = int(q_cnt.scalar() or 0)
 
             if cnt > 0:
                 mov = func.upper(func.coalesce(Venda.mov_tipo_movto, ""))
+                qtd_ok = func.coalesce(Venda.qtdade_vendida, 0.0) > 0
                 signed = case(
-                    (mov.in_(MOVIMENTOS_NEGATIVOS), -func.coalesce(Venda.valor_total, 0.0)),
-                    (mov.in_(MOVIMENTOS_VENDA), func.coalesce(Venda.valor_total, 0.0)),
+                    (qtd_ok & mov.in_(MOVIMENTOS_NEGATIVOS), -func.coalesce(Venda.valor_total, 0.0)),
+                    (qtd_ok & mov.in_(MOVIMENTOS_VENDA), func.coalesce(Venda.valor_total, 0.0)),
                     else_=0.0,
                 )
                 liquido = func.coalesce(func.sum(signed), 0.0)
-                mix = func.count(func.distinct(case((func.upper(func.coalesce(Venda.mov_tipo_movto, "")).in_(MOVIMENTOS_VENDA), Venda.mestre), else_=None)))
 
-                row = (
-                    db.query(liquido, mix)
-                    .select_from(Venda)
+                row_q = (
+                    db.query(Venda)
                     .filter(
                         Venda.vendedor == vendedor,
                         Venda.movimento >= start,
                         Venda.movimento < end,
                     )
                 )
-                if emp_scope:
-                    row = row.filter(Venda.emp == str(emp_scope))
-                r = row.first()
-                return float(r[0] or 0.0), int(r[1] or 0)
+                row_q = _apply_emp_scope_query(row_q, emp_scope)
+                valor_liquido = float(row_q.with_entities(liquido).scalar() or 0.0)
+                mix_liquido = _mix_liquido_mestre_query(db, row_q)
+                return valor_liquido, int(mix_liquido or 0)
 
             # Fallback: resumo manual (vendas_resumo_periodo)
             base_sql = """
@@ -1564,8 +1647,18 @@ def _ano_passado_valor_mix(vendedor: str, ano: int, mes: int, emp_scope: str | N
             params = {"vendedor": vendedor, "ano": int(ano_passado), "mes": int(mes)}
 
             if emp_scope:
-                base_sql += " and coalesce(emp,'') = :emp"
-                params["emp"] = str(emp_scope).strip()
+                if isinstance(emp_scope, (list, tuple, set)):
+                    emps = [str(e).strip() for e in emp_scope if e is not None and str(e).strip()]
+                    if emps:
+                        placeholders = []
+                        for idx, emp_item in enumerate(emps):
+                            key = f"emp_{idx}"
+                            placeholders.append(f":{key}")
+                            params[key] = emp_item
+                        base_sql += " and coalesce(emp,'') in (" + ", ".join(placeholders) + ")"
+                else:
+                    base_sql += " and coalesce(emp,'') = :emp"
+                    params["emp"] = str(emp_scope).strip()
 
             row_sum = db.execute(text(base_sql), params).mappings().first()
             if row_sum:
@@ -1623,16 +1716,11 @@ def _dados_from_cache(vendedor_alvo, mes, ano, emp_scope):
             with SessionLocal() as db:
                 q = db.query(Venda).filter(Venda.vendedor == vendedor_alvo)
 
-                if emp_scope:
-                    if isinstance(emp_scope, (list, tuple, set)):
-                        emps = [str(e).strip() for e in emp_scope if e is not None and str(e).strip()]
-                        if emps:
-                            q = q.filter(Venda.emp.in_(emps))
-                    else:
-                        q = q.filter(Venda.emp == str(emp_scope))
+                q = _apply_emp_scope_query(q, emp_scope)
 
                 mov = func.upper(func.coalesce(Venda.mov_tipo_movto, ""))
-                signed = case((mov.in_(MOVIMENTOS_NEGATIVOS), -func.coalesce(Venda.valor_total, 0.0)), (mov.in_(MOVIMENTOS_VENDA), func.coalesce(Venda.valor_total, 0.0)), else_=0.0)
+                qtd_ok = func.coalesce(Venda.qtdade_vendida, 0.0) > 0
+                signed = case((qtd_ok & mov.in_(MOVIMENTOS_NEGATIVOS), -func.coalesce(Venda.valor_total, 0.0)), (qtd_ok & mov.in_(MOVIMENTOS_VENDA), func.coalesce(Venda.valor_total, 0.0)), else_=0.0)
                 valor_mes_anterior = float(q.filter(Venda.movimento >= s_ant, Venda.movimento < e_ant)
                                           .with_entities(func.coalesce(func.sum(signed), 0.0))
                                           .scalar() or 0.0)
@@ -1710,24 +1798,18 @@ def _dados_ao_vivo(vendedor: str, mes: int, ano: int, emp_scope: str | list[str]
 
     with SessionLocal() as db:
         base = db.query(Venda).filter(Venda.vendedor == vendedor)
-        if emp_scope:
-            if isinstance(emp_scope, (list, tuple, set)):
-                emps = [str(e).strip() for e in emp_scope if e is not None and str(e).strip()]
-                if emps:
-                    base = base.filter(Venda.emp.in_(emps))
-            else:
-                base = base.filter(Venda.emp == str(emp_scope))
+        base = _apply_emp_scope_query(base, emp_scope)
         def sums(s, e):
             q = base.filter(Venda.movimento >= s, Venda.movimento < e)
             mov = func.upper(func.coalesce(Venda.mov_tipo_movto, ""))
-            signed = case((mov.in_(MOVIMENTOS_NEGATIVOS), -func.coalesce(Venda.valor_total, 0.0)), (mov.in_(MOVIMENTOS_VENDA), func.coalesce(Venda.valor_total, 0.0)), else_=0.0)
-            bruto = func.coalesce(func.sum(case((func.upper(func.coalesce(Venda.mov_tipo_movto, "")).in_(MOVIMENTOS_VENDA), Venda.valor_total), else_=0.0)), 0.0)
-            devol = func.coalesce(func.sum(case((func.upper(func.coalesce(Venda.mov_tipo_movto, "")).in_(MOVIMENTOS_NEGATIVOS), Venda.valor_total), else_=0.0)), 0.0)
+            qtd_ok = func.coalesce(Venda.qtdade_vendida, 0.0) > 0
+            signed = case((qtd_ok & mov.in_(MOVIMENTOS_NEGATIVOS), -func.coalesce(Venda.valor_total, 0.0)), (qtd_ok & mov.in_(MOVIMENTOS_VENDA), func.coalesce(Venda.valor_total, 0.0)), else_=0.0)
+            bruto = func.coalesce(func.sum(case((qtd_ok & func.upper(func.coalesce(Venda.mov_tipo_movto, "")).in_(MOVIMENTOS_VENDA), Venda.valor_total), else_=0.0)), 0.0)
+            devol = func.coalesce(func.sum(case((qtd_ok & func.upper(func.coalesce(Venda.mov_tipo_movto, "")).in_(MOVIMENTOS_NEGATIVOS), Venda.valor_total), else_=0.0)), 0.0)
             liquido = func.coalesce(func.sum(signed), 0.0)
-            mix = func.count(func.distinct(case((func.upper(func.coalesce(Venda.mov_tipo_movto, "")).in_(MOVIMENTOS_VENDA), Venda.mestre), else_=None)))
-
-            row = q.with_entities(bruto, devol, liquido, mix).first()
-            return float(row[0] or 0.0), float(row[1] or 0.0), float(row[2] or 0.0), int(row[3] or 0)
+            row = q.with_entities(bruto, devol, liquido).first()
+            mix = _mix_liquido_mestre_query(db, q)
+            return float(row[0] or 0.0), float(row[1] or 0.0), float(row[2] or 0.0), int(mix or 0)
 
         bruto, devol, liquido, mix = sums(start, end)
         bruto_ant, devol_ant, liquido_ant, mix_ant = sums(s_ant, e_ant)
@@ -1745,7 +1827,8 @@ def _dados_ao_vivo(vendedor: str, mes: int, ano: int, emp_scope: str | list[str]
         )
         # ranking por marca (líquido)
         mov = func.upper(func.coalesce(Venda.mov_tipo_movto, ""))
-        signed = case((mov.in_(MOVIMENTOS_NEGATIVOS), -func.coalesce(Venda.valor_total, 0.0)), (mov.in_(MOVIMENTOS_VENDA), func.coalesce(Venda.valor_total, 0.0)), else_=0.0)
+        qtd_ok = func.coalesce(Venda.qtdade_vendida, 0.0) > 0
+        signed = case((qtd_ok & mov.in_(MOVIMENTOS_NEGATIVOS), -func.coalesce(Venda.valor_total, 0.0)), (qtd_ok & mov.in_(MOVIMENTOS_VENDA), func.coalesce(Venda.valor_total, 0.0)), else_=0.0)
         q_rank = base.filter(Venda.movimento >= start, Venda.movimento < end)\
             .with_entities(Venda.marca, func.coalesce(func.sum(signed), 0.0))\
             .group_by(Venda.marca)

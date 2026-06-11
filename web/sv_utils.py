@@ -107,6 +107,8 @@ def _normalize_cols(df: pd.DataFrame) -> pd.DataFrame:
             rename[col] = "VALOR_TOTAL"
         elif low == "mestre":
             rename[col] = "MESTRE"
+        elif low in ("qtdade_vendida", "quantidade", "qtd", "qtde", "qtdade", "qtd_vendida"):
+            rename[col] = "QTDADE_VENDIDA"
         elif low == "emp":
             rename[col] = "EMP"
 
@@ -120,6 +122,8 @@ def _normalize_cols(df: pd.DataFrame) -> pd.DataFrame:
         df["VENDEDOR"] = df["VENDEDOR"].astype(str).str.strip().str.upper()
     if "EMP" in df.columns:
         df["EMP"] = df["EMP"].astype(str).str.strip()
+    if "QTDADE_VENDIDA" in df.columns:
+        df["QTDADE_VENDIDA"] = pd.to_numeric(df["QTDADE_VENDIDA"], errors="coerce").fillna(0.0)
 
     return df
 

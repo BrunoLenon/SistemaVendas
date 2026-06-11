@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Any, Dict, List, Optional, Tuple
 
-from sqlalchemy import text, func
+from sqlalchemy import text, func, case, cast, String
 from sqlalchemy.orm import Session
 
 from db import Venda, ItemParado, VendasResumoPeriodo
@@ -333,18 +333,34 @@ def calcular_e_snapshot(
                 VendasResumoPeriodo.mes == mes,
             ).scalar()
             if mix_mes is None:
-                mix_mes = int(
-                    (
-                        db.query(func.count(func.distinct(Venda.mestre)))
-                        .filter(Venda.emp == str(emp))
-                        .filter(Venda.vendedor == vendedor)
-                        .filter(Venda.movimento >= start)
-                        .filter(Venda.movimento < end)
-                        .filter(func.upper(func.coalesce(Venda.mov_tipo_movto, "")).in_(MOVIMENTOS_VENDA))
-                        .filter(func.coalesce(Venda.qtdade_vendida, 0.0) > 0)
-                        .scalar()
-                        or 0
+                qtd = func.coalesce(Venda.qtdade_vendida, 0.0)
+                qtd_ok = qtd > 0
+                mov = func.upper(func.coalesce(Venda.mov_tipo_movto, ""))
+                qtd_assinada = case(
+                    (qtd_ok & mov.in_(MOVIMENTOS_NEGATIVOS), -qtd),
+                    (qtd_ok & mov.in_(MOVIMENTOS_VENDA), qtd),
+                    else_=0.0,
+                )
+                por_produto = (
+                    db.query(
+                        func.trim(cast(Venda.mestre, String)).label("mestre"),
+                        func.coalesce(func.sum(qtd_assinada), 0.0).label("qtd_liquida"),
                     )
+                    .filter(Venda.emp == str(emp))
+                    .filter(Venda.vendedor == vendedor)
+                    .filter(Venda.movimento >= start)
+                    .filter(Venda.movimento < end)
+                    .filter(Venda.mestre.isnot(None))
+                    .filter(func.trim(cast(Venda.mestre, String)) != "")
+                    .group_by(func.trim(cast(Venda.mestre, String)))
+                    .subquery()
+                )
+                mix_mes = int(
+                    db.query(func.count())
+                    .select_from(por_produto)
+                    .filter(por_produto.c.qtd_liquida > 0)
+                    .scalar()
+                    or 0
                 )
             else:
                 try:

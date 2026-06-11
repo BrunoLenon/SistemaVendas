@@ -46,6 +46,20 @@ def _signed_value():
     return case((qtd_ok & mov.in_(DS_CA), -valor), (qtd_ok & mov.in_(POSITIVE_MOV_TYPES), valor), else_=0.0)
 
 
+def _signed_quantity():
+    """Quantidade líquida oficial para MIX.
+
+    Regra de negócio:
+    - OA/OV/SV/VA/VV somam a quantidade vendida;
+    - CA/DS subtraem a quantidade;
+    - quantidade 0, nula ou movimento fora da regra oficial não participa.
+    """
+    qtd = func.coalesce(Venda.qtdade_vendida, 0.0)
+    qtd_ok = qtd > 0
+    mov = func.upper(func.coalesce(Venda.mov_tipo_movto, ""))
+    return case((qtd_ok & mov.in_(DS_CA), -qtd), (qtd_ok & mov.in_(POSITIVE_MOV_TYPES), qtd), else_=0.0)
+
+
 def refresh_dashboard_cache(emp: str, ano: int, mes: int) -> Dict[str, int]:
     """Recalcula cache de um EMP para um mês/ano.
 
@@ -63,7 +77,6 @@ def refresh_dashboard_cache(emp: str, ano: int, mes: int) -> Dict[str, int]:
                 func.coalesce(func.sum(case((_qtd_positiva() & (func.upper(func.coalesce(Venda.mov_tipo_movto, "")) == "DS"), func.coalesce(Venda.valor_total, 0.0)), else_=0.0)), 0.0).label("devolucoes"),
                 func.coalesce(func.sum(case((_qtd_positiva() & (func.upper(func.coalesce(Venda.mov_tipo_movto, "")) == "CA"), func.coalesce(Venda.valor_total, 0.0)), else_=0.0)), 0.0).label("cancelamentos"),
                 func.coalesce(func.sum(_signed_value()), 0.0).label("valor_liquido"),
-                func.count(func.distinct(case((_qtd_positiva() & func.upper(func.coalesce(Venda.mov_tipo_movto, "")).in_(POSITIVE_MOV_TYPES), Venda.mestre), else_=None))).label("mix_produtos"),
                 func.count(func.distinct(case((_qtd_positiva() & func.upper(func.coalesce(Venda.mov_tipo_movto, "")).in_(POSITIVE_MOV_TYPES), Venda.marca), else_=None))).label("mix_marcas"),
             )
             .filter(Venda.emp == emp)
@@ -73,6 +86,38 @@ def refresh_dashboard_cache(emp: str, ano: int, mes: int) -> Dict[str, int]:
         )
 
         rows = q.all()
+
+        # MIX oficial por MESTRE: conta produtos com quantidade líquida > 0.
+        # Ex.: vendeu 50 un. e cancelou/devolveu 1 un. => saldo 49 => conta 1 no MIX.
+        # Ex.: vendeu 1 un. e cancelou/devolveu 1 un. => saldo 0 => não conta no MIX.
+        por_produto = (
+            db.query(
+                Venda.vendedor.label("vendedor"),
+                Venda.mestre.label("mestre"),
+                func.coalesce(func.sum(_signed_quantity()), 0.0).label("qtd_liquida"),
+            )
+            .filter(Venda.emp == emp)
+            .filter(Venda.movimento >= start)
+            .filter(Venda.movimento < end)
+            .filter(Venda.mestre.isnot(None))
+            .filter(func.trim(Venda.mestre) != "")
+            .group_by(Venda.vendedor, Venda.mestre)
+            .subquery()
+        )
+        mix_rows = (
+            db.query(
+                por_produto.c.vendedor.label("vendedor"),
+                func.count().label("mix_produtos"),
+            )
+            .filter(por_produto.c.qtd_liquida > 0)
+            .group_by(por_produto.c.vendedor)
+            .all()
+        )
+        mix_map: Dict[str, int] = {
+            (r.vendedor or "").strip().upper(): int(r.mix_produtos or 0)
+            for r in mix_rows
+            if (r.vendedor or "").strip()
+        }
 
         # Ranking por marca (líquido/assinado) por vendedor
         q_rank = (
@@ -145,7 +190,7 @@ def refresh_dashboard_cache(emp: str, ano: int, mes: int) -> Dict[str, int]:
             obj.devolucoes = devol
             obj.cancelamentos = canc
             obj.pct_devolucao = pct_dev
-            obj.mix_produtos = int(r.mix_produtos or 0)
+            obj.mix_produtos = int(mix_map.get(vendedor, 0) or 0)
             obj.mix_marcas = int(r.mix_marcas or 0)
             obj.ranking_json = json.dumps(out_list, ensure_ascii=False)
             obj.ranking_top15_json = json.dumps(top15, ensure_ascii=False)

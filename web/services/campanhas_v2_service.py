@@ -5,8 +5,8 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional, Tuple
 
-from sqlalchemy import and_, func, or_
-from sv_utils import MOVIMENTOS_VENDA
+from sqlalchemy import and_, func, or_, case, cast, String
+from sv_utils import MOVIMENTOS_VENDA, MOVIMENTOS_NEGATIVOS
 
 from db import SessionLocal, Venda, CampanhaV2Master, CampanhaV2Resultado, CampanhaV2Audit
 
@@ -16,6 +16,17 @@ ALLOWED_STATUS = {"PENDENTE", "A_PAGAR", "PAGO"}
 
 def _movimento_positivo_expr():
     return func.upper(func.coalesce(Venda.mov_tipo_movto, "")).in_(MOVIMENTOS_VENDA)
+
+
+def _signed_qtd_mix_expr():
+    qtd = func.coalesce(Venda.qtdade_vendida, 0.0)
+    qtd_ok = qtd > 0
+    mov = func.upper(func.coalesce(Venda.mov_tipo_movto, ""))
+    return case(
+        (qtd_ok & mov.in_(MOVIMENTOS_NEGATIVOS), -qtd),
+        (qtd_ok & mov.in_(MOVIMENTOS_VENDA), qtd),
+        else_=0.0,
+    )
 
 
 @dataclass
@@ -575,22 +586,38 @@ def _calc_mix(session, campanha: CampanhaV2Master, ano: int, mes: int, regras: D
     if min_dist <= 0 or premio <= 0:
         return
 
-    q = session.query(
-        Venda.emp.label("emp"),
-        Venda.vendedor.label("vendedor"),
-        func.count(func.distinct(Venda.mestre)).label("mix"),
-    ).filter(
-        _movimento_positivo_expr(),
-        func.coalesce(Venda.qtdade_vendida, 0.0) > 0,
+    q = session.query(Venda).filter(
         Venda.ano == ano,
         Venda.mes == mes,
     )
     if marca:
         q = q.filter(Venda.marca == marca)
     q = _apply_emp_filter(q, emps_alvo)
-    q = q.group_by(Venda.emp, Venda.vendedor)
 
-    for r in q.all():
+    por_produto = (
+        q.with_entities(
+            Venda.emp.label("emp"),
+            Venda.vendedor.label("vendedor"),
+            func.trim(cast(Venda.mestre, String)).label("mestre"),
+            func.coalesce(func.sum(_signed_qtd_mix_expr()), 0.0).label("qtd_liquida"),
+        )
+        .filter(Venda.mestre.isnot(None))
+        .filter(func.trim(cast(Venda.mestre, String)) != "")
+        .group_by(Venda.emp, Venda.vendedor, func.trim(cast(Venda.mestre, String)))
+        .subquery()
+    )
+    rows = (
+        session.query(
+            por_produto.c.emp.label("emp"),
+            por_produto.c.vendedor.label("vendedor"),
+            func.count().label("mix"),
+        )
+        .filter(por_produto.c.qtd_liquida > 0)
+        .group_by(por_produto.c.emp, por_produto.c.vendedor)
+        .all()
+    )
+
+    for r in rows:
         mix = int(r.mix or 0)
         if mix < min_dist:
             continue
