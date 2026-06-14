@@ -52,7 +52,7 @@
               <div class="col-md-3"><label class="form-label">Cor secundária</label><input class="form-control" name="cor_secundaria" value="{{ campanha.cor_secundaria if campanha else '#111111' }}"></div>
               <div class="col-md-3"><label class="form-label">Início</label><input class="form-control" type="date" name="inicio_em" value="{{ campanha.inicio_em if campanha and campanha.inicio_em else '' }}"></div>
               <div class="col-md-3"><label class="form-label">Fim/validade</label><input class="form-control" type="date" name="fim_em" value="{{ campanha.fim_em if campanha and campanha.fim_em else '' }}"></div>
-              <div class="col-12"><label class="form-label">Regulamento / observações públicas</label><textarea class="form-control" name="regulamento" rows="3">{{ campanha.regulamento if campanha else '' }}</textarea></div>
+              <div class="col-12"><label class="form-label">Informações / Regulamento exibido ao ler o QR Code</label><textarea class="form-control" name="regulamento" rows="3">{{ campanha.regulamento if campanha else '' }}</textarea><div class="qr-muted small mt-1">Esse texto aparecerá na página pública após o cliente escanear o QR Code.</div></div>
               <div class="col-12"><label><input type="checkbox" name="ativo" {% if not campanha or campanha.ativo %}checked{% endif %}> Campanha ativa</label></div>
             </div>
             {% if campanha %}
