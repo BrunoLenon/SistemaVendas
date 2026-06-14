@@ -54,6 +54,8 @@ def _ensure_schema(db) -> None:
             premio_descricao VARCHAR(220),
             premio_valor NUMERIC(12,2),
             mensagem_resultado TEXT,
+            whatsapp_resgate VARCHAR(30),
+            mensagem_whatsapp TEXT,
             criado_em TIMESTAMP NOT NULL DEFAULT NOW()
         );
     """))
@@ -62,7 +64,9 @@ def _ensure_schema(db) -> None:
     db.execute(text("ALTER TABLE promocoes_qr_codigos ADD COLUMN IF NOT EXISTS premiado BOOLEAN NOT NULL DEFAULT FALSE;"))
     db.execute(text("ALTER TABLE promocoes_qr_codigos ADD COLUMN IF NOT EXISTS premio_descricao VARCHAR(220);"))
     db.execute(text("ALTER TABLE promocoes_qr_codigos ADD COLUMN IF NOT EXISTS premio_valor NUMERIC(12,2);"))
-    db.execute(text("ALTER TABLE promocoes_qr_codigos ADD COLUMN IF NOT EXISTS mensagem_resultado TEXT;"))
+    db.execute(text("ALTER TABLE promocoes_qr_codigos ADD COLUMN IF NOT EXISTS mensagem_resultado TEXT;
+    db.execute(text("ALTER TABLE promocoes_qr_codigos ADD COLUMN IF NOT EXISTS whatsapp_resgate VARCHAR(30);"))
+    db.execute(text("ALTER TABLE promocoes_qr_codigos ADD COLUMN IF NOT EXISTS mensagem_whatsapp TEXT;"))"))
     db.execute(text("CREATE INDEX IF NOT EXISTS ix_promocoes_qr_codigos_usado ON promocoes_qr_codigos(usado);"))
     db.execute(text("CREATE INDEX IF NOT EXISTS ix_promocoes_qr_codigos_premiado ON promocoes_qr_codigos(premiado);"))
 

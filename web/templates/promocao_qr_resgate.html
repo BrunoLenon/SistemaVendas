@@ -22,7 +22,17 @@
       {% endif %}
     </div>
 
-    {% if item %}<div class="foot">Código: <span class="code">{{ item.codigo }}</span>{% if item.info_qr %} • {{ item.info_qr }}{% endif %}</div>{% endif %}
+    
+    {% if status == 'premiado' and item and item.whatsapp_resgate %}
+    <div style="margin-top:18px">
+      <a href="https://wa.me/{{ item.whatsapp_resgate }}?text={{ ('Olá! Ganhei o prêmio ' ~ item.premio_descricao ~ ' na promoção. Código: ' ~ item.codigo ~ '. Gostaria de resgatar meu prêmio.')|urlencode }}"
+         style="display:inline-block;background:#25D366;color:#fff;text-decoration:none;padding:14px 22px;border-radius:12px;font-weight:900">
+         🎁 Resgatar prêmio pelo WhatsApp
+      </a>
+    </div>
+    {% endif %}
+
+{% if item %}<div class="foot">Código: <span class="code">{{ item.codigo }}</span>{% if item.info_qr %} • {{ item.info_qr }}{% endif %}</div>{% endif %}
     {% if item and item.regulamento %}<div class="reg">{{ item.regulamento }}</div>{% endif %}
   </main>
 </body>
