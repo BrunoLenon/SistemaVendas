@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ item.titulo if item and item.titulo else 'Promoção' }}</title>
+<style>
+  :root{--p:{{ item.cor_primaria if item else '#ff8c00' }};--s:{{ item.cor_secundaria if item else '#111111' }}}
+  *{box-sizing:border-box}body{margin:0;min-height:100vh;font-family:Inter,Arial,sans-serif;color:#fff;background:#080808;display:grid;place-items:center;padding:18px;position:relative;overflow-x:hidden}body:before{content:"";position:fixed;inset:0;background:linear-gradient(135deg,rgba(0,0,0,.86),rgba(0,0,0,.42)),url('{{ item.layout_url if item and item.layout_url else '' }}') center/cover no-repeat;filter:saturate(1.08)}body:after{content:"";position:fixed;inset:0;background:radial-gradient(circle at 50% 0, color-mix(in srgb,var(--p) 34%, transparent), transparent 44%)}.card{position:relative;width:min(520px,100%);border:1px solid color-mix(in srgb,var(--p) 42%, transparent);border-radius:28px;background:rgba(8,8,8,.78);backdrop-filter:blur(14px);box-shadow:0 24px 80px rgba(0,0,0,.48);padding:24px}.logo{max-width:190px;max-height:95px;object-fit:contain;display:block;margin:0 auto 14px}.chip{display:inline-flex;padding:7px 11px;border-radius:999px;background:color-mix(in srgb,var(--p) 18%, transparent);border:1px solid color-mix(in srgb,var(--p) 40%, transparent);font-size:12px;font-weight:900}.center{text-align:center}h1{font-size:30px;line-height:1.02;margin:14px 0 8px;letter-spacing:-.04em}.sub{color:rgba(255,255,255,.76);font-size:15px;line-height:1.45}.msg{margin:18px 0;padding:14px;border-radius:18px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);font-weight:800}.msg.ok{background:rgba(46,204,113,.12);border-color:rgba(46,204,113,.35)}.msg.warn{background:rgba(255,193,7,.12);border-color:rgba(255,193,7,.35)}.msg.err{background:rgba(255,77,79,.12);border-color:rgba(255,77,79,.35)}label{display:block;text-align:left;font-size:12px;font-weight:900;color:rgba(255,255,255,.82);margin:12px 0 6px}input,textarea{width:100%;border-radius:15px;border:1px solid rgba(255,255,255,.16);background:rgba(0,0,0,.38);color:#fff;padding:13px 14px;font-size:15px;outline:none}input:focus,textarea:focus{border-color:var(--p);box-shadow:0 0 0 4px color-mix(in srgb,var(--p) 18%, transparent)}button{width:100%;border:0;border-radius:16px;padding:14px 18px;margin-top:16px;background:linear-gradient(135deg,var(--p),#ffd08a);color:#101010;font-weight:950;font-size:16px;cursor:pointer}.foot{margin-top:16px;color:rgba(255,255,255,.58);font-size:12px;line-height:1.45}.code{font-family:ui-monospace,Consolas,monospace;color:#ffd89a}.reg{margin-top:14px;text-align:left;color:rgba(255,255,255,.62);font-size:12px;line-height:1.45;white-space:pre-line}
+</style>
+</head>
+<body>
+  <main class="card center">
+    {% if item and item.logo_url %}<img class="logo" src="{{ item.logo_url }}" alt="Logo da promoção">{% endif %}
+    <span class="chip">{{ item.premio or 'QR Code Premiado' if item else 'QR Code' }}</span>
+    <h1>{{ item.titulo or item.nome if item else 'Promoção' }}</h1>
+    {% if item and item.subtitulo %}<div class="sub">{{ item.subtitulo }}</div>{% endif %}
+    <div class="msg {% if status=='sucesso' %}ok{% elif status in ['usado','expirado'] %}warn{% elif status=='invalido' %}err{% endif %}">{{ mensagem }}</div>
+    {% if item %}<div class="foot">Código: <span class="code">{{ item.codigo }}</span>{% if item.info_qr %} • {{ item.info_qr }}{% endif %}</div>{% endif %}
+    {% if status == 'novo' %}
+      <form method="post">
+        <label>Nome</label><input name="nome_cliente" required autocomplete="name">
+        <label>Telefone/WhatsApp</label><input name="telefone" required autocomplete="tel">
+        <label>CPF ou documento</label><input name="cpf" autocomplete="off">
+        <label>Observação</label><textarea name="observacao" rows="2" placeholder="Opcional"></textarea>
+        <button>Registrar participação</button>
+      </form>
+    {% endif %}
+    {% if item and item.regulamento %}<div class="reg">{{ item.regulamento }}</div>{% endif %}
+  </main>
+</body>
+</html>

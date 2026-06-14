@@ -2646,9 +2646,11 @@ from core_routes import register_core_routes
 from errors import register_error_handlers
 from operacoes_vendas_produtos_routes import register_operacoes_vendas_produtos_routes
 from financeiro_campanhas_routes import register_financeiro_campanhas_routes
+from promocoes_qr_routes import register_promocoes_qr_routes
 
 # Admin / Configurações
 register_admin_config_routes(app)
+register_promocoes_qr_routes(app)
 
 # Relatórios
 register_relatorio_campanhas_routes(
