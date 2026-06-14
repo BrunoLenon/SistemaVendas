@@ -64,9 +64,9 @@ def _ensure_schema(db) -> None:
     db.execute(text("ALTER TABLE promocoes_qr_codigos ADD COLUMN IF NOT EXISTS premiado BOOLEAN NOT NULL DEFAULT FALSE;"))
     db.execute(text("ALTER TABLE promocoes_qr_codigos ADD COLUMN IF NOT EXISTS premio_descricao VARCHAR(220);"))
     db.execute(text("ALTER TABLE promocoes_qr_codigos ADD COLUMN IF NOT EXISTS premio_valor NUMERIC(12,2);"))
-    db.execute(text("ALTER TABLE promocoes_qr_codigos ADD COLUMN IF NOT EXISTS mensagem_resultado TEXT;
+    db.execute(text("ALTER TABLE promocoes_qr_codigos ADD COLUMN IF NOT EXISTS mensagem_resultado TEXT;"))
     db.execute(text("ALTER TABLE promocoes_qr_codigos ADD COLUMN IF NOT EXISTS whatsapp_resgate VARCHAR(30);"))
-    db.execute(text("ALTER TABLE promocoes_qr_codigos ADD COLUMN IF NOT EXISTS mensagem_whatsapp TEXT;"))"))
+    db.execute(text("ALTER TABLE promocoes_qr_codigos ADD COLUMN IF NOT EXISTS mensagem_whatsapp TEXT;"))
     db.execute(text("CREATE INDEX IF NOT EXISTS ix_promocoes_qr_codigos_usado ON promocoes_qr_codigos(usado);"))
     db.execute(text("CREATE INDEX IF NOT EXISTS ix_promocoes_qr_codigos_premiado ON promocoes_qr_codigos(premiado);"))
 
@@ -87,6 +87,10 @@ def _slugify(value: str) -> str:
 
 def _parse_bool(v: str | None) -> bool:
     return (v or '').strip().lower() in {'1','on','true','sim','ativo','yes'}
+
+
+def _only_digits(value: str | None) -> str:
+    return ''.join(ch for ch in (value or '') if ch.isdigit())
 
 
 def _parse_date(value: str | None):
@@ -223,6 +227,8 @@ def register_promocoes_qr_routes(app):
                         lote = (request.form.get('lote') or '').strip()
                         info_qr = (request.form.get('info_qr') or '').strip()
                         mensagem_nao_premiado = (request.form.get('mensagem_nao_premiado') or 'Não foi dessa vez, mas não desista!').strip()
+                        whatsapp_resgate = _only_digits(request.form.get('whatsapp_resgate'))
+                        mensagem_whatsapp = (request.form.get('mensagem_whatsapp') or '').strip()
                         premios_lote = _parse_premios_lote(request.form.get('premios_lote') or '', qtd, mensagem_nao_premiado)
                         for premio_cfg in premios_lote:
                             for _tentativa in range(8):
@@ -230,14 +236,16 @@ def register_promocoes_qr_routes(app):
                                 try:
                                     db.execute(text("""
                                         INSERT INTO promocoes_qr_codigos
-                                            (campanha_id,codigo,lote,info_qr,premiado,premio_descricao,premio_valor,mensagem_resultado)
+                                            (campanha_id,codigo,lote,info_qr,premiado,premio_descricao,premio_valor,mensagem_resultado,whatsapp_resgate,mensagem_whatsapp)
                                         VALUES
-                                            (:campanha_id,:codigo,:lote,:info_qr,:premiado,:premio_descricao,:premio_valor,:mensagem_resultado)
+                                            (:campanha_id,:codigo,:lote,:info_qr,:premiado,:premio_descricao,:premio_valor,:mensagem_resultado,:whatsapp_resgate,:mensagem_whatsapp)
                                     """), {
                                         'campanha_id': campanha_id,
                                         'codigo': codigo,
                                         'lote': lote,
                                         'info_qr': info_qr,
+                                        'whatsapp_resgate': whatsapp_resgate,
+                                        'mensagem_whatsapp': mensagem_whatsapp,
                                         **premio_cfg,
                                     })
                                     break

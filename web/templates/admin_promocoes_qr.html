@@ -78,6 +78,8 @@
             <div class="col-md-2"><button class="btn qr-btn qr-btn-primary w-100">Gerar</button></div>
             <div class="col-md-7"><label class="form-label">Prêmios do lote</label><textarea class="form-control" name="premios_lote" rows="4" placeholder="1|Vale compra R$ 100|100,00&#10;3|Brinde Moto13&#10;5|Desconto R$ 20|20,00"></textarea><div class="qr-muted small mt-1">Uma linha por prêmio: quantidade|descrição|valor opcional. O sistema sorteia automaticamente dentro do lote.</div></div>
             <div class="col-md-5"><label class="form-label">Mensagem para QR não premiado</label><textarea class="form-control" name="mensagem_nao_premiado" rows="4">Não foi dessa vez, mas não desista!</textarea></div>
+            <div class="col-md-4"><label class="form-label">WhatsApp para resgate</label><input class="form-control" name="whatsapp_resgate" placeholder="5567999999999"><div class="qr-muted small mt-1">Use DDI + DDD + número. Ex.: 5567999999999.</div></div>
+            <div class="col-md-8"><label class="form-label">Mensagem padrão do WhatsApp</label><input class="form-control" name="mensagem_whatsapp" placeholder="Olá! Ganhei o prêmio {premio} na promoção {campanha}. Código: {codigo}. Gostaria de resgatar meu prêmio."><div class="qr-muted small mt-1">Opcional. Variáveis aceitas: {premio}, {campanha}, {codigo}.</div></div>
           </form>
         </div>
       </section>

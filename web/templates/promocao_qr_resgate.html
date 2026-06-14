@@ -24,8 +24,11 @@
 
     
     {% if status == 'premiado' and item and item.whatsapp_resgate %}
+      {% set texto_resgate = item.mensagem_whatsapp or 'Olá! Ganhei o prêmio {premio} na promoção {campanha}. Código: {codigo}. Gostaria de resgatar meu prêmio.' %}
+      {% set texto_resgate = texto_resgate.replace('{premio}', item.premio_descricao or 'prêmio').replace('{campanha}', item.nome or 'promoção').replace('{codigo}', item.codigo or '') %}
     <div style="margin-top:18px">
-      <a href="https://wa.me/{{ item.whatsapp_resgate }}?text={{ ('Olá! Ganhei o prêmio ' ~ item.premio_descricao ~ ' na promoção. Código: ' ~ item.codigo ~ '. Gostaria de resgatar meu prêmio.')|urlencode }}"
+      <a href="https://wa.me/{{ item.whatsapp_resgate }}?text={{ texto_resgate|urlencode }}"
+         target="_blank" rel="noopener"
          style="display:inline-block;background:#25D366;color:#fff;text-decoration:none;padding:14px 22px;border-radius:12px;font-weight:900">
          🎁 Resgatar prêmio pelo WhatsApp
       </a>
