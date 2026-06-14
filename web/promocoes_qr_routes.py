@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import secrets
 import string
+import random
 from datetime import date, datetime
 from urllib.parse import quote_plus
 
@@ -49,11 +50,21 @@ def _ensure_schema(db) -> None:
             telefone VARCHAR(40),
             cpf VARCHAR(40),
             observacao TEXT,
+            premiado BOOLEAN NOT NULL DEFAULT FALSE,
+            premio_descricao VARCHAR(220),
+            premio_valor NUMERIC(12,2),
+            mensagem_resultado TEXT,
             criado_em TIMESTAMP NOT NULL DEFAULT NOW()
         );
     """))
     db.execute(text("CREATE INDEX IF NOT EXISTS ix_promocoes_qr_codigos_campanha ON promocoes_qr_codigos(campanha_id);"))
+    # Migração leve/idempotente para instalações que já criaram a tabela antes desta versão.
+    db.execute(text("ALTER TABLE promocoes_qr_codigos ADD COLUMN IF NOT EXISTS premiado BOOLEAN NOT NULL DEFAULT FALSE;"))
+    db.execute(text("ALTER TABLE promocoes_qr_codigos ADD COLUMN IF NOT EXISTS premio_descricao VARCHAR(220);"))
+    db.execute(text("ALTER TABLE promocoes_qr_codigos ADD COLUMN IF NOT EXISTS premio_valor NUMERIC(12,2);"))
+    db.execute(text("ALTER TABLE promocoes_qr_codigos ADD COLUMN IF NOT EXISTS mensagem_resultado TEXT;"))
     db.execute(text("CREATE INDEX IF NOT EXISTS ix_promocoes_qr_codigos_usado ON promocoes_qr_codigos(usado);"))
+    db.execute(text("CREATE INDEX IF NOT EXISTS ix_promocoes_qr_codigos_premiado ON promocoes_qr_codigos(premiado);"))
 
 
 def _slugify(value: str) -> str:
@@ -91,6 +102,44 @@ def _new_code(prefix: str = '') -> str:
 def _public_url(campanha_slug: str, codigo: str) -> str:
     # Rota curta para ir impressa no QR Code.
     return url_for('promocao_qr_ler', slug=campanha_slug, codigo=codigo, _external=True)
+
+
+def _parse_premios_lote(raw: str, total: int, mensagem_nao_premiado: str) -> list[dict]:
+    """Formato por linha: quantidade|descrição|valor opcional."""
+    premios: list[dict] = []
+    for line in (raw or '').splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        parts = [p.strip() for p in line.split('|')]
+        try:
+            qtd = int(parts[0])
+        except Exception:
+            raise ValueError('Formato de prêmio inválido. Use: quantidade|descrição|valor opcional')
+        if qtd <= 0:
+            continue
+        desc = parts[1] if len(parts) > 1 and parts[1] else 'Prêmio'
+        valor = None
+        if len(parts) > 2 and parts[2]:
+            valor = float(parts[2].replace('.', '').replace(',', '.'))
+        for _ in range(qtd):
+            premios.append({
+                'premiado': True,
+                'premio_descricao': desc,
+                'premio_valor': valor,
+                'mensagem_resultado': f'Parabéns! Você ganhou: {desc}',
+            })
+    if len(premios) > total:
+        raise ValueError('A quantidade de prêmios é maior que a quantidade total de QR Codes.')
+    while len(premios) < total:
+        premios.append({
+            'premiado': False,
+            'premio_descricao': None,
+            'premio_valor': None,
+            'mensagem_resultado': mensagem_nao_premiado or 'Não foi dessa vez, mas não desista!',
+        })
+    random.SystemRandom().shuffle(premios)
+    return premios
 
 
 def register_promocoes_qr_routes(app):
@@ -169,14 +218,24 @@ def register_promocoes_qr_routes(app):
                         prefixo = request.form.get('prefixo') or ''
                         lote = (request.form.get('lote') or '').strip()
                         info_qr = (request.form.get('info_qr') or '').strip()
-                        for _ in range(qtd):
+                        mensagem_nao_premiado = (request.form.get('mensagem_nao_premiado') or 'Não foi dessa vez, mas não desista!').strip()
+                        premios_lote = _parse_premios_lote(request.form.get('premios_lote') or '', qtd, mensagem_nao_premiado)
+                        for premio_cfg in premios_lote:
                             for _tentativa in range(8):
                                 codigo = _new_code(prefixo)
                                 try:
                                     db.execute(text("""
-                                        INSERT INTO promocoes_qr_codigos (campanha_id,codigo,lote,info_qr)
-                                        VALUES (:campanha_id,:codigo,:lote,:info_qr)
-                                    """), {'campanha_id': campanha_id, 'codigo': codigo, 'lote': lote, 'info_qr': info_qr})
+                                        INSERT INTO promocoes_qr_codigos
+                                            (campanha_id,codigo,lote,info_qr,premiado,premio_descricao,premio_valor,mensagem_resultado)
+                                        VALUES
+                                            (:campanha_id,:codigo,:lote,:info_qr,:premiado,:premio_descricao,:premio_valor,:mensagem_resultado)
+                                    """), {
+                                        'campanha_id': campanha_id,
+                                        'codigo': codigo,
+                                        'lote': lote,
+                                        'info_qr': info_qr,
+                                        **premio_cfg,
+                                    })
                                     break
                                 except Exception:
                                     db.rollback()
@@ -232,6 +291,34 @@ def register_promocoes_qr_routes(app):
                 qr_img_fn=lambda url: 'https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=' + quote_plus(url),
             )
 
+    @app.route('/admin/promocoes-qr/<int:campanha_id>/imprimir', methods=['GET'], endpoint='admin_promocoes_qr_imprimir')
+    def admin_promocoes_qr_imprimir(campanha_id: int):
+        red = _admin_required()
+        if red:
+            return red
+        with SessionLocal() as db:
+            _ensure_schema(db)
+            campanha = db.execute(text('SELECT * FROM promocoes_qr_campanhas WHERE id=:id'), {'id': campanha_id}).mappings().first()
+            if not campanha:
+                return redirect(url_for('admin_promocoes_qr'))
+            somente = (request.args.get('somente') or 'todos').strip()
+            where_extra = ''
+            if somente == 'disponiveis':
+                where_extra = ' AND usado=FALSE'
+            codigos = db.execute(text(f'''
+                SELECT * FROM promocoes_qr_codigos
+                 WHERE campanha_id=:id {where_extra}
+                 ORDER BY criado_em DESC, id DESC
+                 LIMIT 1000
+            '''), {'id': campanha_id}).mappings().all()
+            return render_template(
+                'admin_promocoes_qr_imprimir.html',
+                campanha=campanha,
+                codigos=codigos,
+                public_url_fn=_public_url,
+                qr_img_fn=lambda url: 'https://api.qrserver.com/v1/create-qr-code/?size=260x260&data=' + quote_plus(url),
+            )
+
     @app.route('/p/<slug>/<codigo>', methods=['GET', 'POST'], endpoint='promocao_qr_ler')
     def promocao_qr_ler(slug: str, codigo: str):
         with SessionLocal() as db:
@@ -258,25 +345,20 @@ def register_promocoes_qr_routes(app):
                 elif row['usado']:
                     status = 'usado'
                     mensagem = 'Este QR Code já foi lido anteriormente.'
-                elif request.method == 'POST':
-                    db.execute(text("""
-                        UPDATE promocoes_qr_codigos
-                           SET usado=TRUE, usado_em=NOW(), nome_cliente=:nome, telefone=:telefone, cpf=:cpf, observacao=:obs
-                         WHERE id=:id AND usado=FALSE
-                    """), {
-                        'id': row['id'],
-                        'nome': (request.form.get('nome_cliente') or '').strip(),
-                        'telefone': (request.form.get('telefone') or '').strip(),
-                        'cpf': (request.form.get('cpf') or '').strip(),
-                        'obs': (request.form.get('observacao') or '').strip(),
-                    })
-                    db.commit()
-                    status = 'sucesso'
-                    mensagem = 'Participação registrada com sucesso!'
-                    row = dict(row)
-                    row['usado'] = True
                 else:
-                    status = 'novo'
-                    mensagem = 'Código válido. Preencha os dados para registrar sua participação.'
+                    upd = db.execute(text("""
+                        UPDATE promocoes_qr_codigos
+                           SET usado=TRUE, usado_em=NOW()
+                         WHERE id=:id AND usado=FALSE
+                    """), {'id': row['id']})
+                    db.commit()
+                    if getattr(upd, 'rowcount', 0) != 1:
+                        status = 'usado'
+                        mensagem = 'Este QR Code já foi lido anteriormente.'
+                    else:
+                        status = 'premiado' if row.get('premiado') else 'nao_premiado'
+                        mensagem = row.get('mensagem_resultado') or ('Parabéns! Você ganhou!' if row.get('premiado') else 'Não foi dessa vez, mas não desista!')
+                        row = dict(row)
+                        row['usado'] = True
 
             return render_template('promocao_qr_resgate.html', item=row, status=status, mensagem=mensagem)
