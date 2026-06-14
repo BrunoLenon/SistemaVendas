@@ -5,11 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Impressão de cupons - {{ campanha.nome }}</title>
 <style>
-  @page{size:A4 portrait;margin:8mm}*{box-sizing:border-box}body{margin:0;background:#eee;font-family:Arial,Helvetica,sans-serif;color:#111}.toolbar{position:sticky;top:0;z-index:5;background:#111;color:#fff;padding:10px 14px;display:flex;gap:10px;align-items:center;justify-content:space-between}.toolbar button{border:0;border-radius:9px;background:#ff8c00;color:#111;font-weight:900;padding:9px 14px;cursor:pointer}.sheet{width:210mm;min-height:297mm;margin:10px auto;background:#fff;padding:8mm;display:grid;grid-template-columns:repeat(3,70mm);grid-auto-rows:50mm;gap:0}.coupon{width:70mm;height:50mm;border:1px dashed #444;padding:3mm;position:relative;overflow:hidden;display:grid;grid-template-columns:1fr 25mm;gap:2mm;align-items:center;break-inside:avoid}.coupon:before{content:"";position:absolute;inset:0;background:linear-gradient(135deg,rgba(0,0,0,.72),rgba(0,0,0,.20)),var(--bg) center/cover no-repeat;opacity:.96}.coupon>*{position:relative}.txt{color:#fff;text-shadow:0 1px 3px #000}.brand{font-size:8px;font-weight:900;letter-spacing:.06em;color:#ffd08a;text-transform:uppercase}.title{font-size:15px;font-weight:950;line-height:1;margin:2mm 0}.call{font-size:8px;font-weight:800;line-height:1.25}.code{font-size:7px;margin-top:2mm;color:#fff}.qr{width:25mm;height:25mm;background:#fff;padding:1.2mm;border-radius:2mm}.result{position:absolute;left:3mm;bottom:2.2mm;right:31mm;font-size:6.8px;color:#ddd;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.cut{position:absolute;right:1mm;bottom:1mm;font-size:6px;color:#aaa}@media print{body{background:#fff}.toolbar{display:none}.sheet{margin:0;box-shadow:none}.coupon{border-color:#999}}
+  @page{size:A4 portrait;margin:5mm}*{box-sizing:border-box}body{margin:0;background:#eee;font-family:Arial,Helvetica,sans-serif;color:#111}.toolbar{position:sticky;top:0;z-index:5;background:#111;color:#fff;padding:10px 14px;display:flex;gap:10px;align-items:center;justify-content:space-between}.toolbar button{border:0;border-radius:9px;background:#ff8c00;color:#111;font-weight:900;padding:9px 14px;cursor:pointer}.sheet{width:210mm;min-height:297mm;margin:10px auto;background:#fff;padding:3mm;display:grid;grid-template-columns:repeat(3,65mm);grid-auto-rows:45mm;gap:0}.coupon{width:65mm;height:45mm;border:1px dashed #444;padding:3mm;position:relative;overflow:hidden;display:grid;grid-template-columns:1fr 22mm;gap:2mm;align-items:center;break-inside:avoid}.coupon:before{content:"";position:absolute;inset:0;background:linear-gradient(135deg,rgba(0,0,0,.72),rgba(0,0,0,.20)),var(--bg) center/cover no-repeat;opacity:.96}.coupon>*{position:relative}.txt{color:#fff;text-shadow:0 1px 3px #000}.brand{font-size:8px;font-weight:900;letter-spacing:.06em;color:#ffd08a;text-transform:uppercase}.title{font-size:15px;font-weight:950;line-height:1;margin:2mm 0}.call{font-size:8px;font-weight:800;line-height:1.25}.code{font-size:7px;margin-top:2mm;color:#fff}.qr{width:22mm;height:22mm;background:#fff;padding:1.2mm;border-radius:2mm}.result{position:absolute;left:3mm;bottom:2.2mm;right:31mm;font-size:6.8px;color:#ddd;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.cut{position:absolute;right:1mm;bottom:1mm;font-size:6px;color:#aaa}@media print{body{background:#fff}.toolbar{display:none}.sheet{margin:0;box-shadow:none}.coupon{border-color:#999}}
 </style>
 </head>
 <body>
-  <div class="toolbar"><strong>{{ campanha.nome }} — {{ codigos|length }} cupons em 7cm x 5cm</strong><button onclick="window.print()">Imprimir</button></div>
+  <div class="toolbar"><strong>{{ campanha.nome }} — {{ codigos|length }} cupons em 6,5cm x 4,5cm</strong><button onclick="window.print()">Imprimir</button></div>
   <div class="sheet">
     {% for q in codigos %}
       {% set u = public_url_fn(campanha.slug, q.codigo) %}
@@ -22,7 +22,7 @@
         </div>
         <img class="qr" src="{{ qr_img_fn(u) }}" alt="QR Code">
         <div class="result">{{ q.info_qr or campanha.premio or 'Promoção' }}</div>
-        <div class="cut">7x5cm</div>
+        <div class="cut">6,5x4,5cm</div>
       </section>
     {% endfor %}
   </div>
