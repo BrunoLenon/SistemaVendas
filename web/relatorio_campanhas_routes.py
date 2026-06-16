@@ -9,14 +9,16 @@ Extraído do app.py como refatoração pura (sem alterar comportamento externo).
 from __future__ import annotations
 
 from io import BytesIO
+from datetime import date
 import os
 import threading
 import time
 from typing import Any, Callable
+from urllib.parse import urlencode
 
 from werkzeug.datastructures import MultiDict
 
-from flask import Response, flash, render_template, request, send_file, url_for
+from flask import Response, flash, redirect, render_template, request, send_file, url_for
 
 from services.campanhas_service import build_relatorio_campanhas_scope
 from services.relatorio_campanhas_service import build_relatorio_campanhas_unificado_context
@@ -98,6 +100,112 @@ def _scope_cache_set(key: tuple, scope: dict[str, Any]) -> None:
 def _scope_cache_clear() -> None:
     with _RELATORIO_SCOPE_CACHE_LOCK:
         _RELATORIO_SCOPE_CACHE.clear()
+
+
+def _is_recalc_flag(args) -> bool:
+    try:
+        return str(args.get('recalc') or '').strip() in ('1', 'true', 'True', 'sim', 'SIM', 'yes', 'on')
+    except Exception:
+        return False
+
+
+def _has_emp_filter(args) -> bool:
+    return bool(_args_values(args, 'emp'))
+
+
+def _should_defer_unfiltered_report(*, role: str, request_args) -> bool:
+    """Evita carga pesada por padrão para perfis com visão multi-EMP.
+
+    Antes, admin/financeiro/supervisor/gerente sem EMP selecionada acabavam
+    calculando todo o escopo permitido. Em produção isso gerou cache_miss de
+    ~58s para 17 EMPs. Agora a tela inicial abre leve e exige seleção explícita.
+    """
+    role_l = str(role or '').strip().lower()
+    if role_l == 'vendedor':
+        return False
+    return role_l in ('admin', 'financeiro', 'supervisor', 'gerente') and not _has_emp_filter(request_args)
+
+
+def _clean_report_url(args, *, endpoint: str = 'relatorio_campanhas', drop: tuple[str, ...] = ('recalc', 'page')) -> str:
+    try:
+        d = args.to_dict(flat=False) if args else {}
+    except Exception:
+        d = {}
+    for k in drop:
+        d.pop(k, None)
+    qs = urlencode(d, doseq=True)
+    return url_for(endpoint) + (("?" + qs) if qs else '')
+
+
+def _empty_relatorio_ctx(scope: dict[str, Any], *, role: str, vendedor_logado: str, recalc: bool, mensagem: str | None = None) -> dict[str, Any]:
+    return {
+        'ano': int(scope.get('ano') or 0),
+        'mes': int(scope.get('mes') or 0),
+        'role': str(role or '').strip().lower(),
+        'vendedor_logado': vendedor_logado,
+        'emps_scope': list(scope.get('emps_scope') or []),
+        'emps_sel': list(scope.get('emps_sel') or []),
+        'vendedores_sel': list(scope.get('vendedores_sel') or []),
+        'vendedores_por_emp': dict(scope.get('vendedores_por_emp') or {}),
+        'rows': [],
+        'charts': {},
+        'total_linhas': 0,
+        'total_recompensa': 0.0,
+        'recalc': bool(recalc),
+        'deferred_report': True,
+        'deferred_message': mensagem or 'Selecione ao menos uma EMP e aplique os filtros para carregar o relatório.',
+    }
+
+
+def _month_year_from_args(args) -> tuple[int, int]:
+    hoje = date.today()
+    try:
+        mes = int(args.get('mes') or hoje.month)
+    except Exception:
+        mes = hoje.month
+    try:
+        ano = int(args.get('ano') or hoje.year)
+    except Exception:
+        ano = hoje.year
+    mes = min(12, max(1, mes))
+    ano = max(2000, min(ano, 2100))
+    return ano, mes
+
+
+def _build_deferred_scope(deps, *, role: str, emp_usuario: str | None, vendedor_logado: str, request_args, flash_fn) -> dict[str, Any]:
+    """Escopo leve para abrir a tela sem consultar vendedores/relatório completo.
+
+    Usado somente quando multi-EMP não selecionou EMP. A intenção é mostrar
+    os checkboxes de EMP sem disparar queries pesadas em vendas/resultados.
+    """
+    role_l = str(role or '').strip().lower()
+    ano, mes = _month_year_from_args(request_args)
+    vendedores_sel = [str(v).strip().upper() for v in _args_values(request_args, 'vendedor') if str(v).strip()]
+    emps_scope: list[str] = []
+
+    try:
+        if role_l in ('admin', 'financeiro'):
+            emps_scope = [str(e).strip() for e in (deps.get_emps_com_vendas_no_periodo(ano, mes) or []) if str(e).strip()]
+        elif role_l in ('supervisor', 'gerente'):
+            allowed = [str(e).strip() for e in (deps.resolver_emp_scope_para_usuario(vendedor_logado, role_l, emp_usuario) or []) if str(e).strip()]
+            emps_scope = sorted(set(allowed))
+            if not emps_scope:
+                flash_fn('Gerente/Supervisor sem EMP vinculada. Ajuste o vínculo do usuário (usuario_emps).', 'warning')
+        else:
+            base_emps = [str(e).strip() for e in (deps.get_emps_vendedor(vendedor_logado) or []) if str(e).strip()]
+            emps_scope = sorted(set(base_emps))
+    except Exception as exc:
+        print(f'[RELATORIO_CAMPANHAS] erro ao montar escopo leve: {exc}')
+        emps_scope = []
+
+    return {
+        'ano': ano,
+        'mes': mes,
+        'emps_sel': [],
+        'vendedores_sel': vendedores_sel,
+        'emps_scope': emps_scope,
+        'vendedores_por_emp': {str(emp): [] for emp in emps_scope},
+    }
 
 
 def _default_per_page(role: str) -> int:
@@ -462,7 +570,33 @@ def _augment_ctx(ctx, *, role: str, vendedor_logado: str, vendedores_por_emp: di
 
 
 def _build_relatorio_ctx(deps, *, role: str, emp_usuario: str | None, vendedor_logado: str, request_args, flash_fn, recalc_override: bool | None = None):
-    recalc_flag = str(request_args.get('recalc') or '').strip() in ('1', 'true', 'True', 'sim', 'SIM', 'yes', 'on')
+    recalc_flag = _is_recalc_flag(request_args)
+    recalc = recalc_override
+    if recalc is None:
+        recalc = recalc_flag
+
+    if _should_defer_unfiltered_report(role=role, request_args=request_args):
+        if recalc_override is True or recalc_flag:
+            _scope_cache_clear()
+        if recalc:
+            flash_fn('Selecione ao menos uma EMP antes de recalcular o relatório.', 'warning')
+        scope = _build_deferred_scope(
+            deps,
+            role=role,
+            emp_usuario=emp_usuario,
+            vendedor_logado=vendedor_logado,
+            request_args=request_args,
+            flash_fn=flash_fn,
+        )
+        ctx = _empty_relatorio_ctx(
+            scope,
+            role=role,
+            vendedor_logado=vendedor_logado,
+            recalc=False,
+            mensagem='Para evitar travamento, o relatório não calcula todas as EMPs automaticamente. Selecione uma ou mais EMPs e clique em Aplicar filtros.',
+        )
+        return ctx, scope.get('vendedores_por_emp') or {}
+
     if recalc_override is True or recalc_flag:
         _scope_cache_clear()
 
@@ -485,10 +619,6 @@ def _build_relatorio_ctx(deps, *, role: str, emp_usuario: str | None, vendedor_l
     vendedores_sel = scope['vendedores_sel']
     emps_scope = scope['emps_scope']
     vendedores_por_emp = scope['vendedores_por_emp']
-
-    recalc = recalc_override
-    if recalc is None:
-        recalc = recalc_flag
 
     ctx = build_relatorio_campanhas_unificado_context(
         deps,
@@ -530,6 +660,22 @@ def register_relatorio_campanhas_routes(
         emp_usuario = emp_fn()
         vendedor_logado = (usuario_logado_fn() or '').strip().upper()
 
+        # Compatibilidade com links antigos (?recalc=1), mas sem manter recalc na URL.
+        # Isso evita F5/histórico repetindo recálculo pesado.
+        if _is_recalc_flag(request.args):
+            ctx_recalc, _ = _build_relatorio_ctx(
+                deps,
+                role=role,
+                emp_usuario=emp_usuario,
+                vendedor_logado=vendedor_logado,
+                request_args=request.args,
+                flash_fn=flash,
+                recalc_override=True,
+            )
+            if not ctx_recalc.get('deferred_report'):
+                flash('Relatório recalculado com sucesso.', 'success')
+            return redirect(_clean_report_url(request.args))
+
         ctx, vendedores_por_emp = _build_relatorio_ctx(
             deps,
             role=role,
@@ -547,6 +693,39 @@ def register_relatorio_campanhas_routes(
             include_pagination=True,
         )
         return render_template('relatorio_campanhas.html', ctx=ctx, **ctx)
+
+    def relatorio_campanhas_recalcular():
+        red = login_required_fn()
+        if red:
+            return red
+
+        role = (role_fn() or '').strip().lower()
+        emp_usuario = emp_fn()
+        vendedor_logado = (usuario_logado_fn() or '').strip().upper()
+
+        post_args = MultiDict()
+        try:
+            for key, values in request.form.lists():
+                if key in ('recalc', 'page'):
+                    continue
+                post_args.setlist(key, list(values or []))
+        except Exception:
+            pass
+        post_args.setlist('recalc', ['1'])
+
+        ctx_recalc, _ = _build_relatorio_ctx(
+            deps,
+            role=role,
+            emp_usuario=emp_usuario,
+            vendedor_logado=vendedor_logado,
+            request_args=post_args,
+            flash_fn=flash,
+            recalc_override=True,
+        )
+        if not ctx_recalc.get('deferred_report'):
+            flash('Relatório recalculado com sucesso.', 'success')
+
+        return redirect(_clean_report_url(post_args))
 
     def relatorio_campanhas_detalhes():
         red = login_required_fn()
@@ -712,6 +891,7 @@ def register_relatorio_campanhas_routes(
         return send_file(BytesIO(pdf_bytes), mimetype='application/pdf', as_attachment=True, download_name=filename)
 
     app.add_url_rule('/relatorios/campanhas', endpoint='relatorio_campanhas', view_func=relatorio_campanhas, methods=['GET'])
+    app.add_url_rule('/relatorios/campanhas/recalcular', endpoint='relatorio_campanhas_recalcular', view_func=relatorio_campanhas_recalcular, methods=['POST'])
     app.add_url_rule('/relatorios/campanhas/detalhes', endpoint='relatorio_campanhas_detalhes', view_func=relatorio_campanhas_detalhes, methods=['GET'])
     app.add_url_rule('/relatorios/campanhas/export.csv', endpoint='relatorio_campanhas_export_csv', view_func=relatorio_campanhas_export_csv, methods=['GET'])
     app.add_url_rule('/relatorios/campanhas/export.pdf', endpoint='relatorio_campanhas_export_pdf', view_func=relatorio_campanhas_export_pdf, methods=['GET'])

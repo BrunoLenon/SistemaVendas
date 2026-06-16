@@ -557,6 +557,29 @@ from services.relatorio_unificado_service import (
 
 _RELATORIO_UNIFICADO_CACHE: dict[tuple, tuple[float, list[Any], dict[str, Any]]] = {}
 _RELATORIO_UNIFICADO_CACHE_LOCK = threading.Lock()
+_RELATORIO_UNIFICADO_INFLIGHT_LOCKS: dict[tuple, threading.Lock] = {}
+_RELATORIO_UNIFICADO_INFLIGHT_LOCKS_GUARD = threading.Lock()
+
+
+def _relatorio_inflight_lock_for(key: tuple) -> threading.Lock:
+    """Um lock por chave de relatório para evitar cache_miss duplicado.
+
+    Em produção foi observado duas requisições iguais de /relatorios/campanhas
+    calculando 17 EMPs ao mesmo tempo. A primeira monta e grava o cache; a
+    segunda espera e tenta ler o cache novamente, em vez de refazer tudo.
+    """
+    with _RELATORIO_UNIFICADO_INFLIGHT_LOCKS_GUARD:
+        if len(_RELATORIO_UNIFICADO_INFLIGHT_LOCKS) > 64:
+            # Melhor esforço: não remove locks em uso, apenas limita crescimento.
+            for old_key in list(_RELATORIO_UNIFICADO_INFLIGHT_LOCKS.keys())[:16]:
+                lock = _RELATORIO_UNIFICADO_INFLIGHT_LOCKS.get(old_key)
+                if lock is not None and not lock.locked():
+                    _RELATORIO_UNIFICADO_INFLIGHT_LOCKS.pop(old_key, None)
+        lock = _RELATORIO_UNIFICADO_INFLIGHT_LOCKS.get(key)
+        if lock is None:
+            lock = threading.Lock()
+            _RELATORIO_UNIFICADO_INFLIGHT_LOCKS[key] = lock
+        return lock
 
 
 def _relatorio_cache_ttl_seconds() -> int:
@@ -717,33 +740,44 @@ def build_relatorio_campanhas_unificado_context(
         except Exception:
             pass
     else:
-        started = time.perf_counter()
-        try:
-            rows = build_unified_rows(
-                ano=ano,
-                mes=mes,
-                emps=emps_sel,
-                vendedores_por_emp=vendedores_por_emp,
-                incluir_zerados=False,
-                usar_snapshot_itens_parados=True,
-            )
-            if rows is None:
-                rows = []
-        except Exception as e:
-            try:
-                deps.SessionLocal().rollback()
-            except Exception:
-                pass
-            print(f"[RELATORIO_UNIFICADO] erro ao montar rows: {e}")
-            rows = []
+        lock = _relatorio_inflight_lock_for(cache_key)
+        with lock:
+            # Segunda checagem depois de aguardar outra request idêntica terminar.
+            cached_after_wait = None if recalc else _relatorio_cache_get(cache_key)
+            if cached_after_wait is not None:
+                rows, charts = cached_after_wait
+                try:
+                    print(f"[RELATORIO_UNIFICADO] cache_hit_after_wait rows={len(rows or [])} ano={ano} mes={mes} emps={len(emps_sel or [])}")
+                except Exception:
+                    pass
+            else:
+                started = time.perf_counter()
+                try:
+                    rows = build_unified_rows(
+                        ano=ano,
+                        mes=mes,
+                        emps=emps_sel,
+                        vendedores_por_emp=vendedores_por_emp,
+                        incluir_zerados=False,
+                        usar_snapshot_itens_parados=True,
+                    )
+                    if rows is None:
+                        rows = []
+                except Exception as e:
+                    try:
+                        deps.SessionLocal().rollback()
+                    except Exception:
+                        pass
+                    print(f"[RELATORIO_UNIFICADO] erro ao montar rows: {e}")
+                    rows = []
 
-        charts = aggregate_for_charts(rows or [])
-        _relatorio_cache_set(cache_key, rows, charts)
-        try:
-            elapsed_ms = int((time.perf_counter() - started) * 1000)
-            print(f"[RELATORIO_UNIFICADO] cache_miss duration_ms={elapsed_ms} rows={len(rows or [])} ano={ano} mes={mes} emps={len(emps_sel or [])}")
-        except Exception:
-            pass
+                charts = aggregate_for_charts(rows or [])
+                _relatorio_cache_set(cache_key, rows, charts)
+                try:
+                    elapsed_ms = int((time.perf_counter() - started) * 1000)
+                    print(f"[RELATORIO_UNIFICADO] cache_miss duration_ms={elapsed_ms} rows={len(rows or [])} ano={ano} mes={mes} emps={len(emps_sel or [])}")
+                except Exception:
+                    pass
 
     # Stats básicos
     total_linhas = len(rows or [])

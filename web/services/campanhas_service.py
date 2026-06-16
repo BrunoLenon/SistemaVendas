@@ -504,7 +504,7 @@ def build_relatorio_campanhas_scope(
     emps_scope: list[str] = []
     vendedores_por_emp: dict[str, list[str]] = {}
 
-    if role_l == "admin":
+    if role_l in ("admin", "financeiro"):
         emps_scope = deps.get_emps_com_vendas_no_periodo(ano, mes)
         # emps_sel é apenas filtro; não deve reduzir emps_scope (senão some do dropdown)
     elif role_l in ("supervisor", "gerente"):
@@ -539,7 +539,7 @@ def build_relatorio_campanhas_scope(
 
     for emp in emps_scope:
         emp = str(emp)
-        if role_l == "admin":
+        if role_l in ("admin", "financeiro"):
             vendedores = list(vendedores_periodo_batch.get(emp) or [])
             if not vendedores:
                 vendedores = deps.get_vendedores_emp_no_periodo(emp, ano, mes)

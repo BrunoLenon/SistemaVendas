@@ -7,6 +7,10 @@
   .sv-report-page .sv-admin-hero{margin-bottom:14px;}
   .sv-report-page .sv-admin-title{font-size:26px;}
   .sv-report-page .sv-action-row .sv-btn{text-decoration:none;}
+  .sv-report-page .sv-inline-form{display:inline-flex;margin:0;}
+  .sv-report-page .sv-btn[disabled],.sv-report-page button.sv-btn:disabled{opacity:.48;cursor:not-allowed;filter:grayscale(.25);}
+  .sv-report-page .sv-safe-alert{margin-top:14px;padding:14px 16px;border-radius:18px;border:1px solid rgba(255,177,66,.28);background:linear-gradient(180deg,rgba(255,177,66,.11),rgba(255,255,255,.035));color:#fff;box-shadow:0 12px 28px rgba(0,0,0,.16);}
+  .sv-report-page .sv-safe-alert strong{color:#ffd098;}
   .sv-report-page .sv-panel{margin-top:14px;}
   .sv-report-page .sv-panel-body{padding:14px;}
   .sv-report-page .sv-filter-grid-main{display:grid;grid-template-columns:150px 150px 230px 1fr;gap:12px;align-items:end;}
@@ -106,9 +110,18 @@
         <div class="sv-admin-subtitle">Conferência consolidada por EMP, vendedor, campanha e meta. Use <strong>Recalcular</strong> após importar vendas para atualizar a apuração.</div>
       </div>
       <div class="sv-action-row">
-        <a class="sv-btn sv-btn-soft" href="{{ ctx.get('recalc_url') or url_for('relatorio_campanhas', recalc=1, page=1) }}">Recalcular</a>
-        <a class="sv-btn sv-btn-primary" href="{{ ctx.get('export_url') or url_for('relatorio_campanhas_export_pdf') }}">Exportar PDF</a>
-        <a class="sv-btn sv-btn-soft" href="{{ ctx.get('export_csv_url') or url_for('relatorio_campanhas_export_csv') }}">CSV</a>
+        <form method="post" action="{{ url_for('relatorio_campanhas_recalcular') }}" class="sv-inline-form">
+          {% for key, values in request.args.lists() %}
+            {% if key not in ['recalc', 'page'] %}
+              {% for value in values %}
+                <input type="hidden" name="{{ key }}" value="{{ value }}">
+              {% endfor %}
+            {% endif %}
+          {% endfor %}
+          <button class="sv-btn sv-btn-soft" type="submit" {% if ctx.get('deferred_report') %}disabled title="Selecione ao menos uma EMP antes de recalcular"{% endif %}>Recalcular</button>
+        </form>
+        <a class="sv-btn sv-btn-primary" href="{{ ctx.get('export_url') or url_for('relatorio_campanhas_export_pdf') }}" {% if ctx.get('deferred_report') %}aria-disabled="true" onclick="return false;" style="opacity:.48;pointer-events:none;"{% endif %}>Exportar PDF</a>
+        <a class="sv-btn sv-btn-soft" href="{{ ctx.get('export_csv_url') or url_for('relatorio_campanhas_export_csv') }}" {% if ctx.get('deferred_report') %}aria-disabled="true" onclick="return false;" style="opacity:.48;pointer-events:none;"{% endif %}>CSV</a>
       </div>
     </div>
   </section>
@@ -206,6 +219,13 @@
     </form>
     </div>
   </div>
+
+  {% if ctx.get('deferred_report') %}
+    <div class="sv-safe-alert">
+      <strong>Consulta protegida contra travamento.</strong>
+      {{ ctx.get('deferred_message') }}
+    </div>
+  {% endif %}
 
   <!-- KPI -->
   <div class="sv-admin-kpis sv-admin-section">
