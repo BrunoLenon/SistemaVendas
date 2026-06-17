@@ -209,11 +209,23 @@
 
   {% if admin_geral and dados_admin %}
     <div class="sv-dash-kpis mb-3">
-      {{ kpi_card('Total líquido', dados_admin.valor_atual|brl_rs, 'Resultado do mês com DS/CA abatidos', '💰') }}
+      {{ kpi_card('Total líquido', dados_admin.valor_atual|brl_rs, 'Resumo rápido do cache mensal', '💰') }}
       {{ kpi_card('Bruto', dados_admin.valor_bruto|brl_rs, 'Somente vendas positivas', '🧾') }}
       {{ kpi_card('Devolvido', dados_admin.valor_devolvido|brl_rs, 'DS/CA no período', '↩️') }}
-      {{ kpi_card('Clientes', (global_analysis.clientes_total if global_analysis else 0), 'Compradores únicos do mês', '👥') }}
+      {{ kpi_card('Clientes', (global_analysis.clientes_total if global_analysis else '—'), 'Carregue análise completa para apurar', '👥') }}
     </div>
+
+    {% if not global_analysis %}
+      <div class="sv-dash-panel mb-3">
+        <div class="sv-dash-panel__body d-flex justify-content-between align-items-center flex-wrap gap-2">
+          <div>
+            <div class="fw-bold text-white">Dashboard em modo rápido</div>
+            <div class="sv-dash-muted small">Para evitar 502 no Render, produtos, marcas e clientes globais não são calculados automaticamente.</div>
+          </div>
+          <a class="sv-dash-btn sv-dash-btn-ghost" href="/dashboard?mes={{ mes }}&ano={{ ano }}{% if emp_selecionada %}&emp={{ emp_selecionada }}{% endif %}&analise=1">Carregar análise completa</a>
+        </div>
+      </div>
+    {% endif %}
 
     <div class="sv-dash-grid-2 mb-3">
       <div class="sv-dash-panel">

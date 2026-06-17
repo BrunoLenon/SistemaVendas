@@ -727,6 +727,12 @@ def register_relatorio_campanhas_routes(
 
         return redirect(_clean_report_url(post_args))
 
+    def relatorio_campanhas_recalcular_get():
+        # Proteção: se alguém abrir a URL de recálculo direto pelo navegador (GET),
+        # não executa processamento pesado nem gera 405/502; volta para o relatório.
+        flash('Use o botão Recalcular dentro do relatório após selecionar uma EMP.', 'warning')
+        return redirect(url_for('relatorio_campanhas'))
+
     def relatorio_campanhas_detalhes():
         red = login_required_fn()
         if red:
@@ -892,6 +898,7 @@ def register_relatorio_campanhas_routes(
 
     app.add_url_rule('/relatorios/campanhas', endpoint='relatorio_campanhas', view_func=relatorio_campanhas, methods=['GET'])
     app.add_url_rule('/relatorios/campanhas/recalcular', endpoint='relatorio_campanhas_recalcular', view_func=relatorio_campanhas_recalcular, methods=['POST'])
+    app.add_url_rule('/relatorios/campanhas/recalcular', endpoint='relatorio_campanhas_recalcular_get', view_func=relatorio_campanhas_recalcular_get, methods=['GET'])
     app.add_url_rule('/relatorios/campanhas/detalhes', endpoint='relatorio_campanhas_detalhes', view_func=relatorio_campanhas_detalhes, methods=['GET'])
     app.add_url_rule('/relatorios/campanhas/export.csv', endpoint='relatorio_campanhas_export_csv', view_func=relatorio_campanhas_export_csv, methods=['GET'])
     app.add_url_rule('/relatorios/campanhas/export.pdf', endpoint='relatorio_campanhas_export_pdf', view_func=relatorio_campanhas_export_pdf, methods=['GET'])

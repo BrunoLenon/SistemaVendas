@@ -2133,64 +2133,51 @@ def favicon():
 
 
 def _dados_admin_geral(mes: int, ano: int, emp_scope: list[str] | None = None):
-    """Visão geral do ADMIN quando nenhum vendedor é selecionado.
-
-    Mantém as mesmas regras de sinal (DS/CA negativos) usadas no dashboard por vendedor,
-    mas agrega por EMP (e também gera ranking de vendedores do período).
-    """
-    start = date(ano, mes, 1)
-    end = date(ano + 1, 1, 1) if mes == 12 else date(ano, mes + 1, 1)
-
-    mov = func.upper(func.coalesce(Venda.mov_tipo_movto, ""))
-    signed = case((mov.in_(MOVIMENTOS_NEGATIVOS), -func.coalesce(Venda.valor_total, 0.0)), (mov.in_(MOVIMENTOS_VENDA), func.coalesce(Venda.valor_total, 0.0)), else_=0.0)
+    """Visão geral rápida do ADMIN/FINANCEIRO usando dashboard_cache."""
+    emps = [str(e).strip() for e in (emp_scope or []) if e is not None and str(e).strip()]
 
     with SessionLocal() as db:
-        base = db.query(Venda).filter(Venda.movimento >= start, Venda.movimento < end)
-        if emp_scope:
-            emps = [str(e).strip() for e in emp_scope if e is not None and str(e).strip()]
-            if emps:
-                base = base.filter(Venda.emp.in_(emps))
+        q = db.query(DashboardCache).filter(DashboardCache.ano == int(ano), DashboardCache.mes == int(mes))
+        if emps:
+            q = q.filter(DashboardCache.emp.in_(emps))
 
-        bruto_expr = func.coalesce(func.sum(case((func.upper(func.coalesce(Venda.mov_tipo_movto, "")).in_(MOVIMENTOS_VENDA), Venda.valor_total), else_=0.0)), 0.0)
-        devol_expr = func.coalesce(func.sum(case((func.upper(func.coalesce(Venda.mov_tipo_movto, "")).in_(MOVIMENTOS_NEGATIVOS), Venda.valor_total), else_=0.0)), 0.0)
-        liquido_expr = func.coalesce(func.sum(signed), 0.0)
-
-        total_row = base.with_entities(bruto_expr, devol_expr, liquido_expr).first()
+        total_row = q.with_entities(
+            func.coalesce(func.sum(DashboardCache.valor_bruto), 0.0),
+            func.coalesce(func.sum(DashboardCache.devolucoes + DashboardCache.cancelamentos), 0.0),
+            func.coalesce(func.sum(DashboardCache.valor_liquido), 0.0),
+        ).first()
         total_bruto = float(total_row[0] or 0.0)
         total_devol = float(total_row[1] or 0.0)
         total_liquido = float(total_row[2] or 0.0)
         pct_devolucao = (total_devol / total_bruto * 100.0) if total_bruto else None
 
-        # Por EMP
-        q_emp = (
-            base.with_entities(Venda.emp, bruto_expr.label("bruto"), devol_expr.label("devol"), liquido_expr.label("liquido"))
-            .group_by(Venda.emp)
-        )
-        emp_rows = []
-        for emp, bruto, devol, liquido in q_emp:
-            emp_rows.append({
-                "emp": (emp or "").strip(),
-                "valor_bruto": float(bruto or 0.0),
-                "valor_devolvido": float(devol or 0.0),
-                "valor_atual": float(liquido or 0.0),
-            })
-        emp_rows.sort(key=lambda r: r.get("valor_atual", 0.0), reverse=True)
-
-        # Top vendedores (líquido) – útil para drill-down rápido
-        q_vend = (
-            base.with_entities(Venda.vendedor, func.coalesce(func.sum(signed), 0.0))
-            .group_by(Venda.vendedor)
-        )
-        vend_rows = [{"vendedor": (v or "").strip().upper(), "valor": float(val or 0.0)} for v, val in q_vend]
-        vend_rows.sort(key=lambda r: r["valor"], reverse=True)
+        emp_rows = [
+            {"emp": (emp or "").strip(), "valor_bruto": float(bruto or 0.0), "valor_devolvido": float(devol or 0.0), "valor_atual": float(liquido or 0.0)}
+            for emp, bruto, devol, liquido in (
+                q.with_entities(
+                    DashboardCache.emp,
+                    func.coalesce(func.sum(DashboardCache.valor_bruto), 0.0).label("bruto"),
+                    func.coalesce(func.sum(DashboardCache.devolucoes + DashboardCache.cancelamentos), 0.0).label("devol"),
+                    func.coalesce(func.sum(DashboardCache.valor_liquido), 0.0).label("liquido"),
+                ).group_by(DashboardCache.emp).order_by(func.coalesce(func.sum(DashboardCache.valor_liquido), 0.0).desc()).limit(30).all()
+            )
+        ]
+        vend_rows = [
+            {"vendedor": (v or "").strip().upper(), "valor": float(val or 0.0)}
+            for v, val in (
+                q.with_entities(DashboardCache.vendedor, func.coalesce(func.sum(DashboardCache.valor_liquido), 0.0).label("valor"))
+                .group_by(DashboardCache.vendedor).order_by(func.coalesce(func.sum(DashboardCache.valor_liquido), 0.0).desc()).limit(30).all()
+            )
+        ]
 
     return {
         "valor_bruto": total_bruto,
         "valor_devolvido": total_devol,
         "valor_atual": total_liquido,
         "pct_devolucao": pct_devolucao,
-        "ranking_emp_list": emp_rows[:30],
-        "ranking_vendedores_list": vend_rows[:30],
+        "ranking_emp_list": emp_rows,
+        "ranking_vendedores_list": vend_rows,
+        "cache_source": "dashboard_cache",
     }
 
 

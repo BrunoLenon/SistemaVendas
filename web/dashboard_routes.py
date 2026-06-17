@@ -7,6 +7,9 @@ from __future__ import annotations
 
 from typing import Callable, Optional, Any
 from datetime import date
+import os
+import threading
+import time
 
 from flask import (
     flash,
@@ -104,6 +107,74 @@ def _query_periodo(db, ano: int, mes: int, emp: str | None = None):
     if emp:
         q = q.filter(Venda.emp == str(emp))
     return q
+
+
+_DASHBOARD_MEM_CACHE: dict[tuple, tuple[float, Any]] = {}
+_DASHBOARD_MEM_LOCK = threading.Lock()
+_DASHBOARD_SINGLE_FLIGHT: dict[tuple, threading.Lock] = {}
+
+
+def _dashboard_cache_ttl_seconds() -> int:
+    try:
+        return max(0, int(os.environ.get("DASHBOARD_ANALYTICS_CACHE_TTL_SECONDS", "300") or 0))
+    except Exception:
+        return 300
+
+
+def _dashboard_get_cached(key: tuple):
+    ttl = _dashboard_cache_ttl_seconds()
+    if ttl <= 0:
+        return None
+    now = time.monotonic()
+    with _DASHBOARD_MEM_LOCK:
+        item = _DASHBOARD_MEM_CACHE.get(key)
+        if not item:
+            return None
+        created, value = item
+        if now - created > ttl:
+            _DASHBOARD_MEM_CACHE.pop(key, None)
+            return None
+        return value
+
+
+def _dashboard_set_cached(key: tuple, value: Any) -> None:
+    ttl = _dashboard_cache_ttl_seconds()
+    if ttl <= 0:
+        return
+    with _DASHBOARD_MEM_LOCK:
+        if len(_DASHBOARD_MEM_CACHE) > 80:
+            oldest = sorted(_DASHBOARD_MEM_CACHE.items(), key=lambda kv: kv[1][0])[:20]
+            for old_key, _ in oldest:
+                _DASHBOARD_MEM_CACHE.pop(old_key, None)
+        _DASHBOARD_MEM_CACHE[key] = (time.monotonic(), value)
+
+
+def _dashboard_single_flight(key: tuple, builder: Callable[[], Any]):
+    cached = _dashboard_get_cached(key)
+    if cached is not None:
+        return cached
+    with _DASHBOARD_MEM_LOCK:
+        lock = _DASHBOARD_SINGLE_FLIGHT.get(key)
+        if lock is None:
+            lock = threading.Lock()
+            _DASHBOARD_SINGLE_FLIGHT[key] = lock
+    with lock:
+        cached = _dashboard_get_cached(key)
+        if cached is not None:
+            return cached
+        value = builder()
+        _dashboard_set_cached(key, value)
+        return value
+
+
+def _dashboard_heavy_analysis_enabled() -> bool:
+    # Por padrão o dashboard abre em modo leve. Para carregar análises pesadas:
+    # /dashboard?analise=1 ou env DASHBOARD_HEAVY_ANALYSIS=1.
+    flag = str(request.args.get("analise") or request.args.get("analytics") or "").strip().lower()
+    if flag in ("1", "true", "sim", "yes", "on"):
+        return True
+    env = str(os.environ.get("DASHBOARD_HEAVY_ANALYSIS", "0") or "0").strip().lower()
+    return env in ("1", "true", "sim", "yes", "on")
 
 
 def _build_global_sales_analysis(ano: int, mes: int) -> dict:
@@ -409,32 +480,44 @@ def register_dashboard_routes(
         global_analysis = None
         emp_selecionada = None
         emp_options = []
-        if (role or "").lower() == "admin" and not vendedor_alvo:
+        if (role or "").lower() in ("admin", "financeiro") and not vendedor_alvo:
             emp_selecionada = (request.args.get("emp") or "").strip() or None
             try:
+                # Versão rápida: usa cache mensal agregado em vez de varrer toda a tabela vendas.
                 dados_admin = dados_admin_geral_fn(mes=mes, ano=ano)
-                global_analysis = _build_global_sales_analysis(ano=ano, mes=mes)
             except Exception:
-                app.logger.exception("Erro ao carregar dashboard geral do admin")
+                app.logger.exception("Erro ao carregar dashboard geral")
                 dados_admin = None
-                global_analysis = None
+
             emp_options = [str((row or {}).get("emp") or "").strip() for row in (dados_admin or {}).get("ranking_emp_list", []) if str((row or {}).get("emp") or "").strip()]
+
+            # Análises globais de produto/marca/clientes são pesadas. Agora são opt-in:
+            # /dashboard?mes=...&ano=...&analise=1
+            if _dashboard_heavy_analysis_enabled():
+                try:
+                    global_analysis = _dashboard_single_flight(("global_analysis", int(ano), int(mes)), lambda: _build_global_sales_analysis(ano=ano, mes=mes))
+                except Exception:
+                    app.logger.exception("Erro ao carregar análise global do dashboard")
+                    global_analysis = None
+
             if emp_selecionada:
                 try:
-                    dashboard_emp = _build_emp_dashboard(ano=ano, mes=mes, emp=emp_selecionada)
+                    dashboard_emp = _dashboard_single_flight(("emp_dashboard", str(emp_selecionada), int(ano), int(mes)), lambda: _build_emp_dashboard(ano=ano, mes=mes, emp=emp_selecionada))
                 except Exception:
                     app.logger.exception("Erro ao carregar dashboard detalhado por EMP")
                     dashboard_emp = None
         elif (role or "").lower() in ("supervisor", "gerente") and not vendedor_alvo and allowed_emps:
-            emp_selecionada = ((request.args.get("emp") or "").strip() or allowed_emps[0])
-            if emp_selecionada not in allowed_emps:
-                emp_selecionada = allowed_emps[0]
+            emp_req = (request.args.get("emp") or "").strip()
             emp_options = list(allowed_emps)
-            try:
-                dashboard_emp = _build_emp_dashboard(ano=ano, mes=mes, emp=emp_selecionada)
-            except Exception:
-                app.logger.exception("Erro ao carregar dashboard detalhado por EMP do supervisor")
-                dashboard_emp = None
+            emp_selecionada = emp_req if emp_req in allowed_emps else None
+            if not emp_selecionada:
+                msg = msg or "Selecione uma EMP e clique em Atualizar para carregar o dashboard detalhado."
+            else:
+                try:
+                    dashboard_emp = _dashboard_single_flight(("emp_dashboard", str(emp_selecionada), int(ano), int(mes)), lambda: _build_emp_dashboard(ano=ano, mes=mes, emp=emp_selecionada))
+                except Exception:
+                    app.logger.exception("Erro ao carregar dashboard detalhado por EMP do supervisor")
+                    dashboard_emp = None
 
         return render_template(
             "dashboard.html",
@@ -454,7 +537,7 @@ def register_dashboard_routes(
             dashboard_emp=dashboard_emp,
             emp_options=emp_options,
             emp_selecionada=emp_selecionada or "",
-            admin_geral=(bool(dados_admin) and not (vendedor_alvo or "").strip()),
+            admin_geral=(bool(dados_admin) and (role or "").lower() in ("admin", "financeiro") and not (vendedor_alvo or "").strip()),
         )
 
     @app.get("/percentuais")
