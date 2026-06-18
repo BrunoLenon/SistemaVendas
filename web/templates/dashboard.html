@@ -209,23 +209,25 @@
 
   {% if admin_geral and dados_admin %}
     <div class="sv-dash-kpis mb-3">
-      {{ kpi_card('Total líquido', dados_admin.valor_atual|brl_rs, 'Resumo rápido do cache mensal', '💰') }}
+      {{ kpi_card('Total líquido', dados_admin.valor_atual|brl_rs, 'Resultado do mês com DS/CA abatidos', '💰') }}
       {{ kpi_card('Bruto', dados_admin.valor_bruto|brl_rs, 'Somente vendas positivas', '🧾') }}
       {{ kpi_card('Devolvido', dados_admin.valor_devolvido|brl_rs, 'DS/CA no período', '↩️') }}
-      {{ kpi_card('Clientes', (global_analysis.clientes_total if global_analysis else '—'), 'Carregue análise completa para apurar', '👥') }}
+      {{ kpi_card('Clientes', (global_analysis.clientes_total if global_analysis else '—'), ('Compradores únicos do mês' if global_analysis else 'Carregue análise completa'), '👥') }}
     </div>
 
-    {% if not global_analysis %}
-      <div class="sv-dash-panel mb-3">
-        <div class="sv-dash-panel__body d-flex justify-content-between align-items-center flex-wrap gap-2">
-          <div>
-            <div class="fw-bold text-white">Dashboard em modo rápido</div>
-            <div class="sv-dash-muted small">Para evitar 502 no Render, produtos, marcas e clientes globais não são calculados automaticamente.</div>
-          </div>
-          <a class="sv-dash-btn sv-dash-btn-ghost" href="/dashboard?mes={{ mes }}&ano={{ ano }}{% if emp_selecionada %}&emp={{ emp_selecionada }}{% endif %}&analise=1">Carregar análise completa</a>
+    <div class="sv-dash-panel mb-3">
+      <div class="sv-dash-panel__body d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <div>
+          <div class="fw-bold text-white">Análise pesada opcional</div>
+          <div class="sv-dash-muted small">Produtos campeões, marcas líderes e clientes únicos podem consultar muitas vendas. Carregue somente quando precisar.</div>
         </div>
+        {% if carregar_analise %}
+          <a class="sv-dash-btn sv-dash-btn-ghost" href="/dashboard?mes={{ mes }}&ano={{ ano }}{% if emp_selecionada %}&emp={{ emp_selecionada }}{% endif %}">Ocultar análise completa</a>
+        {% else %}
+          <a class="sv-dash-btn" href="/dashboard?mes={{ mes }}&ano={{ ano }}&analise=1{% if emp_selecionada %}&emp={{ emp_selecionada }}{% endif %}">Carregar análise completa</a>
+        {% endif %}
       </div>
-    {% endif %}
+    </div>
 
     <div class="sv-dash-grid-2 mb-3">
       <div class="sv-dash-panel">
@@ -241,7 +243,7 @@
               <thead><tr><th style="width:70px;">EMP</th><th class="text-end">Líquido</th><th class="text-end">Bruto</th><th class="text-end">Devolvido</th></tr></thead>
               <tbody>
               {% for row in dados_admin.ranking_emp_list or [] %}
-                <tr class="sv-row-click" onclick="window.location='/dashboard?emp={{ row.emp }}&mes={{ mes }}&ano={{ ano }}'">
+                <tr class="sv-row-click" onclick="window.location='/dashboard?emp={{ row.emp }}&mes={{ mes }}&ano={{ ano }}&detalhe_emp=1'">
                   <td><span class="sv-dash-rank-badge">{{ row.emp }}</span></td>
                   <td class="text-end fw-bold">{{ row.valor_atual|brl_rs }}</td>
                   <td class="text-end">{{ row.valor_bruto|brl_rs }}</td>
@@ -307,7 +309,7 @@
               </table>
             </div>
           {% else %}
-            {{ empty_state('Sem produtos no período selecionado.') }}
+            {{ empty_state('Clique em Carregar análise completa para ver os produtos campeões.') }}
           {% endif %}
         </div>
       </div>
@@ -332,11 +334,23 @@
               </div>
             {% endfor %}
           {% else %}
-            {{ empty_state('Sem marcas no período selecionado.') }}
+            {{ empty_state('Clique em Carregar análise completa para ver as marcas líderes.') }}
           {% endif %}
         </div>
       </div>
     </div>
+
+    {% if emp_selecionada and not dashboard_emp %}
+      <div class="sv-dash-panel mb-3">
+        <div class="sv-dash-panel__body d-flex flex-wrap justify-content-between align-items-center gap-2">
+          <div>
+            <div class="fw-bold text-white">EMP {{ emp_selecionada }} selecionada</div>
+            <div class="sv-dash-muted small">O detalhamento da EMP consulta produtos, marcas, clientes e vendedores. Ele só carrega quando solicitado para manter o sistema estável.</div>
+          </div>
+          <a class="sv-dash-btn" href="/dashboard?emp={{ emp_selecionada }}&mes={{ mes }}&ano={{ ano }}&detalhe_emp=1">Carregar detalhe da EMP</a>
+        </div>
+      </div>
+    {% endif %}
 
     {% if dashboard_emp %}
       <div class="sv-dash-panel mb-3" id="emp-analise">

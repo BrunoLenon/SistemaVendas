@@ -803,60 +803,58 @@ def _admin_or_supervisor_required():
     return None
 
 def _get_vendedores_db(role: str, emp_usuario: str | None) -> list[str]:
-    """Lista de vendedores para dropdown sem varrer toda a tabela de vendas.
+    """Lista de vendedores para dropdown sem varrer a tabela vendas.
 
-    Antes o admin executava SELECT DISTINCT em vendas para montar o dropdown.
-    Em produção isso competia com dashboard/relatórios e podia bloquear o healthcheck.
-    Agora a fonte primária é o cadastro de usuários e seus vínculos em usuario_emps.
+    Antes o dashboard fazia SELECT DISTINCT em vendas para montar o dropdown.
+    Em bases grandes isso deixa o /dashboard lento logo após login. A fonte
+    correta e leve para o dropdown é a tabela usuarios/usuario_emps.
     """
     role = (role or "").strip().lower()
-    with SessionLocal() as db:
-        try:
-            if role in ("admin", "financeiro"):
-                rows = (
-                    db.query(Usuario.username)
-                    .filter(func.lower(Usuario.role) == "vendedor")
-                    .order_by(Usuario.username.asc())
-                    .all()
-                )
-                vendedores = sorted({(r[0] or "").strip().upper() for r in rows if (r[0] or "").strip()})
-                if vendedores:
-                    return vendedores
+    try:
+        with SessionLocal() as db:
+            q = db.query(Usuario.username).filter(func.lower(Usuario.role) == "vendedor")
 
             if role in ("supervisor", "gerente"):
                 emps = _allowed_emps()
-                if not emps and emp_usuario:
-                    emps = [str(emp_usuario)]
-                if not emps:
+                if emps:
+                    q = (
+                        q.join(UsuarioEmp, Usuario.id == UsuarioEmp.usuario_id)
+                        .filter(UsuarioEmp.ativo.is_(True))
+                        .filter(UsuarioEmp.emp.in_([str(e) for e in emps]))
+                    )
+                elif emp_usuario:
+                    q = (
+                        q.join(UsuarioEmp, Usuario.id == UsuarioEmp.usuario_id)
+                        .filter(UsuarioEmp.ativo.is_(True))
+                        .filter(UsuarioEmp.emp == str(emp_usuario))
+                    )
+                else:
                     return []
-                rows = (
-                    db.query(Usuario.username)
-                    .join(UsuarioEmp, Usuario.id == UsuarioEmp.usuario_id)
-                    .filter(func.lower(Usuario.role) == "vendedor")
-                    .filter(UsuarioEmp.emp.in_([str(e) for e in emps]))
-                    .filter(UsuarioEmp.ativo.is_(True))
-                    .order_by(Usuario.username.asc())
-                    .all()
-                )
-                vendedores = sorted({(r[0] or "").strip().upper() for r in rows if (r[0] or "").strip()})
-                if vendedores:
-                    return vendedores
+
+            vendedores = sorted({(r[0] or "").strip().upper() for r in q.all() if (r[0] or "").strip()})
+            if vendedores:
+                return vendedores
+    except Exception:
+        try:
+            app.logger.exception("Erro ao buscar vendedores cadastrados; usando fallback limitado.")
         except Exception:
-            app.logger.exception("Erro ao listar vendedores pelo cadastro; usando fallback por vendas")
+            pass
 
-        # Fallback de compatibilidade para bases antigas sem usuários/vínculos completos.
-        q = db.query(func.distinct(Venda.vendedor))
-        if role in ("supervisor", "gerente"):
-            emps = _allowed_emps()
-            if emps:
-                q = q.filter(Venda.emp.in_(emps))
-            elif emp_usuario:
-                q = q.filter(Venda.emp == str(emp_usuario))
-            else:
-                return []
-        vendedores = [(r[0] or "").strip().upper() for r in q.limit(500).all()]
-
-    return sorted([v for v in vendedores if v])
+    # Fallback de compatibilidade, limitado. Não deve ser caminho normal.
+    try:
+        with SessionLocal() as db:
+            q = db.query(func.distinct(Venda.vendedor)).limit(500)
+            if role in ("supervisor", "gerente"):
+                emps = _allowed_emps()
+                if emps:
+                    q = q.filter(Venda.emp.in_([str(e) for e in emps]))
+                elif emp_usuario:
+                    q = q.filter(Venda.emp == str(emp_usuario))
+                else:
+                    return []
+            return sorted({(r[0] or "").strip().upper() for r in q.all() if (r[0] or "").strip()})
+    except Exception:
+        return []
 
 def _get_emps_vendedor(username: str) -> list[str]:
     """Lista de EMPs que o vendedor pode acessar.
@@ -1935,72 +1933,62 @@ def _resolver_vendedor_e_lista(df: pd.DataFrame | None) -> tuple[str | None, lis
 
 # ------------- Rotas -------------
 def _dados_admin_geral(mes: int, ano: int, emp_scope: list[str] | None = None):
-    """Visão geral rápida do ADMIN/FINANCEIRO usando dashboard_cache.
+    """Visão geral leve do ADMIN baseada em dashboard_cache.
 
-    O dashboard não deve varrer a tabela `vendas` no primeiro acesso, pois isso
-    concorre com `/healthz` no Render e gera 502 por timeout do healthcheck.
-    Este resumo usa o cache mensal já consolidado por EMP/vendedor.
+    Esta função NÃO deve varrer a tabela vendas. O objetivo é manter /dashboard
+    respondendo rápido e evitar 502/health check failed no Render. O cache é
+    atualizado manualmente pela rota /admin/cache/refresh ou por processo separado.
     """
-    emps = [str(e).strip() for e in (emp_scope or []) if e is not None and str(e).strip()]
-
     with SessionLocal() as db:
-        q = db.query(DashboardCache).filter(DashboardCache.ano == int(ano), DashboardCache.mes == int(mes))
-        if emps:
-            q = q.filter(DashboardCache.emp.in_(emps))
+        q = db.query(DashboardCache).filter(
+            DashboardCache.ano == int(ano),
+            DashboardCache.mes == int(mes),
+        )
+        if emp_scope:
+            emps = [str(e).strip() for e in emp_scope if e is not None and str(e).strip()]
+            if emps:
+                q = q.filter(DashboardCache.emp.in_(emps))
 
-        total_row = q.with_entities(
-            func.coalesce(func.sum(DashboardCache.valor_bruto), 0.0),
-            func.coalesce(func.sum(DashboardCache.devolucoes + DashboardCache.cancelamentos), 0.0),
-            func.coalesce(func.sum(DashboardCache.valor_liquido), 0.0),
-        ).first()
-        total_bruto = float(total_row[0] or 0.0)
-        total_devol = float(total_row[1] or 0.0)
-        total_liquido = float(total_row[2] or 0.0)
-        pct_devolucao = (total_devol / total_bruto * 100.0) if total_bruto else None
+        rows = q.all()
 
-        emp_rows = [
-            {
-                "emp": (emp or "").strip(),
-                "valor_bruto": float(bruto or 0.0),
-                "valor_devolvido": float(devol or 0.0),
-                "valor_atual": float(liquido or 0.0),
-            }
-            for emp, bruto, devol, liquido in (
-                q.with_entities(
-                    DashboardCache.emp,
-                    func.coalesce(func.sum(DashboardCache.valor_bruto), 0.0).label("bruto"),
-                    func.coalesce(func.sum(DashboardCache.devolucoes + DashboardCache.cancelamentos), 0.0).label("devol"),
-                    func.coalesce(func.sum(DashboardCache.valor_liquido), 0.0).label("liquido"),
-                )
-                .group_by(DashboardCache.emp)
-                .order_by(func.coalesce(func.sum(DashboardCache.valor_liquido), 0.0).desc())
-                .limit(30)
-                .all()
-            )
-        ]
+    total_bruto = sum(float(getattr(r, "valor_bruto", 0) or 0.0) for r in rows)
+    total_devol = sum(float(getattr(r, "devolucoes", 0) or 0.0) + float(getattr(r, "cancelamentos", 0) or 0.0) for r in rows)
+    total_liquido = sum(float(getattr(r, "valor_liquido", 0) or 0.0) for r in rows)
+    pct_devolucao = (total_devol / total_bruto * 100.0) if total_bruto else None
 
-        vend_rows = [
-            {"vendedor": (v or "").strip().upper(), "valor": float(val or 0.0)}
-            for v, val in (
-                q.with_entities(
-                    DashboardCache.vendedor,
-                    func.coalesce(func.sum(DashboardCache.valor_liquido), 0.0).label("valor"),
-                )
-                .group_by(DashboardCache.vendedor)
-                .order_by(func.coalesce(func.sum(DashboardCache.valor_liquido), 0.0).desc())
-                .limit(30)
-                .all()
-            )
-        ]
+    emp_map: dict[str, dict] = {}
+    vend_map: dict[str, float] = {}
+    for r in rows:
+        emp = (getattr(r, "emp", "") or "").strip()
+        vendedor = (getattr(r, "vendedor", "") or "").strip().upper()
+        bruto = float(getattr(r, "valor_bruto", 0) or 0.0)
+        devol = float(getattr(r, "devolucoes", 0) or 0.0) + float(getattr(r, "cancelamentos", 0) or 0.0)
+        liquido = float(getattr(r, "valor_liquido", 0) or 0.0)
+
+        if emp:
+            item = emp_map.setdefault(emp, {"emp": emp, "valor_bruto": 0.0, "valor_devolvido": 0.0, "valor_atual": 0.0})
+            item["valor_bruto"] += bruto
+            item["valor_devolvido"] += devol
+            item["valor_atual"] += liquido
+        if vendedor:
+            vend_map[vendedor] = vend_map.get(vendedor, 0.0) + liquido
+
+    emp_rows = sorted(emp_map.values(), key=lambda r: r.get("valor_atual", 0.0), reverse=True)
+    vend_rows = sorted(
+        [{"vendedor": v, "valor": val} for v, val in vend_map.items()],
+        key=lambda r: r["valor"],
+        reverse=True,
+    )
 
     return {
         "valor_bruto": total_bruto,
         "valor_devolvido": total_devol,
         "valor_atual": total_liquido,
         "pct_devolucao": pct_devolucao,
-        "ranking_emp_list": emp_rows,
-        "ranking_vendedores_list": vend_rows,
-        "cache_source": "dashboard_cache",
+        "ranking_emp_list": emp_rows[:30],
+        "ranking_vendedores_list": vend_rows[:30],
+        "fonte": "dashboard_cache",
+        "cache_rows": len(rows),
     }
 
 

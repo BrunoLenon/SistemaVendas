@@ -34,8 +34,9 @@ def register_admin_importar_routes(
             flash("Selecione um arquivo .xlsx para importar.", "warning")
             return redirect(url_for("admin_importar"))
 
-        if not arquivo.filename.lower().endswith(".xlsx"):
-            flash("Formato inválido. Envie um arquivo .xlsx.", "danger")
+        filename_lower = arquivo.filename.lower()
+        if not (filename_lower.endswith(".xlsx") or filename_lower.endswith(".csv")):
+            flash("Formato inválido. Envie um arquivo .xlsx ou .csv.", "danger")
             return redirect(url_for("admin_importar"))
 
         modo = request.form.get("modo", "ignorar_duplicados")
@@ -50,12 +51,23 @@ def register_admin_importar_routes(
         # Salva temporariamente
         import tempfile
 
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
+        suffix = ".csv" if filename_lower.endswith(".csv") else ".xlsx"
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
             arquivo.save(tmp.name)
             tmp_path = tmp.name
 
         try:
-            resumo = importar_planilha(tmp_path, modo=modo, chave=chave, reprocessar_competencia=True)
+            # Não recalcula dashboard_cache dentro da requisição.
+            # Isso evita POST de importação com 2-3 minutos e queda/502 no Render.
+            resumo = importar_planilha(
+                tmp_path,
+                modo=modo,
+                chave=chave,
+                batch_size=1000,
+                csv_chunksize=5000,
+                reprocessar_competencia=True,
+                atualizar_cache_dashboard=False,
+            )
             if not resumo.get("ok"):
                 faltando = resumo.get("faltando")
                 if faltando:
@@ -82,7 +94,8 @@ def register_admin_importar_routes(
                     f"Devoluções: R$ {total_devolucoes:,.2f} | "
                     f"Líquido: R$ {total_liquido:,.2f} | "
                     f"Mov. fora da regra: {mov_ignorados} | "
-                    f"Reprocessamento automático: {recortes} recorte(s), {apagadas} linha(s) substituída(s)"
+                    f"Reprocessamento automático: {recortes} recorte(s), {apagadas} linha(s) substituída(s) | "
+                    f"Cache do dashboard: pendente para atualização manual"
                 ).replace(",", "X").replace(".", ",").replace("X", "."),
                 "success",
             )

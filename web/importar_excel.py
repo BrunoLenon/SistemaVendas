@@ -364,9 +364,18 @@ def importar_planilha(
     csv_chunksize: int = 3000,
     xlsx_max_mb: int = 12,
     reprocessar_competencia: bool = False,
+    atualizar_cache_dashboard: bool | None = None,
 ) -> Dict[str, Any]:
-    """Importa vendas no banco com inserção em lotes."""
+    """Importa vendas no banco com inserção em lotes.
+
+    Por padrão, NÃO recalcula dashboard_cache dentro da requisição de importação.
+    Esse recálculo pode levar minutos e derrubar o worker do Render. Para ativar
+    pontualmente, use atualizar_cache_dashboard=True ou a variável
+    IMPORT_REFRESH_DASHBOARD_CACHE_SYNC=1.
+    """
     ext = os.path.splitext(filepath)[1].lower()
+    if atualizar_cache_dashboard is None:
+        atualizar_cache_dashboard = (os.getenv("IMPORT_REFRESH_DASHBOARD_CACHE_SYNC", "0").strip().lower() in {"1", "true", "sim", "yes", "on"})
 
     conflict_cols = _conflict_cols_from_key(chave)
     reprocess_info: Dict[str, Any] = {"ok": True, "tipo": "EMP_DATA", "recortes": 0, "linhas_apagadas": 0, "detalhes": []}
@@ -525,14 +534,18 @@ def importar_planilha(
             efetivadas = atualizadas if modo == "atualizar" else inseridas
             ignoradas = max(validas - efetivadas, 0)
 
-            # Atualiza cache (dashboard_cache) para os períodos afetados
+            # Atualiza cache (dashboard_cache) somente quando solicitado.
+            # Não fazer isso em toda importação evita POST de 2-3 minutos e 502 no Render.
             cache_info = []
-            try:
-                for e,a,m in sorted(affected_periods):
-                    cache_info.append({"emp": e, "ano": a, "mes": m, **refresh_dashboard_cache(e,a,m)})
-            except Exception:
-                # Não bloqueia importação se o cache falhar
-                cache_info = []
+            cache_skipped = True
+            if atualizar_cache_dashboard:
+                cache_skipped = False
+                try:
+                    for e,a,m in sorted(affected_periods):
+                        cache_info.append({"emp": e, "ano": a, "mes": m, **refresh_dashboard_cache(e,a,m)})
+                except Exception:
+                    # Não bloqueia importação se o cache falhar
+                    cache_info = []
 
             return {
                 "ok": True,
@@ -548,6 +561,8 @@ def importar_planilha(
                 "batch_size": int(batch_size),
                 "conflict_cols": conflict_cols,
                 "cache": cache_info,
+                "cache_dashboard_atualizado": bool(atualizar_cache_dashboard),
+                "cache_dashboard_pendente": bool(cache_skipped and affected_periods),
                 "total_bruto": float(total_bruto),
                 "total_cancelamentos": float(total_cancelamentos),
                 "total_devolucoes": float(total_devolucoes),
@@ -728,13 +743,16 @@ def importar_planilha(
     efetivadas = atualizadas if modo == "atualizar" else inseridas
     ignoradas = max(validas - efetivadas, 0)
 
-    # Atualiza cache (dashboard_cache) para os períodos afetados
+    # Atualiza cache (dashboard_cache) somente quando solicitado.
     cache_info = []
-    try:
-        for e,a,m in sorted(affected_periods):
-            cache_info.append({"emp": e, "ano": a, "mes": m, **refresh_dashboard_cache(e,a,m)})
-    except Exception:
-        cache_info = []
+    cache_skipped = True
+    if atualizar_cache_dashboard:
+        cache_skipped = False
+        try:
+            for e,a,m in sorted(affected_periods):
+                cache_info.append({"emp": e, "ano": a, "mes": m, **refresh_dashboard_cache(e,a,m)})
+        except Exception:
+            cache_info = []
 
     return {
         "ok": True,
@@ -751,6 +769,8 @@ def importar_planilha(
         "csv_chunksize": int(csv_chunksize),
         "conflict_cols": conflict_cols,
         "cache": cache_info,
+        "cache_dashboard_atualizado": bool(atualizar_cache_dashboard),
+        "cache_dashboard_pendente": bool(cache_skipped and affected_periods),
         "total_bruto": float(total_bruto),
         "total_cancelamentos": float(total_cancelamentos),
         "total_devolucoes": float(total_devolucoes),

@@ -227,9 +227,9 @@
               <div class="d-flex align-items-start gap-3">
                 <div class="sv-import-fileicon">📄</div>
                 <div class="flex-grow-1">
-                  <div class="fw-bold text-white">Planilha de vendas (.xlsx)</div>
+                  <div class="fw-bold text-white">Planilha de vendas (.xlsx ou .csv)</div>
                   <div class="sv-import-muted small">Clique aqui ou arraste o arquivo para importar.</div>
-                  <input class="form-control mt-3" type="file" name="arquivo" id="arquivo" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required>
+                  <input class="form-control mt-3" type="file" name="arquivo" id="arquivo" accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" required>
                   <div class="sv-import-muted small mt-2" id="fileInfo">Nenhum arquivo selecionado.</div>
                 </div>
               </div>
@@ -493,7 +493,7 @@
     formImport.addEventListener("submit", (e) => {
       if (!input.files || !input.files.length) {
         e.preventDefault();
-        alert("Selecione um arquivo .xlsx para importar.");
+        alert("Selecione um arquivo .xlsx ou .csv para importar.");
         return;
       }
       processingCard.classList.remove("d-none");
