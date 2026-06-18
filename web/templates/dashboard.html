@@ -209,11 +209,23 @@
 
   {% if admin_geral and dados_admin %}
     <div class="sv-dash-kpis mb-3">
-      {{ kpi_card('Total líquido', dados_admin.valor_atual|brl_rs, 'Resultado do mês com DS/CA abatidos', '💰') }}
+      {{ kpi_card('Total líquido', dados_admin.valor_atual|brl_rs, 'Bruto - DS/CA. Número oficial do resultado', '💰') }}
       {{ kpi_card('Bruto', dados_admin.valor_bruto|brl_rs, 'Somente vendas positivas', '🧾') }}
       {{ kpi_card('Devolvido', dados_admin.valor_devolvido|brl_rs, 'DS/CA no período', '↩️') }}
-      {{ kpi_card('Clientes', (global_analysis.clientes_total if global_analysis else '—'), ('Compradores únicos do mês' if global_analysis else 'Carregue análise completa'), '👥') }}
+      {{ kpi_card('Importado', (dados_admin.valor_importado_total|default(0))|brl_rs, 'Soma de valor_total no banco: vendas + DS/CA', '🗄️') }}
     </div>
+
+    {% if dados_admin.fonte == 'vendas_live' or dados_admin.cache_source == 'vendas_live' %}
+      <div class="sv-dash-panel mb-3">
+        <div class="sv-dash-panel__body py-2">
+          <div class="sv-dash-muted small">
+            Conferência: os cards acima vêm direto da tabela <strong class="text-white">vendas</strong> da competência, não do cache.
+            O valor <strong class="text-white">Importado</strong> bate com a soma simples do banco;
+            o <strong class="text-white">Total líquido</strong> desconta DS/CA.
+          </div>
+        </div>
+      </div>
+    {% endif %}
 
     <div class="sv-dash-panel mb-3">
       <div class="sv-dash-panel__body d-flex flex-wrap justify-content-between align-items-center gap-2">

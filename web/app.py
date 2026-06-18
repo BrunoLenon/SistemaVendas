@@ -1933,43 +1933,109 @@ def _resolver_vendedor_e_lista(df: pd.DataFrame | None) -> tuple[str | None, lis
 
 # ------------- Rotas -------------
 def _dados_admin_geral(mes: int, ano: int, emp_scope: list[str] | None = None):
-    """Visão geral leve do ADMIN baseada em dashboard_cache.
+    """Visão geral do ADMIN/FINANCEIRO com totais oficiais ao vivo.
 
-    Esta função NÃO deve varrer a tabela vendas. O objetivo é manter /dashboard
-    respondendo rápido e evitar 502/health check failed no Render. O cache é
-    atualizado manualmente pela rota /admin/cache/refresh ou por processo separado.
+    Motivo da alteração:
+    - O dashboard passou a usar dashboard_cache para evitar 502 no Render.
+    - Após importação, esse cache pode ficar pendente/desatualizado.
+    - Os cards principais e o ranking por EMP precisam bater com a tabela vendas.
+
+    Estratégia:
+    - Totais principais e ranking por EMP/vendedor são calculados diretamente em
+      uma única agregação mensal na tabela vendas, filtrada por movimento/competência.
+    - Isso mantém os números corretos mesmo antes do refresh do dashboard_cache.
+    - O campo valor_importado_total mostra a soma bruta de valor_total de todos os
+      movimentos válidos do período, para conferência com o SQL do Supabase.
     """
+    start, end = _periodo_bounds(int(ano), int(mes))
+    emps = [str(e).strip() for e in (emp_scope or []) if e is not None and str(e).strip()]
+
+    mov = func.upper(func.coalesce(Venda.mov_tipo_movto, ""))
+    qtd_ok = func.coalesce(Venda.qtdade_vendida, 0.0) > 0
+    valor = func.coalesce(Venda.valor_total, 0.0)
+
+    valor_bruto_expr = case(
+        (qtd_ok & mov.in_(MOVIMENTOS_VENDA), valor),
+        else_=0.0,
+    )
+    valor_devolvido_expr = case(
+        (qtd_ok & mov.in_(MOVIMENTOS_NEGATIVOS), valor),
+        else_=0.0,
+    )
+    valor_liquido_expr = case(
+        (qtd_ok & mov.in_(MOVIMENTOS_VENDA), valor),
+        (qtd_ok & mov.in_(MOVIMENTOS_NEGATIVOS), -valor),
+        else_=0.0,
+    )
+    valor_importado_expr = case(
+        (qtd_ok & mov.in_(tuple(MOVIMENTOS_VENDA) + tuple(MOVIMENTOS_NEGATIVOS)), valor),
+        else_=0.0,
+    )
+
     with SessionLocal() as db:
-        q = db.query(DashboardCache).filter(
-            DashboardCache.ano == int(ano),
-            DashboardCache.mes == int(mes),
+        q = db.query(
+            Venda.emp.label("emp"),
+            func.coalesce(func.nullif(Venda.vendedor, ""), "SEM VENDEDOR").label("vendedor"),
+            func.coalesce(func.sum(valor_bruto_expr), 0.0).label("valor_bruto"),
+            func.coalesce(func.sum(valor_devolvido_expr), 0.0).label("valor_devolvido"),
+            func.coalesce(func.sum(valor_liquido_expr), 0.0).label("valor_liquido"),
+            func.coalesce(func.sum(valor_importado_expr), 0.0).label("valor_importado"),
+            func.count().label("linhas"),
+        ).filter(
+            Venda.movimento >= start,
+            Venda.movimento < end,
+            qtd_ok,
+            mov.in_(tuple(MOVIMENTOS_VENDA) + tuple(MOVIMENTOS_NEGATIVOS)),
         )
-        if emp_scope:
-            emps = [str(e).strip() for e in emp_scope if e is not None and str(e).strip()]
-            if emps:
-                q = q.filter(DashboardCache.emp.in_(emps))
+        if emps:
+            q = q.filter(Venda.emp.in_(emps))
 
-        rows = q.all()
+        rows = q.group_by(
+            Venda.emp,
+            func.coalesce(func.nullif(Venda.vendedor, ""), "SEM VENDEDOR"),
+        ).all()
 
-    total_bruto = sum(float(getattr(r, "valor_bruto", 0) or 0.0) for r in rows)
-    total_devol = sum(float(getattr(r, "devolucoes", 0) or 0.0) + float(getattr(r, "cancelamentos", 0) or 0.0) for r in rows)
-    total_liquido = sum(float(getattr(r, "valor_liquido", 0) or 0.0) for r in rows)
-    pct_devolucao = (total_devol / total_bruto * 100.0) if total_bruto else None
-
+    total_bruto = 0.0
+    total_devol = 0.0
+    total_liquido = 0.0
+    total_importado = 0.0
+    total_linhas = 0
     emp_map: dict[str, dict] = {}
     vend_map: dict[str, float] = {}
+
     for r in rows:
         emp = (getattr(r, "emp", "") or "").strip()
-        vendedor = (getattr(r, "vendedor", "") or "").strip().upper()
+        vendedor = (getattr(r, "vendedor", "") or "SEM VENDEDOR").strip().upper()
         bruto = float(getattr(r, "valor_bruto", 0) or 0.0)
-        devol = float(getattr(r, "devolucoes", 0) or 0.0) + float(getattr(r, "cancelamentos", 0) or 0.0)
+        devol = float(getattr(r, "valor_devolvido", 0) or 0.0)
         liquido = float(getattr(r, "valor_liquido", 0) or 0.0)
+        importado = float(getattr(r, "valor_importado", 0) or 0.0)
+        linhas = int(getattr(r, "linhas", 0) or 0)
+
+        total_bruto += bruto
+        total_devol += devol
+        total_liquido += liquido
+        total_importado += importado
+        total_linhas += linhas
 
         if emp:
-            item = emp_map.setdefault(emp, {"emp": emp, "valor_bruto": 0.0, "valor_devolvido": 0.0, "valor_atual": 0.0})
+            item = emp_map.setdefault(
+                emp,
+                {
+                    "emp": emp,
+                    "valor_bruto": 0.0,
+                    "valor_devolvido": 0.0,
+                    "valor_atual": 0.0,
+                    "valor_importado": 0.0,
+                    "linhas": 0,
+                },
+            )
             item["valor_bruto"] += bruto
             item["valor_devolvido"] += devol
             item["valor_atual"] += liquido
+            item["valor_importado"] += importado
+            item["linhas"] += linhas
+
         if vendedor:
             vend_map[vendedor] = vend_map.get(vendedor, 0.0) + liquido
 
@@ -1979,16 +2045,20 @@ def _dados_admin_geral(mes: int, ano: int, emp_scope: list[str] | None = None):
         key=lambda r: r["valor"],
         reverse=True,
     )
+    pct_devolucao = (total_devol / total_bruto * 100.0) if total_bruto else None
 
     return {
         "valor_bruto": total_bruto,
         "valor_devolvido": total_devol,
         "valor_atual": total_liquido,
+        "valor_importado_total": total_importado,
+        "diferenca_importado_liquido": total_importado - total_liquido,
         "pct_devolucao": pct_devolucao,
         "ranking_emp_list": emp_rows[:30],
         "ranking_vendedores_list": vend_rows[:30],
-        "fonte": "dashboard_cache",
-        "cache_rows": len(rows),
+        "fonte": "vendas_live",
+        "cache_source": "vendas_live",
+        "linhas_vendas_periodo": total_linhas,
     }
 
 
