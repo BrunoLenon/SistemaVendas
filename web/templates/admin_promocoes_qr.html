@@ -2,15 +2,17 @@
 {% block title %}Promoções QR Code{% endblock %}
 {% block extra_head %}
 <style>
-  .qr-page{max-width:1380px;margin:0 auto;padding:12px;color:#fff}.qr-hero{border:1px solid rgba(255,140,0,.25);background:linear-gradient(135deg,rgba(255,140,0,.14),rgba(255,255,255,.03));border-radius:22px;padding:18px;box-shadow:0 18px 50px rgba(0,0,0,.22)}
+  .qr-page{max-width:1420px;margin:0 auto;padding:12px;color:#fff}.qr-hero{border:1px solid rgba(255,140,0,.25);background:linear-gradient(135deg,rgba(255,140,0,.14),rgba(255,255,255,.03));border-radius:22px;padding:18px;box-shadow:0 18px 50px rgba(0,0,0,.22)}
   .qr-title{font-size:25px;font-weight:950;letter-spacing:-.04em;margin:0}.qr-sub{color:rgba(255,255,255,.68);font-size:13px}.qr-grid{display:grid;grid-template-columns:360px minmax(0,1fr);gap:16px;margin-top:16px;align-items:start}@media(max-width:1050px){.qr-grid{grid-template-columns:1fr}.qr-page{padding:8px}}
   .qr-card{border:1px solid rgba(255,140,0,.16);background:linear-gradient(180deg,rgba(255,255,255,.045),rgba(255,255,255,.022));border-radius:20px;overflow:hidden}.qr-card-h{padding:14px 16px;border-bottom:1px solid rgba(255,140,0,.12);display:flex;justify-content:space-between;gap:10px;align-items:flex-start}.qr-card-b{padding:16px}.qr-muted{color:rgba(255,255,255,.62)}
-  .qr-chip{display:inline-flex;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);border-radius:999px;padding:6px 9px;font-size:12px;font-weight:850;color:rgba(255,255,255,.84)}.qr-chip-ok{border-color:rgba(46,204,113,.28);background:rgba(46,204,113,.10);color:#b7ffd1}.qr-chip-prize{border-color:rgba(255,140,0,.42);background:rgba(255,140,0,.14);color:#ffd3a0}.qr-chip-warn{border-color:rgba(255,193,7,.28);background:rgba(255,193,7,.10);color:#ffe49a}
+  .qr-chip{display:inline-flex;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);border-radius:999px;padding:6px 9px;font-size:12px;font-weight:850;color:rgba(255,255,255,.84)}.qr-chip-ok{border-color:rgba(46,204,113,.28);background:rgba(46,204,113,.10);color:#b7ffd1}.qr-chip-prize{border-color:rgba(255,140,0,.42);background:rgba(255,140,0,.14);color:#ffd3a0}.qr-chip-warn{border-color:rgba(255,193,7,.28);background:rgba(255,193,7,.10);color:#ffe49a}.qr-chip-danger{border-color:rgba(255,77,79,.32);background:rgba(255,77,79,.11);color:#ffb3b3}
   .qr-list a{display:block;text-decoration:none;color:#fff;border:1px solid rgba(255,255,255,.09);background:rgba(0,0,0,.18);border-radius:15px;padding:12px;margin-bottom:10px}.qr-list a.active{border-color:rgba(255,140,0,.48);box-shadow:0 0 0 1px rgba(255,140,0,.12)}
-  .qr-page .form-label{font-size:12px;font-weight:900;color:rgba(255,255,255,.84)}.qr-page .form-control,.qr-page .form-select{background:#101010!important;color:#fff!important;border:1px solid rgba(255,255,255,.13)!important;border-radius:13px!important}.qr-page .form-control:focus{border-color:rgba(255,140,0,.72)!important;box-shadow:0 0 0 .2rem rgba(255,140,0,.14)!important}.qr-page .form-control::file-selector-button{background:#ff8c00;color:#111;border:0;border-radius:9px;font-weight:900;margin-right:10px}
-  .qr-btn{border-radius:13px!important;font-weight:900!important}.qr-btn-primary{background:linear-gradient(135deg,#ff8c00,#ffb347)!important;border-color:#ff9d20!important;color:#141414!important}.qr-btn-outline{border-color:rgba(255,255,255,.22)!important;color:#fff!important;background:rgba(255,255,255,.04)!important}
+  .qr-page .form-label{font-size:12px;font-weight:900;color:rgba(255,255,255,.84)}.qr-page .form-control,.qr-page .form-select{background:#101010!important;color:#fff!important;border:1px solid rgba(255,255,255,.13)!important;border-radius:13px!important}.qr-page .form-control:focus,.qr-page .form-select:focus{border-color:rgba(255,140,0,.72)!important;box-shadow:0 0 0 .2rem rgba(255,140,0,.14)!important}.qr-page .form-control::file-selector-button{background:#ff8c00;color:#111;border:0;border-radius:9px;font-weight:900;margin-right:10px}
+  .qr-btn{border-radius:13px!important;font-weight:900!important}.qr-btn-primary{background:linear-gradient(135deg,#ff8c00,#ffb347)!important;border-color:#ff9d20!important;color:#141414!important}.qr-btn-outline{border-color:rgba(255,255,255,.22)!important;color:#fff!important;background:rgba(255,255,255,.04)!important}.qr-btn-danger{border-color:rgba(255,77,79,.34)!important;color:#ffd1d1!important;background:rgba(255,77,79,.10)!important}
   .qr-table{width:100%;border-collapse:separate;border-spacing:0 8px}.qr-table td,.qr-table th{padding:10px;background:rgba(0,0,0,.20);border-top:1px solid rgba(255,255,255,.08);border-bottom:1px solid rgba(255,255,255,.08);vertical-align:middle;font-size:13px}.qr-table th{color:rgba(255,255,255,.65);font-size:11px;text-transform:uppercase;letter-spacing:.06em}.qr-table td:first-child,.qr-table th:first-child{border-left:1px solid rgba(255,255,255,.08);border-radius:13px 0 0 13px}.qr-table td:last-child,.qr-table th:last-child{border-right:1px solid rgba(255,255,255,.08);border-radius:0 13px 13px 0}
   .qr-mini{width:54px;height:54px;background:#fff;border-radius:10px;padding:4px}.qr-preview{min-height:190px;border-radius:18px;border:1px solid rgba(255,140,0,.16);background:#111 center/cover no-repeat;display:flex;align-items:center;gap:14px;padding:18px;position:relative;overflow:hidden}.qr-preview:before{content:"";position:absolute;inset:0;background:linear-gradient(90deg,rgba(0,0,0,.72),rgba(0,0,0,.20))}.qr-preview>*{position:relative}.qr-preview img.logo{max-width:130px;max-height:72px;object-fit:contain}.qr-tabs{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.qr-tabs a{color:#fff;text-decoration:none}
+  .qr-stats{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;margin-bottom:14px}@media(max-width:1100px){.qr-stats{grid-template-columns:repeat(3,minmax(0,1fr))}}@media(max-width:620px){.qr-stats{grid-template-columns:repeat(2,minmax(0,1fr))}}.qr-stat{border:1px solid rgba(255,255,255,.10);background:rgba(0,0,0,.18);border-radius:15px;padding:12px}.qr-stat b{display:block;font-size:20px;line-height:1}.qr-stat span{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:rgba(255,255,255,.62);font-weight:900}
+  .qr-toolbar{border:1px solid rgba(255,255,255,.10);background:rgba(0,0,0,.18);border-radius:16px;padding:12px;margin-bottom:12px}.qr-check{width:18px;height:18px;accent-color:#ff8c00}.qr-danger-zone{border:1px dashed rgba(255,77,79,.42);background:rgba(255,77,79,.06);border-radius:16px;padding:12px}.qr-sticky-actions{position:sticky;bottom:10px;z-index:2;border:1px solid rgba(255,140,0,.22);background:rgba(20,20,20,.94);backdrop-filter:blur(10px);border-radius:16px;padding:12px;margin-top:12px;box-shadow:0 14px 40px rgba(0,0,0,.35)}
 </style>
 {% endblock %}
 {% block content %}
@@ -29,7 +31,7 @@
         {% for c in campanhas %}
           <a class="{% if campanha and campanha.id==c.id %}active{% endif %}" href="{{ url_for('admin_promocoes_qr', campanha_id=c.id) }}">
             <div class="d-flex justify-content-between gap-2"><b>{{ c.nome }}</b><span class="qr-chip {% if c.ativo %}qr-chip-ok{% else %}qr-chip-warn{% endif %}">{{ 'Ativa' if c.ativo else 'Inativa' }}</span></div>
-            <div class="qr-muted small mt-1">{{ c.total_codigos }} códigos • {{ c.codigos_usados }} lidos</div>
+            <div class="qr-muted small mt-1">{{ c.total_codigos }} ativos • {{ c.codigos_usados }} lidos{% if c.codigos_excluidos %} • {{ c.codigos_excluidos }} excluídos{% endif %}</div>
           </a>
         {% else %}<div class="qr-muted">Nenhuma campanha cadastrada ainda.</div>{% endfor %}
       </div>
@@ -67,7 +69,7 @@
       </section>
       {% if campanha %}
       <section class="qr-card mb-3">
-        <div class="qr-card-h"><div><b>Gerar QR Codes</b><div class="qr-muted small">Cada código só pode ser validado uma vez.</div></div><span class="qr-chip">{{ codigos|length }} últimos</span></div>
+        <div class="qr-card-h"><div><b>Gerar QR Codes</b><div class="qr-muted small">Cada código só pode ser validado uma vez.</div></div><span class="qr-chip">Até 500 por lote</span></div>
         <div class="qr-card-b">
           <form method="post" class="row g-3 align-items-end">
             <input type="hidden" name="acao" value="gerar_codigos"><input type="hidden" name="campanha_id" value="{{ campanha.id }}">
@@ -83,22 +85,119 @@
           </form>
         </div>
       </section>
+
       <section class="qr-card">
-        <div class="qr-card-h"><div><b>Códigos gerados</b><div class="qr-muted small">Use a URL/QR no material gráfico. Após leitura, o código fica usado e mostra se ganhou ou não.</div></div><div class="d-flex gap-2 flex-wrap"><a class="btn btn-sm qr-btn qr-btn-outline" target="_blank" href="{{ url_for('admin_promocoes_qr_imprimir', campanha_id=campanha.id) }}">Imprimir cupons 5x7</a><a class="btn btn-sm qr-btn qr-btn-outline" target="_blank" href="{{ url_for('admin_promocoes_qr_imprimir', campanha_id=campanha.id, somente='disponiveis') }}">Imprimir disponíveis</a></div></div>
-        <div class="qr-card-b table-responsive">
-          <table class="qr-table">
-            <thead><tr><th>QR</th><th>Código</th><th>Resultado</th><th>Status</th><th>URL pública</th><th>Cliente</th><th></th></tr></thead>
-            <tbody>
-              {% for q in codigos %}
-                {% set u = public_url_fn(campanha.slug, q.codigo) %}
-                <tr><td><img class="qr-mini" src="{{ qr_img_fn(u) }}" alt="QR"></td><td><b>{{ q.codigo }}</b><div class="qr-muted small">{{ q.lote or '-' }}</div></td><td>{% if q.premiado %}<span class="qr-chip qr-chip-prize">Premiado</span><div class="small mt-1"><b>{{ q.premio_descricao }}</b>{% if q.premio_valor %}<div class="qr-muted">R$ {{ '%.2f'|format(q.premio_valor|float) }}</div>{% endif %}</div>{% else %}<span class="qr-chip">Não premiado</span><div class="qr-muted small mt-1">{{ q.mensagem_resultado or 'Não foi dessa vez' }}</div>{% endif %}</td><td><span class="qr-chip {% if q.usado %}qr-chip-warn{% else %}qr-chip-ok{% endif %}">{{ 'Lido' if q.usado else 'Disponível' }}</span><div class="qr-muted small">{{ q.usado_em or '' }}</div></td><td><input class="form-control form-control-sm" value="{{ u }}" onclick="this.select()" readonly></td><td>{{ q.nome_cliente or '-' }}<div class="qr-muted small">{{ q.telefone or '' }}</div></td><td><form method="post" onsubmit="return confirm('Excluir este código?')"><input type="hidden" name="acao" value="excluir_codigo"><input type="hidden" name="campanha_id" value="{{ campanha.id }}"><input type="hidden" name="codigo_id" value="{{ q.id }}"><button class="btn btn-sm qr-btn qr-btn-outline">Excluir</button></form></td></tr>
-              {% else %}<tr><td colspan="7" class="qr-muted">Nenhum código gerado.</td></tr>{% endfor %}
-            </tbody>
-          </table>
+        <div class="qr-card-h">
+          <div><b>Códigos gerados</b><div class="qr-muted small">Gestão de lote com seleção múltipla e exclusão segura/auditável.</div></div>
+          <div class="d-flex gap-2 flex-wrap"><a class="btn btn-sm qr-btn qr-btn-outline" target="_blank" href="{{ url_for('admin_promocoes_qr_imprimir', campanha_id=campanha.id) }}">Imprimir cupons 5x7</a><a class="btn btn-sm qr-btn qr-btn-outline" target="_blank" href="{{ url_for('admin_promocoes_qr_imprimir', campanha_id=campanha.id, somente='disponiveis') }}">Imprimir disponíveis</a></div>
+        </div>
+        <div class="qr-card-b">
+          <div class="qr-stats">
+            <div class="qr-stat"><span>Ativos</span><b>{{ codigo_stats.total }}</b></div>
+            <div class="qr-stat"><span>Disponíveis</span><b>{{ codigo_stats.disponiveis }}</b></div>
+            <div class="qr-stat"><span>Lidos</span><b>{{ codigo_stats.usados }}</b></div>
+            <div class="qr-stat"><span>Premiados</span><b>{{ codigo_stats.premiados }}</b></div>
+            <div class="qr-stat"><span>Lotes</span><b>{{ codigo_stats.total_lotes }}</b></div>
+            <div class="qr-stat"><span>Excluídos</span><b>{{ codigo_stats.excluidos }}</b></div>
+          </div>
+
+          <form method="get" class="qr-toolbar">
+            <input type="hidden" name="campanha_id" value="{{ campanha.id }}">
+            <div class="row g-2 align-items-end">
+              <div class="col-md-2"><label class="form-label">Status</label><select class="form-select" name="status"><option value="todos" {% if filtros_codigos.status == 'todos' %}selected{% endif %}>Todos</option><option value="disponiveis" {% if filtros_codigos.status == 'disponiveis' %}selected{% endif %}>Disponíveis</option><option value="lidos" {% if filtros_codigos.status == 'lidos' %}selected{% endif %}>Lidos/usados</option></select></div>
+              <div class="col-md-2"><label class="form-label">Resultado</label><select class="form-select" name="premio"><option value="todos" {% if filtros_codigos.premio == 'todos' %}selected{% endif %}>Todos</option><option value="premiados" {% if filtros_codigos.premio == 'premiados' %}selected{% endif %}>Premiados</option><option value="nao_premiados" {% if filtros_codigos.premio == 'nao_premiados' %}selected{% endif %}>Não premiados</option></select></div>
+              <div class="col-md-3"><label class="form-label">Lote</label><select class="form-select" name="lote"><option value="">Todos os lotes</option>{% for l in lotes %}<option value="{{ l.lote }}" {% if filtros_codigos.lote == l.lote %}selected{% endif %}>{{ l.lote }} ({{ l.total }})</option>{% endfor %}</select></div>
+              <div class="col-md-3"><label class="form-label">Buscar</label><input class="form-control" name="busca" value="{{ filtros_codigos.busca }}" placeholder="Código, cliente, telefone, prêmio..."></div>
+              <div class="col-md-1"><label class="form-label">Mostrar</label><select class="form-select" name="per_page"><option value="100" {% if filtros_codigos.per_page == 100 %}selected{% endif %}>100</option><option value="200" {% if filtros_codigos.per_page == 200 %}selected{% endif %}>200</option><option value="300" {% if filtros_codigos.per_page == 300 %}selected{% endif %}>300</option><option value="500" {% if filtros_codigos.per_page == 500 %}selected{% endif %}>500</option></select></div>
+              <div class="col-md-1"><button class="btn qr-btn qr-btn-primary w-100">Filtrar</button></div>
+            </div>
+            <div class="qr-muted small mt-2">{{ codigos_filtrados_total }} código(s) encontrados pelos filtros atuais. Exibindo {{ codigos|length }} nesta página.</div>
+          </form>
+
+          <form method="post" id="qrBulkForm">
+            <input type="hidden" name="campanha_id" value="{{ campanha.id }}">
+            <input type="hidden" name="codigo_id" id="qrCodigoUnico" value="">
+            <input type="hidden" name="status" value="{{ filtros_codigos.status }}">
+            <input type="hidden" name="premio" value="{{ filtros_codigos.premio }}">
+            <input type="hidden" name="lote" value="{{ filtros_codigos.lote }}">
+            <input type="hidden" name="busca" value="{{ filtros_codigos.busca }}">
+            <input type="hidden" name="per_page" value="{{ filtros_codigos.per_page }}">
+
+            <div class="table-responsive">
+              <table class="qr-table">
+                <thead><tr><th style="width:38px"><input class="qr-check" type="checkbox" id="qrSelectAll" title="Selecionar todos desta página"></th><th>QR</th><th>Código</th><th>Resultado</th><th>Status</th><th>URL pública</th><th>Cliente</th><th></th></tr></thead>
+                <tbody>
+                  {% for q in codigos %}
+                    {% set u = public_url_fn(campanha.slug, q.codigo) %}
+                    <tr>
+                      <td><input class="qr-check qr-row-check" type="checkbox" name="codigo_ids" value="{{ q.id }}" data-usado="{{ 1 if q.usado else 0 }}"></td>
+                      <td><img class="qr-mini" src="{{ qr_img_fn(u) }}" alt="QR" loading="lazy"></td>
+                      <td><b>{{ q.codigo }}</b><div class="qr-muted small">{{ q.lote or '-' }}</div></td>
+                      <td>{% if q.premiado %}<span class="qr-chip qr-chip-prize">Premiado</span><div class="small mt-1"><b>{{ q.premio_descricao }}</b>{% if q.premio_valor %}<div class="qr-muted">R$ {{ '%.2f'|format(q.premio_valor|float) }}</div>{% endif %}</div>{% else %}<span class="qr-chip">Não premiado</span><div class="qr-muted small mt-1">{{ q.mensagem_resultado or 'Não foi dessa vez' }}</div>{% endif %}</td>
+                      <td><span class="qr-chip {% if q.usado %}qr-chip-warn{% else %}qr-chip-ok{% endif %}">{{ 'Lido' if q.usado else 'Disponível' }}</span><div class="qr-muted small">{{ q.usado_em or '' }}</div></td>
+                      <td><input class="form-control form-control-sm" value="{{ u }}" onclick="this.select()" readonly></td>
+                      <td>{{ q.nome_cliente or '-' }}<div class="qr-muted small">{{ q.telefone or '' }}</div></td>
+                      <td><button class="btn btn-sm qr-btn qr-btn-outline" type="submit" name="acao" value="excluir_codigo" onclick="return qrDeleteSingle('{{ q.id }}')">Excluir</button></td>
+                    </tr>
+                  {% else %}<tr><td colspan="8" class="qr-muted">Nenhum código gerado para os filtros atuais.</td></tr>{% endfor %}
+                </tbody>
+              </table>
+            </div>
+
+            <div class="qr-sticky-actions d-flex justify-content-between align-items-center gap-3 flex-wrap">
+              <div>
+                <b><span id="qrSelectedCount">0</span> selecionado(s)</b>
+                <div class="qr-muted small">Por segurança, códigos já lidos/usados não são excluídos em massa, exceto se você marcar a opção abaixo.</div>
+                <label class="small mt-2"><input type="checkbox" name="incluir_lidos" class="me-1"> Permitir excluir também códigos já lidos/usados</label>
+              </div>
+              <button class="btn qr-btn qr-btn-danger" type="submit" name="acao" value="excluir_codigos_selecionados" onclick="return qrConfirmBulkSelected()">Excluir selecionados</button>
+            </div>
+          </form>
+
+          <form method="post" class="qr-danger-zone mt-3" onsubmit="return confirm('Confirma excluir em massa pelos filtros atuais? Essa ação torna os QR Codes inválidos para leitura pública.')">
+            <input type="hidden" name="acao" value="excluir_filtrados">
+            <input type="hidden" name="campanha_id" value="{{ campanha.id }}">
+            <input type="hidden" name="status" value="{{ filtros_codigos.status }}">
+            <input type="hidden" name="premio" value="{{ filtros_codigos.premio }}">
+            <input type="hidden" name="lote" value="{{ filtros_codigos.lote }}">
+            <input type="hidden" name="busca" value="{{ filtros_codigos.busca }}">
+            <input type="hidden" name="per_page" value="{{ filtros_codigos.per_page }}">
+            <div class="row g-2 align-items-end">
+              <div class="col-lg-6"><b>Exclusão em massa por filtro</b><div class="qr-muted small">Usa os filtros atuais acima. Por padrão exclui somente códigos disponíveis. Para confirmar, digite <b>EXCLUIR</b>.</div></div>
+              <div class="col-lg-2"><label class="form-label">Confirmação</label><input class="form-control" name="confirmacao_exclusao" placeholder="EXCLUIR"></div>
+              <div class="col-lg-2"><label class="small"><input type="checkbox" name="incluir_lidos_filtrados" class="me-1"> Incluir lidos/usados</label></div>
+              <div class="col-lg-2"><button class="btn qr-btn qr-btn-danger w-100">Excluir filtrados</button></div>
+            </div>
+          </form>
         </div>
       </section>
       {% endif %}
     </main>
   </div>
 </div>
+<script>
+(function(){
+  const selectAll = document.getElementById('qrSelectAll');
+  const checks = Array.from(document.querySelectorAll('.qr-row-check'));
+  const countEl = document.getElementById('qrSelectedCount');
+  const codigoUnico = document.getElementById('qrCodigoUnico');
+  function updateCount(){
+    const selected = checks.filter(c => c.checked).length;
+    if(countEl){ countEl.textContent = selected; }
+    if(selectAll){ selectAll.checked = selected > 0 && selected === checks.length; selectAll.indeterminate = selected > 0 && selected < checks.length; }
+  }
+  if(selectAll){ selectAll.addEventListener('change', () => { checks.forEach(c => c.checked = selectAll.checked); updateCount(); }); }
+  checks.forEach(c => c.addEventListener('change', updateCount));
+  updateCount();
+  window.qrDeleteSingle = function(id){
+    if(codigoUnico){ codigoUnico.value = id; }
+    return confirm('Excluir este código? Ele ficará inválido para leitura pública.');
+  };
+  window.qrConfirmBulkSelected = function(){
+    const selected = checks.filter(c => c.checked).length;
+    if(!selected){ alert('Selecione ao menos um código.'); return false; }
+    return confirm('Excluir ' + selected + ' código(s) selecionado(s)? A exclusão é segura/auditável e os QR Codes ficarão inválidos.');
+  };
+})();
+</script>
 {% endblock %}

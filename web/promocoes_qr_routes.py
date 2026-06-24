@@ -1,21 +1,26 @@
 from __future__ import annotations
 
+import random
 import secrets
 import string
-import random
 from datetime import date, datetime
 from urllib.parse import quote_plus
 
-from flask import flash, redirect, render_template, request, url_for
-from sqlalchemy import text
+from flask import redirect, render_template, request, url_for
+from sqlalchemy import bindparam, text
 
 from admin_config_routes import _read_upload, _store_branding_upload, _ALLOWED_LOGO_EXT, _MAX_LOGO_UPLOAD_BYTES
 from auth_helpers import _admin_required
 from db import SessionLocal
 
 _MAX_LAYOUT_UPLOAD_BYTES = 8_000_000
+_MAX_CODIGOS_POR_LOTE = 500
+_MAX_LISTAGEM_CODIGOS = 500
 
 
+# -----------------------------------------------------------------------------
+# Schema / helpers
+# -----------------------------------------------------------------------------
 def _ensure_schema(db) -> None:
     db.execute(text("""
         CREATE TABLE IF NOT EXISTS promocoes_qr_campanhas (
@@ -56,37 +61,47 @@ def _ensure_schema(db) -> None:
             mensagem_resultado TEXT,
             whatsapp_resgate VARCHAR(30),
             mensagem_whatsapp TEXT,
-            criado_em TIMESTAMP NOT NULL DEFAULT NOW()
+            criado_em TIMESTAMP NOT NULL DEFAULT NOW(),
+            excluido_em TIMESTAMP,
+            excluido_motivo TEXT
         );
     """))
-    db.execute(text("CREATE INDEX IF NOT EXISTS ix_promocoes_qr_codigos_campanha ON promocoes_qr_codigos(campanha_id);"))
-    # Migração leve/idempotente para instalações que já criaram a tabela antes desta versão.
+
+    # Migrações idempotentes para instalações existentes.
     db.execute(text("ALTER TABLE promocoes_qr_codigos ADD COLUMN IF NOT EXISTS premiado BOOLEAN NOT NULL DEFAULT FALSE;"))
     db.execute(text("ALTER TABLE promocoes_qr_codigos ADD COLUMN IF NOT EXISTS premio_descricao VARCHAR(220);"))
     db.execute(text("ALTER TABLE promocoes_qr_codigos ADD COLUMN IF NOT EXISTS premio_valor NUMERIC(12,2);"))
     db.execute(text("ALTER TABLE promocoes_qr_codigos ADD COLUMN IF NOT EXISTS mensagem_resultado TEXT;"))
     db.execute(text("ALTER TABLE promocoes_qr_codigos ADD COLUMN IF NOT EXISTS whatsapp_resgate VARCHAR(30);"))
     db.execute(text("ALTER TABLE promocoes_qr_codigos ADD COLUMN IF NOT EXISTS mensagem_whatsapp TEXT;"))
+    db.execute(text("ALTER TABLE promocoes_qr_codigos ADD COLUMN IF NOT EXISTS excluido_em TIMESTAMP;"))
+    db.execute(text("ALTER TABLE promocoes_qr_codigos ADD COLUMN IF NOT EXISTS excluido_motivo TEXT;"))
+
+    db.execute(text("CREATE INDEX IF NOT EXISTS ix_promocoes_qr_codigos_campanha ON promocoes_qr_codigos(campanha_id);"))
     db.execute(text("CREATE INDEX IF NOT EXISTS ix_promocoes_qr_codigos_usado ON promocoes_qr_codigos(usado);"))
     db.execute(text("CREATE INDEX IF NOT EXISTS ix_promocoes_qr_codigos_premiado ON promocoes_qr_codigos(premiado);"))
+    db.execute(text("CREATE INDEX IF NOT EXISTS ix_promocoes_qr_codigos_lote ON promocoes_qr_codigos(campanha_id, lote);"))
+    db.execute(text("CREATE INDEX IF NOT EXISTS ix_promocoes_qr_codigos_ativos ON promocoes_qr_codigos(campanha_id, usado, premiado) WHERE excluido_em IS NULL;"))
 
 
 def _slugify(value: str) -> str:
     value = (value or '').strip().lower()
     repl = str.maketrans('áàãâäéèêëíìîïóòõôöúùûüçñ', 'aaaaaeeeeiiiiooooouuuucn')
     value = value.translate(repl)
-    out = []
+    out: list[str] = []
     last_dash = False
     for ch in value:
         if ch.isalnum():
-            out.append(ch); last_dash = False
+            out.append(ch)
+            last_dash = False
         elif not last_dash:
-            out.append('-'); last_dash = True
+            out.append('-')
+            last_dash = True
     return ''.join(out).strip('-')[:80] or 'promocao'
 
 
 def _parse_bool(v: str | None) -> bool:
-    return (v or '').strip().lower() in {'1','on','true','sim','ativo','yes'}
+    return (v or '').strip().lower() in {'1', 'on', 'true', 'sim', 'ativo', 'yes'}
 
 
 def _only_digits(value: str | None) -> str:
@@ -150,6 +165,100 @@ def _parse_premios_lote(raw: str, total: int, mensagem_nao_premiado: str) -> lis
     return premios
 
 
+def _safe_int_list(values) -> list[int]:
+    ids: list[int] = []
+    for value in values or []:
+        try:
+            item = int(value)
+        except Exception:
+            continue
+        if item > 0:
+            ids.append(item)
+    # Remove duplicados preservando ordem.
+    return list(dict.fromkeys(ids))
+
+
+def _get_codigo_filters(source) -> dict:
+    status = (source.get('status') or 'todos').strip().lower()
+    if status not in {'todos', 'disponiveis', 'lidos'}:
+        status = 'todos'
+
+    premio = (source.get('premio') or 'todos').strip().lower()
+    if premio not in {'todos', 'premiados', 'nao_premiados'}:
+        premio = 'todos'
+
+    try:
+        per_page = int(source.get('per_page') or 200)
+    except Exception:
+        per_page = 200
+    per_page = max(50, min(per_page, _MAX_LISTAGEM_CODIGOS))
+
+    return {
+        'status': status,
+        'premio': premio,
+        'lote': (source.get('lote') or '').strip(),
+        'busca': (source.get('busca') or '').strip(),
+        'per_page': per_page,
+    }
+
+
+def _codigos_where(campanha_id: int, filters: dict, *, bloquear_lidos: bool = False) -> tuple[str, dict]:
+    params = {'campanha_id': campanha_id}
+    where = ['campanha_id=:campanha_id', 'excluido_em IS NULL']
+
+    status = filters.get('status') or 'todos'
+    if status == 'disponiveis':
+        where.append('usado=FALSE')
+    elif status == 'lidos':
+        where.append('usado=TRUE')
+
+    if bloquear_lidos:
+        where.append('usado=FALSE')
+
+    premio = filters.get('premio') or 'todos'
+    if premio == 'premiados':
+        where.append('premiado=TRUE')
+    elif premio == 'nao_premiados':
+        where.append('premiado=FALSE')
+
+    lote = (filters.get('lote') or '').strip()
+    if lote:
+        where.append("COALESCE(lote, '') = :lote")
+        params['lote'] = lote
+
+    busca = (filters.get('busca') or '').strip()
+    if busca:
+        where.append("""
+            (
+                codigo ILIKE :busca OR
+                COALESCE(info_qr, '') ILIKE :busca OR
+                COALESCE(nome_cliente, '') ILIKE :busca OR
+                COALESCE(telefone, '') ILIKE :busca OR
+                COALESCE(premio_descricao, '') ILIKE :busca
+            )
+        """)
+        params['busca'] = f'%{busca}%'
+
+    return ' AND '.join(where), params
+
+
+def _redirect_admin_qr(campanha_id: int | str | None, *, msg: str = '', source=None):
+    args: dict = {}
+    if campanha_id:
+        args['campanha_id'] = campanha_id
+    src = source or request.form
+    for key in ('status', 'premio', 'lote', 'busca', 'per_page'):
+        value = src.get(key)
+        if value not in (None, ''):
+            args[key] = value
+    if msg:
+        args['msg'] = msg[:260]
+    return redirect(url_for('admin_promocoes_qr', **args))
+
+
+# -----------------------------------------------------------------------------
+# Routes
+# -----------------------------------------------------------------------------
 def register_promocoes_qr_routes(app):
     @app.route('/admin/promocoes-qr', methods=['GET', 'POST'], endpoint='admin_promocoes_qr')
     def admin_promocoes_qr():
@@ -160,6 +269,8 @@ def register_promocoes_qr_routes(app):
         with SessionLocal() as db:
             _ensure_schema(db)
             msgs: list[str] = []
+            if request.args.get('msg'):
+                msgs.append(request.args.get('msg'))
 
             if request.method == 'POST':
                 acao = (request.form.get('acao') or '').strip()
@@ -173,8 +284,18 @@ def register_promocoes_qr_routes(app):
                         logo_url = (request.form.get('logo_url_atual') or '').strip()
                         layout_url = (request.form.get('layout_url_atual') or '').strip()
 
-                        logo = _read_upload(request.files.get('logo'), label='Logo da campanha', max_bytes=_MAX_LOGO_UPLOAD_BYTES, allowed_ext=_ALLOWED_LOGO_EXT)
-                        layout = _read_upload(request.files.get('layout'), label='Imagem/layout de fundo', max_bytes=_MAX_LAYOUT_UPLOAD_BYTES, allowed_ext=_ALLOWED_LOGO_EXT)
+                        logo = _read_upload(
+                            request.files.get('logo'),
+                            label='Logo da campanha',
+                            max_bytes=_MAX_LOGO_UPLOAD_BYTES,
+                            allowed_ext=_ALLOWED_LOGO_EXT,
+                        )
+                        layout = _read_upload(
+                            request.files.get('layout'),
+                            label='Imagem/layout de fundo',
+                            max_bytes=_MAX_LAYOUT_UPLOAD_BYTES,
+                            allowed_ext=_ALLOWED_LOGO_EXT,
+                        )
                         if logo:
                             logo_url, _ = _store_branding_upload(logo, folder='promocoes-qr/logos')
                         if layout:
@@ -206,7 +327,7 @@ def register_promocoes_qr_routes(app):
                                        inicio_em=:inicio_em, fim_em=:fim_em, ativo=:ativo, atualizado_em=NOW()
                                  WHERE id=:id
                             """), params)
-                            msgs.append('Campanha atualizada com sucesso.')
+                            msg = 'Campanha atualizada com sucesso.'
                         else:
                             row = db.execute(text("""
                                 INSERT INTO promocoes_qr_campanhas
@@ -216,13 +337,13 @@ def register_promocoes_qr_routes(app):
                                 RETURNING id
                             """), params).first()
                             campanha_id = row[0]
-                            msgs.append('Campanha criada com sucesso.')
+                            msg = 'Campanha criada com sucesso.'
                         db.commit()
-                        return redirect(url_for('admin_promocoes_qr', campanha_id=campanha_id))
+                        return _redirect_admin_qr(campanha_id, msg=msg)
 
                     elif acao == 'gerar_codigos':
                         campanha_id = int(request.form.get('campanha_id') or 0)
-                        qtd = max(1, min(int(request.form.get('quantidade') or 1), 500))
+                        qtd = max(1, min(int(request.form.get('quantidade') or 1), _MAX_CODIGOS_POR_LOTE))
                         prefixo = request.form.get('prefixo') or ''
                         lote = (request.form.get('lote') or '').strip()
                         info_qr = (request.form.get('info_qr') or '').strip()
@@ -255,27 +376,90 @@ def register_promocoes_qr_routes(app):
                             else:
                                 raise RuntimeError('Não foi possível gerar código único.')
                         db.commit()
-                        return redirect(url_for('admin_promocoes_qr', campanha_id=campanha_id))
+                        return _redirect_admin_qr(campanha_id, msg=f'{qtd} QR Codes gerados com sucesso.')
 
                     elif acao == 'excluir_codigo':
                         codigo_id = int(request.form.get('codigo_id') or 0)
                         campanha_id = request.form.get('campanha_id')
-                        db.execute(text('DELETE FROM promocoes_qr_codigos WHERE id=:id'), {'id': codigo_id})
+                        result = db.execute(text("""
+                            UPDATE promocoes_qr_codigos
+                               SET excluido_em=NOW(), excluido_motivo='Exclusão individual pelo admin'
+                             WHERE id=:id AND campanha_id=:campanha_id AND excluido_em IS NULL
+                        """), {'id': codigo_id, 'campanha_id': int(campanha_id or 0)})
                         db.commit()
-                        return redirect(url_for('admin_promocoes_qr', campanha_id=campanha_id))
+                        msg = 'Código excluído.' if getattr(result, 'rowcount', 0) else 'Nenhum código foi excluído.'
+                        return _redirect_admin_qr(campanha_id, msg=msg, source=request.form)
+
+                    elif acao == 'excluir_codigos_selecionados':
+                        campanha_id = int(request.form.get('campanha_id') or 0)
+                        ids = _safe_int_list(request.form.getlist('codigo_ids'))
+                        if not ids:
+                            raise ValueError('Selecione ao menos um código para excluir.')
+
+                        incluir_lidos = _parse_bool(request.form.get('incluir_lidos'))
+                        sql_extra = '' if incluir_lidos else ' AND usado=FALSE'
+                        stmt = text(f"""
+                            UPDATE promocoes_qr_codigos
+                               SET excluido_em=NOW(), excluido_motivo=:motivo
+                             WHERE campanha_id=:campanha_id
+                               AND id IN :ids
+                               AND excluido_em IS NULL
+                               {sql_extra}
+                        """).bindparams(bindparam('ids', expanding=True))
+                        result = db.execute(stmt, {
+                            'campanha_id': campanha_id,
+                            'ids': ids,
+                            'motivo': 'Exclusão em massa de códigos selecionados pelo admin',
+                        })
+                        db.commit()
+                        total = int(getattr(result, 'rowcount', 0) or 0)
+                        ignorados = max(0, len(ids) - total)
+                        msg = f'{total} código(s) excluído(s).'
+                        if ignorados:
+                            msg += f' {ignorados} ignorado(s) por já estarem lidos/usados ou inválidos.'
+                        return _redirect_admin_qr(campanha_id, msg=msg, source=request.form)
+
+                    elif acao == 'excluir_filtrados':
+                        campanha_id = int(request.form.get('campanha_id') or 0)
+                        confirmacao = (request.form.get('confirmacao_exclusao') or '').strip().upper()
+                        if confirmacao != 'EXCLUIR':
+                            raise ValueError('Digite EXCLUIR para confirmar a exclusão em massa filtrada.')
+
+                        incluir_lidos = _parse_bool(request.form.get('incluir_lidos_filtrados'))
+                        filters = _get_codigo_filters(request.form)
+                        where_sql, params = _codigos_where(campanha_id, filters, bloquear_lidos=not incluir_lidos)
+                        result = db.execute(text(f"""
+                            UPDATE promocoes_qr_codigos
+                               SET excluido_em=NOW(), excluido_motivo=:motivo
+                             WHERE {where_sql}
+                        """), {
+                            **params,
+                            'motivo': 'Exclusão em massa por filtro pelo admin',
+                        })
+                        db.commit()
+                        total = int(getattr(result, 'rowcount', 0) or 0)
+                        msg = f'{total} código(s) excluído(s) pelos filtros atuais.'
+                        if not incluir_lidos:
+                            msg += ' Códigos já lidos/usados foram preservados.'
+                        return _redirect_admin_qr(campanha_id, msg=msg, source=request.form)
 
                 except Exception as exc:
                     db.rollback()
                     msgs.append(f'Falha ao salvar: {exc}')
 
             campanhas = db.execute(text("""
-                SELECT c.*, 
+                SELECT c.*,
                        COALESCE(x.total,0) AS total_codigos,
-                       COALESCE(x.usados,0) AS codigos_usados
+                       COALESCE(x.usados,0) AS codigos_usados,
+                       COALESCE(x.excluidos,0) AS codigos_excluidos
                   FROM promocoes_qr_campanhas c
              LEFT JOIN (
-                    SELECT campanha_id, COUNT(*) total, SUM(CASE WHEN usado THEN 1 ELSE 0 END) usados
-                      FROM promocoes_qr_codigos GROUP BY campanha_id
+                    SELECT campanha_id,
+                           SUM(CASE WHEN excluido_em IS NULL THEN 1 ELSE 0 END) total,
+                           SUM(CASE WHEN excluido_em IS NULL AND usado THEN 1 ELSE 0 END) usados,
+                           SUM(CASE WHEN excluido_em IS NOT NULL THEN 1 ELSE 0 END) excluidos
+                      FROM promocoes_qr_codigos
+                     GROUP BY campanha_id
                   ) x ON x.campanha_id = c.id
                  ORDER BY c.criado_em DESC, c.id DESC
             """)).mappings().all()
@@ -283,21 +467,67 @@ def register_promocoes_qr_routes(app):
             campanha_id = request.args.get('campanha_id') or (campanhas[0]['id'] if campanhas else None)
             campanha = None
             codigos = []
+            lotes = []
+            codigo_stats = {
+                'total': 0,
+                'usados': 0,
+                'disponiveis': 0,
+                'premiados': 0,
+                'nao_premiados': 0,
+                'total_lotes': 0,
+                'excluidos': 0,
+            }
+            filtros_codigos = _get_codigo_filters(request.args)
+            codigos_filtrados_total = 0
+
             if campanha_id:
                 campanha = db.execute(text('SELECT * FROM promocoes_qr_campanhas WHERE id=:id'), {'id': int(campanha_id)}).mappings().first()
                 if campanha:
-                    codigos = db.execute(text("""
-                        SELECT * FROM promocoes_qr_codigos
+                    codigo_stats = db.execute(text("""
+                        SELECT
+                            COALESCE(SUM(CASE WHEN excluido_em IS NULL THEN 1 ELSE 0 END),0) AS total,
+                            COALESCE(SUM(CASE WHEN excluido_em IS NULL AND usado THEN 1 ELSE 0 END),0) AS usados,
+                            COALESCE(SUM(CASE WHEN excluido_em IS NULL AND NOT usado THEN 1 ELSE 0 END),0) AS disponiveis,
+                            COALESCE(SUM(CASE WHEN excluido_em IS NULL AND premiado THEN 1 ELSE 0 END),0) AS premiados,
+                            COALESCE(SUM(CASE WHEN excluido_em IS NULL AND NOT premiado THEN 1 ELSE 0 END),0) AS nao_premiados,
+                            COALESCE(COUNT(DISTINCT CASE WHEN excluido_em IS NULL AND COALESCE(lote,'') <> '' THEN lote END),0) AS total_lotes,
+                            COALESCE(SUM(CASE WHEN excluido_em IS NOT NULL THEN 1 ELSE 0 END),0) AS excluidos
+                          FROM promocoes_qr_codigos
                          WHERE campanha_id=:id
-                         ORDER BY criado_em DESC, id DESC
-                         LIMIT 200
+                    """), {'id': campanha['id']}).mappings().first() or codigo_stats
+
+                    lotes = db.execute(text("""
+                        SELECT lote, COUNT(*) AS total
+                          FROM promocoes_qr_codigos
+                         WHERE campanha_id=:id
+                           AND excluido_em IS NULL
+                           AND COALESCE(lote,'') <> ''
+                         GROUP BY lote
+                         ORDER BY MAX(criado_em) DESC, lote ASC
+                         LIMIT 80
                     """), {'id': campanha['id']}).mappings().all()
+
+                    where_sql, params = _codigos_where(int(campanha['id']), filtros_codigos)
+                    codigos_filtrados_total = int((db.execute(text(f"""
+                        SELECT COUNT(*) FROM promocoes_qr_codigos WHERE {where_sql}
+                    """), params).scalar() or 0))
+
+                    codigos = db.execute(text(f"""
+                        SELECT * FROM promocoes_qr_codigos
+                         WHERE {where_sql}
+                         ORDER BY criado_em DESC, id DESC
+                         LIMIT :limit
+                    """), {**params, 'limit': filtros_codigos['per_page']}).mappings().all()
 
             return render_template(
                 'admin_promocoes_qr.html',
                 campanhas=campanhas,
                 campanha=campanha,
                 codigos=codigos,
+                lotes=lotes,
+                codigo_stats=codigo_stats,
+                filtros_codigos=filtros_codigos,
+                codigos_filtrados_total=codigos_filtrados_total,
                 msgs=msgs,
                 public_url_fn=_public_url,
                 qr_img_fn=lambda url: 'https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=' + quote_plus(url),
@@ -319,7 +549,9 @@ def register_promocoes_qr_routes(app):
                 where_extra = ' AND usado=FALSE'
             codigos = db.execute(text(f'''
                 SELECT * FROM promocoes_qr_codigos
-                 WHERE campanha_id=:id {where_extra}
+                 WHERE campanha_id=:id
+                   AND excluido_em IS NULL
+                   {where_extra}
                  ORDER BY criado_em DESC, id DESC
                  LIMIT 1000
             '''), {'id': campanha_id}).mappings().all()
@@ -341,7 +573,9 @@ def register_promocoes_qr_routes(app):
                        c.inicio_em, c.fim_em, c.ativo
                   FROM promocoes_qr_codigos q
                   JOIN promocoes_qr_campanhas c ON c.id = q.campanha_id
-                 WHERE c.slug=:slug AND q.codigo=:codigo
+                 WHERE c.slug=:slug
+                   AND q.codigo=:codigo
+                   AND q.excluido_em IS NULL
                  LIMIT 1
             """), {'slug': slug, 'codigo': codigo}).mappings().first()
 
@@ -361,7 +595,7 @@ def register_promocoes_qr_routes(app):
                     upd = db.execute(text("""
                         UPDATE promocoes_qr_codigos
                            SET usado=TRUE, usado_em=NOW()
-                         WHERE id=:id AND usado=FALSE
+                         WHERE id=:id AND usado=FALSE AND excluido_em IS NULL
                     """), {'id': row['id']})
                     db.commit()
                     if getattr(upd, 'rowcount', 0) != 1:
