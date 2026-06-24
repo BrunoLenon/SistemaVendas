@@ -115,6 +115,23 @@ def _parse_date(value: str | None):
     return datetime.fromisoformat(value).date()
 
 
+def _validate_campanha_periodo(*, ativo: bool, inicio_em, fim_em) -> None:
+    """Validação defensiva para evitar ativar campanha vencida.
+
+    A campanha pode ser cadastrada como rascunho sem datas. Para ficar ativa,
+    exige data final válida e não vencida. Isso evita o caso operacional de
+    reativar/copiar uma campanha antiga com validade vencida.
+    """
+    hoje = date.today()
+    if inicio_em and fim_em and inicio_em > fim_em:
+        raise ValueError('A data de início não pode ser maior que a data final da campanha.')
+    if ativo:
+        if not fim_em:
+            raise ValueError('Para ativar a campanha, informe a data final/validade.')
+        if fim_em < hoje:
+            raise ValueError('Não é permitido ativar campanha com data final vencida.')
+
+
 def _new_code(prefix: str = '') -> str:
     alphabet = string.ascii_uppercase + string.digits
     core = ''.join(secrets.choice(alphabet) for _ in range(10))
@@ -301,6 +318,11 @@ def register_promocoes_qr_routes(app):
                         if layout:
                             layout_url, _ = _store_branding_upload(layout, folder='promocoes-qr/layouts')
 
+                        inicio_em = _parse_date(request.form.get('inicio_em'))
+                        fim_em = _parse_date(request.form.get('fim_em'))
+                        ativo = _parse_bool(request.form.get('ativo'))
+                        _validate_campanha_periodo(ativo=ativo, inicio_em=inicio_em, fim_em=fim_em)
+
                         params = {
                             'slug': slug,
                             'nome': nome,
@@ -312,9 +334,9 @@ def register_promocoes_qr_routes(app):
                             'layout_url': layout_url,
                             'cor_primaria': (request.form.get('cor_primaria') or '#ff8c00').strip(),
                             'cor_secundaria': (request.form.get('cor_secundaria') or '#111111').strip(),
-                            'inicio_em': _parse_date(request.form.get('inicio_em')),
-                            'fim_em': _parse_date(request.form.get('fim_em')),
-                            'ativo': _parse_bool(request.form.get('ativo')),
+                            'inicio_em': inicio_em,
+                            'fim_em': fim_em,
+                            'ativo': ativo,
                         }
 
                         if campanha_id:
@@ -343,7 +365,22 @@ def register_promocoes_qr_routes(app):
 
                     elif acao == 'gerar_codigos':
                         campanha_id = int(request.form.get('campanha_id') or 0)
-                        qtd = max(1, min(int(request.form.get('quantidade') or 1), _MAX_CODIGOS_POR_LOTE))
+
+                        campanha_validacao = db.execute(text('''
+                            SELECT ativo, inicio_em, fim_em
+                              FROM promocoes_qr_campanhas
+                             WHERE id=:id
+                             LIMIT 1
+                        '''), {'id': campanha_id}).mappings().first()
+                        if not campanha_validacao:
+                            raise ValueError('Campanha não localizada.')
+                        if campanha_validacao.get('fim_em') and campanha_validacao['fim_em'] < date.today():
+                            raise ValueError('Esta campanha está com validade vencida. Atualize a data antes de gerar novos QR Codes.')
+
+                        quantidade_raw = (request.form.get('quantidade') or '').strip()
+                        if not quantidade_raw:
+                            raise ValueError('Informe a quantidade de QR Codes que deseja gerar.')
+                        qtd = max(1, min(int(quantidade_raw), _MAX_CODIGOS_POR_LOTE))
                         prefixo = request.form.get('prefixo') or ''
                         lote = (request.form.get('lote') or '').strip()
                         info_qr = (request.form.get('info_qr') or '').strip()
@@ -531,6 +568,8 @@ def register_promocoes_qr_routes(app):
                 msgs=msgs,
                 public_url_fn=_public_url,
                 qr_img_fn=lambda url: 'https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=' + quote_plus(url),
+                today_iso=date.today().isoformat(),
+                demo_public_url=_public_url(campanha['slug'] if campanha else 'preview', 'PREVIEW123'),
             )
 
     @app.route('/admin/promocoes-qr/<int:campanha_id>/imprimir', methods=['GET'], endpoint='admin_promocoes_qr_imprimir')

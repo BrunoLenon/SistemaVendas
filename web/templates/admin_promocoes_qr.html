@@ -13,6 +13,12 @@
   .qr-mini{width:54px;height:54px;background:#fff;border-radius:10px;padding:4px}.qr-preview{min-height:190px;border-radius:18px;border:1px solid rgba(255,140,0,.16);background:#111 center/cover no-repeat;display:flex;align-items:center;gap:14px;padding:18px;position:relative;overflow:hidden}.qr-preview:before{content:"";position:absolute;inset:0;background:linear-gradient(90deg,rgba(0,0,0,.72),rgba(0,0,0,.20))}.qr-preview>*{position:relative}.qr-preview img.logo{max-width:130px;max-height:72px;object-fit:contain}.qr-tabs{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.qr-tabs a{color:#fff;text-decoration:none}
   .qr-stats{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;margin-bottom:14px}@media(max-width:1100px){.qr-stats{grid-template-columns:repeat(3,minmax(0,1fr))}}@media(max-width:620px){.qr-stats{grid-template-columns:repeat(2,minmax(0,1fr))}}.qr-stat{border:1px solid rgba(255,255,255,.10);background:rgba(0,0,0,.18);border-radius:15px;padding:12px}.qr-stat b{display:block;font-size:20px;line-height:1}.qr-stat span{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:rgba(255,255,255,.62);font-weight:900}
   .qr-toolbar{border:1px solid rgba(255,255,255,.10);background:rgba(0,0,0,.18);border-radius:16px;padding:12px;margin-bottom:12px}.qr-check{width:18px;height:18px;accent-color:#ff8c00}.qr-danger-zone{border:1px dashed rgba(255,77,79,.42);background:rgba(255,77,79,.06);border-radius:16px;padding:12px}.qr-sticky-actions{position:sticky;bottom:10px;z-index:2;border:1px solid rgba(255,140,0,.22);background:rgba(20,20,20,.94);backdrop-filter:blur(10px);border-radius:16px;padding:12px;margin-top:12px;box-shadow:0 14px 40px rgba(0,0,0,.35)}
+
+  .qr-preview-grid{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:14px;margin-top:14px}@media(max-width:900px){.qr-preview-grid{grid-template-columns:1fr}}
+  .qr-preview-panel{border:1px solid rgba(255,140,0,.18);background:rgba(0,0,0,.20);border-radius:18px;padding:14px;overflow:hidden}.qr-preview-panel h4{font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:rgba(255,255,255,.62);font-weight:950;margin:0 0 10px}
+  .qr-public-phone{border:1px solid rgba(255,255,255,.12);border-radius:22px;padding:15px;background:linear-gradient(145deg,#080808,#171717);min-height:255px;position:relative;overflow:hidden}.qr-public-phone:before{content:"";position:absolute;inset:0;background:radial-gradient(circle at 70% 0,rgba(255,140,0,.22),transparent 38%);opacity:.8}.qr-public-phone>*{position:relative}.qr-preview-logo{width:96px;height:48px;border-radius:12px;background:rgba(255,255,255,.07);display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.55);font-size:11px;font-weight:900;margin-bottom:10px}.qr-preview-title{font-size:25px;line-height:1.02;font-weight:950;letter-spacing:-.04em}.qr-preview-sub{font-size:13px;color:rgba(255,255,255,.72);line-height:1.35;margin-top:6px}.qr-preview-msg{margin-top:12px;border:1px solid rgba(255,140,0,.24);background:rgba(255,140,0,.11);border-radius:15px;padding:10px;font-size:13px;font-weight:900}.qr-preview-reg{margin-top:10px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);border-radius:13px;padding:10px;color:rgba(255,255,255,.68);font-size:12px;white-space:pre-line;max-height:90px;overflow:auto}
+  .qr-coupon-preview{border:1px dashed rgba(255,255,255,.22);border-radius:18px;background:#f7f7f7;color:#111;padding:14px;text-align:center}.qr-coupon-preview .coupon-head{font-size:11px;font-weight:950;text-transform:uppercase;letter-spacing:.08em;color:#555}.qr-coupon-preview .coupon-title{font-size:18px;font-weight:950;line-height:1.08;margin:6px 0}.qr-coupon-preview .coupon-qr{width:132px;height:132px;background:#fff;border:1px solid #ddd;border-radius:12px;padding:6px;margin:8px auto}.qr-coupon-preview .coupon-code{font-family:ui-monospace,Consolas,monospace;font-weight:900}.qr-coupon-preview .coupon-info{font-size:12px;color:#555;line-height:1.35;margin-top:6px}.qr-alert-soft{border:1px solid rgba(255,193,7,.32);background:rgba(255,193,7,.09);color:#ffe7a7;border-radius:14px;padding:10px 12px}.qr-alert-danger{border:1px solid rgba(255,77,79,.36);background:rgba(255,77,79,.10);color:#ffc4c4;border-radius:14px;padding:10px 12px}
+
 </style>
 {% endblock %}
 {% block content %}
@@ -55,14 +61,38 @@
               <div class="col-md-3"><label class="form-label">Início</label><input class="form-control" type="date" name="inicio_em" value="{{ campanha.inicio_em if campanha and campanha.inicio_em else '' }}"></div>
               <div class="col-md-3"><label class="form-label">Fim/validade</label><input class="form-control" type="date" name="fim_em" value="{{ campanha.fim_em if campanha and campanha.fim_em else '' }}"></div>
               <div class="col-12"><label class="form-label">Informações / Regulamento exibido ao ler o QR Code</label><textarea class="form-control" name="regulamento" rows="3">{{ campanha.regulamento if campanha else '' }}</textarea><div class="qr-muted small mt-1">Esse texto aparecerá na página pública após o cliente escanear o QR Code.</div></div>
-              <div class="col-12"><label><input type="checkbox" name="ativo" {% if not campanha or campanha.ativo %}checked{% endif %}> Campanha ativa</label></div>
-            </div>
-            {% if campanha %}
-              <div class="qr-preview mt-3" style="background-image:url('{{ campanha.layout_url or '' }}')">
-                {% if campanha.logo_url %}<img class="logo" src="{{ campanha.logo_url }}" alt="Logo">{% endif %}
-                <div><div class="qr-chip">Prévia pública</div><h3 class="mt-2 mb-1">{{ campanha.titulo or campanha.nome }}</h3><div class="qr-muted">{{ campanha.subtitulo or campanha.premio }}</div></div>
+              <div class="col-12">
+                <div id="qrDateWarning" class="qr-alert-danger d-none mb-2">Atenção: campanha ativa não pode ficar com validade vencida. Atualize a data final ou mantenha a campanha inativa.</div>
+                <div class="qr-preview-grid">
+                  <div class="qr-preview-panel">
+                    <h4>Preview da página pública do QR Code</h4>
+                    <div class="qr-public-phone" id="qrPreviewPhone">
+                      <div class="qr-preview-logo">LOGO</div>
+                      <span class="qr-chip qr-chip-prize" id="qrPreviewPremio">QR Code Premiado</span>
+                      <div class="qr-preview-title" id="qrPreviewTitulo">{{ campanha.titulo or campanha.nome if campanha else 'Título da campanha' }}</div>
+                      <div class="qr-preview-sub" id="qrPreviewSubtitulo">{{ campanha.subtitulo or campanha.premio if campanha else 'Subtítulo/chamada da campanha' }}</div>
+                      <div class="qr-preview-msg" id="qrPreviewMensagem">Mensagem de resultado aparecerá aqui.</div>
+                      <div class="qr-preview-reg" id="qrPreviewRegulamento">{{ campanha.regulamento if campanha and campanha.regulamento else 'Informações / regulamento ainda não preenchido.' }}</div>
+                    </div>
+                  </div>
+                  <div class="qr-preview-panel">
+                    <h4>Preview do cupom impresso</h4>
+                    <div class="qr-coupon-preview">
+                      <div class="coupon-head" id="qrCouponNome">{{ campanha.nome if campanha else 'Promoção' }}</div>
+                      <div class="coupon-title" id="qrCouponTitulo">{{ campanha.titulo or campanha.nome if campanha else 'QR Code Premiado' }}</div>
+                      <img class="coupon-qr" src="{{ qr_img_fn(demo_public_url) }}" alt="Preview QR">
+                      <div class="coupon-code">PREVIEW123</div>
+                      <div class="coupon-info" id="qrCouponInfo">Escaneie para ver o resultado da promoção.</div>
+                      <div class="coupon-info" id="qrCouponValidade">Validade: informe a data final</div>
+                    </div>
+                  </div>
+                </div>
               </div>
-            {% endif %}
+              <div class="col-12">
+                <label><input type="checkbox" name="ativo" id="qrAtivo" {% if campanha and campanha.ativo %}checked{% endif %}> Campanha ativa</label>
+                <div class="qr-muted small mt-1">Nova campanha nasce como rascunho. Para ativar, informe validade final válida e não vencida.</div>
+              </div>
+            </div>
             <div class="mt-3 d-flex gap-2 flex-wrap"><button class="btn qr-btn qr-btn-primary">Salvar campanha</button><a class="btn qr-btn qr-btn-outline" href="{{ url_for('admin_promocoes_qr') }}">Nova campanha</a></div>
           </form>
         </div>
@@ -73,15 +103,16 @@
         <div class="qr-card-b">
           <form method="post" class="row g-3 align-items-end">
             <input type="hidden" name="acao" value="gerar_codigos"><input type="hidden" name="campanha_id" value="{{ campanha.id }}">
-            <div class="col-md-2"><label class="form-label">Quantidade</label><input class="form-control" type="number" min="1" max="500" name="quantidade" value="10"></div>
+            <div class="col-md-2"><label class="form-label">Quantidade</label><input class="form-control" type="number" min="1" max="500" name="quantidade" placeholder="Ex.: 100" required><div class="qr-muted small mt-1">Sem valor padrão para evitar geração acidental.</div></div>
             <div class="col-md-2"><label class="form-label">Prefixo</label><input class="form-control" name="prefixo" placeholder="M13"></div>
             <div class="col-md-3"><label class="form-label">Lote/evento</label><input class="form-control" name="lote" placeholder="Copa / Junho / Loja 101"></div>
             <div class="col-md-3"><label class="form-label">Informação no QR</label><input class="form-control" name="info_qr" placeholder="Compra acima de R$100"></div>
             <div class="col-md-2"><button class="btn qr-btn qr-btn-primary w-100">Gerar</button></div>
             <div class="col-md-7"><label class="form-label">Prêmios do lote</label><textarea class="form-control" name="premios_lote" rows="4" placeholder="1|Vale compra R$ 100|100,00&#10;3|Brinde Moto13&#10;5|Desconto R$ 20|20,00"></textarea><div class="qr-muted small mt-1">Uma linha por prêmio: quantidade|descrição|valor opcional. O sistema sorteia automaticamente dentro do lote.</div></div>
-            <div class="col-md-5"><label class="form-label">Mensagem para QR não premiado</label><textarea class="form-control" name="mensagem_nao_premiado" rows="4">Não foi dessa vez, mas não desista!</textarea></div>
+            <div class="col-md-5"><label class="form-label">Mensagem para QR não premiado</label><textarea class="form-control" name="mensagem_nao_premiado" rows="4" placeholder="Não foi dessa vez, mas não desista!"></textarea><div class="qr-muted small mt-1">Se deixar vazio, o sistema usa a mensagem padrão somente no backend.</div></div>
             <div class="col-md-4"><label class="form-label">WhatsApp para resgate</label><input class="form-control" name="whatsapp_resgate" placeholder="5567999999999"><div class="qr-muted small mt-1">Use DDI + DDD + número. Ex.: 5567999999999.</div></div>
             <div class="col-md-8"><label class="form-label">Mensagem padrão do WhatsApp</label><input class="form-control" name="mensagem_whatsapp" placeholder="Olá! Ganhei o prêmio {premio} na promoção {campanha}. Código: {codigo}. Gostaria de resgatar meu prêmio."><div class="qr-muted small mt-1">Opcional. Variáveis aceitas: {premio}, {campanha}, {codigo}.</div></div>
+            <div class="col-12"><div class="qr-alert-soft small"><b>Prévia em tempo real:</b> os campos de lote, informação no QR e mensagem atualizam o preview acima antes de gerar os códigos.</div></div>
           </form>
         </div>
       </section>
@@ -198,6 +229,70 @@
     if(!selected){ alert('Selecione ao menos um código.'); return false; }
     return confirm('Excluir ' + selected + ' código(s) selecionado(s)? A exclusão é segura/auditável e os QR Codes ficarão inválidos.');
   };
+
+  const today = '{{ today_iso }}';
+  const campo = (name) => document.querySelector(`[name="${name}"]`);
+  const setText = (id, value, fallback) => { const el = document.getElementById(id); if(el){ el.textContent = (value || '').trim() || fallback; } };
+  const previewPhone = document.getElementById('qrPreviewPhone');
+  const ativo = document.getElementById('qrAtivo');
+  const dateWarning = document.getElementById('qrDateWarning');
+
+  function fmtDate(iso){
+    if(!iso){ return ''; }
+    const parts = iso.split('-');
+    if(parts.length !== 3){ return iso; }
+    return `${parts[2]}/${parts[1]}/${parts[0]}`;
+  }
+
+  function updatePreview(){
+    const nome = campo('nome')?.value || '';
+    const titulo = campo('titulo')?.value || '';
+    const premio = campo('premio')?.value || '';
+    const subtitulo = campo('subtitulo')?.value || '';
+    const regulamento = campo('regulamento')?.value || '';
+    const cor1 = campo('cor_primaria')?.value || '#ff8c00';
+    const cor2 = campo('cor_secundaria')?.value || '#111111';
+    const fim = campo('fim_em')?.value || '';
+    const lote = campo('lote')?.value || '';
+    const info = campo('info_qr')?.value || '';
+    const msgNao = campo('mensagem_nao_premiado')?.value || '';
+
+    if(previewPhone){
+      previewPhone.style.background = `linear-gradient(145deg, ${cor2}, #171717)`;
+      previewPhone.style.borderColor = cor1 + '66';
+    }
+    setText('qrPreviewPremio', premio, 'QR Code Premiado');
+    setText('qrPreviewTitulo', titulo || nome, 'Título da campanha');
+    setText('qrPreviewSubtitulo', subtitulo || premio, 'Subtítulo/chamada da campanha');
+    setText('qrPreviewMensagem', msgNao, 'Mensagem de resultado aparecerá aqui.');
+    setText('qrPreviewRegulamento', regulamento, 'Informações / regulamento ainda não preenchido.');
+    setText('qrCouponNome', nome, 'Promoção');
+    setText('qrCouponTitulo', titulo || nome, 'QR Code Premiado');
+    setText('qrCouponInfo', [lote ? 'Lote: ' + lote : '', info].filter(Boolean).join(' • '), 'Escaneie para ver o resultado da promoção.');
+    setText('qrCouponValidade', fim ? 'Validade: ' + fmtDate(fim) : '', 'Validade: informe a data final');
+
+    const vencidaAtiva = !!(ativo && ativo.checked && fim && fim < today);
+    if(dateWarning){ dateWarning.classList.toggle('d-none', !vencidaAtiva); }
+  }
+
+  ['nome','titulo','premio','subtitulo','regulamento','cor_primaria','cor_secundaria','inicio_em','fim_em','ativo','lote','info_qr','mensagem_nao_premiado'].forEach(name => {
+    const el = campo(name);
+    if(el){ el.addEventListener('input', updatePreview); el.addEventListener('change', updatePreview); }
+  });
+
+  const campanhaForm = document.querySelector('form[enctype="multipart/form-data"]');
+  if(campanhaForm){
+    campanhaForm.addEventListener('submit', function(ev){
+      const fim = campo('fim_em')?.value || '';
+      if(ativo && ativo.checked){
+        if(!fim){ ev.preventDefault(); alert('Para ativar a campanha, informe a data final/validade.'); return false; }
+        if(fim < today){ ev.preventDefault(); alert('Não é permitido ativar campanha com data final vencida.'); return false; }
+      }
+      return true;
+    });
+  }
+
+  updatePreview();
 })();
 </script>
 {% endblock %}
