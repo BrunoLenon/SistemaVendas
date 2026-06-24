@@ -37,7 +37,7 @@ def _ensure_schema(db) -> None:
             cor_secundaria VARCHAR(20) NOT NULL DEFAULT '#111111',
             inicio_em DATE,
             fim_em DATE,
-            ativo BOOLEAN NOT NULL DEFAULT TRUE,
+            ativo BOOLEAN NOT NULL DEFAULT FALSE,
             criado_em TIMESTAMP NOT NULL DEFAULT NOW(),
             atualizado_em TIMESTAMP
         );
@@ -68,6 +68,8 @@ def _ensure_schema(db) -> None:
     """))
 
     # Migrações idempotentes para instalações existentes.
+    db.execute(text("ALTER TABLE promocoes_qr_campanhas ALTER COLUMN ativo SET DEFAULT FALSE;"))
+
     db.execute(text("ALTER TABLE promocoes_qr_codigos ADD COLUMN IF NOT EXISTS premiado BOOLEAN NOT NULL DEFAULT FALSE;"))
     db.execute(text("ALTER TABLE promocoes_qr_codigos ADD COLUMN IF NOT EXISTS premio_descricao VARCHAR(220);"))
     db.execute(text("ALTER TABLE promocoes_qr_codigos ADD COLUMN IF NOT EXISTS premio_valor NUMERIC(12,2);"))
@@ -131,6 +133,68 @@ def _validate_campanha_periodo(*, ativo: bool, inicio_em, fim_em) -> None:
         if fim_em < hoje:
             raise ValueError('Não é permitido ativar campanha com data final vencida.')
 
+
+
+
+def _campanha_status(row) -> dict:
+    """Retorna status operacional seguro para exibição no admin."""
+    hoje = date.today()
+    ativo = bool(row.get('ativo')) if hasattr(row, 'get') else bool(row['ativo'])
+    inicio_em = row.get('inicio_em') if hasattr(row, 'get') else row['inicio_em']
+    fim_em = row.get('fim_em') if hasattr(row, 'get') else row['fim_em']
+
+    if fim_em and fim_em < hoje:
+        return {'key': 'expirada', 'label': 'Expirada', 'chip': 'qr-chip-danger'}
+    if inicio_em and inicio_em > hoje:
+        return {'key': 'agendada', 'label': 'Agendada', 'chip': 'qr-chip-warn'}
+    if ativo:
+        return {'key': 'ativa', 'label': 'Ativa', 'chip': 'qr-chip-ok'}
+    return {'key': 'rascunho', 'label': 'Rascunho', 'chip': 'qr-chip-warn'}
+
+
+def _normalize_hex_color(value: str | None, fallback: str) -> str:
+    value = (value or '').strip()
+    if not value:
+        return fallback
+    if not value.startswith('#'):
+        value = '#' + value
+    if len(value) not in (4, 7):
+        return fallback
+    valid = set('0123456789abcdefABCDEF')
+    if any(ch not in valid for ch in value[1:]):
+        return fallback
+    return value
+
+
+def _validate_slug_available(db, slug: str, campanha_id: int | None = None) -> None:
+    if campanha_id:
+        row = db.execute(text("""
+            SELECT id, nome
+              FROM promocoes_qr_campanhas
+             WHERE slug=:slug
+               AND id <> :id
+             LIMIT 1
+        """), {'slug': slug, 'id': campanha_id}).mappings().first()
+    else:
+        row = db.execute(text("""
+            SELECT id, nome
+              FROM promocoes_qr_campanhas
+             WHERE slug=:slug
+             LIMIT 1
+        """), {'slug': slug}).mappings().first()
+    if row:
+        raise ValueError(f'O slug público "{slug}" já está em uso pela campanha "{row["nome"]}". Informe outro slug.')
+
+
+def _unique_slug(db, base_slug: str) -> str:
+    base_slug = _slugify(base_slug)
+    slug = base_slug
+    for i in range(2, 200):
+        exists = db.execute(text('SELECT 1 FROM promocoes_qr_campanhas WHERE slug=:slug LIMIT 1'), {'slug': slug}).first()
+        if not exists:
+            return slug
+        slug = _slugify(f'{base_slug}-{i}')
+    return _slugify(f'{base_slug}-{secrets.token_hex(3)}')
 
 def _new_code(prefix: str = '') -> str:
     alphabet = string.ascii_uppercase + string.digits
@@ -298,6 +362,8 @@ def register_promocoes_qr_routes(app):
                         if not nome:
                             raise ValueError('Informe o nome da campanha.')
                         slug = _slugify(request.form.get('slug') or nome)
+                        campanha_id_int = int(campanha_id) if campanha_id else None
+                        _validate_slug_available(db, slug, campanha_id_int)
                         logo_url = (request.form.get('logo_url_atual') or '').strip()
                         layout_url = (request.form.get('layout_url_atual') or '').strip()
 
@@ -332,8 +398,8 @@ def register_promocoes_qr_routes(app):
                             'regulamento': (request.form.get('regulamento') or '').strip(),
                             'logo_url': logo_url,
                             'layout_url': layout_url,
-                            'cor_primaria': (request.form.get('cor_primaria') or '#ff8c00').strip(),
-                            'cor_secundaria': (request.form.get('cor_secundaria') or '#111111').strip(),
+                            'cor_primaria': _normalize_hex_color(request.form.get('cor_primaria'), '#ff8c00'),
+                            'cor_secundaria': _normalize_hex_color(request.form.get('cor_secundaria'), '#111111'),
                             'inicio_em': inicio_em,
                             'fim_em': fim_em,
                             'ativo': ativo,
@@ -363,6 +429,40 @@ def register_promocoes_qr_routes(app):
                         db.commit()
                         return _redirect_admin_qr(campanha_id, msg=msg)
 
+                    elif acao == 'duplicar_campanha':
+                        campanha_id = int(request.form.get('campanha_id') or 0)
+                        origem = db.execute(text("""
+                            SELECT *
+                              FROM promocoes_qr_campanhas
+                             WHERE id=:id
+                             LIMIT 1
+                        """), {'id': campanha_id}).mappings().first()
+                        if not origem:
+                            raise ValueError('Campanha de origem não localizada para duplicar.')
+
+                        novo_nome = f"{origem['nome']} - cópia"
+                        novo_slug = _unique_slug(db, f"{origem['slug']}-copia")
+                        row = db.execute(text("""
+                            INSERT INTO promocoes_qr_campanhas
+                                (slug,nome,titulo,subtitulo,premio,regulamento,logo_url,layout_url,cor_primaria,cor_secundaria,inicio_em,fim_em,ativo)
+                            VALUES
+                                (:slug,:nome,:titulo,:subtitulo,:premio,:regulamento,:logo_url,:layout_url,:cor_primaria,:cor_secundaria,NULL,NULL,FALSE)
+                            RETURNING id
+                        """), {
+                            'slug': novo_slug,
+                            'nome': novo_nome,
+                            'titulo': origem.get('titulo') or '',
+                            'subtitulo': origem.get('subtitulo') or '',
+                            'premio': origem.get('premio') or '',
+                            'regulamento': origem.get('regulamento') or '',
+                            'logo_url': origem.get('logo_url') or '',
+                            'layout_url': origem.get('layout_url') or '',
+                            'cor_primaria': origem.get('cor_primaria') or '#ff8c00',
+                            'cor_secundaria': origem.get('cor_secundaria') or '#111111',
+                        }).first()
+                        db.commit()
+                        return _redirect_admin_qr(row[0], msg='Campanha duplicada como rascunho. Revise datas e publique quando estiver pronta.')
+
                     elif acao == 'gerar_codigos':
                         campanha_id = int(request.form.get('campanha_id') or 0)
 
@@ -374,6 +474,8 @@ def register_promocoes_qr_routes(app):
                         '''), {'id': campanha_id}).mappings().first()
                         if not campanha_validacao:
                             raise ValueError('Campanha não localizada.')
+                        if campanha_validacao.get('inicio_em') and campanha_validacao.get('fim_em') and campanha_validacao['inicio_em'] > campanha_validacao['fim_em']:
+                            raise ValueError('A data de início da campanha é maior que a data final. Corrija antes de gerar QR Codes.')
                         if campanha_validacao.get('fim_em') and campanha_validacao['fim_em'] < date.today():
                             raise ValueError('Esta campanha está com validade vencida. Atualize a data antes de gerar novos QR Codes.')
 
@@ -501,8 +603,16 @@ def register_promocoes_qr_routes(app):
                  ORDER BY c.criado_em DESC, c.id DESC
             """)).mappings().all()
 
-            campanha_id = request.args.get('campanha_id') or (campanhas[0]['id'] if campanhas else None)
+            campanhas = [dict(c, **{
+                'status_key': _campanha_status(c)['key'],
+                'status_label': _campanha_status(c)['label'],
+                'status_chip': _campanha_status(c)['chip'],
+            }) for c in campanhas]
+
+            criando_nova = (request.args.get('novo') or '').strip().lower() in {'1', 'true', 'sim', 'novo'}
+            campanha_id = None if criando_nova else (request.args.get('campanha_id') or (campanhas[0]['id'] if campanhas else None))
             campanha = None
+            campanha_status = None
             codigos = []
             lotes = []
             codigo_stats = {
@@ -520,6 +630,8 @@ def register_promocoes_qr_routes(app):
             if campanha_id:
                 campanha = db.execute(text('SELECT * FROM promocoes_qr_campanhas WHERE id=:id'), {'id': int(campanha_id)}).mappings().first()
                 if campanha:
+                    campanha = dict(campanha)
+                    campanha_status = _campanha_status(campanha)
                     codigo_stats = db.execute(text("""
                         SELECT
                             COALESCE(SUM(CASE WHEN excluido_em IS NULL THEN 1 ELSE 0 END),0) AS total,
@@ -560,6 +672,8 @@ def register_promocoes_qr_routes(app):
                 'admin_promocoes_qr.html',
                 campanhas=campanhas,
                 campanha=campanha,
+                campanha_status=campanha_status,
+                criando_nova=criando_nova,
                 codigos=codigos,
                 lotes=lotes,
                 codigo_stats=codigo_stats,

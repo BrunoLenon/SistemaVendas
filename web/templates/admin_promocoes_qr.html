@@ -5,70 +5,109 @@
   .qr-page{max-width:1420px;margin:0 auto;padding:12px;color:#fff}.qr-hero{border:1px solid rgba(255,140,0,.25);background:linear-gradient(135deg,rgba(255,140,0,.14),rgba(255,255,255,.03));border-radius:22px;padding:18px;box-shadow:0 18px 50px rgba(0,0,0,.22)}
   .qr-title{font-size:25px;font-weight:950;letter-spacing:-.04em;margin:0}.qr-sub{color:rgba(255,255,255,.68);font-size:13px}.qr-grid{display:grid;grid-template-columns:360px minmax(0,1fr);gap:16px;margin-top:16px;align-items:start}@media(max-width:1050px){.qr-grid{grid-template-columns:1fr}.qr-page{padding:8px}}
   .qr-card{border:1px solid rgba(255,140,0,.16);background:linear-gradient(180deg,rgba(255,255,255,.045),rgba(255,255,255,.022));border-radius:20px;overflow:hidden}.qr-card-h{padding:14px 16px;border-bottom:1px solid rgba(255,140,0,.12);display:flex;justify-content:space-between;gap:10px;align-items:flex-start}.qr-card-b{padding:16px}.qr-muted{color:rgba(255,255,255,.62)}
-  .qr-chip{display:inline-flex;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);border-radius:999px;padding:6px 9px;font-size:12px;font-weight:850;color:rgba(255,255,255,.84)}.qr-chip-ok{border-color:rgba(46,204,113,.28);background:rgba(46,204,113,.10);color:#b7ffd1}.qr-chip-prize{border-color:rgba(255,140,0,.42);background:rgba(255,140,0,.14);color:#ffd3a0}.qr-chip-warn{border-color:rgba(255,193,7,.28);background:rgba(255,193,7,.10);color:#ffe49a}.qr-chip-danger{border-color:rgba(255,77,79,.32);background:rgba(255,77,79,.11);color:#ffb3b3}
-  .qr-list a{display:block;text-decoration:none;color:#fff;border:1px solid rgba(255,255,255,.09);background:rgba(0,0,0,.18);border-radius:15px;padding:12px;margin-bottom:10px}.qr-list a.active{border-color:rgba(255,140,0,.48);box-shadow:0 0 0 1px rgba(255,140,0,.12)}
+  .qr-chip{display:inline-flex;align-items:center;gap:5px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);border-radius:999px;padding:6px 9px;font-size:12px;font-weight:850;color:rgba(255,255,255,.84);white-space:nowrap}.qr-chip-ok{border-color:rgba(46,204,113,.28);background:rgba(46,204,113,.10);color:#b7ffd1}.qr-chip-prize{border-color:rgba(255,140,0,.42);background:rgba(255,140,0,.14);color:#ffd3a0}.qr-chip-warn{border-color:rgba(255,193,7,.28);background:rgba(255,193,7,.10);color:#ffe49a}.qr-chip-danger{border-color:rgba(255,77,79,.32);background:rgba(255,77,79,.11);color:#ffb3b3}
+  .qr-list a{display:block;text-decoration:none;color:#fff;border:1px solid rgba(255,255,255,.09);background:rgba(0,0,0,.18);border-radius:15px;padding:12px;margin-bottom:10px}.qr-list a.active{border-color:rgba(255,140,0,.48);box-shadow:0 0 0 1px rgba(255,140,0,.12)}.qr-list a.new{border-style:dashed;border-color:rgba(255,140,0,.35);background:rgba(255,140,0,.07)}
   .qr-page .form-label{font-size:12px;font-weight:900;color:rgba(255,255,255,.84)}.qr-page .form-control,.qr-page .form-select{background:#101010!important;color:#fff!important;border:1px solid rgba(255,255,255,.13)!important;border-radius:13px!important}.qr-page .form-control:focus,.qr-page .form-select:focus{border-color:rgba(255,140,0,.72)!important;box-shadow:0 0 0 .2rem rgba(255,140,0,.14)!important}.qr-page .form-control::file-selector-button{background:#ff8c00;color:#111;border:0;border-radius:9px;font-weight:900;margin-right:10px}
-  .qr-btn{border-radius:13px!important;font-weight:900!important}.qr-btn-primary{background:linear-gradient(135deg,#ff8c00,#ffb347)!important;border-color:#ff9d20!important;color:#141414!important}.qr-btn-outline{border-color:rgba(255,255,255,.22)!important;color:#fff!important;background:rgba(255,255,255,.04)!important}.qr-btn-danger{border-color:rgba(255,77,79,.34)!important;color:#ffd1d1!important;background:rgba(255,77,79,.10)!important}
+  .qr-btn{border-radius:13px!important;font-weight:900!important}.qr-btn-primary{background:linear-gradient(135deg,#ff8c00,#ffb347)!important;border-color:#ff9d20!important;color:#141414!important}.qr-btn-outline{border-color:rgba(255,255,255,.22)!important;color:#fff!important;background:rgba(255,255,255,.04)!important}.qr-btn-danger{border-color:rgba(255,77,79,.34)!important;color:#ffd1d1!important;background:rgba(255,77,79,.10)!important}.qr-btn:disabled{opacity:.45;cursor:not-allowed}
   .qr-table{width:100%;border-collapse:separate;border-spacing:0 8px}.qr-table td,.qr-table th{padding:10px;background:rgba(0,0,0,.20);border-top:1px solid rgba(255,255,255,.08);border-bottom:1px solid rgba(255,255,255,.08);vertical-align:middle;font-size:13px}.qr-table th{color:rgba(255,255,255,.65);font-size:11px;text-transform:uppercase;letter-spacing:.06em}.qr-table td:first-child,.qr-table th:first-child{border-left:1px solid rgba(255,255,255,.08);border-radius:13px 0 0 13px}.qr-table td:last-child,.qr-table th:last-child{border-right:1px solid rgba(255,255,255,.08);border-radius:0 13px 13px 0}
-  .qr-mini{width:54px;height:54px;background:#fff;border-radius:10px;padding:4px}.qr-preview{min-height:190px;border-radius:18px;border:1px solid rgba(255,140,0,.16);background:#111 center/cover no-repeat;display:flex;align-items:center;gap:14px;padding:18px;position:relative;overflow:hidden}.qr-preview:before{content:"";position:absolute;inset:0;background:linear-gradient(90deg,rgba(0,0,0,.72),rgba(0,0,0,.20))}.qr-preview>*{position:relative}.qr-preview img.logo{max-width:130px;max-height:72px;object-fit:contain}.qr-tabs{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.qr-tabs a{color:#fff;text-decoration:none}
-  .qr-stats{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;margin-bottom:14px}@media(max-width:1100px){.qr-stats{grid-template-columns:repeat(3,minmax(0,1fr))}}@media(max-width:620px){.qr-stats{grid-template-columns:repeat(2,minmax(0,1fr))}}.qr-stat{border:1px solid rgba(255,255,255,.10);background:rgba(0,0,0,.18);border-radius:15px;padding:12px}.qr-stat b{display:block;font-size:20px;line-height:1}.qr-stat span{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:rgba(255,255,255,.62);font-weight:900}
+  .qr-mini{width:54px;height:54px;background:#fff;border-radius:10px;padding:4px}.qr-tabs{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.qr-tabs a{color:#fff;text-decoration:none}.qr-stats{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;margin-bottom:14px}@media(max-width:1100px){.qr-stats{grid-template-columns:repeat(3,minmax(0,1fr))}}@media(max-width:620px){.qr-stats{grid-template-columns:repeat(2,minmax(0,1fr))}}.qr-stat{border:1px solid rgba(255,255,255,.10);background:rgba(0,0,0,.18);border-radius:15px;padding:12px}.qr-stat b{display:block;font-size:20px;line-height:1}.qr-stat span{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:rgba(255,255,255,.62);font-weight:900}
   .qr-toolbar{border:1px solid rgba(255,255,255,.10);background:rgba(0,0,0,.18);border-radius:16px;padding:12px;margin-bottom:12px}.qr-check{width:18px;height:18px;accent-color:#ff8c00}.qr-danger-zone{border:1px dashed rgba(255,77,79,.42);background:rgba(255,77,79,.06);border-radius:16px;padding:12px}.qr-sticky-actions{position:sticky;bottom:10px;z-index:2;border:1px solid rgba(255,140,0,.22);background:rgba(20,20,20,.94);backdrop-filter:blur(10px);border-radius:16px;padding:12px;margin-top:12px;box-shadow:0 14px 40px rgba(0,0,0,.35)}
-
-  .qr-preview-grid{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:14px;margin-top:14px}@media(max-width:900px){.qr-preview-grid{grid-template-columns:1fr}}
-  .qr-preview-panel{border:1px solid rgba(255,140,0,.18);background:rgba(0,0,0,.20);border-radius:18px;padding:14px;overflow:hidden}.qr-preview-panel h4{font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:rgba(255,255,255,.62);font-weight:950;margin:0 0 10px}
-  .qr-public-phone{border:1px solid rgba(255,255,255,.12);border-radius:22px;padding:15px;background:linear-gradient(145deg,#080808,#171717);min-height:255px;position:relative;overflow:hidden}.qr-public-phone:before{content:"";position:absolute;inset:0;background:radial-gradient(circle at 70% 0,rgba(255,140,0,.22),transparent 38%);opacity:.8}.qr-public-phone>*{position:relative}.qr-preview-logo{width:96px;height:48px;border-radius:12px;background:rgba(255,255,255,.07);display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.55);font-size:11px;font-weight:900;margin-bottom:10px}.qr-preview-title{font-size:25px;line-height:1.02;font-weight:950;letter-spacing:-.04em}.qr-preview-sub{font-size:13px;color:rgba(255,255,255,.72);line-height:1.35;margin-top:6px}.qr-preview-msg{margin-top:12px;border:1px solid rgba(255,140,0,.24);background:rgba(255,140,0,.11);border-radius:15px;padding:10px;font-size:13px;font-weight:900}.qr-preview-reg{margin-top:10px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);border-radius:13px;padding:10px;color:rgba(255,255,255,.68);font-size:12px;white-space:pre-line;max-height:90px;overflow:auto}
-  .qr-coupon-preview{border:1px dashed rgba(255,255,255,.22);border-radius:18px;background:#f7f7f7;color:#111;padding:14px;text-align:center}.qr-coupon-preview .coupon-head{font-size:11px;font-weight:950;text-transform:uppercase;letter-spacing:.08em;color:#555}.qr-coupon-preview .coupon-title{font-size:18px;font-weight:950;line-height:1.08;margin:6px 0}.qr-coupon-preview .coupon-qr{width:132px;height:132px;background:#fff;border:1px solid #ddd;border-radius:12px;padding:6px;margin:8px auto}.qr-coupon-preview .coupon-code{font-family:ui-monospace,Consolas,monospace;font-weight:900}.qr-coupon-preview .coupon-info{font-size:12px;color:#555;line-height:1.35;margin-top:6px}.qr-alert-soft{border:1px solid rgba(255,193,7,.32);background:rgba(255,193,7,.09);color:#ffe7a7;border-radius:14px;padding:10px 12px}.qr-alert-danger{border:1px solid rgba(255,77,79,.36);background:rgba(255,77,79,.10);color:#ffc4c4;border-radius:14px;padding:10px 12px}
-
+  .qr-preview-grid{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:14px;margin-top:14px}@media(max-width:900px){.qr-preview-grid{grid-template-columns:1fr}}.qr-preview-panel{border:1px solid rgba(255,140,0,.18);background:rgba(0,0,0,.20);border-radius:18px;padding:14px;overflow:hidden}.qr-preview-panel h4{font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:rgba(255,255,255,.62);font-weight:950;margin:0 0 10px}
+  .qr-public-phone{border:1px solid rgba(255,255,255,.12);border-radius:22px;padding:15px;background:linear-gradient(145deg,#080808,#171717);min-height:255px;position:relative;overflow:hidden}.qr-public-phone:before{content:"";position:absolute;inset:0;background:radial-gradient(circle at 70% 0,rgba(255,140,0,.22),transparent 38%);opacity:.8}.qr-public-phone>*{position:relative}.qr-preview-logo{width:108px;height:56px;border-radius:12px;background:rgba(255,255,255,.07);display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.55);font-size:11px;font-weight:900;margin-bottom:10px;object-fit:contain;padding:5px}.qr-preview-title{font-size:25px;line-height:1.02;font-weight:950;letter-spacing:-.04em}.qr-preview-sub{font-size:13px;color:rgba(255,255,255,.72);line-height:1.35;margin-top:6px}.qr-preview-msg{margin-top:12px;border:1px solid rgba(255,140,0,.24);background:rgba(255,140,0,.11);border-radius:15px;padding:10px;font-size:13px;font-weight:900}.qr-preview-reg{margin-top:10px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);border-radius:13px;padding:10px;color:rgba(255,255,255,.68);font-size:12px;white-space:pre-line;max-height:90px;overflow:auto}
+  .qr-coupon-preview{border:1px dashed rgba(255,255,255,.22);border-radius:18px;background:#f7f7f7;color:#111;padding:14px;text-align:center}.qr-coupon-preview .coupon-head{font-size:11px;font-weight:950;text-transform:uppercase;letter-spacing:.08em;color:#555}.qr-coupon-preview .coupon-title{font-size:18px;font-weight:950;line-height:1.08;margin:6px 0}.qr-coupon-preview .coupon-qr{width:132px;height:132px;background:#fff;border:1px solid #ddd;border-radius:12px;padding:6px;margin:8px auto}.qr-coupon-preview .coupon-code{font-family:ui-monospace,Consolas,monospace;font-weight:900}.qr-coupon-preview .coupon-info{font-size:12px;color:#555;line-height:1.35;margin-top:6px}.qr-alert-soft{border:1px solid rgba(255,193,7,.32);background:rgba(255,193,7,.09);color:#ffe7a7;border-radius:14px;padding:10px 12px}.qr-alert-danger{border:1px solid rgba(255,77,79,.36);background:rgba(255,77,79,.10);color:#ffc4c4;border-radius:14px;padding:10px 12px}.qr-alert-ok{border:1px solid rgba(46,204,113,.32);background:rgba(46,204,113,.08);color:#c5ffd7;border-radius:14px;padding:10px 12px}
 </style>
 {% endblock %}
 {% block content %}
 <div class="qr-page">
   <section class="qr-hero">
     <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
-      <div><span class="qr-chip qr-chip-ok mb-2">🎟️ Módulo público independente</span><h1 class="qr-title">Promoções com QR Code</h1><div class="qr-sub">Crie campanhas para Moto13 ou outros eventos sem exibir logo/layout da Veipeças na página pública.</div></div>
-      <a class="btn qr-btn qr-btn-outline" href="{{ url_for('admin_configuracoes') }}">← Configurações</a>
+      <div>
+        <span class="qr-chip qr-chip-ok mb-2">🎟️ Módulo público independente</span>
+        <h1 class="qr-title">Promoções com QR Code</h1>
+        <div class="qr-sub">Crie campanhas independentes, gere códigos rastreáveis, imprima cupons e acompanhe uso/premiação com segurança operacional.</div>
+      </div>
+      <div class="d-flex gap-2 flex-wrap">
+        <a class="btn qr-btn qr-btn-primary" href="{{ url_for('admin_promocoes_qr', novo=1) }}">+ Nova campanha</a>
+        <a class="btn qr-btn qr-btn-outline" href="{{ url_for('admin_configuracoes') }}">← Configurações</a>
+      </div>
     </div>
   </section>
+
   {% for m in msgs or [] %}<div class="alert alert-warning mt-3">{{ m }}</div>{% endfor %}
+
   <div class="qr-grid">
     <aside class="qr-card">
-      <div class="qr-card-h"><div><b>Campanhas</b><div class="qr-muted small">Eventos reutilizáveis</div></div><span class="qr-chip">{{ campanhas|length }}</span></div>
+      <div class="qr-card-h">
+        <div><b>Campanhas</b><div class="qr-muted small">Eventos reutilizáveis</div></div>
+        <span class="qr-chip">{{ campanhas|length }}</span>
+      </div>
       <div class="qr-card-b qr-list">
+        <a class="new {% if criando_nova or not campanha %}active{% endif %}" href="{{ url_for('admin_promocoes_qr', novo=1) }}">
+          <div class="d-flex justify-content-between gap-2"><b>+ Criar nova campanha</b><span class="qr-chip qr-chip-warn">Rascunho</span></div>
+          <div class="qr-muted small mt-1">Começa inativa, sem datas preenchidas.</div>
+        </a>
         {% for c in campanhas %}
           <a class="{% if campanha and campanha.id==c.id %}active{% endif %}" href="{{ url_for('admin_promocoes_qr', campanha_id=c.id) }}">
-            <div class="d-flex justify-content-between gap-2"><b>{{ c.nome }}</b><span class="qr-chip {% if c.ativo %}qr-chip-ok{% else %}qr-chip-warn{% endif %}">{{ 'Ativa' if c.ativo else 'Inativa' }}</span></div>
+            <div class="d-flex justify-content-between gap-2"><b>{{ c.nome }}</b><span class="qr-chip {{ c.status_chip }}">{{ c.status_label }}</span></div>
             <div class="qr-muted small mt-1">{{ c.total_codigos }} ativos • {{ c.codigos_usados }} lidos{% if c.codigos_excluidos %} • {{ c.codigos_excluidos }} excluídos{% endif %}</div>
           </a>
-        {% else %}<div class="qr-muted">Nenhuma campanha cadastrada ainda.</div>{% endfor %}
+        {% else %}
+          <div class="qr-muted small">Nenhuma campanha cadastrada ainda.</div>
+        {% endfor %}
       </div>
     </aside>
+
     <main>
       <section class="qr-card mb-3">
-        <div class="qr-card-h"><div><b>{{ 'Editar campanha' if campanha else 'Nova campanha' }}</b><div class="qr-muted small">Logo/layout próprios para a página pública.</div></div><span class="qr-chip">Branding separado</span></div>
+        <div class="qr-card-h">
+          <div>
+            <b>{{ 'Nova campanha' if criando_nova or not campanha else 'Editar campanha' }}</b>
+            <div class="qr-muted small">Logo/layout próprios para a página pública. Nova campanha nunca nasce ativa automaticamente.</div>
+          </div>
+          <div class="d-flex gap-2 flex-wrap align-items-start">
+            {% if campanha_status %}<span class="qr-chip {{ campanha_status.chip }}">{{ campanha_status.label }}</span>{% endif %}
+            <span class="qr-chip">Branding separado</span>
+          </div>
+        </div>
         <div class="qr-card-b">
-          <form method="post" enctype="multipart/form-data">
-            <input type="hidden" name="acao" value="salvar_campanha"><input type="hidden" name="campanha_id" value="{{ campanha.id if campanha else '' }}"><input type="hidden" name="logo_url_atual" value="{{ campanha.logo_url if campanha else '' }}"><input type="hidden" name="layout_url_atual" value="{{ campanha.layout_url if campanha else '' }}">
+          {% if campanha_status and campanha_status.key == 'expirada' %}
+            <div class="qr-alert-danger mb-3"><b>Campanha expirada:</b> atualize a data final ou mantenha inativa antes de gerar novos QR Codes.</div>
+          {% elif criando_nova or not campanha %}
+            <div class="qr-alert-soft mb-3"><b>Modo criação:</b> preencha os dados e salve. Depois disso, o sistema libera a geração de QR Codes para essa campanha.</div>
+          {% endif %}
+
+          <form method="post" enctype="multipart/form-data" id="qrCampaignForm">
+            <input type="hidden" name="acao" value="salvar_campanha">
+            <input type="hidden" name="campanha_id" value="{{ campanha.id if campanha else '' }}">
+            <input type="hidden" name="logo_url_atual" value="{{ campanha.logo_url if campanha else '' }}">
+            <input type="hidden" name="layout_url_atual" value="{{ campanha.layout_url if campanha else '' }}">
+
             <div class="row g-3">
-              <div class="col-md-6"><label class="form-label">Nome interno</label><input class="form-control" name="nome" value="{{ campanha.nome if campanha else '' }}" required></div>
-              <div class="col-md-6"><label class="form-label">Slug público</label><input class="form-control" name="slug" value="{{ campanha.slug if campanha else '' }}" placeholder="moto13-hexa"></div>
+              <div class="col-md-6"><label class="form-label">Nome interno</label><input class="form-control" name="nome" value="{{ campanha.nome if campanha else '' }}" placeholder="Ex.: Junho Premiado Moto13" required></div>
+              <div class="col-md-6"><label class="form-label">Slug público</label><input class="form-control" name="slug" value="{{ campanha.slug if campanha else '' }}" placeholder="junho-premiado-moto13"><div class="qr-muted small mt-1">Usado na URL pública. Se vazio, será gerado pelo nome.</div></div>
               <div class="col-md-6"><label class="form-label">Título da página</label><input class="form-control" name="titulo" value="{{ campanha.titulo if campanha else '' }}" placeholder="QR Code Premiado"></div>
               <div class="col-md-6"><label class="form-label">Prêmio/chamada</label><input class="form-control" name="premio" value="{{ campanha.premio if campanha else '' }}" placeholder="Concorra a prêmios incríveis"></div>
-              <div class="col-12"><label class="form-label">Subtítulo</label><textarea class="form-control" name="subtitulo" rows="2">{{ campanha.subtitulo if campanha else '' }}</textarea></div>
-              <div class="col-md-6"><label class="form-label">Logo da campanha</label><input class="form-control" type="file" name="logo" accept="image/*"><div class="qr-muted small mt-1">Opcional. Ex.: logo Moto13.</div></div>
-              <div class="col-md-6"><label class="form-label">Imagem/layout de fundo</label><input class="form-control" type="file" name="layout" accept="image/*"><div class="qr-muted small mt-1">Pode trocar a cada evento.</div></div>
-              <div class="col-md-3"><label class="form-label">Cor principal</label><input class="form-control" name="cor_primaria" value="{{ campanha.cor_primaria if campanha else '#ff8c00' }}"></div>
-              <div class="col-md-3"><label class="form-label">Cor secundária</label><input class="form-control" name="cor_secundaria" value="{{ campanha.cor_secundaria if campanha else '#111111' }}"></div>
+              <div class="col-12"><label class="form-label">Subtítulo</label><textarea class="form-control" name="subtitulo" rows="2" placeholder="Escaneie o QR Code e veja seu resultado na hora.">{{ campanha.subtitulo if campanha else '' }}</textarea></div>
+              <div class="col-md-6"><label class="form-label">Logo da campanha</label><input class="form-control" type="file" name="logo" id="qrLogoInput" accept="image/*"><div class="qr-muted small mt-1">Opcional. Ex.: logo Moto13.</div></div>
+              <div class="col-md-6"><label class="form-label">Imagem/layout de fundo</label><input class="form-control" type="file" name="layout" id="qrLayoutInput" accept="image/*"><div class="qr-muted small mt-1">Pode trocar a cada evento.</div></div>
+              <div class="col-md-3"><label class="form-label">Cor principal</label><input class="form-control" type="text" name="cor_primaria" value="{{ campanha.cor_primaria if campanha else '#ff8c00' }}" placeholder="#ff8c00"></div>
+              <div class="col-md-3"><label class="form-label">Cor secundária</label><input class="form-control" type="text" name="cor_secundaria" value="{{ campanha.cor_secundaria if campanha else '#111111' }}" placeholder="#111111"></div>
               <div class="col-md-3"><label class="form-label">Início</label><input class="form-control" type="date" name="inicio_em" value="{{ campanha.inicio_em if campanha and campanha.inicio_em else '' }}"></div>
               <div class="col-md-3"><label class="form-label">Fim/validade</label><input class="form-control" type="date" name="fim_em" value="{{ campanha.fim_em if campanha and campanha.fim_em else '' }}"></div>
-              <div class="col-12"><label class="form-label">Informações / Regulamento exibido ao ler o QR Code</label><textarea class="form-control" name="regulamento" rows="3">{{ campanha.regulamento if campanha else '' }}</textarea><div class="qr-muted small mt-1">Esse texto aparecerá na página pública após o cliente escanear o QR Code.</div></div>
+              <div class="col-12"><label class="form-label">Informações / Regulamento exibido ao ler o QR Code</label><textarea class="form-control" name="regulamento" rows="3" placeholder="Ex.: Promoção válida enquanto durarem os estoques. O prêmio deve ser resgatado até a data informada.">{{ campanha.regulamento if campanha else '' }}</textarea><div class="qr-muted small mt-1">Esse texto aparecerá na página pública após o cliente escanear o QR Code.</div></div>
+
               <div class="col-12">
-                <div id="qrDateWarning" class="qr-alert-danger d-none mb-2">Atenção: campanha ativa não pode ficar com validade vencida. Atualize a data final ou mantenha a campanha inativa.</div>
+                <div id="qrDateWarning" class="qr-alert-danger d-none mb-2">Atenção: campanha ativa não pode ficar sem validade ou com validade vencida. Atualize a data final ou mantenha a campanha inativa.</div>
                 <div class="qr-preview-grid">
                   <div class="qr-preview-panel">
                     <h4>Preview da página pública do QR Code</h4>
-                    <div class="qr-public-phone" id="qrPreviewPhone">
-                      <div class="qr-preview-logo">LOGO</div>
-                      <span class="qr-chip qr-chip-prize" id="qrPreviewPremio">QR Code Premiado</span>
+                    <div class="qr-public-phone" id="qrPreviewPhone" data-layout-url="{{ campanha.layout_url if campanha and campanha.layout_url else '' }}">
+                      {% if campanha and campanha.logo_url %}
+                        <img class="qr-preview-logo" id="qrPreviewLogo" src="{{ campanha.logo_url }}" alt="Logo">
+                      {% else %}
+                        <div class="qr-preview-logo" id="qrPreviewLogo">LOGO</div>
+                      {% endif %}
+                      <span class="qr-chip qr-chip-prize" id="qrPreviewPremio">{{ campanha.premio if campanha and campanha.premio else 'QR Code Premiado' }}</span>
                       <div class="qr-preview-title" id="qrPreviewTitulo">{{ campanha.titulo or campanha.nome if campanha else 'Título da campanha' }}</div>
                       <div class="qr-preview-sub" id="qrPreviewSubtitulo">{{ campanha.subtitulo or campanha.premio if campanha else 'Subtítulo/chamada da campanha' }}</div>
                       <div class="qr-preview-msg" id="qrPreviewMensagem">Mensagem de resultado aparecerá aqui.</div>
@@ -88,26 +127,41 @@
                   </div>
                 </div>
               </div>
+
               <div class="col-12">
                 <label><input type="checkbox" name="ativo" id="qrAtivo" {% if campanha and campanha.ativo %}checked{% endif %}> Campanha ativa</label>
-                <div class="qr-muted small mt-1">Nova campanha nasce como rascunho. Para ativar, informe validade final válida e não vencida.</div>
+                <div class="qr-muted small mt-1">Para ativar, informe validade final válida e não vencida. Campanha rascunho/inativa não aparece como válida para o cliente.</div>
               </div>
             </div>
-            <div class="mt-3 d-flex gap-2 flex-wrap"><button class="btn qr-btn qr-btn-primary">Salvar campanha</button><a class="btn qr-btn qr-btn-outline" href="{{ url_for('admin_promocoes_qr') }}">Nova campanha</a></div>
+
+            <div class="mt-3 d-flex gap-2 flex-wrap">
+              <button class="btn qr-btn qr-btn-primary" type="submit">{{ 'Criar campanha' if criando_nova or not campanha else 'Salvar campanha' }}</button>
+              <a class="btn qr-btn qr-btn-outline" href="{{ url_for('admin_promocoes_qr', novo=1) }}">Limpar para nova</a>
+            </div>
           </form>
+
+          {% if campanha %}
+          <form method="post" class="mt-2" onsubmit="return confirm('Duplicar esta campanha como rascunho? Os QR Codes não serão copiados, apenas a configuração visual/textos.')">
+            <input type="hidden" name="acao" value="duplicar_campanha">
+            <input type="hidden" name="campanha_id" value="{{ campanha.id }}">
+            <button class="btn btn-sm qr-btn qr-btn-outline" type="submit">Duplicar como rascunho</button>
+          </form>
+          {% endif %}
         </div>
       </section>
+
       {% if campanha %}
       <section class="qr-card mb-3">
-        <div class="qr-card-h"><div><b>Gerar QR Codes</b><div class="qr-muted small">Cada código só pode ser validado uma vez.</div></div><span class="qr-chip">Até 500 por lote</span></div>
+        <div class="qr-card-h"><div><b>Gerar QR Codes</b><div class="qr-muted small">Cada código só pode ser validado uma vez. Geração bloqueada se a campanha estiver vencida.</div></div><span class="qr-chip">Até 500 por lote</span></div>
         <div class="qr-card-b">
-          <form method="post" class="row g-3 align-items-end">
+          {% if campanha_status and campanha_status.key == 'expirada' %}<div class="qr-alert-danger mb-3">Campanha vencida. Atualize a validade antes de gerar novos códigos.</div>{% endif %}
+          <form method="post" class="row g-3 align-items-end" id="qrGenerateForm">
             <input type="hidden" name="acao" value="gerar_codigos"><input type="hidden" name="campanha_id" value="{{ campanha.id }}">
             <div class="col-md-2"><label class="form-label">Quantidade</label><input class="form-control" type="number" min="1" max="500" name="quantidade" placeholder="Ex.: 100" required><div class="qr-muted small mt-1">Sem valor padrão para evitar geração acidental.</div></div>
             <div class="col-md-2"><label class="form-label">Prefixo</label><input class="form-control" name="prefixo" placeholder="M13"></div>
             <div class="col-md-3"><label class="form-label">Lote/evento</label><input class="form-control" name="lote" placeholder="Copa / Junho / Loja 101"></div>
             <div class="col-md-3"><label class="form-label">Informação no QR</label><input class="form-control" name="info_qr" placeholder="Compra acima de R$100"></div>
-            <div class="col-md-2"><button class="btn qr-btn qr-btn-primary w-100">Gerar</button></div>
+            <div class="col-md-2"><button class="btn qr-btn qr-btn-primary w-100" {% if campanha_status and campanha_status.key == 'expirada' %}disabled{% endif %}>Gerar</button></div>
             <div class="col-md-7"><label class="form-label">Prêmios do lote</label><textarea class="form-control" name="premios_lote" rows="4" placeholder="1|Vale compra R$ 100|100,00&#10;3|Brinde Moto13&#10;5|Desconto R$ 20|20,00"></textarea><div class="qr-muted small mt-1">Uma linha por prêmio: quantidade|descrição|valor opcional. O sistema sorteia automaticamente dentro do lote.</div></div>
             <div class="col-md-5"><label class="form-label">Mensagem para QR não premiado</label><textarea class="form-control" name="mensagem_nao_premiado" rows="4" placeholder="Não foi dessa vez, mas não desista!"></textarea><div class="qr-muted small mt-1">Se deixar vazio, o sistema usa a mensagem padrão somente no backend.</div></div>
             <div class="col-md-4"><label class="form-label">WhatsApp para resgate</label><input class="form-control" name="whatsapp_resgate" placeholder="5567999999999"><div class="qr-muted small mt-1">Use DDI + DDD + número. Ex.: 5567999999999.</div></div>
@@ -206,6 +260,7 @@
     </main>
   </div>
 </div>
+
 <script>
 (function(){
   const selectAll = document.getElementById('qrSelectAll');
@@ -231,7 +286,9 @@
   };
 
   const today = '{{ today_iso }}';
-  const campo = (name) => document.querySelector(`[name="${name}"]`);
+  const campaignForm = document.getElementById('qrCampaignForm');
+  const generateForm = document.getElementById('qrGenerateForm');
+  const campo = (name) => (campaignForm && campaignForm.querySelector(`[name="${name}"]`)) || (generateForm && generateForm.querySelector(`[name="${name}"]`));
   const setText = (id, value, fallback) => { const el = document.getElementById(id); if(el){ el.textContent = (value || '').trim() || fallback; } };
   const previewPhone = document.getElementById('qrPreviewPhone');
   const ativo = document.getElementById('qrAtivo');
@@ -243,6 +300,7 @@
     if(parts.length !== 3){ return iso; }
     return `${parts[2]}/${parts[1]}/${parts[0]}`;
   }
+  function isPastDate(iso){ return !!iso && iso < today; }
 
   function updatePreview(){
     const nome = campo('nome')?.value || '';
@@ -252,13 +310,15 @@
     const regulamento = campo('regulamento')?.value || '';
     const cor1 = campo('cor_primaria')?.value || '#ff8c00';
     const cor2 = campo('cor_secundaria')?.value || '#111111';
+    const inicio = campo('inicio_em')?.value || '';
     const fim = campo('fim_em')?.value || '';
     const lote = campo('lote')?.value || '';
     const info = campo('info_qr')?.value || '';
     const msgNao = campo('mensagem_nao_premiado')?.value || '';
 
     if(previewPhone){
-      previewPhone.style.background = `linear-gradient(145deg, ${cor2}, #171717)`;
+      const layout = previewPhone.dataset.layoutUrl || '';
+      previewPhone.style.background = layout ? `linear-gradient(145deg, ${cor2}dd, #171717cc), url('${layout}') center/cover no-repeat` : `linear-gradient(145deg, ${cor2}, #171717)`;
       previewPhone.style.borderColor = cor1 + '66';
     }
     setText('qrPreviewPremio', premio, 'QR Code Premiado');
@@ -269,10 +329,11 @@
     setText('qrCouponNome', nome, 'Promoção');
     setText('qrCouponTitulo', titulo || nome, 'QR Code Premiado');
     setText('qrCouponInfo', [lote ? 'Lote: ' + lote : '', info].filter(Boolean).join(' • '), 'Escaneie para ver o resultado da promoção.');
-    setText('qrCouponValidade', fim ? 'Validade: ' + fmtDate(fim) : '', 'Validade: informe a data final');
+    const validade = fim ? 'Validade: ' + fmtDate(fim) : 'Validade: informe a data final';
+    setText('qrCouponValidade', inicio ? validade + ' • Início: ' + fmtDate(inicio) : validade, 'Validade: informe a data final');
 
-    const vencidaAtiva = !!(ativo && ativo.checked && fim && fim < today);
-    if(dateWarning){ dateWarning.classList.toggle('d-none', !vencidaAtiva); }
+    const invalidaAtiva = !!(ativo && ativo.checked && (!fim || isPastDate(fim)));
+    if(dateWarning){ dateWarning.classList.toggle('d-none', !invalidaAtiva); }
   }
 
   ['nome','titulo','premio','subtitulo','regulamento','cor_primaria','cor_secundaria','inicio_em','fim_em','ativo','lote','info_qr','mensagem_nao_premiado'].forEach(name => {
@@ -280,15 +341,49 @@
     if(el){ el.addEventListener('input', updatePreview); el.addEventListener('change', updatePreview); }
   });
 
-  const campanhaForm = document.querySelector('form[enctype="multipart/form-data"]');
-  if(campanhaForm){
-    campanhaForm.addEventListener('submit', function(ev){
+  if(campaignForm){
+    campaignForm.addEventListener('submit', function(ev){
       const fim = campo('fim_em')?.value || '';
+      const inicio = campo('inicio_em')?.value || '';
+      if(inicio && fim && inicio > fim){ ev.preventDefault(); alert('A data de início não pode ser maior que a data final.'); return false; }
       if(ativo && ativo.checked){
         if(!fim){ ev.preventDefault(); alert('Para ativar a campanha, informe a data final/validade.'); return false; }
-        if(fim < today){ ev.preventDefault(); alert('Não é permitido ativar campanha com data final vencida.'); return false; }
+        if(isPastDate(fim)){ ev.preventDefault(); alert('Não é permitido ativar campanha com data final vencida.'); return false; }
       }
       return true;
+    });
+  }
+
+  const logoInput = document.getElementById('qrLogoInput');
+  if(logoInput){
+    logoInput.addEventListener('change', function(){
+      const file = this.files && this.files[0];
+      if(!file){ return; }
+      const reader = new FileReader();
+      reader.onload = function(ev){
+        let logo = document.getElementById('qrPreviewLogo');
+        if(logo && logo.tagName !== 'IMG'){
+          const img = document.createElement('img');
+          img.id = 'qrPreviewLogo';
+          img.className = 'qr-preview-logo';
+          img.alt = 'Logo';
+          logo.replaceWith(img);
+          logo = img;
+        }
+        if(logo){ logo.src = ev.target.result; }
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  const layoutInput = document.getElementById('qrLayoutInput');
+  if(layoutInput){
+    layoutInput.addEventListener('change', function(){
+      const file = this.files && this.files[0];
+      if(!file || !previewPhone){ return; }
+      const reader = new FileReader();
+      reader.onload = function(ev){ previewPhone.dataset.layoutUrl = ev.target.result; updatePreview(); };
+      reader.readAsDataURL(file);
     });
   }
 
