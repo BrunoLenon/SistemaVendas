@@ -814,6 +814,13 @@ def _get_vendedores_db(role: str, emp_usuario: str | None) -> list[str]:
         with SessionLocal() as db:
             q = db.query(Usuario.username).filter(func.lower(Usuario.role) == "vendedor")
 
+            if role in ("admin", "financeiro") and emp_usuario:
+                q = (
+                    q.join(UsuarioEmp, Usuario.id == UsuarioEmp.usuario_id)
+                    .filter(UsuarioEmp.ativo.is_(True))
+                    .filter(UsuarioEmp.emp == str(emp_usuario))
+                )
+
             if role in ("supervisor", "gerente"):
                 emps = _allowed_emps()
                 if emps:
@@ -844,6 +851,8 @@ def _get_vendedores_db(role: str, emp_usuario: str | None) -> list[str]:
     try:
         with SessionLocal() as db:
             q = db.query(func.distinct(Venda.vendedor)).limit(500)
+            if role in ("admin", "financeiro") and emp_usuario:
+                q = q.filter(Venda.emp == str(emp_usuario))
             if role in ("supervisor", "gerente"):
                 emps = _allowed_emps()
                 if emps:
@@ -892,6 +901,22 @@ def _fetch_cache_row(vendedor: str, ano: int, mes: int, emp_scope: str | None) -
         return None
 
     with SessionLocal() as db:
+        if isinstance(emp_scope, (list, tuple, set)):
+            emps = [str(e).strip() for e in emp_scope if e is not None and str(e).strip()]
+            if len(emps) == 1:
+                emp_scope = emps[0]
+            elif emps:
+                rows = db.query(DashboardCache).filter(
+                    DashboardCache.emp.in_(emps),
+                    DashboardCache.vendedor == vendedor,
+                    DashboardCache.ano == int(ano),
+                    DashboardCache.mes == int(mes),
+                ).all()
+                rows = [r for r in rows if _cache_is_fresh(r)]
+                return _aggregate_dashboard_cache_rows(rows, vendedor, ano, mes)
+            else:
+                emp_scope = None
+
         if emp_scope:
             row = (
                 db.query(DashboardCache)
@@ -1542,6 +1567,43 @@ def _cache_is_fresh(row: DashboardCache) -> bool:
     except Exception:
         return False
 
+
+def _aggregate_dashboard_cache_rows(rows, vendedor: str, ano: int, mes: int):
+    """Agrega múltiplas linhas de dashboard_cache em um objeto compatível."""
+    if not rows:
+        return None
+    agg = DashboardCache(emp='*', vendedor=vendedor, ano=int(ano), mes=int(mes))
+    agg.valor_bruto = sum(r.valor_bruto or 0 for r in rows)
+    agg.valor_liquido = sum(r.valor_liquido or 0 for r in rows)
+    agg.devolucoes = sum(r.devolucoes or 0 for r in rows)
+    agg.cancelamentos = sum(r.cancelamentos or 0 for r in rows)
+    agg.pct_devolucao = ((agg.devolucoes + agg.cancelamentos) / agg.valor_bruto * 100.0) if agg.valor_bruto else 0.0
+    agg.mix_produtos = sum(r.mix_produtos or 0 for r in rows)
+    agg.mix_marcas = sum(r.mix_marcas or 0 for r in rows)
+
+    marca_map = {}
+    total = 0.0
+    for r in rows:
+        try:
+            lst = json.loads(r.ranking_json or '[]')
+        except Exception:
+            lst = []
+        for it in lst:
+            m = (it.get('marca') or '').strip()
+            v = float(it.get('valor') or 0.0)
+            if not m:
+                continue
+            marca_map[m] = marca_map.get(m, 0.0) + v
+            total += v
+    ranking = sorted([
+        {'marca': m, 'valor': val, 'pct': (val / total * 100.0) if total else 0.0}
+        for m, val in marca_map.items()
+    ], key=lambda x: x['valor'], reverse=True)
+    agg.ranking_json = json.dumps(ranking, ensure_ascii=False)
+    agg.ranking_top15_json = json.dumps(ranking[:15], ensure_ascii=False)
+    agg.total_liquido_periodo = agg.valor_liquido
+    return agg
+
 def _get_cache_row(vendedor: str, ano: int, mes: int, emp_scope: str | None):
     vendedor = (vendedor or '').strip().upper()
     if not vendedor:
@@ -1932,23 +1994,22 @@ def _resolver_vendedor_e_lista(df: pd.DataFrame | None) -> tuple[str | None, lis
     return vendedor_alvo, vendedores, emp_usuario, None
 
 # ------------- Rotas -------------
-def _dados_admin_geral(mes: int, ano: int, emp_scope: list[str] | None = None):
-    """Visão geral do ADMIN/FINANCEIRO com totais oficiais ao vivo.
+def _dados_admin_geral(mes: int, ano: int, emp_scope: list[str] | str | None = None):
+    """Visão geral ADMIN/FINANCEIRO/SUPERVISOR com conferência oficial por dia.
 
-    Motivo da alteração:
-    - O dashboard passou a usar dashboard_cache para evitar 502 no Render.
-    - Após importação, esse cache pode ficar pendente/desatualizado.
-    - Os cards principais e o ranking por EMP precisam bater com a tabela vendas.
-
-    Estratégia:
-    - Totais principais e ranking por EMP/vendedor são calculados diretamente em
-      uma única agregação mensal na tabela vendas, filtrada por movimento/competência.
-    - Isso mantém os números corretos mesmo antes do refresh do dashboard_cache.
-    - O campo valor_importado_total mostra a soma bruta de valor_total de todos os
-      movimentos válidos do período, para conferência com o SQL do Supabase.
+    Esta função é a fonte de conferência do Dashboard:
+    - Importado: soma simples de valor_total no banco, igual ao SQL de conferência do Supabase;
+    - Bruto: somente movimentos de venda oficiais;
+    - Devolvido: movimentos DS/CA;
+    - Líquido: Bruto - Devolvido;
+    - Valores por dia respeitam o filtro de EMP/loja selecionado.
     """
     start, end = _periodo_bounds(int(ano), int(mes))
-    emps = [str(e).strip() for e in (emp_scope or []) if e is not None and str(e).strip()]
+
+    if isinstance(emp_scope, (str, int)):
+        emps = [str(emp_scope).strip()] if str(emp_scope).strip() else []
+    else:
+        emps = [str(e).strip() for e in (emp_scope or []) if e is not None and str(e).strip()]
 
     mov = func.upper(func.coalesce(Venda.mov_tipo_movto, ""))
     qtd_ok = func.coalesce(Venda.qtdade_vendida, 0.0) > 0
@@ -1967,33 +2028,43 @@ def _dados_admin_geral(mes: int, ano: int, emp_scope: list[str] | None = None):
         (qtd_ok & mov.in_(MOVIMENTOS_NEGATIVOS), -valor),
         else_=0.0,
     )
-    valor_importado_expr = case(
-        (qtd_ok & mov.in_(tuple(MOVIMENTOS_VENDA) + tuple(MOVIMENTOS_NEGATIVOS)), valor),
-        else_=0.0,
-    )
+
+    vendedor_label = func.coalesce(func.nullif(Venda.vendedor, ""), "SEM VENDEDOR")
 
     with SessionLocal() as db:
+        base_filter = [Venda.movimento >= start, Venda.movimento < end]
+        if emps:
+            base_filter.append(Venda.emp.in_(emps))
+
         q = db.query(
             Venda.emp.label("emp"),
-            func.coalesce(func.nullif(Venda.vendedor, ""), "SEM VENDEDOR").label("vendedor"),
+            vendedor_label.label("vendedor"),
             func.coalesce(func.sum(valor_bruto_expr), 0.0).label("valor_bruto"),
             func.coalesce(func.sum(valor_devolvido_expr), 0.0).label("valor_devolvido"),
             func.coalesce(func.sum(valor_liquido_expr), 0.0).label("valor_liquido"),
-            func.coalesce(func.sum(valor_importado_expr), 0.0).label("valor_importado"),
+            func.coalesce(func.sum(valor), 0.0).label("valor_importado"),
             func.count().label("linhas"),
-        ).filter(
-            Venda.movimento >= start,
-            Venda.movimento < end,
-            qtd_ok,
-            mov.in_(tuple(MOVIMENTOS_VENDA) + tuple(MOVIMENTOS_NEGATIVOS)),
-        )
-        if emps:
-            q = q.filter(Venda.emp.in_(emps))
+        ).filter(*base_filter)
 
-        rows = q.group_by(
-            Venda.emp,
-            func.coalesce(func.nullif(Venda.vendedor, ""), "SEM VENDEDOR"),
-        ).all()
+        rows = q.group_by(Venda.emp, vendedor_label).all()
+
+        dia_rows_db = (
+            db.query(
+                Venda.movimento.label("data"),
+                func.coalesce(func.sum(valor_bruto_expr), 0.0).label("valor_bruto"),
+                func.coalesce(func.sum(valor_devolvido_expr), 0.0).label("valor_devolvido"),
+                func.coalesce(func.sum(valor_liquido_expr), 0.0).label("valor_liquido"),
+                func.coalesce(func.sum(valor), 0.0).label("valor_importado"),
+                func.coalesce(func.sum(func.coalesce(Venda.qtdade_vendida, 0.0)), 0.0).label("quantidade_total"),
+                func.count().label("linhas"),
+                func.count(func.distinct(Venda.emp)).label("emps"),
+                func.count(func.distinct(vendedor_label)).label("vendedores"),
+            )
+            .filter(*base_filter)
+            .group_by(Venda.movimento)
+            .order_by(Venda.movimento.asc())
+            .all()
+        )
 
     total_bruto = 0.0
     total_devol = 0.0
@@ -2039,6 +2110,25 @@ def _dados_admin_geral(mes: int, ano: int, emp_scope: list[str] | None = None):
         if vendedor:
             vend_map[vendedor] = vend_map.get(vendedor, 0.0) + liquido
 
+    dias_valores = []
+    for r in dia_rows_db:
+        bruto = float(getattr(r, "valor_bruto", 0) or 0.0)
+        devol = float(getattr(r, "valor_devolvido", 0) or 0.0)
+        liquido = float(getattr(r, "valor_liquido", 0) or 0.0)
+        importado = float(getattr(r, "valor_importado", 0) or 0.0)
+        dias_valores.append({
+            "data": getattr(r, "data", None),
+            "valor_bruto": bruto,
+            "valor_devolvido": devol,
+            "valor_atual": liquido,
+            "valor_importado": importado,
+            "diferenca_importado_liquido": importado - liquido,
+            "quantidade_total": float(getattr(r, "quantidade_total", 0) or 0.0),
+            "linhas": int(getattr(r, "linhas", 0) or 0),
+            "emps": int(getattr(r, "emps", 0) or 0),
+            "vendedores": int(getattr(r, "vendedores", 0) or 0),
+        })
+
     emp_rows = sorted(emp_map.values(), key=lambda r: r.get("valor_atual", 0.0), reverse=True)
     vend_rows = sorted(
         [{"vendedor": v, "valor": val} for v, val in vend_map.items()],
@@ -2046,6 +2136,7 @@ def _dados_admin_geral(mes: int, ano: int, emp_scope: list[str] | None = None):
         reverse=True,
     )
     pct_devolucao = (total_devol / total_bruto * 100.0) if total_bruto else None
+    maior_dia = max(dias_valores, key=lambda r: r.get("valor_importado", 0.0), default=None)
 
     return {
         "valor_bruto": total_bruto,
@@ -2056,11 +2147,18 @@ def _dados_admin_geral(mes: int, ano: int, emp_scope: list[str] | None = None):
         "pct_devolucao": pct_devolucao,
         "ranking_emp_list": emp_rows[:30],
         "ranking_vendedores_list": vend_rows[:30],
+        "dias_valores_list": dias_valores,
+        "dias_com_venda": len(dias_valores),
+        "media_importada_dia": (total_importado / len(dias_valores)) if dias_valores else 0.0,
+        "media_liquida_dia": (total_liquido / len(dias_valores)) if dias_valores else 0.0,
+        "maior_dia": maior_dia,
+        "emp_scope": emps,
+        "emp_scope_label": ", ".join(emps),
+        "filtro_emp_ativo": bool(emps),
         "fonte": "vendas_live",
         "cache_source": "vendas_live",
         "linhas_vendas_periodo": total_linhas,
     }
-
 
 
 def _periodo_prev(ano: int, mes: int) -> tuple[int, int]:

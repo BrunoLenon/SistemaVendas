@@ -148,7 +148,7 @@
         <div class="d-flex flex-wrap gap-2 mt-3">
           {% if role %}<span class="sv-dash-chip">Perfil {{ role|upper }}</span>{% endif %}
           {% if emp %}<span class="sv-dash-chip">EMP {{ emp }}</span>{% endif %}
-          {% if admin_geral %}<span class="sv-dash-chip">Visão geral admin</span>{% endif %}
+          {% if admin_geral %}<span class="sv-dash-chip">Visão geral</span>{% endif %}
         </div>
       </div>
       <div class="sv-dash-actions">
@@ -169,7 +169,7 @@
   <div class="sv-dash-panel mb-3">
     <div class="sv-dash-panel__body">
       <form id="filtersForm" method="get" action="{{ url_for('dashboard') }}" class="sv-dash-form">
-        {% if role and role|lower in ["admin", "gerente", "supervisor"] %}
+        {% if role and role|lower in ["admin", "financeiro", "gerente", "supervisor"] %}
           <div>
             <label class="sv-dash-label">Vendedor</label>
             <select class="sv-dash-select" name="vendedor">
@@ -207,6 +207,18 @@
     </div>
   </div>
 
+  {% if emp_selecionada %}
+    <div class="sv-dash-panel mb-3">
+      <div class="sv-dash-panel__body d-flex flex-wrap justify-content-between align-items-center gap-2 py-2">
+        <div class="sv-dash-muted small">
+          Filtro de loja ativo: <strong class="text-white">EMP {{ emp_selecionada }}</strong>.
+          Os cards, ranking e conferência por dia abaixo estão considerando somente essa loja.
+        </div>
+        <a class="sv-dash-btn sv-dash-btn-ghost" href="/dashboard?mes={{ mes }}&ano={{ ano }}">Limpar filtro da loja</a>
+      </div>
+    </div>
+  {% endif %}
+
   {% if admin_geral and dados_admin %}
     <div class="sv-dash-kpis mb-3">
       {{ kpi_card('Total líquido', dados_admin.valor_atual|brl_rs, 'Bruto - DS/CA. Número oficial do resultado', '💰') }}
@@ -226,6 +238,74 @@
         </div>
       </div>
     {% endif %}
+
+    <div class="sv-dash-panel mb-3">
+      <div class="sv-dash-panel__head">
+        <div>
+          <h5 class="m-0">Conferência por dia</h5>
+          <div class="sv-dash-muted small">
+            Valores importados por data de movimento{% if emp_selecionada %} na EMP {{ emp_selecionada }}{% else %} em todas as lojas{% endif %}.
+            Use esta tabela para bater com o SQL do Supabase dia a dia.
+          </div>
+        </div>
+      </div>
+      <div class="sv-dash-panel__body">
+        <div class="sv-dash-kpis mb-3">
+          {{ kpi_card('Dias importados', dados_admin.dias_com_venda|default(0), 'Quantidade de datas com movimento', '📅') }}
+          {{ kpi_card('Média importada/dia', (dados_admin.media_importada_dia|default(0))|brl_rs, 'Média da soma simples do banco', '📊') }}
+          {{ kpi_card('Maior dia', ((dados_admin.maior_dia.valor_importado|brl_rs) if dados_admin.maior_dia else '—'), ((dados_admin.maior_dia.data.strftime('%d/%m/%Y')) if dados_admin.maior_dia and dados_admin.maior_dia.data else 'Sem movimento'), '🏆') }}
+          {{ kpi_card('Linhas importadas', dados_admin.linhas_vendas_periodo|default(0), 'Total de registros no período', '🧾') }}
+        </div>
+
+        <div class="sv-dash-tablewrap">
+          <table class="sv-dash-table">
+            <thead>
+              <tr>
+                <th style="width:105px;">Dia</th>
+                <th class="text-end">Importado</th>
+                <th class="text-end">Bruto</th>
+                <th class="text-end">DS/CA</th>
+                <th class="text-end">Líquido</th>
+                <th class="text-end">Dif.</th>
+                <th class="text-end">Linhas</th>
+                <th class="text-end">EMPs</th>
+                <th class="text-end">Vendedores</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in dados_admin.dias_valores_list or [] %}
+                <tr>
+                  <td class="fw-bold">{{ row.data.strftime('%d/%m/%Y') if row.data else '—' }}</td>
+                  <td class="text-end fw-bold">{{ row.valor_importado|brl_rs }}</td>
+                  <td class="text-end">{{ row.valor_bruto|brl_rs }}</td>
+                  <td class="text-end">{{ row.valor_devolvido|brl_rs }}</td>
+                  <td class="text-end fw-bold">{{ row.valor_atual|brl_rs }}</td>
+                  <td class="text-end">{{ row.diferenca_importado_liquido|brl_rs }}</td>
+                  <td class="text-end">{{ row.linhas }}</td>
+                  <td class="text-end">{{ row.emps }}</td>
+                  <td class="text-end">{{ row.vendedores }}</td>
+                </tr>
+              {% endfor %}
+              {% if not dados_admin.dias_valores_list %}
+                <tr><td colspan="9">Sem dias importados para o período/filtro selecionado.</td></tr>
+              {% endif %}
+            </tbody>
+            <tfoot>
+              <tr>
+                <th>Total</th>
+                <th class="text-end">{{ dados_admin.valor_importado_total|brl_rs }}</th>
+                <th class="text-end">{{ dados_admin.valor_bruto|brl_rs }}</th>
+                <th class="text-end">{{ dados_admin.valor_devolvido|brl_rs }}</th>
+                <th class="text-end">{{ dados_admin.valor_atual|brl_rs }}</th>
+                <th class="text-end">{{ dados_admin.diferenca_importado_liquido|brl_rs }}</th>
+                <th class="text-end">{{ dados_admin.linhas_vendas_periodo|default(0) }}</th>
+                <th colspan="2"></th>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    </div>
 
     <div class="sv-dash-panel mb-3">
       <div class="sv-dash-panel__body d-flex flex-wrap justify-content-between align-items-center gap-2">
@@ -282,7 +362,7 @@
               <thead><tr><th>Vendedor</th><th class="text-end">Líquido</th></tr></thead>
               <tbody>
               {% for row in (dados_admin.ranking_vendedores_list or [])[:12] %}
-                <tr class="sv-row-click" onclick="window.location='/dashboard?vendedor={{ row.vendedor }}&mes={{ mes }}&ano={{ ano }}'">
+                <tr class="sv-row-click" onclick="window.location='/dashboard?vendedor={{ row.vendedor }}&mes={{ mes }}&ano={{ ano }}{% if emp_selecionada %}&emp={{ emp_selecionada }}{% endif %}'">
                   <td class="fw-bold">{{ row.vendedor }}</td>
                   <td class="text-end fw-bold">{{ row.valor|brl_rs }}</td>
                 </tr>
@@ -390,7 +470,7 @@
                     <thead><tr><th>Vendedor</th><th class="text-end">Líquido</th><th class="text-end">Mix</th><th class="text-end">Clientes</th></tr></thead>
                     <tbody>
                     {% for row in dashboard_emp.top_vendedores %}
-                      <tr class="sv-row-click" onclick="window.location='/dashboard?vendedor={{ row.vendedor }}&mes={{ mes }}&ano={{ ano }}'">
+                      <tr class="sv-row-click" onclick="window.location='/dashboard?vendedor={{ row.vendedor }}&mes={{ mes }}&ano={{ ano }}{% if emp_selecionada %}&emp={{ emp_selecionada }}{% endif %}'">
                         <td class="fw-bold">{{ row.vendedor }}</td><td class="text-end fw-bold">{{ row.valor|brl_rs }}</td><td class="text-end">{{ row.qtd|round(0)|int }}</td><td class="text-end">{{ row.clientes }}</td>
                       </tr>
                     {% endfor %}
