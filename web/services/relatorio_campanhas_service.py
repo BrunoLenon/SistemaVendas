@@ -605,7 +605,7 @@ def _relatorio_vendedores_key(vendedores_por_emp: dict[str, list[str]] | None, e
 
 def _relatorio_cache_key(*, role: str, vendedor_logado: str, ano: int, mes: int, emps: list[str], vendedores_por_emp: dict[str, list[str]]) -> tuple:
     return (
-        "relatorio_campanhas_unificado_v4",
+        "relatorio_campanhas_unificado_v5_participacao",
         str(role or "").strip().lower(),
         str(vendedor_logado or "").strip().upper(),
         int(ano),
@@ -760,6 +760,7 @@ def build_relatorio_campanhas_unificado_context(
                         vendedores_por_emp=vendedores_por_emp,
                         incluir_zerados=False,
                         usar_snapshot_itens_parados=True,
+                        incluir_participacao_ativa=True,
                     )
                     if rows is None:
                         rows = []

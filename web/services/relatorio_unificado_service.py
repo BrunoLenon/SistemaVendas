@@ -827,6 +827,370 @@ def _campanha_tipo_qtd_relatorio(campanha: Any) -> str:
     return str(getattr(campanha, 'campanha_tipo', '') or 'VENDEDOR').strip().upper()
 
 
+def _norm_prefix_relatorio(s: Any) -> str:
+    """Normaliza prefixo de descrição igual ao cálculo oficial de Campanha QTD."""
+    import re
+    import unicodedata
+
+    txt = str(s or '').strip()
+    txt = ''.join(c for c in unicodedata.normalize('NFKD', txt) if not unicodedata.combining(c))
+    txt = re.sub(r'\s+', ' ', txt).strip().lower()
+    return txt
+
+
+def _campanha_qtd_key_relatorio(campanha: Any) -> tuple[str, str, str]:
+    campo_match = str(getattr(campanha, 'campo_match', None) or 'codigo').strip().lower()
+    marca = _clean_text(getattr(campanha, 'marca', None)).upper()
+    if campo_match == 'descricao':
+        pref = _clean_text(getattr(campanha, 'descricao_prefixo', None)) or _clean_text(getattr(campanha, 'produto_prefixo', None))
+        return ('descricao', pref.lower().strip(), marca)
+    return ('codigo', _clean_text(getattr(campanha, 'produto_prefixo', None)).upper(), marca)
+
+
+def _build_campanhas_qtd_escolhidas_por_vendedor(campanhas: list[Any], vendedores: list[str]) -> dict[str, list[Any]]:
+    """Aplica prioridade da campanha específica do vendedor sobre a geral.
+
+    Isso evita duplicar campanha quando existe uma regra geral da loja e uma regra
+    específica para um vendedor com o mesmo item/marca/período.
+    """
+    geral_by_key: dict[tuple[str, str, str], Any] = {}
+    especificas: dict[str, dict[tuple[str, str, str], Any]] = {}
+
+    for c in campanhas or []:
+        if _campanha_tipo_qtd_relatorio(c) == 'GERENTE':
+            continue
+        key = _campanha_qtd_key_relatorio(c)
+        vend = _upper(getattr(c, 'vendedor', None))
+        if vend:
+            especificas.setdefault(vend, {})[key] = c
+        else:
+            geral_by_key.setdefault(key, c)
+
+    escolhidas: dict[str, list[Any]] = {}
+    for vend in vendedores or []:
+        vend_u = _upper(vend)
+        if not vend_u:
+            continue
+        base = dict(geral_by_key)
+        if vend_u in especificas:
+            base.update(especificas[vend_u])
+        escolhidas[vend_u] = list(base.values())
+    return escolhidas
+
+
+def _cond_campanha_qtd_venda(campanha: Any):
+    """Condição de item/marca para campanha QTD usada nas linhas de participação."""
+    campo_match = str(getattr(campanha, 'campo_match', None) or 'codigo').strip().lower()
+    if campo_match == 'descricao':
+        prefix_raw = _clean_text(getattr(campanha, 'descricao_prefixo', None)) or _clean_text(getattr(campanha, 'produto_prefixo', None))
+        prefix = _norm_prefix_relatorio(prefix_raw)
+        campo_item = func.lower(func.trim(func.coalesce(Venda.descricao_norm, '')))
+        cond_prefix = campo_item.like(prefix + '%') if prefix else None
+    else:
+        prefix_raw = _clean_text(getattr(campanha, 'produto_prefixo', None))
+        prefix = prefix_raw.upper()
+        campo_item = func.upper(func.trim(cast(Venda.mestre, String)))
+        cond_prefix = campo_item.like(prefix + '%') if prefix else None
+
+    conds = []
+    if cond_prefix is not None:
+        conds.append(cond_prefix)
+
+    marca_ref = _clean_text(getattr(campanha, 'marca', None)).upper()
+    if marca_ref:
+        conds.append(func.upper(func.trim(cast(Venda.marca, String))) == marca_ref)
+    return conds
+
+
+def _calc_vendas_por_vendedor_campanha_qtd_live(
+    db: Any,
+    *,
+    emp: str,
+    campanha: Any,
+    vendedores: list[str],
+    periodo_ini: date,
+    periodo_fim: date,
+) -> dict[str, tuple[float, float]]:
+    """Soma qtd/valor por vendedor para uma campanha ativa, sem depender de snapshot.
+
+    Usado no /relatorios/campanhas para mostrar campanhas em andamento mesmo
+    quando o vendedor ainda não vendeu nada daquele item.
+    """
+    vendedores_u = [_upper(v) for v in (vendedores or []) if _upper(v)]
+    if not vendedores_u:
+        return {}
+
+    conds_item = _cond_campanha_qtd_venda(campanha)
+    if not conds_item:
+        return {v: (0.0, 0.0) for v in vendedores_u}
+
+    filtros = [
+        Venda.emp == str(emp),
+        Venda.movimento >= periodo_ini,
+        Venda.movimento <= periodo_fim,
+        func.upper(func.coalesce(Venda.mov_tipo_movto, '')).in_(MOVIMENTOS_VENDA),
+        func.coalesce(Venda.qtdade_vendida, 0.0) > 0,
+        Venda.vendedor.in_(vendedores_u),
+    ]
+    filtros.extend(conds_item)
+
+    try:
+        rows = (
+            db.query(
+                Venda.vendedor,
+                func.coalesce(func.sum(Venda.qtdade_vendida), 0.0).label('qtd'),
+                func.coalesce(func.sum(Venda.valor_total), 0.0).label('valor'),
+            )
+            .filter(*filtros)
+            .group_by(Venda.vendedor)
+            .all()
+        )
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        rows = []
+
+    out = {v: (0.0, 0.0) for v in vendedores_u}
+    for vend, qtd, valor in rows:
+        vend_u = _upper(vend)
+        if vend_u:
+            out[vend_u] = (_safe_float(qtd), _safe_float(valor))
+    return out
+
+
+def _calc_vendas_loja_campanha_qtd_live(
+    db: Any,
+    *,
+    emp: str,
+    campanha: Any,
+    periodo_ini: date,
+    periodo_fim: date,
+) -> tuple[float, float]:
+    """Soma qtd/valor da loja inteira para campanha do tipo GERENTE."""
+    conds_item = _cond_campanha_qtd_venda(campanha)
+    if not conds_item:
+        return 0.0, 0.0
+    filtros = [
+        Venda.emp == str(emp),
+        Venda.movimento >= periodo_ini,
+        Venda.movimento <= periodo_fim,
+        func.upper(func.coalesce(Venda.mov_tipo_movto, '')).in_(MOVIMENTOS_VENDA),
+        func.coalesce(Venda.qtdade_vendida, 0.0) > 0,
+    ]
+    filtros.extend(conds_item)
+    try:
+        row = (
+            db.query(
+                func.coalesce(func.sum(Venda.qtdade_vendida), 0.0).label('qtd'),
+                func.coalesce(func.sum(Venda.valor_total), 0.0).label('valor'),
+            )
+            .filter(*filtros)
+            .first()
+        )
+        return _safe_float(getattr(row, 'qtd', 0.0) if row is not None else 0.0), _safe_float(getattr(row, 'valor', 0.0) if row is not None else 0.0)
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return 0.0, 0.0
+
+
+def _build_campanha_qtd_participacao_row(
+    db: Any,
+    *,
+    ano: int,
+    mes: int,
+    emp: str,
+    vendedor: str,
+    campanha: Any,
+    qtd_vendida: float,
+    valor_vendido: float,
+    periodo_ini: date,
+    periodo_fim: date,
+) -> UnifiedRow:
+    """Cria linha visual de campanha ativa ainda sem resultado salvo/atingido."""
+    gate_ini, gate_fim = _campaign_gate_periodo(campanha, periodo_ini, periodo_fim)
+    minimo_qtd = getattr(campanha, 'qtd_minima', None)
+    minimo_val = getattr(campanha, 'valor_minimo', None)
+
+    atingiu_regras_item = True
+    if minimo_qtd is not None and _safe_float(minimo_qtd) > 0:
+        atingiu_regras_item = bool(_safe_float(qtd_vendida) >= _safe_float(minimo_qtd))
+    if atingiu_regras_item and minimo_val is not None and _safe_float(minimo_val) > 0:
+        atingiu_regras_item = bool(_safe_float(valor_vendido) >= _safe_float(minimo_val))
+
+    recompensa_unit = _safe_float(getattr(campanha, 'recompensa_unit', 0.0))
+    premio_potencial = (_safe_float(qtd_vendida) * recompensa_unit) if atingiu_regras_item else 0.0
+    faturamento_emp = calcular_faturamento_emp_periodo(db, emp=str(emp), periodo_ini=gate_ini, periodo_fim=gate_fim)
+    gate = aplicar_trava_faturamento_emp(
+        campanha=campanha,
+        emp=str(emp),
+        faturamento_emp=faturamento_emp,
+        premio_potencial=premio_potencial,
+        atingiu_regras_item=bool(atingiu_regras_item),
+    )
+
+    faturamento_minimo_emp = _safe_float(gate.get('faturamento_minimo_emp')) or None
+    faltante_emp = _safe_float(gate.get('faltante_faturamento_emp'))
+    # Para transparência visual, mostra EMP ABAIXO sempre que a loja ainda não
+    # atingiu a trava, mesmo antes do vendedor gerar prêmio potencial no item.
+    bloqueado_emp_display = bool(faturamento_minimo_emp and faltante_emp > 0)
+
+    item_meta = _campanha_qtd_item_meta(type('ResultadoCampanhaAtiva', (), {})(), campanha)
+    tipo_campanha = _campanha_tipo_qtd_relatorio(campanha)
+    valor_recompensa = _safe_float(gate.get('valor_recompensa'))
+    premio_final = _safe_float(gate.get('premio_potencial'))
+
+    qtd_premiada = None
+    if recompensa_unit > 0 and premio_final > 0:
+        qtd_premiada = premio_final / recompensa_unit
+
+    return UnifiedRow(
+        tipo=('GERENTE' if tipo_campanha == 'GERENTE' else 'QTD'),
+        competencia_ano=int(ano),
+        competencia_mes=int(mes),
+        emp=str(emp),
+        vendedor=_upper(vendedor),
+        titulo=_clean_text(getattr(campanha, 'titulo', None)) or f"Campanha #{getattr(campanha, 'id', '')}",
+        item_codigo=item_meta.get('item_codigo'),
+        item_descricao=item_meta.get('item_descricao'),
+        item_marca=item_meta.get('item_marca'),
+        item_match_tipo=item_meta.get('item_match_tipo'),
+        qtd_minima=_safe_float(minimo_qtd) if minimo_qtd is not None else None,
+        recompensa_unit=recompensa_unit,
+        valor_vendido=_safe_float(valor_vendido),
+        atingiu_gate=bool(gate.get('atingiu_final')),
+        qtd_base=_safe_float(qtd_vendida),
+        qtd_premiada=qtd_premiada,
+        valor_recompensa=valor_recompensa,
+        premio_potencial=premio_final,
+        faturamento_minimo_emp=faturamento_minimo_emp,
+        faturamento_emp=_safe_float(gate.get('faturamento_emp')),
+        faltante_faturamento_emp=faltante_emp,
+        bloqueado_faturamento_emp=bloqueado_emp_display,
+        status_pagamento='PENDENTE',
+        pago_em=None,
+        origem_id=int(getattr(campanha, 'id', 0) or 0),
+    )
+
+
+def _append_campanhas_qtd_participacao_ativa(
+    db: Any,
+    rows: list[UnifiedRow],
+    *,
+    ano: int,
+    mes: int,
+    emp: str,
+    vendedores: list[str],
+    periodo_ini: date,
+    periodo_fim: date,
+    existing_keys: set[tuple[int, str]],
+) -> None:
+    """Inclui campanhas QTD/GERENTE ativas mesmo sem venda/prêmio no período."""
+    emp_s = str(emp or '').strip()
+    vendedores_u = [_upper(v) for v in (vendedores or []) if _upper(v)]
+    if not emp_s or not vendedores_u:
+        return
+
+    try:
+        campanhas = (
+            db.query(CampanhaQtd)
+            .filter(CampanhaQtd.ativo == 1)
+            .filter(or_(cast(CampanhaQtd.emp, String) == emp_s, CampanhaQtd.emp.in_(['ALL', '*', ''])))
+            .filter(CampanhaQtd.data_inicio <= periodo_fim)
+            .filter(CampanhaQtd.data_fim >= periodo_ini)
+            .order_by(CampanhaQtd.emp.asc(), CampanhaQtd.data_inicio.asc(), CampanhaQtd.id.asc())
+            .all()
+        )
+    except Exception as exc:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        try:
+            print(f"[RELATORIO_UNIFICADO] erro campanhas_qtd_participacao emp={emp_s}: {exc}")
+        except Exception:
+            pass
+        return
+
+    if not campanhas:
+        return
+
+    gerentes_set = set(_get_gerentes_emp_relatorio(db, emp_s) or [])
+    vendedores_base = [v for v in vendedores_u if v not in gerentes_set]
+    if not vendedores_base:
+        vendedores_base = vendedores_u[:]
+
+    campanhas_vendedor = [c for c in campanhas if _campanha_tipo_qtd_relatorio(c) != 'GERENTE']
+    escolhidas_por_vendedor = _build_campanhas_qtd_escolhidas_por_vendedor(campanhas_vendedor, vendedores_base)
+
+    vendas_vendedor_cache: dict[int, dict[str, tuple[float, float]]] = {}
+    for vend_u, campanhas_vend in (escolhidas_por_vendedor or {}).items():
+        for campanha in campanhas_vend or []:
+            cid = int(getattr(campanha, 'id', 0) or 0)
+            if cid <= 0 or (cid, vend_u) in existing_keys:
+                continue
+            gate_ini, gate_fim = _campaign_gate_periodo(campanha, periodo_ini, periodo_fim)
+            if cid not in vendas_vendedor_cache:
+                vendas_vendedor_cache[cid] = _calc_vendas_por_vendedor_campanha_qtd_live(
+                    db,
+                    emp=emp_s,
+                    campanha=campanha,
+                    vendedores=vendedores_base,
+                    periodo_ini=gate_ini,
+                    periodo_fim=gate_fim,
+                )
+            qtd, valor = vendas_vendedor_cache.get(cid, {}).get(vend_u, (0.0, 0.0))
+            rows.append(_build_campanha_qtd_participacao_row(
+                db,
+                ano=int(ano),
+                mes=int(mes),
+                emp=emp_s,
+                vendedor=vend_u,
+                campanha=campanha,
+                qtd_vendida=qtd,
+                valor_vendido=valor,
+                periodo_ini=periodo_ini,
+                periodo_fim=periodo_fim,
+            ))
+            existing_keys.add((cid, vend_u))
+
+    campanhas_gerente = [c for c in campanhas if _campanha_tipo_qtd_relatorio(c) == 'GERENTE']
+    gerentes_no_escopo = [v for v in vendedores_u if v in gerentes_set]
+    if campanhas_gerente and gerentes_no_escopo:
+        for campanha in campanhas_gerente:
+            cid = int(getattr(campanha, 'id', 0) or 0)
+            if cid <= 0:
+                continue
+            gate_ini, gate_fim = _campaign_gate_periodo(campanha, periodo_ini, periodo_fim)
+            qtd, valor = _calc_vendas_loja_campanha_qtd_live(
+                db,
+                emp=emp_s,
+                campanha=campanha,
+                periodo_ini=gate_ini,
+                periodo_fim=gate_fim,
+            )
+            for gerente_u in gerentes_no_escopo:
+                if (cid, gerente_u) in existing_keys:
+                    continue
+                rows.append(_build_campanha_qtd_participacao_row(
+                    db,
+                    ano=int(ano),
+                    mes=int(mes),
+                    emp=emp_s,
+                    vendedor=gerente_u,
+                    campanha=campanha,
+                    qtd_vendida=qtd,
+                    valor_vendido=valor,
+                    periodo_ini=periodo_ini,
+                    periodo_fim=periodo_fim,
+                ))
+                existing_keys.add((cid, gerente_u))
+
+
 def _ensure_snapshots_gerente_loja(
     db: Any,
     *,
@@ -946,6 +1310,7 @@ def build_unified_rows(
     vendedores_por_emp: dict[str, list[str]],
     incluir_zerados: bool = False,
     usar_snapshot_itens_parados: bool = True,
+    incluir_participacao_ativa: bool = False,
 ) -> list[UnifiedRow]:
     periodo_ini, periodo_fim = _periodo_bounds(ano, mes)
     rows: list[UnifiedRow] = []
@@ -1003,6 +1368,11 @@ def build_unified_rows(
                 )
 
             qtd_rows = q_qtd.all()
+            qtd_existing_keys: set[tuple[int, str]] = {
+                (int(getattr(r, 'campanha_id', 0) or 0), _upper(getattr(r, 'vendedor', '')))
+                for r in (qtd_rows or [])
+                if int(getattr(r, 'campanha_id', 0) or 0) > 0 and _upper(getattr(r, 'vendedor', ''))
+            }
             qtd_camp_map: dict[int, Any] = {}
             try:
                 qtd_ids = {int(getattr(r, 'campanha_id', 0) or 0) for r in qtd_rows if int(getattr(r, 'campanha_id', 0) or 0) > 0}
@@ -1067,6 +1437,19 @@ def build_unified_rows(
                         pago_em=getattr(r, 'pago_em', None),
                         origem_id=int(getattr(r, 'campanha_id', 0) or 0),
                     )
+                )
+
+            if incluir_participacao_ativa:
+                _append_campanhas_qtd_participacao_ativa(
+                    db,
+                    rows,
+                    ano=int(ano),
+                    mes=int(mes),
+                    emp=str(emp),
+                    vendedores=vendedores,
+                    periodo_ini=periodo_ini,
+                    periodo_fim=periodo_fim,
+                    existing_keys=qtd_existing_keys,
                 )
 
             # -------- COMBO (ativo + itens detalhados + snapshot para pagamento) --------
@@ -1307,7 +1690,7 @@ def build_unified_rows(
                 mes=int(mes),
                 emp=str(emp),
                 vendedores=vendedores,
-                incluir_zerados=incluir_zerados,
+                incluir_zerados=bool(incluir_zerados or incluir_participacao_ativa),
             )
 
             # -------- ITENS PARADOS --------
