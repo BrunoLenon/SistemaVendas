@@ -29,10 +29,10 @@
   .sv-report-page .sv-right{text-align:right;}
   .sv-report-page .sv-center{text-align:center;}
   .sv-report-page .sv-nowrap{white-space:nowrap;}
-  .sv-report-page .sv-tablewrap{border:1px solid rgba(255,140,0,.16);border-radius:18px;background:rgba(0,0,0,.18);overflow:auto;}
-  .sv-report-page .sv-table{width:100%;border-collapse:separate;border-spacing:0;min-width:840px;table-layout:auto;}
-  .sv-report-page .sv-table th{position:sticky;top:0;background:rgba(14,14,14,.98);color:#cbd5e1;font-size:11px;text-transform:uppercase;letter-spacing:.07em;padding:11px 12px;border-bottom:1px solid rgba(255,140,0,.16);white-space:nowrap;}
-  .sv-report-page .sv-table td{padding:11px 12px;border-bottom:1px solid rgba(255,255,255,.065);color:#f8fafc;font-size:13px;vertical-align:middle;}
+  .sv-report-page .sv-tablewrap{border:1px solid rgba(255,140,0,.14);border-radius:18px;background:rgba(0,0,0,.18);overflow:visible;}
+  .sv-report-page .sv-table{width:100%;border-collapse:separate;border-spacing:0;min-width:0;table-layout:fixed;}
+  .sv-report-page .sv-table th{position:sticky;top:0;background:rgba(14,14,14,.98);color:#cbd5e1;font-size:10.5px;text-transform:uppercase;letter-spacing:.055em;padding:9px 10px;border-bottom:1px solid rgba(255,140,0,.14);white-space:nowrap;}
+  .sv-report-page .sv-table td{padding:9px 10px;border-bottom:1px solid rgba(255,255,255,.06);color:#f8fafc;font-size:12.5px;vertical-align:middle;line-height:1.35;}
   .sv-report-page .sv-table tbody tr:nth-child(even) td{background:rgba(255,255,255,.018);}
   .sv-report-page .sv-table tbody tr:hover td{background:rgba(255,140,0,.07);}
   .sv-report-page .sv-table--grouped td{vertical-align:top;}
@@ -51,28 +51,28 @@
   .sv-report-page .sv-pill-warn,.sv-report-page .sv-pill--warn{background:rgba(255,177,66,.12);border-color:rgba(255,177,66,.30);color:#ffd098;}
   .sv-report-page .sv-pill-info{background:rgba(59,130,246,.12);border-color:rgba(59,130,246,.30);color:#b7d2ff;}
   .sv-report-page .sv-pill-ok,.sv-report-page .sv-pill--ok{background:rgba(46,204,113,.12);border-color:rgba(46,204,113,.28);color:#9de7b5;}
-  .sv-report-page .sv-empcards{display:grid;gap:16px;}
-  .sv-report-page .sv-empcard{border:1px solid rgba(255,140,0,.18);border-radius:22px;background:linear-gradient(180deg, rgba(255,255,255,.045), rgba(255,255,255,.022));box-shadow:0 18px 42px rgba(0,0,0,.20);overflow:hidden;}
-  .sv-report-page .sv-empcard__head{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;padding:16px 18px;border-bottom:1px solid rgba(255,140,0,.14);background:rgba(0,0,0,.18);}
+  .sv-report-page .sv-empcards{display:grid;gap:14px;}
+  .sv-report-page .sv-empcard{border:1px solid rgba(255,140,0,.16);border-radius:20px;background:linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.018));box-shadow:0 14px 34px rgba(0,0,0,.18);overflow:hidden;}
+  .sv-report-page .sv-empcard__head{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;padding:14px 16px;border-bottom:1px solid rgba(255,140,0,.12);background:rgba(0,0,0,.16);}
   .sv-report-page .sv-empcard__title{font-size:18px;font-weight:950;color:#fff;letter-spacing:-.01em;}
   .sv-report-page .sv-empcard__meta{display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:flex-end;}
   .sv-report-page .sv-empcard__kpi{display:flex;flex-direction:column;align-items:flex-end;min-width:110px;}
   .sv-report-page .sv-empcard__kpi strong{color:#fff;font-size:16px;}
-  .sv-report-page .sv-fatgrid{display:grid;grid-template-columns:repeat(3,minmax(150px,1fr));gap:10px;padding:12px 18px;border-bottom:1px solid rgba(255,255,255,.06);background:rgba(0,0,0,.12);}
-  .sv-report-page .sv-fatbox{border:1px solid rgba(255,255,255,.09);border-radius:16px;background:rgba(255,255,255,.035);padding:10px 12px;min-height:58px;}
+  .sv-report-page .sv-fatgrid{display:grid;grid-template-columns:repeat(3,minmax(140px,1fr));gap:10px;padding:10px 16px;border-bottom:1px solid rgba(255,255,255,.055);background:rgba(0,0,0,.10);}
+  .sv-report-page .sv-fatbox{border:1px solid rgba(255,255,255,.085);border-radius:15px;background:rgba(255,255,255,.03);padding:9px 11px;min-height:54px;}
   .sv-report-page .sv-fatbox span{display:block;color:#cbd5e1;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.055em;margin-bottom:5px;}
   .sv-report-page .sv-fatbox strong{display:block;color:#fff;font-size:16px;font-weight:950;line-height:1.15;}
   .sv-report-page .sv-fatbox small{display:block;color:#94a3b8;font-size:11px;margin-top:4px;}
   .sv-report-page .sv-fatbox--total{border-color:rgba(255,140,0,.28);background:linear-gradient(180deg,rgba(255,140,0,.12),rgba(255,255,255,.035));}
   .sv-report-page .sv-fatbox--total strong{color:#ffbb5c;}
-  .sv-report-page .sv-empcard__subhead{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:10px 18px;border-bottom:1px solid rgba(255,255,255,.06);}
+  .sv-report-page .sv-empcard__subhead{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:9px 16px;border-bottom:1px solid rgba(255,255,255,.055);}
   .sv-report-page .sv-vendmeta{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;}
-  .sv-report-page .sv-subcard{margin-top:0;padding:12px;background:rgba(0,0,0,.24);border:1px solid rgba(255,140,0,.18);border-radius:16px;overflow:auto;}
-  .sv-report-page .sv-subtable{width:100%;border-collapse:separate;border-spacing:0;font-size:12px;min-width:880px;}
+  .sv-report-page .sv-subcard{margin-top:0;padding:10px;background:rgba(0,0,0,.20);border:1px solid rgba(255,140,0,.14);border-radius:16px;overflow:visible;}
+  .sv-report-page .sv-subtable{width:100%;border-collapse:separate;border-spacing:0;font-size:12px;min-width:0;table-layout:fixed;}
   .sv-report-page .sv-subtable thead th{position:sticky;top:0;background:rgba(13,13,13,.98);color:#cbd5e1;text-transform:uppercase;letter-spacing:.06em;font-size:11px;}
-  .sv-report-page .sv-subtable th,.sv-report-page .sv-subtable td{padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.065);color:#f8fafc;}
-  .sv-report-page .sv-subtotals{display:flex;flex-direction:column;gap:4px;margin-top:10px;align-items:flex-end;}
-  .sv-report-page .sv-subtotals__line{display:flex;gap:10px;color:#cbd5e1;}
+  .sv-report-page .sv-subtable th,.sv-report-page .sv-subtable td{padding:9px 10px;border-bottom:1px solid rgba(255,255,255,.055);color:#f8fafc;vertical-align:top;line-height:1.35;}
+  .sv-report-page .sv-subtotals{display:flex;gap:8px;margin-top:10px;align-items:center;justify-content:flex-end;flex-wrap:wrap;}
+  .sv-report-page .sv-subtotals__line{display:inline-flex;align-items:center;gap:8px;border:1px solid rgba(255,255,255,.09);background:rgba(255,255,255,.035);border-radius:999px;padding:6px 10px;color:#cbd5e1;font-size:12px;}
   .sv-report-page .sv-subtotals__line strong{color:#ffbb5c;}
   .sv-report-page .sv-note{margin-top:10px;font-size:12px;color:#cbd5e1;line-height:1.45;}
   .sv-report-page .sv-detail-placeholder{color:#cbd5e1;font-size:12px;padding:14px;}
@@ -82,6 +82,15 @@
   .sv-report-page .sv-combo-head td{font-weight:800;}
   .sv-report-page .sv-combo-item td:first-child{padding-left:1.25rem;}
   .sv-report-page .sv-pager{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-top:14px;}
+
+  .sv-report-page .sv-master-table th:nth-child(1){width:34%;}
+  .sv-report-page .sv-master-table th:nth-child(2){width:30%;}
+  .sv-report-page .sv-master-table th:nth-child(3){width:18%;}
+  .sv-report-page .sv-master-table th:nth-child(4){width:18%;}
+  .sv-report-page .sv-vendor-name{font-size:13px;font-weight:950;color:#fff;}
+  .sv-report-page .sv-vendor-info{margin-top:3px;color:#cbd5e1;font-size:11.5px;}
+  .sv-report-page .sv-detail-action{display:flex;align-items:center;justify-content:flex-start;}
+  .sv-report-page .sv-table td,.sv-report-page .sv-subtable td{word-break:normal;overflow-wrap:anywhere;}
 
   .sv-report-page .sv-panel > .sv-accordion,
   .sv-report-page .sv-panel > .sv-empcards,
@@ -371,7 +380,7 @@
               </div>
             </div>
             <div class="sv-empcard__subhead">
-              <div class="sv-muted sv-small">Mix de campanhas desta loja no período filtrado</div>
+              <div class="sv-muted sv-small">Tipos de premiação no período</div>
               {% if card.tipos_resumo %}
                 <div class="sv-typechips">
                   {% for tp in card.tipos_resumo %}
@@ -385,7 +394,7 @@
             </div>
 
             <div class="sv-tablewrap">
-              <table class="sv-table sv-table--grouped">
+              <table class="sv-table sv-table--grouped sv-master-table">
                 <thead>
                   <tr>
                     <th>Vendedor</th>
@@ -399,8 +408,8 @@
                     {% set detail_id = 'sv-detail-' ~ card.emp ~ '-' ~ loop.index0 %}
                     <tr class="sv-master-row">
                       <td>
-                        <div class="sv-strong">{{ g.vendedor }}</div>
-                        <div class="sv-muted">Campanhas: {{ g.campanhas_count }} • Total: {{ g.total|brl_rs }}</div>
+                        <div class="sv-vendor-name">{{ g.vendedor }}</div>
+                        <div class="sv-vendor-info">{{ g.campanhas_count }} item(ns) de premiação</div>
                         {% if g.tipos_resumo %}
                           <div class="sv-vendmeta">
                             {% for tp in g.tipos_resumo %}
@@ -410,14 +419,16 @@
                         {% endif %}
                       </td>
                       <td>
+                        <div class="sv-detail-action">
                         <button type="button"
                                 class="sv-btn sv-btn-ghost sv-btn-xs js-toggle-camps"
                                 data-target="{{ detail_id }}"
                                 data-detail-url="{{ g.detail_url or '' }}"
                                 aria-expanded="false">
-                          Ver campanhas ({{ g.campanhas_count }})
+                          Detalhes ({{ g.campanhas_count }})
                           <span class="sv-chev" aria-hidden="true">▾</span>
                         </button>
+                        </div>
                       </td>
                       <td class="sv-right">{{ g.total|brl_rs }}</td>
                       <td>
