@@ -28,6 +28,12 @@
     .sv-metric-stack b,.sv-money-stack b{color:#fff;font-weight:850}
     .sv-money-stack span{display:flex;justify-content:space-between;gap:8px;white-space:nowrap}
     .sv-money-stack small{color:#94a3b8;font-size:10.5px;text-transform:uppercase;letter-spacing:.035em}
+    .sv-req-values{display:grid;gap:2px;margin-top:2px;min-width:150px}
+    .sv-req-row{display:flex;justify-content:space-between;gap:8px;white-space:nowrap;color:#cbd5e1}
+    .sv-req-row small{color:#94a3b8;font-size:10.2px;text-transform:uppercase;letter-spacing:.035em}
+    .sv-req-row b{color:#fff;font-weight:850}
+    .sv-req-row--faltam b{color:#ffd098}
+    .sv-req-row--ok b{color:#9de7b5}
     .sv-status-cell{display:flex;justify-content:center}
     .sv-totalbar{display:flex;gap:8px;margin-top:8px;align-items:center;justify-content:flex-end;flex-wrap:wrap}
     .sv-totalbar__item{display:inline-flex;align-items:center;gap:7px;border:1px solid rgba(255,255,255,.09);background:rgba(255,255,255,.032);border-radius:999px;padding:6px 10px;color:#cbd5e1;font-size:12px}
@@ -115,34 +121,38 @@
       </td>
       <td>
         <div class="sv-req-stack">
-          {% if c.tipo_key is defined and c.tipo_key == 'META' %}
-            {% if c.bloqueado_minimo %}
-              <span class="sv-pill sv-pill--warn">FAT. MÍN.</span>
-              <span class="sv-muted sv-small">Mín. {{ (c.faturamento_minimo_meta or 0)|brl_rs }}</span>
-            {% elif c.faturamento_minimo_meta %}
-              <span class="sv-pill sv-pill--ok">FAT. OK</span>
-            {% endif %}
+          {% set is_meta_req = c.tipo_key is defined and c.tipo_key == 'META' %}
+          {% set req_alvo = c.faturamento_minimo_emp if c.faturamento_minimo_emp is defined and c.faturamento_minimo_emp is not none else none %}
+          {% set req_atual = c.faturamento_emp if c.faturamento_emp is defined and c.faturamento_emp is not none else none %}
+          {% set req_falta = c.faltante_faturamento_emp if c.faltante_faturamento_emp is defined and c.faltante_faturamento_emp is not none else none %}
 
-            {% if c.margem_minima %}
-              {% if c.bloqueado_margem %}
-                <span class="sv-pill sv-pill--warn">MARGEM ABAIXO</span>
-              {% else %}
-                <span class="sv-pill sv-pill--ok">MARGEM OK</span>
-              {% endif %}
-              <span class="sv-muted sv-small">Atual {{ c.margem_percentual_label or 'sem margem' }} • Exigida {{ c.margem_minima_label }}</span>
-              {% if c.bloqueado_margem %}<span class="sv-muted sv-small">Faltam {{ c.margem_faltante_label }} p.p.</span>{% endif %}
-            {% elif not c.faturamento_minimo_meta %}
-              <span class="sv-pill">SEM TRAVA</span>
-            {% endif %}
-          {% else %}
-            {% if c.bloqueado_faturamento_emp %}
-              <span class="sv-pill sv-pill--warn">EMP ABAIXO</span>
-              <span class="sv-muted sv-small">Faltam {{ (c.faltante_faturamento_emp or 0)|brl_rs }}</span>
-            {% elif c.faturamento_minimo_emp %}
-              <span class="sv-pill sv-pill--ok">LIBERADA</span>
+          {% if req_alvo %}
+            {% if (req_falta or 0) > 0 or c.bloqueado_faturamento_emp %}
+              <span class="sv-pill sv-pill--warn">{{ 'META ABAIXO' if is_meta_req else 'EMP ABAIXO' }}</span>
             {% else %}
-              <span class="sv-pill">SEM TRAVA</span>
+              <span class="sv-pill sv-pill--ok">{{ 'META OK' if is_meta_req else 'EMP OK' }}</span>
             {% endif %}
+            <div class="sv-req-values">
+              <span class="sv-req-row"><small>Alvo</small><b>{{ (req_alvo or 0)|brl_rs }}</b></span>
+              <span class="sv-req-row"><small>Vendido</small><b>{{ (req_atual or 0)|brl_rs }}</b></span>
+              {% if (req_falta or 0) > 0 %}
+                <span class="sv-req-row sv-req-row--faltam"><small>Faltam</small><b>{{ (req_falta or 0)|brl_rs }}</b></span>
+              {% else %}
+                <span class="sv-req-row sv-req-row--ok"><small>Faltam</small><b>R$0,00</b></span>
+              {% endif %}
+            </div>
+          {% else %}
+            <span class="sv-pill">SEM TRAVA</span>
+          {% endif %}
+
+          {% if is_meta_req and c.margem_minima is defined and c.margem_minima %}
+            {% if c.bloqueado_margem %}
+              <span class="sv-pill sv-pill--warn">MARGEM ABAIXO</span>
+            {% else %}
+              <span class="sv-pill sv-pill--ok">MARGEM OK</span>
+            {% endif %}
+            <span class="sv-muted sv-small">Atual {{ c.margem_percentual_label or 'sem margem' }} • Exigida {{ c.margem_minima_label }}</span>
+            {% if c.bloqueado_margem %}<span class="sv-muted sv-small">Faltam {{ c.margem_faltante_label }} p.p.</span>{% endif %}
           {% endif %}
         </div>
       </td>

@@ -758,6 +758,15 @@ def _append_metas_unificadas(
                 item_codigo = 'META'
 
             atingiu = bool(valor_premio > 0 and not bool(getattr(calc, 'bloqueado_minimo', False)))
+
+            # Transparência no relatório: a coluna Requisitos deve mostrar o
+            # alvo financeiro real da meta, quanto o vendedor já vendeu e o que
+            # falta. Reaproveitamos os campos de faturamento_* já usados nas
+            # travas de campanha de produto para manter o template simples.
+            faturamento_minimo_meta = _safe_float(getattr(calc, 'faturamento_minimo', 0.0) or 0.0)
+            faturamento_meta_atual = _safe_float(getattr(calc, 'valor_mes', 0.0) or 0.0)
+            faltante_meta = max(0.0, faturamento_minimo_meta - faturamento_meta_atual) if faturamento_minimo_meta > 0 else 0.0
+
             rows.append(
                 UnifiedRow(
                     tipo='META',
@@ -774,6 +783,10 @@ def _append_metas_unificadas(
                     qtd_base=qtd_base,
                     qtd_premiada=None,
                     valor_recompensa=valor_premio,
+                    faturamento_minimo_emp=faturamento_minimo_meta if faturamento_minimo_meta > 0 else None,
+                    faturamento_emp=faturamento_meta_atual,
+                    faltante_faturamento_emp=faltante_meta if faturamento_minimo_meta > 0 else None,
+                    bloqueado_faturamento_emp=bool(getattr(calc, 'bloqueado_minimo', False)),
                     status_pagamento='PENDENTE',
                     pago_em=None,
                     origem_id=meta_id,
