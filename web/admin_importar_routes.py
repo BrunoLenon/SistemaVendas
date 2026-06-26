@@ -34,6 +34,24 @@ def register_admin_importar_routes(
             return None, None
         return None, None
 
+    def _limpar_caches_relatorio_campanhas() -> None:
+        """Invalida caches de relatório após importar vendas ou oficina.
+
+        A oficina altera o faturamento usado nas travas das campanhas. Se o
+        cache do relatório continuar válido, o card da loja pode mostrar o total
+        novo enquanto os detalhes ainda exibem o snapshot/cache antigo.
+        """
+        try:
+            from services.relatorio_campanhas_service import _relatorio_cache_clear
+            _relatorio_cache_clear()
+        except Exception:
+            pass
+        try:
+            from relatorio_campanhas_routes import _scope_cache_clear
+            _scope_cache_clear()
+        except Exception:
+            pass
+
     def admin_importar():
         red = login_required_fn()
         if red:
@@ -121,6 +139,7 @@ def register_admin_importar_routes(
                 limpar_cache_df()
             except Exception:
                 pass
+            _limpar_caches_relatorio_campanhas()
 
             return redirect(url_for("admin_importar"))
 
@@ -198,6 +217,7 @@ def register_admin_importar_routes(
                 limpar_cache_df()
             except Exception:
                 pass
+            _limpar_caches_relatorio_campanhas()
 
             return redirect(url_for("admin_importar"))
         except Exception:

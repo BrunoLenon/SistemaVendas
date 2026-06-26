@@ -18,6 +18,7 @@ from typing import Any
 
 from sqlalchemy import String, cast, func, or_
 from sv_utils import MOVIMENTOS_VENDA
+from services.campanhas_qtd_gate import calcular_faturamento_emp_periodo, aplicar_trava_faturamento_emp
 
 from db import (
     SessionLocal,
@@ -105,6 +106,99 @@ def _periodo_bounds(ano: int, mes: int) -> tuple[date, date]:
     di = date(int(ano), int(mes), 1)
     df = date(int(ano), int(mes), monthrange(int(ano), int(mes))[1])
     return di, df
+
+
+def _campaign_gate_periodo(campanha: Any | None, periodo_ini: date, periodo_fim: date) -> tuple[date, date]:
+    """Período usado para auditar a trava de faturamento da campanha.
+
+    O snapshot oficial é calculado pelo recorte entre a vigência da campanha e
+    a competência. Ao exibir o relatório, repetimos a mesma regra para corrigir
+    snapshots antigos que foram gravados antes da importação de oficina.
+    """
+    di = getattr(campanha, "data_inicio", None) if campanha is not None else None
+    df = getattr(campanha, "data_fim", None) if campanha is not None else None
+    try:
+        if isinstance(di, datetime):
+            di = di.date()
+        if isinstance(df, datetime):
+            df = df.date()
+    except Exception:
+        pass
+    if not isinstance(di, date):
+        di = periodo_ini
+    if not isinstance(df, date):
+        df = periodo_fim
+    try:
+        di = max(di, periodo_ini)
+        df = min(df, periodo_fim)
+    except Exception:
+        di, df = periodo_ini, periodo_fim
+    return di, df
+
+
+def _corrigir_gate_qtd_com_faturamento_atual(
+    db: Any,
+    *,
+    resultado: Any,
+    campanha: Any | None,
+    emp: str,
+    periodo_ini: date,
+    periodo_fim: date,
+) -> dict[str, Any]:
+    """Retorna campos de trava EMP usando o faturamento atual balcão + oficina.
+
+    Corrige a tela quando o snapshot de CampanhaQtdResultado foi gerado antes
+    da importação da oficina. Sem essa auditoria, o relatório pode mostrar
+    `faturamento_emp` apenas com balcão, enquanto o card da loja já mostra
+    balcão + oficina.
+    """
+    minimo_raw = getattr(campanha, "faturamento_minimo_emp", None) if campanha is not None else None
+    if minimo_raw is None:
+        minimo_raw = getattr(resultado, "faturamento_minimo_emp", None)
+    minimo = _safe_float(minimo_raw)
+
+    potencial_raw = getattr(resultado, "premio_potencial", None)
+    if potencial_raw is None:
+        potencial_raw = getattr(resultado, "valor_recompensa", 0.0)
+    premio_potencial = _safe_float(potencial_raw)
+
+    if minimo <= 0:
+        return {
+            "faturamento_minimo_emp": None,
+            "faturamento_emp": getattr(resultado, "faturamento_emp", None),
+            "faltante_faturamento_emp": getattr(resultado, "faltante_faturamento_emp", None),
+            "bloqueado_faturamento_emp": bool(int(getattr(resultado, "bloqueado_faturamento_emp", 0) or 0)),
+            "valor_recompensa": _safe_float(getattr(resultado, "valor_recompensa", 0.0)),
+            "premio_potencial": premio_potencial,
+            "atingiu_gate": bool(int(getattr(resultado, "atingiu_minimo", 0) or 0)),
+        }
+
+    gate_ini, gate_fim = _campaign_gate_periodo(campanha, periodo_ini, periodo_fim)
+    faturamento_atual = calcular_faturamento_emp_periodo(db, emp=str(emp), periodo_ini=gate_ini, periodo_fim=gate_fim)
+
+    # Em CampanhaQtdResultado, premio_potencial > 0 representa que as regras do
+    # item foram atingidas. O bloqueio de EMP não deve apagar esse potencial.
+    atingiu_regras_item = premio_potencial > 0
+
+    class _CampanhaGate:
+        faturamento_minimo_emp = minimo
+
+    gate = aplicar_trava_faturamento_emp(
+        campanha=_CampanhaGate(),
+        emp=str(emp),
+        faturamento_emp=faturamento_atual,
+        premio_potencial=premio_potencial,
+        atingiu_regras_item=atingiu_regras_item,
+    )
+    return {
+        "faturamento_minimo_emp": _safe_float(gate.get("faturamento_minimo_emp")),
+        "faturamento_emp": _safe_float(gate.get("faturamento_emp")),
+        "faltante_faturamento_emp": _safe_float(gate.get("faltante_faturamento_emp")),
+        "bloqueado_faturamento_emp": bool(gate.get("bloqueado_faturamento_emp")),
+        "valor_recompensa": _safe_float(gate.get("valor_recompensa")),
+        "premio_potencial": _safe_float(gate.get("premio_potencial")),
+        "atingiu_gate": bool(gate.get("atingiu_final")),
+    }
 
 
 def _upper(v: Any) -> str:
@@ -921,14 +1015,26 @@ def build_unified_rows(
                 campanha_def = qtd_camp_map.get(int(getattr(r, 'campanha_id', 0) or 0))
                 item_meta = _campanha_qtd_item_meta(r, campanha_def)
                 recompensa_unit = _safe_float(getattr(r, 'recompensa_unit', 0.0))
-                valor_recompensa = _safe_float(getattr(r, 'valor_recompensa', 0.0))
+                valor_recompensa_snapshot = _safe_float(getattr(r, 'valor_recompensa', 0.0))
                 qtd_minima = getattr(r, 'qtd_minima', None)
                 valor_vendido = _safe_float(getattr(r, 'valor_vendido', 0.0))
-                premio_potencial = _safe_float(getattr(r, 'premio_potencial', None)) if getattr(r, 'premio_potencial', None) is not None else valor_recompensa
-                faturamento_minimo_emp = _safe_float(getattr(r, 'faturamento_minimo_emp', None)) if getattr(r, 'faturamento_minimo_emp', None) is not None else None
-                faturamento_emp = _safe_float(getattr(r, 'faturamento_emp', None)) if getattr(r, 'faturamento_emp', None) is not None else None
-                faltante_faturamento_emp = _safe_float(getattr(r, 'faltante_faturamento_emp', None)) if getattr(r, 'faltante_faturamento_emp', None) is not None else None
-                bloqueado_faturamento_emp = bool(int(getattr(r, 'bloqueado_faturamento_emp', 0) or 0))
+
+                gate_atual = _corrigir_gate_qtd_com_faturamento_atual(
+                    db,
+                    resultado=r,
+                    campanha=campanha_def,
+                    emp=str(emp),
+                    periodo_ini=periodo_ini,
+                    periodo_fim=periodo_fim,
+                )
+                valor_recompensa = _safe_float(gate_atual.get('valor_recompensa', valor_recompensa_snapshot))
+                premio_potencial = _safe_float(gate_atual.get('premio_potencial', valor_recompensa_snapshot))
+                faturamento_minimo_emp = gate_atual.get('faturamento_minimo_emp')
+                faturamento_emp = gate_atual.get('faturamento_emp')
+                faltante_faturamento_emp = gate_atual.get('faltante_faturamento_emp')
+                bloqueado_faturamento_emp = bool(gate_atual.get('bloqueado_faturamento_emp'))
+                atingiu_gate = bool(gate_atual.get('atingiu_gate'))
+
                 qtd_prem = None
                 if recompensa_unit > 0 and premio_potencial > 0:
                     qtd_prem = premio_potencial / recompensa_unit
@@ -948,7 +1054,7 @@ def build_unified_rows(
                         qtd_minima=_safe_float(qtd_minima) if qtd_minima is not None else None,
                         recompensa_unit=recompensa_unit,
                         valor_vendido=valor_vendido,
-                        atingiu_gate=bool(int(getattr(r, 'atingiu_minimo', 0) or 0)),
+                        atingiu_gate=atingiu_gate,
                         qtd_base=_safe_float(getattr(r, 'qtd_vendida', None)),
                         qtd_premiada=qtd_prem,
                         valor_recompensa=valor_recompensa,

@@ -605,7 +605,7 @@ def _relatorio_vendedores_key(vendedores_por_emp: dict[str, list[str]] | None, e
 
 def _relatorio_cache_key(*, role: str, vendedor_logado: str, ano: int, mes: int, emps: list[str], vendedores_por_emp: dict[str, list[str]]) -> tuple:
     return (
-        "relatorio_campanhas_unificado_v3",
+        "relatorio_campanhas_unificado_v4",
         str(role or "").strip().lower(),
         str(vendedor_logado or "").strip().upper(),
         int(ano),
