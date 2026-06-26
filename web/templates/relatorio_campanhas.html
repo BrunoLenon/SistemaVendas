@@ -58,6 +58,13 @@
   .sv-report-page .sv-empcard__meta{display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:flex-end;}
   .sv-report-page .sv-empcard__kpi{display:flex;flex-direction:column;align-items:flex-end;min-width:110px;}
   .sv-report-page .sv-empcard__kpi strong{color:#fff;font-size:16px;}
+  .sv-report-page .sv-fatgrid{display:grid;grid-template-columns:repeat(3,minmax(150px,1fr));gap:10px;padding:12px 18px;border-bottom:1px solid rgba(255,255,255,.06);background:rgba(0,0,0,.12);}
+  .sv-report-page .sv-fatbox{border:1px solid rgba(255,255,255,.09);border-radius:16px;background:rgba(255,255,255,.035);padding:10px 12px;min-height:58px;}
+  .sv-report-page .sv-fatbox span{display:block;color:#cbd5e1;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.055em;margin-bottom:5px;}
+  .sv-report-page .sv-fatbox strong{display:block;color:#fff;font-size:16px;font-weight:950;line-height:1.15;}
+  .sv-report-page .sv-fatbox small{display:block;color:#94a3b8;font-size:11px;margin-top:4px;}
+  .sv-report-page .sv-fatbox--total{border-color:rgba(255,140,0,.28);background:linear-gradient(180deg,rgba(255,140,0,.12),rgba(255,255,255,.035));}
+  .sv-report-page .sv-fatbox--total strong{color:#ffbb5c;}
   .sv-report-page .sv-empcard__subhead{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:10px 18px;border-bottom:1px solid rgba(255,255,255,.06);}
   .sv-report-page .sv-vendmeta{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;}
   .sv-report-page .sv-subcard{margin-top:0;padding:12px;background:rgba(0,0,0,.24);border:1px solid rgba(255,140,0,.18);border-radius:16px;overflow:auto;}
@@ -90,6 +97,7 @@
     .sv-report-page .sv-filter-grid-main{grid-template-columns:1fr;}
     .sv-report-page .sv-empcard__head{flex-direction:column;}
     .sv-report-page .sv-empcard__meta{justify-content:flex-start;}
+    .sv-report-page .sv-fatgrid{grid-template-columns:1fr;}
   }
 </style>
 {% endblock %}
@@ -339,10 +347,27 @@
               </div>
               <div class="sv-empcard__meta">
                 <div class="sv-empcard__kpi">
-                  <span class="sv-muted">Total</span>
+                  <span class="sv-muted">Premiação</span>
                   <strong>{{ card.total|brl_rs }}</strong>
                 </div>
                 <span class="sv-pill {{ 'sv-pill-warn' if card.status=='PENDENTE' else ('sv-pill-info' if card.status=='A_PAGAR' else ('sv-pill-ok' if card.status=='PAGO' else '')) }}">{{ card.status }}</span>
+              </div>
+            </div>
+            <div class="sv-fatgrid" aria-label="Faturamento da loja no período">
+              <div class="sv-fatbox">
+                <span>Venda balcão</span>
+                <strong>{{ card.faturamento_balcao|default(0.0)|brl_rs }}</strong>
+                <small>Produtos importados</small>
+              </div>
+              <div class="sv-fatbox">
+                <span>Venda oficina</span>
+                <strong>{{ card.faturamento_oficina|default(0.0)|brl_rs }}</strong>
+                <small>Mão de obra importada</small>
+              </div>
+              <div class="sv-fatbox sv-fatbox--total">
+                <span>Faturamento total</span>
+                <strong>{{ card.faturamento_total|default(0.0)|brl_rs }}</strong>
+                <small>Base usada em metas e travas</small>
               </div>
             </div>
             <div class="sv-empcard__subhead">

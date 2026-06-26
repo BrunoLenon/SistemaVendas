@@ -19,9 +19,12 @@ from urllib.parse import urlencode
 from werkzeug.datastructures import MultiDict
 
 from flask import Response, flash, redirect, render_template, request, send_file, url_for
+from sqlalchemy import func
 
+from db import OficinaServico, SessionLocal, Venda
 from services.campanhas_service import build_relatorio_campanhas_scope
 from services.relatorio_campanhas_service import build_relatorio_campanhas_unificado_context
+from sv_utils import MOVIMENTOS_VENDA
 
 
 _RELATORIO_SCOPE_CACHE: dict[tuple, tuple[float, dict[str, Any]]] = {}
@@ -480,7 +483,122 @@ def _calc_resumo_financeiro(rows):
     return resumo
 
 
-def _augment_ctx(ctx, *, role: str, vendedor_logado: str, vendedores_por_emp: dict[str, list[str]], request_args, include_pagination: bool):
+
+
+def _calc_faturamento_loja_cards(deps, *, ano: int, mes: int, emps: list[str]) -> dict[str, dict[str, float]]:
+    """Calcula balcão + oficina por EMP para conferência visual do relatório.
+
+    Esses valores são faturamento da loja no período, não premiação. A regra segue
+    o cálculo usado nas metas/travas: movimentos positivos de balcão + serviços
+    de oficina importados na competência.
+    """
+    emps_clean: list[str] = []
+    seen: set[str] = set()
+    for e in emps or []:
+        emp = str(e or '').strip()
+        if not emp or emp in seen or emp == '—':
+            continue
+        seen.add(emp)
+        emps_clean.append(emp)
+
+    base = {
+        emp: {
+            'faturamento_balcao': 0.0,
+            'faturamento_oficina': 0.0,
+            'faturamento_total': 0.0,
+        }
+        for emp in emps_clean
+    }
+    if not emps_clean or not deps:
+        return base
+
+    try:
+        periodo_ini, periodo_fim = deps.periodo_bounds(int(ano), int(mes))
+    except Exception:
+        # fallback defensivo para não derrubar a tela caso o helper do período mude
+        from calendar import monthrange
+        periodo_ini = date(int(ano), int(mes), 1)
+        periodo_fim = date(int(ano), int(mes), monthrange(int(ano), int(mes))[1])
+
+    try:
+        Session = getattr(deps, 'SessionLocal', None) or SessionLocal
+        with Session() as db:
+            try:
+                rows_balcao = (
+                    db.query(Venda.emp, func.coalesce(func.sum(Venda.valor_total), 0.0).label('valor'))
+                    .filter(
+                        Venda.emp.in_(emps_clean),
+                        Venda.movimento >= periodo_ini,
+                        Venda.movimento <= periodo_fim,
+                        func.upper(func.coalesce(Venda.mov_tipo_movto, '')).in_(MOVIMENTOS_VENDA),
+                        func.coalesce(Venda.qtdade_vendida, 0.0) > 0,
+                    )
+                    .group_by(Venda.emp)
+                    .all()
+                )
+                for emp, valor in rows_balcao:
+                    emp_s = str(emp or '').strip()
+                    if emp_s in base:
+                        base[emp_s]['faturamento_balcao'] = _to_float(valor)
+            except Exception as exc:
+                print(f'[RELATORIO_CAMPANHAS] erro ao somar venda balcão por loja: {exc}')
+                try:
+                    db.rollback()
+                except Exception:
+                    pass
+
+            try:
+                rows_oficina = (
+                    db.query(OficinaServico.emp, func.coalesce(func.sum(OficinaServico.valor_servico), 0.0).label('valor'))
+                    .filter(
+                        OficinaServico.ano == int(ano),
+                        OficinaServico.mes == int(mes),
+                        OficinaServico.emp.in_(emps_clean),
+                        OficinaServico.ativo.is_(True),
+                    )
+                    .group_by(OficinaServico.emp)
+                    .all()
+                )
+                for emp, valor in rows_oficina:
+                    emp_s = str(emp or '').strip()
+                    if emp_s in base:
+                        base[emp_s]['faturamento_oficina'] = _to_float(valor)
+            except Exception as exc:
+                # Se a migration de oficina ainda não rodou, mantém oficina zerada sem quebrar o relatório.
+                print(f'[RELATORIO_CAMPANHAS] erro ao somar oficina por loja: {exc}')
+                try:
+                    db.rollback()
+                except Exception:
+                    pass
+    except Exception as exc:
+        print(f'[RELATORIO_CAMPANHAS] erro ao calcular totalizadores de faturamento: {exc}')
+
+    for emp, vals in base.items():
+        vals['faturamento_total'] = _to_float(vals.get('faturamento_balcao', 0.0)) + _to_float(vals.get('faturamento_oficina', 0.0))
+    return base
+
+
+def _attach_faturamento_to_emp_cards(ctx: dict[str, Any], deps) -> None:
+    cards = ctx.get('emp_cards_page') or []
+    if not cards:
+        return
+    try:
+        ano = int(ctx.get('ano') or 0)
+        mes = int(ctx.get('mes') or 0)
+    except Exception:
+        return
+    emps = [str(c.get('emp') or '').strip() for c in cards if isinstance(c, dict)]
+    fat_map = _calc_faturamento_loja_cards(deps, ano=ano, mes=mes, emps=emps)
+    for card in cards:
+        if not isinstance(card, dict):
+            continue
+        emp = str(card.get('emp') or '').strip()
+        vals = fat_map.get(emp) or {'faturamento_balcao': 0.0, 'faturamento_oficina': 0.0, 'faturamento_total': 0.0}
+        card['faturamento_balcao'] = _to_float(vals.get('faturamento_balcao', 0.0))
+        card['faturamento_oficina'] = _to_float(vals.get('faturamento_oficina', 0.0))
+        card['faturamento_total'] = _to_float(vals.get('faturamento_total', 0.0))
+
+def _augment_ctx(ctx, *, deps=None, role: str, vendedor_logado: str, vendedores_por_emp: dict[str, list[str]], request_args, include_pagination: bool):
     ctx['role'] = role
     ctx['is_admin'] = role == 'admin'
     ctx['is_supervisor'] = role in ('supervisor', 'gerente')
@@ -517,6 +635,7 @@ def _augment_ctx(ctx, *, role: str, vendedor_logado: str, vendedores_por_emp: di
         ctx['rows_grouped_page'] = rows_grouped_page
         ctx['rows_page'] = rows_grouped_page
         ctx['emp_cards_page'] = _build_emp_cards(rows_grouped_page)
+        _attach_faturamento_to_emp_cards(ctx, deps)
         ctx['page'] = page
         ctx['per_page'] = per_page
         ctx['total_rows'] = total_rows
@@ -525,6 +644,7 @@ def _augment_ctx(ctx, *, role: str, vendedor_logado: str, vendedores_por_emp: di
         ctx['rows_grouped_page'] = rows_grouped
         ctx['rows_page'] = rows_grouped
         ctx['emp_cards_page'] = _build_emp_cards(rows_grouped)
+        _attach_faturamento_to_emp_cards(ctx, deps)
         ctx['page'] = 1
         ctx['per_page'] = len(rows_grouped) or 1
         ctx['total_rows'] = len(rows_grouped)
@@ -686,6 +806,7 @@ def register_relatorio_campanhas_routes(
         )
         ctx = _augment_ctx(
             ctx,
+            deps=deps,
             role=role,
             vendedor_logado=vendedor_logado,
             vendedores_por_emp=vendedores_por_emp,
@@ -781,6 +902,7 @@ def register_relatorio_campanhas_routes(
             )
             ctx = _augment_ctx(
                 ctx,
+                deps=deps,
                 role=role,
                 vendedor_logado=vendedor_logado,
                 vendedores_por_emp=vendedores_por_emp,
@@ -877,6 +999,7 @@ def register_relatorio_campanhas_routes(
         )
         ctx = _augment_ctx(
             ctx,
+            deps=deps,
             role=role,
             vendedor_logado=vendedor_logado,
             vendedores_por_emp=vendedores_por_emp,

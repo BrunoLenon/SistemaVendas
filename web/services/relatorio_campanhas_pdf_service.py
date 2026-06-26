@@ -236,13 +236,19 @@ def _build_emp_header(card: dict, styles):
     status_color = _hex(_status_color(status_label))
     left = f"Loja {escape(_safe_text(card.get('emp')))}"
     right = (
-        f"<b>Total:</b> {_fmt_money(card.get('total', 0))} &nbsp;|&nbsp; "
+        f"<b>Premiação:</b> {_fmt_money(card.get('total', 0))} &nbsp;|&nbsp; "
         f"<b>Vendedores:</b> {int(card.get('vendedores_count') or 0)} &nbsp;|&nbsp; "
         f"<b>Campanhas:</b> {int(card.get('campanhas_count') or 0)} &nbsp;|&nbsp; "
         f"<font color='{status_color}'><b>{escape(status_label)}</b></font>"
     )
+    fat_line = (
+        f"<b>Venda balcão:</b> {_fmt_money(card.get('faturamento_balcao', 0))} &nbsp;|&nbsp; "
+        f"<b>Venda oficina:</b> {_fmt_money(card.get('faturamento_oficina', 0))} &nbsp;|&nbsp; "
+        f"<b>Faturamento total:</b> {_fmt_money(card.get('faturamento_total', 0))}"
+    )
     emp_header = Table(
         [[_p(left, styles['emp_title']), _p(right, styles['emp_meta'])],
+         [_p(fat_line, styles['cell']), ''],
          [_p(escape(_tipo_chip_text(card.get('tipos_resumo') or [])), styles['cell']), '']],
         colWidths=[72 * mm, CONTENT_WIDTH - (72 * mm)],
     )
@@ -250,11 +256,13 @@ def _build_emp_header(card: dict, styles):
         ('BACKGROUND', (0, 0), (-1, -1), PDF_PRIMARY_SOFT),
         ('BOX', (0, 0), (-1, -1), 0.55, PDF_BORDER),
         ('LINEBELOW', (0, 0), (-1, 0), 0.35, PDF_GRID),
+        ('LINEBELOW', (0, 1), (-1, 1), 0.25, PDF_GRID),
         ('LEFTPADDING', (0, 0), (-1, -1), 6),
         ('RIGHTPADDING', (0, 0), (-1, -1), 6),
         ('TOPPADDING', (0, 0), (-1, -1), 4),
         ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
         ('SPAN', (0, 1), (1, 1)),
+        ('SPAN', (0, 2), (1, 2)),
         ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
     ]))
     return emp_header
