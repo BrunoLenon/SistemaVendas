@@ -31,6 +31,7 @@ import requests
 from sqlalchemy import and_, or_, func, case, cast, String, text, extract
 from sv_utils import MOVIMENTOS_VENDA, MOVIMENTOS_NEGATIVOS
 from services.campanhas_qtd_gate import calcular_faturamento_emp_periodo, aplicar_trava_faturamento_emp
+from services.oficina_service import get_emps_servico_no_periodo, get_usuarios_servico_no_periodo
 # ---------------------------------------------------------------------------
 # Helpers de compatibilidade para "rows" que podem vir como dict, SQLAlchemy Row,
 # dataclass (ex.: UnifiedRow), ou objetos simples.
@@ -2966,7 +2967,8 @@ def _get_emps_com_vendas_no_periodo(ano: int, mes: int) -> list[str]:
             .filter(Venda.movimento >= inicio_mes, Venda.movimento <= fim_mes)
             .all()
         )
-    emps = sorted({str(r[0]).strip() for r in rows if r and r[0] is not None and str(r[0]).strip() != ""})
+        emps_oficina = get_emps_servico_no_periodo(db, ano=int(ano), mes=int(mes))
+    emps = sorted({str(r[0]).strip() for r in rows if r and r[0] is not None and str(r[0]).strip() != ""} | {str(e).strip() for e in emps_oficina if str(e).strip()})
     return _filter_emps_cadastradas(emps, apenas_ativas=True)
 
 def _get_vendedores_emp_no_periodo(emp: str, ano: int, mes: int) -> list[str]:
@@ -2978,11 +2980,13 @@ def _get_vendedores_emp_no_periodo(emp: str, ano: int, mes: int) -> list[str]:
             .filter(Venda.emp == emp, Venda.movimento >= inicio_mes, Venda.movimento <= fim_mes)
             .all()
         )
-    vendedores = sorted({(r[0] or '').strip().upper() for r in rows if r and (r[0] or '').strip()})
-    # Remove vendedores não cadastrados (usuários inexistentes)
+        usuarios_oficina = get_usuarios_servico_no_periodo(db, ano=int(ano), mes=int(mes), emps=[emp])
+    vendedores = sorted({(r[0] or '').strip().upper() for r in rows if r and (r[0] or '').strip()} | {str(u).strip().upper() for u in usuarios_oficina if str(u).strip()})
+    # Remove vendedores não cadastrados (usuários inexistentes), mas preserva mecânicos/usuários com serviço importado.
     cad = _get_vendedores_cadastrados_por_emp(emp)
     if cad:
-        vendedores = [v for v in vendedores if v in cad]
+        usuarios_oficina_set = {str(u).strip().upper() for u in usuarios_oficina if str(u).strip()}
+        vendedores = [v for v in vendedores if v in cad or v in usuarios_oficina_set]
     return vendedores
 
 def _calc_vendas_por_vendedor_para_campanha(db, emp: str, campanha: CampanhaQtd, periodo_ini: date, periodo_fim: date) -> dict[str, tuple[float, float]]:

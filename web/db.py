@@ -714,6 +714,36 @@ class MetaMargemVendedor(Base):
     )
 
 
+class OficinaServico(Base):
+    """Faturamento de mão de obra/oficina por competência, EMP e usuário.
+
+    Mantemos separado de ``vendas`` porque serviço não tem produto/marca/mix, mas
+    deve compor o faturamento usado por metas e travas de campanhas.
+    """
+
+    __tablename__ = "oficina_servicos"
+
+    id = Column(Integer, primary_key=True)
+    ano = Column(Integer, nullable=False, index=True)
+    mes = Column(Integer, nullable=False, index=True)
+    emp = Column(String(30), nullable=False, index=True)
+    usuario = Column(String(80), nullable=False, index=True)
+
+    valor_servico = Column(Float, nullable=False, default=0.0)
+    observacao = Column(String(240), nullable=True)
+    arquivo_origem = Column(String(255), nullable=True)
+    importado_por = Column(String(80), nullable=True)
+    importado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
+    ativo = Column(Boolean, nullable=False, default=True)
+
+    __table_args__ = (
+        UniqueConstraint("ano", "mes", "emp", "usuario", name="uq_oficina_servico_periodo_usuario"),
+        Index("ix_oficina_servicos_emp_periodo", "emp", "ano", "mes"),
+        Index("ix_oficina_servicos_usuario_periodo", "usuario", "ano", "mes"),
+        Index("ix_oficina_servicos_periodo", "ano", "mes"),
+    )
+
+
 class MetaResultado(Base):
     """Resultado calculado por meta/vendedor/EMP/mês.
 
@@ -1360,6 +1390,31 @@ def criar_tabelas():
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_meta_margem_emp_periodo ON metas_margens_vendedores (emp, ano, mes);"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_meta_margem_vendedor_periodo ON metas_margens_vendedores (vendedor, ano, mes);"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_meta_margem_periodo_vendedor ON metas_margens_vendedores (ano, mes, vendedor);"))
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS oficina_servicos (
+                    id SERIAL PRIMARY KEY,
+                    ano INTEGER NOT NULL,
+                    mes INTEGER NOT NULL,
+                    emp VARCHAR(30) NOT NULL,
+                    usuario VARCHAR(80) NOT NULL,
+                    valor_servico DOUBLE PRECISION NOT NULL DEFAULT 0,
+                    observacao VARCHAR(240),
+                    arquivo_origem VARCHAR(255),
+                    importado_por VARCHAR(80),
+                    importado_em TIMESTAMP NOT NULL DEFAULT NOW(),
+                    ativo BOOLEAN NOT NULL DEFAULT TRUE,
+                    CONSTRAINT uq_oficina_servico_periodo_usuario UNIQUE (ano, mes, emp, usuario)
+                );
+            """))
+            conn.execute(text("ALTER TABLE oficina_servicos ADD COLUMN IF NOT EXISTS observacao varchar(240);"))
+            conn.execute(text("ALTER TABLE oficina_servicos ADD COLUMN IF NOT EXISTS arquivo_origem varchar(255);"))
+            conn.execute(text("ALTER TABLE oficina_servicos ADD COLUMN IF NOT EXISTS importado_por varchar(80);"))
+            conn.execute(text("ALTER TABLE oficina_servicos ADD COLUMN IF NOT EXISTS importado_em timestamp NOT NULL DEFAULT now();"))
+            conn.execute(text("ALTER TABLE oficina_servicos ADD COLUMN IF NOT EXISTS ativo boolean NOT NULL DEFAULT true;"))
+            conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ux_oficina_servicos_periodo_usuario ON oficina_servicos (ano, mes, emp, usuario);"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_oficina_servicos_emp_periodo ON oficina_servicos (emp, ano, mes);"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_oficina_servicos_usuario_periodo ON oficina_servicos (usuario, ano, mes);"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_oficina_servicos_periodo ON oficina_servicos (ano, mes);"))
             conn.execute(text("ALTER TABLE metas_resultados ADD COLUMN IF NOT EXISTS margem_percentual double precision;"))
             conn.execute(text("ALTER TABLE metas_resultados ADD COLUMN IF NOT EXISTS margem_minima double precision;"))
             conn.execute(text("ALTER TABLE metas_resultados ADD COLUMN IF NOT EXISTS margem_atingida boolean;"))
@@ -1718,6 +1773,26 @@ def ensure_metas_lojas_schema():
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_meta_margem_emp_periodo ON metas_margens_vendedores (emp, ano, mes);"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_meta_margem_vendedor_periodo ON metas_margens_vendedores (vendedor, ano, mes);"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_meta_margem_periodo_vendedor ON metas_margens_vendedores (ano, mes, vendedor);"))
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS oficina_servicos (
+                    id SERIAL PRIMARY KEY,
+                    ano INTEGER NOT NULL,
+                    mes INTEGER NOT NULL,
+                    emp VARCHAR(30) NOT NULL,
+                    usuario VARCHAR(80) NOT NULL,
+                    valor_servico DOUBLE PRECISION NOT NULL DEFAULT 0,
+                    observacao VARCHAR(240),
+                    arquivo_origem VARCHAR(255),
+                    importado_por VARCHAR(80),
+                    importado_em TIMESTAMP NOT NULL DEFAULT NOW(),
+                    ativo BOOLEAN NOT NULL DEFAULT TRUE,
+                    CONSTRAINT uq_oficina_servico_periodo_usuario UNIQUE (ano, mes, emp, usuario)
+                );
+            """))
+            conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ux_oficina_servicos_periodo_usuario ON oficina_servicos (ano, mes, emp, usuario);"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_oficina_servicos_emp_periodo ON oficina_servicos (emp, ano, mes);"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_oficina_servicos_usuario_periodo ON oficina_servicos (usuario, ano, mes);"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_oficina_servicos_periodo ON oficina_servicos (ano, mes);"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_metas_resultados_emp_periodo ON metas_resultados (emp, ano, mes);"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_metas_resultados_meta_periodo ON metas_resultados (meta_id, ano, mes);"))
     except Exception:

@@ -128,7 +128,7 @@
       <div>
         <div class="sv-import-chip sv-import-chip--ok mb-2">📥 Importação administrativa</div>
         <h1 class="sv-import-title">Importar Vendas</h1>
-        <div class="sv-import-sub">Envie a planilha de vendas em XLSX. O sistema ignora duplicados, preserva histórico e usa a chave com EMP e MOV_TIPO_MOVTO.</div>
+        <div class="sv-import-sub">Envie planilhas de vendas e de mão de obra/oficina em XLSX ou CSV. O faturamento de oficina passa a compor metas e travas de campanhas.</div>
       </div>
       <div class="sv-import-actions">
         <a class="btn sv-import-btn-outline" href="{{ url_for('dashboard') }}">← Voltar ao dashboard</a>
@@ -139,8 +139,8 @@
     <div class="sv-kpi-grid mt-3">
       <div class="sv-kpi sv-card">
         <div class="sv-kpi__label">Formato aceito</div>
-        <div class="sv-kpi__value">XLSX</div>
-        <div class="sv-kpi__meta">Planilha de vendas</div>
+        <div class="sv-kpi__value">XLSX/CSV</div>
+        <div class="sv-kpi__meta">Vendas e oficina</div>
       </div>
       <div class="sv-kpi sv-card">
         <div class="sv-kpi__label">Deduplicação</div>
@@ -149,8 +149,8 @@
       </div>
       <div class="sv-kpi sv-card">
         <div class="sv-kpi__label">Movimentos</div>
-        <div class="sv-kpi__value">OA/VV/SV</div>
-        <div class="sv-kpi__meta">DS/CA descontam nos relatórios</div>
+        <div class="sv-kpi__value">Balcão + Oficina</div>
+        <div class="sv-kpi__meta">Serviço soma no faturamento</div>
       </div>
       <div class="sv-kpi sv-card">
         <div class="sv-kpi__label">Segurança</div>
@@ -278,10 +278,56 @@
         </div>
       </section>
 
+      <section class="sv-import-panel mt-3" id="oficinaImportPanel">
+        <div class="sv-import-panel__head">
+          <div class="d-flex align-items-start gap-2">
+            <span class="sv-import-step">2</span>
+            <div>
+              <h2 class="h5 mb-1">Importar mão de obra / oficina</h2>
+              <div class="sv-import-muted small">Use para somar o faturamento de serviços nas metas e nas travas de faturamento das campanhas.</div>
+            </div>
+          </div>
+          <span class="sv-import-chip sv-import-chip--warn">Novo cálculo</span>
+        </div>
+        <div class="sv-import-panel__body">
+          <form action="{{ url_for('admin_importar_oficina') }}" method="POST" enctype="multipart/form-data" id="formImportOficina">
+            <div class="row g-3">
+              <div class="col-12 col-lg-5">
+                <label class="form-label">Arquivo de mão de obra</label>
+                <input class="form-control" type="file" name="arquivo_oficina" accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" required>
+                <div class="form-text">Colunas mínimas: USUARIO, EMP e VALOR_SERVICO.</div>
+              </div>
+              <div class="col-12 col-md-4 col-lg-3">
+                <label class="form-label">Competência</label>
+                <input class="form-control" type="month" name="competencia_oficina">
+                <div class="form-text">Opcional se a planilha tiver ANO+MES, COMPETENCIA ou DATA.</div>
+              </div>
+              <div class="col-12 col-md-4 col-lg-2">
+                <label class="form-label">Modo</label>
+                <select class="form-select" name="modo_oficina">
+                  <option value="substituir" selected>Substituir</option>
+                  <option value="somar">Somar</option>
+                </select>
+                <div class="form-text">Substituir evita duplicidade.</div>
+              </div>
+              <div class="col-12 col-md-4 col-lg-2 d-flex align-items-end">
+                <button class="btn sv-import-btn-primary w-100" type="submit">Importar oficina</button>
+              </div>
+            </div>
+
+            <div class="row g-3 mt-2">
+              <div class="col-12 col-md-4"><div class="sv-import-feature"><strong>✔ Soma na EMP</strong><div class="sv-import-muted small mt-1">Ex.: balcão R$ 80 mil + oficina R$ 20 mil = R$ 100 mil para metas/campanhas.</div></div></div>
+              <div class="col-12 col-md-4"><div class="sv-import-feature"><strong>✔ Por usuário</strong><div class="sv-import-muted small mt-1">Permite conferir produção por mecânico/usuário.</div></div></div>
+              <div class="col-12 col-md-4"><div class="sv-import-feature"><strong>✔ Sem mexer no mix</strong><div class="sv-import-muted small mt-1">Serviço entra como faturamento, mas não vira item/produto.</div></div></div>
+            </div>
+          </form>
+        </div>
+      </section>
+
       <section id="processingCard" class="sv-import-panel mt-3 d-none">
         <div class="sv-import-panel__body">
           <div class="d-flex align-items-start gap-2 mb-3">
-            <span class="sv-import-step">2</span>
+            <span class="sv-import-step">3</span>
             <div>
               <h3 class="h5 mb-1">Processando importação</h3>
               <div class="sv-import-muted small">Não feche esta página. Pode levar alguns segundos.</div>
@@ -367,6 +413,24 @@
         </div>
       </section>
 
+      <section class="sv-import-panel mb-3">
+        <div class="sv-import-panel__head">
+          <div>
+            <h2 class="h5 mb-1">🔧 Formato da oficina</h2>
+            <div class="sv-import-muted small">Importação simples por competência.</div>
+          </div>
+          <span class="sv-import-chip">Mão de obra</span>
+        </div>
+        <div class="sv-import-panel__body">
+          <div class="sv-import-codebox sv-import-mono small">
+            USUARIO<br>EMP<br>VALOR_SERVICO
+            <br><br>
+            <span class="sv-import-muted">opcional na planilha</span><br>
+            ANO<br>MES<br>COMPETENCIA<br>DATA<br>OBS
+          </div>
+          <div class="sv-import-muted mt-3 small">Se informar a competência no formulário, a planilha pode ter somente usuário, EMP e valor.</div>
+        </div>
+      </section>
 
       <section class="sv-import-panel mb-3">
         <div class="sv-import-panel__head">
@@ -502,6 +566,15 @@
     });
 
     setInfo();
+  })();
+
+  (function(){
+    const formOficina = document.getElementById("formImportOficina");
+    if (!formOficina) return;
+    formOficina.addEventListener("submit", () => {
+      const btn = formOficina.querySelector('button[type="submit"]');
+      if (btn) { btn.disabled = true; btn.innerText = "Importando..."; }
+    });
   })();
 
   function confirmDelete(form){

@@ -4,6 +4,8 @@ import os
 
 from flask import flash, redirect, render_template, request, session, url_for
 
+from importar_servicos_oficina import importar_servicos_oficina
+
 
 def register_admin_importar_routes(
     app,
@@ -17,6 +19,20 @@ def register_admin_importar_routes(
 
     Refatoração pura: mantém URL, endpoint e comportamento externo.
     """
+
+    def _parse_competencia(value: str | None) -> tuple[int | None, int | None]:
+        value = (value or "").strip()
+        if not value:
+            return None, None
+        try:
+            parts = value.replace("/", "-").split("-")
+            if len(parts) >= 2:
+                if len(parts[0]) == 4:
+                    return int(parts[0]), int(parts[1])
+                return int(parts[1]), int(parts[0])
+        except Exception:
+            return None, None
+        return None, None
 
     def admin_importar():
         red = login_required_fn()
@@ -118,10 +134,92 @@ def register_admin_importar_routes(
             except Exception:
                 pass
 
+    def admin_importar_oficina():
+        red = login_required_fn()
+        if red:
+            return red
+        red = admin_required_fn()
+        if red:
+            return red
+
+        arquivo = request.files.get("arquivo_oficina")
+        if not arquivo or not arquivo.filename:
+            flash("Selecione um arquivo .xlsx ou .csv de mão de obra/oficina.", "warning")
+            return redirect(url_for("admin_importar"))
+
+        filename_lower = arquivo.filename.lower()
+        if not (filename_lower.endswith(".xlsx") or filename_lower.endswith(".csv")):
+            flash("Formato inválido para oficina. Envie um arquivo .xlsx ou .csv.", "danger")
+            return redirect(url_for("admin_importar"))
+
+        ano, mes = _parse_competencia(request.form.get("competencia_oficina"))
+        modo = (request.form.get("modo_oficina") or "substituir").strip().lower()
+
+        import tempfile
+
+        suffix = ".csv" if filename_lower.endswith(".csv") else ".xlsx"
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            arquivo.save(tmp.name)
+            tmp_path = tmp.name
+
+        try:
+            resumo = importar_servicos_oficina(
+                tmp_path,
+                ano=ano,
+                mes=mes,
+                modo=modo,
+                arquivo_origem=arquivo.filename,
+                importado_por=(session.get("usuario") or session.get("vendedor") or ""),
+            )
+            if not resumo.get("ok"):
+                faltando = resumo.get("faltando")
+                if faltando:
+                    flash("Colunas faltando na oficina: " + ", ".join([str(x) for x in faltando]), "danger")
+                else:
+                    flash(resumo.get("msg", "Falha ao importar mão de obra/oficina."), "danger")
+                return redirect(url_for("admin_importar"))
+
+            total_servico = float(resumo.get("total_servico") or 0.0)
+            periodos = resumo.get("periodos") or []
+            qtd_periodos = len(periodos)
+            flash(
+                (
+                    f"Mão de obra importada. Linhas válidas: {resumo.get('validas', 0)} | "
+                    f"Registros por usuário/EMP: {resumo.get('registros_competencia', 0)} | "
+                    f"Erros: {resumo.get('erros_linha', 0)} | "
+                    f"Total serviço: R$ {total_servico:,.2f} | "
+                    f"Competências afetadas: {qtd_periodos}. "
+                    f"Recalcule metas/relatório de campanhas para atualizar snapshots já gravados."
+                ).replace(",", "X").replace(".", ",").replace("X", "."),
+                "success",
+            )
+
+            try:
+                limpar_cache_df()
+            except Exception:
+                pass
+
+            return redirect(url_for("admin_importar"))
+        except Exception:
+            app.logger.exception("Erro ao importar mão de obra/oficina")
+            flash("Erro ao importar mão de obra/oficina. Veja os logs no Render.", "danger")
+            return redirect(url_for("admin_importar"))
+        finally:
+            try:
+                os.remove(tmp_path)
+            except Exception:
+                pass
+
     # Mantém endpoint = "admin_importar" (backward compatible com url_for)
     app.add_url_rule(
         "/admin/importar",
         endpoint="admin_importar",
         view_func=admin_importar,
         methods=["GET", "POST"],
+    )
+    app.add_url_rule(
+        "/admin/importar/oficina",
+        endpoint="admin_importar_oficina",
+        view_func=admin_importar_oficina,
+        methods=["POST"],
     )

@@ -13,6 +13,7 @@ from typing import Any
 from sqlalchemy import func
 
 from db import Venda
+from services.oficina_service import sum_servicos_oficina_periodo
 from sv_utils import MOVIMENTOS_VENDA
 
 
@@ -34,9 +35,10 @@ def _round_money(v: Any) -> float:
 def calcular_faturamento_emp_periodo(db: Any, *, emp: str, periodo_ini: Any, periodo_fim: Any) -> float:
     """Soma o faturamento da EMP no período usando a regra padrão do sistema.
 
-    Regra oficial: considera somente movimentos positivos OA, OV, SV, VA e VV.
-    CA e DS abatem em relatórios líquidos, mas não entram como faturamento bruto
-    para destravar campanha. Outros movimentos ficam fora do cálculo.
+    Regra oficial: considera movimentos positivos de balcão OA, OV, SV, VA e VV
+    + mão de obra/oficina importada para a mesma EMP/competência. CA e DS
+    abatem em relatórios líquidos, mas não entram como faturamento bruto para
+    destravar campanha. Outros movimentos ficam fora do cálculo.
     """
     emp_s = str(emp or "").strip()
     if not emp_s or not periodo_ini or not periodo_fim:
@@ -64,7 +66,9 @@ def calcular_faturamento_emp_periodo(db: Any, *, emp: str, periodo_ini: Any, per
         )
         .first()
     )
-    valor = _round_money(getattr(row, "valor", 0.0) if row is not None else 0.0)
+    valor_balcao = _round_money(getattr(row, "valor", 0.0) if row is not None else 0.0)
+    valor_oficina = sum_servicos_oficina_periodo(db, emp=emp_s, periodo_ini=periodo_ini, periodo_fim=periodo_fim)
+    valor = _round_money(valor_balcao + valor_oficina)
     try:
         cache[key] = valor
     except Exception:

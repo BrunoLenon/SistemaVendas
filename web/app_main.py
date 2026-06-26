@@ -123,6 +123,7 @@ from db import (
     criar_tabelas,
 )
 from importar_excel import importar_planilha
+from importar_servicos_oficina import importar_servicos_oficina
 
 # Flask app (Render/Gunicorn expects `app` at module level: web/app.py -> app:app)
 app = Flask(__name__, template_folder="templates")
@@ -4942,8 +4943,9 @@ def admin_importar():
         flash("Selecione um arquivo .xlsx para importar.", "warning")
         return redirect(url_for("admin_importar"))
 
-    if not arquivo.filename.lower().endswith(".xlsx"):
-        flash("Formato inválido. Envie um arquivo .xlsx.", "danger")
+    filename_lower = arquivo.filename.lower()
+    if not (filename_lower.endswith(".xlsx") or filename_lower.endswith(".csv")):
+        flash("Formato inválido. Envie um arquivo .xlsx ou .csv.", "danger")
         return redirect(url_for("admin_importar"))
 
     modo = request.form.get("modo", "ignorar_duplicados")
@@ -4958,7 +4960,8 @@ def admin_importar():
     # Salva temporariamente
     import tempfile
 
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
+    suffix = ".csv" if filename_lower.endswith(".csv") else ".xlsx"
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
         arquivo.save(tmp.name)
         tmp_path = tmp.name
 
@@ -4998,6 +5001,91 @@ def admin_importar():
         except Exception:
             pass
 
+
+@app.route("/admin/importar/oficina", methods=["POST"])
+def admin_importar_oficina():
+    red = _login_required()
+    if red:
+        return red
+    red = _admin_required()
+    if red:
+        return red
+
+    def _parse_competencia(value):
+        value = (value or "").strip()
+        if not value:
+            return None, None
+        try:
+            parts = value.replace("/", "-").split("-")
+            if len(parts) >= 2:
+                if len(parts[0]) == 4:
+                    return int(parts[0]), int(parts[1])
+                return int(parts[1]), int(parts[0])
+        except Exception:
+            pass
+        return None, None
+
+    arquivo = request.files.get("arquivo_oficina")
+    if not arquivo or not arquivo.filename:
+        flash("Selecione um arquivo .xlsx ou .csv de mão de obra/oficina.", "warning")
+        return redirect(url_for("admin_importar"))
+
+    filename_lower = arquivo.filename.lower()
+    if not (filename_lower.endswith(".xlsx") or filename_lower.endswith(".csv")):
+        flash("Formato inválido para oficina. Envie um arquivo .xlsx ou .csv.", "danger")
+        return redirect(url_for("admin_importar"))
+
+    ano, mes = _parse_competencia(request.form.get("competencia_oficina"))
+    modo = (request.form.get("modo_oficina") or "substituir").strip().lower()
+
+    import tempfile
+    suffix = ".csv" if filename_lower.endswith(".csv") else ".xlsx"
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        arquivo.save(tmp.name)
+        tmp_path = tmp.name
+
+    try:
+        resumo = importar_servicos_oficina(
+            tmp_path,
+            ano=ano,
+            mes=mes,
+            modo=modo,
+            arquivo_origem=arquivo.filename,
+            importado_por=(session.get("usuario") or session.get("vendedor") or ""),
+        )
+        if not resumo.get("ok"):
+            faltando = resumo.get("faltando")
+            if faltando:
+                flash("Colunas faltando na oficina: " + ", ".join([str(x) for x in faltando]), "danger")
+            else:
+                flash(resumo.get("msg", "Falha ao importar mão de obra/oficina."), "danger")
+            return redirect(url_for("admin_importar"))
+
+        total_servico = float(resumo.get("total_servico") or 0.0)
+        flash(
+            (
+                f"Mão de obra importada. Linhas válidas: {resumo.get('validas', 0)} | "
+                f"Registros por usuário/EMP: {resumo.get('registros_competencia', 0)} | "
+                f"Erros: {resumo.get('erros_linha', 0)} | "
+                f"Total serviço: R$ {total_servico:,.2f}. "
+                f"Recalcule metas/relatório de campanhas para atualizar snapshots já gravados."
+            ).replace(",", "X").replace(".", ",").replace("X", "."),
+            "success",
+        )
+        try:
+            limpar_cache_df()
+        except Exception:
+            pass
+        return redirect(url_for("admin_importar"))
+    except Exception:
+        app.logger.exception("Erro ao importar mão de obra/oficina")
+        flash("Erro ao importar mão de obra/oficina. Veja os logs no Render.", "danger")
+        return redirect(url_for("admin_importar"))
+    finally:
+        try:
+            os.remove(tmp_path)
+        except Exception:
+            pass
 
 
 @app.route("/admin/itens_parados", methods=["GET", "POST"])

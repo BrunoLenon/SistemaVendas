@@ -5,6 +5,7 @@ from datetime import date
 from typing import Any, Callable
 from types import SimpleNamespace
 from services.campanhas_v2_service import list_resultados_v2
+from services.oficina_service import get_usuarios_servico_no_periodo
 from sqlalchemy import func, cast, String
 from db import Usuario, UsuarioEmp, Venda
 
@@ -469,10 +470,12 @@ def _get_vendedores_por_emp_no_periodo_batch(
 
             final: dict[str, list[str]] = {}
             for emp_s, vendedores in out.items():
+                usuarios_oficina = set(get_usuarios_servico_no_periodo(db, ano=int(ano), mes=int(mes), emps=[emp_s]))
+                vendedores = set(vendedores) | {str(u or '').strip().upper() for u in usuarios_oficina if str(u or '').strip()}
                 if vinculados.get(emp_s):
-                    vendedores = {v for v in vendedores if v in vinculados[emp_s]}
+                    vendedores = {v for v in vendedores if v in vinculados[emp_s] or v in usuarios_oficina}
                 elif vendedores_globais:
-                    vendedores = {v for v in vendedores if v in vendedores_globais}
+                    vendedores = {v for v in vendedores if v in vendedores_globais or v in usuarios_oficina}
                 final[emp_s] = sorted(vendedores)
             return final
     except Exception:

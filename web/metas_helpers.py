@@ -22,6 +22,11 @@ from typing import Iterable
 
 from sqlalchemy import text
 
+from services.oficina_service import (
+    get_emps_servico_no_periodo,
+    get_usuarios_servico_no_periodo,
+    sum_servicos_oficina_mes,
+)
 from sv_utils import _emp_norm, MOVIMENTOS_VENDA, MOVIMENTOS_NEGATIVOS
 from db import (
     Emp,
@@ -106,7 +111,12 @@ def _scope_emp_clause(emps: list[str]) -> tuple[str, dict]:
 
 
 def query_valor_mes(db, ano: int, mes: int, emp: str, vendedor: str | None = None) -> float:
-    """Venda liquida do mes para EMP e opcionalmente vendedor."""
+    """Faturamento líquido do mês para EMP e opcionalmente usuário.
+
+    Soma vendas de balcão (tabela ``vendas``) + mão de obra/oficina
+    (tabela ``oficina_servicos``). Serviço não afeta mix nem venda por marca,
+    mas entra no faturamento usado por metas e campanhas.
+    """
     inicio, fim = periodo_bounds_ym(ano, mes)
     emp_n = normalize_emp(emp)
     vendedor_n = normalize_text(vendedor)
@@ -120,7 +130,9 @@ def query_valor_mes(db, ano: int, mes: int, emp: str, vendedor: str | None = Non
     """
     params = {"emp": emp_n, "vendedor": vendedor_n, "ini": inicio, "fim": fim, **_mov_params()}
     row = db.execute(text(sql), params).fetchone()
-    return float(row[0] or 0.0) if row else 0.0
+    valor_vendas = float(row[0] or 0.0) if row else 0.0
+    valor_oficina = sum_servicos_oficina_mes(db, ano=ano, mes=mes, emp=emp_n, usuario=vendedor_n or None)
+    return float(valor_vendas + valor_oficina)
 
 
 # Aliases legados.
@@ -161,6 +173,9 @@ def query_valor_marcas(db, ano: int, mes: int, emp: str, vendedor: str, marcas: 
     row = db.execute(text(sql), params).fetchone()
     valor_marcas = float(row[0] or 0.0) if row else 0.0
     valor_total = float(row[1] or 0.0) if row else 0.0
+    # Serviço de oficina compõe o faturamento total do usuário/EMP. Como não
+    # possui marca, entra apenas no denominador de metas de share.
+    valor_total += sum_servicos_oficina_mes(db, ano=ano, mes=mes, emp=emp, usuario=vendedor)
     share = (valor_marcas / valor_total * 100.0) if valor_total > 0 else 0.0
     return float(share), float(valor_marcas), float(valor_total)
 
@@ -262,7 +277,16 @@ def get_vendedores_no_periodo(db, ano: int, mes: int, emps: list[str] | None = N
          ORDER BY vendedor
     """
     rows = db.execute(text(sql), {"ini": inicio, "fim": fim, **extra}).fetchall()
-    return [normalize_text(r[0]) for r in rows if r and normalize_text(r[0])]
+    nomes = [normalize_text(r[0]) for r in rows if r and normalize_text(r[0])]
+    nomes.extend(get_usuarios_servico_no_periodo(db, ano=ano, mes=mes, emps=emps or []))
+    seen: set[str] = set()
+    out: list[str] = []
+    for n in nomes:
+        n = normalize_text(n)
+        if n and n not in seen:
+            seen.add(n)
+            out.append(n)
+    return sorted(out)
 
 
 # Alias legado.
@@ -282,7 +306,16 @@ def get_emps_no_periodo(db, ano: int, mes: int, allowed_emps: list[str] | None =
          ORDER BY emp
     """
     rows = db.execute(text(sql), {"ini": inicio, "fim": fim, **extra}).fetchall()
-    return [normalize_emp(r[0]) for r in rows if r and normalize_emp(r[0])]
+    emps_vendas = [normalize_emp(r[0]) for r in rows if r and normalize_emp(r[0])]
+    emps_servicos = get_emps_servico_no_periodo(db, ano=ano, mes=mes, allowed_emps=allowed_emps or [])
+    seen: set[str] = set()
+    out: list[str] = []
+    for e in list(emps_vendas) + list(emps_servicos):
+        e = normalize_emp(e)
+        if e and e not in seen:
+            seen.add(e)
+            out.append(e)
+    return sorted(out)
 
 
 # Alias legado.
