@@ -1529,7 +1529,7 @@ def build_unified_rows(
                     CampanhaQtdResultado.vendedor.in_(vendedores),
                 )
             )
-            if not incluir_zerados:
+            if not incluir_zerados and not incluir_participacao_ativa:
                 q_qtd = q_qtd.filter(
                     or_(
                         CampanhaQtdResultado.valor_recompensa > 0,
@@ -1537,6 +1537,10 @@ def build_unified_rows(
                         CampanhaQtdResultado.bloqueado_faturamento_emp == 1,
                     )
                 )
+            # Quando incluir_participacao_ativa=True, preferimos ler os snapshots
+            # completos gerados no pós-importação, inclusive campanhas zeradas.
+            # Assim a abertura normal do relatório não precisa recalcular
+            # participação QTD ao vivo para cada vendedor/campanha.
 
             qtd_rows = q_qtd.all()
             qtd_existing_keys: set[tuple[int, str]] = {

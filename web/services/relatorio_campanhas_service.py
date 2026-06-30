@@ -584,9 +584,12 @@ def _relatorio_inflight_lock_for(key: tuple) -> threading.Lock:
 
 def _relatorio_cache_ttl_seconds() -> int:
     try:
-        return max(0, int(os.environ.get("RELATORIO_CAMPANHAS_CACHE_TTL_SECONDS", "300") or 0))
+        # O relatório agora é aquecido automaticamente após a importação diária.
+        # Um TTL curto (5 min) fazia a página voltar a dar cache_miss ao longo do dia.
+        # Mantemos 8h por padrão e limpamos/aquecemos novamente quando entra nova importação.
+        return max(0, int(os.environ.get("RELATORIO_CAMPANHAS_CACHE_TTL_SECONDS", "28800") or 0))
     except Exception:
-        return 300
+        return 28800
 
 
 def _relatorio_vendedores_key(vendedores_por_emp: dict[str, list[str]] | None, emps: list[str]) -> tuple:
@@ -604,10 +607,15 @@ def _relatorio_vendedores_key(vendedores_por_emp: dict[str, list[str]] | None, e
 
 
 def _relatorio_cache_key(*, role: str, vendedor_logado: str, ano: int, mes: int, emps: list[str], vendedores_por_emp: dict[str, list[str]]) -> tuple:
+    role_l = str(role or "").strip().lower()
+    # Admin/financeiro enxergam o mesmo escopo quando EMP/vendedores são os mesmos.
+    # Remover o usuário da chave permite que o aquecimento pós-importação sirva
+    # para qualquer admin, sem recalcular a mesma competência por usuário.
+    actor = "__GLOBAL__" if role_l in ("admin", "financeiro") else str(vendedor_logado or "").strip().upper()
     return (
-        "relatorio_campanhas_unificado_v5_participacao",
-        str(role or "").strip().lower(),
-        str(vendedor_logado or "").strip().upper(),
+        "relatorio_campanhas_unificado_v6_import_warm",
+        role_l,
+        actor,
         int(ano),
         int(mes),
         tuple(sorted({str(e).strip() for e in (emps or []) if str(e).strip()})),
@@ -649,6 +657,63 @@ def _relatorio_cache_clear() -> None:
         _RELATORIO_UNIFICADO_CACHE.clear()
 
 
+def _relatorio_cache_warm_aliases(
+    *,
+    ano: int,
+    mes: int,
+    emps: list[str],
+    vendedores_por_emp: dict[str, list[str]],
+    rows: list[Any],
+    charts: dict[str, Any] | None = None,
+) -> None:
+    """Aquece chaves comuns do relatório após importação/recálculo.
+
+    A página costuma ser aberta por admin/financeiro com 1 EMP selecionada.
+    Além do cache combinado, deixamos cada EMP individual pronta para evitar
+    cache_miss ao alternar entre lojas.
+    """
+    emps_clean = _sanitize_emps(emps)
+    if not emps_clean:
+        return
+
+    roles = ("admin", "financeiro")
+    all_rows = list(rows or [])
+
+    # Cache do escopo completo.
+    full_charts = charts if charts is not None else aggregate_for_charts(all_rows)
+    for role_name in roles:
+        _relatorio_cache_set(
+            _relatorio_cache_key(
+                role=role_name,
+                vendedor_logado="",
+                ano=int(ano),
+                mes=int(mes),
+                emps=emps_clean,
+                vendedores_por_emp=vendedores_por_emp,
+            ),
+            all_rows,
+            full_charts,
+        )
+
+    # Cache por EMP, que é o uso mais comum na tela de conferência.
+    for emp in emps_clean:
+        emp_rows = [r for r in all_rows if str(getattr(r, "emp", "") or "").strip() == str(emp)]
+        emp_vendedores = {str(emp): list((vendedores_por_emp or {}).get(str(emp)) or [])}
+        emp_charts = aggregate_for_charts(emp_rows)
+        for role_name in roles:
+            _relatorio_cache_set(
+                _relatorio_cache_key(
+                    role=role_name,
+                    vendedor_logado="",
+                    ano=int(ano),
+                    mes=int(mes),
+                    emps=[str(emp)],
+                    vendedores_por_emp=emp_vendedores,
+                ),
+                emp_rows,
+                emp_charts,
+            )
+
 
 def rebuild_relatorio_campanhas_unificado_cache(
     deps: CampanhasDeps,
@@ -661,6 +726,7 @@ def rebuild_relatorio_campanhas_unificado_cache(
     emps_sel: list[str],
     vendedores_sel: list[str],
     vendedores_por_emp: dict[str, list[str]],
+    clear_existing: bool = True,
 ) -> dict[str, Any]:
     """Executa o recálculo pesado fora da request HTTP e aquece o cache do relatório.
 
@@ -756,8 +822,17 @@ def rebuild_relatorio_campanhas_unificado_cache(
             vendedores_por_emp=vendedores_por_emp,
         )
         # Snapshots foram alterados: invalida caches antigos e deixa o escopo atual aquecido.
-        _relatorio_cache_clear()
+        if clear_existing:
+            _relatorio_cache_clear()
         _relatorio_cache_set(cache_key, rows, charts)
+        _relatorio_cache_warm_aliases(
+            ano=int(ano),
+            mes=int(mes),
+            emps=emps_sel,
+            vendedores_por_emp=vendedores_por_emp,
+            rows=rows,
+            charts=charts,
+        )
         stats["rows"] = len(rows or [])
     except Exception as exc:
         stats["status"] = "partial_error"
@@ -778,6 +853,219 @@ def rebuild_relatorio_campanhas_unificado_cache(
     except Exception:
         pass
     return stats
+
+
+_RELATORIO_IMPORT_REFRESH_JOBS: dict[tuple, dict[str, Any]] = {}
+_RELATORIO_IMPORT_REFRESH_JOBS_LOCK = threading.Lock()
+
+
+def _normalize_affected_periods(affected_periods: list[Any] | tuple[Any, ...] | None) -> dict[tuple[int, int], list[str]]:
+    grouped: dict[tuple[int, int], list[str]] = {}
+    for item in affected_periods or []:
+        try:
+            emp, ano, mes = item[0], item[1], item[2]
+            emp_s = str(emp or '').strip()
+            ano_i = int(ano)
+            mes_i = int(mes)
+        except Exception:
+            continue
+        if not emp_s or mes_i < 1 or mes_i > 12:
+            continue
+        key = (ano_i, mes_i)
+        grouped.setdefault(key, [])
+        if emp_s not in grouped[key]:
+            grouped[key].append(emp_s)
+    for key in list(grouped.keys()):
+        grouped[key] = sorted(grouped[key], key=lambda x: (0, int(x)) if str(x).isdigit() else (1, str(x)))
+        if not grouped[key]:
+            grouped.pop(key, None)
+    return grouped
+
+
+def _refresh_import_job_key(grouped: dict[tuple[int, int], list[str]]) -> tuple:
+    return (
+        'relatorio_campanhas_import_refresh_v1',
+        tuple((int(ano), int(mes), tuple(str(e) for e in emps)) for (ano, mes), emps in sorted(grouped.items())),
+    )
+
+
+def _vendedores_por_emp_refresh(deps: CampanhasDeps, *, ano: int, mes: int, emps: list[str]) -> dict[str, list[str]]:
+    out: dict[str, list[str]] = {}
+    for emp in _sanitize_emps(emps):
+        vendedores: list[str] = []
+        try:
+            vendedores = [str(v or '').strip().upper() for v in (deps.get_vendedores_emp_no_periodo(str(emp), int(ano), int(mes)) or []) if str(v or '').strip()]
+        except Exception:
+            vendedores = []
+        # Fallback direto em vendas, útil se a função injetada falhar durante boot/deploy.
+        if not vendedores:
+            try:
+                periodo_ini, periodo_fim = deps.periodo_bounds(int(ano), int(mes))
+                with deps.SessionLocal() as db:
+                    rows_v = (
+                        db.query(func.distinct(Venda.vendedor))
+                        .filter(
+                            Venda.emp == str(emp),
+                            Venda.movimento >= periodo_ini,
+                            Venda.movimento <= periodo_fim,
+                        )
+                        .all()
+                    )
+                    vendedores = sorted({str(r[0] or '').strip().upper() for r in rows_v if r and str(r[0] or '').strip()})
+            except Exception:
+                vendedores = []
+        out[str(emp)] = sorted({v for v in vendedores if v})
+    return out
+
+
+def _run_import_refresh_job(
+    deps: CampanhasDeps,
+    *,
+    grouped: dict[tuple[int, int], list[str]],
+    job_key: tuple,
+) -> None:
+    started_all = time.perf_counter()
+    total_rows = 0
+    errors: list[str] = []
+    detalhes: list[dict[str, Any]] = []
+
+    with _RELATORIO_IMPORT_REFRESH_JOBS_LOCK:
+        job = _RELATORIO_IMPORT_REFRESH_JOBS.get(job_key) or {}
+        job.update({'status': 'running', 'started_at': time.monotonic(), 'ended_at': None})
+        _RELATORIO_IMPORT_REFRESH_JOBS[job_key] = job
+
+    try:
+        # Entra venda nova: caches antigos deixam de ser confiáveis.
+        _relatorio_cache_clear()
+        for (ano, mes), emps in sorted(grouped.items()):
+            started = time.perf_counter()
+            emps_clean = _sanitize_emps(emps)
+            if not emps_clean:
+                continue
+            vendedores_por_emp = _vendedores_por_emp_refresh(deps, ano=int(ano), mes=int(mes), emps=emps_clean)
+            try:
+                stats = rebuild_relatorio_campanhas_unificado_cache(
+                    deps,
+                    role='admin',
+                    vendedor_logado='',
+                    ano=int(ano),
+                    mes=int(mes),
+                    emps_scope=emps_clean,
+                    emps_sel=emps_clean,
+                    vendedores_sel=[],
+                    vendedores_por_emp=vendedores_por_emp,
+                    clear_existing=False,
+                )
+                total_rows += int(stats.get('rows') or 0)
+                if stats.get('errors'):
+                    errors.extend([str(e) for e in (stats.get('errors') or [])])
+                detalhes.append({
+                    'ano': int(ano),
+                    'mes': int(mes),
+                    'emps': len(emps_clean),
+                    'rows': int(stats.get('rows') or 0),
+                    'duration_ms': int((time.perf_counter() - started) * 1000),
+                    'status': stats.get('status') or 'ok',
+                })
+            except Exception as exc:
+                errors.append(f'{ano}-{mes:02d}:{exc}')
+                detalhes.append({
+                    'ano': int(ano),
+                    'mes': int(mes),
+                    'emps': len(emps_clean),
+                    'rows': 0,
+                    'duration_ms': int((time.perf_counter() - started) * 1000),
+                    'status': 'error',
+                    'error': str(exc),
+                })
+                try:
+                    print(f'[RELATORIO_IMPORT_REFRESH] erro competencia={ano}-{mes:02d} emps={len(emps_clean)} erro={exc}')
+                except Exception:
+                    pass
+    finally:
+        ended = time.monotonic()
+        status = 'partial_error' if errors else 'done'
+        duration_ms = int((time.perf_counter() - started_all) * 1000)
+        with _RELATORIO_IMPORT_REFRESH_JOBS_LOCK:
+            job = _RELATORIO_IMPORT_REFRESH_JOBS.get(job_key) or {}
+            job.update({
+                'status': status,
+                'ended_at': ended,
+                'duration_ms': duration_ms,
+                'rows': int(total_rows),
+                'errors': errors[:20],
+                'detalhes': detalhes,
+            })
+            _RELATORIO_IMPORT_REFRESH_JOBS[job_key] = job
+        try:
+            print(
+                '[RELATORIO_IMPORT_REFRESH] done '
+                f'status={status} duration_ms={duration_ms} rows={int(total_rows)} '
+                f'competencias={len(grouped)} errors={len(errors)}'
+            )
+        except Exception:
+            pass
+
+
+def start_relatorio_campanhas_refresh_after_import(
+    deps: CampanhasDeps | None,
+    *,
+    affected_periods: list[Any] | tuple[Any, ...] | None,
+) -> dict[str, Any]:
+    """Dispara atualização automática dos snapshots/cache após importação de vendas.
+
+    A importação diária substitui EMP+DATA e informa `affected_periods`.
+    Para cada competência afetada, recalculamos QTD, Combo, Itens Parados e Metas,
+    depois aquecemos o cache do relatório para admin/financeiro por EMP.
+    """
+    grouped = _normalize_affected_periods(affected_periods)
+    if deps is None or not grouped:
+        return {'started': False, 'reason': 'sem_deps_ou_periodos', 'competencias': 0, 'emps': 0}
+
+    job_key = _refresh_import_job_key(grouped)
+    now = time.monotonic()
+    with _RELATORIO_IMPORT_REFRESH_JOBS_LOCK:
+        # Limpeza simples de jobs antigos.
+        for k, j in list(_RELATORIO_IMPORT_REFRESH_JOBS.items()):
+            if j.get('status') == 'running':
+                continue
+            ended = float(j.get('ended_at') or j.get('started_at') or 0)
+            if ended and now - ended > 3600:
+                _RELATORIO_IMPORT_REFRESH_JOBS.pop(k, None)
+
+        current = _RELATORIO_IMPORT_REFRESH_JOBS.get(job_key)
+        if current and current.get('status') == 'running':
+            return {
+                'started': False,
+                'already_running': True,
+                'competencias': len(grouped),
+                'emps': sum(len(v) for v in grouped.values()),
+            }
+
+        _RELATORIO_IMPORT_REFRESH_JOBS[job_key] = {
+            'status': 'queued',
+            'started_at': now,
+            'ended_at': None,
+            'competencias': len(grouped),
+            'emps': sum(len(v) for v in grouped.values()),
+            'rows': 0,
+            'errors': [],
+        }
+
+    th = threading.Thread(
+        target=_run_import_refresh_job,
+        args=(deps,),
+        kwargs={'grouped': grouped, 'job_key': job_key},
+        name='relatorio-campanhas-import-refresh',
+        daemon=True,
+    )
+    th.start()
+    return {
+        'started': True,
+        'competencias': len(grouped),
+        'emps': sum(len(v) for v in grouped.values()),
+    }
+
 
 def build_relatorio_campanhas_unificado_context(
     deps: CampanhasDeps,

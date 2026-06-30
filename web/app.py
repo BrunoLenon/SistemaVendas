@@ -2889,6 +2889,7 @@ register_admin_importar_routes(
     limpar_cache_df=limpar_cache_df,
     login_required_fn=_login_required,
     admin_required_fn=_admin_required,
+    relatorio_deps=_campanhas_deps,
 )
 register_admin_combos_routes(
     app,

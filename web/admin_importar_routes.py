@@ -14,6 +14,7 @@ def register_admin_importar_routes(
     limpar_cache_df,
     login_required_fn,
     admin_required_fn,
+    relatorio_deps=None,
 ):
     """Registra a rota de importação de vendas (Admin).
 
@@ -141,6 +142,35 @@ def register_admin_importar_routes(
                 pass
             _limpar_caches_relatorio_campanhas()
 
+            # Novo fluxo de performance:
+            # após a importação diária de vendas, dispara em segundo plano o
+            # recálculo completo dos snapshots/cache de /relatorios/campanhas
+            # para todas as EMPs/competências presentes no arquivo. Assim a tela
+            # abre lendo dados prontos, em vez de recalcular no GET.
+            try:
+                from services.relatorio_campanhas_service import start_relatorio_campanhas_refresh_after_import
+                refresh_info = start_relatorio_campanhas_refresh_after_import(
+                    relatorio_deps,
+                    affected_periods=resumo.get("affected_periods") or [],
+                )
+                if refresh_info.get("started"):
+                    flash(
+                        (
+                            "Relatório de campanhas: atualização automática iniciada em segundo plano "
+                            f"para {int(refresh_info.get('emps') or 0)} EMP(s) em "
+                            f"{int(refresh_info.get('competencias') or 0)} competência(s)."
+                        ),
+                        "info",
+                    )
+                elif refresh_info.get("already_running"):
+                    flash("Relatório de campanhas: atualização automática já está em andamento para esta importação.", "info")
+            except Exception as exc:
+                try:
+                    app.logger.exception("Erro ao iniciar atualização automática do relatório de campanhas")
+                except Exception:
+                    pass
+                flash("Importação concluída, mas não consegui iniciar a atualização automática do relatório de campanhas. Use Recalcular se necessário.", "warning")
+
             return redirect(url_for("admin_importar"))
 
         except Exception:
@@ -218,6 +248,27 @@ def register_admin_importar_routes(
             except Exception:
                 pass
             _limpar_caches_relatorio_campanhas()
+
+            try:
+                from services.relatorio_campanhas_service import start_relatorio_campanhas_refresh_after_import
+                refresh_info = start_relatorio_campanhas_refresh_after_import(
+                    relatorio_deps,
+                    affected_periods=resumo.get("periodos") or [],
+                )
+                if refresh_info.get("started"):
+                    flash(
+                        (
+                            "Relatório de campanhas: atualização automática iniciada após importar mão de obra "
+                            f"para {int(refresh_info.get('emps') or 0)} EMP(s) em "
+                            f"{int(refresh_info.get('competencias') or 0)} competência(s)."
+                        ),
+                        "info",
+                    )
+            except Exception:
+                try:
+                    app.logger.exception("Erro ao iniciar atualização automática do relatório após mão de obra")
+                except Exception:
+                    pass
 
             return redirect(url_for("admin_importar"))
         except Exception:
