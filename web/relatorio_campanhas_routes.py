@@ -18,7 +18,7 @@ from urllib.parse import urlencode
 
 from werkzeug.datastructures import MultiDict
 
-from flask import Response, flash, redirect, render_template, request, send_file, url_for
+from flask import Response, flash, redirect, render_template, request, send_file, session, url_for
 from sqlalchemy import func
 
 from db import OficinaServico, SessionLocal, Venda
@@ -334,6 +334,47 @@ def _build_deferred_scope(deps, *, role: str, emp_usuario: str | None, vendedor_
         'emps_scope': emps_scope,
         'vendedores_por_emp': {str(emp): [] for emp in emps_scope},
     }
+
+
+
+
+def _build_processing_scope_ctx(deps, *, role: str, emp_usuario: str | None, vendedor_logado: str, request_args, flash_fn) -> tuple[dict[str, Any], dict[str, list[str]]]:
+    """Renderiza retorno leve logo após iniciar recálculo em background.
+
+    Sem isso, o redirect do POST abria /relatorios/campanhas imediatamente e
+    podia gerar novo cache_miss enquanto o job ainda estava rodando.
+    """
+    try:
+        scope = build_relatorio_campanhas_scope(
+            deps,
+            role=role,
+            emp_usuario=emp_usuario,
+            vendedor_logado=vendedor_logado,
+            args=request_args,
+            flash=flash_fn,
+        )
+    except Exception as exc:
+        try:
+            print(f'[RELATORIO_CAMPANHAS] erro ao montar tela de processamento: {exc}')
+        except Exception:
+            pass
+        scope = _build_deferred_scope(
+            deps,
+            role=role,
+            emp_usuario=emp_usuario,
+            vendedor_logado=vendedor_logado,
+            request_args=request_args,
+            flash_fn=flash_fn,
+        )
+    ctx = _empty_relatorio_ctx(
+        scope,
+        role=role,
+        vendedor_logado=vendedor_logado,
+        recalc=False,
+        mensagem='Recálculo em segundo plano iniciado. Aguarde alguns instantes e atualize a página para carregar o resultado já em cache.',
+    )
+    ctx['recalc_processing'] = True
+    return ctx, dict(scope.get('vendedores_por_emp') or {})
 
 
 def _default_per_page(role: str) -> int:
@@ -911,6 +952,26 @@ def register_relatorio_campanhas_routes(
             flash('Use o botão Recalcular. Agora o processamento roda em segundo plano para evitar timeout.', 'warning')
             return redirect(_clean_report_url(request.args))
 
+        if session.pop('relatorio_campanhas_recalc_started', None):
+            ctx, vendedores_por_emp = _build_processing_scope_ctx(
+                deps,
+                role=role,
+                emp_usuario=emp_usuario,
+                vendedor_logado=vendedor_logado,
+                request_args=request.args,
+                flash_fn=flash,
+            )
+            ctx = _augment_ctx(
+                ctx,
+                deps=deps,
+                role=role,
+                vendedor_logado=vendedor_logado,
+                vendedores_por_emp=vendedores_por_emp,
+                request_args=request.args,
+                include_pagination=True,
+            )
+            return render_template('relatorio_campanhas.html', ctx=ctx, **ctx)
+
         ctx, vendedores_por_emp = _build_relatorio_ctx(
             deps,
             role=role,
@@ -995,6 +1056,7 @@ def register_relatorio_campanhas_routes(
             emps_count = len(job.get('emps') or [])
             flash(f'Recálculo iniciado em segundo plano para {emps_count} EMP(s). A página não ficará travada; atualize em alguns instantes.', 'success')
 
+        session['relatorio_campanhas_recalc_started'] = '1'
         return redirect(_clean_report_url(post_args))
 
     def relatorio_campanhas_recalcular_get():

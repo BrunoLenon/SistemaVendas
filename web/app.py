@@ -2448,6 +2448,7 @@ def _upsert_resultado(
     competencia_mes: int,
     periodo_ini: date,
     periodo_fim: date,
+    faturamento_cache: dict[tuple[str, date, date], float] | None = None,
 ) -> CampanhaQtdResultado:
     """Calcula e grava (upsert) o snapshot do resultado da campanha.
 
@@ -2530,12 +2531,15 @@ def _upsert_resultado(
     else:
         valor_potencial = 0.0
 
-    faturamento_emp = calcular_faturamento_emp_periodo(
-        db,
-        emp=emp,
-        periodo_ini=periodo_ini,
-        periodo_fim=periodo_fim,
-    )
+    if faturamento_cache is not None:
+        faturamento_emp = _faturamento_emp_periodo_cached(db, faturamento_cache, emp=emp, periodo_ini=periodo_ini, periodo_fim=periodo_fim)
+    else:
+        faturamento_emp = calcular_faturamento_emp_periodo(
+            db,
+            emp=emp,
+            periodo_ini=periodo_ini,
+            periodo_fim=periodo_fim,
+        )
     gate_emp = aplicar_trava_faturamento_emp(
         campanha=campanha,
         emp=emp,
@@ -3054,6 +3058,24 @@ def _calc_vendas_por_vendedor_para_campanha(db, emp: str, campanha: CampanhaQtd,
     return out
 
 
+
+
+def _faturamento_emp_periodo_cached(
+    db,
+    cache: dict[tuple[str, date, date], float],
+    *,
+    emp: str,
+    periodo_ini: date,
+    periodo_fim: date,
+) -> float:
+    """Cache local do recálculo para não somar o faturamento da loja repetidas vezes."""
+    emp_s = str(emp or '').strip()
+    key = (emp_s, periodo_ini, periodo_fim)
+    if key not in cache:
+        cache[key] = float(calcular_faturamento_emp_periodo(db, emp=emp_s, periodo_ini=periodo_ini, periodo_fim=periodo_fim) or 0.0)
+    return float(cache.get(key) or 0.0)
+
+
 def _combos_mes_overlap(ano: int, mes: int, emp: str) -> list[CampanhaCombo]:
     """Combos ativos cuja vigência intersecta a competência (mês/ano).
     Considera combos globais (emp null/''), e combos específicos da EMP.
@@ -3265,6 +3287,7 @@ def _recalcular_resultados_campanhas_para_scope(ano: int, mes: int, emps: list[s
     """
     inicio_mes, fim_mes = _periodo_bounds(int(ano), int(mes))
     with SessionLocal() as db:
+        faturamento_cache: dict[tuple[str, date, date], float] = {}
         for emp in emps:
             emp = str(emp)
 
@@ -3330,7 +3353,7 @@ def _recalcular_resultados_campanhas_para_scope(ano: int, mes: int, emps: list[s
                     if atingiu_regras_item and min_val is not None and float(min_val) > 0:
                         atingiu_regras_item = 1 if float(valor) >= float(min_val) else 0
                     valor_potencial = (float(qtd) * float(c.recompensa_unit or 0.0)) if atingiu_regras_item else 0.0
-                    faturamento_emp = calcular_faturamento_emp_periodo(db, emp=emp, periodo_ini=periodo_ini, periodo_fim=periodo_fim)
+                    faturamento_emp = _faturamento_emp_periodo_cached(db, faturamento_cache, emp=emp, periodo_ini=periodo_ini, periodo_fim=periodo_fim)
                     gate_emp = aplicar_trava_faturamento_emp(
                         campanha=c,
                         emp=emp,
@@ -3375,7 +3398,7 @@ def _recalcular_resultados_campanhas_para_scope(ano: int, mes: int, emps: list[s
                 for c in campanhas_gerente:
                     periodo_ini = max(c.data_inicio, inicio_mes)
                     periodo_fim = min(c.data_fim, fim_mes)
-                    res = _upsert_resultado(db, c, gerente, emp, ano, mes, periodo_ini, periodo_fim)
+                    res = _upsert_resultado(db, c, gerente, emp, ano, mes, periodo_ini, periodo_fim, faturamento_cache=faturamento_cache)
                     # já está em sessão via upsert; sem bulk_save para preservar upsert/status existente
 
             if novos:

@@ -28,6 +28,8 @@ from db import (
     CampanhaComboResultado,
     CampanhaCombo,
     CampanhaComboItem,
+    MetaPrograma,
+    MetaResultado,
     ItemParado,
     ItensParadosPontosConfig,
     ItensParadosPontosBonus,
@@ -136,6 +138,32 @@ def _campaign_gate_periodo(campanha: Any | None, periodo_ini: date, periodo_fim:
     return di, df
 
 
+
+
+def _get_faturamento_emp_cached(
+    db: Any,
+    cache: dict[tuple[str, date, date], float] | None,
+    *,
+    emp: str,
+    periodo_ini: date,
+    periodo_fim: date,
+) -> float:
+    """Soma faturamento da EMP uma única vez por período dentro do relatório.
+
+    Campanhas diferentes costumam compartilhar o mesmo recorte mensal. Sem este
+    cache, uma tela com dezenas de vendedores executa a mesma soma de faturamento
+    várias vezes, gerando SLOW_REQUEST/cache_miss.
+    """
+    emp_s = str(emp or '').strip()
+    key = (emp_s, periodo_ini, periodo_fim)
+    if cache is not None and key in cache:
+        return _safe_float(cache.get(key))
+    valor = calcular_faturamento_emp_periodo(db, emp=emp_s, periodo_ini=periodo_ini, periodo_fim=periodo_fim)
+    if cache is not None:
+        cache[key] = _safe_float(valor)
+    return _safe_float(valor)
+
+
 def _corrigir_gate_qtd_com_faturamento_atual(
     db: Any,
     *,
@@ -144,6 +172,7 @@ def _corrigir_gate_qtd_com_faturamento_atual(
     emp: str,
     periodo_ini: date,
     periodo_fim: date,
+    faturamento_cache: dict[tuple[str, date, date], float] | None = None,
 ) -> dict[str, Any]:
     """Retorna campos de trava EMP usando o faturamento atual balcão + oficina.
 
@@ -174,7 +203,7 @@ def _corrigir_gate_qtd_com_faturamento_atual(
         }
 
     gate_ini, gate_fim = _campaign_gate_periodo(campanha, periodo_ini, periodo_fim)
-    faturamento_atual = calcular_faturamento_emp_periodo(db, emp=str(emp), periodo_ini=gate_ini, periodo_fim=gate_fim)
+    faturamento_atual = _get_faturamento_emp_cached(db, faturamento_cache, emp=str(emp), periodo_ini=gate_ini, periodo_fim=gate_fim)
 
     # Em CampanhaQtdResultado, premio_potencial > 0 representa que as regras do
     # item foram atingidas. O bloqueio de EMP não deve apagar esse potencial.
@@ -662,6 +691,114 @@ def _meta_unified_title(meta: Any, calc: Any) -> str:
     return f"{prefix} • {nome}" if nome else prefix
 
 
+
+
+def _meta_rows_from_snapshots(
+    db: Any,
+    rows: list[UnifiedRow],
+    *,
+    ano: int,
+    mes: int,
+    emp: str,
+    vendedores: list[str],
+    incluir_zerados: bool,
+) -> int:
+    """Lê metas_resultados já persistido, sem recalcular venda/mix/marca ao vivo.
+
+    Em abertura comum de /relatorios/campanhas isso evita recalcular metas para
+    cada vendedor. O recálculo manual em background continua usando o motor vivo
+    para atualizar esses snapshots.
+    """
+    emp_s = str(emp or '').strip()
+    vendedores_u = [_upper(v) for v in (vendedores or []) if _upper(v)]
+    if not emp_s or not vendedores_u:
+        return 0
+
+    try:
+        q = (
+            db.query(MetaResultado, MetaPrograma)
+            .join(MetaPrograma, MetaPrograma.id == MetaResultado.meta_id)
+            .filter(
+                MetaResultado.ano == int(ano),
+                MetaResultado.mes == int(mes),
+                cast(MetaResultado.emp, String) == emp_s,
+                MetaResultado.vendedor.in_(vendedores_u),
+                MetaPrograma.ativo.is_(True),
+            )
+        )
+        if not incluir_zerados:
+            q = q.filter(MetaResultado.premio > 0)
+        snap_rows = q.order_by(MetaResultado.vendedor.asc(), MetaPrograma.nome.asc(), MetaResultado.meta_id.asc()).all()
+    except Exception as exc:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        try:
+            print(f"[RELATORIO_UNIFICADO] metas_snapshot_read_error emp={emp_s}: {exc}")
+        except Exception:
+            pass
+        return 0
+
+    count = 0
+    for calc, meta in snap_rows:
+        tipo_meta = str(getattr(meta, 'tipo', '') or '').strip().upper()
+        valor_premio = _safe_float(getattr(calc, 'premio', 0.0) or 0.0)
+        if valor_premio <= 0 and not incluir_zerados:
+            continue
+
+        if tipo_meta == 'CRESCIMENTO':
+            qtd_base = _safe_float(getattr(calc, 'crescimento_pct', 0.0) or 0.0)
+            valor_vendido = _safe_float(getattr(calc, 'valor_mes', 0.0) or 0.0)
+            item_codigo = 'CRESCIMENTO'
+        elif tipo_meta == 'MIX':
+            qtd_base = _safe_float(getattr(calc, 'mix_itens_unicos', 0.0) or 0.0)
+            valor_vendido = _safe_float(getattr(calc, 'valor_mes', 0.0) or 0.0)
+            item_codigo = 'MIX'
+        elif tipo_meta == 'SHARE_MARCA':
+            qtd_base = _safe_float(getattr(calc, 'share_pct', 0.0) or 0.0)
+            valor_vendido = _safe_float(getattr(calc, 'valor_marcas', 0.0) or 0.0)
+            item_codigo = 'MARCAS'
+        else:
+            qtd_base = 0.0
+            valor_vendido = _safe_float(getattr(calc, 'valor_mes', 0.0) or 0.0)
+            item_codigo = tipo_meta or 'META'
+
+        faturamento_minimo_meta = _safe_float(getattr(meta, 'faturamento_minimo', 0.0) or 0.0)
+        faturamento_meta_atual = _safe_float(getattr(calc, 'valor_mes', 0.0) or 0.0)
+        faltante_meta = max(0.0, faturamento_minimo_meta - faturamento_meta_atual) if faturamento_minimo_meta > 0 else 0.0
+        bloqueado_minimo = bool(faturamento_minimo_meta > 0 and faturamento_meta_atual < faturamento_minimo_meta)
+        bloqueado_margem = bool(getattr(calc, 'bloqueado_margem', False))
+
+        rows.append(
+            UnifiedRow(
+                tipo='META',
+                competencia_ano=int(ano),
+                competencia_mes=int(mes),
+                emp=emp_s,
+                vendedor=_upper(getattr(calc, 'vendedor', '')),
+                titulo=_meta_unified_title(meta, calc),
+                item_codigo=item_codigo,
+                qtd_minima=None,
+                recompensa_unit=_safe_float(getattr(calc, 'bonus_percentual', 0.0) or 0.0),
+                valor_vendido=valor_vendido,
+                atingiu_gate=bool(valor_premio > 0),
+                qtd_base=qtd_base,
+                qtd_premiada=None,
+                valor_recompensa=valor_premio,
+                faturamento_minimo_emp=faturamento_minimo_meta if faturamento_minimo_meta > 0 else None,
+                faturamento_emp=faturamento_meta_atual,
+                faltante_faturamento_emp=faltante_meta if faturamento_minimo_meta > 0 else None,
+                bloqueado_faturamento_emp=bool(bloqueado_minimo or bloqueado_margem),
+                status_pagamento='PENDENTE',
+                pago_em=None,
+                origem_id=int(getattr(calc, 'meta_id', 0) or getattr(meta, 'id', 0) or 0),
+            )
+        )
+        count += 1
+    return count
+
+
 def _append_metas_unificadas(
     db: Any,
     rows: list[UnifiedRow],
@@ -671,8 +808,25 @@ def _append_metas_unificadas(
     emp: str,
     vendedores: list[str],
     incluir_zerados: bool,
+    metas_live: bool = False,
 ) -> None:
     """Integra Metas no dataset unificado usado por /relatorios/campanhas e /financeiro/campanhas."""
+    emp_s = str(emp or '').strip()
+    if not emp_s or not vendedores:
+        return
+
+    if not metas_live:
+        _meta_rows_from_snapshots(
+            db,
+            rows,
+            ano=int(ano),
+            mes=int(mes),
+            emp=emp_s,
+            vendedores=vendedores,
+            incluir_zerados=bool(incluir_zerados),
+        )
+        return
+
     try:
         from metas_helpers import calcular_meta, get_meta_emps, metas_ativas_periodo
     except Exception as exc:
@@ -680,10 +834,6 @@ def _append_metas_unificadas(
             print(f"[RELATORIO_UNIFICADO] metas indisponiveis: {exc}")
         except Exception:
             pass
-        return
-
-    emp_s = str(emp or '').strip()
-    if not emp_s or not vendedores:
         return
 
     try:
@@ -1023,6 +1173,7 @@ def _build_campanha_qtd_participacao_row(
     valor_vendido: float,
     periodo_ini: date,
     periodo_fim: date,
+    faturamento_cache: dict[tuple[str, date, date], float] | None = None,
 ) -> UnifiedRow:
     """Cria linha visual de campanha ativa ainda sem resultado salvo/atingido."""
     gate_ini, gate_fim = _campaign_gate_periodo(campanha, periodo_ini, periodo_fim)
@@ -1037,7 +1188,7 @@ def _build_campanha_qtd_participacao_row(
 
     recompensa_unit = _safe_float(getattr(campanha, 'recompensa_unit', 0.0))
     premio_potencial = (_safe_float(qtd_vendida) * recompensa_unit) if atingiu_regras_item else 0.0
-    faturamento_emp = calcular_faturamento_emp_periodo(db, emp=str(emp), periodo_ini=gate_ini, periodo_fim=gate_fim)
+    faturamento_emp = _get_faturamento_emp_cached(db, faturamento_cache, emp=str(emp), periodo_ini=gate_ini, periodo_fim=gate_fim)
     gate = aplicar_trava_faturamento_emp(
         campanha=campanha,
         emp=str(emp),
@@ -1101,6 +1252,7 @@ def _append_campanhas_qtd_participacao_ativa(
     periodo_ini: date,
     periodo_fim: date,
     existing_keys: set[tuple[int, str]],
+    faturamento_cache: dict[tuple[str, date, date], float] | None = None,
 ) -> None:
     """Inclui campanhas QTD/GERENTE ativas mesmo sem venda/prêmio no período."""
     emp_s = str(emp or '').strip()
@@ -1168,6 +1320,7 @@ def _append_campanhas_qtd_participacao_ativa(
                 valor_vendido=valor,
                 periodo_ini=periodo_ini,
                 periodo_fim=periodo_fim,
+                faturamento_cache=faturamento_cache,
             ))
             existing_keys.add((cid, vend_u))
 
@@ -1200,6 +1353,7 @@ def _append_campanhas_qtd_participacao_ativa(
                     valor_vendido=valor,
                     periodo_ini=periodo_ini,
                     periodo_fim=periodo_fim,
+                    faturamento_cache=faturamento_cache,
                 ))
                 existing_keys.add((cid, gerente_u))
 
@@ -1324,9 +1478,12 @@ def build_unified_rows(
     incluir_zerados: bool = False,
     usar_snapshot_itens_parados: bool = True,
     incluir_participacao_ativa: bool = False,
+    metas_live: bool = False,
+    ensure_missing_gerente_snapshots: bool = False,
 ) -> list[UnifiedRow]:
     periodo_ini, periodo_fim = _periodo_bounds(ano, mes)
     rows: list[UnifiedRow] = []
+    faturamento_cache: dict[tuple[str, date, date], float] = {}
 
     with SessionLocal() as db:
         for emp in emps:
@@ -1351,15 +1508,16 @@ def build_unified_rows(
             if not vendedores:
                 continue
 
-            _ensure_snapshots_gerente_loja(
-                db,
-                ano=int(ano),
-                mes=int(mes),
-                emp=str(emp),
-                vendedores_escopo=vendedores,
-                periodo_ini=periodo_ini,
-                periodo_fim=periodo_fim,
-            )
+            if ensure_missing_gerente_snapshots:
+                _ensure_snapshots_gerente_loja(
+                    db,
+                    ano=int(ano),
+                    mes=int(mes),
+                    emp=str(emp),
+                    vendedores_escopo=vendedores,
+                    periodo_ini=periodo_ini,
+                    periodo_fim=periodo_fim,
+                )
 
             # -------- QTD (snapshot) --------
             q_qtd = (
@@ -1409,6 +1567,7 @@ def build_unified_rows(
                     emp=str(emp),
                     periodo_ini=periodo_ini,
                     periodo_fim=periodo_fim,
+                    faturamento_cache=faturamento_cache,
                 )
                 valor_recompensa = _safe_float(gate_atual.get('valor_recompensa', valor_recompensa_snapshot))
                 premio_potencial = _safe_float(gate_atual.get('premio_potencial', valor_recompensa_snapshot))
@@ -1463,6 +1622,7 @@ def build_unified_rows(
                     periodo_ini=periodo_ini,
                     periodo_fim=periodo_fim,
                     existing_keys=qtd_existing_keys,
+                    faturamento_cache=faturamento_cache,
                 )
 
             # -------- COMBO (ativo + itens detalhados + snapshot para pagamento) --------
@@ -1704,6 +1864,7 @@ def build_unified_rows(
                 emp=str(emp),
                 vendedores=vendedores,
                 incluir_zerados=bool(incluir_zerados or incluir_participacao_ativa),
+                metas_live=bool(metas_live),
             )
 
             # -------- ITENS PARADOS --------

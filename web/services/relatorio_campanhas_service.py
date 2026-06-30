@@ -743,6 +743,8 @@ def rebuild_relatorio_campanhas_unificado_cache(
             incluir_zerados=False,
             usar_snapshot_itens_parados=True,
             incluir_participacao_ativa=True,
+            metas_live=True,
+            ensure_missing_gerente_snapshots=False,
         ) or []
         charts = aggregate_for_charts(rows or [])
         cache_key = _relatorio_cache_key(
@@ -889,6 +891,8 @@ def build_relatorio_campanhas_unificado_context(
                         incluir_zerados=False,
                         usar_snapshot_itens_parados=True,
                         incluir_participacao_ativa=True,
+                        metas_live=False,
+                        ensure_missing_gerente_snapshots=False,
                     )
                     if rows is None:
                         rows = []
