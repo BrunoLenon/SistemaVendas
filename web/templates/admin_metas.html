@@ -25,20 +25,20 @@
     <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
       <div>
         <h1 class="meta-title">🎯 Metas Admin</h1>
-        <div class="meta-sub">Novo motor de metas para pagamento: Crescimento por base manual, Mix por MESTRE único e Meta Marcas por participação no faturamento. Cálculo auditável por mês, ano, EMP e vendedor.</div>
+        <div class="meta-sub">Novo motor de metas para pagamento: vendedores por desempenho individual e gerentes pelo resultado da EMP inteira. Crescimento usa base manual; Marcas mede a participação das marcas configuradas no faturamento.</div>
       </div>
       <form class="meta-period" method="get" action="{{ url_for('admin_metas') }}">
         <div><div class="meta-label">Mês</div><input class="form-control form-control-sm" name="mes" value="{{ '%02d'|format(mes) }}" style="width:86px"></div>
         <div><div class="meta-label">Ano</div><input class="form-control form-control-sm" name="ano" value="{{ ano }}" style="width:98px"></div>
         <div><div class="meta-label">EMP</div><select class="form-select form-select-sm" name="emp_sel" style="min-width:150px"><option value="">Todas</option>{% for e in emps_rows %}<option value="{{ e.codigo }}" {% if emp_selected==e.codigo|string %}selected{% endif %}>{{ e.codigo }} - {{ e.nome }}</option>{% endfor %}</select></div>
-        <div><div class="meta-label">Vendedor</div><select class="form-select form-select-sm" name="vendedor" style="min-width:210px"><option value="">Todos</option>{% for v in vendedores_choices %}<option value="{{ v }}" {% if vendedor_selected==v %}selected{% endif %}>{{ v }}</option>{% endfor %}</select></div>
+        <div><div class="meta-label">Vendedor/Gerente</div><select class="form-select form-select-sm" name="vendedor" style="min-width:210px"><option value="">Todos</option>{% for v in vendedores_choices %}<option value="{{ v }}" {% if vendedor_selected==v %}selected{% endif %}>{{ v }}</option>{% endfor %}</select></div>
         <button class="btn btn-sm btn-meta-primary px-3">Filtrar</button>
       </form>
     </div>
     <div class="meta-kpis">
       <div class="meta-kpi"><small>Metas cadastradas</small><strong>{{ totais.metas }}</strong><span>{{ totais.ativas }} ativas no período</span></div>
-      <div class="meta-kpi"><small>Bases manuais</small><strong>{{ totais.bases }}</strong><span>Meta base por vendedor/EMP</span></div>
-      <div class="meta-kpi"><small>Simulados</small><strong>{{ totais.vendedores_simulados }}</strong><span>Vendedor(es)/EMP no filtro</span></div>
+      <div class="meta-kpi"><small>Bases manuais</small><strong>{{ totais.bases }}</strong><span>Base por vendedor ou gerente/EMP</span></div>
+      <div class="meta-kpi"><small>Simulados</small><strong>{{ totais.vendedores_simulados }}</strong><span>Participante(s)/EMP no filtro</span></div>
       <div class="meta-kpi"><small>Prêmio simulado</small><strong>{{ totais.premio_simulado|brl_rs }}</strong><span>Prévia, não fecha financeiro</span></div>
       <div class="meta-kpi"><small>Margens importadas</small><strong>{{ totais.margens }}</strong><span>{% if totais.margens_pendentes %}{{ totais.margens_pendentes }} sem margem{% else %}Última margem válida{% endif %}</span></div>
       <div class="meta-kpi"><small>Regra vendas</small><strong>OA/VV/SV</strong><span>DS/CA descontam</span></div>
@@ -49,7 +49,8 @@
     <ul class="nav nav-pills" id="metasAdminTab" role="tablist">
       <li class="nav-item"><button class="nav-link active" data-bs-toggle="pill" data-bs-target="#tab-regras" type="button">Regras</button></li>
       <li class="nav-item"><button class="nav-link" data-bs-toggle="pill" data-bs-target="#tab-criar" type="button">Cadastrar faixas</button></li>
-      <li class="nav-item"><button class="nav-link" data-bs-toggle="pill" data-bs-target="#tab-bases" type="button">Bases dos vendedores</button></li>
+      <li class="nav-item"><button class="nav-link" data-bs-toggle="pill" data-bs-target="#tab-bases" type="button">Bases vendedores</button></li>
+      <li class="nav-item"><button class="nav-link" data-bs-toggle="pill" data-bs-target="#tab-bases-gerentes" type="button">Bases gerentes</button></li>
       <li class="nav-item"><button class="nav-link" data-bs-toggle="pill" data-bs-target="#tab-margens" type="button">Margens</button></li>
       <li class="nav-item"><button class="nav-link" data-bs-toggle="pill" data-bs-target="#tab-simulacao" type="button">Simulação</button></li>
     </ul>
@@ -67,8 +68,9 @@
                   <div class="d-flex justify-content-between align-items-start gap-2">
                     <div>
                       <span class="meta-chip {% if m.ativo %}ok{% else %}off{% endif %}">{{ tipo_badge(m.tipo) }}</span>
+                      <span class="meta-chip {% if ((m.escopo or 'VENDEDOR')|upper) == 'GERENTE' %}warn{% endif %}">{{ escopo_badge(m.escopo or 'VENDEDOR') }}</span>
                       <h6 class="mt-2">{{ m.nome }}</h6>
-                      <p>{{ '%02d'|format(m.mes) }}/{{ m.ano }} · {{ p.emps|length }} EMP(s) · {{ p.escalas|length }} faixa(s)</p>
+                      <p>{{ '%02d'|format(m.mes) }}/{{ m.ano }} · {{ p.emps|length }} EMP(s) · {{ p.escalas|length }} faixa(s) · {{ escopo_label(m.escopo or 'VENDEDOR') }}</p>
                     </div>
                     <span class="meta-chip {% if m.ativo %}ok{% else %}off{% endif %}">{{ 'Ativa' if m.ativo else 'Inativa' }}</span>
                   </div>
@@ -124,7 +126,7 @@
                         {% if m.tipo == 'CRESCIMENTO' %}<div><div class="meta-label">Margem mínima padrão (%)</div><input class="form-control form-control-sm meta-input" name="margem_minima" value="{{ (m.margem_minima or 0)|brl if m.margem_minima else '8,00' }}"><div class="meta-help mt-1">Ex.: 8,00. Usada quando o vendedor não tiver margem mínima individual cadastrada em Bases dos Vendedores.</div></div>{% endif %}
                         {% if m.tipo == 'CRESCIMENTO' %}<div><div class="meta-label">Venda que ativa faixa máxima</div><input class="form-control form-control-sm meta-input" name="teto_faturamento" value="{{ (m.teto_faturamento or 0)|brl if m.teto_faturamento else '' }}"></div>{% endif %}
                       </div>
-                      <div class="meta-help mt-2">Se o vendedor não atingir o faturamento mínimo ou, no Crescimento, a margem mínima configurada, a premiação dessa meta fica zerada.</div>
+                      <div class="meta-help mt-2">Se o participante não atingir o faturamento mínimo ou, no Crescimento, a margem mínima configurada, a premiação dessa meta fica zerada. Em metas de gerente, o faturamento analisado é o total da EMP.</div>
                       <button class="btn btn-meta-primary btn-sm mt-2">Salvar regra</button>
                     </form>
                   </details>
@@ -139,8 +141,8 @@
         <div class="row g-3">
           <div class="col-12 col-xl-4">
             <form class="meta-card" method="post" action="{{ url_for('admin_metas_criar') }}">
-              <input type="hidden" name="tipo" value="CRESCIMENTO"><input type="hidden" name="ano" value="{{ ano }}"><input type="hidden" name="mes" value="{{ mes }}">
-              <h6>📈 Meta de Crescimento</h6><p>Compara a venda do mês contra a Meta Base manual. Acima do teto, aplica a maior faixa cadastrada.</p>
+              <input type="hidden" name="tipo" value="CRESCIMENTO"><input type="hidden" name="escopo" value="VENDEDOR"><input type="hidden" name="ano" value="{{ ano }}"><input type="hidden" name="mes" value="{{ mes }}">
+              <h6>📈 Meta de Crescimento — Vendedor</h6><p>Compara a venda individual do vendedor contra a Meta Base manual. Acima do teto, aplica a maior faixa cadastrada.</p>
               <div class="mb-2"><div class="meta-label">Nome</div><input class="form-control form-control-sm meta-input" name="nome" value="Meta Crescimento {{ '%02d'|format(mes) }}/{{ ano }}"></div>
               <div class="mb-2"><div class="meta-label">EMPs participantes</div><div class="meta-emp-box">{% for e in emps_rows %}<label class="meta-emp-check"><input type="checkbox" name="emps" value="{{ e.codigo }}" {% if emp_selected and emp_selected==e.codigo|string %}checked{% endif %}> <span>{{ e.codigo }} - {{ e.nome }}</span></label>{% endfor %}</div></div>
               <div class="mb-2"><div class="meta-label">Faturamento mínimo para participar</div><input class="form-control form-control-sm meta-input" name="faturamento_minimo" value="70.000,00"><div class="meta-help mt-1">Abaixo desse valor, a premiação desta meta fica zerada.</div></div>
@@ -156,7 +158,7 @@
 
           <div class="col-12 col-xl-4">
             <form class="meta-card" method="post" action="{{ url_for('admin_metas_criar') }}">
-              <input type="hidden" name="tipo" value="MIX"><input type="hidden" name="ano" value="{{ ano }}"><input type="hidden" name="mes" value="{{ mes }}">
+              <input type="hidden" name="tipo" value="MIX"><input type="hidden" name="escopo" value="VENDEDOR"><input type="hidden" name="ano" value="{{ ano }}"><input type="hidden" name="mes" value="{{ mes }}">
               <h6>🧩 Meta Mix</h6><p>Conta códigos MESTRE únicos com saldo líquido positivo de quantidade no mês.</p>
               <div class="mb-2"><div class="meta-label">Nome</div><input class="form-control form-control-sm meta-input" name="nome" value="Meta Mix {{ '%02d'|format(mes) }}/{{ ano }}"></div>
               <div class="mb-2"><div class="meta-label">EMPs participantes</div><div class="meta-emp-box">{% for e in emps_rows %}<label class="meta-emp-check"><input type="checkbox" name="emps" value="{{ e.codigo }}" {% if emp_selected and emp_selected==e.codigo|string %}checked{% endif %}> <span>{{ e.codigo }} - {{ e.nome }}</span></label>{% endfor %}</div></div>
@@ -170,8 +172,8 @@
 
           <div class="col-12 col-xl-4">
             <form class="meta-card" method="post" action="{{ url_for('admin_metas_criar') }}">
-              <input type="hidden" name="tipo" value="SHARE_MARCA"><input type="hidden" name="ano" value="{{ ano }}"><input type="hidden" name="mes" value="{{ mes }}">
-              <h6>🏷️ Meta Marcas</h6><p>Soma marcas selecionadas e compara contra a venda total do vendedor na EMP.</p>
+              <input type="hidden" name="tipo" value="SHARE_MARCA"><input type="hidden" name="escopo" value="VENDEDOR"><input type="hidden" name="ano" value="{{ ano }}"><input type="hidden" name="mes" value="{{ mes }}">
+              <h6>🏷️ Meta Marcas — Vendedor</h6><p>Soma marcas selecionadas e compara contra a venda total do vendedor na EMP.</p>
               <div class="mb-2"><div class="meta-label">Nome</div><input class="form-control form-control-sm meta-input" name="nome" value="Meta Marcas {{ '%02d'|format(mes) }}/{{ ano }}"></div>
               <div class="mb-2"><div class="meta-label">EMPs participantes</div><div class="meta-emp-box">{% for e in emps_rows %}<label class="meta-emp-check"><input type="checkbox" name="emps" value="{{ e.codigo }}" {% if emp_selected and emp_selected==e.codigo|string %}checked{% endif %}> <span>{{ e.codigo }} - {{ e.nome }}</span></label>{% endfor %}</div></div>
               <div class="mb-2"><div class="meta-label">Faturamento mínimo para participar</div><input class="form-control form-control-sm meta-input" name="faturamento_minimo" value="70.000,00"><div class="meta-help mt-1">Abaixo desse valor, a premiação desta meta fica zerada.</div></div>
@@ -185,11 +187,57 @@ VEI</textarea></div>
             </form>
           </div>
         </div>
+
+        <div class="meta-card mt-3">
+          <div class="d-flex justify-content-between align-items-start gap-2 flex-wrap">
+            <div>
+              <h6>🏢 Metas de Gerente</h6>
+              <p class="mb-0">Essas metas calculam a <b>EMP inteira</b> e direcionam o prêmio para o usuário com perfil <b>Gerente</b> vinculado à loja.</p>
+            </div>
+            <span class="meta-chip warn">Resultado da loja</span>
+          </div>
+        </div>
+
+        <div class="row g-3 mt-1">
+          <div class="col-12 col-xl-6">
+            <form class="meta-card" method="post" action="{{ url_for('admin_metas_criar') }}">
+              <input type="hidden" name="tipo" value="CRESCIMENTO"><input type="hidden" name="escopo" value="GERENTE"><input type="hidden" name="ano" value="{{ ano }}"><input type="hidden" name="mes" value="{{ mes }}">
+              <h6>📈 Meta Crescimento — Gerente</h6><p>Compara a venda total da EMP contra a base manual da loja e paga o gerente vinculado à EMP.</p>
+              <div class="mb-2"><div class="meta-label">Nome</div><input class="form-control form-control-sm meta-input" name="nome" value="Meta Crescimento Gerente {{ '%02d'|format(mes) }}/{{ ano }}"></div>
+              <div class="mb-2"><div class="meta-label">EMPs participantes</div><div class="meta-emp-box">{% for e in emps_rows %}<label class="meta-emp-check"><input type="checkbox" name="emps" value="{{ e.codigo }}" {% if emp_selected and emp_selected==e.codigo|string %}checked{% endif %}> <span>{{ e.codigo }} - {{ e.nome }}</span></label>{% endfor %}</div></div>
+              <div class="mb-2"><div class="meta-label">Faturamento mínimo da loja</div><input class="form-control form-control-sm meta-input" name="faturamento_minimo" value="0,00"><div class="meta-help mt-1">Opcional. Se ficar zerado, a regra usa apenas crescimento/base/faixa.</div></div>
+              <div class="mb-2"><div class="meta-label">Margem mínima padrão (%)</div><input class="form-control form-control-sm meta-input" name="margem_minima" value=""><div class="meta-help mt-1">Opcional para gerente. Se preencher, precisa importar margem para o usuário gerente.</div></div>
+              <div class="mb-2"><div class="meta-label">Faixas: crescimento % = prêmio %</div><textarea class="form-control meta-textarea" name="escalas">5=0,10
+10=0,20
+15=0,30
+20=0,40</textarea></div>
+              <div class="mb-3"><div class="meta-label">Venda da loja que ativa faixa máxima</div><input class="form-control form-control-sm meta-input" name="teto_faturamento" value=""><div class="meta-help mt-1">Opcional. Em branco, usa somente as faixas de crescimento.</div></div>
+              <button class="btn btn-meta-primary btn-sm w-100">Criar Crescimento Gerente</button>
+            </form>
+          </div>
+
+          <div class="col-12 col-xl-6">
+            <form class="meta-card" method="post" action="{{ url_for('admin_metas_criar') }}">
+              <input type="hidden" name="tipo" value="SHARE_MARCA"><input type="hidden" name="escopo" value="GERENTE"><input type="hidden" name="ano" value="{{ ano }}"><input type="hidden" name="mes" value="{{ mes }}">
+              <h6>🏷️ Meta Marcas — Gerente</h6><p>Mede as marcas selecionadas sobre o faturamento total da EMP e paga o gerente da loja.</p>
+              <div class="mb-2"><div class="meta-label">Nome</div><input class="form-control form-control-sm meta-input" name="nome" value="Meta Marcas Gerente {{ '%02d'|format(mes) }}/{{ ano }}"></div>
+              <div class="mb-2"><div class="meta-label">EMPs participantes</div><div class="meta-emp-box">{% for e in emps_rows %}<label class="meta-emp-check"><input type="checkbox" name="emps" value="{{ e.codigo }}" {% if emp_selected and emp_selected==e.codigo|string %}checked{% endif %}> <span>{{ e.codigo }} - {{ e.nome }}</span></label>{% endfor %}</div></div>
+              <div class="mb-2"><div class="meta-label">Faturamento mínimo da loja</div><input class="form-control form-control-sm meta-input" name="faturamento_minimo" value="0,00"><div class="meta-help mt-1">Opcional. Se preencher, a loja precisa atingir para liberar o pagamento.</div></div>
+              <div class="mb-2"><div class="meta-label">Marcas</div><textarea class="form-control meta-textarea" name="marcas" style="min-height:72px">EVOL
+CREVON
+VEI</textarea></div>
+              <div class="mb-3"><div class="meta-label">Faixas: participação % = prêmio %</div><textarea class="form-control meta-textarea" name="escalas" style="min-height:88px">15=0,10
+18=0,15
+20=0,30</textarea></div>
+              <button class="btn btn-meta-primary btn-sm w-100">Criar Marcas Gerente</button>
+            </form>
+          </div>
+        </div>
       </div>
 
       <div class="tab-pane fade meta-pane" id="tab-bases">
         {% if not crescimento_meta %}
-          <div class="meta-empty">Cadastre uma <b>Meta de Crescimento</b> antes de informar as bases dos vendedores.</div>
+          <div class="meta-empty">Cadastre uma <b>Meta de Crescimento de Vendedor</b> antes de informar as bases dos vendedores.</div>
         {% elif not emp_selected %}
           <div class="meta-empty">Selecione uma EMP no filtro superior para editar as bases com segurança.</div>
         {% else %}
@@ -210,23 +258,47 @@ VEI</textarea></div>
         {% endif %}
       </div>
 
+      <div class="tab-pane fade meta-pane" id="tab-bases-gerentes">
+        {% if not crescimento_gerente_meta %}
+          <div class="meta-empty">Cadastre uma <b>Meta Crescimento — Gerente</b> antes de informar a base manual da loja.</div>
+        {% elif not emp_selected %}
+          <div class="meta-empty">Selecione uma EMP no filtro superior para editar a base do gerente com segurança.</div>
+        {% else %}
+          <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+            <div><h6 class="m-0 fw-bold">Bases de gerente da {{ emp_selected }}</h6><div class="meta-help">Meta: <b>{{ crescimento_gerente_meta.nome }}</b>. A venda mês abaixo é o total da EMP inteira; o pagamento é direcionado ao gerente vinculado.</div></div>
+            <a class="btn btn-sm btn-outline-light" href="{{ url_for('admin_meta_bases', meta_id=crescimento_gerente_meta.id, emp=emp_selected) }}">Abrir tela completa de bases</a>
+          </div>
+          <div class="meta-table-wrap">
+            <table class="table table-sm meta-table">
+              <thead><tr><th>Gerente</th><th class="text-end">Venda total EMP</th><th class="text-end">Meta base loja</th><th class="text-end">Cresc.</th><th class="text-end">Margem mínima</th><th>Observação</th></tr></thead>
+              <tbody>
+                {% for r in gerente_base_rows %}
+                  <tr><td class="fw-semibold">{{ r.vendedor }}</td><td class="text-end">{{ r.venda_mes|brl_rs }}</td><td class="text-end">{{ r.base_valor|brl_rs }}</td><td class="text-end">{{ r.crescimento_pct|brl }}%</td><td class="text-end">{% if r.margem_minima_efetiva %}{{ r.margem_minima_efetiva|brl }}% <span class="meta-chip {% if r.margem_minima_origem == 'individual' %}ok{% endif %}">{{ 'Individual' if r.margem_minima_origem == 'individual' else 'Padrão' }}</span>{% else %}-{% endif %}</td><td>{{ r.observacao or '-' }}</td></tr>
+                {% endfor %}
+                {% if gerente_base_rows|length == 0 %}<tr><td colspan="6" class="text-center text-muted py-4">Nenhum gerente vinculado a esta EMP.</td></tr>{% endif %}
+              </tbody>
+            </table>
+          </div>
+        {% endif %}
+      </div>
+
       <div class="tab-pane fade meta-pane" id="tab-margens">
         <div class="row g-3">
           <div class="col-12 col-xl-5">
             <form class="meta-card" method="post" action="{{ url_for('admin_metas_margens_importar') }}" enctype="multipart/form-data">
               <input type="hidden" name="ano" value="{{ ano }}"><input type="hidden" name="mes" value="{{ mes }}">
-              <h6>📥 Importar margens individuais por vendedor</h6>
-              <p>A última margem importada para <b>ANO + MÊS + EMP + VENDEDOR</b> substitui a anterior. A margem é <b>individual por vendedor</b>; não é fixa por loja, não soma, não faz média e não acumula.</p>
+              <h6>📥 Importar margens individuais por vendedor/gerente</h6>
+              <p>A última margem importada para <b>ANO + MÊS + VENDEDOR/GERENTE</b> substitui a anterior. A margem é <b>individual por participante</b>; não é fixa por loja, não soma, não faz média e não acumula.</p>
               <div class="mb-3">
                 <div class="meta-label">Planilha de margens</div>
                 <input class="form-control form-control-sm meta-input" type="file" name="arquivo_margens" accept=".xlsx,.xls,.csv" required>
-                <div class="meta-help mt-1">Colunas obrigatórias: ANO, MES, VENDEDOR e MARGEM_PERCENTUAL. Não informe EMP: a margem é individual do vendedor e vale para ele em qualquer loja vinculada.</div>
+                <div class="meta-help mt-1">Colunas obrigatórias: ANO, MES, VENDEDOR e MARGEM_PERCENTUAL. Para gerente, informe o username do gerente na coluna VENDEDOR. Não informe EMP: a margem é individual do participante e vale para ele em qualquer loja vinculada.</div>
               </div>
               <div class="meta-actions">
                 <button class="btn btn-meta-primary btn-sm">Importar margens</button>
                 <a class="btn btn-sm btn-outline-light" href="{{ url_for('admin_metas_margens_modelo', ano=ano, mes=mes) }}">Baixar modelo .xlsx</a>
               </div>
-              <div class="meta-help mt-3"><b>Regra:</b> na Meta Crescimento, se houver margem mínima padrão ou individual, cada vendedor só recebe quando o seu próprio crescimento + faturamento mínimo + sua margem importada atingirem a margem mínima efetiva.</div>
+              <div class="meta-help mt-3"><b>Regra:</b> na Meta Crescimento, se houver margem mínima padrão ou individual, cada participante só recebe quando o crescimento + faturamento mínimo + sua margem importada atingirem a margem mínima efetiva.</div>
             </form>
           </div>
           <div class="col-12 col-xl-7">
@@ -291,7 +363,7 @@ VEI</textarea></div>
           <div class="meta-table-wrap">
             <table class="table table-sm meta-table">
               <thead>
-                <tr><th>EMP</th><th>Vendedor</th><th class="text-end">Venda mês</th>{% for m in metas_sim %}<th class="text-end">{{ m.nome }}</th>{% endfor %}<th class="text-end">Total</th></tr>
+                <tr><th>EMP</th><th>Participante</th><th class="text-end">Venda analisada</th>{% for m in metas_sim %}<th class="text-end">{{ m.nome }}</th>{% endfor %}<th class="text-end">Total</th></tr>
               </thead>
               <tbody>
                 {% for r in resultados_sim %}
@@ -303,9 +375,9 @@ VEI</textarea></div>
                         {% if d %}
                           <div class="fw-bold">{{ d.premio|brl_rs }}</div>
                           {% if d.bloqueado_minimo %}<div class="small meta-warning-text">Mínimo {{ d.faturamento_minimo|brl_rs }} não atingido</div>{% endif %}
-                          {% if m.tipo == 'CRESCIMENTO' %}<div class="small text-muted">Cresc. {{ d.crescimento_pct|brl }}% · prêmio {{ d.bonus_percentual|brl }}%</div>{% if d.margem_minima and d.margem_minima > 0 %}<div class="small {% if d.bloqueado_margem %}meta-warning-text{% else %}text-success{% endif %}">Margem vendedor: {% if d.margem_percentual is not none %}{{ d.margem_percentual|brl }}%{% else %}não importada{% endif %} · mínima {{ d.margem_minima|brl }}%{% if d.margem_minima_origem %} ({{ 'individual' if d.margem_minima_origem == 'individual' else 'padrão' }}){% endif %}</div>{% endif %}{% endif %}
+                          {% if m.tipo == 'CRESCIMENTO' %}<div class="small text-muted">Cresc. {{ d.crescimento_pct|brl }}% · prêmio {{ d.bonus_percentual|brl }}%</div>{% if ((m.escopo or 'VENDEDOR')|upper) == 'GERENTE' %}<div class="small text-muted">Cálculo sobre a EMP inteira</div>{% endif %}{% if d.margem_minima and d.margem_minima > 0 %}<div class="small {% if d.bloqueado_margem %}meta-warning-text{% else %}text-success{% endif %}">Margem participante: {% if d.margem_percentual is not none %}{{ d.margem_percentual|brl }}%{% else %}não importada{% endif %} · mínima {{ d.margem_minima|brl }}%{% if d.margem_minima_origem %} ({{ 'individual' if d.margem_minima_origem == 'individual' else 'padrão' }}){% endif %}</div>{% endif %}{% endif %}
                           {% if m.tipo == 'MIX' %}<div class="small text-muted">{{ d.mix_itens_unicos or 0 }} únicos · {% if d.faixa_limite is not none %}faixa {{ d.faixa_limite|round(0)|int }}{% else %}sem faixa atingida{% endif %}</div>{% endif %}
-                          {% if m.tipo == 'SHARE_MARCA' %}<div class="small text-muted">{{ d.share_pct|brl }}% · {{ d.bonus_percentual|brl }}%</div>{% endif %}
+                          {% if m.tipo == 'SHARE_MARCA' %}<div class="small text-muted">{{ d.share_pct|brl }}% · {{ d.bonus_percentual|brl }}%{% if ((m.escopo or 'VENDEDOR')|upper) == 'GERENTE' %} · EMP inteira{% endif %}</div>{% endif %}
                         {% else %}<span class="text-muted">-</span>{% endif %}
                       </td>
                     {% endfor %}

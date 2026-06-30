@@ -45,6 +45,25 @@ POSITIVE_MOV_TYPES = MOVIMENTOS_VENDA
 NEGATIVE_MOV_TYPES = MOVIMENTOS_NEGATIVOS
 META_GERENTE_ALIAS = "__GERENTE__"  # mantido por compatibilidade com telas antigas
 META_GERENTE_LABEL = "GERENTE"
+META_ESCOPOS = {"VENDEDOR", "GERENTE"}
+
+
+def meta_escopo(meta: MetaPrograma | object) -> str:
+    """Escopo da meta: VENDEDOR ou GERENTE.
+
+    O banco já possui ``metas_programas.escopo``. Quando vier vazio em dados
+    antigos, tratamos como VENDEDOR para preservar o comportamento anterior.
+    """
+    escopo = normalize_text(getattr(meta, "escopo", "VENDEDOR") or "VENDEDOR")
+    return escopo if escopo in META_ESCOPOS else "VENDEDOR"
+
+
+def is_meta_gerente(meta: MetaPrograma | object) -> bool:
+    return meta_escopo(meta) == "GERENTE"
+
+
+def participante_label(meta: MetaPrograma | object) -> str:
+    return "Gerente" if is_meta_gerente(meta) else "Vendedor"
 
 
 def periodo_bounds_ym(ano: int, mes: int) -> tuple[date, date]:
@@ -144,13 +163,19 @@ def _query_valor_emp_mes(db, ano: int, mes: int, emp: str) -> float:
     return query_valor_mes(db, ano, mes, emp, None)
 
 
-def query_valor_marcas(db, ano: int, mes: int, emp: str, vendedor: str, marcas: list[str]) -> tuple[float, float, float]:
-    """Retorna (share_pct, valor_marcas, valor_total_vendedor)."""
+def query_valor_marcas(db, ano: int, mes: int, emp: str, vendedor: str | None, marcas: list[str]) -> tuple[float, float, float]:
+    """Retorna (share_pct, valor_marcas, valor_total).
+
+    Quando ``vendedor`` vier vazio/None, calcula sobre a EMP inteira. Isso é
+    usado nas metas de gerente, pois o gerente recebe pelo resultado da loja.
+    """
     inicio, fim = periodo_bounds_ym(ano, mes)
     marcas_norm = [normalize_text(m) for m in (marcas or []) if normalize_text(m)]
     if not marcas_norm:
         return 0.0, 0.0, query_valor_mes(db, ano, mes, emp, vendedor)
 
+    vendedor_n = normalize_text(vendedor)
+    vendedor_clause = "AND UPPER(COALESCE(vendedor,'')) = :vendedor" if vendedor_n else ""
     sql = f"""
         SELECT
           COALESCE(SUM(CASE WHEN UPPER(COALESCE(marca,'')) = ANY(:marcas)
@@ -159,12 +184,12 @@ def query_valor_marcas(db, ano: int, mes: int, emp: str, vendedor: str, marcas: 
           COALESCE(SUM({signed_value_sql('valor_total')}),0)::double precision AS valor_total
           FROM vendas
          WHERE emp = :emp
-           AND UPPER(COALESCE(vendedor,'')) = :vendedor
+           {vendedor_clause}
            AND movimento BETWEEN :ini AND :fim
     """
     params = {
         "emp": normalize_emp(emp),
-        "vendedor": normalize_text(vendedor),
+        "vendedor": vendedor_n,
         "marcas": marcas_norm,
         "ini": inicio,
         "fim": fim,
@@ -175,20 +200,24 @@ def query_valor_marcas(db, ano: int, mes: int, emp: str, vendedor: str, marcas: 
     valor_total = float(row[1] or 0.0) if row else 0.0
     # Serviço de oficina compõe o faturamento total do usuário/EMP. Como não
     # possui marca, entra apenas no denominador de metas de share.
-    valor_total += sum_servicos_oficina_mes(db, ano=ano, mes=mes, emp=emp, usuario=vendedor)
+    valor_total += sum_servicos_oficina_mes(db, ano=ano, mes=mes, emp=emp, usuario=vendedor_n or None)
     share = (valor_marcas / valor_total * 100.0) if valor_total > 0 else 0.0
     return float(share), float(valor_marcas), float(valor_total)
-
 
 # Alias legado.
 def _query_share_marca(db, ano: int, mes: int, emp: str, vendedor: str, marcas: list[str]) -> tuple[float, float, float]:
     return query_valor_marcas(db, ano, mes, emp, vendedor, marcas)
 
 
-def query_mix_itens_unicos(db, ano: int, mes: int, emp: str, vendedor: str) -> int:
-    """Conta MESTRE unico com quantidade liquida positiva no periodo."""
+def query_mix_itens_unicos(db, ano: int, mes: int, emp: str, vendedor: str | None) -> int:
+    """Conta MESTRE único com quantidade líquida positiva no período.
+
+    Quando ``vendedor`` vier vazio/None, conta o mix da EMP inteira.
+    """
     inicio, fim = periodo_bounds_ym(ano, mes)
-    sql = """
+    vendedor_n = normalize_text(vendedor)
+    vendedor_clause = "AND UPPER(COALESCE(vendedor,'')) = :vendedor" if vendedor_n else ""
+    sql = f"""
       WITH por_produto AS (
         SELECT
           UPPER(TRIM(COALESCE(mestre,''))) AS mestre_norm,
@@ -203,7 +232,7 @@ def query_mix_itens_unicos(db, ano: int, mes: int, emp: str, vendedor: str) -> i
           ) AS qtd_liquida
         FROM vendas
         WHERE emp = :emp
-          AND UPPER(COALESCE(vendedor,'')) = :vendedor
+          {vendedor_clause}
           AND movimento BETWEEN :ini AND :fim
           AND COALESCE(mestre,'') <> ''
         GROUP BY UPPER(TRIM(COALESCE(mestre,'')))
@@ -215,14 +244,13 @@ def query_mix_itens_unicos(db, ano: int, mes: int, emp: str, vendedor: str) -> i
     """
     params = {
         "emp": normalize_emp(emp),
-        "vendedor": normalize_text(vendedor),
+        "vendedor": vendedor_n,
         "ini": inicio,
         "fim": fim,
         **_mov_params(),
     }
     row = db.execute(text(sql), params).fetchone()
     return int(row[0] or 0) if row else 0
-
 
 # Alias legado.
 def _query_mix_itens(db, ano: int, mes: int, emp: str, vendedor: str) -> float:
@@ -337,6 +365,105 @@ def get_vendedores_cadastrados(db, emps: list[str] | None = None) -> list[str]:
     return [normalize_text(r[0]) for r in rows if r and normalize_text(r[0])]
 
 
+
+
+def get_gerentes_cadastrados(db, emps: list[str] | None = None) -> list[str]:
+    """Gerentes vinculados às EMPs.
+
+    O gerente pode não ter venda própria no período, então a listagem precisa
+    vir do cadastro/vínculo de usuários, não da tabela de vendas.
+    """
+    allowed = [normalize_emp(e) for e in (emps or []) if normalize_emp(e)]
+    nomes: list[str] = []
+    try:
+        q = (
+            db.query(Usuario.username)
+            .join(UsuarioEmp, UsuarioEmp.usuario_id == Usuario.id)
+            .filter(UsuarioEmp.ativo.is_(True))
+            .filter(Usuario.role.ilike("gerente"))
+        )
+        if allowed:
+            q = q.filter(UsuarioEmp.emp.in_(allowed))
+        rows = q.order_by(Usuario.username.asc()).all()
+        nomes.extend([normalize_text(r[0]) for r in rows if r and normalize_text(r[0])])
+    except Exception:
+        pass
+
+    # Fallback para bancos/usuários antigos que ainda usam usuarios.emp direto.
+    try:
+        q2 = db.query(Usuario.username).filter(Usuario.role.ilike("gerente"))
+        if allowed:
+            q2 = q2.filter(Usuario.emp.in_(allowed))
+        rows2 = q2.order_by(Usuario.username.asc()).all()
+        nomes.extend([normalize_text(r[0]) for r in rows2 if r and normalize_text(r[0])])
+    except Exception:
+        pass
+
+    seen: set[str] = set()
+    out: list[str] = []
+    for n in nomes:
+        n = normalize_text(n)
+        if n and n not in seen:
+            seen.add(n)
+            out.append(n)
+    return sorted(out)
+
+
+def get_gerentes_para_metas(db, ano: int, mes: int, emps: list[str] | None = None) -> list[str]:
+    """Gerentes aptos a aparecerem nas metas.
+
+    Inclui gerentes cadastrados e também nomes já lançados em bases manuais de
+    metas de escopo GERENTE, preservando histórico se o cadastro mudar.
+    """
+    nomes: list[str] = []
+    nomes.extend(get_gerentes_cadastrados(db, emps))
+
+    allowed = [normalize_emp(e) for e in (emps or []) if normalize_emp(e)]
+    emp_clause = "AND b.emp = ANY(:emps)" if allowed else ""
+    params: dict[str, object] = {"ano": ano, "mes": mes}
+    if allowed:
+        params["emps"] = allowed
+    sql = f"""
+      SELECT DISTINCT UPPER(TRIM(COALESCE(b.vendedor,'')))
+        FROM metas_bases_manuais b
+        JOIN metas_programas m ON m.id = b.meta_id
+       WHERE m.ano = :ano AND m.mes = :mes
+         AND UPPER(COALESCE(m.escopo,'VENDEDOR')) = 'GERENTE'
+         {emp_clause}
+         AND COALESCE(b.vendedor,'') <> ''
+    """
+    try:
+        rows = db.execute(text(sql), params).fetchall()
+        nomes.extend([normalize_text(r[0]) for r in rows if r and normalize_text(r[0])])
+    except Exception:
+        pass
+
+    seen: set[str] = set()
+    out: list[str] = []
+    for n in nomes:
+        n = normalize_text(n)
+        if n and n not in seen:
+            seen.add(n)
+            out.append(n)
+    return sorted(out)
+
+
+def get_participantes_para_meta(db, meta: MetaPrograma, ano: int, mes: int, emps: list[str] | None = None) -> list[str]:
+    return get_gerentes_para_metas(db, ano, mes, emps) if is_meta_gerente(meta) else get_vendedores_para_metas(db, ano, mes, emps)
+
+
+def get_pessoas_para_metas(db, ano: int, mes: int, emps: list[str] | None = None) -> list[str]:
+    """Lista combinada para filtros: vendedores + gerentes."""
+    nomes = list(get_vendedores_para_metas(db, ano, mes, emps)) + list(get_gerentes_para_metas(db, ano, mes, emps))
+    seen: set[str] = set()
+    out: list[str] = []
+    for n in nomes:
+        n = normalize_text(n)
+        if n and n not in seen:
+            seen.add(n)
+            out.append(n)
+    return sorted(out)
+
 def get_vendedores_para_metas(db, ano: int, mes: int, emps: list[str] | None = None) -> list[str]:
     """Une vendedores cadastrados, vendedores com venda e vendedores com base manual."""
     nomes: list[str] = []
@@ -355,6 +482,7 @@ def get_vendedores_para_metas(db, ano: int, mes: int, emps: list[str] | None = N
         FROM metas_bases_manuais b
         JOIN metas_programas m ON m.id = b.meta_id
        WHERE m.ano = :ano AND m.mes = :mes
+         AND UPPER(COALESCE(m.escopo,'VENDEDOR')) <> 'GERENTE'
          {emp_clause}
          AND COALESCE(b.vendedor,'') <> ''
     """
@@ -470,6 +598,11 @@ def calcular_meta(db, meta: MetaPrograma, emp: str, vendedor: str, persist: bool
     tipo = normalize_text(meta.tipo)
     emp_n = normalize_emp(emp)
     vendedor_n = normalize_text(vendedor)
+    escopo = meta_escopo(meta)
+    gerente_scope = escopo == "GERENTE"
+    # Para GERENTE, as métricas são da EMP inteira; o resultado continua
+    # gravado no usuário gerente informado em ``vendedor_n``.
+    vendedor_metrica = None if gerente_scope else vendedor_n
     escalas = get_meta_escalas(db, int(meta.id))
 
     calc = MetaCalc(meta_id=int(meta.id), tipo=tipo, emp=emp_n, vendedor=vendedor_n)
@@ -479,7 +612,7 @@ def calcular_meta(db, meta: MetaPrograma, emp: str, vendedor: str, persist: bool
     calc.faturamento_minimo = faturamento_minimo
 
     if tipo == "CRESCIMENTO":
-        valor_mes = Decimal(str(query_valor_mes(db, meta.ano, meta.mes, emp_n, vendedor_n)))
+        valor_mes = Decimal(str(query_valor_mes(db, meta.ano, meta.mes, emp_n, vendedor_metrica)))
         base = get_base_manual(db, int(meta.id), emp_n, vendedor_n)
         base_valor = Decimal(str(getattr(base, "base_valor", 0.0) or 0.0)) if base else Decimal("0")
 
@@ -526,8 +659,8 @@ def calcular_meta(db, meta: MetaPrograma, emp: str, vendedor: str, persist: bool
         calc.regra_teto_aplicada = bool(teto_aplicado)
 
     elif tipo == "MIX":
-        valor_mes = Decimal(str(query_valor_mes(db, meta.ano, meta.mes, emp_n, vendedor_n)))
-        mix = query_mix_itens_unicos(db, meta.ano, meta.mes, emp_n, vendedor_n)
+        valor_mes = Decimal(str(query_valor_mes(db, meta.ano, meta.mes, emp_n, vendedor_metrica)))
+        mix = query_mix_itens_unicos(db, meta.ano, meta.mes, emp_n, vendedor_metrica)
         escala = pick_scale(escalas, mix)
         premio_fixo = float(getattr(escala, "bonus_percentual", 0.0) or 0.0) if escala else 0.0
 
@@ -539,7 +672,7 @@ def calcular_meta(db, meta: MetaPrograma, emp: str, vendedor: str, persist: bool
 
     elif tipo == "SHARE_MARCA":
         marcas = get_meta_marcas(db, int(meta.id))
-        share_pct, valor_marcas, valor_mes_f = query_valor_marcas(db, meta.ano, meta.mes, emp_n, vendedor_n, marcas)
+        share_pct, valor_marcas, valor_mes_f = query_valor_marcas(db, meta.ano, meta.mes, emp_n, vendedor_metrica, marcas)
         escala = pick_scale(escalas, share_pct)
         bonus_pct = float(getattr(escala, "bonus_percentual", 0.0) or 0.0) if escala else 0.0
         premio = money2(Decimal(str(valor_mes_f)) * Decimal(str(bonus_pct)) / Decimal("100"))
@@ -654,7 +787,11 @@ def montar_resultados_periodo(
     vendedor: str | None = None,
     persist: bool = False,
 ) -> tuple[list[MetaPrograma], list[dict]]:
-    """Monta matriz EMP+Vendedor com metas calculadas para a tela de acompanhamento."""
+    """Monta matriz EMP+participante com metas calculadas para acompanhamento.
+
+    Metas VENDEDOR calculam cada vendedor. Metas GERENTE calculam o total da
+    EMP e direcionam o prêmio ao gerente vinculado à loja.
+    """
     metas = metas_ativas_periodo(db, ano, mes, only_active=True)
     if not metas:
         return [], []
@@ -674,7 +811,11 @@ def montar_resultados_periodo(
         metas_visiveis.append(meta)
 
         for emp in meta_emps:
-            vendedores = [vendedor_filter] if vendedor_filter else get_vendedores_para_metas(db, ano, mes, [emp])
+            if vendedor_filter:
+                participantes_validos = set(get_participantes_para_meta(db, meta, ano, mes, [emp]))
+                vendedores = [vendedor_filter] if vendedor_filter in participantes_validos else []
+            else:
+                vendedores = get_participantes_para_meta(db, meta, ano, mes, [emp])
             for vend in vendedores:
                 if not vend:
                     continue

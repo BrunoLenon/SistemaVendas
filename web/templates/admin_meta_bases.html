@@ -17,8 +17,8 @@
   <section class="mb-hero mb-3">
     <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
       <div>
-        <h1 class="mb-title">🧮 Bases dos Vendedores</h1>
-        <div class="mb-sub"><strong>{{ meta.nome }}</strong> · {{ tipo_label(meta.tipo) }} · {{ '%02d'|format(meta.mes) }}/{{ meta.ano }}. A base e a margem mínima individual são manuais por EMP e vendedor. {% if meta.faturamento_minimo %}<b>Faturamento mínimo:</b> {{ meta.faturamento_minimo|brl_rs }}.{% endif %} {% if margem_minima_padrao %}<b>Margem padrão:</b> {{ margem_minima_padrao|brl }}%.{% endif %}</div>
+        <h1 class="mb-title">🧮 Bases dos {% if meta_gerente %}Gerentes{% else %}Vendedores{% endif %}</h1>
+        <div class="mb-sub"><strong>{{ meta.nome }}</strong> · {{ tipo_label(meta.tipo) }} · {{ '%02d'|format(meta.mes) }}/{{ meta.ano }}. {% if meta_gerente %}A base é manual por EMP e gerente; o cálculo usa a venda total da loja.{% else %}A base e a margem mínima individual são manuais por EMP e vendedor.{% endif %} {% if meta.faturamento_minimo %}<b>Faturamento mínimo:</b> {{ meta.faturamento_minimo|brl_rs }}.{% endif %} {% if margem_minima_padrao %}<b>Margem padrão:</b> {{ margem_minima_padrao|brl }}%.{% endif %}</div>
       </div>
       <form class="mb-filter" method="get" action="{{ url_for('admin_meta_bases', meta_id=meta.id) }}">
         <div><div class="mb-help mb-1">EMP</div><select class="form-select form-select-sm" name="emp" style="min-width:190px">{% for e in emps %}<option value="{{ e }}" {% if emp_selected==e %}selected{% endif %}>{{ e }}</option>{% endfor %}</select></div>
@@ -32,13 +32,13 @@
     <input type="hidden" name="emp_selected" value="{{ emp_selected }}">
     <div class="mb-card">
       <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
-        <div><div class="fw-bold">EMP {{ emp_selected }}</div><div class="mb-help">Informe a Meta Base mensal e, se necessário, a margem mínima individual. Se a margem individual ficar vazia, o sistema usa a margem padrão da meta.</div></div>
+        <div><div class="fw-bold">EMP {{ emp_selected }}</div><div class="mb-help">{% if meta_gerente %}Informe a Meta Base mensal da loja para o gerente. A venda mês é o total da EMP inteira.{% else %}Informe a Meta Base mensal e, se necessário, a margem mínima individual. Se a margem individual ficar vazia, o sistema usa a margem padrão da meta.{% endif %}</div></div>
         <button class="btn btn-meta-primary btn-sm px-4">Salvar bases</button>
       </div>
       <div class="mb-table-wrap">
         <table class="table table-sm mb-table">
           <thead>
-            <tr><th>Vendedor</th><th class="text-end">Venda mês</th><th style="min-width:170px">Meta base manual</th><th style="min-width:170px">Margem mínima individual</th><th class="text-end">Margem efetiva</th><th class="text-end">Crescimento atual</th><th style="min-width:260px">Observação</th></tr>
+            <tr><th>{{ participante_label }}</th><th class="text-end">{% if meta_gerente %}Venda total EMP{% else %}Venda mês{% endif %}</th><th style="min-width:170px">{% if meta_gerente %}Meta base loja{% else %}Meta base manual{% endif %}</th><th style="min-width:170px">Margem mínima individual</th><th class="text-end">Margem efetiva</th><th class="text-end">Crescimento atual</th><th style="min-width:260px">Observação</th></tr>
           </thead>
           <tbody>
             {% for l in linhas %}
@@ -53,12 +53,12 @@
               </tr>
             {% endfor %}
             {% if linhas|length == 0 %}
-              <tr><td colspan="7" class="text-center text-muted py-4">Nenhum vendedor encontrado para esta EMP no período.</td></tr>
+              <tr><td colspan="7" class="text-center text-muted py-4">Nenhum {% if meta_gerente %}gerente{% else %}vendedor{% endif %} encontrado para esta EMP no período.</td></tr>
             {% endif %}
           </tbody>
         </table>
       </div>
-      <div class="mb-help mt-3">Regra: crescimento = (Venda mês - Meta base) / Meta base. A margem mínima efetiva usa primeiro o valor individual da base; se estiver vazio, usa a margem padrão da meta.</div>
+      <div class="mb-help mt-3">Regra: crescimento = (Venda analisada - Meta base) / Meta base. {% if meta_gerente %}Em meta de gerente, a venda analisada é a EMP inteira e o prêmio fica no usuário gerente.{% else %}A margem mínima efetiva usa primeiro o valor individual da base; se estiver vazio, usa a margem padrão da meta.{% endif %}</div>
     </div>
   </form>
 </div>

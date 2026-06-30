@@ -828,7 +828,7 @@ def _append_metas_unificadas(
         return
 
     try:
-        from metas_helpers import calcular_meta, get_meta_emps, metas_ativas_periodo
+        from metas_helpers import calcular_meta, get_meta_emps, get_gerentes_para_metas, is_meta_gerente, metas_ativas_periodo
     except Exception as exc:
         try:
             print(f"[RELATORIO_UNIFICADO] metas indisponiveis: {exc}")
@@ -865,7 +865,14 @@ def _append_metas_unificadas(
             continue
 
         tipo_meta = str(getattr(meta, 'tipo', '') or '').strip().upper()
-        for vend in vendedores:
+        participantes_meta = vendedores
+        try:
+            if is_meta_gerente(meta):
+                gerentes_emp = {_upper(g) for g in (get_gerentes_para_metas(db, int(ano), int(mes), [emp_s]) or []) if _upper(g)}
+                participantes_meta = [v for v in vendedores if _upper(v) in gerentes_emp]
+        except Exception:
+            participantes_meta = vendedores
+        for vend in participantes_meta:
             vend_u = _upper(vend)
             if not vend_u:
                 continue

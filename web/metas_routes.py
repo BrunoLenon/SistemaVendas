@@ -37,7 +37,11 @@ from metas_helpers import (
     get_meta_escalas,
     get_meta_marcas,
     get_margem_vendedor,
+    get_gerentes_para_metas,
+    get_participantes_para_meta,
+    get_pessoas_para_metas,
     get_vendedores_para_metas,
+    is_meta_gerente,
     metas_ativas_periodo,
     montar_resultados_periodo,
     normalize_emp,
@@ -173,6 +177,20 @@ def _tipo_badge(tipo: str) -> str:
     return tipo or "-"
 
 
+def _escopo_label(escopo: str) -> str:
+    escopo_n = normalize_text(escopo) or "VENDEDOR"
+    if escopo_n == "GERENTE":
+        return "Gerente / EMP inteira"
+    return "Vendedor"
+
+
+def _escopo_badge(escopo: str) -> str:
+    escopo_n = normalize_text(escopo) or "VENDEDOR"
+    if escopo_n == "GERENTE":
+        return "🏢 Gerente"
+    return "👤 Vendedor"
+
+
 def _parse_escalas(raw: str, tipo: str) -> list[tuple[float, float]]:
     """Aceita linhas como 5=0,10 ou 750=100."""
     out: list[tuple[float, float]] = []
@@ -293,7 +311,7 @@ def metas():
 
         vendedores_choices = []
         if role != "vendedor":
-            vendedores_choices = get_vendedores_para_metas(db, ano, mes, emps_calc or emps_choices)
+            vendedores_choices = get_pessoas_para_metas(db, ano, mes, emps_calc or emps_choices)
             if vendedor_filtro and vendedor_filtro not in vendedores_choices:
                 vendedor_filtro = ""
 
@@ -356,9 +374,12 @@ def admin_metas():
         )
         metas_payload = [_meta_payload(db, m) for m in metas_db]
 
-        crescimento_meta = next((p["meta"] for p in metas_payload if normalize_text(p["meta"].tipo) == "CRESCIMENTO" and p["meta"].ativo), None)
+        crescimento_meta = next((p["meta"] for p in metas_payload if normalize_text(p["meta"].tipo) == "CRESCIMENTO" and normalize_text(getattr(p["meta"], "escopo", "VENDEDOR")) != "GERENTE" and p["meta"].ativo), None)
+        crescimento_gerente_meta = next((p["meta"] for p in metas_payload if normalize_text(p["meta"].tipo) == "CRESCIMENTO" and normalize_text(getattr(p["meta"], "escopo", "VENDEDOR")) == "GERENTE" and p["meta"].ativo), None)
         margem_minima_ativa = float(getattr(crescimento_meta, "margem_minima", 0.0) or 0.0) if crescimento_meta else 0.0
+        margem_minima_gerente_ativa = float(getattr(crescimento_gerente_meta, "margem_minima", 0.0) or 0.0) if crescimento_gerente_meta else 0.0
         base_rows = []
+        gerente_base_rows = []
         vendedores_base = []
         if crescimento_meta and emp_selected:
             vendedores_base = get_vendedores_para_metas(db, ano, mes, [emp_selected])
@@ -378,6 +399,33 @@ def admin_metas():
                 base_rows.append({
                     "emp": emp_selected,
                     "vendedor": vend,
+                    "venda_mes": venda_mes,
+                    "base_valor": base_valor,
+                    "crescimento_pct": crescimento_pct,
+                    "margem_minima_individual": margem_individual,
+                    "margem_minima_efetiva": margem_efetiva,
+                    "margem_minima_origem": margem_origem,
+                    "observacao": getattr(base, "observacao", "") if base else "",
+                })
+
+        if crescimento_gerente_meta and emp_selected:
+            gerentes_base = get_gerentes_para_metas(db, ano, mes, [emp_selected])
+            if vendedor_selected:
+                gerentes_base = [g for g in gerentes_base if g == vendedor_selected]
+            for gerente in gerentes_base:
+                base = (
+                    db.query(MetaBaseManual)
+                    .filter(MetaBaseManual.meta_id == crescimento_gerente_meta.id, MetaBaseManual.emp == emp_selected, MetaBaseManual.vendedor == gerente)
+                    .first()
+                )
+                venda_mes = query_valor_mes(db, ano, mes, emp_selected, None)
+                base_valor = float(getattr(base, "base_valor", 0.0) or 0.0) if base else 0.0
+                crescimento_pct = ((venda_mes - base_valor) / base_valor * 100.0) if base_valor > 0 else 0.0
+                margem_individual = float(getattr(base, "margem_percentual", 0.0) or 0.0) if base else 0.0
+                margem_efetiva, margem_origem = _margem_minima_efetiva(db, crescimento_gerente_meta.id, emp_selected, gerente, margem_minima_gerente_ativa)
+                gerente_base_rows.append({
+                    "emp": emp_selected,
+                    "vendedor": gerente,
                     "venda_mes": venda_mes,
                     "base_valor": base_valor,
                     "crescimento_pct": crescimento_pct,
@@ -475,8 +523,10 @@ def admin_metas():
             emps_rows=emps_rows,
             metas_payload=metas_payload,
             crescimento_meta=crescimento_meta,
+            crescimento_gerente_meta=crescimento_gerente_meta,
             base_rows=base_rows,
-            vendedores_choices=get_vendedores_para_metas(db, ano, mes, [emp_selected] if emp_selected else emps_codes),
+            gerente_base_rows=gerente_base_rows,
+            vendedores_choices=get_pessoas_para_metas(db, ano, mes, [emp_selected] if emp_selected else emps_codes),
             metas_sim=metas_sim,
             resultados_sim=resultados_sim,
             margens_rows=margens_rows,
@@ -485,6 +535,8 @@ def admin_metas():
             totais=totais,
             tipo_label=_tipo_label,
             tipo_badge=_tipo_badge,
+            escopo_label=_escopo_label,
+            escopo_badge=_escopo_badge,
         )
 
 
@@ -496,6 +548,9 @@ def admin_metas_criar():
 
     ano, mes = _period_from_request()
     tipo = normalize_text(request.form.get("tipo"))
+    escopo = normalize_text(request.form.get("escopo") or "VENDEDOR")
+    if escopo not in ("VENDEDOR", "GERENTE"):
+        escopo = "VENDEDOR"
     nome = (request.form.get("nome") or _tipo_label(tipo)).strip()
     emps = [normalize_emp(e) for e in request.form.getlist("emps") if normalize_emp(e)]
     escalas = _parse_escalas(request.form.get("escalas"), tipo)
@@ -513,6 +568,9 @@ def admin_metas_criar():
     if not escalas:
         flash("Cadastre pelo menos uma faixa válida. Exemplo: 5=0,10 ou 750=100.", "warning")
         return redirect(url_for("admin_metas", ano=ano, mes=mes))
+    if escopo == "GERENTE" and tipo not in ("CRESCIMENTO", "SHARE_MARCA"):
+        flash("Meta de gerente aceita apenas Crescimento e Marcas.", "warning")
+        return redirect(url_for("admin_metas", ano=ano, mes=mes))
     if tipo == "SHARE_MARCA" and not marcas:
         flash("Informe pelo menos uma marca para a Meta Marcas.", "warning")
         return redirect(url_for("admin_metas", ano=ano, mes=mes))
@@ -524,7 +582,7 @@ def admin_metas_criar():
             ano=ano,
             mes=mes,
             ativo=True,
-            escopo="VENDEDOR",
+            escopo=escopo,
             faturamento_minimo=faturamento_minimo if faturamento_minimo > 0 else 0.0,
             margem_minima=margem_minima if tipo == "CRESCIMENTO" and margem_minima > 0 else 0.0,
             # No crescimento, este campo representa a trava: venda >= teto aplica maior faixa.
@@ -543,7 +601,7 @@ def admin_metas_criar():
             db.add(MetaMarca(meta_id=meta.id, marca=marca))
         db.commit()
 
-    flash(f"Meta '{nome}' criada com sucesso.", "success")
+    flash(f"Meta '{nome}' criada com sucesso para {_escopo_label(escopo).lower()}.", "success")
     return redirect(url_for("admin_metas", ano=ano, mes=mes, emp_sel=emps[0] if emps else ""))
 
 
@@ -884,7 +942,7 @@ def admin_metas_recalcular():
         _, resultados = montar_resultados_periodo(db, ano, mes, emps=emps, vendedor=vendedor_selected or None, persist=True)
         db.commit()
 
-    flash(f"Metas recalculadas: {len(resultados)} vendedor(es)/EMP.", "success")
+    flash(f"Metas recalculadas: {len(resultados)} participante(s)/EMP.", "success")
     return redirect(url_for("admin_metas", ano=ano, mes=mes, emp_sel=emp_selected, vendedor=vendedor_selected))
 
 
@@ -908,7 +966,12 @@ def admin_meta_bases(meta_id: int):
         if emp_selected and emp_selected not in set(emps):
             emp_selected = emps[0] if emps else ""
 
-        vendedores = get_vendedores_para_metas(db, meta.ano, meta.mes, [emp_selected] if emp_selected else emps)
+        meta_gerente = is_meta_gerente(meta)
+        vendedores = (
+            get_gerentes_para_metas(db, meta.ano, meta.mes, [emp_selected] if emp_selected else emps)
+            if meta_gerente
+            else get_vendedores_para_metas(db, meta.ano, meta.mes, [emp_selected] if emp_selected else emps)
+        )
         linhas = []
         for vend in vendedores:
             base = (
@@ -916,7 +979,7 @@ def admin_meta_bases(meta_id: int):
                 .filter(MetaBaseManual.meta_id == meta.id, MetaBaseManual.emp == emp_selected, MetaBaseManual.vendedor == vend)
                 .first()
             )
-            venda_mes = query_valor_mes(db, meta.ano, meta.mes, emp_selected, vend)
+            venda_mes = query_valor_mes(db, meta.ano, meta.mes, emp_selected, None if meta_gerente else vend)
             base_valor = float(getattr(base, "base_valor", 0.0) or 0.0) if base else 0.0
             crescimento_pct = ((venda_mes - base_valor) / base_valor * 100.0) if base_valor > 0 else 0.0
             margem_individual = float(getattr(base, "margem_percentual", 0.0) or 0.0) if base else 0.0
@@ -944,6 +1007,8 @@ def admin_meta_bases(meta_id: int):
             emp_selected=emp_selected,
             linhas=linhas,
             margem_minima_padrao=float(getattr(meta, "margem_minima", 0.0) or 0.0),
+            meta_gerente=meta_gerente,
+            participante_label="Gerente" if meta_gerente else "Vendedor",
             tipo_label=_tipo_badge,
         )
 
@@ -976,5 +1041,5 @@ def admin_meta_bases_salvar(meta_id: int):
             salvos += 1
         db.commit()
 
-    flash(f"Bases salvas com sucesso: {salvos} vendedor(es).", "success")
+    flash(f"Bases salvas com sucesso: {salvos} participante(s).", "success")
     return redirect(url_for("admin_meta_bases", meta_id=meta_id, emp=emp_selected))
