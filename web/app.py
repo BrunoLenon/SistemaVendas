@@ -3316,6 +3316,11 @@ def _recalcular_resultados_campanhas_para_scope(ano: int, mes: int, emps: list[s
             novos = []
             for v in vendedores_base:
                 for c in escolhidas_por_vendedor.get(v, []):
+                    # Período precisa ser o da campanha atual. Antes ficava reaproveitando
+                    # o último período calculado no loop anterior, gerando gate de
+                    # faturamento incorreto e consultas repetidas/desnecessárias.
+                    periodo_ini = max(c.data_inicio, inicio_mes)
+                    periodo_fim = min(c.data_fim, fim_mes)
                     qtd, valor = vendas_por_campanha.get(c.id, {}).get(v, (0.0, 0.0))
                     minimo = c.qtd_minima
                     min_val = getattr(c, "valor_minimo", None)

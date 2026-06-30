@@ -124,7 +124,7 @@
       <div>
         <div class="sv-admin-eyebrow">Relatórios / Campanhas</div>
         <h1 class="sv-admin-title">Campanhas do mês</h1>
-        <div class="sv-admin-subtitle">Conferência consolidada por EMP, vendedor, campanha e meta. Use <strong>Recalcular</strong> após importar vendas para atualizar a apuração.</div>
+        <div class="sv-admin-subtitle">Conferência consolidada por EMP, vendedor, campanha e meta. Use <strong>Recalcular em segundo plano</strong> após importar vendas para atualizar a apuração sem travar a tela.</div>
       </div>
       <div class="sv-action-row">
         <form method="post" action="{{ url_for('relatorio_campanhas_recalcular') }}" class="sv-inline-form">
@@ -135,7 +135,7 @@
               {% endfor %}
             {% endif %}
           {% endfor %}
-          <button class="sv-btn sv-btn-soft" type="submit" {% if ctx.get('deferred_report') %}disabled title="Selecione ao menos uma EMP antes de recalcular"{% endif %}>Recalcular</button>
+          <button class="sv-btn sv-btn-soft" type="submit" {% if ctx.get('deferred_report') %}disabled title="Selecione ao menos uma EMP antes de recalcular"{% endif %}>Recalcular em segundo plano</button>
         </form>
         <a class="sv-btn sv-btn-primary" href="{{ ctx.get('export_url') or url_for('relatorio_campanhas_export_pdf') }}" {% if ctx.get('deferred_report') %}aria-disabled="true" onclick="return false;" style="opacity:.48;pointer-events:none;"{% endif %}>Exportar PDF</a>
         <a class="sv-btn sv-btn-soft" href="{{ ctx.get('export_csv_url') or url_for('relatorio_campanhas_export_csv') }}" {% if ctx.get('deferred_report') %}aria-disabled="true" onclick="return false;" style="opacity:.48;pointer-events:none;"{% endif %}>CSV</a>

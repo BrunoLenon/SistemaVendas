@@ -23,13 +23,138 @@ from sqlalchemy import func
 
 from db import OficinaServico, SessionLocal, Venda
 from services.campanhas_service import build_relatorio_campanhas_scope
-from services.relatorio_campanhas_service import build_relatorio_campanhas_unificado_context
+from services.relatorio_campanhas_service import (
+    build_relatorio_campanhas_unificado_context,
+    rebuild_relatorio_campanhas_unificado_cache,
+)
 from sv_utils import MOVIMENTOS_VENDA
 
 
 _RELATORIO_SCOPE_CACHE: dict[tuple, tuple[float, dict[str, Any]]] = {}
 _RELATORIO_SCOPE_CACHE_LOCK = threading.Lock()
 
+
+
+_RELATORIO_RECALC_JOBS: dict[tuple, dict[str, Any]] = {}
+_RELATORIO_RECALC_JOBS_LOCK = threading.Lock()
+
+
+def _recalc_jobs_ttl_seconds() -> int:
+    try:
+        return max(60, int(os.environ.get('RELATORIO_CAMPANHAS_RECALC_JOB_TTL_SECONDS', '1800') or 1800))
+    except Exception:
+        return 1800
+
+
+def _recalc_job_key(*, role: str, vendedor_logado: str, ano: int, mes: int, emps: list[str], vendedores_por_emp: dict[str, list[str]]) -> tuple:
+    vend_key = []
+    for emp in sorted({str(e).strip() for e in (emps or []) if str(e).strip()}):
+        vend_key.append((emp, tuple(sorted({str(v or '').strip().upper() for v in (vendedores_por_emp.get(emp) or []) if str(v or '').strip()}))))
+    return (
+        'relatorio_campanhas_recalc_job_v1',
+        str(role or '').strip().lower(),
+        str(vendedor_logado or '').strip().upper(),
+        int(ano),
+        int(mes),
+        tuple(sorted({str(e).strip() for e in (emps or []) if str(e).strip()})),
+        tuple(vend_key),
+    )
+
+
+def _cleanup_recalc_jobs(now: float | None = None) -> None:
+    now = time.monotonic() if now is None else now
+    ttl = _recalc_jobs_ttl_seconds()
+    with _RELATORIO_RECALC_JOBS_LOCK:
+        for key, job in list(_RELATORIO_RECALC_JOBS.items()):
+            if job.get('status') == 'running':
+                continue
+            ended = float(job.get('ended_at') or job.get('started_at') or 0)
+            if ended and now - ended > ttl:
+                _RELATORIO_RECALC_JOBS.pop(key, None)
+
+
+def _start_recalc_background_job(
+    deps,
+    *,
+    role: str,
+    vendedor_logado: str,
+    ano: int,
+    mes: int,
+    emps_scope: list[str],
+    emps_sel: list[str],
+    vendedores_sel: list[str],
+    vendedores_por_emp: dict[str, list[str]],
+) -> tuple[str, dict[str, Any]]:
+    """Inicia recálculo sem bloquear a request do Render.
+
+    Retorna (estado, job), onde estado pode ser started/running/done/error.
+    """
+    role_l = str(role or '').strip().lower()
+    emps_effective = [str(e).strip() for e in (emps_sel or []) if str(e).strip()]
+    if role_l == 'vendedor' and not emps_effective:
+        emps_effective = [str(e).strip() for e in (emps_scope or []) if str(e).strip()]
+    key = _recalc_job_key(
+        role=role_l,
+        vendedor_logado=vendedor_logado,
+        ano=int(ano),
+        mes=int(mes),
+        emps=emps_effective,
+        vendedores_por_emp=vendedores_por_emp,
+    )
+    now = time.monotonic()
+    _cleanup_recalc_jobs(now)
+    with _RELATORIO_RECALC_JOBS_LOCK:
+        current = _RELATORIO_RECALC_JOBS.get(key)
+        if current and current.get('status') == 'running':
+            return 'running', dict(current)
+        if current and current.get('status') in ('done', 'partial_error') and now - float(current.get('ended_at') or 0) < 10:
+            return 'done', dict(current)
+        job = {
+            'status': 'running',
+            'started_at': now,
+            'ended_at': None,
+            'ano': int(ano),
+            'mes': int(mes),
+            'emps': list(emps_effective),
+            'rows': 0,
+            'duration_ms': 0,
+            'errors': [],
+        }
+        _RELATORIO_RECALC_JOBS[key] = job
+
+    def _runner() -> None:
+        result: dict[str, Any] = {}
+        try:
+            result = rebuild_relatorio_campanhas_unificado_cache(
+                deps,
+                role=role_l,
+                vendedor_logado=vendedor_logado,
+                ano=int(ano),
+                mes=int(mes),
+                emps_scope=list(emps_scope or []),
+                emps_sel=list(emps_effective or []),
+                vendedores_sel=list(vendedores_sel or []),
+                vendedores_por_emp={str(emp): list(vs or []) for emp, vs in (vendedores_por_emp or {}).items()},
+            )
+        except Exception as exc:
+            result = {'status': 'error', 'errors': [str(exc)], 'rows': 0, 'duration_ms': 0}
+            try:
+                print(f'[RELATORIO_UNIFICADO] recalc_background_fatal erro={exc}')
+            except Exception:
+                pass
+        finally:
+            with _RELATORIO_RECALC_JOBS_LOCK:
+                saved = _RELATORIO_RECALC_JOBS.get(key) or {}
+                saved.update(result or {})
+                saved['status'] = result.get('status') or ('error' if result.get('errors') else 'done')
+                if saved['status'] == 'ok':
+                    saved['status'] = 'done'
+                saved['ended_at'] = time.monotonic()
+                _RELATORIO_RECALC_JOBS[key] = saved
+
+    th = threading.Thread(target=_runner, name=f'relatorio-campanhas-recalc-{int(ano)}-{int(mes)}', daemon=True)
+    th.start()
+    return 'started', dict(job)
 
 def _scope_cache_ttl_seconds() -> int:
     try:
@@ -780,20 +905,10 @@ def register_relatorio_campanhas_routes(
         emp_usuario = emp_fn()
         vendedor_logado = (usuario_logado_fn() or '').strip().upper()
 
-        # Compatibilidade com links antigos (?recalc=1), mas sem manter recalc na URL.
-        # Isso evita F5/histórico repetindo recálculo pesado.
+        # Compatibilidade com links antigos (?recalc=1), mas sem executar
+        # recálculo pesado por GET. O botão oficial usa POST e roda em background.
         if _is_recalc_flag(request.args):
-            ctx_recalc, _ = _build_relatorio_ctx(
-                deps,
-                role=role,
-                emp_usuario=emp_usuario,
-                vendedor_logado=vendedor_logado,
-                request_args=request.args,
-                flash_fn=flash,
-                recalc_override=True,
-            )
-            if not ctx_recalc.get('deferred_report'):
-                flash('Relatório recalculado com sucesso.', 'success')
+            flash('Use o botão Recalcular. Agora o processamento roda em segundo plano para evitar timeout.', 'warning')
             return redirect(_clean_report_url(request.args))
 
         ctx, vendedores_por_emp = _build_relatorio_ctx(
@@ -832,19 +947,53 @@ def register_relatorio_campanhas_routes(
                 post_args.setlist(key, list(values or []))
         except Exception:
             pass
-        post_args.setlist('recalc', ['1'])
+        # Proteção de performance: nunca recalcula todas as EMPs por acidente.
+        if _should_defer_unfiltered_report(role=role, request_args=post_args):
+            flash('Selecione ao menos uma EMP antes de recalcular o relatório.', 'warning')
+            return redirect(_clean_report_url(post_args))
 
-        ctx_recalc, _ = _build_relatorio_ctx(
+        _scope_cache_clear()
+        try:
+            scope = build_relatorio_campanhas_scope(
+                deps,
+                role=role,
+                emp_usuario=emp_usuario,
+                vendedor_logado=vendedor_logado,
+                args=post_args,
+                flash=flash,
+            )
+        except Exception as exc:
+            flash('Não foi possível preparar o recálculo agora. Tente novamente em instantes.', 'warning')
+            try:
+                print(f'[RELATORIO_CAMPANHAS] erro ao preparar recalc background: {exc}')
+            except Exception:
+                pass
+            return redirect(_clean_report_url(post_args))
+
+        try:
+            ano = int(scope.get('ano') or 0)
+            mes = int(scope.get('mes') or 0)
+        except Exception:
+            ano, mes = _month_year_from_args(post_args)
+
+        state, job = _start_recalc_background_job(
             deps,
             role=role,
-            emp_usuario=emp_usuario,
             vendedor_logado=vendedor_logado,
-            request_args=post_args,
-            flash_fn=flash,
-            recalc_override=True,
+            ano=ano,
+            mes=mes,
+            emps_scope=list(scope.get('emps_scope') or []),
+            emps_sel=list(scope.get('emps_sel') or []),
+            vendedores_sel=list(scope.get('vendedores_sel') or []),
+            vendedores_por_emp=dict(scope.get('vendedores_por_emp') or {}),
         )
-        if not ctx_recalc.get('deferred_report'):
-            flash('Relatório recalculado com sucesso.', 'success')
+        if state == 'running':
+            flash('O recálculo desta competência já está em andamento. Aguarde alguns instantes e atualize a página.', 'info')
+        elif state == 'done':
+            flash('Relatório já foi recalculado agora há pouco. Atualize a página para conferir.', 'success')
+        else:
+            emps_count = len(job.get('emps') or [])
+            flash(f'Recálculo iniciado em segundo plano para {emps_count} EMP(s). A página não ficará travada; atualize em alguns instantes.', 'success')
 
         return redirect(_clean_report_url(post_args))
 

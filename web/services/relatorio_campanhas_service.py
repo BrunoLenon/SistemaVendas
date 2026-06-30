@@ -649,6 +649,134 @@ def _relatorio_cache_clear() -> None:
         _RELATORIO_UNIFICADO_CACHE.clear()
 
 
+
+def rebuild_relatorio_campanhas_unificado_cache(
+    deps: CampanhasDeps,
+    *,
+    role: str,
+    vendedor_logado: str,
+    ano: int,
+    mes: int,
+    emps_scope: list[str],
+    emps_sel: list[str],
+    vendedores_sel: list[str],
+    vendedores_por_emp: dict[str, list[str]],
+) -> dict[str, Any]:
+    """Executa o recálculo pesado fora da request HTTP e aquece o cache do relatório.
+
+    Esta função é usada pelo botão /relatorios/campanhas/recalcular em modo
+    background. O objetivo é evitar timeout/502 no Render: a rota responde rápido
+    e este job atualiza snapshots + cache no processo atual.
+    """
+    started = time.perf_counter()
+    role_l = (role or "").strip().lower()
+    emps_scope = _sanitize_emps(emps_scope)
+    emps_sel = _sanitize_emps(emps_sel)
+
+    if role_l != "admin" and not emps_sel and emps_scope:
+        emps_sel = [str(e) for e in emps_scope]
+    if not emps_sel:
+        emps_sel = [str(e) for e in emps_scope]
+
+    stats: dict[str, Any] = {
+        "status": "ok",
+        "ano": int(ano),
+        "mes": int(mes),
+        "emps": list(emps_sel),
+        "rows": 0,
+        "duration_ms": 0,
+        "errors": [],
+    }
+
+    if not emps_sel:
+        stats["status"] = "skipped"
+        stats["errors"].append("sem_emp")
+        return stats
+
+    try:
+        try:
+            deps.recalcular_resultados_campanhas_para_scope(ano=ano, mes=mes, emps=emps_sel, vendedores_por_emp=vendedores_por_emp)
+        except TypeError:
+            deps.recalcular_resultados_campanhas_para_scope(ano=ano, mes=mes, emps_scope=emps_sel, vendedores_por_emp=vendedores_por_emp)
+    except Exception as exc:
+        stats["errors"].append(f"qtd:{exc}")
+        try:
+            print(f"[RELATORIO_UNIFICADO] recalc_background erro QTD: {exc}")
+        except Exception:
+            pass
+
+    try:
+        try:
+            deps.recalcular_resultados_combos_para_scope(ano=ano, mes=mes, emps=emps_sel, vendedores_por_emp=vendedores_por_emp)
+        except TypeError:
+            deps.recalcular_resultados_combos_para_scope(ano=ano, mes=mes, emps_scope=emps_sel, vendedores_por_emp=vendedores_por_emp)
+    except Exception as exc:
+        stats["errors"].append(f"combo:{exc}")
+        try:
+            print(f"[RELATORIO_UNIFICADO] recalc_background erro COMBO: {exc}")
+        except Exception:
+            pass
+
+    try:
+        snap_stats = rebuild_itens_parados_snapshot(
+            ano=int(ano),
+            mes=int(mes),
+            emps=emps_sel,
+            vendedores_por_emp=vendedores_por_emp,
+        )
+        stats["itens_parados_snapshot"] = snap_stats
+    except Exception as exc:
+        stats["errors"].append(f"itens_parados:{exc}")
+        try:
+            print(f"[RELATORIO_UNIFICADO] recalc_background erro Itens Parados: {exc}")
+        except Exception:
+            pass
+
+    rows: list[Any] = []
+    charts: dict[str, Any] = {}
+    try:
+        rows = build_unified_rows(
+            ano=int(ano),
+            mes=int(mes),
+            emps=emps_sel,
+            vendedores_por_emp=vendedores_por_emp,
+            incluir_zerados=False,
+            usar_snapshot_itens_parados=True,
+            incluir_participacao_ativa=True,
+        ) or []
+        charts = aggregate_for_charts(rows or [])
+        cache_key = _relatorio_cache_key(
+            role=role_l,
+            vendedor_logado=vendedor_logado,
+            ano=int(ano),
+            mes=int(mes),
+            emps=emps_sel,
+            vendedores_por_emp=vendedores_por_emp,
+        )
+        # Snapshots foram alterados: invalida caches antigos e deixa o escopo atual aquecido.
+        _relatorio_cache_clear()
+        _relatorio_cache_set(cache_key, rows, charts)
+        stats["rows"] = len(rows or [])
+    except Exception as exc:
+        stats["status"] = "partial_error"
+        stats["errors"].append(f"cache:{exc}")
+        try:
+            print(f"[RELATORIO_UNIFICADO] recalc_background erro ao aquecer cache: {exc}")
+        except Exception:
+            pass
+
+    stats["duration_ms"] = int((time.perf_counter() - started) * 1000)
+    try:
+        print(
+            "[RELATORIO_UNIFICADO] recalc_background_done "
+            f"status={stats.get('status')} duration_ms={stats.get('duration_ms')} "
+            f"rows={stats.get('rows')} ano={ano} mes={mes} emps={len(emps_sel or [])} "
+            f"errors={len(stats.get('errors') or [])}"
+        )
+    except Exception:
+        pass
+    return stats
+
 def build_relatorio_campanhas_unificado_context(
     deps: CampanhasDeps,
     *,
