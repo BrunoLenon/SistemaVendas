@@ -38,6 +38,9 @@ class UserScope:
     def is_vendedor(self) -> bool:
         return self.role == "vendedor"
 
+    def is_mecanico(self) -> bool:
+        return self.role == "mecanico"
+
     def is_financeiro(self) -> bool:
         return self.role == "financeiro"
 
@@ -186,7 +189,7 @@ def can_view_emp(user: UserScope, emp: Any) -> bool:
 
     - admin: sempre
     - financeiro: visão centralizada (se tiver lista de EMPs, respeita; se não tiver, libera)
-    - supervisor/gerente/vendedor: precisa estar em `user.emps` (quando definido) ou bater com `emp_default`
+    - supervisor/gerente/vendedor/mecanico: precisa estar em `user.emps` (quando definido) ou bater com `emp_default`
     """
     emp_s = _norm_emp(emp)
     if not emp_s:
@@ -217,12 +220,12 @@ def can_view_vendedor(user: UserScope, vendedor: Any) -> bool:
     """Regra única: usuário pode ver esse vendedor?
 
     - admin/supervisor/gerente/financeiro: permitido (o recorte final deve vir do filtro de EMP)
-    - vendedor: apenas ele mesmo (session['vendedor'])
+    - vendedor/mecanico: apenas ele mesmo (session['vendedor'])
     """
     v = (str(vendedor or "").strip().upper())
     if not v:
         return False
-    if user.is_vendedor():
+    if user.is_vendedor() or user.is_mecanico():
         me = (user.vendedor or "").strip().upper()
         return bool(me) and v == me
     return True

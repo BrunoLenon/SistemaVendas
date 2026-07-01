@@ -65,6 +65,8 @@ def login():
             set_session_emps(emps)
 
     # Redireciona para a melhor primeira tela por perfil
+    if role == "mecanico":
+        return redirect(url_for("metas"))
     if role in ("vendedor", "supervisor", "gerente"):
         return redirect(url_for("itens_parados"))
     return redirect(url_for("dashboard"))

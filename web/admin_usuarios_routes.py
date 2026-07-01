@@ -77,13 +77,13 @@ def admin_usuarios():
                     desired_emps = sorted({e for e in emps_sel if e})
                     if len(nova_senha) < 4:
                         raise ValueError("Senha muito curta (mín. 4).")
-                    if role not in {"admin", "supervisor", "gerente", "vendedor", "financeiro"}:
+                    if role not in {"admin", "supervisor", "gerente", "vendedor", "mecanico", "financeiro"}:
                         role = "vendedor"
                     # Regras:
-                    # - Vendedor/Supervisor: precisam ter ao menos 1 EMP ativa
+                    # - Vendedor/Supervisor/Gerente/Mecânico: precisam ter ao menos 1 EMP ativa
                     # - Admin/Financeiro: EMP é opcional (Financeiro enxerga todas as EMPs)
-                    if role in {"vendedor", "supervisor", "gerente"} and not desired_emps:
-                        raise ValueError("Selecione ao menos 1 EMP para vendedor/supervisor/gerente.")
+                    if role in {"vendedor", "supervisor", "gerente", "mecanico"} and not desired_emps:
+                        raise ValueError("Selecione ao menos 1 EMP para vendedor/supervisor/gerente/mecânico.")
 
                     # EMP legado (usuarios.emp) não é mais usado na UI/regra de permissão.
                     # A fonte oficial agora é usuario_emps.
@@ -169,8 +169,8 @@ def admin_usuarios():
                     if not u:
                         raise ValueError("Usuário não encontrado.")
                     # Admin pode ter 0+ vínculos (opcional). Vendedor/Supervisor precisam de 1+.
-                    if u.role in ("vendedor", "supervisor", "gerente") and not emps:
-                        raise ValueError("Vendedor/Supervisor/Gerente precisam ter ao menos 1 EMP.")
+                    if u.role in ("vendedor", "supervisor", "gerente", "mecanico") and not emps:
+                        raise ValueError("Vendedor/Supervisor/Gerente/Mecânico precisam ter ao menos 1 EMP.")
                     desired = set(emps)
                     links = db.query(UsuarioEmp).filter(UsuarioEmp.usuario_id == u.id).all()
                     current = {lk.emp: lk for lk in links}
@@ -205,8 +205,8 @@ def admin_usuarios():
                     u = db.query(Usuario).filter(Usuario.username == alvo).first()
                     if not u:
                         raise ValueError("Usuário não encontrado.")
-                    if u.role not in ("vendedor", "supervisor", "gerente"):
-                        raise ValueError("Apenas VENDEDOR, SUPERVISOR ou GERENTE podem ser vinculados a EMPs.")
+                    if u.role not in ("vendedor", "supervisor", "gerente", "mecanico"):
+                        raise ValueError("Apenas VENDEDOR, SUPERVISOR, GERENTE ou MECÂNICO podem ser vinculados a EMPs.")
 
                     # Normaliza lista de EMPs vinculadas
                     emps = []
@@ -235,8 +235,8 @@ def admin_usuarios():
                         # Mantém compatibilidade: define a primeira EMP vinculada como padrão
                         emp_legado = sorted(desired)[0]
 
-                    if u.role in ("supervisor", "gerente") and not emp_legado and not desired:
-                        raise ValueError("Supervisor/Gerente precisa ter ao menos 1 EMP (legado ou vinculada).")
+                    if u.role in ("supervisor", "gerente", "mecanico") and not emp_legado and not desired:
+                        raise ValueError("Supervisor/Gerente/Mecânico precisa ter ao menos 1 EMP (legado ou vinculada).")
 
                     setattr(u, "emp", emp_legado)
                     db.commit()
@@ -254,8 +254,8 @@ def admin_usuarios():
                     u = db.query(Usuario).filter(Usuario.username == alvo).first()
                     if not u:
                         raise ValueError("Usuário não encontrado.")
-                    if u.role not in {"vendedor", "supervisor", "gerente"}:
-                        raise ValueError("Apenas VENDEDOR, SUPERVISOR ou GERENTE podem ter múltiplas EMPs vinculadas.")
+                    if u.role not in {"vendedor", "supervisor", "gerente", "mecanico"}:
+                        raise ValueError("Apenas VENDEDOR, SUPERVISOR, GERENTE ou MECÂNICO podem ter múltiplas EMPs vinculadas.")
                     added = 0
                     for emp in sorted(set(emps)):
                         # upsert simples: tenta buscar, senão cria

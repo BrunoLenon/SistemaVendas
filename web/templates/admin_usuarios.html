@@ -10,7 +10,7 @@
   .users-title{font-size:28px;font-weight:900;letter-spacing:-.035em;margin:0;color:#fff;}
   .users-sub{color:#d1d5db;font-size:13px;max-width:980px;margin-top:7px;}
   .users-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;align-items:center;}
-  .users-kpis{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;margin-top:14px;}
+  .users-kpis{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:10px;margin-top:14px;}
   .users-kpi{border:1px solid rgba(255,255,255,.08);border-radius:18px;background:rgba(0,0,0,.24);padding:13px;min-height:92px;}
   .users-kpi small{display:block;color:#aeb6c2;text-transform:uppercase;letter-spacing:.08em;font-weight:900;font-size:10px;}
   .users-kpi strong{display:block;color:#fff;font-size:24px;line-height:1.05;margin-top:8px;}
@@ -65,11 +65,12 @@
 {% endblock %}
 
 {% block content %}
-{% set ns = namespace(admin=0, supervisor=0, gerente=0, vendedor=0, financeiro=0) %}
+{% set ns = namespace(admin=0, supervisor=0, gerente=0, vendedor=0, mecanico=0, financeiro=0) %}
 {% for u in usuarios %}
   {% if u.role == 'admin' %}{% set ns.admin = ns.admin + 1 %}
   {% elif u.role == 'supervisor' %}{% set ns.supervisor = ns.supervisor + 1 %}
   {% elif u.role == 'gerente' %}{% set ns.gerente = ns.gerente + 1 %}
+  {% elif u.role == 'mecanico' %}{% set ns.mecanico = ns.mecanico + 1 %}
   {% elif u.role == 'financeiro' %}{% set ns.financeiro = ns.financeiro + 1 %}
   {% else %}{% set ns.vendedor = ns.vendedor + 1 %}
   {% endif %}
@@ -80,7 +81,7 @@
     <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
       <div>
         <h1 class="users-title">👥 Administração de Usuários</h1>
-        <div class="users-sub">Cadastro, perfis e vínculos de EMP com visual premium no mesmo padrão da página Metas. Use esta tela para manter vendedores, gerentes, supervisores, financeiro e administradores organizados.</div>
+        <div class="users-sub">Cadastro, perfis e vínculos de EMP com visual premium no mesmo padrão da página Metas. Use esta tela para manter vendedores, mecânicos, gerentes, supervisores, financeiro e administradores organizados.</div>
       </div>
       <div class="users-actions">
         <a class="btn btn-sm btn-users-primary px-3" href="/admin/importar">📥 Importar Vendas</a>
@@ -96,6 +97,7 @@
     <div class="users-kpis">
       <div class="users-kpi"><small>Total de usuários</small><strong>{{ usuarios|length }}</strong><span>cadastros ativos no sistema</span></div>
       <div class="users-kpi"><small>Vendedores</small><strong>{{ ns.vendedor }}</strong><span>acompanham próprias vendas/metas</span></div>
+      <div class="users-kpi"><small>Mecânicos</small><strong>{{ ns.mecanico }}</strong><span>metas de oficina/mão de obra</span></div>
       <div class="users-kpi"><small>Supervisores</small><strong>{{ ns.supervisor }}</strong><span>visão por EMP vinculada</span></div>
       <div class="users-kpi"><small>Gerentes</small><strong>{{ ns.gerente }}</strong><span>visão da loja e campanha gerente</span></div>
       <div class="users-kpi"><small>Financeiro</small><strong>{{ ns.financeiro }}</strong><span>fechamento e pagamentos</span></div>
@@ -109,7 +111,7 @@
         <div class="users-card-head">
           <div>
             <h2 class="users-card-title">➕ Criar / Atualizar usuário</h2>
-            <div class="users-card-sub">O usuário é salvo em maiúsculo. Para vendedor/gerente/supervisor, selecione ao menos uma EMP.</div>
+            <div class="users-card-sub">O usuário é salvo em maiúsculo. Para vendedor/mecânico/gerente/supervisor, selecione ao menos uma EMP.</div>
           </div>
           <span class="users-chip warn">ADMIN</span>
         </div>
@@ -129,6 +131,7 @@
               <div class="users-label">Perfil</div>
               <select class="form-select users-select" name="role" id="roleSelect">
                 <option value="vendedor" selected>Vendedor</option>
+                <option value="mecanico">Mecânico</option>
                 <option value="supervisor">Supervisor</option>
                 <option value="gerente">Gerente de loja</option>
                 <option value="admin">Administrador</option>
@@ -148,7 +151,7 @@
                     {% endif %}
                   {% endfor %}
                 </div>
-                <div class="users-help mt-2"><b>Vendedor/Supervisor/Gerente</b> precisam de ao menos uma EMP ativa. <b>Admin/Financeiro</b> podem ficar sem vínculo.</div>
+                <div class="users-help mt-2"><b>Vendedor/Mecânico/Supervisor/Gerente</b> precisam de ao menos uma EMP ativa. <b>Admin/Financeiro</b> podem ficar sem vínculo.</div>
               {% else %}
                 <input class="form-control users-input" name="emps_text" placeholder="Ex.: 101, 102, 103">
                 <div class="users-help mt-2">Ainda não há empresas cadastradas. Cadastre em <a href="/admin/emps">Empresas</a> ou informe os códigos separados por vírgula.</div>
@@ -240,7 +243,7 @@
             <span>🔎</span>
             <input class="form-control users-input" id="usersSearch" placeholder="Pesquisar por usuário, perfil ou EMP...">
           </div>
-          <div class="users-help">Dica: o usuário do vendedor deve bater com a coluna <b>VENDEDOR</b> da planilha.</div>
+          <div class="users-help">Dica: o usuário do vendedor ou mecânico deve bater com a coluna usada na importação, como <b>VENDEDOR</b> ou usuário da oficina.</div>
         </div>
 
         {% if usuarios|length == 0 %}
@@ -272,6 +275,8 @@
                         <span class="users-chip info">supervisor</span>
                       {% elif u.role == 'gerente' %}
                         <span class="users-chip warn">gerente</span>
+                      {% elif u.role == 'mecanico' %}
+                        <span class="users-chip info">mecânico</span>
                       {% elif u.role == 'financeiro' %}
                         <span class="users-chip warn">financeiro</span>
                       {% else %}

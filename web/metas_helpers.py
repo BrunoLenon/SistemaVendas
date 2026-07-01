@@ -24,7 +24,6 @@ from sqlalchemy import text
 
 from services.oficina_service import (
     get_emps_servico_no_periodo,
-    get_usuarios_servico_no_periodo,
     sum_servicos_oficina_mes,
 )
 from sv_utils import _emp_norm, MOVIMENTOS_VENDA, MOVIMENTOS_NEGATIVOS
@@ -326,7 +325,6 @@ def get_vendedores_no_periodo(db, ano: int, mes: int, emps: list[str] | None = N
     """
     rows = db.execute(text(sql), {"ini": inicio, "fim": fim, **extra}).fetchall()
     nomes = [normalize_text(r[0]) for r in rows if r and normalize_text(r[0])]
-    nomes.extend(get_usuarios_servico_no_periodo(db, ano=ano, mes=mes, emps=emps or []))
     seen: set[str] = set()
     out: list[str] = []
     for n in nomes:
@@ -508,13 +506,12 @@ def get_mecanicos_cadastrados(db, emps: list[str] | None = None) -> list[str]:
 def get_mecanicos_para_metas(db, ano: int, mes: int, emps: list[str] | None = None) -> list[str]:
     """Mecânicos aptos a aparecerem na meta.
 
-    Une mecânicos cadastrados, usuários com serviço de oficina importado e
-    mecânicos cadastrados manualmente na aba de metas. Assim o mecânico aparece
-    mesmo antes de faturar, desde que tenha sido incluído na meta da EMP.
+    A fonte oficial de cadastro agora é a página Admin > Usuários, usando
+    usuários com perfil MECÂNICO e vínculo ativo com a EMP. Mantém entradas
+    antigas em bases manuais apenas para preservar histórico já cadastrado.
     """
     nomes: list[str] = []
     nomes.extend(get_mecanicos_cadastrados(db, emps))
-    nomes.extend(get_usuarios_servico_no_periodo(db, ano=ano, mes=mes, emps=emps or []))
 
     allowed = [normalize_emp(e) for e in (emps or []) if normalize_emp(e)]
     emp_clause = "AND b.emp = ANY(:emps)" if allowed else ""

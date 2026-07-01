@@ -751,35 +751,16 @@ def admin_metas_regra_salvar(meta_id: int):
 
 
 def admin_metas_mecanico_adicionar():
-    ensure_metas_lojas_schema()
+    """Compatibilidade para versões antigas da tela.
+
+    O cadastro oficial de mecânicos foi centralizado em Admin > Usuários para
+    manter todos os perfis na mesma página.
+    """
     red = _admin_guard()
     if red:
         return red
-
-    ano, mes = _period_from_request()
-    meta_id = _safe_int(request.form.get("meta_id"), 0)
-    emp_selected = normalize_emp(request.form.get("emp_selected"))
-    mecanico = normalize_text(request.form.get("mecanico"))
-    obs = (request.form.get("observacao") or "").strip()
-
-    if not meta_id or not emp_selected or not mecanico:
-        flash("Informe meta, EMP e nome do mecânico.", "warning")
-        return redirect(url_for("admin_metas", ano=ano, mes=mes, emp_sel=emp_selected))
-
-    with SessionLocal() as db:
-        meta = db.query(MetaPrograma).filter(MetaPrograma.id == int(meta_id)).first()
-        if not meta or not is_meta_mecanico(meta):
-            flash("Meta de mecânico não encontrada.", "danger")
-            return redirect(url_for("admin_metas", ano=ano, mes=mes, emp_sel=emp_selected))
-        emps_meta = set(get_meta_emps(db, int(meta.id)))
-        if emp_selected not in emps_meta:
-            flash("A EMP selecionada não participa desta meta de mecânico.", "warning")
-            return redirect(url_for("admin_metas", ano=meta.ano, mes=meta.mes, emp_sel=emp_selected))
-        upsert_base_manual(db, meta.id, emp_selected, mecanico, 0.0, obs, None)
-        db.commit()
-
-    flash(f"Mecânico {mecanico} cadastrado na meta da EMP {emp_selected}.", "success")
-    return redirect(url_for("admin_metas", ano=ano, mes=mes, emp_sel=emp_selected))
+    flash("Cadastre ou atualize mecânicos em Admin > Usuários, selecionando o perfil Mecânico e a EMP vinculada.", "info")
+    return redirect(url_for("admin_usuarios"))
 
 
 def admin_metas_margens_modelo():

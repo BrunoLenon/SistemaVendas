@@ -27,6 +27,8 @@ def normalize_role(role: str | None) -> str:
         return "gerente"
     if r in ("financeiro", "fin", "finance"):
         return "financeiro"
+    if r in ("mecanico", "mecânico", "mec", "oficina"):
+        return "mecanico"
     return "vendedor"
 
 

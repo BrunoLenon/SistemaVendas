@@ -317,39 +317,31 @@ VEI</textarea></div>
 
       <div class="tab-pane fade meta-pane" id="tab-mecanicos">
         {% if not mecanico_meta %}
-          <div class="meta-empty">Cadastre uma <b>Meta Faturamento — Mecânicos</b> antes de cadastrar os mecânicos.</div>
+          <div class="meta-empty">Cadastre uma <b>Meta Faturamento — Mecânicos</b> antes de conferir os mecânicos.</div>
         {% elif not emp_selected %}
-          <div class="meta-empty">Selecione uma EMP no filtro superior para cadastrar e conferir os mecânicos.</div>
+          <div class="meta-empty">Selecione uma EMP no filtro superior para conferir os mecânicos.</div>
         {% else %}
-          <div class="row g-3">
-            <div class="col-12 col-xl-4">
-              <form class="meta-card" method="post" action="{{ url_for('admin_metas_mecanico_adicionar') }}">
-                <input type="hidden" name="ano" value="{{ ano }}"><input type="hidden" name="mes" value="{{ mes }}"><input type="hidden" name="meta_id" value="{{ mecanico_meta.id }}"><input type="hidden" name="emp_selected" value="{{ emp_selected }}">
-                <h6>➕ Cadastrar mecânico</h6>
-                <p>Inclui o mecânico na meta da EMP selecionada mesmo antes de ter faturamento importado.</p>
-                <div class="mb-2"><div class="meta-label">Nome / usuário do mecânico</div><input class="form-control form-control-sm meta-input" name="mecanico" placeholder="Ex.: JOAO_OFICINA" required></div>
-                <div class="mb-3"><div class="meta-label">Observação</div><input class="form-control form-control-sm meta-input" name="observacao" placeholder="Opcional"></div>
-                <button class="btn btn-meta-primary btn-sm w-100">Cadastrar mecânico</button>
-              </form>
-            </div>
-            <div class="col-12 col-xl-8">
-              <div class="meta-card">
-                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
-                  <div><h6 class="m-0 fw-bold">Mecânicos da {{ emp_selected }}</h6><div class="meta-help">Meta: <b>{{ mecanico_meta.nome }}</b>. O faturamento vem da importação de oficina/mão de obra.</div></div>
-                  <a class="btn btn-sm btn-outline-light" href="{{ url_for('admin_meta_bases', meta_id=mecanico_meta.id, emp=emp_selected) }}">Abrir tela completa</a>
-                </div>
-                <div class="meta-table-wrap">
-                  <table class="table table-sm meta-table">
-                    <thead><tr><th>Mecânico</th><th class="text-end">Faturamento oficina</th><th class="text-end">Faixa</th><th class="text-end">Prêmio %</th><th class="text-end">Valor prêmio</th><th>Observação</th></tr></thead>
-                    <tbody>
-                      {% for r in mecanico_rows %}
-                        <tr><td class="fw-semibold">{{ r.mecanico }}</td><td class="text-end">{{ r.faturamento|brl_rs }}</td><td class="text-end">{% if r.faixa_limite %}{{ r.faixa_limite|brl_rs }}{% else %}-{% endif %}</td><td class="text-end">{{ r.bonus_percentual|brl }}%</td><td class="text-end fw-bold">{{ r.premio|brl_rs }}</td><td>{{ r.observacao or '-' }}</td></tr>
-                      {% endfor %}
-                      {% if mecanico_rows|length == 0 %}<tr><td colspan="6" class="text-center text-muted py-4">Nenhum mecânico cadastrado ou importado para esta EMP no período.</td></tr>{% endif %}
-                    </tbody>
-                  </table>
-                </div>
+          <div class="meta-card">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+              <div>
+                <h6 class="m-0 fw-bold">Mecânicos da {{ emp_selected }}</h6>
+                <div class="meta-help">Meta: <b>{{ mecanico_meta.nome }}</b>. O cadastro oficial do mecânico fica em <b>Admin &gt; Usuários</b>, usando o perfil <b>Mecânico</b> e vínculo com a EMP. O faturamento vem da importação de oficina/mão de obra.</div>
               </div>
+              <div class="d-flex gap-2 flex-wrap">
+                <a class="btn btn-sm btn-meta-primary" href="{{ url_for('admin_usuarios') }}">Cadastrar em Usuários</a>
+                <a class="btn btn-sm btn-outline-light" href="{{ url_for('admin_meta_bases', meta_id=mecanico_meta.id, emp=emp_selected) }}">Abrir conferência</a>
+              </div>
+            </div>
+            <div class="meta-table-wrap">
+              <table class="table table-sm meta-table">
+                <thead><tr><th>Mecânico</th><th class="text-end">Faturamento oficina</th><th class="text-end">Faixa</th><th class="text-end">Prêmio %</th><th class="text-end">Valor prêmio</th><th>Observação</th></tr></thead>
+                <tbody>
+                  {% for r in mecanico_rows %}
+                    <tr><td class="fw-semibold">{{ r.mecanico }}</td><td class="text-end">{{ r.faturamento|brl_rs }}</td><td class="text-end">{% if r.faixa_limite %}{{ r.faixa_limite|brl_rs }}{% else %}-{% endif %}</td><td class="text-end">{{ r.bonus_percentual|brl }}%</td><td class="text-end fw-bold">{{ r.premio|brl_rs }}</td><td>{{ r.observacao or '-' }}</td></tr>
+                  {% endfor %}
+                  {% if mecanico_rows|length == 0 %}<tr><td colspan="6" class="text-center text-muted py-4">Nenhum mecânico com perfil Mecânico vinculado a esta EMP.</td></tr>{% endif %}
+                </tbody>
+              </table>
             </div>
           </div>
         {% endif %}
