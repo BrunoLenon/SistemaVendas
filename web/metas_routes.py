@@ -38,19 +38,22 @@ from metas_helpers import (
     get_meta_marcas,
     get_margem_vendedor,
     get_gerentes_para_metas,
+    get_mecanicos_para_metas,
     get_participantes_para_meta,
     get_pessoas_para_metas,
     get_vendedores_para_metas,
     is_meta_gerente,
+    is_meta_mecanico,
     metas_ativas_periodo,
     montar_resultados_periodo,
     normalize_emp,
     normalize_text,
+    query_valor_mecanico_mes,
     query_valor_mes,
     upsert_base_manual,
 )
 
-TIPOS_META = ("CRESCIMENTO", "MIX", "SHARE_MARCA")
+TIPOS_META = ("CRESCIMENTO", "MIX", "SHARE_MARCA", "MECANICO_FATURAMENTO")
 
 
 def register_metas_routes(app) -> None:
@@ -64,6 +67,7 @@ def register_metas_routes(app) -> None:
     app.add_url_rule("/admin/metas/recalcular", endpoint="admin_metas_recalcular", view_func=admin_metas_recalcular, methods=["POST"])
     app.add_url_rule("/admin/metas/bases/<int:meta_id>", endpoint="admin_meta_bases", view_func=admin_meta_bases, methods=["GET"])
     app.add_url_rule("/admin/metas/bases/<int:meta_id>/salvar", endpoint="admin_meta_bases_salvar", view_func=admin_meta_bases_salvar, methods=["POST"])
+    app.add_url_rule("/admin/metas/mecanicos/adicionar", endpoint="admin_metas_mecanico_adicionar", view_func=admin_metas_mecanico_adicionar, methods=["POST"])
     app.add_url_rule("/admin/metas/margens/modelo", endpoint="admin_metas_margens_modelo", view_func=admin_metas_margens_modelo, methods=["GET"])
     app.add_url_rule("/admin/metas/margens/importar", endpoint="admin_metas_margens_importar", view_func=admin_metas_margens_importar, methods=["POST"])
 
@@ -163,6 +167,8 @@ def _tipo_label(tipo: str) -> str:
         return "Mix de Itens Únicos"
     if tipo == "SHARE_MARCA":
         return "Meta Marcas"
+    if tipo == "MECANICO_FATURAMENTO":
+        return "Meta Mecânicos"
     return tipo or "-"
 
 
@@ -174,6 +180,8 @@ def _tipo_badge(tipo: str) -> str:
         return "🧩 Mix"
     if tipo == "SHARE_MARCA":
         return "🏷️ Marcas"
+    if tipo == "MECANICO_FATURAMENTO":
+        return "🔧 Mecânicos"
     return tipo or "-"
 
 
@@ -181,6 +189,8 @@ def _escopo_label(escopo: str) -> str:
     escopo_n = normalize_text(escopo) or "VENDEDOR"
     if escopo_n == "GERENTE":
         return "Gerente / EMP inteira"
+    if escopo_n == "MECANICO":
+        return "Mecânico / Oficina"
     return "Vendedor"
 
 
@@ -188,6 +198,8 @@ def _escopo_badge(escopo: str) -> str:
     escopo_n = normalize_text(escopo) or "VENDEDOR"
     if escopo_n == "GERENTE":
         return "🏢 Gerente"
+    if escopo_n == "MECANICO":
+        return "🔧 Mecânico"
     return "👤 Vendedor"
 
 
@@ -293,9 +305,9 @@ def metas():
         allowed_emps = _allowed_emps()
         emps_choices = _allowed_admin_emps(db)
 
-        if role == "vendedor":
+        if role in ("vendedor", "mecanico"):
             vendedor_filtro = usuario
-            # Se o vendedor tem EMPs vinculadas, usa elas; senao usa EMP da sessao.
+            # Se o participante tem EMPs vinculadas, usa elas; senao usa EMP da sessao.
             emps_user = [normalize_emp(e) for e in (allowed_emps or []) if normalize_emp(e)]
             if not emps_user and _emp():
                 emps_user = [normalize_emp(_emp())]
@@ -345,7 +357,7 @@ def metas():
             metas_list=metas_list,
             resultados=resultados,
             totais=totais,
-            tipo_label={"CRESCIMENTO": "Crescimento", "MIX": "Mix", "SHARE_MARCA": "Marcas"},
+            tipo_label={"CRESCIMENTO": "Crescimento", "MIX": "Mix", "SHARE_MARCA": "Marcas", "MECANICO_FATURAMENTO": "Mecânicos"},
             tipo_label_fn=_tipo_label,
         )
 
@@ -374,12 +386,14 @@ def admin_metas():
         )
         metas_payload = [_meta_payload(db, m) for m in metas_db]
 
-        crescimento_meta = next((p["meta"] for p in metas_payload if normalize_text(p["meta"].tipo) == "CRESCIMENTO" and normalize_text(getattr(p["meta"], "escopo", "VENDEDOR")) != "GERENTE" and p["meta"].ativo), None)
+        crescimento_meta = next((p["meta"] for p in metas_payload if normalize_text(p["meta"].tipo) == "CRESCIMENTO" and normalize_text(getattr(p["meta"], "escopo", "VENDEDOR")) not in ("GERENTE", "MECANICO") and p["meta"].ativo), None)
         crescimento_gerente_meta = next((p["meta"] for p in metas_payload if normalize_text(p["meta"].tipo) == "CRESCIMENTO" and normalize_text(getattr(p["meta"], "escopo", "VENDEDOR")) == "GERENTE" and p["meta"].ativo), None)
+        mecanico_meta = next((p["meta"] for p in metas_payload if normalize_text(p["meta"].tipo) == "MECANICO_FATURAMENTO" and p["meta"].ativo), None)
         margem_minima_ativa = float(getattr(crescimento_meta, "margem_minima", 0.0) or 0.0) if crescimento_meta else 0.0
         margem_minima_gerente_ativa = float(getattr(crescimento_gerente_meta, "margem_minima", 0.0) or 0.0) if crescimento_gerente_meta else 0.0
         base_rows = []
         gerente_base_rows = []
+        mecanico_rows = []
         vendedores_base = []
         if crescimento_meta and emp_selected:
             vendedores_base = get_vendedores_para_metas(db, ano, mes, [emp_selected])
@@ -432,6 +446,28 @@ def admin_metas():
                     "margem_minima_individual": margem_individual,
                     "margem_minima_efetiva": margem_efetiva,
                     "margem_minima_origem": margem_origem,
+                    "observacao": getattr(base, "observacao", "") if base else "",
+                })
+
+        if mecanico_meta and emp_selected:
+            mecanicos_base = get_mecanicos_para_metas(db, ano, mes, [emp_selected])
+            if vendedor_selected:
+                mecanicos_base = [m for m in mecanicos_base if m == vendedor_selected]
+            for mecanico in mecanicos_base:
+                base = (
+                    db.query(MetaBaseManual)
+                    .filter(MetaBaseManual.meta_id == mecanico_meta.id, MetaBaseManual.emp == emp_selected, MetaBaseManual.vendedor == mecanico)
+                    .first()
+                )
+                calc = calcular_meta(db, mecanico_meta, emp_selected, mecanico, persist=False)
+                mecanico_rows.append({
+                    "emp": emp_selected,
+                    "mecanico": mecanico,
+                    "vendedor": mecanico,
+                    "faturamento": float(getattr(calc, "valor_mes", 0.0) or 0.0),
+                    "faixa_limite": float(getattr(calc, "faixa_limite", 0.0) or 0.0) if getattr(calc, "faixa_limite", None) is not None else None,
+                    "bonus_percentual": float(getattr(calc, "bonus_percentual", 0.0) or 0.0),
+                    "premio": float(getattr(calc, "premio", 0.0) or 0.0),
                     "observacao": getattr(base, "observacao", "") if base else "",
                 })
 
@@ -524,8 +560,10 @@ def admin_metas():
             metas_payload=metas_payload,
             crescimento_meta=crescimento_meta,
             crescimento_gerente_meta=crescimento_gerente_meta,
+            mecanico_meta=mecanico_meta,
             base_rows=base_rows,
             gerente_base_rows=gerente_base_rows,
+            mecanico_rows=mecanico_rows,
             vendedores_choices=get_pessoas_para_metas(db, ano, mes, [emp_selected] if emp_selected else emps_codes),
             metas_sim=metas_sim,
             resultados_sim=resultados_sim,
@@ -549,7 +587,9 @@ def admin_metas_criar():
     ano, mes = _period_from_request()
     tipo = normalize_text(request.form.get("tipo"))
     escopo = normalize_text(request.form.get("escopo") or "VENDEDOR")
-    if escopo not in ("VENDEDOR", "GERENTE"):
+    if tipo == "MECANICO_FATURAMENTO":
+        escopo = "MECANICO"
+    if escopo not in ("VENDEDOR", "GERENTE", "MECANICO"):
         escopo = "VENDEDOR"
     nome = (request.form.get("nome") or _tipo_label(tipo)).strip()
     emps = [normalize_emp(e) for e in request.form.getlist("emps") if normalize_emp(e)]
@@ -557,7 +597,8 @@ def admin_metas_criar():
     marcas = _parse_marcas(request.form.get("marcas"))
     teto_faturamento = _safe_float(request.form.get("teto_faturamento"), 0.0)
     margem_minima = _safe_float(request.form.get("margem_minima"), 0.0)
-    faturamento_minimo = _safe_float(request.form.get("faturamento_minimo"), 70000.0)
+    faturamento_default = 0.0 if tipo == "MECANICO_FATURAMENTO" or escopo == "MECANICO" else 70000.0
+    faturamento_minimo = _safe_float(request.form.get("faturamento_minimo"), faturamento_default)
 
     if tipo not in TIPOS_META:
         flash("Tipo de meta inválido.", "danger")
@@ -570,6 +611,9 @@ def admin_metas_criar():
         return redirect(url_for("admin_metas", ano=ano, mes=mes))
     if escopo == "GERENTE" and tipo not in ("CRESCIMENTO", "SHARE_MARCA"):
         flash("Meta de gerente aceita apenas Crescimento e Marcas.", "warning")
+        return redirect(url_for("admin_metas", ano=ano, mes=mes))
+    if escopo == "MECANICO" and tipo != "MECANICO_FATURAMENTO":
+        flash("Meta de mecânico aceita apenas Faturamento de Oficina.", "warning")
         return redirect(url_for("admin_metas", ano=ano, mes=mes))
     if tipo == "SHARE_MARCA" and not marcas:
         flash("Informe pelo menos uma marca para a Meta Marcas.", "warning")
@@ -674,6 +718,7 @@ def admin_metas_regra_salvar(meta_id: int):
     faturamento_minimo = _safe_float(request.form.get("faturamento_minimo"), 0.0)
     margem_minima = _safe_float(request.form.get("margem_minima"), 0.0)
     teto_faturamento = _safe_float(request.form.get("teto_faturamento"), 0.0)
+    escalas_raw = request.form.get("escalas")
 
     with SessionLocal() as db:
         meta = db.query(MetaPrograma).filter(MetaPrograma.id == int(meta_id)).first()
@@ -681,8 +726,18 @@ def admin_metas_regra_salvar(meta_id: int):
             flash("Meta não encontrada.", "danger")
             return redirect(url_for("admin_metas", ano=ano, mes=mes, emp_sel=emp_selected, vendedor=vendedor_selected))
 
+        tipo_meta = normalize_text(meta.tipo)
+        if escalas_raw is not None:
+            escalas = _parse_escalas(escalas_raw, tipo_meta)
+            if not escalas:
+                flash("Informe pelo menos uma faixa válida.", "warning")
+                return redirect(url_for("admin_metas", ano=ano, mes=mes, emp_sel=emp_selected, vendedor=vendedor_selected))
+            db.query(MetaEscala).filter(MetaEscala.meta_id == int(meta.id)).delete(synchronize_session=False)
+            for idx, (lim, valor) in enumerate(escalas, start=1):
+                db.add(MetaEscala(meta_id=meta.id, ordem=idx, limite_min=float(lim), bonus_percentual=float(valor)))
+
         meta.faturamento_minimo = faturamento_minimo if faturamento_minimo > 0 else 0.0
-        if normalize_text(meta.tipo) == "CRESCIMENTO":
+        if tipo_meta == "CRESCIMENTO":
             meta.margem_minima = margem_minima if margem_minima > 0 else 0.0
             meta.teto_faturamento = teto_faturamento if teto_faturamento > 0 else None
         else:
@@ -693,6 +748,38 @@ def admin_metas_regra_salvar(meta_id: int):
     flash("Regras da meta atualizadas.", "success")
     return redirect(url_for("admin_metas", ano=ano, mes=mes, emp_sel=emp_selected, vendedor=vendedor_selected))
 
+
+
+def admin_metas_mecanico_adicionar():
+    ensure_metas_lojas_schema()
+    red = _admin_guard()
+    if red:
+        return red
+
+    ano, mes = _period_from_request()
+    meta_id = _safe_int(request.form.get("meta_id"), 0)
+    emp_selected = normalize_emp(request.form.get("emp_selected"))
+    mecanico = normalize_text(request.form.get("mecanico"))
+    obs = (request.form.get("observacao") or "").strip()
+
+    if not meta_id or not emp_selected or not mecanico:
+        flash("Informe meta, EMP e nome do mecânico.", "warning")
+        return redirect(url_for("admin_metas", ano=ano, mes=mes, emp_sel=emp_selected))
+
+    with SessionLocal() as db:
+        meta = db.query(MetaPrograma).filter(MetaPrograma.id == int(meta_id)).first()
+        if not meta or not is_meta_mecanico(meta):
+            flash("Meta de mecânico não encontrada.", "danger")
+            return redirect(url_for("admin_metas", ano=ano, mes=mes, emp_sel=emp_selected))
+        emps_meta = set(get_meta_emps(db, int(meta.id)))
+        if emp_selected not in emps_meta:
+            flash("A EMP selecionada não participa desta meta de mecânico.", "warning")
+            return redirect(url_for("admin_metas", ano=meta.ano, mes=meta.mes, emp_sel=emp_selected))
+        upsert_base_manual(db, meta.id, emp_selected, mecanico, 0.0, obs, None)
+        db.commit()
+
+    flash(f"Mecânico {mecanico} cadastrado na meta da EMP {emp_selected}.", "success")
+    return redirect(url_for("admin_metas", ano=ano, mes=mes, emp_sel=emp_selected))
 
 
 def admin_metas_margens_modelo():
@@ -957,8 +1044,9 @@ def admin_meta_bases(meta_id: int):
         if not meta:
             flash("Meta não encontrada.", "danger")
             return redirect(url_for("admin_metas"))
-        if normalize_text(meta.tipo) != "CRESCIMENTO":
-            flash("Bases manuais são utilizadas apenas na Meta de Crescimento.", "warning")
+        meta_mecanico = is_meta_mecanico(meta)
+        if normalize_text(meta.tipo) != "CRESCIMENTO" and not meta_mecanico:
+            flash("Esta tela é usada para bases de crescimento ou cadastro de mecânicos.", "warning")
             return redirect(url_for("admin_metas", ano=meta.ano, mes=meta.mes))
 
         emps = get_meta_emps(db, int(meta.id))
@@ -967,11 +1055,14 @@ def admin_meta_bases(meta_id: int):
             emp_selected = emps[0] if emps else ""
 
         meta_gerente = is_meta_gerente(meta)
-        vendedores = (
-            get_gerentes_para_metas(db, meta.ano, meta.mes, [emp_selected] if emp_selected else emps)
-            if meta_gerente
-            else get_vendedores_para_metas(db, meta.ano, meta.mes, [emp_selected] if emp_selected else emps)
-        )
+        if meta_mecanico:
+            vendedores = get_mecanicos_para_metas(db, meta.ano, meta.mes, [emp_selected] if emp_selected else emps)
+        else:
+            vendedores = (
+                get_gerentes_para_metas(db, meta.ano, meta.mes, [emp_selected] if emp_selected else emps)
+                if meta_gerente
+                else get_vendedores_para_metas(db, meta.ano, meta.mes, [emp_selected] if emp_selected else emps)
+            )
         linhas = []
         for vend in vendedores:
             base = (
@@ -979,6 +1070,24 @@ def admin_meta_bases(meta_id: int):
                 .filter(MetaBaseManual.meta_id == meta.id, MetaBaseManual.emp == emp_selected, MetaBaseManual.vendedor == vend)
                 .first()
             )
+            if meta_mecanico:
+                calc = calcular_meta(db, meta, emp_selected, vend, persist=False)
+                linhas.append({
+                    "emp": emp_selected,
+                    "vendedor": vend,
+                    "venda_mes": float(getattr(calc, "valor_mes", 0.0) or 0.0),
+                    "base_valor": 0.0,
+                    "crescimento_pct": 0.0,
+                    "margem_minima_individual": 0.0,
+                    "margem_minima_efetiva": 0.0,
+                    "margem_minima_origem": "",
+                    "faixa_limite": float(getattr(calc, "faixa_limite", 0.0) or 0.0) if getattr(calc, "faixa_limite", None) is not None else None,
+                    "bonus_percentual": float(getattr(calc, "bonus_percentual", 0.0) or 0.0),
+                    "premio": float(getattr(calc, "premio", 0.0) or 0.0),
+                    "observacao": getattr(base, "observacao", "") if base else "",
+                })
+                continue
+
             venda_mes = query_valor_mes(db, meta.ano, meta.mes, emp_selected, None if meta_gerente else vend)
             base_valor = float(getattr(base, "base_valor", 0.0) or 0.0) if base else 0.0
             crescimento_pct = ((venda_mes - base_valor) / base_valor * 100.0) if base_valor > 0 else 0.0
@@ -1008,7 +1117,8 @@ def admin_meta_bases(meta_id: int):
             linhas=linhas,
             margem_minima_padrao=float(getattr(meta, "margem_minima", 0.0) or 0.0),
             meta_gerente=meta_gerente,
-            participante_label="Gerente" if meta_gerente else "Vendedor",
+            meta_mecanico=meta_mecanico,
+            participante_label="Mecânico" if meta_mecanico else ("Gerente" if meta_gerente else "Vendedor"),
             tipo_label=_tipo_badge,
         )
 

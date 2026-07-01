@@ -17,14 +17,14 @@
     <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
       <div>
         <h1 class="metas-title">🎯 Metas</h1>
-        <div class="metas-sub">Acompanhe suas metas do mês: crescimento sobre base manual, mix de itens únicos, participação das marcas e metas de gerente pelo resultado da EMP inteira. Resultados consideram OA/VV/SV como venda e DS/CA como desconto.</div>
+        <div class="metas-sub">Acompanhe suas metas do mês: crescimento sobre base manual, mix de itens únicos, participação das marcas, metas de gerente pelo resultado da EMP inteira e metas de mecânico pelo faturamento de oficina. Resultados consideram OA/VV/SV como venda, DS/CA como desconto e oficina conforme importação de mão de obra.</div>
       </div>
       <form class="metas-filter" method="get" action="{{ url_for('metas') }}">
         <div><div class="metas-label">Mês</div><input class="form-control form-control-sm" name="mes" value="{{ '%02d'|format(mes) }}" style="width:86px"></div>
         <div><div class="metas-label">Ano</div><input class="form-control form-control-sm" name="ano" value="{{ ano }}" style="width:98px"></div>
         {% if role != 'vendedor' %}
           <div><div class="metas-label">EMP</div><select class="form-select form-select-sm" name="emp" style="min-width:160px"><option value="">Todas</option>{% for e in emps_choices %}<option value="{{ e }}" {% if emp_filtro==e %}selected{% endif %}>{{ e }}</option>{% endfor %}</select></div>
-          <div><div class="metas-label">Vendedor/Gerente</div><select class="form-select form-select-sm" name="vendedor" style="min-width:220px"><option value="">Todos</option>{% for v in vendedores_choices %}<option value="{{ v }}" {% if vendedor_filtro==v %}selected{% endif %}>{{ v }}</option>{% endfor %}</select></div>
+          <div><div class="metas-label">Participante</div><select class="form-select form-select-sm" name="vendedor" style="min-width:220px"><option value="">Todos</option>{% for v in vendedores_choices %}<option value="{{ v }}" {% if vendedor_filtro==v %}selected{% endif %}>{{ v }}</option>{% endfor %}</select></div>
         {% endif %}
         <button class="btn btn-sm btn-warning fw-bold px-3">Filtrar</button>
       </form>
@@ -46,7 +46,7 @@
       <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
         <div><h6 class="m-0 fw-bold">Resultado parcial</h6><div class="metas-detail">Valores ainda podem mudar até o fechamento do mês.</div></div>
         <div>
-          {% for m in metas_list %}<span class="metas-chip">{{ tipo_label.get(m.tipo, m.tipo) }}{% if ((m.escopo or 'VENDEDOR')|upper) == 'GERENTE' %} · Gerente{% endif %}</span>{% endfor %}
+          {% for m in metas_list %}<span class="metas-chip">{{ tipo_label.get(m.tipo, m.tipo) }}{% if ((m.escopo or 'VENDEDOR')|upper) == 'GERENTE' %} · Gerente{% elif ((m.escopo or 'VENDEDOR')|upper) == 'MECANICO' or m.tipo == 'MECANICO_FATURAMENTO' %} · Mecânico{% endif %}</span>{% endfor %}
         </div>
       </div>
       <div class="metas-table-wrap">
@@ -90,6 +90,9 @@
                       {% elif m.tipo == 'SHARE_MARCA' %}
                         <div class="metas-detail">Marcas: {{ (d.valor_marcas or 0)|brl_rs }}</div>
                         <div class="metas-detail">Part.: {{ (d.share_pct or 0)|brl }}% · Prêmio: {{ (d.bonus_percentual or 0)|brl }}%{% if ((m.escopo or 'VENDEDOR')|upper) == 'GERENTE' %} · EMP inteira{% endif %}</div>
+                      {% elif m.tipo == 'MECANICO_FATURAMENTO' %}
+                        <div class="metas-detail">Faturamento oficina: {{ (d.valor_mes or 0)|brl_rs }}</div>
+                        <div class="metas-detail">Faixa: {% if d.faixa_limite %}{{ d.faixa_limite|brl_rs }}{% else %}não atingida{% endif %} · Prêmio: {{ (d.bonus_percentual or 0)|brl }}%</div>
                       {% endif %}
                     {% else %}
                       <span class="text-muted">-</span>

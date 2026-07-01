@@ -45,7 +45,9 @@ POSITIVE_MOV_TYPES = MOVIMENTOS_VENDA
 NEGATIVE_MOV_TYPES = MOVIMENTOS_NEGATIVOS
 META_GERENTE_ALIAS = "__GERENTE__"  # mantido por compatibilidade com telas antigas
 META_GERENTE_LABEL = "GERENTE"
-META_ESCOPOS = {"VENDEDOR", "GERENTE"}
+META_MECANICO_LABEL = "MECANICO"
+META_TIPO_MECANICO_FATURAMENTO = "MECANICO_FATURAMENTO"
+META_ESCOPOS = {"VENDEDOR", "GERENTE", "MECANICO"}
 
 
 def meta_escopo(meta: MetaPrograma | object) -> str:
@@ -62,7 +64,14 @@ def is_meta_gerente(meta: MetaPrograma | object) -> bool:
     return meta_escopo(meta) == "GERENTE"
 
 
+def is_meta_mecanico(meta: MetaPrograma | object) -> bool:
+    tipo = normalize_text(getattr(meta, "tipo", "") or "")
+    return meta_escopo(meta) == "MECANICO" or tipo == META_TIPO_MECANICO_FATURAMENTO
+
+
 def participante_label(meta: MetaPrograma | object) -> str:
+    if is_meta_mecanico(meta):
+        return "Mecânico"
     return "Gerente" if is_meta_gerente(meta) else "Vendedor"
 
 
@@ -161,6 +170,17 @@ def _query_valor_mes(db, ano: int, mes: int, emp: str, vendedor: str) -> float:
 
 def _query_valor_emp_mes(db, ano: int, mes: int, emp: str) -> float:
     return query_valor_mes(db, ano, mes, emp, None)
+
+
+def query_valor_mecanico_mes(db, ano: int, mes: int, emp: str, mecanico: str) -> float:
+    """Faturamento de oficina/mão de obra por mecânico na competência."""
+    return sum_servicos_oficina_mes(
+        db,
+        ano=int(ano),
+        mes=int(mes),
+        emp=normalize_emp(emp),
+        usuario=normalize_text(mecanico) or None,
+    )
 
 
 def query_valor_marcas(db, ano: int, mes: int, emp: str, vendedor: str | None, marcas: list[str]) -> tuple[float, float, float]:
@@ -448,13 +468,98 @@ def get_gerentes_para_metas(db, ano: int, mes: int, emps: list[str] | None = Non
     return sorted(out)
 
 
+def get_mecanicos_cadastrados(db, emps: list[str] | None = None) -> list[str]:
+    """Mecânicos cadastrados como usuário/vínculo, quando existir esse perfil."""
+    allowed = [normalize_emp(e) for e in (emps or []) if normalize_emp(e)]
+    nomes: list[str] = []
+    try:
+        q = (
+            db.query(Usuario.username)
+            .join(UsuarioEmp, UsuarioEmp.usuario_id == Usuario.id)
+            .filter(UsuarioEmp.ativo.is_(True))
+            .filter(Usuario.role.ilike("mecanico"))
+        )
+        if allowed:
+            q = q.filter(UsuarioEmp.emp.in_(allowed))
+        rows = q.order_by(Usuario.username.asc()).all()
+        nomes.extend([normalize_text(r[0]) for r in rows if r and normalize_text(r[0])])
+    except Exception:
+        pass
+
+    try:
+        q2 = db.query(Usuario.username).filter(Usuario.role.ilike("mecanico"))
+        if allowed:
+            q2 = q2.filter(Usuario.emp.in_(allowed))
+        rows2 = q2.order_by(Usuario.username.asc()).all()
+        nomes.extend([normalize_text(r[0]) for r in rows2 if r and normalize_text(r[0])])
+    except Exception:
+        pass
+
+    seen: set[str] = set()
+    out: list[str] = []
+    for n in nomes:
+        n = normalize_text(n)
+        if n and n not in seen:
+            seen.add(n)
+            out.append(n)
+    return sorted(out)
+
+
+def get_mecanicos_para_metas(db, ano: int, mes: int, emps: list[str] | None = None) -> list[str]:
+    """Mecânicos aptos a aparecerem na meta.
+
+    Une mecânicos cadastrados, usuários com serviço de oficina importado e
+    mecânicos cadastrados manualmente na aba de metas. Assim o mecânico aparece
+    mesmo antes de faturar, desde que tenha sido incluído na meta da EMP.
+    """
+    nomes: list[str] = []
+    nomes.extend(get_mecanicos_cadastrados(db, emps))
+    nomes.extend(get_usuarios_servico_no_periodo(db, ano=ano, mes=mes, emps=emps or []))
+
+    allowed = [normalize_emp(e) for e in (emps or []) if normalize_emp(e)]
+    emp_clause = "AND b.emp = ANY(:emps)" if allowed else ""
+    params: dict[str, object] = {"ano": ano, "mes": mes}
+    if allowed:
+        params["emps"] = allowed
+    sql = f"""
+      SELECT DISTINCT UPPER(TRIM(COALESCE(b.vendedor,'')))
+        FROM metas_bases_manuais b
+        JOIN metas_programas m ON m.id = b.meta_id
+       WHERE m.ano = :ano AND m.mes = :mes
+         AND (UPPER(COALESCE(m.escopo,'VENDEDOR')) = 'MECANICO'
+              OR UPPER(COALESCE(m.tipo,'')) = 'MECANICO_FATURAMENTO')
+         {emp_clause}
+         AND COALESCE(b.vendedor,'') <> ''
+    """
+    try:
+        rows = db.execute(text(sql), params).fetchall()
+        nomes.extend([normalize_text(r[0]) for r in rows if r and normalize_text(r[0])])
+    except Exception:
+        pass
+
+    seen: set[str] = set()
+    out: list[str] = []
+    for n in nomes:
+        n = normalize_text(n)
+        if n and n not in seen:
+            seen.add(n)
+            out.append(n)
+    return sorted(out)
+
+
 def get_participantes_para_meta(db, meta: MetaPrograma, ano: int, mes: int, emps: list[str] | None = None) -> list[str]:
+    if is_meta_mecanico(meta):
+        return get_mecanicos_para_metas(db, ano, mes, emps)
     return get_gerentes_para_metas(db, ano, mes, emps) if is_meta_gerente(meta) else get_vendedores_para_metas(db, ano, mes, emps)
 
 
 def get_pessoas_para_metas(db, ano: int, mes: int, emps: list[str] | None = None) -> list[str]:
-    """Lista combinada para filtros: vendedores + gerentes."""
-    nomes = list(get_vendedores_para_metas(db, ano, mes, emps)) + list(get_gerentes_para_metas(db, ano, mes, emps))
+    """Lista combinada para filtros: vendedores + gerentes + mecânicos."""
+    nomes = (
+        list(get_vendedores_para_metas(db, ano, mes, emps))
+        + list(get_gerentes_para_metas(db, ano, mes, emps))
+        + list(get_mecanicos_para_metas(db, ano, mes, emps))
+    )
     seen: set[str] = set()
     out: list[str] = []
     for n in nomes:
@@ -681,6 +786,26 @@ def calcular_meta(db, meta: MetaPrograma, emp: str, vendedor: str, persist: bool
         calc.valor_marcas = float(valor_marcas)
         calc.share_pct = float(percent2(share_pct))
         calc.faixa_limite = float(getattr(escala, "limite_min", 0.0) or 0.0) if escala else None
+        calc.bonus_percentual = bonus_pct
+        calc.premio = float(premio)
+
+    elif tipo == META_TIPO_MECANICO_FATURAMENTO:
+        valor_mes = Decimal(str(query_valor_mecanico_mes(db, meta.ano, meta.mes, emp_n, vendedor_n)))
+        escala = pick_scale(escalas, float(valor_mes))
+        bonus_pct = float(getattr(escala, "bonus_percentual", 0.0) or 0.0) if escala else 0.0
+        premio = money2(valor_mes * Decimal(str(bonus_pct)) / Decimal("100"))
+
+        # Para auditoria/snapshot, base_valor guarda a faixa financeira de
+        # referência: faixa atingida quando houver prêmio, ou a primeira faixa
+        # quando o mecânico ainda não atingiu o mínimo.
+        escala_ref = escala
+        if escala_ref is None:
+            escalas_ord = sorted(list(escalas or []), key=lambda e: (float(e.limite_min or 0.0), int(e.ordem or 0)))
+            escala_ref = escalas_ord[0] if escalas_ord else None
+
+        calc.valor_mes = float(valor_mes)
+        calc.base_valor = float(getattr(escala_ref, "limite_min", 0.0) or 0.0) if escala_ref else None
+        calc.faixa_limite = calc.base_valor
         calc.bonus_percentual = bonus_pct
         calc.premio = float(premio)
 

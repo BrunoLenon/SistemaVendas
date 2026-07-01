@@ -54,6 +54,8 @@ def _meta_tipo_label_public(tipo: str) -> str:
         return "Meta Mix"
     if tipo == "SHARE_MARCA":
         return "Meta Marcas"
+    if tipo == "MECANICO_FATURAMENTO":
+        return "Meta Mecânicos"
     return "Meta"
 
 
@@ -69,6 +71,9 @@ def _meta_metric_label(calc: Any) -> str:
         if tipo == "SHARE_MARCA":
             pct = float(getattr(calc, "share_pct", 0.0) or 0.0)
             return f"{pct:.2f}%"
+        if tipo == "MECANICO_FATURAMENTO":
+            valor = float(getattr(calc, "valor_mes", 0.0) or 0.0)
+            return f"R$ {valor:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
     except Exception:
         pass
     return "0"
@@ -114,7 +119,15 @@ def _get_gerentes_emp(db, emp: str) -> list[str]:
 def _build_meta_cards_for_vendedor(db: Any, *, ano: int, mes: int, emp: str, vendedor: str, incluir_zeradas: bool = True) -> list[Any]:
     """Monta linhas de metas para a tela /campanhas sem acoplar template ao módulo /metas."""
     try:
-        from metas_helpers import calcular_meta, get_meta_emps, metas_ativas_periodo
+        from metas_helpers import (
+            calcular_meta,
+            get_meta_emps,
+            get_gerentes_para_metas,
+            get_mecanicos_para_metas,
+            is_meta_gerente,
+            is_meta_mecanico,
+            metas_ativas_periodo,
+        )
     except Exception:
         return []
 
@@ -134,6 +147,14 @@ def _build_meta_cards_for_vendedor(db: Any, *, ano: int, mes: int, emp: str, ven
             meta_emps = set(str(e).strip() for e in (get_meta_emps(db, int(getattr(meta, "id", 0) or 0)) or []) if str(e).strip())
             if meta_emps and emp_s not in meta_emps:
                 continue
+            if is_meta_mecanico(meta):
+                mecanicos_emp = {str(m or '').strip().upper() for m in (get_mecanicos_para_metas(db, int(ano), int(mes), [emp_s]) or []) if str(m or '').strip()}
+                if vendedor_u not in mecanicos_emp:
+                    continue
+            elif is_meta_gerente(meta):
+                gerentes_emp = {str(g or '').strip().upper() for g in (get_gerentes_para_metas(db, int(ano), int(mes), [emp_s]) or []) if str(g or '').strip()}
+                if vendedor_u not in gerentes_emp:
+                    continue
             calc = calcular_meta(db, meta, emp_s, vendedor_u, persist=True)
             premio = float(getattr(calc, "premio", 0.0) or 0.0)
             if not incluir_zeradas and premio <= 0:
@@ -149,6 +170,8 @@ def _build_meta_cards_for_vendedor(db: Any, *, ano: int, mes: int, emp: str, ven
                 subtitulo = "Itens únicos vendidos"
             elif tipo == "SHARE_MARCA":
                 subtitulo = "Participação das marcas"
+            elif tipo == "MECANICO_FATURAMENTO":
+                subtitulo = "Faturamento de oficina"
 
             out.append(SimpleNamespace(
                 tipo="META",
@@ -470,12 +493,23 @@ def _get_vendedores_por_emp_no_periodo_batch(
 
             final: dict[str, list[str]] = {}
             for emp_s, vendedores in out.items():
-                usuarios_oficina = set(get_usuarios_servico_no_periodo(db, ano=int(ano), mes=int(mes), emps=[emp_s]))
-                vendedores = set(vendedores) | {str(u or '').strip().upper() for u in usuarios_oficina if str(u or '').strip()}
+                usuarios_oficina = {str(u or '').strip().upper() for u in get_usuarios_servico_no_periodo(db, ano=int(ano), mes=int(mes), emps=[emp_s]) if str(u or '').strip()}
+                mecanicos_meta: set[str] = set()
+                try:
+                    from metas_helpers import get_mecanicos_para_metas  # import local para evitar acoplamento/ciclo no boot
+                    mecanicos_meta = {
+                        str(u or '').strip().upper()
+                        for u in (get_mecanicos_para_metas(db, ano=int(ano), mes=int(mes), emps=[emp_s]) or [])
+                        if str(u or '').strip()
+                    }
+                except Exception:
+                    mecanicos_meta = set()
+
+                vendedores = set(vendedores) | usuarios_oficina | mecanicos_meta
                 if vinculados.get(emp_s):
-                    vendedores = {v for v in vendedores if v in vinculados[emp_s] or v in usuarios_oficina}
+                    vendedores = {v for v in vendedores if v in vinculados[emp_s] or v in usuarios_oficina or v in mecanicos_meta}
                 elif vendedores_globais:
-                    vendedores = {v for v in vendedores if v in vendedores_globais or v in usuarios_oficina}
+                    vendedores = {v for v in vendedores if v in vendedores_globais or v in usuarios_oficina or v in mecanicos_meta}
                 final[emp_s] = sorted(vendedores)
             return final
     except Exception:

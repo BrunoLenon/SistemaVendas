@@ -17,8 +17,8 @@
   <section class="mb-hero mb-3">
     <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
       <div>
-        <h1 class="mb-title">🧮 Bases dos {% if meta_gerente %}Gerentes{% else %}Vendedores{% endif %}</h1>
-        <div class="mb-sub"><strong>{{ meta.nome }}</strong> · {{ tipo_label(meta.tipo) }} · {{ '%02d'|format(meta.mes) }}/{{ meta.ano }}. {% if meta_gerente %}A base é manual por EMP e gerente; o cálculo usa a venda total da loja.{% else %}A base e a margem mínima individual são manuais por EMP e vendedor.{% endif %} {% if meta.faturamento_minimo %}<b>Faturamento mínimo:</b> {{ meta.faturamento_minimo|brl_rs }}.{% endif %} {% if margem_minima_padrao %}<b>Margem padrão:</b> {{ margem_minima_padrao|brl }}%.{% endif %}</div>
+        <h1 class="mb-title">{% if meta_mecanico %}🔧 Mecânicos{% else %}🧮 Bases dos {% if meta_gerente %}Gerentes{% else %}Vendedores{% endif %}{% endif %}</h1>
+        <div class="mb-sub"><strong>{{ meta.nome }}</strong> · {{ tipo_label(meta.tipo) }} · {{ '%02d'|format(meta.mes) }}/{{ meta.ano }}. {% if meta_mecanico %}Cadastre os mecânicos da EMP e confira o faturamento de oficina usado nas faixas de premiação.{% elif meta_gerente %}A base é manual por EMP e gerente; o cálculo usa a venda total da loja.{% else %}A base e a margem mínima individual são manuais por EMP e vendedor.{% endif %} {% if meta.faturamento_minimo %}<b>Faturamento mínimo:</b> {{ meta.faturamento_minimo|brl_rs }}.{% endif %} {% if margem_minima_padrao and not meta_mecanico %}<b>Margem padrão:</b> {{ margem_minima_padrao|brl }}%.{% endif %}</div>
       </div>
       <form class="mb-filter" method="get" action="{{ url_for('admin_meta_bases', meta_id=meta.id) }}">
         <div><div class="mb-help mb-1">EMP</div><select class="form-select form-select-sm" name="emp" style="min-width:190px">{% for e in emps %}<option value="{{ e }}" {% if emp_selected==e %}selected{% endif %}>{{ e }}</option>{% endfor %}</select></div>
@@ -28,37 +28,59 @@
     </div>
   </section>
 
+  {% if meta_mecanico %}
+    <form class="mb-card mb-3" method="post" action="{{ url_for('admin_metas_mecanico_adicionar') }}">
+      <input type="hidden" name="ano" value="{{ meta.ano }}"><input type="hidden" name="mes" value="{{ meta.mes }}"><input type="hidden" name="meta_id" value="{{ meta.id }}"><input type="hidden" name="emp_selected" value="{{ emp_selected }}">
+      <div class="row g-2 align-items-end">
+        <div class="col-12 col-lg-5"><div class="mb-help mb-1">Nome / usuário do mecânico</div><input class="form-control form-control-sm mb-input" name="mecanico" placeholder="Ex.: JOAO_OFICINA" required></div>
+        <div class="col-12 col-lg-5"><div class="mb-help mb-1">Observação</div><input class="form-control form-control-sm mb-input" name="observacao" placeholder="Opcional"></div>
+        <div class="col-12 col-lg-2"><button class="btn btn-meta-primary btn-sm w-100">Adicionar</button></div>
+      </div>
+    </form>
+  {% endif %}
+
   <form method="post" action="{{ url_for('admin_meta_bases_salvar', meta_id=meta.id) }}">
     <input type="hidden" name="emp_selected" value="{{ emp_selected }}">
     <div class="mb-card">
       <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
-        <div><div class="fw-bold">EMP {{ emp_selected }}</div><div class="mb-help">{% if meta_gerente %}Informe a Meta Base mensal da loja para o gerente. A venda mês é o total da EMP inteira.{% else %}Informe a Meta Base mensal e, se necessário, a margem mínima individual. Se a margem individual ficar vazia, o sistema usa a margem padrão da meta.{% endif %}</div></div>
-        <button class="btn btn-meta-primary btn-sm px-4">Salvar bases</button>
+        <div><div class="fw-bold">EMP {{ emp_selected }}</div><div class="mb-help">{% if meta_mecanico %}Confira o faturamento de oficina de cada mecânico e mantenha observações cadastrais, se necessário.{% elif meta_gerente %}Informe a Meta Base mensal da loja para o gerente. A venda mês é o total da EMP inteira.{% else %}Informe a Meta Base mensal e, se necessário, a margem mínima individual. Se a margem individual ficar vazia, o sistema usa a margem padrão da meta.{% endif %}</div></div>
+        <button class="btn btn-meta-primary btn-sm px-4">{% if meta_mecanico %}Salvar observações{% else %}Salvar bases{% endif %}</button>
       </div>
       <div class="mb-table-wrap">
         <table class="table table-sm mb-table">
           <thead>
-            <tr><th>{{ participante_label }}</th><th class="text-end">{% if meta_gerente %}Venda total EMP{% else %}Venda mês{% endif %}</th><th style="min-width:170px">{% if meta_gerente %}Meta base loja{% else %}Meta base manual{% endif %}</th><th style="min-width:170px">Margem mínima individual</th><th class="text-end">Margem efetiva</th><th class="text-end">Crescimento atual</th><th style="min-width:260px">Observação</th></tr>
+            {% if meta_mecanico %}
+              <tr><th>Mecânico</th><th class="text-end">Faturamento oficina</th><th class="text-end">Faixa referência</th><th class="text-end">Prêmio %</th><th class="text-end">Valor prêmio</th><th style="min-width:260px">Observação</th></tr>
+            {% else %}
+              <tr><th>{{ participante_label }}</th><th class="text-end">{% if meta_gerente %}Venda total EMP{% else %}Venda mês{% endif %}</th><th style="min-width:170px">{% if meta_gerente %}Meta base loja{% else %}Meta base manual{% endif %}</th><th style="min-width:170px">Margem mínima individual</th><th class="text-end">Margem efetiva</th><th class="text-end">Crescimento atual</th><th style="min-width:260px">Observação</th></tr>
+            {% endif %}
           </thead>
           <tbody>
             {% for l in linhas %}
               <tr>
                 <td class="fw-semibold">{{ l.vendedor }}</td>
                 <td class="text-end">{{ l.venda_mes|brl_rs }}</td>
-                <td><input class="form-control form-control-sm mb-input text-end" name="base__{{ l.vendedor }}" value="{{ l.base_valor|brl if l.base_valor else '' }}" placeholder="0,00"></td>
-                <td><input class="form-control form-control-sm mb-input text-end" name="margem__{{ l.vendedor }}" value="{{ l.margem_minima_individual|brl if l.margem_minima_individual else '' }}" placeholder="Usa padrão"></td>
-                <td class="text-end">{% if l.margem_minima_efetiva %}{{ l.margem_minima_efetiva|brl }}%<div class="mb-help">{{ 'Individual' if l.margem_minima_origem == 'individual' else 'Padrão' }}</div>{% else %}-{% endif %}</td>
-                <td class="text-end">{{ l.crescimento_pct|brl }}%</td>
-                <td><input class="form-control form-control-sm mb-input" name="obs__{{ l.vendedor }}" value="{{ l.observacao or '' }}" placeholder="Opcional"></td>
+                {% if meta_mecanico %}
+                  <td class="text-end">{% if l.faixa_limite %}{{ l.faixa_limite|brl_rs }}{% else %}-{% endif %}</td>
+                  <td class="text-end">{{ l.bonus_percentual|brl }}%</td>
+                  <td class="text-end fw-bold">{{ l.premio|brl_rs }}</td>
+                  <td><input type="hidden" name="base__{{ l.vendedor }}" value="0,00"><input class="form-control form-control-sm mb-input" name="obs__{{ l.vendedor }}" value="{{ l.observacao or '' }}" placeholder="Opcional"></td>
+                {% else %}
+                  <td><input class="form-control form-control-sm mb-input text-end" name="base__{{ l.vendedor }}" value="{{ l.base_valor|brl if l.base_valor else '' }}" placeholder="0,00"></td>
+                  <td><input class="form-control form-control-sm mb-input text-end" name="margem__{{ l.vendedor }}" value="{{ l.margem_minima_individual|brl if l.margem_minima_individual else '' }}" placeholder="Usa padrão"></td>
+                  <td class="text-end">{% if l.margem_minima_efetiva %}{{ l.margem_minima_efetiva|brl }}%<div class="mb-help">{{ 'Individual' if l.margem_minima_origem == 'individual' else 'Padrão' }}</div>{% else %}-{% endif %}</td>
+                  <td class="text-end">{{ l.crescimento_pct|brl }}%</td>
+                  <td><input class="form-control form-control-sm mb-input" name="obs__{{ l.vendedor }}" value="{{ l.observacao or '' }}" placeholder="Opcional"></td>
+                {% endif %}
               </tr>
             {% endfor %}
             {% if linhas|length == 0 %}
-              <tr><td colspan="7" class="text-center text-muted py-4">Nenhum {% if meta_gerente %}gerente{% else %}vendedor{% endif %} encontrado para esta EMP no período.</td></tr>
+              <tr><td colspan="{% if meta_mecanico %}6{% else %}7{% endif %}" class="text-center text-muted py-4">Nenhum {% if meta_mecanico %}mecânico{% elif meta_gerente %}gerente{% else %}vendedor{% endif %} encontrado para esta EMP no período.</td></tr>
             {% endif %}
           </tbody>
         </table>
       </div>
-      <div class="mb-help mt-3">Regra: crescimento = (Venda analisada - Meta base) / Meta base. {% if meta_gerente %}Em meta de gerente, a venda analisada é a EMP inteira e o prêmio fica no usuário gerente.{% else %}A margem mínima efetiva usa primeiro o valor individual da base; se estiver vazio, usa a margem padrão da meta.{% endif %}</div>
+      <div class="mb-help mt-3">Regra: {% if meta_mecanico %}o mecânico recebe percentual sobre o faturamento de oficina conforme a maior faixa atingida.{% else %}crescimento = (Venda analisada - Meta base) / Meta base. {% if meta_gerente %}Em meta de gerente, a venda analisada é a EMP inteira e o prêmio fica no usuário gerente.{% else %}A margem mínima efetiva usa primeiro o valor individual da base; se estiver vazio, usa a margem padrão da meta.{% endif %}{% endif %}</div>
     </div>
   </form>
 </div>

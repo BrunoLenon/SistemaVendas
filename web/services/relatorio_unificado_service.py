@@ -700,6 +700,8 @@ def _meta_unified_title(meta: Any, calc: Any) -> str:
         prefix = 'Meta Mix'
     elif tipo == 'SHARE_MARCA':
         prefix = 'Meta Marcas'
+    elif tipo == 'MECANICO_FATURAMENTO':
+        prefix = 'Meta Mecânicos'
     else:
         prefix = 'Meta'
     return f"{prefix} • {nome}" if nome else prefix
@@ -797,6 +799,10 @@ def _meta_rows_from_snapshots(
             qtd_base = _safe_float(getattr(calc, 'share_pct', 0.0) or 0.0)
             valor_vendido = _safe_float(getattr(calc, 'valor_marcas', 0.0) or 0.0)
             item_codigo = 'MARCAS'
+        elif tipo_meta == 'MECANICO_FATURAMENTO':
+            qtd_base = _safe_float(getattr(calc, 'valor_mes', 0.0) or 0.0)
+            valor_vendido = _safe_float(getattr(calc, 'valor_mes', 0.0) or 0.0)
+            item_codigo = 'MECANICO'
         else:
             qtd_base = 0.0
             valor_vendido = _safe_float(getattr(calc, 'valor_mes', 0.0) or 0.0)
@@ -812,7 +818,10 @@ def _meta_rows_from_snapshots(
         # Para Meta Crescimento, o alvo exibido no relatório deve ser a base
         # manual cadastrada em Bases vendedores/gerentes. Antes a tela usava
         # o faturamento mínimo (ex.: R$70.000,00), confundindo a conferência.
-        requisito_alvo = base_meta if tipo_meta == 'CRESCIMENTO' and base_meta > 0 else faturamento_minimo_meta
+        if tipo_meta in ('CRESCIMENTO', 'MECANICO_FATURAMENTO') and base_meta > 0:
+            requisito_alvo = base_meta
+        else:
+            requisito_alvo = faturamento_minimo_meta
         faltante_requisito = max(0.0, requisito_alvo - faturamento_meta_atual) if requisito_alvo > 0 else 0.0
         bloqueado_requisito = bool(requisito_alvo > 0 and faturamento_meta_atual < requisito_alvo)
         bloqueado_minimo = bool(faturamento_minimo_meta > 0 and faturamento_meta_atual < faturamento_minimo_meta)
@@ -899,7 +908,15 @@ def _append_metas_unificadas(
         return
 
     try:
-        from metas_helpers import calcular_meta, get_meta_emps, get_gerentes_para_metas, is_meta_gerente, metas_ativas_periodo
+        from metas_helpers import (
+            calcular_meta,
+            get_meta_emps,
+            get_gerentes_para_metas,
+            get_mecanicos_para_metas,
+            is_meta_gerente,
+            is_meta_mecanico,
+            metas_ativas_periodo,
+        )
     except Exception as exc:
         try:
             print(f"[RELATORIO_UNIFICADO] metas indisponiveis: {exc}")
@@ -938,7 +955,10 @@ def _append_metas_unificadas(
         tipo_meta = str(getattr(meta, 'tipo', '') or '').strip().upper()
         participantes_meta = vendedores
         try:
-            if is_meta_gerente(meta):
+            if is_meta_mecanico(meta):
+                mecanicos_emp = {_upper(m) for m in (get_mecanicos_para_metas(db, int(ano), int(mes), [emp_s]) or []) if _upper(m)}
+                participantes_meta = [v for v in vendedores if _upper(v) in mecanicos_emp]
+            elif is_meta_gerente(meta):
                 gerentes_emp = {_upper(g) for g in (get_gerentes_para_metas(db, int(ano), int(mes), [emp_s]) or []) if _upper(g)}
                 participantes_meta = [v for v in vendedores if _upper(v) in gerentes_emp]
         except Exception:
@@ -978,6 +998,12 @@ def _append_metas_unificadas(
                 recompensa_unit = _safe_float(getattr(calc, 'bonus_percentual', 0.0) or 0.0)
                 valor_vendido = _safe_float(getattr(calc, 'valor_marcas', 0.0) or 0.0)
                 item_codigo = 'MARCAS'
+            elif tipo_meta == 'MECANICO_FATURAMENTO':
+                qtd_base = _safe_float(getattr(calc, 'valor_mes', 0.0) or 0.0)
+                qtd_minima = _safe_float(getattr(calc, 'faixa_limite', 0.0) or 0.0) if getattr(calc, 'faixa_limite', None) is not None else None
+                recompensa_unit = _safe_float(getattr(calc, 'bonus_percentual', 0.0) or 0.0)
+                valor_vendido = _safe_float(getattr(calc, 'valor_mes', 0.0) or 0.0)
+                item_codigo = 'MECANICO'
             else:
                 qtd_base = 0.0
                 qtd_minima = None
@@ -994,7 +1020,10 @@ def _append_metas_unificadas(
             faturamento_minimo_meta = _safe_float(getattr(calc, 'faturamento_minimo', 0.0) or 0.0)
             faturamento_meta_atual = _safe_float(getattr(calc, 'valor_mes', 0.0) or 0.0)
             base_meta = _safe_float(getattr(calc, 'base_valor', 0.0) or 0.0)
-            requisito_alvo = base_meta if tipo_meta == 'CRESCIMENTO' and base_meta > 0 else faturamento_minimo_meta
+            if tipo_meta in ('CRESCIMENTO', 'MECANICO_FATURAMENTO') and base_meta > 0:
+                requisito_alvo = base_meta
+            else:
+                requisito_alvo = faturamento_minimo_meta
             faltante_requisito = max(0.0, requisito_alvo - faturamento_meta_atual) if requisito_alvo > 0 else 0.0
             bloqueado_requisito = bool(requisito_alvo > 0 and faturamento_meta_atual < requisito_alvo)
             bloqueado_minimo = bool(getattr(calc, 'bloqueado_minimo', False))
@@ -1086,6 +1115,22 @@ def _get_gerentes_emp_relatorio(db: Any, emp: str) -> list[str]:
         )
         return sorted({str(r[0] or '').strip().upper() for r in rows if r and str(r[0] or '').strip()})
     except Exception:
+        return []
+
+
+def _get_mecanicos_emp_relatorio(db: Any, *, ano: int, mes: int, emp: str) -> list[str]:
+    """Retorna mecânicos cadastrados/importados para garantir exibição no relatório."""
+    emp_s = str(emp or '').strip()
+    if not emp_s:
+        return []
+    try:
+        from metas_helpers import get_mecanicos_para_metas  # import local para evitar acoplamento no boot
+        return sorted({_upper(m) for m in (get_mecanicos_para_metas(db, int(ano), int(mes), [emp_s]) or []) if _upper(m)})
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            pass
         return []
 
 
@@ -1605,6 +1650,15 @@ def build_unified_rows(
                 for _g in _get_gerentes_emp_relatorio(db, str(emp)):
                     if _g and _g not in vendedores:
                         vendedores.append(_g)
+            except Exception:
+                pass
+
+            # Garante que o mecânico cadastrado na meta também apareça no relatório
+            # mesmo antes de faturar oficina no período filtrado.
+            try:
+                for _m in _get_mecanicos_emp_relatorio(db, ano=int(ano), mes=int(mes), emp=str(emp)):
+                    if _m and _m not in vendedores:
+                        vendedores.append(_m)
             except Exception:
                 pass
 
