@@ -117,6 +117,67 @@ def _safe_float(v: Any) -> float:
         return 0.0
 
 
+def _meta_escopo_relatorio(meta: Any) -> str:
+    escopo = str(getattr(meta, 'escopo', '') or 'VENDEDOR').strip().upper()
+    return escopo or 'VENDEDOR'
+
+
+def _is_meta_gerente_relatorio(meta: Any) -> bool:
+    return _meta_escopo_relatorio(meta) == 'GERENTE'
+
+
+def _gerente_bases_referencia_map(db: Any, *, ano: int, mes: int, emp: str, vendedores: list[str]) -> dict[tuple[str, str], float]:
+    """Mapa da base mensal da loja para gerentes no período.
+
+    A base é cadastrada em Bases dos Gerentes normalmente na meta de
+    Crescimento, mas o relatório deve usar esse mesmo alvo da loja também nas
+    demais metas de escopo GERENTE, como Meta Marcas.
+    """
+    emp_s = str(emp or '').strip()
+    vendedores_u = [_upper(v) for v in (vendedores or []) if _upper(v)]
+    if not emp_s or not vendedores_u:
+        return {}
+
+    try:
+        rows = (
+            db.query(MetaBaseManual, MetaPrograma)
+            .join(MetaPrograma, MetaPrograma.id == MetaBaseManual.meta_id)
+            .filter(
+                MetaPrograma.ano == int(ano),
+                MetaPrograma.mes == int(mes),
+                func.upper(func.coalesce(MetaPrograma.escopo, 'VENDEDOR')) == 'GERENTE',
+                cast(MetaBaseManual.emp, String) == emp_s,
+                MetaBaseManual.vendedor.in_(vendedores_u),
+                MetaBaseManual.base_valor > 0,
+            )
+            .all()
+        )
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return {}
+
+    chosen: dict[tuple[str, str], tuple[int, int, float]] = {}
+    for base, meta in rows or []:
+        vend_u = _upper(getattr(base, 'vendedor', ''))
+        if not vend_u:
+            continue
+        valor = _safe_float(getattr(base, 'base_valor', 0.0) or 0.0)
+        if valor <= 0:
+            continue
+        tipo = str(getattr(meta, 'tipo', '') or '').strip().upper()
+        prioridade = 0 if tipo == 'CRESCIMENTO' else 1
+        meta_id = int(getattr(meta, 'id', 0) or 0)
+        key = (emp_s, vend_u)
+        atual = chosen.get(key)
+        if atual is None or (prioridade, -meta_id) < (atual[0], -atual[1]):
+            chosen[key] = (prioridade, meta_id, valor)
+
+    return {key: data[2] for key, data in chosen.items()}
+
+
 def _periodo_bounds(ano: int, mes: int) -> tuple[date, date]:
     from calendar import monthrange
     di = date(int(ano), int(mes), 1)
@@ -780,9 +841,12 @@ def _meta_rows_from_snapshots(
             pass
         bases_map = {}
 
+    gerente_bases_map = _gerente_bases_referencia_map(db, ano=int(ano), mes=int(mes), emp=emp_s, vendedores=vendedores_u)
+
     count = 0
     for calc, meta in snap_rows:
         tipo_meta = str(getattr(meta, 'tipo', '') or '').strip().upper()
+        meta_gerente = _is_meta_gerente_relatorio(meta)
         valor_premio = _safe_float(getattr(calc, 'premio', 0.0) or 0.0)
         if valor_premio <= 0 and not incluir_zerados:
             continue
@@ -810,15 +874,18 @@ def _meta_rows_from_snapshots(
 
         faturamento_minimo_meta = _safe_float(getattr(meta, 'faturamento_minimo', 0.0) or 0.0)
         faturamento_meta_atual = _safe_float(getattr(calc, 'valor_mes', 0.0) or 0.0)
-        base_current = bases_map.get((int(getattr(meta, 'id', 0) or getattr(calc, 'meta_id', 0) or 0), emp_s, _upper(getattr(calc, 'vendedor', ''))))
+        vend_calc = _upper(getattr(calc, 'vendedor', ''))
+        base_current = bases_map.get((int(getattr(meta, 'id', 0) or getattr(calc, 'meta_id', 0) or 0), emp_s, vend_calc))
         base_meta = _safe_float(getattr(base_current, 'base_valor', None)) if base_current is not None else 0.0
         if base_meta <= 0:
             base_meta = _safe_float(getattr(calc, 'base_valor', 0.0) or 0.0)
+        if base_meta <= 0 and meta_gerente:
+            base_meta = _safe_float(gerente_bases_map.get((emp_s, vend_calc), 0.0))
 
-        # Para Meta Crescimento, o alvo exibido no relatório deve ser a base
-        # manual cadastrada em Bases vendedores/gerentes. Antes a tela usava
-        # o faturamento mínimo (ex.: R$70.000,00), confundindo a conferência.
-        if tipo_meta in ('CRESCIMENTO', 'MECANICO_FATURAMENTO') and base_meta > 0:
+        # Para Meta Crescimento/Mecânico, o alvo exibido é a base manual.
+        # Para metas GERENTE, inclusive Marcas, o alvo deve ser a Meta Base
+        # Loja cadastrada em Bases dos Gerentes, não o faturamento mínimo geral.
+        if (tipo_meta in ('CRESCIMENTO', 'MECANICO_FATURAMENTO') or meta_gerente) and base_meta > 0:
             requisito_alvo = base_meta
         else:
             requisito_alvo = faturamento_minimo_meta
@@ -937,6 +1004,7 @@ def _append_metas_unificadas(
         return
 
     meta_emps_cache: dict[int, set[str]] = {}
+    gerente_bases_map = _gerente_bases_referencia_map(db, ano=int(ano), mes=int(mes), emp=emp_s, vendedores=[_upper(v) for v in (vendedores or []) if _upper(v)])
     for meta in metas:
         try:
             meta_id = int(getattr(meta, 'id', 0) or 0)
@@ -953,12 +1021,13 @@ def _append_metas_unificadas(
             continue
 
         tipo_meta = str(getattr(meta, 'tipo', '') or '').strip().upper()
+        meta_gerente = bool(is_meta_gerente(meta))
         participantes_meta = vendedores
         try:
             if is_meta_mecanico(meta):
                 mecanicos_emp = {_upper(m) for m in (get_mecanicos_para_metas(db, int(ano), int(mes), [emp_s]) or []) if _upper(m)}
                 participantes_meta = [v for v in vendedores if _upper(v) in mecanicos_emp]
-            elif is_meta_gerente(meta):
+            elif meta_gerente:
                 gerentes_emp = {_upper(g) for g in (get_gerentes_para_metas(db, int(ano), int(mes), [emp_s]) or []) if _upper(g)}
                 participantes_meta = [v for v in vendedores if _upper(v) in gerentes_emp]
         except Exception:
@@ -1020,7 +1089,9 @@ def _append_metas_unificadas(
             faturamento_minimo_meta = _safe_float(getattr(calc, 'faturamento_minimo', 0.0) or 0.0)
             faturamento_meta_atual = _safe_float(getattr(calc, 'valor_mes', 0.0) or 0.0)
             base_meta = _safe_float(getattr(calc, 'base_valor', 0.0) or 0.0)
-            if tipo_meta in ('CRESCIMENTO', 'MECANICO_FATURAMENTO') and base_meta > 0:
+            if base_meta <= 0 and meta_gerente:
+                base_meta = _safe_float(gerente_bases_map.get((emp_s, vend_u), 0.0))
+            if (tipo_meta in ('CRESCIMENTO', 'MECANICO_FATURAMENTO') or meta_gerente) and base_meta > 0:
                 requisito_alvo = base_meta
             else:
                 requisito_alvo = faturamento_minimo_meta

@@ -20,7 +20,7 @@ from datetime import date, datetime
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Iterable
 
-from sqlalchemy import text
+from sqlalchemy import String, cast, func, text
 
 from services.oficina_service import (
     get_emps_servico_no_periodo,
@@ -639,6 +639,59 @@ def get_base_manual(db, meta_id: int, emp: str, vendedor: str) -> MetaBaseManual
     )
 
 
+def get_base_gerente_referencia(
+    db,
+    ano: int,
+    mes: int,
+    emp: str,
+    gerente: str,
+    prefer_meta_id: int | None = None,
+) -> MetaBaseManual | None:
+    """Base mensal da loja usada como alvo visual das metas de gerente.
+
+    A base é cadastrada na tela Bases dos Gerentes, normalmente na meta
+    CRESCIMENTO. As demais metas de escopo GERENTE (ex.: Marcas) também
+    devem exibir esse mesmo alvo da loja em /relatorios/campanhas, em vez
+    do faturamento mínimo geral da regra.
+    """
+    emp_n = normalize_emp(emp)
+    gerente_n = normalize_text(gerente)
+    if not emp_n or not gerente_n:
+        return None
+
+    base_q = (
+        db.query(MetaBaseManual)
+        .join(MetaPrograma, MetaPrograma.id == MetaBaseManual.meta_id)
+        .filter(
+            MetaPrograma.ano == int(ano),
+            MetaPrograma.mes == int(mes),
+            func.upper(func.coalesce(MetaPrograma.escopo, "VENDEDOR")) == "GERENTE",
+            cast(MetaBaseManual.emp, String) == emp_n,
+            MetaBaseManual.vendedor == gerente_n,
+            MetaBaseManual.base_valor > 0,
+        )
+    )
+
+    if prefer_meta_id:
+        exact = (
+            base_q.filter(MetaPrograma.id == int(prefer_meta_id))
+            .order_by(MetaBaseManual.id.desc())
+            .first()
+        )
+        if exact is not None:
+            return exact
+
+    crescimento = (
+        base_q.filter(func.upper(func.coalesce(MetaPrograma.tipo, "")) == "CRESCIMENTO")
+        .order_by(MetaPrograma.id.desc(), MetaBaseManual.id.desc())
+        .first()
+    )
+    if crescimento is not None:
+        return crescimento
+
+    return base_q.order_by(MetaPrograma.id.desc(), MetaBaseManual.id.desc()).first()
+
+
 def get_margem_vendedor(db, ano: int, mes: int, emp: str, vendedor: str) -> MetaMargemVendedor | None:
     """Retorna a margem percentual vigente do vendedor na competência.
 
@@ -887,6 +940,14 @@ def calcular_meta(db, meta: MetaPrograma, emp: str, vendedor: str, persist: bool
         calc.faixa_limite = calc.base_valor
         calc.bonus_percentual = bonus_pct
         calc.premio = float(premio)
+
+    if gerente_scope and not is_meta_mecanico(meta):
+        _safe_base = get_base_gerente_referencia(db, meta.ano, meta.mes, emp_n, vendedor_n, int(meta.id))
+        # Para metas de gerente que não usam base no cálculo (ex.: Marcas),
+        # preservamos a base da loja no snapshot para o relatório exibir o
+        # alvo correto cadastrado em Bases dos Gerentes.
+        if _safe_base is not None and (not calc.base_valor or float(calc.base_valor or 0.0) <= 0):
+            calc.base_valor = float(getattr(_safe_base, "base_valor", 0.0) or 0.0)
 
     if faturamento_minimo > 0 and float(calc.valor_mes or 0.0) < faturamento_minimo:
         calc.faturamento_minimo_atingido = False
