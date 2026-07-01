@@ -844,9 +844,28 @@ def _meta_rows_from_snapshots(
     gerente_bases_map = _gerente_bases_referencia_map(db, ano=int(ano), mes=int(mes), emp=emp_s, vendedores=vendedores_u)
 
     count = 0
+    calcular_meta_live = None
     for calc, meta in snap_rows:
         tipo_meta = str(getattr(meta, 'tipo', '') or '').strip().upper()
         meta_gerente = _is_meta_gerente_relatorio(meta)
+        vend_calc = _upper(getattr(calc, 'vendedor', ''))
+
+        # Metas de GERENTE precisam refletir sempre a EMP inteira. Snapshots
+        # antigos podiam ter sido gravados com venda/base individual; por isso,
+        # na abertura do relatório recalculamos somente estas linhas ao vivo.
+        if meta_gerente and vend_calc:
+            try:
+                if calcular_meta_live is None:
+                    from metas_helpers import calcular_meta as calcular_meta_live  # type: ignore
+                calc_live = calcular_meta_live(db, meta, emp_s, vend_calc, persist=False)
+                if calc_live is not None:
+                    calc = calc_live
+            except Exception as exc:
+                try:
+                    print(f"[RELATORIO_UNIFICADO] meta_gerente_live_fallback emp={emp_s} vendedor={vend_calc} meta={getattr(meta, 'id', '')}: {exc}")
+                except Exception:
+                    pass
+
         valor_premio = _safe_float(getattr(calc, 'premio', 0.0) or 0.0)
         if valor_premio <= 0 and not incluir_zerados:
             continue
@@ -874,7 +893,7 @@ def _meta_rows_from_snapshots(
 
         faturamento_minimo_meta = _safe_float(getattr(meta, 'faturamento_minimo', 0.0) or 0.0)
         faturamento_meta_atual = _safe_float(getattr(calc, 'valor_mes', 0.0) or 0.0)
-        vend_calc = _upper(getattr(calc, 'vendedor', ''))
+        vend_calc = _upper(getattr(calc, 'vendedor', '')) or vend_calc
         base_current = bases_map.get((int(getattr(meta, 'id', 0) or getattr(calc, 'meta_id', 0) or 0), emp_s, vend_calc))
         base_meta = _safe_float(getattr(base_current, 'base_valor', None)) if base_current is not None else 0.0
         if base_meta <= 0:
@@ -908,6 +927,9 @@ def _meta_rows_from_snapshots(
         else:
             margem_faltante_pp = 0.0
 
+        valor_liberado = 0.0 if (bloqueado_requisito or bloqueado_minimo or bloqueado_margem) else valor_premio
+        premio_potencial = valor_premio if valor_premio > valor_liberado else valor_liberado
+
         rows.append(
             UnifiedRow(
                 tipo='META',
@@ -920,10 +942,11 @@ def _meta_rows_from_snapshots(
                 qtd_minima=None,
                 recompensa_unit=_safe_float(getattr(calc, 'bonus_percentual', 0.0) or 0.0),
                 valor_vendido=valor_vendido,
-                atingiu_gate=bool(valor_premio > 0),
+                atingiu_gate=bool(valor_liberado > 0),
                 qtd_base=qtd_base,
                 qtd_premiada=None,
-                valor_recompensa=valor_premio,
+                valor_recompensa=valor_liberado,
+                premio_potencial=premio_potencial,
                 faturamento_minimo_emp=requisito_alvo if requisito_alvo > 0 else None,
                 faturamento_emp=faturamento_meta_atual,
                 faltante_faturamento_emp=faltante_requisito if requisito_alvo > 0 else None,
@@ -946,6 +969,201 @@ def _meta_rows_from_snapshots(
     return count
 
 
+def _append_metas_gerente_live_missing(
+    db: Any,
+    rows: list[UnifiedRow],
+    *,
+    ano: int,
+    mes: int,
+    emp: str,
+    vendedores: list[str],
+    incluir_zerados: bool,
+) -> None:
+    """Inclui/recalcula metas GERENTE pelo total da EMP quando faltarem snapshots.
+
+    A página normal usa snapshots para abrir rápido, mas metas de gerente são
+    poucas e críticas: o valor analisado precisa ser sempre a produção total da
+    loja, e a base/alvo precisa vir de Bases dos Gerentes. Este complemento
+    evita que uma meta GERENTE fique ausente ou herdando snapshot antigo de
+    cálculo individual.
+    """
+    emp_s = str(emp or '').strip()
+    vendedores_u = [_upper(v) for v in (vendedores or []) if _upper(v)]
+    if not emp_s or not vendedores_u:
+        return
+
+    try:
+        from metas_helpers import (
+            calcular_meta,
+            get_meta_emps,
+            get_gerentes_para_metas,
+            is_meta_gerente,
+            is_meta_mecanico,
+            metas_ativas_periodo,
+        )
+    except Exception as exc:
+        try:
+            print(f"[RELATORIO_UNIFICADO] metas gerente live indisponiveis: {exc}")
+        except Exception:
+            pass
+        return
+
+    try:
+        gerentes_emp = {_upper(g) for g in (get_gerentes_para_metas(db, int(ano), int(mes), [emp_s]) or []) if _upper(g)}
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        gerentes_emp = set()
+    if not gerentes_emp:
+        return
+
+    participantes = [v for v in vendedores_u if v in gerentes_emp]
+    if not participantes:
+        return
+
+    existentes: set[tuple[int, str]] = set()
+    for r in rows or []:
+        try:
+            if str(getattr(r, 'tipo', '') or '').upper() != 'META':
+                continue
+            if str(getattr(r, 'emp', '') or '').strip() != emp_s:
+                continue
+            mid = int(getattr(r, 'origem_id', 0) or 0)
+            vend = _upper(getattr(r, 'vendedor', ''))
+            if mid > 0 and vend:
+                existentes.add((mid, vend))
+        except Exception:
+            continue
+
+    try:
+        metas = metas_ativas_periodo(db, int(ano), int(mes), only_active=True) or []
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        metas = []
+    if not metas:
+        return
+
+    gerente_bases_map = _gerente_bases_referencia_map(db, ano=int(ano), mes=int(mes), emp=emp_s, vendedores=participantes)
+
+    for meta in metas:
+        try:
+            meta_id = int(getattr(meta, 'id', 0) or 0)
+            if meta_id <= 0 or not is_meta_gerente(meta) or is_meta_mecanico(meta):
+                continue
+            emps_meta = {str(e).strip() for e in (get_meta_emps(db, meta_id) or []) if str(e).strip()}
+            if emps_meta and emp_s not in emps_meta:
+                continue
+        except Exception:
+            continue
+
+        tipo_meta = str(getattr(meta, 'tipo', '') or '').strip().upper()
+        for vend_u in participantes:
+            if (meta_id, vend_u) in existentes:
+                continue
+            try:
+                calc = calcular_meta(db, meta, emp_s, vend_u, persist=False)
+            except Exception as exc:
+                try:
+                    print(f"[RELATORIO_UNIFICADO] erro meta gerente live emp={emp_s} vendedor={vend_u} meta={meta_id}: {exc}")
+                except Exception:
+                    pass
+                continue
+
+            valor_premio = _safe_float(getattr(calc, 'premio', 0.0) or 0.0)
+            if valor_premio <= 0 and not incluir_zerados:
+                continue
+
+            if tipo_meta == 'CRESCIMENTO':
+                qtd_base = _safe_float(getattr(calc, 'crescimento_pct', 0.0) or 0.0)
+                qtd_minima = _safe_float(getattr(calc, 'faixa_limite', 0.0) or 0.0) if getattr(calc, 'faixa_limite', None) is not None else None
+                recompensa_unit = _safe_float(getattr(calc, 'bonus_percentual', 0.0) or 0.0)
+                valor_vendido = _safe_float(getattr(calc, 'valor_mes', 0.0) or 0.0)
+                item_codigo = 'CRESCIMENTO'
+            elif tipo_meta == 'MIX':
+                qtd_base = _safe_float(getattr(calc, 'mix_itens_unicos', 0.0) or 0.0)
+                qtd_minima = _safe_float(getattr(calc, 'faixa_limite', 0.0) or 0.0) if getattr(calc, 'faixa_limite', None) is not None else None
+                recompensa_unit = _safe_float(getattr(calc, 'bonus_percentual', 0.0) or 0.0)
+                valor_vendido = _safe_float(getattr(calc, 'valor_mes', 0.0) or 0.0)
+                item_codigo = 'MIX'
+            elif tipo_meta == 'SHARE_MARCA':
+                qtd_base = _safe_float(getattr(calc, 'share_pct', 0.0) or 0.0)
+                qtd_minima = _safe_float(getattr(calc, 'faixa_limite', 0.0) or 0.0) if getattr(calc, 'faixa_limite', None) is not None else None
+                recompensa_unit = _safe_float(getattr(calc, 'bonus_percentual', 0.0) or 0.0)
+                # Em meta de GERENTE, valor_marcas é a soma das marcas da EMP inteira.
+                valor_vendido = _safe_float(getattr(calc, 'valor_marcas', 0.0) or 0.0)
+                item_codigo = 'MARCAS'
+            else:
+                qtd_base = 0.0
+                qtd_minima = None
+                recompensa_unit = _safe_float(getattr(calc, 'bonus_percentual', 0.0) or 0.0)
+                valor_vendido = _safe_float(getattr(calc, 'valor_mes', 0.0) or 0.0)
+                item_codigo = 'META'
+
+            faturamento_minimo_meta = _safe_float(getattr(calc, 'faturamento_minimo', 0.0) or getattr(meta, 'faturamento_minimo', 0.0) or 0.0)
+            faturamento_meta_atual = _safe_float(getattr(calc, 'valor_mes', 0.0) or 0.0)
+            base_meta = _safe_float(getattr(calc, 'base_valor', 0.0) or 0.0)
+            if base_meta <= 0:
+                base_meta = _safe_float(gerente_bases_map.get((emp_s, vend_u), 0.0))
+            requisito_alvo = base_meta if base_meta > 0 else faturamento_minimo_meta
+            faltante_requisito = max(0.0, requisito_alvo - faturamento_meta_atual) if requisito_alvo > 0 else 0.0
+            bloqueado_requisito = bool(requisito_alvo > 0 and faturamento_meta_atual < requisito_alvo)
+            bloqueado_minimo = bool(getattr(calc, 'bloqueado_minimo', False))
+
+            margem_minima = _safe_float(getattr(calc, 'margem_minima', 0.0) or 0.0)
+            margem_raw = getattr(calc, 'margem_percentual', None)
+            margem_percentual = None if margem_raw is None else _safe_float(margem_raw)
+            bloqueado_margem = bool(getattr(calc, 'bloqueado_margem', False))
+            if margem_minima > 0:
+                margem_faltante_pp = margem_minima if margem_percentual is None else max(0.0, margem_minima - margem_percentual)
+            else:
+                margem_faltante_pp = 0.0
+
+            valor_liberado = 0.0 if (bloqueado_requisito or bloqueado_minimo or bloqueado_margem) else valor_premio
+            premio_potencial = valor_premio if valor_premio > valor_liberado else valor_liberado
+
+            rows.append(
+                UnifiedRow(
+                    tipo='META',
+                    competencia_ano=int(ano),
+                    competencia_mes=int(mes),
+                    emp=emp_s,
+                    vendedor=vend_u,
+                    titulo=_meta_unified_title(meta, calc),
+                    item_codigo=item_codigo,
+                    qtd_minima=qtd_minima,
+                    recompensa_unit=recompensa_unit,
+                    valor_vendido=valor_vendido,
+                    atingiu_gate=bool(valor_liberado > 0),
+                    qtd_base=qtd_base,
+                    qtd_premiada=None,
+                    valor_recompensa=valor_liberado,
+                    premio_potencial=premio_potencial,
+                    faturamento_minimo_emp=requisito_alvo if requisito_alvo > 0 else None,
+                    faturamento_emp=faturamento_meta_atual,
+                    faltante_faturamento_emp=faltante_requisito if requisito_alvo > 0 else None,
+                    bloqueado_faturamento_emp=bloqueado_requisito,
+                    status_pagamento='PENDENTE',
+                    pago_em=None,
+                    origem_id=meta_id,
+                    meta_tipo=tipo_meta,
+                    base_valor=base_meta if base_meta > 0 else None,
+                    faturamento_minimo_meta=faturamento_minimo_meta if faturamento_minimo_meta > 0 else None,
+                    bloqueado_minimo=bloqueado_minimo,
+                    margem_percentual=margem_percentual,
+                    margem_minima=margem_minima if margem_minima > 0 else None,
+                    margem_atingida=bool(getattr(calc, 'margem_atingida', True)),
+                    bloqueado_margem=bloqueado_margem,
+                    margem_faltante_pp=margem_faltante_pp,
+                )
+            )
+            existentes.add((meta_id, vend_u))
+
+
 def _append_metas_unificadas(
     db: Any,
     rows: list[UnifiedRow],
@@ -964,6 +1182,15 @@ def _append_metas_unificadas(
 
     if not metas_live:
         _meta_rows_from_snapshots(
+            db,
+            rows,
+            ano=int(ano),
+            mes=int(mes),
+            emp=emp_s,
+            vendedores=vendedores,
+            incluir_zerados=bool(incluir_zerados),
+        )
+        _append_metas_gerente_live_missing(
             db,
             rows,
             ano=int(ano),
@@ -1111,6 +1338,9 @@ def _append_metas_unificadas(
             else:
                 margem_faltante_pp = 0.0
 
+            valor_liberado = 0.0 if (bloqueado_requisito or bloqueado_minimo or bloqueado_margem) else valor_premio
+            premio_potencial = valor_premio if valor_premio > valor_liberado else valor_liberado
+
             rows.append(
                 UnifiedRow(
                     tipo='META',
@@ -1123,10 +1353,11 @@ def _append_metas_unificadas(
                     qtd_minima=qtd_minima,
                     recompensa_unit=recompensa_unit,
                     valor_vendido=valor_vendido,
-                    atingiu_gate=atingiu,
+                    atingiu_gate=bool(valor_liberado > 0),
                     qtd_base=qtd_base,
                     qtd_premiada=None,
-                    valor_recompensa=valor_premio,
+                    valor_recompensa=valor_liberado,
+                    premio_potencial=premio_potencial,
                     faturamento_minimo_emp=requisito_alvo if requisito_alvo > 0 else None,
                     faturamento_emp=faturamento_meta_atual,
                     faltante_faturamento_emp=faltante_requisito if requisito_alvo > 0 else None,
