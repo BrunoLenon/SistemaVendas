@@ -466,11 +466,17 @@ def admin_metas():
                     .first()
                 )
                 calc = calcular_meta(db, mecanico_meta, emp_selected, mecanico, persist=False)
+                faturamento_loja = float(getattr(calc, "faturamento_emp", 0.0) or 0.0)
+                faturamento_minimo = float(getattr(calc, "faturamento_minimo", 0.0) or 0.0)
                 mecanico_rows.append({
                     "emp": emp_selected,
                     "mecanico": mecanico,
                     "vendedor": mecanico,
                     "faturamento": float(getattr(calc, "valor_mes", 0.0) or 0.0),
+                    "faturamento_loja": faturamento_loja,
+                    "faturamento_minimo": faturamento_minimo,
+                    "faltante_loja": max(0.0, faturamento_minimo - faturamento_loja) if faturamento_minimo > 0 else 0.0,
+                    "bloqueado_minimo": bool(getattr(calc, "bloqueado_minimo", False)),
                     "faixa_limite": float(getattr(calc, "faixa_limite", 0.0) or 0.0) if getattr(calc, "faixa_limite", None) is not None else None,
                     "bonus_percentual": float(getattr(calc, "bonus_percentual", 0.0) or 0.0),
                     "premio": float(getattr(calc, "premio", 0.0) or 0.0),
@@ -603,7 +609,7 @@ def admin_metas_criar():
     marcas = _parse_marcas(request.form.get("marcas"))
     teto_faturamento = _safe_float(request.form.get("teto_faturamento"), 0.0)
     margem_minima = _safe_float(request.form.get("margem_minima"), 0.0)
-    faturamento_default = 0.0 if tipo == "MECANICO_FATURAMENTO" or escopo == "MECANICO" else 70000.0
+    faturamento_default = 70000.0
     faturamento_minimo = _safe_float(request.form.get("faturamento_minimo"), faturamento_default)
 
     if tipo not in TIPOS_META:
@@ -1059,6 +1065,8 @@ def admin_meta_bases(meta_id: int):
             )
             if meta_mecanico:
                 calc = calcular_meta(db, meta, emp_selected, vend, persist=False)
+                faturamento_loja = float(getattr(calc, "faturamento_emp", 0.0) or 0.0)
+                faturamento_minimo = float(getattr(calc, "faturamento_minimo", 0.0) or 0.0)
                 linhas.append({
                     "emp": emp_selected,
                     "vendedor": vend,
@@ -1068,6 +1076,10 @@ def admin_meta_bases(meta_id: int):
                     "margem_minima_individual": 0.0,
                     "margem_minima_efetiva": 0.0,
                     "margem_minima_origem": "",
+                    "faturamento_loja": faturamento_loja,
+                    "faturamento_minimo": faturamento_minimo,
+                    "faltante_loja": max(0.0, faturamento_minimo - faturamento_loja) if faturamento_minimo > 0 else 0.0,
+                    "bloqueado_minimo": bool(getattr(calc, "bloqueado_minimo", False)),
                     "faixa_limite": float(getattr(calc, "faixa_limite", 0.0) or 0.0) if getattr(calc, "faixa_limite", None) is not None else None,
                     "bonus_percentual": float(getattr(calc, "bonus_percentual", 0.0) or 0.0),
                     "premio": float(getattr(calc, "premio", 0.0) or 0.0),

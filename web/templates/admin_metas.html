@@ -125,7 +125,7 @@
                     <form class="mt-3" method="post" action="{{ url_for('admin_metas_regra_salvar', meta_id=m.id) }}">
                       <input type="hidden" name="ano" value="{{ ano }}"><input type="hidden" name="mes" value="{{ mes }}"><input type="hidden" name="emp_sel" value="{{ emp_selected }}"><input type="hidden" name="vendedor" value="{{ vendedor_selected }}">
                       <div class="meta-edit-grid">
-                        <div><div class="meta-label">Faturamento mínimo{% if m.tipo == 'MECANICO_FATURAMENTO' %} adicional{% endif %}</div><input class="form-control form-control-sm meta-input" name="faturamento_minimo" value="{{ (m.faturamento_minimo or 0)|brl if m.faturamento_minimo else ('0,00' if m.tipo == 'MECANICO_FATURAMENTO' else '70.000,00') }}"></div>
+                        <div><div class="meta-label">{% if m.tipo == 'MECANICO_FATURAMENTO' %}Faturamento mínimo da loja{% else %}Faturamento mínimo{% endif %}</div><input class="form-control form-control-sm meta-input" name="faturamento_minimo" value="{{ (m.faturamento_minimo or 0)|brl if m.faturamento_minimo else ('70.000,00' if m.tipo == 'MECANICO_FATURAMENTO' else '70.000,00') }}">{% if m.tipo == 'MECANICO_FATURAMENTO' %}<div class="meta-help mt-1">Trava pelo total da EMP: vendas balcão + oficina. Não é o faturamento individual do mecânico.</div>{% endif %}</div>
                         {% if m.tipo == 'CRESCIMENTO' %}<div><div class="meta-label">Margem mínima padrão (%)</div><input class="form-control form-control-sm meta-input" name="margem_minima" value="{{ (m.margem_minima or 0)|brl if m.margem_minima else '8,00' }}"><div class="meta-help mt-1">Ex.: 8,00. Usada quando o vendedor não tiver margem mínima individual cadastrada em Bases dos Vendedores.</div></div>{% endif %}
                         {% if m.tipo == 'CRESCIMENTO' %}<div><div class="meta-label">Venda que ativa faixa máxima</div><input class="form-control form-control-sm meta-input" name="teto_faturamento" value="{{ (m.teto_faturamento or 0)|brl if m.teto_faturamento else '' }}"></div>{% endif %}
                       </div>
@@ -134,7 +134,7 @@
                         <textarea class="form-control meta-textarea" name="escalas">{% for esc in p.escalas %}{{ esc.limite_min|brl }}={{ esc.bonus_percentual|brl }}{% if not loop.last %}
 {% endif %}{% endfor %}</textarea>
                       </div>
-                      <div class="meta-help mt-2">Se o participante não atingir o faturamento mínimo ou, no Crescimento, a margem mínima configurada, a premiação dessa meta fica zerada. Em metas de gerente, o faturamento analisado é o total da EMP. Em metas de mecânico, as faixas usam o faturamento de oficina do mecânico.</div>
+                      <div class="meta-help mt-2">Se o participante não atingir o faturamento mínimo ou, no Crescimento, a margem mínima configurada, a premiação dessa meta fica zerada. Em metas de gerente e mecânico, a trava de faturamento mínimo analisa o total da EMP. Em metas de mecânico, as faixas continuam usando o faturamento de oficina individual.</div>
                       <button class="btn btn-meta-primary btn-sm mt-2">Salvar regra</button>
                     </form>
                   </details>
@@ -246,22 +246,23 @@ VEI</textarea></div>
           <div class="d-flex justify-content-between align-items-start gap-2 flex-wrap">
             <div>
               <h6>🔧 Metas de Mecânicos</h6>
-              <p class="mb-0">Calcula somente o faturamento de <b>oficina/mão de obra</b> do mecânico e paga percentual sobre esse faturamento conforme as faixas configuradas.</p>
+              <p class="mb-0">Calcula o faturamento de <b>oficina/mão de obra</b> do mecânico, mas só libera o prêmio se a <b>loja/EMP</b> atingir o faturamento mínimo configurado.</p>
             </div>
-            <span class="meta-chip warn">Faturamento oficina</span>
+            <span class="meta-chip warn">Oficina + trava loja</span>
           </div>
         </div>
 
         <div class="row g-3 mt-1">
           <div class="col-12 col-xl-6">
             <form class="meta-card" method="post" action="{{ url_for('admin_metas_criar') }}">
-              <input type="hidden" name="tipo" value="MECANICO_FATURAMENTO"><input type="hidden" name="escopo" value="MECANICO"><input type="hidden" name="ano" value="{{ ano }}"><input type="hidden" name="mes" value="{{ mes }}"><input type="hidden" name="faturamento_minimo" value="0,00">
-              <h6>🔧 Meta Faturamento — Mecânicos</h6><p>Acima da faixa de faturamento, paga o percentual sobre o faturamento de oficina do mecânico.</p>
+              <input type="hidden" name="tipo" value="MECANICO_FATURAMENTO"><input type="hidden" name="escopo" value="MECANICO"><input type="hidden" name="ano" value="{{ ano }}"><input type="hidden" name="mes" value="{{ mes }}">
+              <h6>🔧 Meta Faturamento — Mecânicos</h6><p>Acima da faixa de oficina, paga o percentual sobre o faturamento do mecânico. A liberação depende do faturamento total da loja.</p>
               <div class="mb-2"><div class="meta-label">Nome</div><input class="form-control form-control-sm meta-input" name="nome" value="Meta Mecânicos {{ '%02d'|format(mes) }}/{{ ano }}"></div>
               <div class="mb-2"><div class="meta-label">EMPs participantes</div><div class="meta-emp-box">{% for e in emps_rows %}<label class="meta-emp-check"><input type="checkbox" name="emps" value="{{ e.codigo }}" {% if emp_selected and emp_selected==e.codigo|string %}checked{% endif %}> <span>{{ e.codigo }} - {{ e.nome }}</span></label>{% endfor %}</div></div>
-              <div class="mb-3"><div class="meta-label">Faixas: faturamento R$ = prêmio %</div><textarea class="form-control meta-textarea" name="escalas">10.000,00=2,00
+              <div class="mb-2"><div class="meta-label">Faturamento mínimo da loja para liberar</div><input class="form-control form-control-sm meta-input" name="faturamento_minimo" value="70.000,00"><div class="meta-help mt-1">Usa o total da EMP no mês: vendas balcão + oficina. Se ficar zerado, não aplica trava de loja.</div></div>
+              <div class="mb-3"><div class="meta-label">Faixas: faturamento oficina R$ = prêmio %</div><textarea class="form-control meta-textarea" name="escalas">10.000,00=2,00
 12.000,00=2,60
-14.000,00=3,00</textarea><div class="meta-help mt-1">Ex.: faturou R$ 12.500,00 aplica 2,60% sobre R$ 12.500,00.</div></div>
+14.000,00=3,00</textarea><div class="meta-help mt-1">Ex.: mecânico faturou R$ 12.500,00 e a loja atingiu o mínimo: aplica 2,60% sobre R$ 12.500,00.</div></div>
               <button class="btn btn-meta-primary btn-sm w-100">Criar Meta Mecânicos</button>
             </form>
           </div>
@@ -340,7 +341,7 @@ VEI</textarea></div>
             <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
               <div>
                 <h6 class="m-0 fw-bold">Mecânicos da {{ emp_selected }}</h6>
-                <div class="meta-help">Meta: <b>{{ mecanico_meta.nome }}</b>. O cadastro oficial do mecânico fica em <b>Admin &gt; Usuários</b>, usando o perfil <b>Mecânico</b> e vínculo com a EMP. O faturamento vem da importação de oficina/mão de obra.</div>
+                <div class="meta-help">Meta: <b>{{ mecanico_meta.nome }}</b>. O cadastro oficial do mecânico fica em <b>Admin &gt; Usuários</b>. As faixas usam a oficina do mecânico; a trava usa o total da loja/EMP.</div>
               </div>
               <div class="d-flex gap-2 flex-wrap">
                 <a class="btn btn-sm btn-meta-primary" href="{{ url_for('admin_usuarios') }}">Cadastrar em Usuários</a>
@@ -349,12 +350,22 @@ VEI</textarea></div>
             </div>
             <div class="meta-table-wrap">
               <table class="table table-sm meta-table">
-                <thead><tr><th>Mecânico</th><th class="text-end">Faturamento oficina</th><th class="text-end">Faixa</th><th class="text-end">Prêmio %</th><th class="text-end">Valor prêmio</th><th>Observação</th></tr></thead>
+                <thead><tr><th>Mecânico</th><th class="text-end">Faturamento oficina</th><th class="text-end">Faturamento loja</th><th class="text-end">Alvo loja</th><th class="text-center">Status loja</th><th class="text-end">Faixa</th><th class="text-end">Prêmio %</th><th class="text-end">Valor prêmio</th><th>Observação</th></tr></thead>
                 <tbody>
                   {% for r in mecanico_rows %}
-                    <tr><td class="fw-semibold">{{ r.mecanico }}</td><td class="text-end">{{ r.faturamento|brl_rs }}</td><td class="text-end">{% if r.faixa_limite %}{{ r.faixa_limite|brl_rs }}{% else %}-{% endif %}</td><td class="text-end">{{ r.bonus_percentual|brl }}%</td><td class="text-end fw-bold">{{ r.premio|brl_rs }}</td><td>{{ r.observacao or '-' }}</td></tr>
+                    <tr>
+                      <td class="fw-semibold">{{ r.mecanico }}</td>
+                      <td class="text-end">{{ r.faturamento|brl_rs }}</td>
+                      <td class="text-end">{{ r.faturamento_loja|brl_rs }}</td>
+                      <td class="text-end">{% if r.faturamento_minimo %}{{ r.faturamento_minimo|brl_rs }}{% else %}-{% endif %}</td>
+                      <td class="text-center">{% if r.faturamento_minimo and r.bloqueado_minimo %}<span class="meta-chip warn">Loja abaixo</span>{% elif r.faturamento_minimo %}<span class="meta-chip ok">Loja OK</span>{% else %}<span class="meta-chip off">Sem trava</span>{% endif %}</td>
+                      <td class="text-end">{% if r.faixa_limite %}{{ r.faixa_limite|brl_rs }}{% else %}-{% endif %}</td>
+                      <td class="text-end">{{ r.bonus_percentual|brl }}%</td>
+                      <td class="text-end fw-bold">{{ r.premio|brl_rs }}</td>
+                      <td>{{ r.observacao or '-' }}{% if r.bloqueado_minimo and r.faltante_loja %}<div class="meta-help text-warning">Faltam {{ r.faltante_loja|brl_rs }} na loja</div>{% endif %}</td>
+                    </tr>
                   {% endfor %}
-                  {% if mecanico_rows|length == 0 %}<tr><td colspan="6" class="text-center text-muted py-4">Nenhum mecânico com perfil Mecânico vinculado a esta EMP.</td></tr>{% endif %}
+                  {% if mecanico_rows|length == 0 %}<tr><td colspan="9" class="text-center text-muted py-4">Nenhum mecânico com perfil Mecânico vinculado a esta EMP.</td></tr>{% endif %}
                 </tbody>
               </table>
             </div>

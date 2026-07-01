@@ -126,6 +126,32 @@ def _is_meta_gerente_relatorio(meta: Any) -> bool:
     return _meta_escopo_relatorio(meta) == 'GERENTE'
 
 
+def _is_meta_mecanico_relatorio(meta: Any) -> bool:
+    tipo = str(getattr(meta, 'tipo', '') or '').strip().upper()
+    return _meta_escopo_relatorio(meta) == 'MECANICO' or tipo == 'MECANICO_FATURAMENTO'
+
+
+def _meta_faturamento_gate_atual(db: Any, calc: Any, meta: Any, *, ano: int, mes: int, emp: str, tipo_meta: str) -> float:
+    """Valor comparado com o faturamento mínimo da meta.
+
+    Mecânicos calculam prêmio pelo faturamento de oficina individual, mas a
+    liberação da meta é pelo faturamento total da EMP. Gerentes já têm
+    ``valor_mes`` como total da loja.
+    """
+    if tipo_meta == 'MECANICO_FATURAMENTO' or _is_meta_mecanico_relatorio(meta):
+        raw = getattr(calc, 'faturamento_emp', None)
+        if raw is not None:
+            val = _safe_float(raw)
+            if val > 0:
+                return val
+        try:
+            from metas_helpers import query_valor_mes  # type: ignore
+            return _safe_float(query_valor_mes(db, int(ano), int(mes), str(emp), None) or 0.0)
+        except Exception:
+            return 0.0
+    return _safe_float(getattr(calc, 'valor_mes', 0.0) or 0.0)
+
+
 def _gerente_bases_referencia_map(db: Any, *, ano: int, mes: int, emp: str, vendedores: list[str]) -> dict[tuple[str, str], float]:
     """Mapa da base mensal da loja para gerentes no período.
 
@@ -868,12 +894,13 @@ def _meta_rows_from_snapshots(
     for calc, meta in snap_rows:
         tipo_meta = str(getattr(meta, 'tipo', '') or '').strip().upper()
         meta_gerente = _is_meta_gerente_relatorio(meta)
+        meta_mecanico = _is_meta_mecanico_relatorio(meta)
         vend_calc = _upper(getattr(calc, 'vendedor', ''))
 
-        # Metas de GERENTE precisam refletir sempre a EMP inteira. Snapshots
-        # antigos podiam ter sido gravados com venda/base individual; por isso,
-        # na abertura do relatório recalculamos somente estas linhas ao vivo.
-        if meta_gerente and vend_calc:
+        # Metas de GERENTE e MECÂNICO precisam refletir regras específicas da
+        # EMP inteira. Snapshots antigos podiam ter sido gravados antes dessas
+        # regras; por isso recalculamos essas linhas ao vivo na abertura.
+        if (meta_gerente or meta_mecanico) and vend_calc:
             try:
                 if calcular_meta_live is None:
                     from metas_helpers import calcular_meta as calcular_meta_live  # type: ignore
@@ -882,7 +909,7 @@ def _meta_rows_from_snapshots(
                     calc = calc_live
             except Exception as exc:
                 try:
-                    print(f"[RELATORIO_UNIFICADO] meta_gerente_live_fallback emp={emp_s} vendedor={vend_calc} meta={getattr(meta, 'id', '')}: {exc}")
+                    print(f"[RELATORIO_UNIFICADO] meta_scope_live_fallback emp={emp_s} vendedor={vend_calc} meta={getattr(meta, 'id', '')}: {exc}")
                 except Exception:
                     pass
 
@@ -911,9 +938,9 @@ def _meta_rows_from_snapshots(
             valor_vendido = _safe_float(getattr(calc, 'valor_mes', 0.0) or 0.0)
             item_codigo = tipo_meta or 'META'
 
-        faturamento_minimo_meta = _safe_float(getattr(meta, 'faturamento_minimo', 0.0) or 0.0)
-        faturamento_meta_atual = _safe_float(getattr(calc, 'valor_mes', 0.0) or 0.0)
+        faturamento_minimo_meta = _safe_float(getattr(calc, 'faturamento_minimo', getattr(meta, 'faturamento_minimo', 0.0)) or 0.0)
         vend_calc = _upper(getattr(calc, 'vendedor', '')) or vend_calc
+        faturamento_gate_atual = _meta_faturamento_gate_atual(db, calc, meta, ano=int(ano), mes=int(mes), emp=emp_s, tipo_meta=tipo_meta)
         base_current = bases_map.get((int(getattr(meta, 'id', 0) or getattr(calc, 'meta_id', 0) or 0), emp_s, vend_calc))
         base_meta = _safe_float(getattr(base_current, 'base_valor', None)) if base_current is not None else 0.0
         if base_meta <= 0:
@@ -921,16 +948,18 @@ def _meta_rows_from_snapshots(
         if base_meta <= 0 and meta_gerente:
             base_meta = _safe_float(gerente_bases_map.get((emp_s, vend_calc), 0.0))
 
-        # Para Meta Crescimento/Mecânico, o alvo exibido é a base manual.
-        # Para metas GERENTE, inclusive Marcas, o alvo deve ser a Meta Base
-        # Loja cadastrada em Bases dos Gerentes, não o faturamento mínimo geral.
-        if (tipo_meta in ('CRESCIMENTO', 'MECANICO_FATURAMENTO') or meta_gerente) and base_meta > 0:
+        # Crescimento vendedor/gerente usa a base manual como alvo visual.
+        # Gerente marcas também usa a base da loja. Mecânico usa o faturamento
+        # mínimo da loja como trava; a base_valor dele representa a faixa de oficina.
+        if tipo_meta == 'MECANICO_FATURAMENTO':
+            requisito_alvo = faturamento_minimo_meta
+        elif (tipo_meta == 'CRESCIMENTO' or meta_gerente) and base_meta > 0:
             requisito_alvo = base_meta
         else:
             requisito_alvo = faturamento_minimo_meta
-        faltante_requisito = max(0.0, requisito_alvo - faturamento_meta_atual) if requisito_alvo > 0 else 0.0
-        bloqueado_requisito = bool(requisito_alvo > 0 and faturamento_meta_atual < requisito_alvo)
-        bloqueado_minimo = bool(faturamento_minimo_meta > 0 and faturamento_meta_atual < faturamento_minimo_meta)
+        faltante_requisito = max(0.0, requisito_alvo - faturamento_gate_atual) if requisito_alvo > 0 else 0.0
+        bloqueado_requisito = bool(requisito_alvo > 0 and faturamento_gate_atual < requisito_alvo)
+        bloqueado_minimo = bool(faturamento_minimo_meta > 0 and faturamento_gate_atual < faturamento_minimo_meta) or bool(getattr(calc, 'bloqueado_minimo', False))
 
         margem_minima = _safe_float(getattr(calc, 'margem_minima', 0.0) or 0.0)
         margem_individual_atual = _safe_float(getattr(base_current, 'margem_percentual', 0.0) or 0.0) if base_current is not None else 0.0
@@ -968,7 +997,7 @@ def _meta_rows_from_snapshots(
                 valor_recompensa=valor_liberado,
                 premio_potencial=premio_potencial,
                 faturamento_minimo_emp=requisito_alvo if requisito_alvo > 0 else None,
-                faturamento_emp=faturamento_meta_atual,
+                faturamento_emp=faturamento_gate_atual,
                 faltante_faturamento_emp=faltante_requisito if requisito_alvo > 0 else None,
                 bloqueado_faturamento_emp=bloqueado_requisito,
                 status_pagamento='PENDENTE',
@@ -1184,6 +1213,150 @@ def _append_metas_gerente_live_missing(
             existentes.add((meta_id, vend_u))
 
 
+def _append_metas_mecanico_live_missing(
+    db: Any,
+    rows: list[UnifiedRow],
+    *,
+    ano: int,
+    mes: int,
+    emp: str,
+    vendedores: list[str],
+    incluir_zerados: bool,
+) -> None:
+    """Inclui/recalcula metas de MECÂNICO quando não houver snapshot.
+
+    Mecânicos podem não ter snapshot antigo após a criação/alteração da regra.
+    Como normalmente são poucos por EMP, calcular ao vivo aqui mantém o relatório
+    completo sem pesar como um recálculo geral de todas as metas.
+    """
+    emp_s = str(emp or '').strip()
+    vendedores_u = [_upper(v) for v in (vendedores or []) if _upper(v)]
+    if not emp_s or not vendedores_u:
+        return
+
+    try:
+        from metas_helpers import (
+            calcular_meta,
+            get_meta_emps,
+            get_mecanicos_para_metas,
+            is_meta_mecanico,
+            metas_ativas_periodo,
+        )
+    except Exception as exc:
+        try:
+            print(f"[RELATORIO_UNIFICADO] metas mecanico live indisponiveis: {exc}")
+        except Exception:
+            pass
+        return
+
+    try:
+        mecanicos_emp = {_upper(m) for m in (get_mecanicos_para_metas(db, int(ano), int(mes), [emp_s]) or []) if _upper(m)}
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        mecanicos_emp = set()
+    participantes = [v for v in vendedores_u if v in mecanicos_emp]
+    if not participantes:
+        return
+
+    existentes: set[tuple[int, str]] = set()
+    for r in rows or []:
+        try:
+            if str(getattr(r, 'tipo', '') or '').upper() != 'META':
+                continue
+            if str(getattr(r, 'emp', '') or '').strip() != emp_s:
+                continue
+            mid = int(getattr(r, 'origem_id', 0) or 0)
+            vend = _upper(getattr(r, 'vendedor', ''))
+            if mid > 0 and vend:
+                existentes.add((mid, vend))
+        except Exception:
+            continue
+
+    try:
+        metas = metas_ativas_periodo(db, int(ano), int(mes), only_active=True) or []
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        metas = []
+
+    for meta in metas:
+        try:
+            meta_id = int(getattr(meta, 'id', 0) or 0)
+            if meta_id <= 0 or not is_meta_mecanico(meta):
+                continue
+            tipo_meta = str(getattr(meta, 'tipo', '') or '').strip().upper()
+            if tipo_meta != 'MECANICO_FATURAMENTO':
+                continue
+            emps_meta = {str(e).strip() for e in (get_meta_emps(db, meta_id) or []) if str(e).strip()}
+            if emps_meta and emp_s not in emps_meta:
+                continue
+        except Exception:
+            continue
+
+        for vend_u in participantes:
+            if (meta_id, vend_u) in existentes:
+                continue
+            try:
+                calc = calcular_meta(db, meta, emp_s, vend_u, persist=False)
+            except Exception as exc:
+                try:
+                    print(f"[RELATORIO_UNIFICADO] erro meta mecanico live emp={emp_s} vendedor={vend_u} meta={meta_id}: {exc}")
+                except Exception:
+                    pass
+                continue
+
+            valor_premio = _safe_float(getattr(calc, 'premio', 0.0) or 0.0)
+            if valor_premio <= 0 and not incluir_zerados:
+                continue
+
+            valor_vendido = _safe_float(getattr(calc, 'valor_mes', 0.0) or 0.0)
+            faturamento_minimo_meta = _safe_float(getattr(calc, 'faturamento_minimo', getattr(meta, 'faturamento_minimo', 0.0)) or 0.0)
+            faturamento_gate_atual = _meta_faturamento_gate_atual(db, calc, meta, ano=int(ano), mes=int(mes), emp=emp_s, tipo_meta='MECANICO_FATURAMENTO')
+            requisito_alvo = faturamento_minimo_meta
+            faltante_requisito = max(0.0, requisito_alvo - faturamento_gate_atual) if requisito_alvo > 0 else 0.0
+            bloqueado_requisito = bool(requisito_alvo > 0 and faturamento_gate_atual < requisito_alvo)
+            bloqueado_minimo = bool(faturamento_minimo_meta > 0 and faturamento_gate_atual < faturamento_minimo_meta) or bool(getattr(calc, 'bloqueado_minimo', False))
+            valor_liberado = 0.0 if (bloqueado_requisito or bloqueado_minimo) else valor_premio
+            premio_potencial = valor_premio if valor_premio > valor_liberado else valor_liberado
+
+            rows.append(
+                UnifiedRow(
+                    tipo='META',
+                    competencia_ano=int(ano),
+                    competencia_mes=int(mes),
+                    emp=emp_s,
+                    vendedor=vend_u,
+                    titulo=_meta_unified_title(meta, calc),
+                    item_codigo='MECANICO',
+                    qtd_minima=_safe_float(getattr(calc, 'faixa_limite', 0.0) or 0.0) if getattr(calc, 'faixa_limite', None) is not None else None,
+                    recompensa_unit=_safe_float(getattr(calc, 'bonus_percentual', 0.0) or 0.0),
+                    valor_vendido=valor_vendido,
+                    atingiu_gate=bool(valor_liberado > 0),
+                    qtd_base=valor_vendido,
+                    qtd_premiada=None,
+                    valor_recompensa=valor_liberado,
+                    premio_potencial=premio_potencial,
+                    faturamento_minimo_emp=requisito_alvo if requisito_alvo > 0 else None,
+                    faturamento_emp=faturamento_gate_atual,
+                    faltante_faturamento_emp=faltante_requisito if requisito_alvo > 0 else None,
+                    bloqueado_faturamento_emp=bloqueado_requisito,
+                    status_pagamento='PENDENTE',
+                    pago_em=None,
+                    origem_id=meta_id,
+                    meta_tipo='MECANICO_FATURAMENTO',
+                    base_valor=None,
+                    faturamento_minimo_meta=faturamento_minimo_meta if faturamento_minimo_meta > 0 else None,
+                    bloqueado_minimo=bloqueado_minimo,
+                )
+            )
+            existentes.add((meta_id, vend_u))
+
+
 def _append_metas_unificadas(
     db: Any,
     rows: list[UnifiedRow],
@@ -1211,6 +1384,15 @@ def _append_metas_unificadas(
             incluir_zerados=bool(incluir_zerados),
         )
         _append_metas_gerente_live_missing(
+            db,
+            rows,
+            ano=int(ano),
+            mes=int(mes),
+            emp=emp_s,
+            vendedores=vendedores,
+            incluir_zerados=bool(incluir_zerados),
+        )
+        _append_metas_mecanico_live_missing(
             db,
             rows,
             ano=int(ano),
@@ -1333,18 +1515,20 @@ def _append_metas_unificadas(
             # alvo financeiro real da meta, quanto o vendedor já vendeu e o que
             # falta. Para Crescimento, o alvo real exibido é a base manual
             # cadastrada em Bases vendedores/gerentes, não o faturamento mínimo.
-            faturamento_minimo_meta = _safe_float(getattr(calc, 'faturamento_minimo', 0.0) or 0.0)
-            faturamento_meta_atual = _safe_float(getattr(calc, 'valor_mes', 0.0) or 0.0)
+            faturamento_minimo_meta = _safe_float(getattr(calc, 'faturamento_minimo', getattr(meta, 'faturamento_minimo', 0.0)) or 0.0)
+            faturamento_gate_atual = _meta_faturamento_gate_atual(db, calc, meta, ano=int(ano), mes=int(mes), emp=emp_s, tipo_meta=tipo_meta)
             base_meta = _safe_float(getattr(calc, 'base_valor', 0.0) or 0.0)
             if base_meta <= 0 and meta_gerente:
                 base_meta = _safe_float(gerente_bases_map.get((emp_s, vend_u), 0.0))
-            if (tipo_meta in ('CRESCIMENTO', 'MECANICO_FATURAMENTO') or meta_gerente) and base_meta > 0:
+            if tipo_meta == 'MECANICO_FATURAMENTO':
+                requisito_alvo = faturamento_minimo_meta
+            elif (tipo_meta == 'CRESCIMENTO' or meta_gerente) and base_meta > 0:
                 requisito_alvo = base_meta
             else:
                 requisito_alvo = faturamento_minimo_meta
-            faltante_requisito = max(0.0, requisito_alvo - faturamento_meta_atual) if requisito_alvo > 0 else 0.0
-            bloqueado_requisito = bool(requisito_alvo > 0 and faturamento_meta_atual < requisito_alvo)
-            bloqueado_minimo = bool(getattr(calc, 'bloqueado_minimo', False))
+            faltante_requisito = max(0.0, requisito_alvo - faturamento_gate_atual) if requisito_alvo > 0 else 0.0
+            bloqueado_requisito = bool(requisito_alvo > 0 and faturamento_gate_atual < requisito_alvo)
+            bloqueado_minimo = bool(faturamento_minimo_meta > 0 and faturamento_gate_atual < faturamento_minimo_meta) or bool(getattr(calc, 'bloqueado_minimo', False))
 
             margem_minima = _safe_float(getattr(calc, 'margem_minima', 0.0) or 0.0)
             margem_raw = getattr(calc, 'margem_percentual', None)
@@ -1379,7 +1563,7 @@ def _append_metas_unificadas(
                     valor_recompensa=valor_liberado,
                     premio_potencial=premio_potencial,
                     faturamento_minimo_emp=requisito_alvo if requisito_alvo > 0 else None,
-                    faturamento_emp=faturamento_meta_atual,
+                    faturamento_emp=faturamento_gate_atual,
                     faltante_faturamento_emp=faltante_requisito if requisito_alvo > 0 else None,
                     bloqueado_faturamento_emp=bloqueado_requisito,
                     status_pagamento='PENDENTE',

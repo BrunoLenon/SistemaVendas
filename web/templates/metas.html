@@ -93,6 +93,7 @@
                       {% elif m.tipo == 'MECANICO_FATURAMENTO' %}
                         <div class="metas-detail">Faturamento oficina: {{ (d.valor_mes or 0)|brl_rs }}</div>
                         <div class="metas-detail">Faixa: {% if d.faixa_limite %}{{ d.faixa_limite|brl_rs }}{% else %}não atingida{% endif %} · Prêmio: {{ (d.bonus_percentual or 0)|brl }}%</div>
+                        {% if d.faturamento_minimo and d.faturamento_minimo > 0 %}<div class="metas-detail">Trava loja: {{ (d.faturamento_emp or 0)|brl_rs }} / {{ d.faturamento_minimo|brl_rs }}{% if d.bloqueado_minimo %} · loja abaixo{% else %} · loja OK{% endif %}</div>{% endif %}
                       {% endif %}
                     {% else %}
                       <span class="text-muted">-</span>

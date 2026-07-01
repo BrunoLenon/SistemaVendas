@@ -171,7 +171,10 @@ def _build_meta_cards_for_vendedor(db: Any, *, ano: int, mes: int, emp: str, ven
             elif tipo == "SHARE_MARCA":
                 subtitulo = "Participação das marcas"
             elif tipo == "MECANICO_FATURAMENTO":
-                subtitulo = "Faturamento de oficina"
+                if bloqueado and float(getattr(calc, "faturamento_minimo", 0.0) or 0.0) > 0:
+                    subtitulo = "Loja abaixo do mínimo"
+                else:
+                    subtitulo = "Faturamento de oficina"
 
             out.append(SimpleNamespace(
                 tipo="META",

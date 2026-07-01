@@ -820,6 +820,9 @@ class MetaCalc:
     margem_atingida: bool = True
     bloqueado_margem: bool = False
     margem_faltante_pp: float = 0.0
+    # Valor usado para validar a trava de faturamento mínimo.
+    # Em vendedor = venda do próprio participante; em gerente/mecânico = total da EMP.
+    faturamento_emp: float | None = None
 
 
 def calcular_meta(db, meta: MetaPrograma, emp: str, vendedor: str, persist: bool = False) -> MetaCalc:
@@ -829,8 +832,11 @@ def calcular_meta(db, meta: MetaPrograma, emp: str, vendedor: str, persist: bool
     vendedor_n = normalize_text(vendedor)
     escopo = meta_escopo(meta)
     gerente_scope = escopo == "GERENTE"
+    mecanico_scope = is_meta_mecanico(meta)
     # Para GERENTE, as métricas são da EMP inteira; o resultado continua
     # gravado no usuário gerente informado em ``vendedor_n``.
+    # Para MECÂNICO, as faixas usam o faturamento de oficina individual,
+    # mas a trava mínima usa o faturamento total da EMP.
     vendedor_metrica = None if gerente_scope else vendedor_n
     escalas = get_meta_escalas(db, int(meta.id))
 
@@ -949,10 +955,23 @@ def calcular_meta(db, meta: MetaPrograma, emp: str, vendedor: str, persist: bool
         if _safe_base is not None and (not calc.base_valor or float(calc.base_valor or 0.0) <= 0):
             calc.base_valor = float(getattr(_safe_base, "base_valor", 0.0) or 0.0)
 
-    if faturamento_minimo > 0 and float(calc.valor_mes or 0.0) < faturamento_minimo:
+    # Trava de faturamento mínimo:
+    # - Vendedor: compara contra a venda do próprio vendedor.
+    # - Gerente: compara contra a venda total da EMP (calc.valor_mes já é loja).
+    # - Mecânico: compara contra a venda total da EMP, mas mantém valor_mes
+    #   como faturamento de oficina individual para calcular a faixa/prêmio.
+    faturamento_gate_valor = float(calc.valor_mes or 0.0)
+    if mecanico_scope:
+        try:
+            faturamento_gate_valor = float(query_valor_mes(db, meta.ano, meta.mes, emp_n, None) or 0.0)
+        except Exception:
+            faturamento_gate_valor = 0.0
+    calc.faturamento_emp = float(faturamento_gate_valor or 0.0)
+
+    if faturamento_minimo > 0 and faturamento_gate_valor < faturamento_minimo:
         calc.faturamento_minimo_atingido = False
         calc.bloqueado_minimo = True
-        # Mantém as métricas/faixas para conferência, mas zera o pagamento porque não atingiu o faturamento mínimo.
+        # Mantém as métricas/faixas para conferência, mas zera o pagamento porque a loja/participante não atingiu o mínimo.
         calc.premio = 0.0
     else:
         calc.faturamento_minimo_atingido = True
