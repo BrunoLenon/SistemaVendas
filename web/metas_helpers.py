@@ -371,16 +371,39 @@ def _get_emps_no_periodo(db, ano: int, mes: int, emps_allowed: list[str]) -> lis
 
 def get_vendedores_cadastrados(db, emps: list[str] | None = None) -> list[str]:
     allowed = [normalize_emp(e) for e in (emps or []) if normalize_emp(e)]
-    q = (
-        db.query(Usuario.username)
-        .join(UsuarioEmp, UsuarioEmp.usuario_id == Usuario.id)
-        .filter(UsuarioEmp.ativo.is_(True))
-        .filter(Usuario.role.ilike("vendedor"))
-    )
-    if allowed:
-        q = q.filter(UsuarioEmp.emp.in_(allowed))
-    rows = q.order_by(Usuario.username.asc()).all()
-    return [normalize_text(r[0]) for r in rows if r and normalize_text(r[0])]
+    nomes: list[str] = []
+    try:
+        q = (
+            db.query(Usuario.username)
+            .join(UsuarioEmp, UsuarioEmp.usuario_id == Usuario.id)
+            .filter(UsuarioEmp.ativo.is_(True))
+            .filter(Usuario.role.ilike("vendedor"))
+        )
+        if allowed:
+            q = q.filter(UsuarioEmp.emp.in_(allowed))
+        rows = q.order_by(Usuario.username.asc()).all()
+        nomes.extend([normalize_text(r[0]) for r in rows if r and normalize_text(r[0])])
+    except Exception:
+        pass
+
+    # Fallback para cadastros antigos que ainda usam usuarios.emp direto.
+    try:
+        q2 = db.query(Usuario.username).filter(Usuario.role.ilike("vendedor"))
+        if allowed:
+            q2 = q2.filter(Usuario.emp.in_(allowed))
+        rows2 = q2.order_by(Usuario.username.asc()).all()
+        nomes.extend([normalize_text(r[0]) for r in rows2 if r and normalize_text(r[0])])
+    except Exception:
+        pass
+
+    seen: set[str] = set()
+    out: list[str] = []
+    for n in nomes:
+        n = normalize_text(n)
+        if n and n not in seen:
+            seen.add(n)
+            out.append(n)
+    return sorted(out)
 
 
 
@@ -639,6 +662,54 @@ def get_margem_vendedor(db, ano: int, mes: int, emp: str, vendedor: str) -> Meta
     )
 
 
+
+
+def get_margem_media_vendedores_emp(db, ano: int, mes: int, emp: str) -> dict[str, object]:
+    """Calcula a margem média dos vendedores vinculados à EMP.
+
+    Usado na meta de gerente: a margem atual do gerente não deve vir do
+    cadastro/importação do usuário gerente, e sim da média das margens dos
+    vendedores da loja. A margem continua sendo importada individualmente por
+    vendedor em ``metas_margens_vendedores``; aqui usamos a última margem
+    válida de cada vendedor na competência.
+    """
+    emp_n = normalize_emp(emp)
+    vendedores = [normalize_text(v) for v in get_vendedores_cadastrados(db, [emp_n]) if normalize_text(v)]
+    # Fallback para bases/vendas legadas quando ainda não houver cadastro de usuários vinculado.
+    if not vendedores:
+        vendedores = [normalize_text(v) for v in get_vendedores_para_metas(db, ano, mes, [emp_n]) if normalize_text(v)]
+    # Remove duplicados preservando ordenação.
+    seen: set[str] = set()
+    vendedores = [v for v in vendedores if not (v in seen or seen.add(v))]
+    if not vendedores:
+        return {
+            "media": None,
+            "total_vendedores": 0,
+            "com_margem": 0,
+            "sem_margem": [],
+        }
+
+    valores: list[float] = []
+    sem_margem: list[str] = []
+    for vend in vendedores:
+        margem_row = get_margem_vendedor(db, ano, mes, emp_n, vend)
+        if margem_row is None:
+            sem_margem.append(vend)
+            continue
+        try:
+            valores.append(float(getattr(margem_row, "margem_percentual", 0.0) or 0.0))
+        except Exception:
+            sem_margem.append(vend)
+
+    media = (sum(valores) / len(valores)) if valores else None
+    return {
+        "media": media,
+        "total_vendedores": len(vendedores),
+        "com_margem": len(valores),
+        "sem_margem": sem_margem,
+    }
+
+
 def upsert_base_manual(db, meta_id: int, emp: str, vendedor: str, base_valor: float, observacao: str | None = None, margem_minima_individual: float | None = None) -> MetaBaseManual:
     item = get_base_manual(db, meta_id, emp, vendedor)
     if not item:
@@ -690,6 +761,9 @@ class MetaCalc:
     margem_minima_origem: str = ""  # "individual", "padrao" ou vazio
     margem_percentual: float | None = None
     margem_importada_em: datetime | None = None
+    margem_media_total_vendedores: int = 0
+    margem_media_com_margem: int = 0
+    margem_media_sem_margem: int = 0
     margem_atingida: bool = True
     bloqueado_margem: bool = False
     margem_faltante_pp: float = 0.0
@@ -730,12 +804,20 @@ def calcular_meta(db, meta: MetaPrograma, emp: str, vendedor: str, persist: bool
             calc.margem_minima_origem = ""
         calc.margem_minima = margem_minima
 
-        margem_row = get_margem_vendedor(db, meta.ano, meta.mes, emp_n, vendedor_n) if margem_minima > 0 else None
-        if margem_row is not None:
-            calc.margem_percentual = float(getattr(margem_row, "margem_percentual", 0.0) or 0.0)
-            calc.margem_importada_em = getattr(margem_row, "importado_em", None)
-        elif margem_minima > 0:
-            calc.margem_percentual = None
+        if margem_minima > 0 and gerente_scope:
+            margem_media_info = get_margem_media_vendedores_emp(db, meta.ano, meta.mes, emp_n)
+            margem_media = margem_media_info.get("media")
+            calc.margem_percentual = float(margem_media) if margem_media is not None else None
+            calc.margem_media_total_vendedores = int(margem_media_info.get("total_vendedores") or 0)
+            calc.margem_media_com_margem = int(margem_media_info.get("com_margem") or 0)
+            calc.margem_media_sem_margem = len(margem_media_info.get("sem_margem") or [])
+        else:
+            margem_row = get_margem_vendedor(db, meta.ano, meta.mes, emp_n, vendedor_n) if margem_minima > 0 else None
+            if margem_row is not None:
+                calc.margem_percentual = float(getattr(margem_row, "margem_percentual", 0.0) or 0.0)
+                calc.margem_importada_em = getattr(margem_row, "importado_em", None)
+            elif margem_minima > 0:
+                calc.margem_percentual = None
         crescimento = Decimal("0")
         if base_valor > 0:
             crescimento = (valor_mes - base_valor) / base_valor * Decimal("100")

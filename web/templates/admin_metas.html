@@ -214,7 +214,7 @@ VEI</textarea></div>
               <div class="mb-2"><div class="meta-label">Nome</div><input class="form-control form-control-sm meta-input" name="nome" value="Meta Crescimento Gerente {{ '%02d'|format(mes) }}/{{ ano }}"></div>
               <div class="mb-2"><div class="meta-label">EMPs participantes</div><div class="meta-emp-box">{% for e in emps_rows %}<label class="meta-emp-check"><input type="checkbox" name="emps" value="{{ e.codigo }}" {% if emp_selected and emp_selected==e.codigo|string %}checked{% endif %}> <span>{{ e.codigo }} - {{ e.nome }}</span></label>{% endfor %}</div></div>
               <div class="mb-2"><div class="meta-label">Faturamento mínimo da loja</div><input class="form-control form-control-sm meta-input" name="faturamento_minimo" value="0,00"><div class="meta-help mt-1">Opcional. Se ficar zerado, a regra usa apenas crescimento/base/faixa.</div></div>
-              <div class="mb-2"><div class="meta-label">Margem mínima padrão (%)</div><input class="form-control form-control-sm meta-input" name="margem_minima" value=""><div class="meta-help mt-1">Opcional para gerente. Se preencher, precisa importar margem para o usuário gerente.</div></div>
+              <div class="mb-2"><div class="meta-label">Margem mínima padrão (%)</div><input class="form-control form-control-sm meta-input" name="margem_minima" value=""><div class="meta-help mt-1">Opcional para gerente. Se preencher, a margem atual será comparada com a média das margens dos vendedores da EMP.</div></div>
               <div class="mb-2"><div class="meta-label">Faixas: crescimento % = prêmio %</div><textarea class="form-control meta-textarea" name="escalas">5=0,10
 10=0,20
 15=0,30
@@ -298,15 +298,30 @@ VEI</textarea></div>
           <div class="meta-empty">Selecione uma EMP no filtro superior para editar a base do gerente com segurança.</div>
         {% else %}
           <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
-            <div><h6 class="m-0 fw-bold">Bases de gerente da {{ emp_selected }}</h6><div class="meta-help">Meta: <b>{{ crescimento_gerente_meta.nome }}</b>. A venda mês abaixo é o total da EMP inteira; o pagamento é direcionado ao gerente vinculado.</div></div>
+            <div><h6 class="m-0 fw-bold">Bases de gerente da {{ emp_selected }}</h6><div class="meta-help">Meta: <b>{{ crescimento_gerente_meta.nome }}</b>. A venda mês abaixo é o total da EMP inteira; a margem atual do gerente é a média das margens dos vendedores da EMP.</div></div>
             <a class="btn btn-sm btn-outline-light" href="{{ url_for('admin_meta_bases', meta_id=crescimento_gerente_meta.id, emp=emp_selected) }}">Abrir tela completa de bases</a>
           </div>
           <div class="meta-table-wrap">
             <table class="table table-sm meta-table">
-              <thead><tr><th>Gerente</th><th class="text-end">Venda total EMP</th><th class="text-end">Meta base loja</th><th class="text-end">Cresc.</th><th class="text-end">Margem mínima</th><th>Observação</th></tr></thead>
+              <thead><tr><th>Gerente</th><th class="text-end">Venda total EMP</th><th class="text-end">Meta base loja</th><th class="text-end">Cresc.</th><th class="text-end">Margem média / mínima</th><th>Observação</th></tr></thead>
               <tbody>
                 {% for r in gerente_base_rows %}
-                  <tr><td class="fw-semibold">{{ r.vendedor }}</td><td class="text-end">{{ r.venda_mes|brl_rs }}</td><td class="text-end">{{ r.base_valor|brl_rs }}</td><td class="text-end">{{ r.crescimento_pct|brl }}%</td><td class="text-end">{% if r.margem_minima_efetiva %}{{ r.margem_minima_efetiva|brl }}% <span class="meta-chip {% if r.margem_minima_origem == 'individual' %}ok{% endif %}">{{ 'Individual' if r.margem_minima_origem == 'individual' else 'Padrão' }}</span>{% else %}-{% endif %}</td><td>{{ r.observacao or '-' }}</td></tr>
+                  <tr>
+                    <td class="fw-semibold">{{ r.vendedor }}</td>
+                    <td class="text-end">{{ r.venda_mes|brl_rs }}</td>
+                    <td class="text-end">{{ r.base_valor|brl_rs }}</td>
+                    <td class="text-end">{{ r.crescimento_pct|brl }}%</td>
+                    <td class="text-end">
+                      {% if r.margem_media_vendedores is not none %}
+                        <div class="fw-bold">Média {{ r.margem_media_vendedores|brl }}%</div>
+                        <div class="meta-help">{{ r.margem_media_com_margem }}/{{ r.margem_media_total_vendedores }} vendedores</div>
+                      {% else %}
+                        <span class="meta-chip warn">Sem margem média</span>
+                      {% endif %}
+                      {% if r.margem_minima_efetiva %}<div class="meta-help">Mín. {{ r.margem_minima_efetiva|brl }}% · {{ 'Manual' if r.margem_minima_origem == 'individual' else 'Padrão' }}</div>{% endif %}
+                    </td>
+                    <td>{{ r.observacao or '-' }}</td>
+                  </tr>
                 {% endfor %}
                 {% if gerente_base_rows|length == 0 %}<tr><td colspan="6" class="text-center text-muted py-4">Nenhum gerente vinculado a esta EMP.</td></tr>{% endif %}
               </tbody>
@@ -352,12 +367,12 @@ VEI</textarea></div>
           <div class="col-12 col-xl-5">
             <form class="meta-card" method="post" action="{{ url_for('admin_metas_margens_importar') }}" enctype="multipart/form-data">
               <input type="hidden" name="ano" value="{{ ano }}"><input type="hidden" name="mes" value="{{ mes }}">
-              <h6>📥 Importar margens individuais por vendedor/gerente</h6>
-              <p>A última margem importada para <b>ANO + MÊS + VENDEDOR/GERENTE</b> substitui a anterior. A margem é <b>individual por participante</b>; não é fixa por loja, não soma, não faz média e não acumula.</p>
+              <h6>📥 Importar margens individuais por vendedor</h6>
+              <p>A última margem importada para <b>ANO + MÊS + VENDEDOR</b> substitui a anterior. A margem é <b>individual por vendedor</b>; para gerente, o sistema faz a média dos vendedores da EMP. Não é fixa por loja, não soma e não acumula.</p>
               <div class="mb-3">
                 <div class="meta-label">Planilha de margens</div>
                 <input class="form-control form-control-sm meta-input" type="file" name="arquivo_margens" accept=".xlsx,.xls,.csv" required>
-                <div class="meta-help mt-1">Colunas obrigatórias: ANO, MES, VENDEDOR e MARGEM_PERCENTUAL. Para gerente, informe o username do gerente na coluna VENDEDOR. Não informe EMP: a margem é individual do participante e vale para ele em qualquer loja vinculada.</div>
+                <div class="meta-help mt-1">Colunas obrigatórias: ANO, MES, VENDEDOR e MARGEM_PERCENTUAL. Para gerente, não precisa importar margem do usuário gerente: o sistema usa a média das margens dos vendedores vinculados à EMP. Não informe EMP: a margem é individual do vendedor e vale para ele em qualquer loja vinculada.</div>
               </div>
               <div class="meta-actions">
                 <button class="btn btn-meta-primary btn-sm">Importar margens</button>

@@ -37,6 +37,7 @@ from metas_helpers import (
     get_meta_escalas,
     get_meta_marcas,
     get_margem_vendedor,
+    get_margem_media_vendedores_emp,
     get_gerentes_para_metas,
     get_mecanicos_para_metas,
     get_participantes_para_meta,
@@ -437,6 +438,7 @@ def admin_metas():
                 crescimento_pct = ((venda_mes - base_valor) / base_valor * 100.0) if base_valor > 0 else 0.0
                 margem_individual = float(getattr(base, "margem_percentual", 0.0) or 0.0) if base else 0.0
                 margem_efetiva, margem_origem = _margem_minima_efetiva(db, crescimento_gerente_meta.id, emp_selected, gerente, margem_minima_gerente_ativa)
+                margem_media_info = get_margem_media_vendedores_emp(db, ano, mes, emp_selected)
                 gerente_base_rows.append({
                     "emp": emp_selected,
                     "vendedor": gerente,
@@ -446,6 +448,10 @@ def admin_metas():
                     "margem_minima_individual": margem_individual,
                     "margem_minima_efetiva": margem_efetiva,
                     "margem_minima_origem": margem_origem,
+                    "margem_media_vendedores": margem_media_info.get("media"),
+                    "margem_media_total_vendedores": int(margem_media_info.get("total_vendedores") or 0),
+                    "margem_media_com_margem": int(margem_media_info.get("com_margem") or 0),
+                    "margem_media_sem_margem": len(margem_media_info.get("sem_margem") or []),
                     "observacao": getattr(base, "observacao", "") if base else "",
                 })
 
@@ -1076,6 +1082,7 @@ def admin_meta_bases(meta_id: int):
             margem_padrao = float(getattr(meta, "margem_minima", 0.0) or 0.0)
             margem_efetiva = margem_individual if margem_individual > 0 else margem_padrao
             margem_origem = "individual" if margem_individual > 0 else ("padrao" if margem_padrao > 0 else "")
+            margem_media_info = get_margem_media_vendedores_emp(db, meta.ano, meta.mes, emp_selected) if meta_gerente else {}
             linhas.append({
                 "emp": emp_selected,
                 "vendedor": vend,
@@ -1085,6 +1092,11 @@ def admin_meta_bases(meta_id: int):
                 "margem_minima_individual": margem_individual,
                 "margem_minima_efetiva": margem_efetiva,
                 "margem_minima_origem": margem_origem,
+                "margem_media_vendedores": margem_media_info.get("media") if meta_gerente else None,
+                "margem_media_total_vendedores": int(margem_media_info.get("total_vendedores") or 0) if meta_gerente else 0,
+                "margem_media_com_margem": int(margem_media_info.get("com_margem") or 0) if meta_gerente else 0,
+                "margem_media_sem_margem": len(margem_media_info.get("sem_margem") or []) if meta_gerente else 0,
+                "margem_media_sem_margem_lista": ", ".join((margem_media_info.get("sem_margem") or [])[:8]) if meta_gerente else "",
                 "observacao": getattr(base, "observacao", "") if base else "",
             })
 
