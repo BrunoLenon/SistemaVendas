@@ -137,7 +137,7 @@
           {% endfor %}
           <button class="sv-btn sv-btn-soft" type="submit" {% if ctx.get('deferred_report') %}disabled title="Selecione ao menos uma EMP antes de recalcular"{% endif %}>Recalcular em segundo plano</button>
         </form>
-        <a class="sv-btn sv-btn-primary" href="{{ ctx.get('export_url') or url_for('relatorio_campanhas_export_pdf') }}" {% if ctx.get('deferred_report') %}aria-disabled="true" onclick="return false;" style="opacity:.48;pointer-events:none;"{% endif %}>Exportar PDF</a>
+        <a class="sv-btn sv-btn-primary" href="{{ ctx.get('export_url') or url_for('relatorio_campanhas_export_pdf') }}" {% if ctx.get('deferred_report') %}aria-disabled="true" onclick="return false;" style="opacity:.48;pointer-events:none;"{% endif %}>{{ 'PDF por vendedor' if view_mode == 'vendedores' else 'PDF detalhado' }}</a>
         <a class="sv-btn sv-btn-soft" href="{{ ctx.get('export_csv_url') or url_for('relatorio_campanhas_export_csv') }}" {% if ctx.get('deferred_report') %}aria-disabled="true" onclick="return false;" style="opacity:.48;pointer-events:none;"{% endif %}>CSV</a>
       </div>
     </div>

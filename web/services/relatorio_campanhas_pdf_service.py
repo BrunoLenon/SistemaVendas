@@ -403,6 +403,206 @@ def _build_campaigns_table(card: dict, styles):
     return table
 
 
+
+def _build_vendor_header(*, ano: int, mes: int, emps_sel: list[str], resumo: dict, styles):
+    """Cabeçalho branco para a visão por loja/vendedor.
+
+    A exportação desta visão é feita para conferência/impressão econômica:
+    fundo branco, poucas áreas preenchidas e tabelas objetivas.
+    """
+    emps = ', '.join([str(e) for e in (emps_sel or [])]) if emps_sel else 'todas as selecionadas'
+    subtitle = (
+        f'<b>Competência:</b> {mes:02d}/{ano}<br/>'
+        f'<b>EMPs:</b> {escape(emps)}<br/>'
+        '<b>Visão:</b> Por loja/vendedor'
+    )
+    header = Table(
+        [[_p(f'Recompensas por loja/vendedor {mes:02d}/{ano}', styles['title']), _p(subtitle, styles['subtitle'])]],
+        colWidths=[112 * mm, CONTENT_WIDTH - (112 * mm)],
+    )
+    header.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), PDF_WHITE),
+        ('BOX', (0, 0), (-1, -1), 0.45, PDF_BORDER),
+        ('LINEBELOW', (0, 0), (-1, -1), 0.8, PDF_TEXT),
+        ('LEFTPADDING', (0, 0), (-1, -1), 7),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 7),
+        ('TOPPADDING', (0, 0), (-1, -1), 6),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+    ]))
+
+    status = (resumo or {}).get('status', {}) if isinstance(resumo, dict) else {}
+    metric_data = [[
+        _metric_cell('Total geral', (resumo or {}).get('total_valor', 0), styles),
+        _metric_cell('Pendente', status.get('PENDENTE', 0), styles),
+        _metric_cell('A pagar', status.get('A_PAGAR', 0), styles),
+        _metric_cell('Pago', status.get('PAGO', 0), styles),
+    ]]
+    metric_table = Table(metric_data, colWidths=[CONTENT_WIDTH / 4] * 4)
+    metric_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), PDF_WHITE),
+        ('BOX', (0, 0), (-1, -1), 0.35, PDF_BORDER),
+        ('INNERGRID', (0, 0), (-1, -1), 0.25, PDF_GRID),
+        ('LEFTPADDING', (0, 0), (-1, -1), 6),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+        ('TOPPADDING', (0, 0), (-1, -1), 4),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+    ]))
+    return [header, Spacer(1, 2 * mm), metric_table, Spacer(1, 3 * mm)]
+
+
+def _iter_resumo_por_emp_ordenado(resumo: dict):
+    resumo = resumo or {}
+    ordered = resumo.get('por_emp_ordenado') or []
+    if ordered:
+        return list(ordered)
+    por_emp = resumo.get('por_emp') or {}
+    try:
+        return sorted(por_emp.items(), key=lambda kv: float((kv[1] or {}).get('total') or 0), reverse=True)
+    except Exception:
+        return list(por_emp.items())
+
+
+def _build_vendor_emp_header(emp: object, empd: dict, styles):
+    status = (empd or {}).get('status', {}) if isinstance(empd, dict) else {}
+    total = (empd or {}).get('total', 0)
+    text = (
+        f"<b>EMP {escape(_safe_text(emp))}</b> &nbsp;|&nbsp; "
+        f"<b>Total:</b> {_fmt_money(total)} &nbsp;|&nbsp; "
+        f"<b>Pendente:</b> {_fmt_money(status.get('PENDENTE', 0))} &nbsp;|&nbsp; "
+        f"<b>A pagar:</b> {_fmt_money(status.get('A_PAGAR', 0))} &nbsp;|&nbsp; "
+        f"<b>Pago:</b> {_fmt_money(status.get('PAGO', 0))}"
+    )
+    tbl = Table([[_p(text, styles['emp_title'])]], colWidths=[CONTENT_WIDTH])
+    tbl.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), PDF_WHITE),
+        ('BOX', (0, 0), (-1, -1), 0.4, PDF_BORDER),
+        ('LINEBELOW', (0, 0), (-1, -1), 0.55, PDF_TEXT),
+        ('LEFTPADDING', (0, 0), (-1, -1), 6),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+        ('TOPPADDING', (0, 0), (-1, -1), 4.5),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4.5),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+    ]))
+    return tbl
+
+
+def _build_vendor_table(empd: dict, styles):
+    data = [[
+        _p('Vendedor', styles['head']),
+        _p('Linhas', styles['head']),
+        _p('Total (R$)', styles['head']),
+        _p('Pendente', styles['head']),
+        _p('A pagar', styles['head']),
+        _p('Pago', styles['head']),
+    ]]
+    vendedores = (empd or {}).get('vendedores', {}) if isinstance(empd, dict) else {}
+    try:
+        vend_items = sorted(
+            vendedores.items(),
+            key=lambda kv: (-float((kv[1] or {}).get('total') or 0), str(kv[0] or '')),
+        )
+    except Exception:
+        vend_items = list(vendedores.items())
+
+    if not vend_items:
+        data.append([_p('Sem dados para os filtros escolhidos.', styles['cell']), '', '', '', '', ''])
+    else:
+        for vend, vd in vend_items:
+            vd = vd or {}
+            st = vd.get('status') or {}
+            data.append([
+                _p(escape(_safe_text(vend)), styles['cell_bold']),
+                _p(str(int(vd.get('linhas') or 0)), styles['cell_right']),
+                _p(escape(_fmt_money(vd.get('total', 0))), styles['cell_right_bold']),
+                _p(escape(_fmt_money(st.get('PENDENTE', 0))), styles['cell_right']),
+                _p(escape(_fmt_money(st.get('A_PAGAR', 0))), styles['cell_right']),
+                _p(escape(_fmt_money(st.get('PAGO', 0))), styles['cell_right']),
+            ])
+
+    col_widths = [55 * mm, 18 * mm, 31 * mm, 30 * mm, 30 * mm, 30 * mm]
+    style_cmds = [
+        ('BACKGROUND', (0, 0), (-1, 0), PDF_WHITE),
+        ('TEXTCOLOR', (0, 0), (-1, 0), PDF_TEXT),
+        ('BOX', (0, 0), (-1, -1), 0.35, PDF_BORDER),
+        ('INNERGRID', (0, 0), (-1, -1), 0.2, PDF_GRID),
+        ('LINEBELOW', (0, 0), (-1, 0), 0.45, PDF_TEXT),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 3.5),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 3.5),
+        ('TOPPADDING', (0, 0), (-1, -1), 2.7),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 2.7),
+        ('ALIGN', (1, 1), (-1, -1), 'RIGHT'),
+    ]
+    # Sem fundos escuros: apenas listras cinza muito claras para leitura.
+    for idx in range(1, len(data)):
+        if idx % 2 == 0:
+            style_cmds.append(('BACKGROUND', (0, idx), (-1, idx), PDF_ROW_ALT))
+        else:
+            style_cmds.append(('BACKGROUND', (0, idx), (-1, idx), PDF_WHITE))
+        if not vend_items and idx == 1:
+            style_cmds.append(('SPAN', (0, idx), (-1, idx)))
+
+    tbl = Table(data, colWidths=col_widths, repeatRows=1, splitByRow=1)
+    tbl.setStyle(TableStyle(style_cmds))
+    return tbl
+
+
+def build_relatorio_campanhas_vendedores_pdf(
+    *,
+    ano: int,
+    mes: int,
+    emps_sel: list[str],
+    resumo: dict,
+) -> bytes:
+    """Gera PDF da visão "Por vendedor (recompensas)".
+
+    Mantém a mesma leitura da tela: agrupado por EMP, com totais por vendedor e
+    colunas de pendente/a pagar/pago. O layout é branco para economizar tinta.
+    """
+    styles = _build_styles()
+    buf = BytesIO()
+    doc = SimpleDocTemplate(
+        buf,
+        pagesize=A4,
+        leftMargin=PAGE_MARGIN_X,
+        rightMargin=PAGE_MARGIN_X,
+        topMargin=PAGE_MARGIN_TOP,
+        bottomMargin=PAGE_MARGIN_BOTTOM,
+        title=f'Recompensas por loja/vendedor {mes:02d}/{ano}',
+        author='Veipeças',
+    )
+
+    story = []
+    story.extend(_build_vendor_header(ano=ano, mes=mes, emps_sel=emps_sel, resumo=resumo or {}, styles=styles))
+
+    emp_items = _iter_resumo_por_emp_ordenado(resumo or {})
+    if not emp_items:
+        empty = Table(
+            [[_p('Nenhum dado encontrado para os filtros selecionados.', styles['emp_title'])]],
+            colWidths=[CONTENT_WIDTH],
+        )
+        empty.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, -1), PDF_WHITE),
+            ('BOX', (0, 0), (-1, -1), 0.45, PDF_BORDER),
+            ('LEFTPADDING', (0, 0), (-1, -1), 8),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+            ('TOPPADDING', (0, 0), (-1, -1), 8),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+        ]))
+        story.append(empty)
+    else:
+        for idx, (emp, empd) in enumerate(emp_items):
+            if idx:
+                story.append(Spacer(1, 3 * mm))
+            story.append(_build_vendor_emp_header(emp, empd or {}, styles))
+            story.append(_build_vendor_table(empd or {}, styles))
+
+    doc.build(story, onFirstPage=_header_footer, onLaterPages=_header_footer)
+    return buf.getvalue()
+
+
 def build_relatorio_campanhas_pdf(
     *,
     ano: int,

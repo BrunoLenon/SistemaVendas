@@ -1251,16 +1251,34 @@ def register_relatorio_campanhas_routes(
             include_pagination=False,
         )
 
-        from services.relatorio_campanhas_pdf_service import build_relatorio_campanhas_pdf
-
-        pdf_bytes = build_relatorio_campanhas_pdf(
-            ano=int(ctx.get('ano') or 0),
-            mes=int(ctx.get('mes') or 0),
-            emps_sel=[str(e) for e in (ctx.get('emps_sel') or [])],
-            resumo=ctx.get('resumo') or {},
-            emp_cards=ctx.get('emp_cards_page') or [],
+        from services.relatorio_campanhas_pdf_service import (
+            build_relatorio_campanhas_pdf,
+            build_relatorio_campanhas_vendedores_pdf,
         )
-        filename = f'fechamento_campanhas_{int(ctx.get("ano") or 0)}_{int(ctx.get("mes") or 0):02d}.pdf'
+
+        ano_pdf = int(ctx.get('ano') or 0)
+        mes_pdf = int(ctx.get('mes') or 0)
+        emps_pdf = [str(e) for e in (ctx.get('emps_sel') or [])]
+        resumo_pdf = ctx.get('resumo') or {}
+        view_mode = str(request.args.get('view') or 'detalhado').strip().lower()
+
+        if view_mode == 'vendedores':
+            pdf_bytes = build_relatorio_campanhas_vendedores_pdf(
+                ano=ano_pdf,
+                mes=mes_pdf,
+                emps_sel=emps_pdf,
+                resumo=resumo_pdf,
+            )
+            filename = f'recompensas_por_vendedor_{ano_pdf}_{mes_pdf:02d}.pdf'
+        else:
+            pdf_bytes = build_relatorio_campanhas_pdf(
+                ano=ano_pdf,
+                mes=mes_pdf,
+                emps_sel=emps_pdf,
+                resumo=resumo_pdf,
+                emp_cards=ctx.get('emp_cards_page') or [],
+            )
+            filename = f'fechamento_campanhas_{ano_pdf}_{mes_pdf:02d}.pdf'
         return send_file(BytesIO(pdf_bytes), mimetype='application/pdf', as_attachment=True, download_name=filename)
 
     app.add_url_rule('/relatorios/campanhas', endpoint='relatorio_campanhas', view_func=relatorio_campanhas, methods=['GET'])
