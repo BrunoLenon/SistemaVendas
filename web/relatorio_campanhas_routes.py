@@ -406,6 +406,21 @@ def _to_float(x):
         return 0.0
 
 
+def _fmt_num_label(x):
+    if x is None:
+        return None
+    try:
+        val = float(x)
+    except Exception:
+        return None
+    return f"{val:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def _fmt_pct_label(x):
+    base = _fmt_num_label(x)
+    return None if base is None else base + "%"
+
+
 def _norm_status(s: str) -> str:
     s = (s or "PENDENTE").strip().upper()
     if s in ("A PAGAR", "A_PAGAR", "APAGAR"):
@@ -503,6 +518,12 @@ def _group_rows(rows):
         faturamento_emp = _pick(r, 'faturamento_emp', 'FATURAMENTO_EMP')
         faltante_faturamento_emp = _pick(r, 'faltante_faturamento_emp', 'FALTANTE_FATURAMENTO_EMP')
         bloqueado_faturamento_emp = bool(_to_float(_pick(r, 'bloqueado_faturamento_emp', 'BLOQUEADO_FATURAMENTO_EMP') or 0))
+        margem_percentual = _pick(r, 'margem_percentual', 'MARGEM_PERCENTUAL')
+        margem_minima = _pick(r, 'margem_minima', 'MARGEM_MINIMA')
+        margem_faltante = _pick(r, 'margem_faltante_pp', 'MARGEM_FALTANTE_PP')
+        bloqueado_margem = bool(_to_float(_pick(r, 'bloqueado_margem', 'BLOQUEADO_MARGEM') or 0))
+        margem_atingida_raw = _pick(r, 'margem_atingida', 'MARGEM_ATINGIDA')
+        margem_atingida = None if margem_atingida_raw is None else bool(margem_atingida_raw)
         st = _norm_status(_pick(r, 'status_pagamento', 'status', 'STATUS_PAGAMENTO') or 'PENDENTE')
 
         key = (emp_r, vend_r)
@@ -537,6 +558,18 @@ def _group_rows(rows):
             'faturamento_emp': _to_float(faturamento_emp or 0) if faturamento_emp is not None else None,
             'faltante_faturamento_emp': _to_float(faltante_faturamento_emp or 0) if faltante_faturamento_emp is not None else None,
             'bloqueado_faturamento_emp': bloqueado_faturamento_emp,
+            'meta_tipo': _pick(r, 'meta_tipo', 'META_TIPO'),
+            'base_valor': _to_float(_pick(r, 'base_valor', 'BASE_VALOR') or 0) if _pick(r, 'base_valor', 'BASE_VALOR') is not None else None,
+            'faturamento_minimo_meta': _to_float(_pick(r, 'faturamento_minimo_meta', 'FATURAMENTO_MINIMO_META') or 0) if _pick(r, 'faturamento_minimo_meta', 'FATURAMENTO_MINIMO_META') is not None else None,
+            'bloqueado_minimo': bool(_to_float(_pick(r, 'bloqueado_minimo', 'BLOQUEADO_MINIMO') or 0)),
+            'margem_percentual': _to_float(margem_percentual) if margem_percentual is not None else None,
+            'margem_percentual_label': _fmt_pct_label(margem_percentual),
+            'margem_minima': _to_float(margem_minima) if margem_minima is not None else None,
+            'margem_minima_label': _fmt_pct_label(margem_minima),
+            'margem_atingida': margem_atingida,
+            'bloqueado_margem': bloqueado_margem,
+            'margem_faltante': _to_float(margem_faltante or 0) if margem_faltante is not None else None,
+            'margem_faltante_label': _fmt_num_label(margem_faltante),
             'status': st,
             'atingiu': bool(getattr(r, 'atingiu', False)),
             'tipo': tipo_raw,

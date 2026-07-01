@@ -30,6 +30,7 @@ from db import (
     CampanhaComboItem,
     MetaPrograma,
     MetaResultado,
+    MetaBaseManual,
     ItemParado,
     ItensParadosPontosConfig,
     ItensParadosPontosBonus,
@@ -78,6 +79,19 @@ class UnifiedRow:
     status_pagamento: str = "PENDENTE"
     pago_em: Any | None = None
     origem_id: int | None = None
+
+    # Campos específicos de Metas. Ficam opcionais para não interferir nas
+    # campanhas QTD/Combo/Itens Parados, mas permitem que o relatório mostre
+    # exatamente a base manual e a margem usadas no cálculo oficial.
+    meta_tipo: str | None = None
+    base_valor: float | None = None
+    faturamento_minimo_meta: float | None = None
+    bloqueado_minimo: bool | None = None
+    margem_percentual: float | None = None
+    margem_minima: float | None = None
+    margem_atingida: bool | None = None
+    bloqueado_margem: bool | None = None
+    margem_faltante_pp: float | None = None
 
     def get(self, key: str, default: Any = None) -> Any:
         if key is None:
@@ -740,6 +754,30 @@ def _meta_rows_from_snapshots(
             pass
         return 0
 
+    bases_map: dict[tuple[int, str, str], Any] = {}
+    try:
+        meta_ids = sorted({int(getattr(meta, 'id', 0) or getattr(calc, 'meta_id', 0) or 0) for calc, meta in (snap_rows or [])})
+        if meta_ids:
+            base_rows = (
+                db.query(MetaBaseManual)
+                .filter(
+                    MetaBaseManual.meta_id.in_(meta_ids),
+                    cast(MetaBaseManual.emp, String) == emp_s,
+                    MetaBaseManual.vendedor.in_(vendedores_u),
+                )
+                .all()
+            )
+            bases_map = {
+                (int(getattr(b, 'meta_id', 0) or 0), str(getattr(b, 'emp', '') or '').strip(), _upper(getattr(b, 'vendedor', ''))): b
+                for b in (base_rows or [])
+            }
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        bases_map = {}
+
     count = 0
     for calc, meta in snap_rows:
         tipo_meta = str(getattr(meta, 'tipo', '') or '').strip().upper()
@@ -766,9 +804,33 @@ def _meta_rows_from_snapshots(
 
         faturamento_minimo_meta = _safe_float(getattr(meta, 'faturamento_minimo', 0.0) or 0.0)
         faturamento_meta_atual = _safe_float(getattr(calc, 'valor_mes', 0.0) or 0.0)
-        faltante_meta = max(0.0, faturamento_minimo_meta - faturamento_meta_atual) if faturamento_minimo_meta > 0 else 0.0
+        base_current = bases_map.get((int(getattr(meta, 'id', 0) or getattr(calc, 'meta_id', 0) or 0), emp_s, _upper(getattr(calc, 'vendedor', ''))))
+        base_meta = _safe_float(getattr(base_current, 'base_valor', None)) if base_current is not None else 0.0
+        if base_meta <= 0:
+            base_meta = _safe_float(getattr(calc, 'base_valor', 0.0) or 0.0)
+
+        # Para Meta Crescimento, o alvo exibido no relatório deve ser a base
+        # manual cadastrada em Bases vendedores/gerentes. Antes a tela usava
+        # o faturamento mínimo (ex.: R$70.000,00), confundindo a conferência.
+        requisito_alvo = base_meta if tipo_meta == 'CRESCIMENTO' and base_meta > 0 else faturamento_minimo_meta
+        faltante_requisito = max(0.0, requisito_alvo - faturamento_meta_atual) if requisito_alvo > 0 else 0.0
+        bloqueado_requisito = bool(requisito_alvo > 0 and faturamento_meta_atual < requisito_alvo)
         bloqueado_minimo = bool(faturamento_minimo_meta > 0 and faturamento_meta_atual < faturamento_minimo_meta)
+
+        margem_minima = _safe_float(getattr(calc, 'margem_minima', 0.0) or 0.0)
+        margem_individual_atual = _safe_float(getattr(base_current, 'margem_percentual', 0.0) or 0.0) if base_current is not None else 0.0
+        if margem_individual_atual > 0:
+            margem_minima = margem_individual_atual
+        margem_raw = getattr(calc, 'margem_percentual', None)
+        margem_percentual = None if margem_raw is None else _safe_float(margem_raw)
         bloqueado_margem = bool(getattr(calc, 'bloqueado_margem', False))
+        if margem_minima > 0:
+            if margem_percentual is None:
+                margem_faltante_pp = margem_minima
+            else:
+                margem_faltante_pp = max(0.0, margem_minima - margem_percentual)
+        else:
+            margem_faltante_pp = 0.0
 
         rows.append(
             UnifiedRow(
@@ -786,13 +848,22 @@ def _meta_rows_from_snapshots(
                 qtd_base=qtd_base,
                 qtd_premiada=None,
                 valor_recompensa=valor_premio,
-                faturamento_minimo_emp=faturamento_minimo_meta if faturamento_minimo_meta > 0 else None,
+                faturamento_minimo_emp=requisito_alvo if requisito_alvo > 0 else None,
                 faturamento_emp=faturamento_meta_atual,
-                faltante_faturamento_emp=faltante_meta if faturamento_minimo_meta > 0 else None,
-                bloqueado_faturamento_emp=bool(bloqueado_minimo or bloqueado_margem),
+                faltante_faturamento_emp=faltante_requisito if requisito_alvo > 0 else None,
+                bloqueado_faturamento_emp=bloqueado_requisito,
                 status_pagamento='PENDENTE',
                 pago_em=None,
                 origem_id=int(getattr(calc, 'meta_id', 0) or getattr(meta, 'id', 0) or 0),
+                meta_tipo=tipo_meta,
+                base_valor=base_meta if base_meta > 0 else None,
+                faturamento_minimo_meta=faturamento_minimo_meta if faturamento_minimo_meta > 0 else None,
+                bloqueado_minimo=bloqueado_minimo,
+                margem_percentual=margem_percentual,
+                margem_minima=margem_minima if margem_minima > 0 else None,
+                margem_atingida=bool(getattr(calc, 'margem_atingida', True)),
+                bloqueado_margem=bloqueado_margem,
+                margem_faltante_pp=margem_faltante_pp,
             )
         )
         count += 1
@@ -918,11 +989,27 @@ def _append_metas_unificadas(
 
             # Transparência no relatório: a coluna Requisitos deve mostrar o
             # alvo financeiro real da meta, quanto o vendedor já vendeu e o que
-            # falta. Reaproveitamos os campos de faturamento_* já usados nas
-            # travas de campanha de produto para manter o template simples.
+            # falta. Para Crescimento, o alvo real exibido é a base manual
+            # cadastrada em Bases vendedores/gerentes, não o faturamento mínimo.
             faturamento_minimo_meta = _safe_float(getattr(calc, 'faturamento_minimo', 0.0) or 0.0)
             faturamento_meta_atual = _safe_float(getattr(calc, 'valor_mes', 0.0) or 0.0)
-            faltante_meta = max(0.0, faturamento_minimo_meta - faturamento_meta_atual) if faturamento_minimo_meta > 0 else 0.0
+            base_meta = _safe_float(getattr(calc, 'base_valor', 0.0) or 0.0)
+            requisito_alvo = base_meta if tipo_meta == 'CRESCIMENTO' and base_meta > 0 else faturamento_minimo_meta
+            faltante_requisito = max(0.0, requisito_alvo - faturamento_meta_atual) if requisito_alvo > 0 else 0.0
+            bloqueado_requisito = bool(requisito_alvo > 0 and faturamento_meta_atual < requisito_alvo)
+            bloqueado_minimo = bool(getattr(calc, 'bloqueado_minimo', False))
+
+            margem_minima = _safe_float(getattr(calc, 'margem_minima', 0.0) or 0.0)
+            margem_raw = getattr(calc, 'margem_percentual', None)
+            margem_percentual = None if margem_raw is None else _safe_float(margem_raw)
+            bloqueado_margem = bool(getattr(calc, 'bloqueado_margem', False))
+            if margem_minima > 0:
+                if margem_percentual is None:
+                    margem_faltante_pp = margem_minima
+                else:
+                    margem_faltante_pp = max(0.0, margem_minima - margem_percentual)
+            else:
+                margem_faltante_pp = 0.0
 
             rows.append(
                 UnifiedRow(
@@ -940,13 +1027,22 @@ def _append_metas_unificadas(
                     qtd_base=qtd_base,
                     qtd_premiada=None,
                     valor_recompensa=valor_premio,
-                    faturamento_minimo_emp=faturamento_minimo_meta if faturamento_minimo_meta > 0 else None,
+                    faturamento_minimo_emp=requisito_alvo if requisito_alvo > 0 else None,
                     faturamento_emp=faturamento_meta_atual,
-                    faltante_faturamento_emp=faltante_meta if faturamento_minimo_meta > 0 else None,
-                    bloqueado_faturamento_emp=bool(getattr(calc, 'bloqueado_minimo', False)),
+                    faltante_faturamento_emp=faltante_requisito if requisito_alvo > 0 else None,
+                    bloqueado_faturamento_emp=bloqueado_requisito,
                     status_pagamento='PENDENTE',
                     pago_em=None,
                     origem_id=meta_id,
+                    meta_tipo=tipo_meta,
+                    base_valor=base_meta if base_meta > 0 else None,
+                    faturamento_minimo_meta=faturamento_minimo_meta if faturamento_minimo_meta > 0 else None,
+                    bloqueado_minimo=bloqueado_minimo,
+                    margem_percentual=margem_percentual,
+                    margem_minima=margem_minima if margem_minima > 0 else None,
+                    margem_atingida=bool(getattr(calc, 'margem_atingida', True)),
+                    bloqueado_margem=bloqueado_margem,
+                    margem_faltante_pp=margem_faltante_pp,
                 )
             )
 
