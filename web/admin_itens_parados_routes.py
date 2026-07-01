@@ -517,11 +517,17 @@ def _create_modelo_itens_parados_workbook() -> BytesIO:
     return bio
 
 
-def _bonus_base_from_pontos(pontos: Decimal, valor_por_ponto: Decimal) -> Decimal:
+def _pontos_fechados_from_pontos(pontos: Decimal) -> Decimal:
+    """Retorna apenas os pontos inteiros que geram pagamento."""
     pontos_validos = _d(pontos)
     if pontos_validos <= 0:
         return Decimal("0")
     pontos_fechados = pontos_validos.quantize(Decimal("1"), rounding=ROUND_FLOOR)
+    return pontos_fechados if pontos_fechados > 0 else Decimal("0")
+
+
+def _bonus_base_from_pontos(pontos: Decimal, valor_por_ponto: Decimal) -> Decimal:
+    pontos_fechados = _pontos_fechados_from_pontos(pontos)
     if pontos_fechados <= 0:
         return Decimal("0")
     return pontos_fechados * _d(valor_por_ponto)
@@ -676,7 +682,12 @@ def _processar_fechamento_itens_parados(db, *, ItemParado, emps, di, df, usuario
                 continue
             if data_fim_v and movimento > data_fim_v:
                 continue
-            pontos_factor += pontos_por_real
+
+            # Evita multiplicar a mesma venda quando o mesmo MESTRE estiver duplicado
+            # ou com vigências sobrepostas. A venda conta uma vez; se houver
+            # multiplicadores diferentes, prevalece o maior.
+            if pontos_por_real > pontos_factor:
+                pontos_factor = pontos_por_real
 
         if pontos_factor <= 0:
             continue
@@ -698,11 +709,12 @@ def _processar_fechamento_itens_parados(db, *, ItemParado, emps, di, df, usuario
     utc_now = datetime.utcnow()
     for (emp_key, vend_key), data in acc.items():
         bonus_list = bonus_by_emp.get(emp_key) or bonus_global
-        pontos = data["pontos"]
-        bonus_base = _bonus_base_from_pontos(pontos, data["valor_por_ponto"])
+        pontos_calculados = data["pontos"]
+        pontos_fechados = _pontos_fechados_from_pontos(pontos_calculados)
+        bonus_base = _bonus_base_from_pontos(pontos_fechados, data["valor_por_ponto"])
         bonus_extra = Decimal("0")
         for min_pontos, bonus_valor in bonus_list:
-            if pontos >= min_pontos:
+            if pontos_fechados >= min_pontos:
                 bonus_extra = bonus_valor
         total_final = bonus_base + bonus_extra
 
@@ -712,7 +724,7 @@ def _processar_fechamento_itens_parados(db, *, ItemParado, emps, di, df, usuario
                 emp=emp_key,
                 vendedor=vend_key,
                 valor_vendido=float(_round2(data["valor_vendido"])),
-                pontos=float(_round2(pontos)),
+                pontos=float(_round2(pontos_fechados)),
                 base_reais=float(_round2(data["base_reais"])),
                 valor_por_ponto=float(_round2(data["valor_por_ponto"])),
                 bonus_extra=float(_round2(bonus_extra)),

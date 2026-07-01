@@ -353,11 +353,24 @@ def _d(v: Any) -> Decimal:
 ITENS_PARADOS_MOV_TIPOS_VENDA = MOVIMENTOS_VENDA
 
 
-def _bonus_base_from_pontos(pontos: Decimal, valor_por_ponto: Decimal) -> Decimal:
+def _pontos_fechados_from_pontos(pontos: Decimal) -> Decimal:
+    """Converte pontos calculados em pontos efetivamente pagáveis.
+
+    Regra oficial de Itens Parados:
+    - a cada `base_reais` vendidos gera 1 ponto inteiro;
+    - centavos/parciais não viram prêmio.
+
+    Ex.: R$ 602,25 com base R$ 100,00 = 6 pontos pagáveis.
+    """
     pontos_validos = _d(pontos)
     if pontos_validos <= 0:
         return Decimal("0")
     pontos_fechados = pontos_validos.quantize(Decimal("1"), rounding=ROUND_FLOOR)
+    return pontos_fechados if pontos_fechados > 0 else Decimal("0")
+
+
+def _bonus_base_from_pontos(pontos: Decimal, valor_por_ponto: Decimal) -> Decimal:
+    pontos_fechados = _pontos_fechados_from_pontos(pontos)
     if pontos_fechados <= 0:
         return Decimal("0")
     return pontos_fechados * _d(valor_por_ponto)
@@ -535,8 +548,7 @@ def _compute_itens_parados_rows_live(
             total_dec = _d(total)
             if total_dec <= 0:
                 continue
-            pontos_sale = Decimal('0')
-            elegivel = False
+            melhor_mult = Decimal('0')
             mov_date = movimento if isinstance(movimento, date) else None
             for ip in itens_por_codigo.get(codigo, []):
                 di = getattr(ip, 'data_inicio', None)
@@ -545,27 +557,35 @@ def _compute_itens_parados_rows_live(
                     continue
                 if mov_date and df and mov_date > df:
                     continue
+
+                # O mesmo MESTRE pode aparecer duplicado no cadastro/importação ou em
+                # vigências sobrepostas. A venda deve contar uma única vez. Quando houver
+                # mais de um cadastro válido para a mesma venda, usamos o maior
+                # multiplicador em vez de somar todos, evitando prêmio duplicado.
                 mult = _d(getattr(ip, 'multiplicador_pontos', 1.0) or 1.0)
                 if mult <= 0:
                     mult = Decimal('1')
-                pontos_sale += (total_dec / base_reais) * mult
-                elegivel = True
-            if not elegivel:
+                if mult > melhor_mult:
+                    melhor_mult = mult
+
+            if melhor_mult <= 0:
                 continue
+            pontos_sale = (total_dec / base_reais) * melhor_mult
             cur = acc.setdefault(vend_u, {'valor_vendido': Decimal('0'), 'pontos': Decimal('0')})
             cur['valor_vendido'] += total_dec
             cur['pontos'] += pontos_sale
 
         for vend_u, data in acc.items():
-            pontos = data['pontos']
-            bonus_base = _bonus_base_from_pontos(pontos, valor_por_ponto)
+            pontos_calculados = data['pontos']
+            pontos_fechados = _pontos_fechados_from_pontos(pontos_calculados)
+            bonus_base = _bonus_base_from_pontos(pontos_fechados, valor_por_ponto)
             bonus_extra = Decimal('0')
             for faixa in bonus_list:
                 min_pontos = _d(getattr(faixa, 'min_pontos', 0) or 0)
-                if pontos >= min_pontos:
+                if pontos_fechados >= min_pontos:
                     bonus_extra = _d(getattr(faixa, 'bonus_valor', 0) or 0)
             valor_total = bonus_base + bonus_extra
-            if (not incluir_zerados) and valor_total <= 0 and pontos <= 0:
+            if (not incluir_zerados) and valor_total <= 0 and pontos_fechados <= 0:
                 continue
             out.append(
                 UnifiedRow(
@@ -579,8 +599,8 @@ def _compute_itens_parados_rows_live(
                     recompensa_unit=_round2(valor_por_ponto),
                     valor_vendido=_round2(data['valor_vendido']),
                     atingiu_gate=bool(valor_total > 0),
-                    qtd_base=_round2(pontos),
-                    qtd_premiada=None,
+                    qtd_base=_round2(pontos_fechados),
+                    qtd_premiada=_round2(pontos_fechados),
                     valor_recompensa=_round2(valor_total),
                     status_pagamento='PENDENTE',
                     pago_em=None,
