@@ -2147,6 +2147,76 @@ def _ensure_snapshots_gerente_loja(
             pass
 
 
+def _is_meta_mecanico_row(row: UnifiedRow) -> bool:
+    try:
+        return (
+            str(getattr(row, 'tipo', '') or '').strip().upper() == 'META'
+            and str(getattr(row, 'meta_tipo', '') or '').strip().upper() == 'MECANICO_FATURAMENTO'
+        )
+    except Exception:
+        return False
+
+
+def _dedupe_metas_mecanico_rows(rows: list[UnifiedRow]) -> list[UnifiedRow]:
+    """Remove duplicidade visual da Meta Mecânicos por EMP/mecânico.
+
+    A duplicidade pode acontecer quando existe snapshot antigo da meta sem trava
+    de loja e, ao mesmo tempo, a regra atual é recalculada ao vivo com a trava
+    correta. Para o usuário o que importa é uma única linha de mecânico no mês,
+    priorizando a linha mais completa/atual: com alvo de loja, faturamento da loja
+    e maior id de origem.
+    """
+    if not rows:
+        return rows
+
+    best_idx: dict[tuple[str, str], int] = {}
+    best_prio: dict[tuple[str, str], tuple[int, int, int, int, int, int]] = {}
+
+    for idx, row in enumerate(rows):
+        if not _is_meta_mecanico_row(row):
+            continue
+        key = (
+            str(getattr(row, 'emp', '') or '').strip(),
+            _upper(getattr(row, 'vendedor', '') or ''),
+        )
+        if not key[0] or not key[1]:
+            continue
+
+        alvo_loja = _safe_float(getattr(row, 'faturamento_minimo_emp', 0.0) or 0.0)
+        faturamento_loja = _safe_float(getattr(row, 'faturamento_emp', 0.0) or 0.0)
+        valor_liberado = _safe_float(getattr(row, 'valor_recompensa', 0.0) or 0.0)
+        potencial = _safe_float(getattr(row, 'premio_potencial', 0.0) or 0.0)
+        origem_id = int(getattr(row, 'origem_id', 0) or 0)
+
+        prio = (
+            1 if alvo_loja > 0 else 0,
+            1 if faturamento_loja > 0 else 0,
+            1 if (valor_liberado > 0 or potencial > 0) else 0,
+            0 if bool(getattr(row, 'bloqueado_faturamento_emp', False)) else 1,
+            origem_id,
+            idx,
+        )
+        if key not in best_prio or prio > best_prio[key]:
+            best_prio[key] = prio
+            best_idx[key] = idx
+
+    if not best_idx:
+        return rows
+
+    out: list[UnifiedRow] = []
+    for idx, row in enumerate(rows):
+        if not _is_meta_mecanico_row(row):
+            out.append(row)
+            continue
+        key = (
+            str(getattr(row, 'emp', '') or '').strip(),
+            _upper(getattr(row, 'vendedor', '') or ''),
+        )
+        if best_idx.get(key) == idx:
+            out.append(row)
+    return out
+
+
 def build_unified_rows(
     *,
     ano: int,
@@ -2611,6 +2681,7 @@ def build_unified_rows(
             except Exception:
                 pass
 
+    rows = _dedupe_metas_mecanico_rows(rows)
     rows.sort(key=lambda r: (r.emp, r.vendedor, r.tipo, r.titulo))
     return rows
 
