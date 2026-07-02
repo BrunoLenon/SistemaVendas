@@ -421,6 +421,11 @@ def _fmt_pct_label(x):
     return None if base is None else base + "%"
 
 
+def _fmt_brl(x):
+    base = _fmt_num_label(x)
+    return None if base is None else "R$" + base
+
+
 def _norm_status(s: str) -> str:
     s = (s or "PENDENTE").strip().upper()
     if s in ("A PAGAR", "A_PAGAR", "APAGAR"):
@@ -542,6 +547,8 @@ def _group_rows(rows):
         g['status_counts'][st if st in g['status_counts'] else 'OUTROS'] += 1
         tipo_raw = str(getattr(r, 'tipo', '') or '').strip().upper()
         tipo_meta = _tipo_meta(tipo_raw)
+        meta_tipo_row = str(_pick(r, 'meta_tipo', 'META_TIPO') or '').strip().upper()
+        is_meta_mecanico = bool(tipo_raw == 'META' and meta_tipo_row == 'MECANICO_FATURAMENTO')
         g['campanhas'].append({
             'titulo': titulo,
             'item_codigo': _pick(r, 'item_codigo', 'codigo', 'produto_prefixo'),
@@ -552,13 +559,17 @@ def _group_rows(rows):
             'recompensa_unit': getattr(r, 'recompensa_unit', None),
             'qtd_vendida': float(getattr(r, 'qtd_base', 0) or 0),
             'vendeu_rs': float(getattr(r, 'valor_vendido', 0) or 0),
+            'resultado_label': 'Fat.:' if is_meta_mecanico else 'Qtd:',
+            'resultado_valor_label': _fmt_brl(float(getattr(r, 'valor_vendido', 0) or 0)) if is_meta_mecanico else None,
+            'qtd_minima_label': _fmt_brl(float(getattr(r, 'qtd_minima', 0) or 0)) if (is_meta_mecanico and getattr(r, 'qtd_minima', None) is not None) else None,
+            'recompensa_label': (_fmt_pct_label(getattr(r, 'recompensa_unit', None)) if is_meta_mecanico else None),
             'valor': valor,
             'premio_potencial': premio_potencial,
             'faturamento_minimo_emp': _to_float(faturamento_minimo_emp or 0) if faturamento_minimo_emp is not None else None,
             'faturamento_emp': _to_float(faturamento_emp or 0) if faturamento_emp is not None else None,
             'faltante_faturamento_emp': _to_float(faltante_faturamento_emp or 0) if faltante_faturamento_emp is not None else None,
             'bloqueado_faturamento_emp': bloqueado_faturamento_emp,
-            'meta_tipo': _pick(r, 'meta_tipo', 'META_TIPO'),
+            'meta_tipo': meta_tipo_row,
             'base_valor': _to_float(_pick(r, 'base_valor', 'BASE_VALOR') or 0) if _pick(r, 'base_valor', 'BASE_VALOR') is not None else None,
             'faturamento_minimo_meta': _to_float(_pick(r, 'faturamento_minimo_meta', 'FATURAMENTO_MINIMO_META') or 0) if _pick(r, 'faturamento_minimo_meta', 'FATURAMENTO_MINIMO_META') is not None else None,
             'bloqueado_minimo': bool(_to_float(_pick(r, 'bloqueado_minimo', 'BLOQUEADO_MINIMO') or 0)),

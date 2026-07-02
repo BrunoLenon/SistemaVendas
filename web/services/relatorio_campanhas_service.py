@@ -613,7 +613,7 @@ def _relatorio_cache_key(*, role: str, vendedor_logado: str, ano: int, mes: int,
     # para qualquer admin, sem recalcular a mesma competência por usuário.
     actor = "__GLOBAL__" if role_l in ("admin", "financeiro") else str(vendedor_logado or "").strip().upper()
     return (
-        "relatorio_campanhas_unificado_v12_mecanico_trava_loja",
+        "relatorio_campanhas_unificado_v13_papeis_mecanico",
         role_l,
         actor,
         int(ano),

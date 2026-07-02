@@ -888,6 +888,14 @@ def _meta_rows_from_snapshots(
         bases_map = {}
 
     gerente_bases_map = _gerente_bases_referencia_map(db, ano=int(ano), mes=int(mes), emp=emp_s, vendedores=vendedores_u)
+    try:
+        gerentes_emp_set = set(_get_gerentes_emp_relatorio(db, emp_s) or [])
+    except Exception:
+        gerentes_emp_set = set()
+    try:
+        mecanicos_emp_set = set(_get_mecanicos_emp_relatorio(db, ano=int(ano), mes=int(mes), emp=emp_s) or [])
+    except Exception:
+        mecanicos_emp_set = set()
 
     count = 0
     calcular_meta_live = None
@@ -896,6 +904,18 @@ def _meta_rows_from_snapshots(
         meta_gerente = _is_meta_gerente_relatorio(meta)
         meta_mecanico = _is_meta_mecanico_relatorio(meta)
         vend_calc = _upper(getattr(calc, 'vendedor', ''))
+
+        # Separa os papéis no relatório. Snapshot antigo podia ter gravado
+        # meta de vendedor para mecânico/gerente; essas linhas não devem
+        # aparecer na visão de campanhas do respectivo usuário.
+        if meta_mecanico:
+            if vend_calc not in mecanicos_emp_set:
+                continue
+        elif meta_gerente:
+            if vend_calc not in gerentes_emp_set:
+                continue
+        elif vend_calc in gerentes_emp_set or vend_calc in mecanicos_emp_set:
+            continue
 
         # Metas de GERENTE e MECÂNICO precisam refletir regras específicas da
         # EMP inteira. Snapshots antigos podiam ter sido gravados antes dessas
@@ -1434,6 +1454,15 @@ def _append_metas_unificadas(
 
     meta_emps_cache: dict[int, set[str]] = {}
     gerente_bases_map = _gerente_bases_referencia_map(db, ano=int(ano), mes=int(mes), emp=emp_s, vendedores=[_upper(v) for v in (vendedores or []) if _upper(v)])
+    try:
+        gerentes_emp_cache = {_upper(g) for g in (get_gerentes_para_metas(db, int(ano), int(mes), [emp_s]) or []) if _upper(g)}
+    except Exception:
+        gerentes_emp_cache = set()
+    try:
+        mecanicos_emp_cache = {_upper(m) for m in (get_mecanicos_para_metas(db, int(ano), int(mes), [emp_s]) or []) if _upper(m)}
+    except Exception:
+        mecanicos_emp_cache = set()
+    vendedores_venda_cache = [v for v in (vendedores or []) if _upper(v) and _upper(v) not in gerentes_emp_cache and _upper(v) not in mecanicos_emp_cache]
     for meta in metas:
         try:
             meta_id = int(getattr(meta, 'id', 0) or 0)
@@ -1451,16 +1480,12 @@ def _append_metas_unificadas(
 
         tipo_meta = str(getattr(meta, 'tipo', '') or '').strip().upper()
         meta_gerente = bool(is_meta_gerente(meta))
-        participantes_meta = vendedores
-        try:
-            if is_meta_mecanico(meta):
-                mecanicos_emp = {_upper(m) for m in (get_mecanicos_para_metas(db, int(ano), int(mes), [emp_s]) or []) if _upper(m)}
-                participantes_meta = [v for v in vendedores if _upper(v) in mecanicos_emp]
-            elif meta_gerente:
-                gerentes_emp = {_upper(g) for g in (get_gerentes_para_metas(db, int(ano), int(mes), [emp_s]) or []) if _upper(g)}
-                participantes_meta = [v for v in vendedores if _upper(v) in gerentes_emp]
-        except Exception:
-            participantes_meta = vendedores
+        if is_meta_mecanico(meta):
+            participantes_meta = [v for v in vendedores if _upper(v) in mecanicos_emp_cache]
+        elif meta_gerente:
+            participantes_meta = [v for v in vendedores if _upper(v) in gerentes_emp_cache]
+        else:
+            participantes_meta = vendedores_venda_cache
         for vend in participantes_meta:
             vend_u = _upper(vend)
             if not vend_u:
@@ -1939,9 +1964,8 @@ def _append_campanhas_qtd_participacao_ativa(
         return
 
     gerentes_set = set(_get_gerentes_emp_relatorio(db, emp_s) or [])
-    vendedores_base = [v for v in vendedores_u if v not in gerentes_set]
-    if not vendedores_base:
-        vendedores_base = vendedores_u[:]
+    mecanicos_set = set(_get_mecanicos_emp_relatorio(db, ano=int(ano), mes=int(mes), emp=emp_s) or [])
+    vendedores_base = [v for v in vendedores_u if v not in gerentes_set and v not in mecanicos_set]
 
     campanhas_vendedor = [c for c in campanhas if _campanha_tipo_qtd_relatorio(c) != 'GERENTE']
     escolhidas_por_vendedor = _build_campanhas_qtd_escolhidas_por_vendedor(campanhas_vendedor, vendedores_base)
@@ -2149,24 +2173,27 @@ def build_unified_rows(
             vendedores = [_upper(v) for v in (vendedores_por_emp.get(emp) or []) if str(v or '').strip()]
             vendedores = [v for v in vendedores if v]
 
-            # Garante que o gerente da loja entre no relatório mesmo quando ele não
-            # aparece como vendedor nas vendas do período. Isso é indispensável para
-            # campanhas do tipo GERENTE, que pagam sobre a venda total da EMP.
             try:
-                for _g in _get_gerentes_emp_relatorio(db, str(emp)):
-                    if _g and _g not in vendedores:
-                        vendedores.append(_g)
+                gerentes_emp_set = set(_get_gerentes_emp_relatorio(db, str(emp)) or [])
             except Exception:
-                pass
+                gerentes_emp_set = set()
+            try:
+                mecanicos_emp_set = set(_get_mecanicos_emp_relatorio(db, ano=int(ano), mes=int(mes), emp=str(emp)) or [])
+            except Exception:
+                mecanicos_emp_set = set()
 
-            # Garante que o mecânico cadastrado na meta também apareça no relatório
-            # mesmo antes de faturar oficina no período filtrado.
-            try:
-                for _m in _get_mecanicos_emp_relatorio(db, ano=int(ano), mes=int(mes), emp=str(emp)):
-                    if _m and _m not in vendedores:
-                        vendedores.append(_m)
-            except Exception:
-                pass
+            # Garante que gerente/mecânico cadastrados entrem no relatório mesmo
+            # sem venda própria. Depois separamos o escopo de cada papel para não
+            # misturar campanhas/metas de vendedor com mecânico ou gerente.
+            for _g in sorted(gerentes_emp_set):
+                if _g and _g not in vendedores:
+                    vendedores.append(_g)
+            for _m in sorted(mecanicos_emp_set):
+                if _m and _m not in vendedores:
+                    vendedores.append(_m)
+
+            vendedores_operacao = [v for v in vendedores if v not in gerentes_emp_set and v not in mecanicos_emp_set]
+            vendedores_qtd_scope = vendedores_operacao + [v for v in vendedores if v in gerentes_emp_set]
 
             if not vendedores:
                 continue
@@ -2189,7 +2216,7 @@ def build_unified_rows(
                     CampanhaQtdResultado.competencia_ano == int(ano),
                     CampanhaQtdResultado.competencia_mes == int(mes),
                     cast(CampanhaQtdResultado.emp, String) == str(emp),
-                    CampanhaQtdResultado.vendedor.in_(vendedores),
+                    CampanhaQtdResultado.vendedor.in_(vendedores_qtd_scope or ['__SEM_USUARIO__']),
                 )
             )
             if not incluir_zerados and not incluir_participacao_ativa:
@@ -2221,6 +2248,13 @@ def build_unified_rows(
 
             for r in qtd_rows:
                 campanha_def = qtd_camp_map.get(int(getattr(r, 'campanha_id', 0) or 0))
+                vend_result = _upper(getattr(r, 'vendedor', ''))
+                campanha_tipo_row = str(getattr(r, 'campanha_tipo', '') or getattr(campanha_def, 'campanha_tipo', '') or 'VENDEDOR').strip().upper()
+                if campanha_tipo_row == 'GERENTE':
+                    if vend_result not in gerentes_emp_set:
+                        continue
+                elif vend_result in gerentes_emp_set or vend_result in mecanicos_emp_set:
+                    continue
                 item_meta = _campanha_qtd_item_meta(r, campanha_def)
                 recompensa_unit = _safe_float(getattr(r, 'recompensa_unit', 0.0))
                 valor_recompensa_snapshot = _safe_float(getattr(r, 'valor_recompensa', 0.0))
@@ -2250,7 +2284,7 @@ def build_unified_rows(
 
                 rows.append(
                     UnifiedRow(
-                        tipo=('GERENTE' if str(getattr(r, 'campanha_tipo', '') or '').strip().upper() == 'GERENTE' else 'QTD'),
+                        tipo=('GERENTE' if campanha_tipo_row == 'GERENTE' else 'QTD'),
                         competencia_ano=int(getattr(r, 'competencia_ano', ano)),
                         competencia_mes=int(getattr(r, 'competencia_mes', mes)),
                         emp=str(getattr(r, 'emp', emp)),
@@ -2319,7 +2353,7 @@ def build_unified_rows(
                                 CampanhaComboResultado.competencia_ano == int(ano),
                                 CampanhaComboResultado.competencia_mes == int(mes),
                                 cast(CampanhaComboResultado.emp, String) == str(emp),
-                                CampanhaComboResultado.vendedor.in_(vendedores),
+                                CampanhaComboResultado.vendedor.in_(vendedores_operacao or ['__SEM_USUARIO__']),
                                 CampanhaComboResultado.combo_id.in_(combo_ids),
                             )
                             .all()
@@ -2353,7 +2387,7 @@ def build_unified_rows(
                         func.coalesce(func.sum(Venda.valor_total), 0),
                     )
                     .filter(Venda.emp == str(emp))
-                    .filter(Venda.vendedor.in_(vendedores))
+                    .filter(Venda.vendedor.in_(vendedores_operacao or ['__SEM_USUARIO__']))
                     .filter(Venda.movimento >= periodo_ini, Venda.movimento <= periodo_fim)
                     .filter(func.upper(func.coalesce(Venda.mov_tipo_movto, "")).in_(MOVIMENTOS_VENDA))
                     .filter(func.coalesce(Venda.qtdade_vendida, 0.0) > 0)
@@ -2361,7 +2395,7 @@ def build_unified_rows(
                     .all()
                 )
 
-                sales_by_vendor: dict[str, list[dict[str, Any]]] = {v: [] for v in vendedores}
+                sales_by_vendor: dict[str, list[dict[str, Any]]] = {v: [] for v in vendedores_operacao}
                 for vend, mestre, descricao, qtd, val in vendas_rows:
                     if float(qtd or 0.0) <= 0:
                         continue
@@ -2389,7 +2423,7 @@ def build_unified_rows(
                         val_total += float(sale['valor'] or 0)
                     return qtd_total, val_total
 
-                for vend in vendedores:
+                for vend in vendedores_operacao:
                     for combo in combos_ativos:
                         combo_id = int(getattr(combo, 'id', 0) or 0)
                         if combo_id <= 0:
@@ -2544,7 +2578,7 @@ def build_unified_rows(
                     ano=int(ano),
                     mes=int(mes),
                     emp=str(emp),
-                    vendedores=vendedores,
+                    vendedores=vendedores_operacao,
                     incluir_zerados=incluir_zerados,
                 )
 
@@ -2557,7 +2591,7 @@ def build_unified_rows(
                         ano=int(ano),
                         mes=int(mes),
                         emp=str(emp),
-                        vendedores=vendedores,
+                        vendedores=vendedores_operacao,
                         periodo_ini=periodo_ini,
                         periodo_fim=periodo_fim,
                         incluir_zerados=incluir_zerados,

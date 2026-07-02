@@ -101,8 +101,8 @@
       </td>
       <td>
         <div class="sv-metric-stack">
-          <span><b>Qtd:</b> {{ c.qtd_vendida_label if c.qtd_vendida_label is defined and c.qtd_vendida_label else (c.qtd_vendida or 0) }}</span>
-          <span><b>Mín.:</b> {{ c.qtd_minima_label if c.qtd_minima_label is defined and c.qtd_minima_label else (c.qtd_minima or '-') }}</span>
+          <span><b>{{ c.resultado_label if c.resultado_label is defined and c.resultado_label else 'Qtd:' }}</b> {{ c.resultado_valor_label if c.resultado_valor_label is defined and c.resultado_valor_label else (c.qtd_vendida_label if c.qtd_vendida_label is defined and c.qtd_vendida_label else (c.qtd_vendida or 0)) }}</span>
+          <span><b>{% if c.meta_tipo is defined and c.meta_tipo == 'MECANICO_FATURAMENTO' %}Faixa:{% else %}Mín.:{% endif %}</b> {{ c.qtd_minima_label if c.qtd_minima_label is defined and c.qtd_minima_label else (c.qtd_minima or '-') }}</span>
           <span><b>Rec.:</b>
             {% if c.recompensa_label is defined and c.recompensa_label %}
               {{ c.recompensa_label }}

@@ -607,7 +607,8 @@ def get_vendedores_para_metas(db, ano: int, mes: int, emps: list[str] | None = N
         FROM metas_bases_manuais b
         JOIN metas_programas m ON m.id = b.meta_id
        WHERE m.ano = :ano AND m.mes = :mes
-         AND UPPER(COALESCE(m.escopo,'VENDEDOR')) <> 'GERENTE'
+         AND UPPER(COALESCE(m.escopo,'VENDEDOR')) NOT IN ('GERENTE','MECANICO')
+         AND UPPER(COALESCE(m.tipo,'')) <> 'MECANICO_FATURAMENTO'
          {emp_clause}
          AND COALESCE(b.vendedor,'') <> ''
     """
@@ -617,11 +618,20 @@ def get_vendedores_para_metas(db, ano: int, mes: int, emps: list[str] | None = N
     except Exception:
         pass
 
+    bloqueados: set[str] = set()
+    try:
+        bloqueados.update(normalize_text(n) for n in get_gerentes_cadastrados(db, emps))
+        bloqueados.update(normalize_text(n) for n in get_mecanicos_cadastrados(db, emps))
+    except Exception:
+        bloqueados = set()
+
     seen: set[str] = set()
     out: list[str] = []
     for n in nomes:
         n = normalize_text(n)
-        if n and n not in seen:
+        if not n or n in bloqueados:
+            continue
+        if n not in seen:
             seen.add(n)
             out.append(n)
     return sorted(out)
