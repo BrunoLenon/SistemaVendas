@@ -27,7 +27,7 @@ from services.relatorio_campanhas_service import (
     build_relatorio_campanhas_unificado_context,
     rebuild_relatorio_campanhas_unificado_cache,
 )
-from sv_utils import MOVIMENTOS_VENDA
+from sv_utils import MOVIMENTOS_VENDA, emp_sort_key, sort_emp_codes
 
 
 _RELATORIO_SCOPE_CACHE: dict[tuple, tuple[float, dict[str, Any]]] = {}
@@ -48,7 +48,7 @@ def _recalc_jobs_ttl_seconds() -> int:
 
 def _recalc_job_key(*, role: str, vendedor_logado: str, ano: int, mes: int, emps: list[str], vendedores_por_emp: dict[str, list[str]]) -> tuple:
     vend_key = []
-    for emp in sorted({str(e).strip() for e in (emps or []) if str(e).strip()}):
+    for emp in sort_emp_codes(emps or []):
         vend_key.append((emp, tuple(sorted({str(v or '').strip().upper() for v in (vendedores_por_emp.get(emp) or []) if str(v or '').strip()}))))
     return (
         'relatorio_campanhas_recalc_job_v1',
@@ -56,7 +56,7 @@ def _recalc_job_key(*, role: str, vendedor_logado: str, ano: int, mes: int, emps
         str(vendedor_logado or '').strip().upper(),
         int(ano),
         int(mes),
-        tuple(sorted({str(e).strip() for e in (emps or []) if str(e).strip()})),
+        tuple(sort_emp_codes(emps or [])),
         tuple(vend_key),
     )
 
@@ -271,8 +271,8 @@ def _empty_relatorio_ctx(scope: dict[str, Any], *, role: str, vendedor_logado: s
         'mes': int(scope.get('mes') or 0),
         'role': str(role or '').strip().lower(),
         'vendedor_logado': vendedor_logado,
-        'emps_scope': list(scope.get('emps_scope') or []),
-        'emps_sel': list(scope.get('emps_sel') or []),
+        'emps_scope': sort_emp_codes(scope.get('emps_scope') or []),
+        'emps_sel': sort_emp_codes(scope.get('emps_sel') or []),
         'vendedores_sel': list(scope.get('vendedores_sel') or []),
         'vendedores_por_emp': dict(scope.get('vendedores_por_emp') or {}),
         'rows': [],
@@ -313,15 +313,15 @@ def _build_deferred_scope(deps, *, role: str, emp_usuario: str | None, vendedor_
 
     try:
         if role_l in ('admin', 'financeiro'):
-            emps_scope = [str(e).strip() for e in (deps.get_emps_com_vendas_no_periodo(ano, mes) or []) if str(e).strip()]
+            emps_scope = sort_emp_codes(deps.get_emps_com_vendas_no_periodo(ano, mes) or [])
         elif role_l in ('supervisor', 'gerente'):
             allowed = [str(e).strip() for e in (deps.resolver_emp_scope_para_usuario(vendedor_logado, role_l, emp_usuario) or []) if str(e).strip()]
-            emps_scope = sorted(set(allowed))
+            emps_scope = sort_emp_codes(allowed)
             if not emps_scope:
                 flash_fn('Gerente/Supervisor sem EMP vinculada. Ajuste o vínculo do usuário (usuario_emps).', 'warning')
         else:
             base_emps = [str(e).strip() for e in (deps.get_emps_vendedor(vendedor_logado) or []) if str(e).strip()]
-            emps_scope = sorted(set(base_emps))
+            emps_scope = sort_emp_codes(base_emps)
     except Exception as exc:
         print(f'[RELATORIO_CAMPANHAS] erro ao montar escopo leve: {exc}')
         emps_scope = []
@@ -332,7 +332,7 @@ def _build_deferred_scope(deps, *, role: str, emp_usuario: str | None, vendedor_
         'emps_sel': [],
         'vendedores_sel': vendedores_sel,
         'emps_scope': emps_scope,
-        'vendedores_por_emp': {str(emp): [] for emp in emps_scope},
+        'vendedores_por_emp': {str(emp): [] for emp in sort_emp_codes(emps_scope)},
     }
 
 
@@ -501,11 +501,7 @@ def _agg_status(counts):
 
 
 def _emp_sort_key(val):
-    s = str(val or '').strip()
-    try:
-        return (0, int(s))
-    except Exception:
-        return (1, s)
+    return emp_sort_key(val)
 
 
 def _group_rows(rows):
@@ -689,7 +685,7 @@ def _calc_resumo_financeiro(rows):
         vd['linhas'] += 1
         vd['total'] += valor
         vd['status'][st_key] += valor
-    resumo['por_emp_ordenado'] = sorted(resumo['por_emp'].items(), key=lambda kv: kv[1].get('total', 0.0), reverse=True)
+    resumo['por_emp_ordenado'] = sorted(resumo['por_emp'].items(), key=lambda kv: _emp_sort_key(kv[0]))
     return resumo
 
 
@@ -710,6 +706,7 @@ def _calc_faturamento_loja_cards(deps, *, ano: int, mes: int, emps: list[str]) -
             continue
         seen.add(emp)
         emps_clean.append(emp)
+    emps_clean = sort_emp_codes(emps_clean)
 
     base = {
         emp: {

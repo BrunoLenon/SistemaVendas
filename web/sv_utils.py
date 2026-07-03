@@ -176,6 +176,44 @@ def _parse_num_ptbr(val: str | None) -> float:
     except Exception:
         return 0.0
 
+
+def emp_sort_key(emp: object) -> tuple[int, int, str]:
+    """Chave de ordenação padrão para EMP.
+
+    EMP é código numérico na operação. Ordenação alfabética coloca 1001 antes
+    de 101; para filtros e relatórios a ordem correta é 101, 102, 807, 1001.
+    Valores não numéricos ficam no final, em ordem textual.
+    """
+    s = str(emp or "").strip()
+    if not s or s == "—":
+        return (2, 0, s)
+    try:
+        return (0, int(s), s)
+    except Exception:
+        return (1, 0, s)
+
+
+def sort_emp_codes(codigos: object) -> list[str]:
+    """Normaliza, remove duplicados e ordena EMPs em ordem numérica crescente."""
+    if not codigos:
+        return []
+    if isinstance(codigos, (str, bytes)):
+        values = [codigos]
+    else:
+        try:
+            values = list(codigos)  # aceita list/tuple/set e generators
+        except Exception:
+            values = [codigos]
+    seen: set[str] = set()
+    out: list[str] = []
+    for c in values:
+        s = str(c or "").strip()
+        if not s or s in seen:
+            continue
+        seen.add(s)
+        out.append(s)
+    return sorted(out, key=emp_sort_key)
+
 def _emp_norm(emp: str | None) -> str:
     """Normaliza EMP para armazenamento ('' quando nulo)."""
     return (emp or "").strip()

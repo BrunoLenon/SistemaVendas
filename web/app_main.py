@@ -30,7 +30,7 @@ from decimal import Decimal, ROUND_HALF_UP
 import pandas as pd
 import requests
 from sqlalchemy import and_, or_, func, case, cast, String, text, extract
-from sv_utils import MOVIMENTOS_VENDA, MOVIMENTOS_NEGATIVOS
+from sv_utils import MOVIMENTOS_VENDA, MOVIMENTOS_NEGATIVOS, sort_emp_codes
 # ---------------------------------------------------------------------------
 # Helpers de compatibilidade para "rows" que podem vir como dict, SQLAlchemy Row,
 # dataclass (ex.: UnifiedRow), ou objetos simples.
@@ -1059,7 +1059,7 @@ def _get_emps_vendedor(username: str) -> list[str]:
     if (_usuario_logado() or "").strip().upper() == username:
         emps = _allowed_emps()
         if emps:
-            return _filter_emps_cadastradas(sorted({str(e).strip() for e in emps if e is not None and str(e).strip()}), apenas_ativas=True)
+            return _filter_emps_cadastradas(sort_emp_codes({str(e).strip() for e in emps if e is not None and str(e).strip()}), apenas_ativas=True)
 
     # Fallback: inferir pelas vendas (compatibilidade)
     with SessionLocal() as db:
@@ -1570,15 +1570,9 @@ def _emp_to_int_safe(emp: str) -> int | str:
 
 def _get_emp_options(codigos: list[str]) -> list[dict]:
     """Retorna opções de EMP com label amigável (ex: 101 - Veipecas)."""
-    codigos = [str(c).strip() for c in (codigos or []) if str(c).strip()]
-    if not codigos:
+    uniq = sort_emp_codes(codigos or [])
+    if not uniq:
         return []
-    # mantém ordem original
-    uniq=[]
-    seen=set()
-    for c in codigos:
-        if c not in seen:
-            seen.add(c); uniq.append(c)
     rows = {}
     try:
         with SessionLocal() as db:
@@ -1625,9 +1619,9 @@ def _filter_emps_cadastradas(codigos: list[str], apenas_ativas: bool = True) -> 
 
     if not ok:
         # Sem cadastro disponível/consultável → não filtra (compatibilidade)
-        return uniq
+        return sort_emp_codes(uniq)
 
-    return [c for c in uniq if c in ok]
+    return sort_emp_codes([c for c in uniq if c in ok])
 
 
 def _get_vendedores_cadastrados_por_emp(emp: str) -> set[str]:
@@ -1687,7 +1681,7 @@ def _get_all_emp_codigos(apenas_ativas: bool = True) -> list[str]:
             rows = q.order_by(Emp.codigo.asc()).all()
             cods = [str(r[0]).strip() for r in rows if r and r[0] is not None and str(r[0]).strip()]
             if cods:
-                return cods
+                return sort_emp_codes(cods)
     except Exception:
         pass
     # fallback: tenta inferir via vendas
@@ -1695,7 +1689,7 @@ def _get_all_emp_codigos(apenas_ativas: bool = True) -> list[str]:
         with SessionLocal() as db:
             rows = db.query(Venda.emp).distinct().order_by(Venda.emp.asc()).all()
             cods = [str(r[0]).strip() for r in rows if r and r[0] is not None and str(r[0]).strip()]
-            return cods
+            return sort_emp_codes(cods)
     except Exception:
         return []
 
@@ -2584,7 +2578,7 @@ def _list_emp_options_for_period(ano: int, mes: int, allowed_emps: list[str] | N
             if allowed:
                 emps = [e for e in emps if e in allowed]
             if emps:
-                return emps
+                return sort_emp_codes(emps)
     except Exception:
         pass
     try:
@@ -2598,7 +2592,7 @@ def _list_emp_options_for_period(ano: int, mes: int, allowed_emps: list[str] | N
             if allowed:
                 q = q.filter(Venda.emp.in_(list(allowed)))
             rows = q.order_by(Venda.emp.asc()).all()
-            return [str(r[0]).strip() for r in rows if r and r[0] is not None and str(r[0]).strip()]
+            return sort_emp_codes([str(r[0]).strip() for r in rows if r and r[0] is not None and str(r[0]).strip()])
     except Exception:
         return []
 
@@ -2678,7 +2672,7 @@ def dashboard():
         emp_options = _list_emp_options_for_period(ano=ano, mes=mes)
         if emp_selecionada and emp_selecionada not in emp_options:
             emp_options.append(emp_selecionada)
-            emp_options = sorted(set(emp_options))
+            emp_options = sort_emp_codes(emp_options)
         admin_scope = [emp_selecionada] if emp_selecionada else None
         try:
             dados_admin = _dados_admin_geral(mes=mes, ano=ano, emp_scope=admin_scope)
@@ -3600,7 +3594,7 @@ def _resolver_emp_scope_para_usuario(vendedor_logado: str, role: str, emp_usuari
     # Admin vê tudo
     if role_l == "admin":
         try:
-            return [str(e) for e in (_get_all_emp_codigos(False) or [])]
+            return sort_emp_codes(_get_all_emp_codigos(False) or [])
         except Exception:
             return []
 
@@ -3630,7 +3624,7 @@ def _resolver_emp_scope_para_usuario(vendedor_logado: str, role: str, emp_usuari
             .all()
         )
         emps = [str(r[0]).strip() for r in rows if r and str(r[0]).strip()]
-        return sorted(set(emps))
+        return sort_emp_codes(emps)
     except Exception:
         return []
     finally:
@@ -3651,7 +3645,7 @@ def _get_emps_com_vendas_no_periodo(ano: int, mes: int) -> list[str]:
             .order_by(Venda.emp.asc())
             .all()
         )
-        return [str(r[0]).strip() for r in rows if r and str(r[0]).strip()]
+        return sort_emp_codes([str(r[0]).strip() for r in rows if r and str(r[0]).strip()])
     except Exception:
         return []
     finally:
@@ -4704,7 +4698,7 @@ def admin_usuarios():
                     if u.role not in {"vendedor", "supervisor"}:
                         raise ValueError("Apenas VENDEDOR ou SUPERVISOR podem ter múltiplas EMPs vinculadas.")
                     added = 0
-                    for emp in sorted(set(emps)):
+                    for emp in sort_emp_codes(emps):
                         # upsert simples: tenta buscar, senão cria
                         link = db.query(UsuarioEmp).filter(UsuarioEmp.usuario_id == u.id, UsuarioEmp.emp == emp).first()
                         if link:
@@ -4793,7 +4787,7 @@ def admin_usuarios():
                 continue
 
         try:
-            emps_disponiveis = [str(r[0]) for r in db.query(Venda.emp).distinct().order_by(Venda.emp.asc()).all() if r[0] is not None]
+            emps_disponiveis = sort_emp_codes([str(r[0]) for r in db.query(Venda.emp).distinct().order_by(Venda.emp.asc()).all() if r[0] is not None])
         except Exception:
             emps_disponiveis = []
 
@@ -7568,7 +7562,7 @@ def operacoes_vendas_produto():
     try:
         # carrega emps_disponiveis para admin all (somente para UI de chips)
         if not allowed:
-            emps_disponiveis = [r[0] for r in db.query(Venda.emp).filter(Venda.emp.isnot(None)).distinct().order_by(Venda.emp.asc()).limit(60).all()]
+            emps_disponiveis = sort_emp_codes([r[0] for r in db.query(Venda.emp).filter(Venda.emp.isnot(None)).distinct().order_by(Venda.emp.asc()).limit(60).all()])
 
         do_search = bool(produto_raw or marca_raw or mestre_raw)
 

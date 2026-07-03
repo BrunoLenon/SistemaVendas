@@ -8,6 +8,7 @@ from services.campanhas_v2_service import list_resultados_v2
 from services.oficina_service import get_usuarios_servico_no_periodo
 from sqlalchemy import func, cast, String
 from db import Usuario, UsuarioEmp, Venda
+from sv_utils import sort_emp_codes
 
 
 @dataclass(frozen=True)
@@ -238,13 +239,11 @@ def build_campanhas_page_context(
 
     # ===== Base de EMPs para opções (dropdown) e escopo efetivo =====
     if role_l == "admin":
-        emps_base = [str(e).strip() for e in (deps.get_emps_com_vendas_no_periodo(ano, mes) or []) if str(e).strip()]
-        emps_base = list(dict.fromkeys(sorted(emps_base)))
+        emps_base = sort_emp_codes(deps.get_emps_com_vendas_no_periodo(ano, mes) or [])
         emps_scope = [e for e in emps_base if (not emps_sel) or (e in set(emps_sel))]
         emps_options_base = emps_base
     else:
-        emps_base = [str(e).strip() for e in (deps.resolver_emp_scope_para_usuario(vendedor_logado, role_l, emp_usuario) or []) if str(e).strip()]
-        emps_base = list(dict.fromkeys(sorted(emps_base)))
+        emps_base = sort_emp_codes(deps.resolver_emp_scope_para_usuario(vendedor_logado, role_l, emp_usuario) or [])
         if emps_sel:
             wanted = {str(x).strip() for x in emps_sel}
             emps_scope = [e for e in emps_base if e in wanted]
@@ -412,8 +411,8 @@ def build_campanhas_page_context(
         "visao": visao,
         "por_pagina": por_pagina,
 
-        "emps_scope": emps_scope,
-        "emps_sel": emps_sel,
+        "emps_scope": sort_emp_codes(emps_scope),
+        "emps_sel": sort_emp_codes(emps_sel),
         "emps_options": emps_options,
 
         "vendedores_sel": vendedores_sel,
@@ -441,7 +440,7 @@ def _get_vendedores_por_emp_no_periodo_batch(
     preserva a mesma ideia de filtrar por vendedores cadastrados/vinculados,
     mas faz a leitura principal de vendas em uma única consulta.
     """
-    emps_norm = sorted({str(e or '').strip() for e in (emps or []) if str(e or '').strip()})
+    emps_norm = sort_emp_codes(emps or [])
     if not emps_norm:
         return {}
 
@@ -545,11 +544,11 @@ def build_relatorio_campanhas_scope(
     vendedores_por_emp: dict[str, list[str]] = {}
 
     if role_l in ("admin", "financeiro"):
-        emps_scope = deps.get_emps_com_vendas_no_periodo(ano, mes)
+        emps_scope = sort_emp_codes(deps.get_emps_com_vendas_no_periodo(ano, mes) or [])
         # emps_sel é apenas filtro; não deve reduzir emps_scope (senão some do dropdown)
     elif role_l in ("supervisor", "gerente"):
         allowed = [str(e).strip() for e in (deps.resolver_emp_scope_para_usuario(vendedor_logado, role_l, emp_usuario) or []) if str(e).strip()]
-        allowed = sorted(set(allowed))
+        allowed = sort_emp_codes(allowed)
         if not allowed:
             flash("Gerente/Supervisor sem EMP vinculada. Ajuste o vínculo do usuário (usuario_emps).", "warning")
             emps_scope = []
@@ -563,7 +562,7 @@ def build_relatorio_campanhas_scope(
         base_emps = [str(e).strip() for e in (deps.get_emps_vendedor(vendedor_logado) or []) if str(e).strip()]
         if not base_emps:
             base_emps = [str(e).strip() for e in (deps.resolver_emp_scope_para_usuario(vendedor_logado, role_l, emp_usuario) or []) if str(e).strip()]
-        base_emps = sorted(set(base_emps))
+        base_emps = sort_emp_codes(base_emps)
         if emps_sel:
             wanted = {str(x).strip() for x in emps_sel if str(x).strip()}
             emps_scope = [e for e in base_emps if e in wanted]
@@ -612,8 +611,8 @@ def build_relatorio_campanhas_scope(
     return {
         "ano": ano,
         "mes": mes,
-        "emps_sel": emps_sel,
+        "emps_sel": sort_emp_codes(emps_sel),
         "vendedores_sel": vendedores_sel,
-        "emps_scope": emps_scope,
+        "emps_scope": sort_emp_codes(emps_scope),
         "vendedores_por_emp": vendedores_por_emp,
     }

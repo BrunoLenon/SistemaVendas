@@ -17,7 +17,7 @@ from typing import Callable, Type
 
 from flask import current_app, redirect, render_template, request, send_file, session, url_for
 from sqlalchemy import func, inspect, or_, text
-from sv_utils import MOVIMENTOS_VENDA
+from sv_utils import MOVIMENTOS_VENDA, sort_emp_codes
 
 from db import (
     engine,
@@ -460,7 +460,7 @@ def _parse_emp_list(values: list[str], manual: str = "") -> list[str]:
         txt = str(value or "").strip()
         if txt:
             emps.append(txt)
-    return sorted(set(emps), key=lambda x: (len(x), x))
+    return sort_emp_codes(emps)
 
 
 def _create_modelo_itens_parados_workbook() -> BytesIO:
@@ -1004,7 +1004,7 @@ def register_admin_itens_parados_routes(
                             str(x[0])
                             for x in db.query(ItemParado.emp).filter(ItemParado.ativo.is_(True)).distinct().all()
                         ]
-                        emps = sorted({str(e).strip() for e in emps if e and str(e).strip()})
+                        emps = sort_emp_codes({str(e).strip() for e in emps if e and str(e).strip()})
                         if not emps:
                             raise ValueError("Não existem EMPs com itens parados ativos.")
 
@@ -1085,7 +1085,7 @@ def register_admin_itens_parados_routes(
                 for x in db.query(ItemParado.emp).filter(ItemParado.emp.isnot(None)).distinct().all()
                 if x and x[0] and str(x[0]).strip()
             ]
-            emps_options = sorted(set(emps_vendas + emps_itens), key=lambda x: (len(x), x))
+            emps_options = sort_emp_codes(emps_vendas + emps_itens)
 
         total_paginas = max((total_itens + limite - 1) // limite, 1) if total_itens is not None else max(pagina + (1 if has_next else 0), 1)
 

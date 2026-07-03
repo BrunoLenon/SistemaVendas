@@ -17,7 +17,7 @@ from decimal import Decimal, ROUND_FLOOR, ROUND_HALF_UP
 from typing import Any
 
 from sqlalchemy import String, cast, func, or_
-from sv_utils import MOVIMENTOS_VENDA
+from sv_utils import MOVIMENTOS_VENDA, emp_sort_key
 from services.campanhas_qtd_gate import calcular_faturamento_emp_periodo, aplicar_trava_faturamento_emp
 
 from db import (
@@ -2234,7 +2234,7 @@ def build_unified_rows(
     faturamento_cache: dict[tuple[str, date, date], float] = {}
 
     with SessionLocal() as db:
-        for emp in emps:
+        for emp in sorted([str(e).strip() for e in (emps or []) if str(e).strip()], key=emp_sort_key):
             try:
                 db.rollback()
             except Exception:
@@ -2687,7 +2687,7 @@ def build_unified_rows(
                 pass
 
     rows = _dedupe_metas_mecanico_rows(rows)
-    rows.sort(key=lambda r: (r.emp, r.vendedor, r.tipo, r.titulo))
+    rows.sort(key=lambda r: (emp_sort_key(r.emp), r.vendedor, r.tipo, r.titulo))
     return rows
 
 
@@ -2711,5 +2711,5 @@ def aggregate_for_charts(rows: list[UnifiedRow] | None) -> dict[str, Any]:
     return {
         'total_recompensa': total,
         'by_tipo': [{'label': k, 'value': float(v)} for k, v in sorted(by_tipo.items()) if k],
-        'by_emp': [{'label': k, 'value': float(v)} for k, v in sorted(by_emp.items()) if k],
+        'by_emp': [{'label': k, 'value': float(v)} for k, v in sorted(by_emp.items(), key=lambda kv: emp_sort_key(kv[0])) if k],
     }

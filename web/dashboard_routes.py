@@ -19,7 +19,7 @@ from flask import (
 from sqlalchemy import func, case, cast, String
 
 from db import SessionLocal, Venda, Usuario, UsuarioEmp, Emp
-from sv_utils import _periodo_bounds, MOVIMENTOS_VENDA, MOVIMENTOS_NEGATIVOS
+from sv_utils import _periodo_bounds, MOVIMENTOS_VENDA, MOVIMENTOS_NEGATIVOS, sort_emp_codes
 
 
 def _meses_referencia(ano: int, mes: int, quantidade: int = 3) -> list[tuple[int, int]]:
@@ -363,7 +363,7 @@ def _list_emp_options_for_period(ano: int, mes: int, allowed_emps: list[str] | N
             if allowed:
                 q = q.filter(Venda.emp.in_(list(allowed)))
             rows = q.order_by(Venda.emp.asc()).all()
-            return [str(r[0]).strip() for r in rows if r and r[0] is not None and str(r[0]).strip()]
+            return sort_emp_codes([str(r[0]).strip() for r in rows if r and r[0] is not None and str(r[0]).strip()])
     except Exception:
         return []
 
@@ -469,7 +469,7 @@ def register_dashboard_routes(
             emp_options = _list_emp_options_for_period(ano=ano, mes=mes)
             if emp_selecionada and emp_selecionada not in emp_options:
                 emp_options.append(emp_selecionada)
-                emp_options = sorted(set(emp_options))
+                emp_options = sort_emp_codes(emp_options)
 
             admin_scope = [emp_selecionada] if emp_selecionada else None
             try:

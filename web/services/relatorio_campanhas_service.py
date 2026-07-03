@@ -23,7 +23,7 @@ def _sanitize_emps(emp_list):
         if s not in seen:
             out.append(s)
             seen.add(s)
-    return out
+    return sort_emp_codes(out)
 
 
 from dataclasses import dataclass
@@ -35,7 +35,7 @@ import time
 from typing import Any, Callable
 
 from sqlalchemy import func, or_
-from sv_utils import MOVIMENTOS_VENDA
+from sv_utils import MOVIMENTOS_VENDA, emp_sort_key, sort_emp_codes
 
 from db import (
     SessionLocal,
@@ -539,8 +539,8 @@ def build_relatorio_campanhas_context(
         "emps_todos": emps_todos,
         "emps_abertas": emps_abertas,
         "emps_fechadas": emps_fechadas,
-        "emps_scope": emps_scope,
-        "emps_sel": emps_sel,
+        "emps_scope": sort_emp_codes(emps_scope),
+        "emps_sel": sort_emp_codes(emps_sel),
         "emps_options": emps_options,
         "vendedores_sel": vendedores_sel,
         "vendedores_options": vendedores_options,
@@ -600,7 +600,7 @@ def _relatorio_vendedores_key(vendedores_por_emp: dict[str, list[str]] | None, e
     """
     out = []
     mapa = vendedores_por_emp or {}
-    for emp in sorted({str(e).strip() for e in (emps or []) if str(e).strip()}):
+    for emp in sort_emp_codes(emps or []):
         vendedores = sorted({str(v or "").strip().upper() for v in (mapa.get(emp) or []) if str(v or "").strip()})
         out.append((emp, tuple(vendedores)))
     return tuple(out)
@@ -618,7 +618,7 @@ def _relatorio_cache_key(*, role: str, vendedor_logado: str, ano: int, mes: int,
         actor,
         int(ano),
         int(mes),
-        tuple(sorted({str(e).strip() for e in (emps or []) if str(e).strip()})),
+        tuple(sort_emp_codes(emps or [])),
         _relatorio_vendedores_key(vendedores_por_emp, emps),
     )
 
@@ -876,7 +876,7 @@ def _normalize_affected_periods(affected_periods: list[Any] | tuple[Any, ...] | 
         if emp_s not in grouped[key]:
             grouped[key].append(emp_s)
     for key in list(grouped.keys()):
-        grouped[key] = sorted(grouped[key], key=lambda x: (0, int(x)) if str(x).isdigit() else (1, str(x)))
+        grouped[key] = sort_emp_codes(grouped[key])
         if not grouped[key]:
             grouped.pop(key, None)
     return grouped
@@ -1225,8 +1225,8 @@ def build_relatorio_campanhas_unificado_context(
         "mes": mes,
         "role": role_l,
         "vendedor_logado": vendedor_logado,
-        "emps_scope": emps_scope,
-        "emps_sel": emps_sel,
+        "emps_scope": sort_emp_codes(emps_scope),
+        "emps_sel": sort_emp_codes(emps_sel),
         "vendedores_sel": vendedores_sel,
         "vendedores_por_emp": vendedores_por_emp,
         "rows": rows,

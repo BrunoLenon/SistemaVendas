@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from io import BytesIO
 from xml.sax.saxutils import escape
+from sv_utils import emp_sort_key
 
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
@@ -459,7 +460,7 @@ def _iter_resumo_por_emp_ordenado(resumo: dict):
         return list(ordered)
     por_emp = resumo.get('por_emp') or {}
     try:
-        return sorted(por_emp.items(), key=lambda kv: float((kv[1] or {}).get('total') or 0), reverse=True)
+        return sorted(por_emp.items(), key=lambda kv: emp_sort_key(kv[0]))
     except Exception:
         return list(por_emp.items())
 

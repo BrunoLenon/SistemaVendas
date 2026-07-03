@@ -16,6 +16,7 @@ import unicodedata
 import pandas as pd
 from flask import flash, redirect, render_template, request, send_file, session, url_for
 from sqlalchemy import func, text
+from sv_utils import sort_emp_codes
 
 from auth_helpers import _allowed_emps, _emp, _login_required, _role
 from db import (
@@ -649,7 +650,7 @@ def admin_metas_criar():
         db.add(meta)
         db.flush()
 
-        for emp_codigo in sorted(set(emps)):
+        for emp_codigo in sort_emp_codes(emps):
             db.add(MetaProgramaEmp(meta_id=meta.id, emp=emp_codigo, ativo=True))
         for idx, (lim, valor) in enumerate(escalas, start=1):
             db.add(MetaEscala(meta_id=meta.id, ordem=idx, limite_min=float(lim), bonus_percentual=float(valor)))
@@ -670,7 +671,7 @@ def admin_metas_emps_salvar(meta_id: int):
     ano, mes = _period_from_request()
     emp_selected = normalize_emp(request.form.get("emp_sel"))
     vendedor_selected = normalize_text(request.form.get("vendedor"))
-    novas_emps = sorted(set(normalize_emp(e) for e in request.form.getlist("emps") if normalize_emp(e)))
+    novas_emps = sort_emp_codes(normalize_emp(e) for e in request.form.getlist("emps") if normalize_emp(e))
 
     if not novas_emps:
         flash("Selecione pelo menos uma EMP para a meta.", "warning")

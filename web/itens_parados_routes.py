@@ -10,7 +10,7 @@ from typing import Callable
 
 from flask import flash, redirect, render_template, request, send_file, url_for
 from sqlalchemy import func, inspect, or_, text
-from sv_utils import MOVIMENTOS_VENDA
+from sv_utils import MOVIMENTOS_VENDA, sort_emp_codes
 
 from db import (
     engine,
@@ -205,7 +205,7 @@ def _emp_scope_for_role(role: str, vendedor_alvo: str | None) -> list[str]:
                     .all()
                 ]
 
-    return sorted({str(e).strip() for e in emp_scopes if e and str(e).strip()})
+    return sort_emp_codes({str(e).strip() for e in emp_scopes if e and str(e).strip()})
 
 
 def _load_campaign_view():

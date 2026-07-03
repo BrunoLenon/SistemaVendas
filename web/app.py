@@ -29,7 +29,7 @@ from decimal import Decimal, ROUND_HALF_UP
 import pandas as pd
 import requests
 from sqlalchemy import and_, or_, func, case, cast, String, text, extract
-from sv_utils import MOVIMENTOS_VENDA, MOVIMENTOS_NEGATIVOS
+from sv_utils import MOVIMENTOS_VENDA, MOVIMENTOS_NEGATIVOS, sort_emp_codes
 from services.campanhas_qtd_gate import calcular_faturamento_emp_periodo, aplicar_trava_faturamento_emp
 from services.oficina_service import get_emps_servico_no_periodo, get_usuarios_servico_no_periodo
 # ---------------------------------------------------------------------------
@@ -880,7 +880,7 @@ def _get_emps_vendedor(username: str) -> list[str]:
     if (_usuario_logado() or "").strip().upper() == username:
         emps = _allowed_emps()
         if emps:
-            return _filter_emps_cadastradas(sorted({str(e).strip() for e in emps if e is not None and str(e).strip()}), apenas_ativas=True)
+            return _filter_emps_cadastradas(sort_emp_codes({str(e).strip() for e in emps if e is not None and str(e).strip()}), apenas_ativas=True)
 
     # Fallback: inferir pelas vendas (compatibilidade)
     with SessionLocal() as db:
@@ -1391,15 +1391,9 @@ def _emp_to_int_safe(emp: str) -> int | str:
 
 def _get_emp_options(codigos: list[str]) -> list[dict]:
     """Retorna opções de EMP com label amigável (ex: 101 - Veipecas)."""
-    codigos = [str(c).strip() for c in (codigos or []) if str(c).strip()]
-    if not codigos:
+    uniq = sort_emp_codes(codigos or [])
+    if not uniq:
         return []
-    # mantém ordem original
-    uniq=[]
-    seen=set()
-    for c in codigos:
-        if c not in seen:
-            seen.add(c); uniq.append(c)
     rows = {}
     try:
         with SessionLocal() as db:
@@ -1446,9 +1440,9 @@ def _filter_emps_cadastradas(codigos: list[str], apenas_ativas: bool = True) -> 
 
     if not ok:
         # Sem cadastro disponível/consultável → não filtra (compatibilidade)
-        return uniq
+        return sort_emp_codes(uniq)
 
-    return [c for c in uniq if c in ok]
+    return sort_emp_codes([c for c in uniq if c in ok])
 
 
 def _get_vendedores_cadastrados_por_emp(emp: str) -> set[str]:
@@ -1508,7 +1502,7 @@ def _get_all_emp_codigos(apenas_ativas: bool = True) -> list[str]:
             rows = q.order_by(Emp.codigo.asc()).all()
             cods = [str(r[0]).strip() for r in rows if r and r[0] is not None and str(r[0]).strip()]
             if cods:
-                return cods
+                return sort_emp_codes(cods)
     except Exception:
         pass
     # fallback: tenta inferir via vendas
@@ -1516,7 +1510,7 @@ def _get_all_emp_codigos(apenas_ativas: bool = True) -> list[str]:
         with SessionLocal() as db:
             rows = db.query(Venda.emp).distinct().order_by(Venda.emp.asc()).all()
             cods = [str(r[0]).strip() for r in rows if r and r[0] is not None and str(r[0]).strip()]
-            return cods
+            return sort_emp_codes(cods)
     except Exception:
         return []
 
@@ -2777,7 +2771,7 @@ def _resolver_emp_scope_para_usuario(vendedor: str, role: str, emp_usuario: str 
     if role in ("supervisor", "gerente", "vendedor"):
         emps = _allowed_emps()
         if emps:
-            return emps
+            return sort_emp_codes(emps)
 
     if role in ("supervisor", "gerente"):
         return [str(emp_usuario)] if emp_usuario else []
@@ -2973,7 +2967,7 @@ def _get_emps_com_vendas_no_periodo(ano: int, mes: int) -> list[str]:
             .all()
         )
         emps_oficina = get_emps_servico_no_periodo(db, ano=int(ano), mes=int(mes))
-    emps = sorted({str(r[0]).strip() for r in rows if r and r[0] is not None and str(r[0]).strip() != ""} | {str(e).strip() for e in emps_oficina if str(e).strip()})
+    emps = sort_emp_codes({str(r[0]).strip() for r in rows if r and r[0] is not None and str(r[0]).strip() != ""} | {str(e).strip() for e in emps_oficina if str(e).strip()})
     return _filter_emps_cadastradas(emps, apenas_ativas=True)
 
 def _get_vendedores_emp_no_periodo(emp: str, ano: int, mes: int) -> list[str]:
