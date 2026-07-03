@@ -16,6 +16,7 @@ import unicodedata
 import pandas as pd
 from flask import flash, redirect, render_template, request, send_file, session, url_for
 from sqlalchemy import func, text
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sv_utils import emp_sort_key, sort_emp_codes
 
 from auth_helpers import _allowed_emps, _emp, _login_required, _role
@@ -113,14 +114,27 @@ def _norm_col_name(value: object) -> str:
 def _parse_margem_percentual(value, default=None):
     if value is None:
         return default
-    raw = str(value).strip()
-    if not raw or raw.lower() in ("nan", "none", "null"):
+    raw_original = str(value).strip()
+    if not raw_original or raw_original.lower() in ("nan", "none", "null"):
         return default
-    raw = raw.replace("%", "").replace(" ", "")
+
+    # Aceita tanto percentual digitado (8,35 ou 8.35) quanto célula do Excel
+    # formatada como percentual. Nesse segundo caso o pandas pode ler 8,35% como
+    # 0.0835; para manter a regra de negócio em percentual, convertemos para 8.35.
+    tem_percentual = "%" in raw_original
+    raw = raw_original.replace("%", "").replace(" ", "")
     try:
-        if "," in raw:
+        usou_virgula = "," in raw
+        if usou_virgula:
             raw = raw.replace(".", "").replace(",", ".")
-        return float(raw)
+        valor = float(raw)
+
+        # Excel percentual armazenado como fração: 8,35% pode vir como 0.0835.
+        # Não aplicamos essa conversão para valores digitados com vírgula, pois
+        # 0,50 normalmente significa 0,50%.
+        if (not tem_percentual) and (not usou_virgula) and abs(valor) > 0 and abs(valor) < 1:
+            valor = valor * 100.0
+        return valor
     except Exception:
         return default
 
@@ -881,6 +895,7 @@ def admin_metas_margens_importar():
         return redirect(url_for("admin_metas", ano=ano_req, mes=mes_req))
 
     col_map = {_norm_col_name(c): c for c in df.columns}
+
     def col(*names):
         for name in names:
             key = _norm_col_name(name)
@@ -897,9 +912,10 @@ def admin_metas_margens_importar():
         flash("Planilha inválida. Colunas obrigatórias: ANO, MES, VENDEDOR e MARGEM_PERCENTUAL.", "danger")
         return redirect(url_for("admin_metas", ano=ano_req, mes=mes_req))
 
-    upserts: dict[tuple[int, int, str], dict] = {}
+    linhas_validas: list[dict] = []
     erros: list[str] = []
     vendedores_planilha: set[str] = set()
+
     for idx, row in df.iterrows():
         try:
             ano = _safe_int(row.get(c_ano), 0)
@@ -913,20 +929,21 @@ def admin_metas_margens_importar():
             if margem is None:
                 raise ValueError("margem inválida")
             vendedores_planilha.add(vendedor)
-            # Se houver duplicidade do mesmo vendedor na própria planilha, a última linha vence.
-            upserts[(int(ano), int(mes), vendedor)] = {
+            linhas_validas.append({
+                "ano": int(ano),
+                "mes": int(mes),
+                "vendedor_importado": vendedor,
                 "margem": float(margem),
-            }
+                "linha": int(idx) + 2,
+            })
         except Exception as exc:
             if len(erros) < 10:
                 erros.append(f"Linha {idx + 2}: {exc}")
 
-    if not upserts:
+    if not linhas_validas:
         flash("Nenhuma margem válida foi encontrada na planilha. " + (" | ".join(erros) if erros else ""), "danger")
         return redirect(url_for("admin_metas", ano=ano_req, mes=mes_req))
 
-    importados = 0
-    atualizados = 0
     agora = datetime.utcnow()
     usuario = normalize_text(session.get("usuario"))
     vendedores_nao_encontrados: list[str] = []
@@ -937,8 +954,8 @@ def admin_metas_margens_importar():
             return re.sub(r"[^A-Z0-9]", "", normalize_text(value))
 
         usuarios_lookup: dict[str, str] = {}
-        for u in db.query(Usuario).filter(Usuario.username.isnot(None)).all():
-            username = normalize_text(u.username)
+        for (username_raw,) in db.query(Usuario.username).filter(Usuario.username.isnot(None)).all():
+            username = normalize_text(username_raw)
             if not username:
                 continue
             usuarios_lookup.setdefault(username, username)
@@ -952,37 +969,87 @@ def admin_metas_margens_importar():
             if not _resolve_vendedor_importado(vendedor):
                 vendedores_nao_encontrados.append(vendedor)
 
-        for (ano, mes, vendedor_importado), payload in upserts.items():
-            vendedor = _resolve_vendedor_importado(vendedor_importado)
-            if not vendedor:
+        # Regra oficial: uma margem por ANO + MÊS + VENDEDOR, gravada com EMP=GERAL.
+        # Importante: a planilha pode trazer o mesmo vendedor mais de uma vez ou trazer
+        # aliases que resolvem para o mesmo username. O SQLAlchemy está com autoflush
+        # desativado, então o fluxo antigo podia tentar inserir duas linhas iguais e
+        # quebrar no UNIQUE uq_meta_margem_vendedor_periodo. Aqui consolidamos depois
+        # de resolver o username; a última linha válida da planilha vence.
+        payloads: dict[tuple[int, int, str, str], dict] = {}
+        duplicados_resolvidos = 0
+        for item in linhas_validas:
+            vendedor_resolvido = _resolve_vendedor_importado(item["vendedor_importado"])
+            if not vendedor_resolvido:
                 continue
+            key = (int(item["ano"]), int(item["mes"]), emp_global, vendedor_resolvido)
+            if key in payloads:
+                duplicados_resolvidos += 1
+            payloads[key] = {
+                "ano": int(item["ano"]),
+                "mes": int(item["mes"]),
+                "emp": emp_global,
+                "vendedor": vendedor_resolvido,
+                "margem_percentual": float(item["margem"]),
+                "observacao": "Margem individual por vendedor",
+                "arquivo_origem": filename[:255],
+                "importado_por": usuario,
+                "importado_em": agora,
+            }
 
-            # Nova regra: uma única margem por vendedor/competência, independente da EMP.
-            # Mantém emp="GERAL" por compatibilidade com a tabela atual.
-            item = (
-                db.query(MetaMargemVendedor)
+        if not payloads:
+            msg = "Nenhuma margem foi importada porque os vendedores da planilha não foram encontrados no cadastro de usuários."
+            if vendedores_nao_encontrados:
+                msg += " Vendedores ignorados: " + ", ".join(vendedores_nao_encontrados[:10])
+                if len(vendedores_nao_encontrados) > 10:
+                    msg += f" e mais {len(vendedores_nao_encontrados) - 10}."
+            flash(msg, "danger")
+            return redirect(url_for("admin_metas", ano=ano_req, mes=mes_req))
+
+        existing_keys: set[tuple[int, int, str, str]] = set()
+        por_competencia: dict[tuple[int, int], list[str]] = {}
+        for ano, mes, _emp, vendedor in payloads.keys():
+            por_competencia.setdefault((ano, mes), []).append(vendedor)
+
+        for (ano, mes), vendedores in por_competencia.items():
+            rows_existentes = (
+                db.query(
+                    MetaMargemVendedor.ano,
+                    MetaMargemVendedor.mes,
+                    MetaMargemVendedor.emp,
+                    MetaMargemVendedor.vendedor,
+                )
                 .filter(
                     MetaMargemVendedor.ano == ano,
                     MetaMargemVendedor.mes == mes,
                     MetaMargemVendedor.emp == emp_global,
-                    MetaMargemVendedor.vendedor == vendedor,
+                    MetaMargemVendedor.vendedor.in_(list(set(vendedores))),
                 )
-                .first()
+                .all()
             )
-            if item:
-                atualizados += 1
-            else:
-                item = MetaMargemVendedor(ano=ano, mes=mes, emp=emp_global, vendedor=vendedor)
-                importados += 1
-            item.margem_percentual = float(payload["margem"])
-            item.observacao = "Margem individual por vendedor"
-            item.arquivo_origem = filename[:255]
-            item.importado_por = usuario
-            item.importado_em = agora
-            db.add(item)
+            for row in rows_existentes:
+                existing_keys.add((int(row.ano), int(row.mes), normalize_emp(row.emp), normalize_text(row.vendedor)))
+
+        rows_to_upsert = list(payloads.values())
+        stmt = pg_insert(MetaMargemVendedor.__table__).values(rows_to_upsert)
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["ano", "mes", "emp", "vendedor"],
+            set_={
+                "margem_percentual": stmt.excluded.margem_percentual,
+                "observacao": stmt.excluded.observacao,
+                "arquivo_origem": stmt.excluded.arquivo_origem,
+                "importado_por": stmt.excluded.importado_por,
+                "importado_em": stmt.excluded.importado_em,
+            },
+        )
+        db.execute(stmt)
         db.commit()
 
+    total_payloads = len(payloads)
+    atualizados = len([k for k in payloads.keys() if k in existing_keys])
+    importados = total_payloads - atualizados
     msg = f"Margens importadas com sucesso. Novas: {importados}. Atualizadas: {atualizados}."
+    if duplicados_resolvidos:
+        msg += f" Duplicidades/aliases na planilha consolidados: {duplicados_resolvidos} (a última linha válida venceu)."
     if vendedores_nao_encontrados:
         msg += " Vendedores não encontrados/ignorados: " + ", ".join(vendedores_nao_encontrados[:10])
         if len(vendedores_nao_encontrados) > 10:

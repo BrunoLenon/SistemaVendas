@@ -67,6 +67,11 @@ SessionLocal = sessionmaker(
 )
 Base = declarative_base()
 
+# Evita executar dezenas de DDLs idempotentes em toda abertura do Admin > Metas.
+# A migração continua sendo garantida na primeira chamada de cada processo.
+_METAS_LOJAS_SCHEMA_READY = False
+
+
 
 class Usuario(Base):
     __tablename__ = "usuarios"
@@ -1645,11 +1650,16 @@ class FinanceiroPagamentoAudit(Base):
 
 
 
-def ensure_metas_lojas_schema():
+def ensure_metas_lojas_schema(force: bool = False):
     """Garante a estrutura do módulo novo de Metas.
 
     Mantido idempotente para não depender de AUTO_MIGRATE em produção.
+    Para performance, as DDLs rodam somente na primeira chamada de cada processo
+    Render, salvo quando ``force=True`` for usado explicitamente.
     """
+    global _METAS_LOJAS_SCHEMA_READY
+    if _METAS_LOJAS_SCHEMA_READY and not force:
+        return
     try:
         with engine.connect() as conn:
             conn = conn.execution_options(isolation_level="AUTOCOMMIT")
@@ -1803,5 +1813,6 @@ def ensure_metas_lojas_schema():
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_oficina_servicos_periodo ON oficina_servicos (ano, mes);"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_metas_resultados_emp_periodo ON metas_resultados (emp, ano, mes);"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS ix_metas_resultados_meta_periodo ON metas_resultados (meta_id, ano, mes);"))
+        _METAS_LOJAS_SCHEMA_READY = True
     except Exception:
         pass
