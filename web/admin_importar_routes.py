@@ -35,6 +35,14 @@ def register_admin_importar_routes(
             return None, None
         return None, None
 
+    def _recalculo_pos_importacao_inline() -> bool:
+        """Por padrão mantém exatidão: importou, recalculou snapshots no mesmo fluxo.
+
+        Se o Render voltar a dar timeout em arquivos muito grandes, defina
+        RELATORIO_REFRESH_AFTER_IMPORT_SYNC=0 para usar o modo em segundo plano.
+        """
+        return (os.getenv("RELATORIO_REFRESH_AFTER_IMPORT_SYNC", "1").strip().lower() in {"1", "true", "sim", "yes", "on"})
+
     def _limpar_caches_relatorio_campanhas() -> None:
         """Invalida caches de relatório após importar vendas ou oficina.
 
@@ -152,16 +160,29 @@ def register_admin_importar_routes(
                 refresh_info = start_relatorio_campanhas_refresh_after_import(
                     relatorio_deps,
                     affected_periods=resumo.get("affected_periods") or [],
+                    run_inline=_recalculo_pos_importacao_inline(),
                 )
                 if refresh_info.get("started"):
-                    flash(
-                        (
-                            "Relatório de campanhas: atualização automática iniciada em segundo plano "
-                            f"para {int(refresh_info.get('emps') or 0)} EMP(s) em "
-                            f"{int(refresh_info.get('competencias') or 0)} competência(s)."
-                        ),
-                        "info",
-                    )
+                    if refresh_info.get("inline"):
+                        erros_refresh = len(refresh_info.get("errors") or [])
+                        flash(
+                            (
+                                "Relatório de campanhas recalculado após a importação "
+                                f"para {int(refresh_info.get('emps') or 0)} EMP(s) em "
+                                f"{int(refresh_info.get('competencias') or 0)} competência(s). "
+                                f"Linhas geradas: {int(refresh_info.get('rows') or 0)} | Erros: {erros_refresh}."
+                            ),
+                            "success" if erros_refresh == 0 else "warning",
+                        )
+                    else:
+                        flash(
+                            (
+                                "Relatório de campanhas: atualização automática iniciada em segundo plano "
+                                f"para {int(refresh_info.get('emps') or 0)} EMP(s) em "
+                                f"{int(refresh_info.get('competencias') or 0)} competência(s)."
+                            ),
+                            "info",
+                        )
                 elif refresh_info.get("already_running"):
                     flash("Relatório de campanhas: atualização automática já está em andamento para esta importação.", "info")
             except Exception as exc:
@@ -254,16 +275,29 @@ def register_admin_importar_routes(
                 refresh_info = start_relatorio_campanhas_refresh_after_import(
                     relatorio_deps,
                     affected_periods=resumo.get("periodos") or [],
+                    run_inline=_recalculo_pos_importacao_inline(),
                 )
                 if refresh_info.get("started"):
-                    flash(
-                        (
-                            "Relatório de campanhas: atualização automática iniciada após importar mão de obra "
-                            f"para {int(refresh_info.get('emps') or 0)} EMP(s) em "
-                            f"{int(refresh_info.get('competencias') or 0)} competência(s)."
-                        ),
-                        "info",
-                    )
+                    if refresh_info.get("inline"):
+                        erros_refresh = len(refresh_info.get("errors") or [])
+                        flash(
+                            (
+                                "Relatório de campanhas recalculado após importar mão de obra "
+                                f"para {int(refresh_info.get('emps') or 0)} EMP(s) em "
+                                f"{int(refresh_info.get('competencias') or 0)} competência(s). "
+                                f"Linhas geradas: {int(refresh_info.get('rows') or 0)} | Erros: {erros_refresh}."
+                            ),
+                            "success" if erros_refresh == 0 else "warning",
+                        )
+                    else:
+                        flash(
+                            (
+                                "Relatório de campanhas: atualização automática iniciada após importar mão de obra "
+                                f"para {int(refresh_info.get('emps') or 0)} EMP(s) em "
+                                f"{int(refresh_info.get('competencias') or 0)} competência(s)."
+                            ),
+                            "info",
+                        )
             except Exception:
                 try:
                     app.logger.exception("Erro ao iniciar atualização automática do relatório após mão de obra")

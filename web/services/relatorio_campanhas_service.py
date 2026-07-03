@@ -1011,6 +1011,7 @@ def start_relatorio_campanhas_refresh_after_import(
     deps: CampanhasDeps | None,
     *,
     affected_periods: list[Any] | tuple[Any, ...] | None,
+    run_inline: bool = False,
 ) -> dict[str, Any]:
     """Dispara atualização automática dos snapshots/cache após importação de vendas.
 
@@ -1052,6 +1053,20 @@ def start_relatorio_campanhas_refresh_after_import(
             'errors': [],
         }
 
+    if run_inline:
+        _run_import_refresh_job(deps, grouped=grouped, job_key=job_key)
+        with _RELATORIO_IMPORT_REFRESH_JOBS_LOCK:
+            done_job = dict(_RELATORIO_IMPORT_REFRESH_JOBS.get(job_key) or {})
+        return {
+            'started': True,
+            'inline': True,
+            'status': done_job.get('status') or 'done',
+            'rows': int(done_job.get('rows') or 0),
+            'errors': list(done_job.get('errors') or []),
+            'competencias': len(grouped),
+            'emps': sum(len(v) for v in grouped.values()),
+        }
+
     th = threading.Thread(
         target=_run_import_refresh_job,
         args=(deps,),
@@ -1062,6 +1077,7 @@ def start_relatorio_campanhas_refresh_after_import(
     th.start()
     return {
         'started': True,
+        'inline': False,
         'competencias': len(grouped),
         'emps': sum(len(v) for v in grouped.values()),
     }

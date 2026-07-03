@@ -2554,7 +2554,11 @@ def build_unified_rows(
                                     qtd_base=float(qtd_vendida or 0.0),
                                     valor_vendido=float(vendeu_rs or 0.0),
                                     atingiu_gate=item_ok,
-                                    valor_recompensa=float(valor_potencial or 0.0),
+                                    # Linha detalhada do item não é linha de pagamento.
+                                    # O valor oficial do combo fica somente no cabeçalho do combo,
+                                    # evitando somar prêmio duas vezes nos totais/financeiro.
+                                    valor_recompensa=0.0,
+                                    premio_potencial=float(valor_potencial or 0.0),
                                     status_pagamento='PENDENTE',
                                     pago_em=None,
                                     origem_id=combo_id,
@@ -2587,6 +2591,7 @@ def build_unified_rows(
                                     valor_vendido=ir.valor_vendido,
                                     atingiu_gate=ir.atingiu_gate,
                                     valor_recompensa=0.0,
+                                    premio_potencial=ir.premio_potencial,
                                     status_pagamento=ir.status_pagamento,
                                     pago_em=ir.pago_em,
                                     origem_id=ir.origem_id,
@@ -2692,6 +2697,11 @@ def aggregate_for_charts(rows: list[UnifiedRow] | None) -> dict[str, Any]:
     by_emp: dict[str, float] = {}
     total = 0.0
     for r in rows:
+        # Linhas-filhas de combo começam com "↳" e são apenas comprovação/detalhe.
+        # Elas não podem entrar no total a receber.
+        titulo = str(getattr(r, 'titulo', '') or '').strip()
+        if titulo.startswith('↳'):
+            continue
         val = _safe_float(getattr(r, 'valor_recompensa', 0.0))
         total += val
         tipo = str(getattr(r, 'tipo', '') or '')

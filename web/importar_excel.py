@@ -126,6 +126,17 @@ def _norm_str(value: Any) -> Optional[str]:
     return s if s else None
 
 
+def _norm_key_str(value: Any, *, upper: bool = False) -> str:
+    """Normaliza campos que entram na chave UNIQUE de importação.
+
+    Postgres permite múltiplos NULL em índice UNIQUE. Se NOTA/MARCA/EMP
+    vierem vazios como NULL, a mesma venda pode passar sem bater no
+    ON CONFLICT. Para a chave de importação usamos string vazia estável.
+    """
+    s = _norm_str(value) or ""
+    return s.upper() if upper else s
+
+
 
 def _norm_text(value: Any) -> Optional[str]:
     """Normaliza texto para comparações estáveis (lowercase, sem acento, espaços colapsados)."""
@@ -175,39 +186,49 @@ def _safe_date_key(emp: Any, mov: Any) -> Optional[Tuple[str, dt.date]]:
         return None
 
 
-def _delete_affected_dates(datas: List[Tuple[str, dt.date]]) -> Dict[str, Any]:
-    """Remove vendas já existentes apenas para os recortes exatos do arquivo.
+def _delete_affected_dates_in_session(db, datas: List[Tuple[str, dt.date]]) -> Dict[str, Any]:
+    """Remove vendas existentes no MESMO transaction da importação.
 
-    Segurança: em vez de apagar o mês inteiro, apaga somente EMP + DATA presentes
-    na planilha. Isso evita perder vendas de outros dias quando a importação diária
-    contém apenas parte da competência mensal.
+    Esta é a trava principal contra perda de venda: se a importação falhar
+    depois do DELETE, o rollback devolve as vendas antigas.
     """
     unique_dates = sorted({(str(emp), mov) for emp, mov in datas if emp and mov})
     if not unique_dates:
         return {"ok": True, "tipo": "EMP_DATA", "recortes": 0, "linhas_apagadas": 0, "detalhes": []}
 
-    db = SessionLocal()
     detalhes = []
     total = 0
+    for emp, mov in unique_dates:
+        apagadas = (
+            db.query(Venda)
+            .filter(Venda.emp == str(emp))
+            .filter(Venda.movimento == mov)
+            .delete(synchronize_session=False)
+        )
+        apagadas = int(apagadas or 0)
+        total += apagadas
+        detalhes.append({"emp": str(emp), "data": mov.isoformat(), "linhas_apagadas": apagadas})
+    return {
+        "ok": True,
+        "tipo": "EMP_DATA",
+        "recortes": len(unique_dates),
+        "linhas_apagadas": int(total),
+        "detalhes": detalhes,
+        "transacao_atomica": True,
+    }
+
+
+def _delete_affected_dates(datas: List[Tuple[str, dt.date]]) -> Dict[str, Any]:
+    """Remove vendas já existentes apenas para os recortes exatos do arquivo.
+
+    Mantido para compatibilidade, mas a importação principal usa a versão
+    transacional `_delete_affected_dates_in_session`.
+    """
+    db = SessionLocal()
     try:
-        for emp, mov in unique_dates:
-            apagadas = (
-                db.query(Venda)
-                .filter(Venda.emp == str(emp))
-                .filter(Venda.movimento == mov)
-                .delete(synchronize_session=False)
-            )
-            apagadas = int(apagadas or 0)
-            total += apagadas
-            detalhes.append({"emp": str(emp), "data": mov.isoformat(), "linhas_apagadas": apagadas})
+        info = _delete_affected_dates_in_session(db, datas)
         db.commit()
-        return {
-            "ok": True,
-            "tipo": "EMP_DATA",
-            "recortes": len(unique_dates),
-            "linhas_apagadas": int(total),
-            "detalhes": detalhes,
-        }
+        return info
     except Exception:
         db.rollback()
         raise
@@ -395,11 +416,12 @@ def importar_planilha(
         except Exception:
             pass
 
+        meta_datas: list[Tuple[str, dt.date]] = []
         if reprocessar_competencia:
             meta = scan_metadata_xlsx(filepath, check_required=True)
             if not meta.get("ok"):
                 return {"ok": False, "msg": meta.get("msg", "Falha ao varrer planilha."), "faltando": meta.get("faltando"), "lidas": meta.get("lidas")}
-            reprocess_info = _delete_affected_dates(meta.get("datas") or [])
+            meta_datas = list(meta.get("datas") or [])
 
         from openpyxl import load_workbook
 
@@ -419,6 +441,9 @@ def importar_planilha(
             missing = [c for c in REQUIRED_COLS if c not in col_index]
             if missing:
                 return {"ok": False, "msg": "Colunas faltando.", "faltando": missing, "lidas": cols}
+
+            if reprocessar_competencia:
+                reprocess_info = _delete_affected_dates_in_session(db, meta_datas)
 
             total_linhas = 0
             validas = 0
@@ -442,15 +467,17 @@ def importar_planilha(
                     def get(col: str):
                         return r[col_index[col]] if col in col_index else None
 
-                    mestre = _norm_str(get("MESTRE"))
-                    vendedor = _norm_str(get("VENDEDOR"))
-                    vendedor = vendedor.upper() if vendedor else None
+                    mestre = _norm_key_str(get("MESTRE"))
+                    vendedor = _norm_key_str(get("VENDEDOR"), upper=True)
                     if not mestre or not vendedor:
                         erros_linha += 1
                         continue
 
-                    nota = _norm_str(get("NOTA"))
-                    emp = _norm_str(get("EMP"))
+                    nota = _norm_key_str(get("NOTA"))
+                    emp = _norm_key_str(get("EMP"))
+                    if not emp:
+                        erros_linha += 1
+                        continue
                     mov = _to_date(get("MOVIMENTO"))
                     # registra período para atualizar cache depois
                     if emp:
@@ -466,7 +493,7 @@ def importar_planilha(
 
                     rec = {
                         "mestre": mestre,
-                        "marca": _norm_str(get("MARCA")),
+                        "marca": _norm_key_str(get("MARCA"), upper=True),
                         "movimento": mov,
                         "mov_tipo_movto": mov_tipo,
                         "vendedor": vendedor,
@@ -509,7 +536,7 @@ def importar_planilha(
                     if len(batch) >= batch_size:
                         stmt = _build_stmt(batch, modo, conflict_cols)
                         res = db.execute(stmt)
-                        db.commit()
+                        db.flush()
                         if modo == "atualizar":
                             atualizadas += int(res.rowcount or 0)
                         else:
@@ -523,12 +550,29 @@ def importar_planilha(
             if batch:
                 stmt = _build_stmt(batch, modo, conflict_cols)
                 res = db.execute(stmt)
-                db.commit()
+                db.flush()
                 if modo == "atualizar":
                     atualizadas += int(res.rowcount or 0)
                 else:
                     inseridas += int(res.rowcount or 0)
                 batch.clear()
+
+            if validas <= 0:
+                db.rollback()
+                return {
+                    "ok": False,
+                    "msg": "Nenhuma linha válida encontrada. Nada foi substituído no banco.",
+                    "total_linhas": int(total_linhas),
+                    "validas": 0,
+                    "inseridas": 0,
+                    "atualizadas": 0,
+                    "ignoradas": 0,
+                    "erros_linha": int(erros_linha),
+                    "reprocessar": bool(reprocessar_competencia),
+                    "reprocessamento": {**(reprocess_info or {}), "rollback_aplicado": True},
+                }
+
+            db.commit()
 
             # rowcount = quantos foram inseridos/atualizados; o resto são ignorados (duplicados)
             efetivadas = atualizadas if modo == "atualizar" else inseridas
@@ -582,6 +626,22 @@ def importar_planilha(
                 "affected_periods": sorted(list(affected_periods)),
             }
 
+        except Exception as exc:
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            return {
+                "ok": False,
+                "msg": f"Erro ao gravar importação. Nenhuma venda antiga foi substituída: {exc}",
+                "inseridas": int(inseridas) if 'inseridas' in locals() else 0,
+                "atualizadas": int(atualizadas) if 'atualizadas' in locals() else 0,
+                "ignoradas": 0,
+                "erros_linha": int(erros_linha) if 'erros_linha' in locals() else 0,
+                "reprocessar": bool(reprocessar_competencia),
+                "reprocessamento": {**(reprocess_info or {}), "rollback_aplicado": True},
+            }
+
         finally:
             try:
                 db.close()
@@ -612,14 +672,18 @@ def importar_planilha(
     movimentos_ignorados_linhas = 0
     linhas_qtd_zero = 0
 
+    meta_datas: list[Tuple[str, dt.date]] = []
     if reprocessar_competencia:
         meta = scan_metadata_csv(filepath, check_required=True, csv_chunksize=csv_chunksize)
         if not meta.get("ok"):
             return {"ok": False, "msg": meta.get("msg", "Falha ao varrer CSV."), "faltando": meta.get("faltando"), "lidas": meta.get("lidas")}
-        reprocess_info = _delete_affected_dates(meta.get("datas") or [])
+        meta_datas = list(meta.get("datas") or [])
 
     db = SessionLocal()
     try:
+        if reprocessar_competencia:
+            reprocess_info = _delete_affected_dates_in_session(db, meta_datas)
+
         for chunk in pd.read_csv(filepath, chunksize=csv_chunksize, dtype=str, encoding_errors="ignore"):
             chunk.columns = _norm_cols(list(chunk.columns))
             missing = [c for c in REQUIRED_COLS if c not in chunk.columns]
@@ -641,15 +705,17 @@ def importar_planilha(
             for _, row in chunk.iterrows():
                 total_linhas += 1
                 try:
-                    mestre = _norm_str(row.get("MESTRE"))
-                    vendedor = _norm_str(row.get("VENDEDOR"))
-                    vendedor = vendedor.upper() if vendedor else None
+                    mestre = _norm_key_str(row.get("MESTRE"))
+                    vendedor = _norm_key_str(row.get("VENDEDOR"), upper=True)
                     if not mestre or not vendedor:
                         erros_linha += 1
                         continue
 
-                    nota = _norm_str(row.get("NOTA"))
-                    emp = _norm_str(row.get("EMP"))
+                    nota = _norm_key_str(row.get("NOTA"))
+                    emp = _norm_key_str(row.get("EMP"))
+                    if not emp:
+                        erros_linha += 1
+                        continue
                     mov = row.get("MOVIMENTO")
                     if mov is None or pd.isna(mov):
                         erros_linha += 1
@@ -666,7 +732,7 @@ def importar_planilha(
 
                     rec = {
                         "mestre": mestre,
-                        "marca": _norm_str(row.get("MARCA")),
+                        "marca": _norm_key_str(row.get("MARCA"), upper=True),
                         "movimento": mov,
                         "mov_tipo_movto": mov_tipo,
                         "vendedor": vendedor,
@@ -676,14 +742,6 @@ def importar_planilha(
                         "des": _to_float(row.get("DES")),
                         "qtdade_vendida": qtd_importada,
                         "valor_total": valor_importado,
-                        "descricao": _norm_str(row.get("DESCRICAO")),
-                        "razao": _norm_str(row.get("RAZAO")),
-                        "cidade": _norm_str(row.get("CIDADE")),
-                        "cnpj_cpf": _norm_str(row.get("CNPJ_CPF")),
-                        "descricao_norm": _norm_text(row.get("DESCRICAO")),
-                        "razao_norm": _norm_text(row.get("RAZAO")),
-                        "cidade_norm": _norm_text(row.get("CIDADE")),
-                        "cliente_id_norm": _client_id_norm(row.get("CNPJ_CPF"), row.get("RAZAO")),
                         "descricao": _norm_str(row.get("DESCRICAO")),
                         "razao": _norm_str(row.get("RAZAO")),
                         "cidade": _norm_str(row.get("CIDADE")),
@@ -716,7 +774,7 @@ def importar_planilha(
                     if len(records) >= batch_size:
                         stmt = _build_stmt(records, modo, conflict_cols)
                         res = db.execute(stmt)
-                        db.commit()
+                        db.flush()
                         if modo == "atualizar":
                             atualizadas += int(res.rowcount or 0)
                         else:
@@ -730,13 +788,45 @@ def importar_planilha(
             if records:
                 stmt = _build_stmt(records, modo, conflict_cols)
                 res = db.execute(stmt)
-                db.commit()
+                db.flush()
                 if modo == "atualizar":
                     atualizadas += int(res.rowcount or 0)
                 else:
                     inseridas += int(res.rowcount or 0)
                 records.clear()
 
+        if validas <= 0:
+            db.rollback()
+            return {
+                "ok": False,
+                "msg": "Nenhuma linha válida encontrada. Nada foi substituído no banco.",
+                "total_linhas": int(total_linhas),
+                "validas": 0,
+                "inseridas": 0,
+                "atualizadas": 0,
+                "ignoradas": 0,
+                "erros_linha": int(erros_linha),
+                "reprocessar": bool(reprocessar_competencia),
+                "reprocessamento": {**(reprocess_info or {}), "rollback_aplicado": True},
+            }
+
+        db.commit()
+
+    except Exception as exc:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return {
+            "ok": False,
+            "msg": f"Erro ao gravar importação. Nenhuma venda antiga foi substituída: {exc}",
+            "inseridas": int(inseridas),
+            "atualizadas": int(atualizadas),
+            "ignoradas": 0,
+            "erros_linha": int(erros_linha),
+            "reprocessar": bool(reprocessar_competencia),
+            "reprocessamento": {**(reprocess_info or {}), "rollback_aplicado": True},
+        }
     finally:
         db.close()
 

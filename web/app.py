@@ -3180,9 +3180,27 @@ def _recalcular_resultados_combos_para_scope(ano: int, mes: int, emps: list[str]
             if not vendedores_emp:
                 continue
 
+            existing_combo_status = (
+                db.query(CampanhaComboResultado)
+                .filter(
+                    CampanhaComboResultado.emp == emp,
+                    CampanhaComboResultado.competencia_ano == int(ano),
+                    CampanhaComboResultado.competencia_mes == int(mes),
+                )
+                .all()
+            )
+            status_combo_map = {
+                (int(getattr(r, "combo_id", 0) or 0), str(getattr(r, "vendedor", "") or "").strip().upper()): (
+                    str(getattr(r, "status_pagamento", "PENDENTE") or "PENDENTE"),
+                    getattr(r, "pago_em", None),
+                )
+                for r in existing_combo_status
+            }
+
             combos = _combos_mes_overlap(int(ano), int(mes), emp)
             if not combos:
-                # limpa resultados do período para evitar lixo antigo
+                # limpa resultados do período para evitar lixo antigo, preservando o fechamento financeiro
+                # apenas não há novo resultado para recriar.
                 db.query(CampanhaComboResultado).filter(
                     CampanhaComboResultado.emp == emp,
                     CampanhaComboResultado.competencia_ano == int(ano),
@@ -3191,7 +3209,7 @@ def _recalcular_resultados_combos_para_scope(ano: int, mes: int, emps: list[str]
                 db.commit()
                 continue
 
-            # apaga resultados antigos do escopo (EMP+competência)
+            # apaga resultados antigos do escopo (EMP+competência), mas preserva status/pago_em nos novos snapshots
             db.query(CampanhaComboResultado).filter(
                 CampanhaComboResultado.emp == emp,
                 CampanhaComboResultado.competencia_ano == int(ano),
@@ -3234,6 +3252,7 @@ def _recalcular_resultados_combos_para_scope(ano: int, mes: int, emps: list[str]
                     if not atingiu:
                         total = 0.0
 
+                    st_pag, pago_em = status_combo_map.get((int(combo.id), vend), ("PENDENTE", None))
                     novos.append(CampanhaComboResultado(
                         combo_id=combo.id,
                         competencia_ano=int(ano),
@@ -3246,7 +3265,8 @@ def _recalcular_resultados_combos_para_scope(ano: int, mes: int, emps: list[str]
                         data_fim=combo.data_fim,
                         atingiu_gate=int(atingiu),
                         valor_recompensa=float(total),
-                        status_pagamento="PENDENTE",
+                        status_pagamento=st_pag,
+                        pago_em=pago_em,
                         atualizado_em=datetime.utcnow(),
                     ))
 
@@ -3328,6 +3348,26 @@ def _recalcular_resultados_campanhas_para_scope(ano: int, mes: int, emps: list[s
                 periodo_fim = min(c.data_fim, fim_mes)
                 vendas_por_campanha[cid] = _calc_vendas_por_vendedor_para_campanha(db, emp, c, periodo_ini, periodo_fim)
 
+            # Preserva status financeiro antes do rebuild. O cálculo pode mudar, mas
+            # uma linha já marcada como PAGO/A PAGAR não pode voltar para PENDENTE
+            # por causa de recálculo automático.
+            existing_qtd_status = (
+                db.query(CampanhaQtdResultado)
+                .filter(
+                    CampanhaQtdResultado.emp == emp,
+                    CampanhaQtdResultado.competencia_ano == int(ano),
+                    CampanhaQtdResultado.competencia_mes == int(mes),
+                )
+                .all()
+            )
+            status_qtd_map = {
+                (int(getattr(r, "campanha_id", 0) or 0), str(getattr(r, "vendedor", "") or "").strip().upper()): (
+                    str(getattr(r, "status_pagamento", "PENDENTE") or "PENDENTE"),
+                    getattr(r, "pago_em", None),
+                )
+                for r in existing_qtd_status
+            }
+
             # Apaga resultados existentes do escopo (para evitar conflito e garantir consistência)
             # (apenas para a EMP e competência; é rápido pois tem índice)
             db.query(CampanhaQtdResultado).filter(
@@ -3367,6 +3407,7 @@ def _recalcular_resultados_campanhas_para_scope(ano: int, mes: int, emps: list[s
                     bloqueado_emp = 1 if gate_emp.get("bloqueado_faturamento_emp") else 0
                     atingiu_final = 1 if gate_emp.get("atingiu_final") else 0
 
+                    st_pag, pago_em = status_qtd_map.get((int(c.id), v), ("PENDENTE", None))
                     novos.append(CampanhaQtdResultado(
                         campanha_id=c.id,
                         competencia_ano=int(ano),
@@ -3389,7 +3430,8 @@ def _recalcular_resultados_campanhas_para_scope(ano: int, mes: int, emps: list[s
                         faturamento_emp=float(gate_emp.get("faturamento_emp") or 0.0),
                         faltante_faturamento_emp=float(gate_emp.get("faltante_faturamento_emp") or 0.0),
                         bloqueado_faturamento_emp=int(bloqueado_emp),
-                        status_pagamento="PENDENTE",
+                        status_pagamento=st_pag,
+                        pago_em=pago_em,
                         campanha_tipo=_campanha_tipo_qtd(c),
                         atualizado_em=datetime.utcnow(),
                     ))
@@ -3400,6 +3442,9 @@ def _recalcular_resultados_campanhas_para_scope(ano: int, mes: int, emps: list[s
                     periodo_ini = max(c.data_inicio, inicio_mes)
                     periodo_fim = min(c.data_fim, fim_mes)
                     res = _upsert_resultado(db, c, gerente, emp, ano, mes, periodo_ini, periodo_fim, faturamento_cache=faturamento_cache)
+                    st_pag, pago_em = status_qtd_map.get((int(c.id), gerente), (getattr(res, "status_pagamento", "PENDENTE") or "PENDENTE", getattr(res, "pago_em", None)))
+                    res.status_pagamento = st_pag
+                    res.pago_em = pago_em
                     # já está em sessão via upsert; sem bulk_save para preservar upsert/status existente
 
             if novos:

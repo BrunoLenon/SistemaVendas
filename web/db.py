@@ -888,6 +888,14 @@ class CampanhaComboResultado(Base):
     atualizado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
 
     __table_args__ = (
+        UniqueConstraint(
+            "combo_id",
+            "emp",
+            "vendedor",
+            "competencia_ano",
+            "competencia_mes",
+            name="uq_combo_resultado_comp_emp_vendedor",
+        ),
         Index("ix_combo_res_emp_comp", "emp", "competencia_ano", "competencia_mes"),
         Index("ix_combo_res_vendedor", "vendedor"),
     )
