@@ -36,10 +36,11 @@ def register_admin_importar_routes(
         return None, None
 
     def _recalculo_pos_importacao_inline() -> bool:
-        """Por padrão mantém exatidão: importou, recalculou snapshots no mesmo fluxo.
+        """Mantém exatidão por padrão: importou, recalculou no mesmo fluxo.
 
-        Se o Render voltar a dar timeout em arquivos muito grandes, defina
-        RELATORIO_REFRESH_AFTER_IMPORT_SYNC=0 para usar o modo em segundo plano.
+        O fluxo normal é primeiro plano para o ADMIN receber confirmação de término.
+        Use RELATORIO_REFRESH_AFTER_IMPORT_SYNC=0 apenas como contingência temporária
+        se o ambiente voltar a ter timeout em arquivos muito grandes.
         """
         return (os.getenv("RELATORIO_REFRESH_AFTER_IMPORT_SYNC", "1").strip().lower() in {"1", "true", "sim", "yes", "on"})
 
@@ -150,11 +151,11 @@ def register_admin_importar_routes(
                 pass
             _limpar_caches_relatorio_campanhas()
 
-            # Novo fluxo de performance:
-            # após a importação diária de vendas, dispara em segundo plano o
-            # recálculo completo dos snapshots/cache de /relatorios/campanhas
-            # para todas as EMPs/competências presentes no arquivo. Assim a tela
-            # abre lendo dados prontos, em vez de recalcular no GET.
+            # Novo fluxo de exatidão/performance:
+            # após a importação diária de vendas, recalcula os snapshots/cache de
+            # /relatorios/campanhas para as EMPs/competências presentes no arquivo.
+            # Por padrão é primeiro plano: terminou a importação, terminou o recálculo
+            # e o ADMIN recebe confirmação. Assim usuários comuns apenas leem dados prontos.
             try:
                 from services.relatorio_campanhas_service import start_relatorio_campanhas_refresh_after_import
                 refresh_info = start_relatorio_campanhas_refresh_after_import(
@@ -177,7 +178,7 @@ def register_admin_importar_routes(
                     else:
                         flash(
                             (
-                                "Relatório de campanhas: atualização automática iniciada em segundo plano "
+                                "Relatório de campanhas: atualização automática iniciada em contingência/segundo plano "
                                 f"para {int(refresh_info.get('emps') or 0)} EMP(s) em "
                                 f"{int(refresh_info.get('competencias') or 0)} competência(s)."
                             ),
@@ -259,7 +260,7 @@ def register_admin_importar_routes(
                     f"Erros: {resumo.get('erros_linha', 0)} | "
                     f"Total serviço: R$ {total_servico:,.2f} | "
                     f"Competências afetadas: {qtd_periodos}. "
-                    f"Recalcule metas/relatório de campanhas para atualizar snapshots já gravados."
+                    f"O relatório será recalculado agora para atualizar os snapshots já gravados."
                 ).replace(",", "X").replace(".", ",").replace("X", "."),
                 "success",
             )
@@ -292,7 +293,7 @@ def register_admin_importar_routes(
                     else:
                         flash(
                             (
-                                "Relatório de campanhas: atualização automática iniciada após importar mão de obra "
+                                "Relatório de campanhas: atualização automática iniciada em contingência/segundo plano após importar mão de obra "
                                 f"para {int(refresh_info.get('emps') or 0)} EMP(s) em "
                                 f"{int(refresh_info.get('competencias') or 0)} competência(s)."
                             ),

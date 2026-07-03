@@ -124,10 +124,11 @@
       <div>
         <div class="sv-admin-eyebrow">Relatórios / Campanhas</div>
         <h1 class="sv-admin-title">Campanhas do mês</h1>
-        <div class="sv-admin-subtitle">Conferência consolidada por EMP, vendedor, campanha e meta. Use <strong>Recalcular em segundo plano</strong> após importar vendas para atualizar a apuração sem travar a tela.</div>
+        <div class="sv-admin-subtitle">Conferência consolidada por EMP, vendedor, campanha e meta. O ADMIN recalcula em primeiro plano após a importação diária; os demais usuários consultam os resultados já gravados/cacheados.</div>
       </div>
       <div class="sv-action-row">
-        <form method="post" action="{{ url_for('relatorio_campanhas_recalcular') }}" class="sv-inline-form">
+        {% if ctx.get('is_admin') %}
+        <form method="post" action="{{ url_for('relatorio_campanhas_recalcular') }}" class="sv-inline-form" onsubmit="return window.confirm('Iniciar recálculo agora? A tela ficará aguardando até terminar e depois exibirá a confirmação.');">
           {% for key, values in request.args.lists() %}
             {% if key not in ['recalc', 'page'] %}
               {% for value in values %}
@@ -135,8 +136,9 @@
               {% endfor %}
             {% endif %}
           {% endfor %}
-          <button class="sv-btn sv-btn-soft" type="submit" {% if ctx.get('deferred_report') %}disabled title="Selecione ao menos uma EMP antes de recalcular"{% endif %}>Recalcular em segundo plano</button>
+          <button class="sv-btn sv-btn-soft" type="submit" {% if ctx.get('deferred_report') %}disabled title="Selecione ao menos uma EMP antes de recalcular"{% endif %}>Recalcular agora</button>
         </form>
+        {% endif %}
         <a class="sv-btn sv-btn-primary" href="{{ ctx.get('export_url') or url_for('relatorio_campanhas_export_pdf') }}" {% if ctx.get('deferred_report') %}aria-disabled="true" onclick="return false;" style="opacity:.48;pointer-events:none;"{% endif %}>{{ 'PDF por vendedor' if view_mode == 'vendedores' else 'PDF detalhado' }}</a>
         <a class="sv-btn sv-btn-soft" href="{{ ctx.get('export_csv_url') or url_for('relatorio_campanhas_export_csv') }}" {% if ctx.get('deferred_report') %}aria-disabled="true" onclick="return false;" style="opacity:.48;pointer-events:none;"{% endif %}>CSV</a>
       </div>

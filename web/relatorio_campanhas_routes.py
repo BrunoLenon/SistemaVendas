@@ -339,10 +339,10 @@ def _build_deferred_scope(deps, *, role: str, emp_usuario: str | None, vendedor_
 
 
 def _build_processing_scope_ctx(deps, *, role: str, emp_usuario: str | None, vendedor_logado: str, request_args, flash_fn) -> tuple[dict[str, Any], dict[str, list[str]]]:
-    """Renderiza retorno leve logo após iniciar recálculo em background.
+    """Renderiza retorno leve para sessões antigas que ainda tinham flag de processamento.
 
-    Sem isso, o redirect do POST abria /relatorios/campanhas imediatamente e
-    podia gerar novo cache_miss enquanto o job ainda estava rodando.
+    O fluxo atual de recálculo manual é primeiro plano e não usa mais essa tela.
+    Mantemos a função para compatibilidade com usuários que estavam com sessão antiga.
     """
     try:
         scope = build_relatorio_campanhas_scope(
@@ -371,7 +371,7 @@ def _build_processing_scope_ctx(deps, *, role: str, emp_usuario: str | None, ven
         role=role,
         vendedor_logado=vendedor_logado,
         recalc=False,
-        mensagem='Recálculo em segundo plano iniciado. Aguarde alguns instantes e atualize a página para carregar o resultado já em cache.',
+        mensagem='Recálculo anterior finalizado ou sessão antiga detectada. Aplique os filtros para carregar o resultado já gravado/cacheado.',
     )
     ctx['recalc_processing'] = True
     return ctx, dict(scope.get('vendedores_por_emp') or {})
@@ -991,9 +991,10 @@ def register_relatorio_campanhas_routes(
         vendedor_logado = (usuario_logado_fn() or '').strip().upper()
 
         # Compatibilidade com links antigos (?recalc=1), mas sem executar
-        # recálculo pesado por GET. O botão oficial usa POST e roda em background.
+        # recálculo pesado por GET. O recálculo oficial é POST, exclusivo do ADMIN,
+        # e roda em primeiro plano para que o usuário saiba exatamente quando terminou.
         if _is_recalc_flag(request.args):
-            flash('Use o botão Recalcular. Agora o processamento roda em segundo plano para evitar timeout.', 'warning')
+            flash('Use o botão Recalcular agora dentro do relatório. O recálculo é exclusivo do ADMIN e termina com uma mensagem de confirmação.', 'warning')
             return redirect(_clean_report_url(request.args))
 
         if session.pop('relatorio_campanhas_recalc_started', None):
@@ -1052,9 +1053,17 @@ def register_relatorio_campanhas_routes(
                 post_args.setlist(key, list(values or []))
         except Exception:
             pass
+
+        # Regra operacional: somente ADMIN pode recalcular snapshots/cache.
+        # Usuários comuns apenas consultam os resultados já gravados/aquecidos.
+        if role != 'admin':
+            flash('Recálculo bloqueado: somente o ADMIN pode atualizar a apuração. Você está visualizando os dados já calculados.', 'warning')
+            return redirect(_clean_report_url(post_args))
+
         # Proteção de performance: nunca recalcula todas as EMPs por acidente.
+        # O admin pode clicar em "Marcar todas" e recalcular conscientemente.
         if _should_defer_unfiltered_report(role=role, request_args=post_args):
-            flash('Selecione ao menos uma EMP antes de recalcular o relatório.', 'warning')
+            flash('Selecione ao menos uma EMP antes de recalcular. Para recalcular todas, use Marcar todas e depois Recalcular agora.', 'warning')
             return redirect(_clean_report_url(post_args))
 
         _scope_cache_clear()
@@ -1070,7 +1079,7 @@ def register_relatorio_campanhas_routes(
         except Exception as exc:
             flash('Não foi possível preparar o recálculo agora. Tente novamente em instantes.', 'warning')
             try:
-                print(f'[RELATORIO_CAMPANHAS] erro ao preparar recalc background: {exc}')
+                print(f'[RELATORIO_CAMPANHAS] erro ao preparar recalc inline: {exc}')
             except Exception:
                 pass
             return redirect(_clean_report_url(post_args))
@@ -1081,32 +1090,59 @@ def register_relatorio_campanhas_routes(
         except Exception:
             ano, mes = _month_year_from_args(post_args)
 
-        state, job = _start_recalc_background_job(
-            deps,
-            role=role,
-            vendedor_logado=vendedor_logado,
-            ano=ano,
-            mes=mes,
-            emps_scope=list(scope.get('emps_scope') or []),
-            emps_sel=list(scope.get('emps_sel') or []),
-            vendedores_sel=list(scope.get('vendedores_sel') or []),
-            vendedores_por_emp=dict(scope.get('vendedores_por_emp') or {}),
-        )
-        if state == 'running':
-            flash('O recálculo desta competência já está em andamento. Aguarde alguns instantes e atualize a página.', 'info')
-        elif state == 'done':
-            flash('Relatório já foi recalculado agora há pouco. Atualize a página para conferir.', 'success')
-        else:
-            emps_count = len(job.get('emps') or [])
-            flash(f'Recálculo iniciado em segundo plano para {emps_count} EMP(s). A página não ficará travada; atualize em alguns instantes.', 'success')
+        started = time.perf_counter()
+        try:
+            stats = rebuild_relatorio_campanhas_unificado_cache(
+                deps,
+                role='admin',
+                vendedor_logado=vendedor_logado,
+                ano=int(ano),
+                mes=int(mes),
+                emps_scope=list(scope.get('emps_scope') or []),
+                emps_sel=list(scope.get('emps_sel') or []),
+                vendedores_sel=list(scope.get('vendedores_sel') or []),
+                vendedores_por_emp=dict(scope.get('vendedores_por_emp') or {}),
+                clear_existing=True,
+            ) or {}
+        except Exception as exc:
+            try:
+                deps.SessionLocal().rollback()
+            except Exception:
+                pass
+            flash(f'Falha no recálculo: {exc}', 'danger')
+            try:
+                print(f'[RELATORIO_CAMPANHAS] erro recalc inline fatal: {exc}')
+            except Exception:
+                pass
+            return redirect(_clean_report_url(post_args))
 
-        session['relatorio_campanhas_recalc_started'] = '1'
+        # A função de rebuild captura falhas parciais de QTD/Combo/Itens Parados/Cache.
+        # Se houver qualquer erro interno, avisa claramente para não passar falso positivo.
+        duration_ms = int(stats.get('duration_ms') or ((time.perf_counter() - started) * 1000))
+        emps_count = int(stats.get('emps') and len(stats.get('emps') or []) or len(scope.get('emps_sel') or []))
+        rows_count = int(stats.get('rows') or 0)
+        errors = [str(e) for e in (stats.get('errors') or []) if str(e).strip()]
+        status = str(stats.get('status') or 'ok')
+        segundos = duration_ms / 1000.0
+
+        if errors or status not in ('ok', 'done'):
+            detalhe = '; '.join(errors[:3]) if errors else f'status={status}'
+            flash(
+                f'Recálculo finalizado com alerta em {segundos:.1f}s para {emps_count} EMP(s). Linhas geradas: {rows_count}. Verifique: {detalhe}',
+                'warning',
+            )
+        else:
+            flash(
+                f'Tudo recalculado com sucesso em {segundos:.1f}s para {emps_count} EMP(s). Linhas geradas: {rows_count}. O relatório já está pronto para uso.',
+                'success',
+            )
+
         return redirect(_clean_report_url(post_args))
 
     def relatorio_campanhas_recalcular_get():
         # Proteção: se alguém abrir a URL de recálculo direto pelo navegador (GET),
         # não executa processamento pesado nem gera 405/502; volta para o relatório.
-        flash('Use o botão Recalcular dentro do relatório após selecionar uma EMP.', 'warning')
+        flash('Use o botão Recalcular agora dentro do relatório. Ele é exclusivo do ADMIN e roda em primeiro plano.', 'warning')
         return redirect(url_for('relatorio_campanhas'))
 
     def relatorio_campanhas_detalhes():
