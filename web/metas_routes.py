@@ -16,7 +16,7 @@ import unicodedata
 import pandas as pd
 from flask import flash, redirect, render_template, request, send_file, session, url_for
 from sqlalchemy import func, text
-from sv_utils import sort_emp_codes
+from sv_utils import emp_sort_key, sort_emp_codes
 
 from auth_helpers import _allowed_emps, _emp, _login_required, _role
 from db import (
@@ -375,7 +375,12 @@ def admin_metas():
     vendedor_selected = normalize_text(request.args.get("vendedor"))
 
     with SessionLocal() as db:
-        emps_rows = db.query(Emp).filter(Emp.ativo.is_(True)).order_by(Emp.codigo.asc()).all()
+        # A página de admin não precisa ordenar por texto (1001 antes de 101).
+        # Traz a lista e ordena em memória pela regra numérica padrão de EMP.
+        emps_rows = sorted(
+            db.query(Emp).filter(Emp.ativo.is_(True)).all(),
+            key=lambda e: emp_sort_key(getattr(e, "codigo", "")),
+        )
         emps_codes = [normalize_emp(e.codigo) for e in emps_rows]
         if emp_selected and emp_selected not in set(emps_codes):
             emp_selected = ""
@@ -484,40 +489,55 @@ def admin_metas():
                     "observacao": getattr(base, "observacao", "") if base else "",
                 })
 
-        sim_emps = [emp_selected] if emp_selected else []
-        sim_vendedor = vendedor_selected if vendedor_selected else None
-        metas_sim, resultados_sim = montar_resultados_periodo(db, ano, mes, emps=sim_emps, vendedor=sim_vendedor, persist=False)
+        # /admin/metas é uma tela de configuração, não relatório.
+        # Antes ela simulava todas as metas a cada abertura da página, o que podia
+        # varrer vendas, oficina, mix e marcas sem necessidade. Agora a simulação
+        # só roda quando o ADMIN pedir explicitamente (?simular=1) e com EMP filtrada.
+        simular = str(request.args.get("simular") or "").strip().lower() in ("1", "true", "s", "sim", "yes")
+        metas_sim = []
+        resultados_sim = []
+        simulacao_bloqueada_motivo = ""
+        if simular and not emp_selected:
+            simulacao_bloqueada_motivo = "Selecione uma EMP para carregar a simulação sem pesar a tela."
+        elif simular:
+            sim_emps = [emp_selected]
+            sim_vendedor = vendedor_selected if vendedor_selected else None
+            metas_sim, resultados_sim = montar_resultados_periodo(
+                db, ano, mes, emps=sim_emps, vendedor=sim_vendedor, persist=False
+            )
 
         # Margem atual é individual por vendedor, não por EMP.
         # Quando uma EMP estiver filtrada, mostramos apenas os vendedores daquela EMP,
         # mas a busca da margem continua usando ANO + MÊS + VENDEDOR.
         vendedores_margem_filtro: list[str] = []
+        margens_exigem_filtro = not bool(emp_selected or vendedor_selected)
         if vendedor_selected:
             vendedores_margem_filtro = [vendedor_selected]
         elif emp_selected:
             vendedores_margem_filtro = [normalize_text(v) for v in get_vendedores_para_metas(db, ano, mes, [emp_selected])]
 
-        margens_q = db.query(MetaMargemVendedor).filter(MetaMargemVendedor.ano == ano, MetaMargemVendedor.mes == mes)
-        if vendedores_margem_filtro:
-            margens_q = margens_q.filter(MetaMargemVendedor.vendedor.in_(vendedores_margem_filtro))
-        margens_rows_db_all = (
-            margens_q
-            .order_by(MetaMargemVendedor.vendedor.asc(), MetaMargemVendedor.importado_em.desc(), MetaMargemVendedor.id.desc())
-            .limit(1200)
-            .all()
-        )
-
-        # Pode existir histórico legado por EMP. Para a nova regra, mantém só a última margem por vendedor.
         margens_rows_db = []
-        vistos_vendedores = set()
-        for item in margens_rows_db_all:
-            vend_key = normalize_text(getattr(item, "vendedor", ""))
-            if not vend_key or vend_key in vistos_vendedores:
-                continue
-            vistos_vendedores.add(vend_key)
-            margens_rows_db.append(item)
-            if len(margens_rows_db) >= 600:
-                break
+        if not margens_exigem_filtro:
+            margens_q = db.query(MetaMargemVendedor).filter(MetaMargemVendedor.ano == ano, MetaMargemVendedor.mes == mes)
+            if vendedores_margem_filtro:
+                margens_q = margens_q.filter(MetaMargemVendedor.vendedor.in_(vendedores_margem_filtro))
+            margens_rows_db_all = (
+                margens_q
+                .order_by(MetaMargemVendedor.vendedor.asc(), MetaMargemVendedor.importado_em.desc(), MetaMargemVendedor.id.desc())
+                .limit(1200)
+                .all()
+            )
+
+            # Pode existir histórico legado por EMP. Para a nova regra, mantém só a última margem por vendedor.
+            vistos_vendedores = set()
+            for item in margens_rows_db_all:
+                vend_key = normalize_text(getattr(item, "vendedor", ""))
+                if not vend_key or vend_key in vistos_vendedores:
+                    continue
+                vistos_vendedores.add(vend_key)
+                margens_rows_db.append(item)
+                if len(margens_rows_db) >= 600:
+                    break
 
         margens_rows = []
         crescimento_meta_id = int(crescimento_meta.id) if crescimento_meta else None
@@ -577,11 +597,16 @@ def admin_metas():
             base_rows=base_rows,
             gerente_base_rows=gerente_base_rows,
             mecanico_rows=mecanico_rows,
-            vendedores_choices=get_pessoas_para_metas(db, ano, mes, [emp_selected] if emp_selected else emps_codes),
+            # Sem EMP filtrada, não busca todos os participantes do mês inteiro.
+            # Isso deixava a abertura da página pesada e a lista pouco útil.
+            vendedores_choices=get_pessoas_para_metas(db, ano, mes, [emp_selected]) if emp_selected else [],
+            simular=simular,
+            simulacao_bloqueada_motivo=simulacao_bloqueada_motivo,
             metas_sim=metas_sim,
             resultados_sim=resultados_sim,
             margens_rows=margens_rows,
             margem_minima_ativa=margem_minima_ativa,
+            margens_exigem_filtro=margens_exigem_filtro,
             margens_pendentes=margens_pendentes,
             totais=totais,
             tipo_label=_tipo_label,
@@ -1018,13 +1043,17 @@ def admin_metas_recalcular():
     emp_selected = normalize_emp(request.form.get("emp_sel"))
     vendedor_selected = normalize_text(request.form.get("vendedor"))
 
+    if not emp_selected:
+        flash("Selecione uma EMP para recalcular as metas nesta tela. Isso evita recalcular todas as lojas sem querer e mantém o admin/metas leve.", "warning")
+        return redirect(url_for("admin_metas", ano=ano, mes=mes, emp_sel=emp_selected, vendedor=vendedor_selected))
+
     with SessionLocal() as db:
-        emps = [emp_selected] if emp_selected else []
+        emps = [emp_selected]
         _, resultados = montar_resultados_periodo(db, ano, mes, emps=emps, vendedor=vendedor_selected or None, persist=True)
         db.commit()
 
-    flash(f"Metas recalculadas: {len(resultados)} participante(s)/EMP.", "success")
-    return redirect(url_for("admin_metas", ano=ano, mes=mes, emp_sel=emp_selected, vendedor=vendedor_selected))
+    flash(f"Metas recalculadas para EMP {emp_selected}: {len(resultados)} participante(s)/EMP.", "success")
+    return redirect(url_for("admin_metas", ano=ano, mes=mes, emp_sel=emp_selected, vendedor=vendedor_selected, simular=1))
 
 
 def admin_meta_bases(meta_id: int):

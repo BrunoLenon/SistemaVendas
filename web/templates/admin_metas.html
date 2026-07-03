@@ -31,15 +31,15 @@
         <div><div class="meta-label">Mês</div><input class="form-control form-control-sm" name="mes" value="{{ '%02d'|format(mes) }}" style="width:86px"></div>
         <div><div class="meta-label">Ano</div><input class="form-control form-control-sm" name="ano" value="{{ ano }}" style="width:98px"></div>
         <div><div class="meta-label">EMP</div><select class="form-select form-select-sm" name="emp_sel" style="min-width:150px"><option value="">Todas</option>{% for e in emps_rows %}<option value="{{ e.codigo }}" {% if emp_selected==e.codigo|string %}selected{% endif %}>{{ e.codigo }} - {{ e.nome }}</option>{% endfor %}</select></div>
-        <div><div class="meta-label">Vendedor/Gerente/Mecânico</div><select class="form-select form-select-sm" name="vendedor" style="min-width:230px"><option value="">Todos</option>{% for v in vendedores_choices %}<option value="{{ v }}" {% if vendedor_selected==v %}selected{% endif %}>{{ v }}</option>{% endfor %}</select></div>
+        <div><div class="meta-label">Vendedor/Gerente/Mecânico</div><select class="form-select form-select-sm" name="vendedor" style="min-width:230px"><option value="">{% if emp_selected %}Todos{% else %}Selecione uma EMP{% endif %}</option>{% for v in vendedores_choices %}<option value="{{ v }}" {% if vendedor_selected==v %}selected{% endif %}>{{ v }}</option>{% endfor %}</select></div>
         <button class="btn btn-sm btn-meta-primary px-3">Filtrar</button>
       </form>
     </div>
     <div class="meta-kpis">
       <div class="meta-kpi"><small>Metas cadastradas</small><strong>{{ totais.metas }}</strong><span>{{ totais.ativas }} ativas no período</span></div>
       <div class="meta-kpi"><small>Participantes manuais</small><strong>{{ totais.bases }}</strong><span>Bases e cadastros por EMP</span></div>
-      <div class="meta-kpi"><small>Simulados</small><strong>{{ totais.vendedores_simulados }}</strong><span>Participante(s)/EMP no filtro</span></div>
-      <div class="meta-kpi"><small>Prêmio simulado</small><strong>{{ totais.premio_simulado|brl_rs }}</strong><span>Prévia, não fecha financeiro</span></div>
+      <div class="meta-kpi"><small>Simulados</small><strong>{{ totais.vendedores_simulados }}</strong><span>{% if simular %}Participante(s)/EMP no filtro{% else %}Carrega só ao pedir{% endif %}</span></div>
+      <div class="meta-kpi"><small>Prêmio simulado</small><strong>{{ totais.premio_simulado|brl_rs }}</strong><span>{% if simular %}Prévia, não fecha financeiro{% else %}Admin mais leve{% endif %}</span></div>
       <div class="meta-kpi"><small>Margens importadas</small><strong>{{ totais.margens }}</strong><span>{% if totais.margens_pendentes %}{{ totais.margens_pendentes }} sem margem{% else %}Última margem válida{% endif %}</span></div>
       <div class="meta-kpi"><small>Regras</small><strong>Vendas + Oficina</strong><span>DS/CA descontam vendas</span></div>
     </div>
@@ -401,7 +401,9 @@ VEI</textarea></div>
                 </div>
                 {% if emp_selected %}<span class="meta-chip">EMP {{ emp_selected }}</span>{% endif %}
               </div>
-              {% if margens_rows|length == 0 %}
+              {% if margens_exigem_filtro %}
+                <div class="meta-empty">Selecione uma EMP ou um participante no filtro superior para carregar as margens sem pesar a tela.</div>
+              {% elif margens_rows|length == 0 %}
                 <div class="meta-empty">Nenhuma margem importada para o filtro atual.</div>
               {% else %}
                 <div class="meta-table-wrap" style="max-height:360px">
@@ -445,10 +447,23 @@ VEI</textarea></div>
 
       <div class="tab-pane fade meta-pane" id="tab-simulacao">
         <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
-          <div><h6 class="m-0 fw-bold">Prévia de pagamento</h6><div class="meta-help">Use para conferência antes de fechar mês. O botão recalcula e grava em <b>metas_resultados</b>.</div></div>
-          <form method="post" action="{{ url_for('admin_metas_recalcular') }}"><input type="hidden" name="ano" value="{{ ano }}"><input type="hidden" name="mes" value="{{ mes }}"><input type="hidden" name="emp_sel" value="{{ emp_selected }}"><input type="hidden" name="vendedor" value="{{ vendedor_selected }}"><button class="btn btn-meta-primary btn-sm">Recalcular e gravar resultados</button></form>
+          <div><h6 class="m-0 fw-bold">Prévia de pagamento</h6><div class="meta-help">Use para conferência antes de fechar mês. Para não pesar a abertura da página, a prévia só é calculada quando você clicar em <b>Carregar simulação</b>.</div></div>
+          <div class="meta-actions">
+            <form method="get" action="{{ url_for('admin_metas') }}">
+              <input type="hidden" name="ano" value="{{ ano }}"><input type="hidden" name="mes" value="{{ mes }}"><input type="hidden" name="emp_sel" value="{{ emp_selected }}"><input type="hidden" name="vendedor" value="{{ vendedor_selected }}"><input type="hidden" name="simular" value="1">
+              <button class="btn btn-sm btn-outline-light" {% if not emp_selected %}disabled title="Selecione uma EMP primeiro"{% endif %}>Carregar simulação</button>
+            </form>
+            <form method="post" action="{{ url_for('admin_metas_recalcular') }}" onsubmit="return confirm('Recalcular e gravar resultados da EMP {{ emp_selected or '-' }}?');">
+              <input type="hidden" name="ano" value="{{ ano }}"><input type="hidden" name="mes" value="{{ mes }}"><input type="hidden" name="emp_sel" value="{{ emp_selected }}"><input type="hidden" name="vendedor" value="{{ vendedor_selected }}">
+              <button class="btn btn-meta-primary btn-sm" {% if not emp_selected %}disabled title="Selecione uma EMP primeiro"{% endif %}>Recalcular e gravar resultados</button>
+            </form>
+          </div>
         </div>
-        {% if resultados_sim|length == 0 %}
+        {% if simulacao_bloqueada_motivo %}
+          <div class="meta-empty">{{ simulacao_bloqueada_motivo }}</div>
+        {% elif not simular %}
+          <div class="meta-empty">Simulação não carregada automaticamente. Selecione uma EMP e clique em <b>Carregar simulação</b> para conferir os valores sem deixar o admin/metas pesado.</div>
+        {% elif resultados_sim|length == 0 %}
           <div class="meta-empty">Nenhum resultado para simular. Verifique se há metas ativas, EMP selecionada e vendas no período.</div>
         {% else %}
           <div class="meta-table-wrap">
