@@ -18,7 +18,7 @@
     <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
       <div>
         <h1 class="mb-title">{% if meta_mecanico %}🔧 Mecânicos{% else %}🧮 Bases dos {% if meta_gerente %}Gerentes{% else %}Vendedores{% endif %}{% endif %}</h1>
-        <div class="mb-sub"><strong>{{ meta.nome }}</strong> · {{ tipo_label(meta.tipo) }} · {{ '%02d'|format(meta.mes) }}/{{ meta.ano }}. {% if meta_mecanico %}Confira os mecânicos cadastrados em Admin > Usuários. As faixas usam o faturamento de oficina individual e a liberação usa o faturamento total da EMP.{% elif meta_gerente %}A base é manual por EMP e gerente; o cálculo usa a venda total da loja e a margem atual é a média das margens dos vendedores da EMP.{% else %}A base e a margem mínima individual são manuais por EMP e vendedor.{% endif %} {% if meta.faturamento_minimo %}<b>Faturamento mínimo:</b> {{ meta.faturamento_minimo|brl_rs }}.{% endif %} {% if margem_minima_padrao and not meta_mecanico %}<b>Margem padrão:</b> {{ margem_minima_padrao|brl }}%.{% endif %}</div>
+        <div class="mb-sub"><strong>{{ meta.nome }}</strong> · {{ tipo_label(meta.tipo) }} · {{ '%02d'|format(meta.mes) }}/{{ meta.ano }}. {% if meta_mecanico %}Confira os mecânicos cadastrados em Admin > Usuários. As faixas usam o faturamento de oficina individual e a liberação usa o faturamento total da EMP.{% elif meta_gerente %}A base é manual por EMP e gerente; vendas importadas e oficina são exibidas separadamente, enquanto o crescimento usa o faturamento combinado da loja. A margem atual é a média das margens dos vendedores da EMP.{% else %}A base e a margem mínima individual são manuais por EMP e vendedor. Vendas importadas e oficina ficam separadas para conferência.{% endif %} {% if meta.faturamento_minimo %}<b>Faturamento mínimo:</b> {{ meta.faturamento_minimo|brl_rs }}.{% endif %} {% if margem_minima_padrao and not meta_mecanico %}<b>Margem padrão:</b> {{ margem_minima_padrao|brl }}%.{% endif %}</div>
       </div>
       <form class="mb-filter" method="get" action="{{ url_for('admin_meta_bases', meta_id=meta.id) }}">
         <div><div class="mb-help mb-1">EMP</div><select class="form-select form-select-sm" name="emp" style="min-width:190px">{% for e in emps %}<option value="{{ e }}" {% if emp_selected==e %}selected{% endif %}>{{ e }}</option>{% endfor %}</select></div>
@@ -52,9 +52,9 @@
               <tr><th>Mecânico</th><th class="text-end">Faturamento oficina</th><th class="text-end">Faturamento loja</th><th class="text-end">Alvo loja</th><th class="text-center">Status loja</th><th class="text-end">Faixa referência</th><th class="text-end">Prêmio %</th><th class="text-end">Valor prêmio</th><th style="min-width:260px">Observação</th></tr>
             {% else %}
               {% if meta_gerente %}
-                <tr><th>{{ participante_label }}</th><th class="text-end">Venda total EMP</th><th style="min-width:170px">Meta base loja</th><th style="min-width:180px">Margem mínima loja</th><th class="text-end" style="min-width:190px">Média margem vendedores</th><th class="text-end">Crescimento atual</th><th style="min-width:260px">Observação</th></tr>
+                <tr><th>{{ participante_label }}</th><th class="text-end">Venda importada EMP</th><th class="text-end">Oficina EMP</th><th class="text-end">Faturamento considerado</th><th style="min-width:170px">Meta base loja</th><th style="min-width:180px">Margem mínima loja</th><th class="text-end" style="min-width:190px">Média margem vendedores</th><th class="text-end">Crescimento atual</th><th style="min-width:260px">Observação</th></tr>
               {% else %}
-                <tr><th>{{ participante_label }}</th><th class="text-end">Venda mês</th><th style="min-width:170px">Meta base manual</th><th style="min-width:170px">Margem mínima individual</th><th class="text-end">Margem efetiva</th><th class="text-end">Crescimento atual</th><th style="min-width:260px">Observação</th></tr>
+                <tr><th>{{ participante_label }}</th><th class="text-end">Venda importada</th><th class="text-end">Oficina</th><th class="text-end">Faturamento considerado</th><th style="min-width:170px">Meta base manual</th><th style="min-width:170px">Margem mínima individual</th><th class="text-end">Margem efetiva</th><th class="text-end">Crescimento atual</th><th style="min-width:260px">Observação</th></tr>
               {% endif %}
             {% endif %}
           </thead>
@@ -62,8 +62,8 @@
             {% for l in linhas %}
               <tr>
                 <td class="fw-semibold">{{ l.vendedor }}</td>
-                <td class="text-end">{{ l.venda_mes|brl_rs }}</td>
                 {% if meta_mecanico %}
+                  <td class="text-end">{{ l.venda_mes|brl_rs }}</td>
                   <td class="text-end">{{ l.faturamento_loja|brl_rs }}</td>
                   <td class="text-end">{% if l.faturamento_minimo %}{{ l.faturamento_minimo|brl_rs }}{% else %}-{% endif %}</td>
                   <td class="text-center">{% if l.faturamento_minimo and l.bloqueado_minimo %}<span class="badge bg-warning text-dark">Loja abaixo</span>{% elif l.faturamento_minimo %}<span class="badge bg-success">Loja OK</span>{% else %}<span class="badge bg-secondary">Sem trava</span>{% endif %}</td>
@@ -72,6 +72,9 @@
                   <td class="text-end fw-bold">{{ l.premio|brl_rs }}</td>
                   <td><input type="hidden" name="base__{{ l.vendedor }}" value="0,00"><input class="form-control form-control-sm mb-input" name="obs__{{ l.vendedor }}" value="{{ l.observacao or '' }}" placeholder="Opcional">{% if l.bloqueado_minimo and l.faltante_loja %}<div class="mb-help text-warning">Faltam {{ l.faltante_loja|brl_rs }} na loja</div>{% endif %}</td>
                 {% else %}
+                  <td class="text-end">{{ l.vendas_importadas|brl_rs }}</td>
+                  <td class="text-end">{{ l.oficina_importada|brl_rs }}</td>
+                  <td class="text-end fw-bold">{{ l.venda_mes|brl_rs }}</td>
                   <td><input class="form-control form-control-sm mb-input text-end" name="base__{{ l.vendedor }}" value="{{ l.base_valor|brl if l.base_valor else '' }}" placeholder="0,00"></td>
                   <td>
                     <input class="form-control form-control-sm mb-input text-end" name="margem__{{ l.vendedor }}" value="{{ l.margem_minima_individual|brl if l.margem_minima_individual else '' }}" placeholder="Usa padrão">
@@ -97,12 +100,12 @@
               </tr>
             {% endfor %}
             {% if linhas|length == 0 %}
-              <tr><td colspan="{% if meta_mecanico %}9{% else %}7{% endif %}" class="text-center text-muted py-4">Nenhum {% if meta_mecanico %}mecânico com perfil Mecânico vinculado{% elif meta_gerente %}gerente{% else %}vendedor{% endif %} encontrado para esta EMP no período.</td></tr>
+              <tr><td colspan="9" class="text-center text-muted py-4">Nenhum {% if meta_mecanico %}mecânico com perfil Mecânico vinculado{% elif meta_gerente %}gerente{% else %}vendedor{% endif %} encontrado para esta EMP no período.</td></tr>
             {% endif %}
           </tbody>
         </table>
       </div>
-      <div class="mb-help mt-3">Regra: {% if meta_mecanico %}o mecânico recebe percentual sobre o faturamento de oficina conforme a maior faixa atingida, mas o pagamento só libera se a EMP atingir o faturamento mínimo da loja configurado na regra.{% else %}crescimento = (Venda analisada - Meta base) / Meta base. {% if meta_gerente %}Em meta de gerente, a venda analisada é a EMP inteira, a margem atual é a média das margens dos vendedores da EMP e o prêmio fica no usuário gerente.{% else %}A margem mínima efetiva usa primeiro o valor individual da base; se estiver vazio, usa a margem padrão da meta.{% endif %}{% endif %}</div>
+      <div class="mb-help mt-3">Regra: {% if meta_mecanico %}o mecânico recebe percentual sobre o faturamento de oficina conforme a maior faixa atingida, mas o pagamento só libera se a EMP atingir o faturamento mínimo da loja configurado na regra.{% else %}crescimento = (Faturamento considerado - Meta base) / Meta base. A coluna <b>Venda importada</b> mostra somente OA/OV/SV/VA/VV menos CA/DS; oficina é exibida separadamente. {% if meta_gerente %}Na meta de gerente, o faturamento considerado é o total da EMP inteira, a margem atual é a média das margens dos vendedores da EMP e o prêmio fica no usuário gerente.{% else %}A margem mínima efetiva usa primeiro o valor individual da base; se estiver vazio, usa a margem padrão da meta.{% endif %}{% endif %}</div>
     </div>
   </form>
 </div>

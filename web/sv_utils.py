@@ -215,8 +215,19 @@ def sort_emp_codes(codigos: object) -> list[str]:
     return sorted(out, key=emp_sort_key)
 
 def _emp_norm(emp: str | None) -> str:
-    """Normaliza EMP para armazenamento ('' quando nulo)."""
-    return (emp or "").strip()
+    """Normaliza EMP para armazenamento e comparação.
+
+    Planilhas do Excel frequentemente entregam códigos inteiros como ``101.0``.
+    Como EMP é um identificador textual inteiro no SistemaVendas, mantemos
+    ``101`` e ``101.0`` como a mesma loja. Valores realmente alfanuméricos não
+    são alterados.
+    """
+    s = str(emp or "").strip()
+    if not s:
+        return ""
+    if re.fullmatch(r"[+-]?\d+\.0+", s):
+        return s.split(".", 1)[0]
+    return s
 
 def _parse_multi_args(name: str) -> list[str]:
     from flask import request

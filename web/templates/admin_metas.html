@@ -281,10 +281,10 @@ VEI</textarea></div>
           </div>
           <div class="meta-table-wrap">
             <table class="table table-sm meta-table">
-              <thead><tr><th>Vendedor</th><th class="text-end">Venda mês</th><th class="text-end">Meta base</th><th class="text-end">Cresc.</th><th class="text-end">Margem mínima</th><th>Observação</th></tr></thead>
+              <thead><tr><th>Vendedor</th><th class="text-end">Venda importada</th><th class="text-end">Oficina</th><th class="text-end">Faturamento considerado</th><th class="text-end">Meta base</th><th class="text-end">Cresc.</th><th class="text-end">Margem mínima</th><th>Observação</th></tr></thead>
               <tbody>
                 {% for r in base_rows %}
-                  <tr><td class="fw-semibold">{{ r.vendedor }}</td><td class="text-end">{{ r.venda_mes|brl_rs }}</td><td class="text-end">{{ r.base_valor|brl_rs }}</td><td class="text-end">{{ r.crescimento_pct|brl }}%</td><td class="text-end">{% if r.margem_minima_efetiva %}{{ r.margem_minima_efetiva|brl }}% <span class="meta-chip {% if r.margem_minima_origem == 'individual' %}ok{% endif %}">{{ 'Individual' if r.margem_minima_origem == 'individual' else 'Padrão' }}</span>{% else %}-{% endif %}</td><td>{{ r.observacao or '-' }}</td></tr>
+                  <tr><td class="fw-semibold">{{ r.vendedor }}</td><td class="text-end">{{ r.vendas_importadas|brl_rs }}</td><td class="text-end">{{ r.oficina_importada|brl_rs }}</td><td class="text-end fw-bold">{{ r.venda_mes|brl_rs }}</td><td class="text-end">{{ r.base_valor|brl_rs }}</td><td class="text-end">{{ r.crescimento_pct|brl }}%</td><td class="text-end">{% if r.margem_minima_efetiva %}{{ r.margem_minima_efetiva|brl }}% <span class="meta-chip {% if r.margem_minima_origem == 'individual' %}ok{% endif %}">{{ 'Individual' if r.margem_minima_origem == 'individual' else 'Padrão' }}</span>{% else %}-{% endif %}</td><td>{{ r.observacao or '-' }}</td></tr>
                 {% endfor %}
               </tbody>
             </table>
@@ -299,17 +299,19 @@ VEI</textarea></div>
           <div class="meta-empty">Selecione uma EMP no filtro superior para editar a base do gerente com segurança.</div>
         {% else %}
           <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
-            <div><h6 class="m-0 fw-bold">Bases de gerente da {{ emp_selected }}</h6><div class="meta-help">Meta: <b>{{ crescimento_gerente_meta.nome }}</b>. A venda mês abaixo é o total da EMP inteira; a margem atual do gerente é a média das margens dos vendedores da EMP.</div></div>
+            <div><h6 class="m-0 fw-bold">Bases de gerente da {{ emp_selected }}</h6><div class="meta-help">Meta: <b>{{ crescimento_gerente_meta.nome }}</b>. As vendas importadas e a oficina são exibidas separadamente; o crescimento usa o faturamento combinado da EMP inteira. A margem atual do gerente é a média das margens dos vendedores da EMP.</div></div>
             <a class="btn btn-sm btn-outline-light" href="{{ url_for('admin_meta_bases', meta_id=crescimento_gerente_meta.id, emp=emp_selected) }}">Abrir tela completa de bases</a>
           </div>
           <div class="meta-table-wrap">
             <table class="table table-sm meta-table">
-              <thead><tr><th>Gerente</th><th class="text-end">Venda total EMP</th><th class="text-end">Meta base loja</th><th class="text-end">Cresc.</th><th class="text-end">Margem média / mínima</th><th>Observação</th></tr></thead>
+              <thead><tr><th>Gerente</th><th class="text-end">Venda importada EMP</th><th class="text-end">Oficina EMP</th><th class="text-end">Faturamento considerado</th><th class="text-end">Meta base loja</th><th class="text-end">Cresc.</th><th class="text-end">Margem média / mínima</th><th>Observação</th></tr></thead>
               <tbody>
                 {% for r in gerente_base_rows %}
                   <tr>
                     <td class="fw-semibold">{{ r.vendedor }}</td>
-                    <td class="text-end">{{ r.venda_mes|brl_rs }}</td>
+                    <td class="text-end">{{ r.vendas_importadas|brl_rs }}</td>
+                    <td class="text-end">{{ r.oficina_importada|brl_rs }}</td>
+                    <td class="text-end fw-bold">{{ r.venda_mes|brl_rs }}</td>
                     <td class="text-end">{{ r.base_valor|brl_rs }}</td>
                     <td class="text-end">{{ r.crescimento_pct|brl }}%</td>
                     <td class="text-end">
@@ -324,7 +326,7 @@ VEI</textarea></div>
                     <td>{{ r.observacao or '-' }}</td>
                   </tr>
                 {% endfor %}
-                {% if gerente_base_rows|length == 0 %}<tr><td colspan="6" class="text-center text-muted py-4">Nenhum gerente vinculado a esta EMP.</td></tr>{% endif %}
+                {% if gerente_base_rows|length == 0 %}<tr><td colspan="8" class="text-center text-muted py-4">Nenhum gerente vinculado a esta EMP.</td></tr>{% endif %}
               </tbody>
             </table>
           </div>
@@ -469,12 +471,12 @@ VEI</textarea></div>
           <div class="meta-table-wrap">
             <table class="table table-sm meta-table">
               <thead>
-                <tr><th>EMP</th><th>Participante</th><th class="text-end">Venda analisada</th>{% for m in metas_sim %}<th class="text-end">{{ m.nome }}</th>{% endfor %}<th class="text-end">Total</th></tr>
+                <tr><th>EMP</th><th>Participante</th><th class="text-end">Venda importada</th><th class="text-end">Oficina</th><th class="text-end">Faturamento considerado</th>{% for m in metas_sim %}<th class="text-end">{{ m.nome }}</th>{% endfor %}<th class="text-end">Total</th></tr>
               </thead>
               <tbody>
                 {% for r in resultados_sim %}
                   <tr>
-                    <td>{{ r.emp }}</td><td class="fw-semibold">{{ r.vendedor }}</td><td class="text-end">{{ r.valor_mes|brl_rs }}</td>
+                    <td>{{ r.emp }}</td><td class="fw-semibold">{{ r.vendedor }}</td><td class="text-end">{{ r.vendas_importadas|brl_rs }}</td><td class="text-end">{{ r.oficina_importada|brl_rs }}</td><td class="text-end fw-bold">{{ r.faturamento_considerado|brl_rs }}</td>
                     {% for m in metas_sim %}
                       {% set d = r.detalhes.get(m.id) %}
                       <td class="text-end">

@@ -119,46 +119,162 @@ def signed_value_sql(column_name: str = "valor_total") -> str:
     """Expressao SQL de valor assinado conforme regra comercial de vendas."""
     return f"""
         CASE
-          WHEN COALESCE(qtdade_vendida,0) > 0
-           AND UPPER(COALESCE(mov_tipo_movto,'')) = ANY(:negativos)
+          WHEN ABS(COALESCE(qtdade_vendida,0)) > 0
+           AND UPPER(TRIM(COALESCE(mov_tipo_movto,''))) = ANY(:negativos)
             THEN -ABS(COALESCE({column_name},0))
-          WHEN COALESCE(qtdade_vendida,0) > 0
-           AND UPPER(COALESCE(mov_tipo_movto,'')) = ANY(:positivos)
+          WHEN ABS(COALESCE(qtdade_vendida,0)) > 0
+           AND UPPER(TRIM(COALESCE(mov_tipo_movto,''))) = ANY(:positivos)
             THEN COALESCE({column_name},0)
           ELSE 0
         END
     """
 
 
+def _metas_query_cache(db) -> dict:
+    cache = getattr(db, "_metas_query_cache", None)
+    if cache is None:
+        cache = {}
+        try:
+            setattr(db, "_metas_query_cache", cache)
+        except Exception:
+            pass
+    return cache
+
+
+def _emp_db_variants(emp: object) -> list[str]:
+    """Retorna EMP normalizada e a forma decimal legada do Excel.
+
+    Até versões anteriores, uma célula numérica podia ser armazenada como
+    ``101.0``. A leitura aceita essa variante para não ocultar vendas antigas;
+    novas importações já são gravadas como ``101``.
+    """
+    emp_n = normalize_emp(emp)
+    if not emp_n:
+        return []
+    values = [emp_n]
+    if emp_n.lstrip("+-").isdigit():
+        values.append(f"{emp_n}.0")
+    return list(dict.fromkeys(values))
+
+
 def _scope_emp_clause(emps: list[str]) -> tuple[str, dict]:
-    clean = [normalize_emp(e) for e in (emps or []) if normalize_emp(e)]
+    clean: list[str] = []
+    for e in emps or []:
+        clean.extend(_emp_db_variants(e))
+    clean = list(dict.fromkeys(clean))
     if not clean:
         return "", {}
     return "AND emp = ANY(:emps)", {"emps": clean}
 
 
+def query_resumo_vendas_mes(
+    db,
+    ano: int,
+    mes: int,
+    emps: list[str] | str,
+    vendedor: str | None = None,
+) -> dict[str, float | int]:
+    """Resumo auditável das vendas importadas na competência.
+
+    ``total_liquido`` é a fonte oficial de **Venda analisada** na página Metas:
+    vendas OA/OV/SV/VA/VV menos CA/DS. Linhas com quantidade zero são mantidas
+    para rastreabilidade, porém não entram nos valores. Quantidade negativa em
+    CA/DS também é aceita, pois o tipo de movimento define o sinal financeiro.
+    """
+    emps_list = [emps] if isinstance(emps, str) else list(emps or [])
+    emps_norm = [normalize_emp(e) for e in emps_list if normalize_emp(e)]
+    vendedor_n = normalize_text(vendedor)
+    cache_key = ("resumo_vendas", int(ano), int(mes), tuple(sorted(set(emps_norm))), vendedor_n)
+    cache = _metas_query_cache(db)
+    if cache_key in cache:
+        return dict(cache[cache_key])
+
+    inicio, fim = periodo_bounds_ym(ano, mes)
+    emp_clause, emp_params = _scope_emp_clause(emps_norm)
+    vendedor_clause = "AND UPPER(TRIM(COALESCE(vendedor,''))) = :vendedor" if vendedor_n else ""
+    sql = f"""
+        SELECT
+          COALESCE(SUM(CASE
+            WHEN ABS(COALESCE(qtdade_vendida,0)) > 0
+             AND UPPER(TRIM(COALESCE(mov_tipo_movto,''))) = ANY(:positivos)
+              THEN COALESCE(valor_total,0) ELSE 0 END),0)::double precision AS total_vendas,
+          COALESCE(SUM(CASE
+            WHEN ABS(COALESCE(qtdade_vendida,0)) > 0
+             AND UPPER(TRIM(COALESCE(mov_tipo_movto,''))) = 'CA'
+              THEN ABS(COALESCE(valor_total,0)) ELSE 0 END),0)::double precision AS total_cancelamentos,
+          COALESCE(SUM(CASE
+            WHEN ABS(COALESCE(qtdade_vendida,0)) > 0
+             AND UPPER(TRIM(COALESCE(mov_tipo_movto,''))) = 'DS'
+              THEN ABS(COALESCE(valor_total,0)) ELSE 0 END),0)::double precision AS total_devolucoes,
+          COALESCE(SUM({signed_value_sql('valor_total')}),0)::double precision AS total_liquido,
+          COUNT(*)::integer AS linhas_importadas,
+          COUNT(*) FILTER (WHERE ABS(COALESCE(qtdade_vendida,0)) <= 0)::integer AS linhas_qtd_zero,
+          COUNT(*) FILTER (
+            WHERE ABS(COALESCE(qtdade_vendida,0)) > 0
+              AND UPPER(TRIM(COALESCE(mov_tipo_movto,''))) <> ALL(:movimentos_calculo)
+          )::integer AS linhas_movimento_ignorado
+          FROM vendas
+         WHERE movimento BETWEEN :ini AND :fim
+           {emp_clause}
+           {vendedor_clause}
+    """
+    params = {
+        "ini": inicio,
+        "fim": fim,
+        "vendedor": vendedor_n,
+        "movimentos_calculo": list(POSITIVE_MOV_TYPES) + list(NEGATIVE_MOV_TYPES),
+        **_mov_params(),
+        **emp_params,
+    }
+    row = db.execute(text(sql), params).fetchone()
+    resumo: dict[str, float | int] = {
+        "total_vendas": float(row[0] or 0.0) if row else 0.0,
+        "total_cancelamentos": float(row[1] or 0.0) if row else 0.0,
+        "total_devolucoes": float(row[2] or 0.0) if row else 0.0,
+        "total_liquido": float(row[3] or 0.0) if row else 0.0,
+        "linhas_importadas": int(row[4] or 0) if row else 0,
+        "linhas_qtd_zero": int(row[5] or 0) if row else 0,
+        "linhas_movimento_ignorado": int(row[6] or 0) if row else 0,
+    }
+    cache[cache_key] = dict(resumo)
+    return resumo
+
+
+def query_valor_vendas_mes(db, ano: int, mes: int, emp: str, vendedor: str | None = None) -> float:
+    """Venda líquida importada, sem somar mão de obra/oficina."""
+    return float(query_resumo_vendas_mes(db, ano, mes, [emp], vendedor).get("total_liquido") or 0.0)
+
+
+def query_valor_oficina_mes(db, ano: int, mes: int, emp: str, usuario: str | None = None) -> float:
+    emp_n = normalize_emp(emp)
+    usuario_n = normalize_text(usuario)
+    cache_key = ("valor_oficina", int(ano), int(mes), emp_n, usuario_n)
+    cache = _metas_query_cache(db)
+    if cache_key not in cache:
+        cache[cache_key] = float(
+            sum_servicos_oficina_mes(
+                db,
+                ano=int(ano),
+                mes=int(mes),
+                emp=emp_n,
+                usuario=usuario_n or None,
+            )
+            or 0.0
+        )
+    return float(cache[cache_key] or 0.0)
+
+
 def query_valor_mes(db, ano: int, mes: int, emp: str, vendedor: str | None = None) -> float:
-    """Faturamento líquido do mês para EMP e opcionalmente usuário.
+    """Faturamento total do mês para EMP e opcionalmente usuário.
 
     Soma vendas de balcão (tabela ``vendas``) + mão de obra/oficina
     (tabela ``oficina_servicos``). Serviço não afeta mix nem venda por marca,
     mas entra no faturamento usado por metas e campanhas.
     """
-    inicio, fim = periodo_bounds_ym(ano, mes)
     emp_n = normalize_emp(emp)
     vendedor_n = normalize_text(vendedor)
-    vendedor_clause = "AND UPPER(COALESCE(vendedor,'')) = :vendedor" if vendedor_n else ""
-    sql = f"""
-        SELECT COALESCE(SUM({signed_value_sql('valor_total')}),0)::double precision
-          FROM vendas
-         WHERE emp = :emp
-           {vendedor_clause}
-           AND movimento BETWEEN :ini AND :fim
-    """
-    params = {"emp": emp_n, "vendedor": vendedor_n, "ini": inicio, "fim": fim, **_mov_params()}
-    row = db.execute(text(sql), params).fetchone()
-    valor_vendas = float(row[0] or 0.0) if row else 0.0
-    valor_oficina = sum_servicos_oficina_mes(db, ano=ano, mes=mes, emp=emp_n, usuario=vendedor_n or None)
+    valor_vendas = query_valor_vendas_mes(db, ano, mes, emp_n, vendedor_n or None)
+    valor_oficina = query_valor_oficina_mes(db, ano, mes, emp_n, vendedor_n or None)
     return float(valor_vendas + valor_oficina)
 
 
@@ -173,13 +289,7 @@ def _query_valor_emp_mes(db, ano: int, mes: int, emp: str) -> float:
 
 def query_valor_mecanico_mes(db, ano: int, mes: int, emp: str, mecanico: str) -> float:
     """Faturamento de oficina/mão de obra por mecânico na competência."""
-    return sum_servicos_oficina_mes(
-        db,
-        ano=int(ano),
-        mes=int(mes),
-        emp=normalize_emp(emp),
-        usuario=normalize_text(mecanico) or None,
-    )
+    return query_valor_oficina_mes(db, ano, mes, emp, mecanico)
 
 
 def query_valor_marcas(db, ano: int, mes: int, emp: str, vendedor: str | None, marcas: list[str]) -> tuple[float, float, float]:
@@ -194,7 +304,7 @@ def query_valor_marcas(db, ano: int, mes: int, emp: str, vendedor: str | None, m
         return 0.0, 0.0, query_valor_mes(db, ano, mes, emp, vendedor)
 
     vendedor_n = normalize_text(vendedor)
-    vendedor_clause = "AND UPPER(COALESCE(vendedor,'')) = :vendedor" if vendedor_n else ""
+    vendedor_clause = "AND UPPER(TRIM(COALESCE(vendedor,''))) = :vendedor" if vendedor_n else ""
     sql = f"""
         SELECT
           COALESCE(SUM(CASE WHEN UPPER(COALESCE(marca,'')) = ANY(:marcas)
@@ -202,12 +312,12 @@ def query_valor_marcas(db, ano: int, mes: int, emp: str, vendedor: str | None, m
                             ELSE 0 END),0)::double precision AS valor_marcas,
           COALESCE(SUM({signed_value_sql('valor_total')}),0)::double precision AS valor_total
           FROM vendas
-         WHERE emp = :emp
+         WHERE emp = ANY(:emps)
            {vendedor_clause}
            AND movimento BETWEEN :ini AND :fim
     """
     params = {
-        "emp": normalize_emp(emp),
+        "emps": _emp_db_variants(emp),
         "vendedor": vendedor_n,
         "marcas": marcas_norm,
         "ini": inicio,
@@ -219,7 +329,7 @@ def query_valor_marcas(db, ano: int, mes: int, emp: str, vendedor: str | None, m
     valor_total = float(row[1] or 0.0) if row else 0.0
     # Serviço de oficina compõe o faturamento total do usuário/EMP. Como não
     # possui marca, entra apenas no denominador de metas de share.
-    valor_total += sum_servicos_oficina_mes(db, ano=ano, mes=mes, emp=emp, usuario=vendedor_n or None)
+    valor_total += query_valor_oficina_mes(db, ano=ano, mes=mes, emp=emp, usuario=vendedor_n or None)
     share = (valor_marcas / valor_total * 100.0) if valor_total > 0 else 0.0
     return float(share), float(valor_marcas), float(valor_total)
 
@@ -235,22 +345,22 @@ def query_mix_itens_unicos(db, ano: int, mes: int, emp: str, vendedor: str | Non
     """
     inicio, fim = periodo_bounds_ym(ano, mes)
     vendedor_n = normalize_text(vendedor)
-    vendedor_clause = "AND UPPER(COALESCE(vendedor,'')) = :vendedor" if vendedor_n else ""
+    vendedor_clause = "AND UPPER(TRIM(COALESCE(vendedor,''))) = :vendedor" if vendedor_n else ""
     sql = f"""
       WITH por_produto AS (
         SELECT
           UPPER(TRIM(COALESCE(mestre,''))) AS mestre_norm,
           SUM(
             CASE
-              WHEN UPPER(COALESCE(mov_tipo_movto,'')) = ANY(:negativos)
+              WHEN UPPER(TRIM(COALESCE(mov_tipo_movto,''))) = ANY(:negativos)
                 THEN -ABS(COALESCE(qtdade_vendida,0))
-              WHEN UPPER(COALESCE(mov_tipo_movto,'')) = ANY(:positivos)
+              WHEN UPPER(TRIM(COALESCE(mov_tipo_movto,''))) = ANY(:positivos)
                 THEN COALESCE(qtdade_vendida,0)
               ELSE 0
             END
           ) AS qtd_liquida
         FROM vendas
-        WHERE emp = :emp
+        WHERE emp = ANY(:emps)
           {vendedor_clause}
           AND movimento BETWEEN :ini AND :fim
           AND COALESCE(mestre,'') <> ''
@@ -262,7 +372,7 @@ def query_mix_itens_unicos(db, ano: int, mes: int, emp: str, vendedor: str | Non
          AND qtd_liquida > 0
     """
     params = {
-        "emp": normalize_emp(emp),
+        "emps": _emp_db_variants(emp),
         "vendedor": vendedor_n,
         "ini": inicio,
         "fim": fim,
@@ -833,6 +943,10 @@ class MetaCalc:
     # Valor usado para validar a trava de faturamento mínimo.
     # Em vendedor = venda do próprio participante; em gerente/mecânico = total da EMP.
     faturamento_emp: float | None = None
+    # Fontes separadas para conferência da página Metas.
+    vendas_importadas: float = 0.0
+    oficina_importada: float = 0.0
+    faturamento_considerado: float = 0.0
 
 
 def calcular_meta(db, meta: MetaPrograma, emp: str, vendedor: str, persist: bool = False) -> MetaCalc:
@@ -964,6 +1078,26 @@ def calcular_meta(db, meta: MetaPrograma, emp: str, vendedor: str, persist: bool
         # alvo correto cadastrado em Bases dos Gerentes.
         if _safe_base is not None and (not calc.base_valor or float(calc.base_valor or 0.0) <= 0):
             calc.base_valor = float(getattr(_safe_base, "base_valor", 0.0) or 0.0)
+
+    # Mantém as fontes visíveis e auditáveis. A coluna "Venda analisada" deve
+    # representar somente o líquido importado em `vendas`; oficina aparece em
+    # coluna separada. O faturamento considerado conserva a regra já usada nas
+    # metas (vendas + oficina, ou oficina individual na meta de mecânico).
+    try:
+        calc.vendas_importadas = float(
+            query_valor_vendas_mes(db, meta.ano, meta.mes, emp_n, vendedor_metrica)
+            or 0.0
+        )
+    except Exception:
+        calc.vendas_importadas = 0.0
+    try:
+        calc.oficina_importada = float(
+            query_valor_oficina_mes(db, meta.ano, meta.mes, emp_n, vendedor_metrica)
+            or 0.0
+        )
+    except Exception:
+        calc.oficina_importada = 0.0
+    calc.faturamento_considerado = float(calc.valor_mes or 0.0)
 
     # Trava de faturamento mínimo:
     # - Vendedor: compara contra a venda do próprio vendedor.
@@ -1120,13 +1254,30 @@ def montar_resultados_periodo(
                     {
                         "emp": emp,
                         "vendedor": vend,
-                        "valor_mes": float(calc.valor_mes or 0.0),
+                        # Compatibilidade: valor_mes passa a refletir apenas as
+                        # vendas importadas, exatamente como a coluna exibida.
+                        "valor_mes": float(calc.vendas_importadas or 0.0),
+                        "vendas_importadas": float(calc.vendas_importadas or 0.0),
+                        "oficina_importada": float(calc.oficina_importada or 0.0),
+                        "faturamento_considerado": float(calc.faturamento_considerado or 0.0),
                         "metas": {},
                         "detalhes": {},
                         "total_premios": 0.0,
                     },
                 )
-                row["valor_mes"] = max(float(row.get("valor_mes") or 0.0), float(calc.valor_mes or 0.0))
+                row["vendas_importadas"] = max(
+                    float(row.get("vendas_importadas") or 0.0),
+                    float(calc.vendas_importadas or 0.0),
+                )
+                row["oficina_importada"] = max(
+                    float(row.get("oficina_importada") or 0.0),
+                    float(calc.oficina_importada or 0.0),
+                )
+                row["faturamento_considerado"] = max(
+                    float(row.get("faturamento_considerado") or 0.0),
+                    float(calc.faturamento_considerado or 0.0),
+                )
+                row["valor_mes"] = float(row["vendas_importadas"])
                 row["metas"][int(meta.id)] = float(calc.premio or 0.0)
                 row["detalhes"][int(meta.id)] = calc
                 row["total_premios"] = round(float(row.get("total_premios") or 0.0) + float(calc.premio or 0.0), 2)

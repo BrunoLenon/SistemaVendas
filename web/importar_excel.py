@@ -32,7 +32,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from db import SessionLocal, Venda
 from dashboard_cache import refresh_dashboard_cache
-from sv_utils import MOVIMENTOS_VENDA, MOVIMENTOS_NEGATIVOS, classificar_movimento
+from sv_utils import MOVIMENTOS_VENDA, MOVIMENTOS_NEGATIVOS, _emp_norm, classificar_movimento
 
 
 REQUIRED_COLS = [
@@ -137,6 +137,27 @@ def _norm_key_str(value: Any, *, upper: bool = False) -> str:
     return s.upper() if upper else s
 
 
+def _norm_emp_key(value: Any) -> str:
+    """Normaliza EMP vindo de Excel/CSV sem transformar 101 em ``101.0``."""
+    return _emp_norm(_norm_str(value) or "")
+
+
+def _emp_db_variants(value: Any) -> list[str]:
+    """Variantes legadas usadas ao substituir um recorte já importado.
+
+    Versões anteriores podiam gravar EMP numérica como ``101.0``. Durante o
+    reprocessamento, removemos tanto a forma normalizada quanto a variante
+    legada para não manter duas cópias do mesmo dia/loja.
+    """
+    emp = _norm_emp_key(value)
+    if not emp:
+        return []
+    variants = [emp]
+    if emp.lstrip("+-").isdigit():
+        variants.append(f"{emp}.0")
+    return list(dict.fromkeys(variants))
+
+
 
 def _norm_text(value: Any) -> Optional[str]:
     """Normaliza texto para comparações estáveis (lowercase, sem acento, espaços colapsados)."""
@@ -177,7 +198,7 @@ def _month_period_from_date(emp: str, mov: dt.date) -> Tuple[str, int, int]:
 def _safe_date_key(emp: Any, mov: Any) -> Optional[Tuple[str, dt.date]]:
     """Retorna chave segura (EMP, data) para reprocessamento automático."""
     try:
-        e = _norm_str(emp)
+        e = _norm_emp_key(emp)
         d = _to_date(mov)
         if not e or not d:
             return None
@@ -192,16 +213,17 @@ def _delete_affected_dates_in_session(db, datas: List[Tuple[str, dt.date]]) -> D
     Esta é a trava principal contra perda de venda: se a importação falhar
     depois do DELETE, o rollback devolve as vendas antigas.
     """
-    unique_dates = sorted({(str(emp), mov) for emp, mov in datas if emp and mov})
+    unique_dates = sorted({(_norm_emp_key(emp), mov) for emp, mov in datas if _norm_emp_key(emp) and mov})
     if not unique_dates:
         return {"ok": True, "tipo": "EMP_DATA", "recortes": 0, "linhas_apagadas": 0, "detalhes": []}
 
     detalhes = []
     total = 0
     for emp, mov in unique_dates:
+        variants = _emp_db_variants(emp)
         apagadas = (
             db.query(Venda)
-            .filter(Venda.emp == str(emp))
+            .filter(Venda.emp.in_(variants))
             .filter(Venda.movimento == mov)
             .delete(synchronize_session=False)
         )
@@ -474,7 +496,7 @@ def importar_planilha(
                         continue
 
                     nota = _norm_key_str(get("NOTA"))
-                    emp = _norm_key_str(get("EMP"))
+                    emp = _norm_emp_key(get("EMP"))
                     if not emp:
                         erros_linha += 1
                         continue
@@ -694,7 +716,7 @@ def importar_planilha(
             try:
                 # períodos (emp, ano, mes) presentes no chunk
                 for _emp, _mov in chunk[["EMP","MOVIMENTO"]].dropna().itertuples(index=False, name=None):
-                    _e = str(_emp).strip()
+                    _e = _norm_emp_key(_emp)
                     if not _e or not _mov:
                         continue
                     affected_periods.add((_e, int(_mov.year), int(_mov.month)))
@@ -712,7 +734,7 @@ def importar_planilha(
                         continue
 
                     nota = _norm_key_str(row.get("NOTA"))
-                    emp = _norm_key_str(row.get("EMP"))
+                    emp = _norm_emp_key(row.get("EMP"))
                     if not emp:
                         erros_linha += 1
                         continue

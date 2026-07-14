@@ -3,7 +3,7 @@
 
 {% block extra_head %}
 <style>
-  .metas-page{max-width:1580px;margin:0 auto;padding:4px 0 22px}.metas-hero{border:1px solid rgba(255,255,255,.08);border-radius:24px;padding:18px;background:radial-gradient(circle at top right,rgba(255,145,0,.20),transparent 32%),linear-gradient(180deg,rgba(255,255,255,.055),rgba(255,255,255,.025));box-shadow:0 18px 42px rgba(0,0,0,.24)}.metas-title{font-size:28px;font-weight:900;letter-spacing:-.035em;margin:0}.metas-sub{color:#bdbdbd;font-size:13px;max-width:860px;margin-top:7px}.metas-filter{display:flex;gap:8px;flex-wrap:wrap;align-items:end}.metas-filter .form-control,.metas-filter .form-select{background:rgba(12,12,12,.82);border-color:rgba(255,255,255,.10);color:#fff;border-radius:12px;min-height:38px}.metas-label{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#a6a6a6;font-weight:900;margin-bottom:6px}.metas-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:14px}.metas-kpi{border:1px solid rgba(255,255,255,.08);border-radius:18px;background:rgba(0,0,0,.24);padding:13px}.metas-kpi small{display:block;color:#999;text-transform:uppercase;letter-spacing:.08em;font-weight:800;font-size:10px}.metas-kpi strong{display:block;color:#fff;font-size:24px;line-height:1.05;margin-top:8px}.metas-kpi span{color:#bdbdbd;font-size:12px}.metas-card{border:1px solid rgba(255,255,255,.08);border-radius:22px;background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,.02));padding:16px}.metas-table-wrap{border:1px solid rgba(255,255,255,.08);border-radius:18px;overflow:auto;background:rgba(0,0,0,.14)}.metas-table{margin:0}.metas-table th{position:sticky;top:0;z-index:2;background:rgba(17,17,17,.96)!important;color:#bdbdbd;font-size:11px;text-transform:uppercase;letter-spacing:.07em;white-space:nowrap}.metas-table td,.metas-table th{padding:.62rem .68rem;border-color:rgba(255,255,255,.065);vertical-align:middle}.metas-table tbody td{background:rgba(5,5,5,.32)!important}.metas-table tbody tr:nth-child(even) td{background:rgba(255,255,255,.028)!important}.metas-table tbody tr:hover td{background:rgba(255,145,0,.08)!important}.metas-chip{display:inline-flex;align-items:center;gap:5px;border:1px solid rgba(255,255,255,.10);background:rgba(255,255,255,.045);border-radius:999px;padding:4px 9px;font-size:12px;font-weight:800;margin:2px 3px 2px 0;white-space:nowrap}.metas-chip.ok{background:rgba(46,204,113,.11);border-color:rgba(46,204,113,.22);color:#9de7b5}.metas-chip.warn{background:rgba(255,177,66,.10);border-color:rgba(255,177,66,.24);color:#ffd098}.metas-empty{border:1px dashed rgba(255,255,255,.14);border-radius:18px;padding:28px;text-align:center;color:#bdbdbd;background:rgba(255,255,255,.025)}.metas-detail{font-size:12px;color:#aeb0b3;margin-top:2px}.metas-value{font-weight:900;color:#fff}.metas-total{font-size:16px;font-weight:900}.metas-progress{height:6px;background:rgba(255,255,255,.09);border-radius:999px;overflow:hidden;margin-top:7px}.metas-progress>span{display:block;height:100%;background:linear-gradient(90deg,#ff8a00,#ffbc64);border-radius:999px}@media(max-width:1100px){.metas-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:760px){.metas-kpis{grid-template-columns:1fr}.metas-title{font-size:23px}}
+  .metas-page{max-width:1580px;margin:0 auto;padding:4px 0 22px}.metas-hero{border:1px solid rgba(255,255,255,.08);border-radius:24px;padding:18px;background:radial-gradient(circle at top right,rgba(255,145,0,.20),transparent 32%),linear-gradient(180deg,rgba(255,255,255,.055),rgba(255,255,255,.025));box-shadow:0 18px 42px rgba(0,0,0,.24)}.metas-title{font-size:28px;font-weight:900;letter-spacing:-.035em;margin:0}.metas-sub{color:#bdbdbd;font-size:13px;max-width:960px;margin-top:7px}.metas-filter{display:flex;gap:8px;flex-wrap:wrap;align-items:end}.metas-filter .form-control,.metas-filter .form-select{background:rgba(12,12,12,.82);border-color:rgba(255,255,255,.10);color:#fff;border-radius:12px;min-height:38px}.metas-label{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#a6a6a6;font-weight:900;margin-bottom:6px}.metas-kpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:14px}.metas-kpi{border:1px solid rgba(255,255,255,.08);border-radius:18px;background:rgba(0,0,0,.24);padding:13px}.metas-kpi small{display:block;color:#999;text-transform:uppercase;letter-spacing:.08em;font-weight:800;font-size:10px}.metas-kpi strong{display:block;color:#fff;font-size:24px;line-height:1.05;margin-top:8px}.metas-kpi span{color:#bdbdbd;font-size:12px}.metas-audit{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;padding:10px 12px;border:1px solid rgba(255,255,255,.07);border-radius:14px;background:rgba(0,0,0,.18);color:#bdbdbd;font-size:12px}.metas-audit b{color:#fff}.metas-card{border:1px solid rgba(255,255,255,.08);border-radius:22px;background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,.02));padding:16px}.metas-table-wrap{border:1px solid rgba(255,255,255,.08);border-radius:18px;overflow:auto;background:rgba(0,0,0,.14)}.metas-table{margin:0}.metas-table th{position:sticky;top:0;z-index:2;background:rgba(17,17,17,.96)!important;color:#bdbdbd;font-size:11px;text-transform:uppercase;letter-spacing:.07em;white-space:nowrap}.metas-table td,.metas-table th{padding:.62rem .68rem;border-color:rgba(255,255,255,.065);vertical-align:middle}.metas-table tbody td{background:rgba(5,5,5,.32)!important}.metas-table tbody tr:nth-child(even) td{background:rgba(255,255,255,.028)!important}.metas-table tbody tr:hover td{background:rgba(255,145,0,.08)!important}.metas-chip{display:inline-flex;align-items:center;gap:5px;border:1px solid rgba(255,255,255,.10);background:rgba(255,255,255,.045);border-radius:999px;padding:4px 9px;font-size:12px;font-weight:800;margin:2px 3px 2px 0;white-space:nowrap}.metas-chip.ok{background:rgba(46,204,113,.11);border-color:rgba(46,204,113,.22);color:#9de7b5}.metas-chip.warn{background:rgba(255,177,66,.10);border-color:rgba(255,177,66,.24);color:#ffd098}.metas-empty{border:1px dashed rgba(255,255,255,.14);border-radius:18px;padding:28px;text-align:center;color:#bdbdbd;background:rgba(255,255,255,.025)}.metas-detail{font-size:12px;color:#aeb0b3;margin-top:2px}.metas-value{font-weight:900;color:#fff}.metas-total{font-size:16px;font-weight:900}.metas-progress{height:6px;background:rgba(255,255,255,.09);border-radius:999px;overflow:hidden;margin-top:7px}.metas-progress>span{display:block;height:100%;background:linear-gradient(90deg,#ff8a00,#ffbc64);border-radius:999px}@media(max-width:1100px){.metas-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:760px){.metas-kpis{grid-template-columns:1fr}.metas-title{font-size:23px}}
 
   .metas-page, .metas-page .table, .metas-page td{color:#f8fafc!important;}
   .metas-page .text-muted{color:#cbd5e1!important;}
@@ -17,7 +17,7 @@
     <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
       <div>
         <h1 class="metas-title">🎯 Metas</h1>
-        <div class="metas-sub">Acompanhe suas metas do mês: crescimento sobre base manual, mix de itens únicos, participação das marcas, metas de gerente pelo resultado da EMP inteira e metas de mecânico pelo faturamento de oficina. Resultados consideram OA/VV/SV como venda, DS/CA como desconto e oficina conforme importação de mão de obra.</div>
+        <div class="metas-sub">Acompanhe crescimento, mix, marcas, gerente e mecânicos com as fontes separadas para conferência. <b>Venda analisada</b> é somente o líquido importado em vendas: OA, OV, SV, VA e VV menos CA e DS. A oficina aparece separadamente e só é somada no faturamento considerado pelas regras que utilizam mão de obra.</div>
       </div>
       <form class="metas-filter" method="get" action="{{ url_for('metas') }}">
         <div><div class="metas-label">Mês</div><input class="form-control form-control-sm" name="mes" value="{{ '%02d'|format(mes) }}" style="width:86px"></div>
@@ -30,10 +30,20 @@
       </form>
     </div>
     <div class="metas-kpis">
-      <div class="metas-kpi"><small>Venda analisada</small><strong>{{ totais.venda|brl_rs }}</strong><span>No filtro atual</span></div>
+      <div class="metas-kpi"><small>Vendas importadas líquidas</small><strong>{{ totais.venda|brl_rs }}</strong><span>Bruto menos CA e DS</span></div>
+      <div class="metas-kpi"><small>Oficina importada</small><strong>{{ totais.oficina|brl_rs }}</strong><span>Mão de obra no filtro</span></div>
+      <div class="metas-kpi"><small>Faturamento combinado</small><strong>{{ totais.faturamento|brl_rs }}</strong><span>Vendas líquidas + oficina</span></div>
       <div class="metas-kpi"><small>Prêmio parcial</small><strong>{{ totais.premio|brl_rs }}</strong><span>Soma das metas atingidas</span></div>
       <div class="metas-kpi"><small>Participantes/EMP</small><strong>{{ totais.vendedores }}</strong><span>Linhas calculadas</span></div>
       <div class="metas-kpi"><small>Metas ativas</small><strong>{{ totais.metas }}</strong><span>{{ '%02d'|format(mes) }}/{{ ano }}</span></div>
+    </div>
+    <div class="metas-audit">
+      <span>Bruto de vendas: <b>{{ totais.venda_bruta|brl_rs }}</b></span>
+      <span>Cancelamentos (CA): <b>-{{ totais.cancelamentos|brl_rs }}</b></span>
+      <span>Devoluções (DS): <b>-{{ totais.devolucoes|brl_rs }}</b></span>
+      <span>Linhas importadas: <b>{{ totais.linhas_importadas }}</b></span>
+      {% if totais.linhas_qtd_zero %}<span>Qtd. zero ignoradas: <b>{{ totais.linhas_qtd_zero }}</b></span>{% endif %}
+      {% if totais.linhas_movimento_ignorado %}<span>Movimentos fora da regra: <b>{{ totais.linhas_movimento_ignorado }}</b></span>{% endif %}
     </div>
   </section>
 
@@ -55,7 +65,9 @@
             <tr>
               <th>EMP</th>
               <th>Participante</th>
-              <th class="text-end">Venda analisada</th>
+              <th class="text-end">Venda importada</th>
+              <th class="text-end">Oficina</th>
+              <th class="text-end">Faturamento considerado</th>
               {% for m in metas_list %}
                 <th class="text-end" style="min-width:190px">{{ m.nome }}</th>
               {% endfor %}
@@ -67,7 +79,9 @@
               <tr>
                 <td>{{ r.emp }}</td>
                 <td class="fw-semibold">{{ r.vendedor }}</td>
-                <td class="text-end metas-value">{{ r.valor_mes|brl_rs }}</td>
+                <td class="text-end metas-value">{{ r.vendas_importadas|brl_rs }}</td>
+                <td class="text-end">{{ r.oficina_importada|brl_rs }}</td>
+                <td class="text-end metas-value">{{ r.faturamento_considerado|brl_rs }}</td>
                 {% for m in metas_list %}
                   {% set d = r.detalhes.get(m.id) %}
                   <td class="text-end">

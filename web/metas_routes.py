@@ -51,6 +51,9 @@ from metas_helpers import (
     montar_resultados_periodo,
     normalize_emp,
     normalize_text,
+    query_resumo_vendas_mes,
+    query_valor_oficina_mes,
+    query_valor_vendas_mes,
     query_valor_mecanico_mes,
     query_valor_mes,
     upsert_base_manual,
@@ -353,8 +356,56 @@ def metas():
         )
         db.commit()
 
+        # "Venda analisada" não pode ser obtida somando as linhas da matriz:
+        # vendedores, gerente (EMP inteira) e mecânicos podem repetir a mesma
+        # loja. Calculamos diretamente sobre as vendas importadas, uma única vez
+        # por escopo do filtro, e deixamos oficina separada para conferência.
+        # O total segue o filtro selecionado, mesmo que uma EMP ainda não tenha
+        # participante/meta calculada. Assim o indicador fecha com tudo o que
+        # foi importado no período, em vez de depender das linhas da matriz.
+        emps_totais = sort_emp_codes(emps_calc or emps_choices)
+        vendedor_totais: str | None = None
+        oficina_usuario: str | None = None
+        if vendedor_filtro:
+            gerentes_periodo = set(get_gerentes_para_metas(db, ano, mes, emps_totais))
+            if vendedor_filtro in gerentes_periodo:
+                # Gerente acompanha a EMP inteira.
+                vendedor_totais = None
+                oficina_usuario = None
+            else:
+                vendedor_totais = vendedor_filtro
+                oficina_usuario = vendedor_filtro
+
+        resumo_vendas = query_resumo_vendas_mes(
+            db,
+            ano,
+            mes,
+            emps_totais,
+            vendedor=vendedor_totais,
+        ) if emps_totais else {
+            "total_vendas": 0.0,
+            "total_cancelamentos": 0.0,
+            "total_devolucoes": 0.0,
+            "total_liquido": 0.0,
+            "linhas_importadas": 0,
+            "linhas_qtd_zero": 0,
+            "linhas_movimento_ignorado": 0,
+        }
+        total_oficina = round(sum(
+            query_valor_oficina_mes(db, ano, mes, emp_codigo, oficina_usuario)
+            for emp_codigo in emps_totais
+        ), 2)
+
         totais = {
-            "venda": round(sum(float(r.get("valor_mes") or 0.0) for r in resultados), 2),
+            "venda": round(float(resumo_vendas.get("total_liquido") or 0.0), 2),
+            "venda_bruta": round(float(resumo_vendas.get("total_vendas") or 0.0), 2),
+            "cancelamentos": round(float(resumo_vendas.get("total_cancelamentos") or 0.0), 2),
+            "devolucoes": round(float(resumo_vendas.get("total_devolucoes") or 0.0), 2),
+            "oficina": total_oficina,
+            "faturamento": round(float(resumo_vendas.get("total_liquido") or 0.0) + total_oficina, 2),
+            "linhas_importadas": int(resumo_vendas.get("linhas_importadas") or 0),
+            "linhas_qtd_zero": int(resumo_vendas.get("linhas_qtd_zero") or 0),
+            "linhas_movimento_ignorado": int(resumo_vendas.get("linhas_movimento_ignorado") or 0),
             "premio": round(sum(float(r.get("total_premios") or 0.0) for r in resultados), 2),
             "vendedores": len(resultados),
             "metas": len(metas_list),
@@ -426,7 +477,9 @@ def admin_metas():
                     .filter(MetaBaseManual.meta_id == crescimento_meta.id, MetaBaseManual.emp == emp_selected, MetaBaseManual.vendedor == vend)
                     .first()
                 )
-                venda_mes = query_valor_mes(db, ano, mes, emp_selected, vend)
+                vendas_importadas = query_valor_vendas_mes(db, ano, mes, emp_selected, vend)
+                oficina_importada = query_valor_oficina_mes(db, ano, mes, emp_selected, vend)
+                venda_mes = float(vendas_importadas + oficina_importada)
                 base_valor = float(getattr(base, "base_valor", 0.0) or 0.0) if base else 0.0
                 crescimento_pct = ((venda_mes - base_valor) / base_valor * 100.0) if base_valor > 0 else 0.0
                 margem_individual = float(getattr(base, "margem_percentual", 0.0) or 0.0) if base else 0.0
@@ -435,6 +488,8 @@ def admin_metas():
                     "emp": emp_selected,
                     "vendedor": vend,
                     "venda_mes": venda_mes,
+                    "vendas_importadas": vendas_importadas,
+                    "oficina_importada": oficina_importada,
                     "base_valor": base_valor,
                     "crescimento_pct": crescimento_pct,
                     "margem_minima_individual": margem_individual,
@@ -453,7 +508,9 @@ def admin_metas():
                     .filter(MetaBaseManual.meta_id == crescimento_gerente_meta.id, MetaBaseManual.emp == emp_selected, MetaBaseManual.vendedor == gerente)
                     .first()
                 )
-                venda_mes = query_valor_mes(db, ano, mes, emp_selected, None)
+                vendas_importadas = query_valor_vendas_mes(db, ano, mes, emp_selected, None)
+                oficina_importada = query_valor_oficina_mes(db, ano, mes, emp_selected, None)
+                venda_mes = float(vendas_importadas + oficina_importada)
                 base_valor = float(getattr(base, "base_valor", 0.0) or 0.0) if base else 0.0
                 crescimento_pct = ((venda_mes - base_valor) / base_valor * 100.0) if base_valor > 0 else 0.0
                 margem_individual = float(getattr(base, "margem_percentual", 0.0) or 0.0) if base else 0.0
@@ -463,6 +520,8 @@ def admin_metas():
                     "emp": emp_selected,
                     "vendedor": gerente,
                     "venda_mes": venda_mes,
+                    "vendas_importadas": vendas_importadas,
+                    "oficina_importada": oficina_importada,
                     "base_valor": base_valor,
                     "crescimento_pct": crescimento_pct,
                     "margem_minima_individual": margem_individual,
@@ -1184,7 +1243,10 @@ def admin_meta_bases(meta_id: int):
                 })
                 continue
 
-            venda_mes = query_valor_mes(db, meta.ano, meta.mes, emp_selected, None if meta_gerente else vend)
+            participante_metrica = None if meta_gerente else vend
+            vendas_importadas = query_valor_vendas_mes(db, meta.ano, meta.mes, emp_selected, participante_metrica)
+            oficina_importada = query_valor_oficina_mes(db, meta.ano, meta.mes, emp_selected, participante_metrica)
+            venda_mes = float(vendas_importadas + oficina_importada)
             base_valor = float(getattr(base, "base_valor", 0.0) or 0.0) if base else 0.0
             crescimento_pct = ((venda_mes - base_valor) / base_valor * 100.0) if base_valor > 0 else 0.0
             margem_individual = float(getattr(base, "margem_percentual", 0.0) or 0.0) if base else 0.0
@@ -1196,6 +1258,8 @@ def admin_meta_bases(meta_id: int):
                 "emp": emp_selected,
                 "vendedor": vend,
                 "venda_mes": venda_mes,
+                "vendas_importadas": vendas_importadas,
+                "oficina_importada": oficina_importada,
                 "base_valor": base_valor,
                 "crescimento_pct": crescimento_pct,
                 "margem_minima_individual": margem_individual,

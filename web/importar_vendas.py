@@ -21,6 +21,7 @@ import pandas as pd
 from sqlalchemy import text
 
 from db import SessionLocal, Venda
+from sv_utils import _emp_norm
 
 
 @dataclass
@@ -176,7 +177,7 @@ def importar_vendas_xlsx(
         # Nao converta para int; isso pode quebrar filtros (ex: 101 != '101').
         if tem_emp and "EMP" in df.columns:
             v = r.get("EMP")
-            row["emp"] = "" if pd.isna(v) else str(v).strip()
+            row["emp"] = "" if pd.isna(v) else _emp_norm(str(v).strip())
         rows.append(row)
 
     inseridas = 0
