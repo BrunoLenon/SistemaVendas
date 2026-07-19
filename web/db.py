@@ -2,7 +2,7 @@ import os
 from datetime import datetime
 from urllib.parse import quote_plus
 
-from sqlalchemy import create_engine, Column, Integer, String, Float, Date, DateTime, Text, Boolean, Index, UniqueConstraint, text, func
+from sqlalchemy import create_engine, Column, Integer, String, Float, Numeric, Date, DateTime, Text, Boolean, Index, UniqueConstraint, text, func
 from sqlalchemy.orm import declarative_base, sessionmaker, synonym
 
 # =====================
@@ -70,6 +70,7 @@ Base = declarative_base()
 # Evita executar dezenas de DDLs idempotentes em toda abertura do Admin > Metas.
 # A migração continua sendo garantida na primeira chamada de cada processo.
 _METAS_LOJAS_SCHEMA_READY = False
+_BONUS_IMPORTADOS_SCHEMA_READY = False
 
 
 
@@ -101,6 +102,96 @@ class UsuarioEmp(Base):
 
     __table_args__ = (
         UniqueConstraint("usuario_id", "emp", name="uq_usuario_emps_usuario_emp"),
+    )
+
+
+class BonusImportacaoLote(Base):
+    """Auditoria das importações da aba ``Final Bonus``.
+
+    Os cálculos permanecem na planilha de origem. O sistema apenas valida,
+    persiste e apresenta o snapshot importado para a competência escolhida.
+    """
+
+    __tablename__ = "bonus_importacoes_lotes"
+
+    id = Column(Integer, primary_key=True)
+    ano = Column(Integer, nullable=False, index=True)
+    mes = Column(Integer, nullable=False, index=True)
+    arquivo_origem = Column(String(255), nullable=False)
+    importado_por_user_id = Column(Integer, nullable=True, index=True)
+    importado_por = Column(String(80), nullable=True)
+    importado_em = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
+    linhas_lidas = Column(Integer, nullable=False, default=0)
+    linhas_importadas = Column(Integer, nullable=False, default=0)
+    linhas_ignoradas = Column(Integer, nullable=False, default=0)
+    avisos_json = Column(Text, nullable=True)
+
+    __table_args__ = (
+        Index("ix_bonus_lotes_periodo_importado", "ano", "mes", "importado_em"),
+    )
+
+
+class BonusUsuarioImportado(Base):
+    """Snapshot mensal dos bônus calculados externamente na planilha."""
+
+    __tablename__ = "bonus_usuarios_importados"
+
+    id = Column(Integer, primary_key=True)
+    lote_id = Column(Integer, nullable=False, index=True)
+    ano = Column(Integer, nullable=False, index=True)
+    mes = Column(Integer, nullable=False, index=True)
+    linha_origem = Column(Integer, nullable=True)
+
+    usuario_id = Column(Integer, nullable=True, index=True)
+    usuario_nome = Column(String(80), nullable=False, index=True)
+    funcao = Column(String(30), nullable=False, index=True)
+    emp = Column(String(30), nullable=False, index=True)
+
+    # Faturamento individual e bônus de produtos
+    importado = Column(Numeric(18, 4), nullable=False, default=0)
+    faturamento_individual_anterior = Column(Numeric(18, 4), nullable=False, default=0)
+    faturamento_individual_atual = Column(Numeric(18, 4), nullable=False, default=0)
+    final_vendedor = Column(Numeric(18, 4), nullable=False, default=0)
+    final_gerente = Column(Numeric(18, 4), nullable=False, default=0)
+
+    # Percentuais e meta individual
+    percentual_faturamento = Column(Numeric(12, 6), nullable=False, default=0)
+    percentual_meta = Column(Numeric(12, 6), nullable=False, default=0)
+    valor_meta = Column(Numeric(18, 4), nullable=False, default=0)
+    bonus_gerente_total = Column(Numeric(18, 4), nullable=False, default=0)
+
+    # Importados do vendedor
+    percentual_importado = Column(Numeric(12, 6), nullable=False, default=0)
+    percentual_bonus_importado_vendedor = Column(Numeric(12, 6), nullable=False, default=0)
+    bonus_importado_vendedor = Column(Numeric(18, 4), nullable=False, default=0)
+
+    # Importados agregados da loja (premiação do gerente)
+    importado_loja = Column(Numeric(18, 4), nullable=False, default=0)
+    percentual_importado_gerente = Column(Numeric(12, 6), nullable=False, default=0)
+    percentual_bonus_importado_loja = Column(Numeric(12, 6), nullable=False, default=0)
+    bonus_importado_loja = Column(Numeric(18, 4), nullable=False, default=0)
+
+    # Desempenho agregado da loja (premiação do gerente)
+    meta_loja = Column(Numeric(18, 4), nullable=False, default=0)
+    venda_loja_atual = Column(Numeric(18, 4), nullable=False, default=0)
+    crescimento_loja = Column(Numeric(12, 6), nullable=False, default=0)
+    percentual_crescimento = Column(Numeric(12, 6), nullable=False, default=0)
+    bonus_gerente = Column(Numeric(18, 4), nullable=False, default=0)
+
+    bonus_final = Column(Numeric(18, 4), nullable=False, default=0)
+    importado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "ano",
+            "mes",
+            "emp",
+            "usuario_nome",
+            name="uq_bonus_usuario_periodo_emp",
+        ),
+        Index("ix_bonus_usuario_periodo", "usuario_nome", "ano", "mes"),
+        Index("ix_bonus_emp_periodo", "emp", "ano", "mes"),
+        Index("ix_bonus_funcao_periodo", "funcao", "ano", "mes"),
     )
 
 
@@ -1647,6 +1738,83 @@ class FinanceiroPagamentoAudit(Base):
     alterado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
 
     motivo = Column(Text, nullable=True)
+
+
+def ensure_bonus_importados_schema(force: bool = False):
+    """Garante as tabelas do snapshot mensal de bônus.
+
+    A função é idempotente e roda somente na primeira utilização por processo,
+    evitando depender de ``AUTO_MIGRATE`` no Render. O arquivo SQL equivalente
+    também acompanha o projeto para aplicação manual no Supabase.
+    """
+    global _BONUS_IMPORTADOS_SCHEMA_READY
+    if _BONUS_IMPORTADOS_SCHEMA_READY and not force:
+        return
+
+    with engine.connect() as conn:
+        conn = conn.execution_options(isolation_level="AUTOCOMMIT")
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS bonus_importacoes_lotes (
+                id SERIAL PRIMARY KEY,
+                ano INTEGER NOT NULL,
+                mes INTEGER NOT NULL,
+                arquivo_origem VARCHAR(255) NOT NULL,
+                importado_por_user_id INTEGER,
+                importado_por VARCHAR(80),
+                importado_em TIMESTAMP NOT NULL DEFAULT NOW(),
+                linhas_lidas INTEGER NOT NULL DEFAULT 0,
+                linhas_importadas INTEGER NOT NULL DEFAULT 0,
+                linhas_ignoradas INTEGER NOT NULL DEFAULT 0,
+                avisos_json TEXT
+            );
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS bonus_usuarios_importados (
+                id SERIAL PRIMARY KEY,
+                lote_id INTEGER NOT NULL,
+                ano INTEGER NOT NULL,
+                mes INTEGER NOT NULL,
+                linha_origem INTEGER,
+                usuario_id INTEGER,
+                usuario_nome VARCHAR(80) NOT NULL,
+                funcao VARCHAR(30) NOT NULL,
+                emp VARCHAR(30) NOT NULL,
+                importado NUMERIC(18,4) NOT NULL DEFAULT 0,
+                faturamento_individual_anterior NUMERIC(18,4) NOT NULL DEFAULT 0,
+                faturamento_individual_atual NUMERIC(18,4) NOT NULL DEFAULT 0,
+                final_vendedor NUMERIC(18,4) NOT NULL DEFAULT 0,
+                final_gerente NUMERIC(18,4) NOT NULL DEFAULT 0,
+                percentual_faturamento NUMERIC(12,6) NOT NULL DEFAULT 0,
+                percentual_meta NUMERIC(12,6) NOT NULL DEFAULT 0,
+                valor_meta NUMERIC(18,4) NOT NULL DEFAULT 0,
+                bonus_gerente_total NUMERIC(18,4) NOT NULL DEFAULT 0,
+                percentual_importado NUMERIC(12,6) NOT NULL DEFAULT 0,
+                percentual_bonus_importado_vendedor NUMERIC(12,6) NOT NULL DEFAULT 0,
+                bonus_importado_vendedor NUMERIC(18,4) NOT NULL DEFAULT 0,
+                importado_loja NUMERIC(18,4) NOT NULL DEFAULT 0,
+                percentual_importado_gerente NUMERIC(12,6) NOT NULL DEFAULT 0,
+                percentual_bonus_importado_loja NUMERIC(12,6) NOT NULL DEFAULT 0,
+                bonus_importado_loja NUMERIC(18,4) NOT NULL DEFAULT 0,
+                meta_loja NUMERIC(18,4) NOT NULL DEFAULT 0,
+                venda_loja_atual NUMERIC(18,4) NOT NULL DEFAULT 0,
+                crescimento_loja NUMERIC(12,6) NOT NULL DEFAULT 0,
+                percentual_crescimento NUMERIC(12,6) NOT NULL DEFAULT 0,
+                bonus_gerente NUMERIC(18,4) NOT NULL DEFAULT 0,
+                bonus_final NUMERIC(18,4) NOT NULL DEFAULT 0,
+                importado_em TIMESTAMP NOT NULL DEFAULT NOW(),
+                CONSTRAINT uq_bonus_usuario_periodo_emp UNIQUE (ano, mes, emp, usuario_nome)
+            );
+        """))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_bonus_lotes_periodo_importado ON bonus_importacoes_lotes (ano, mes, importado_em);"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_bonus_lotes_importado_em ON bonus_importacoes_lotes (importado_em);"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_bonus_lotes_importado_por_user_id ON bonus_importacoes_lotes (importado_por_user_id);"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_bonus_usuario_periodo ON bonus_usuarios_importados (usuario_nome, ano, mes);"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_bonus_emp_periodo ON bonus_usuarios_importados (emp, ano, mes);"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_bonus_funcao_periodo ON bonus_usuarios_importados (funcao, ano, mes);"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_bonus_usuarios_lote_id ON bonus_usuarios_importados (lote_id);"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_bonus_usuarios_usuario_id ON bonus_usuarios_importados (usuario_id);"))
+
+    _BONUS_IMPORTADOS_SCHEMA_READY = True
 
 
 

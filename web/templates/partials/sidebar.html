@@ -5,6 +5,7 @@
 {% set is_supervisor = (r in ['supervisor', 'gerente']) %}
 {% set is_gerente = (r == 'gerente') %}
 {% set is_vendedor = (r == 'vendedor') %}
+{% set is_mecanico = (r == 'mecanico') %}
 {% set is_financeiro = (r == 'financeiro') %}
 
 <style>
@@ -112,6 +113,7 @@
     <div class="lbl">Relatórios</div>
     <a class="sb-link {% if path.startswith('/relatorios/campanhas') %}active{% endif %}" href="{{ url_for('relatorio_campanhas') }}">📊 Campanhas</a>
     <a class="sb-link {% if path.startswith('/relatorios/cidades') %}active{% endif %}" href="{{ url_for('relatorio_cidades_clientes') }}">🗺️ Cidades & Clientes</a>
+    <a class="sb-link {% if path.startswith('/bonus') or path.startswith('/admin/bonus') %}active{% endif %}" href="{{ url_for('bonus_importados') }}">💰 Bônus</a>
   </div>
 
   <div class="sb-sec">

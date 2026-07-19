@@ -1,0 +1,343 @@
+{% extends "base.html" %}
+{% block title %}Bônus Importados{% endblock %}
+
+{% block extra_head %}
+<style>
+  .bonus-page{max-width:1580px;margin:0 auto;padding:4px 0 26px;color:#f8fafc}
+  .bonus-hero,.bonus-panel{border:1px solid rgba(255,255,255,.085);border-radius:24px;background:linear-gradient(180deg,rgba(255,255,255,.052),rgba(255,255,255,.022));box-shadow:0 18px 44px rgba(0,0,0,.22)}
+  .bonus-hero{padding:20px;background:radial-gradient(circle at top right,rgba(255,145,0,.21),transparent 34%),linear-gradient(180deg,rgba(255,255,255,.052),rgba(255,255,255,.022))}
+  .bonus-panel{padding:17px}
+  .bonus-title{font-size:29px;font-weight:950;letter-spacing:-.04em;margin:0}
+  .bonus-sub{color:#b9bdc5;font-size:13px;max-width:940px;margin-top:7px;line-height:1.55}
+  .bonus-chip{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border:1px solid rgba(255,174,72,.25);border-radius:999px;background:rgba(255,145,0,.09);color:#ffc477;font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.06em}
+  .bonus-filter{display:flex;gap:9px;align-items:end;flex-wrap:wrap}
+  .bonus-label{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#a9adb5;font-weight:900;margin-bottom:6px}
+  .bonus-page .form-control,.bonus-page .form-select{background:rgba(9,9,10,.88);border-color:rgba(255,255,255,.11);color:#fff;border-radius:12px;min-height:40px}
+  .bonus-page .form-control:focus,.bonus-page .form-select:focus{border-color:rgba(255,166,58,.5);box-shadow:0 0 0 .18rem rgba(255,145,0,.12)}
+  .bonus-page .form-select option{background:#151515;color:#fff}
+  .bonus-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:15px}
+  .bonus-kpi{border:1px solid rgba(255,255,255,.08);border-radius:18px;background:rgba(0,0,0,.24);padding:14px;min-width:0}
+  .bonus-kpi small{display:block;color:#9da2aa;text-transform:uppercase;letter-spacing:.075em;font-size:10px;font-weight:900}
+  .bonus-kpi strong{display:block;font-size:24px;line-height:1.08;margin-top:8px;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .bonus-kpi span{display:block;color:#b9bdc5;font-size:12px;margin-top:4px}
+  .bonus-grid{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(320px,.65fr);gap:14px}
+  .bonus-section-title{font-size:16px;font-weight:900;margin:0}
+  .bonus-section-sub{font-size:12px;color:#aeb3bb;margin-top:3px}
+  .bonus-import-box{border:1px solid rgba(255,169,62,.18);border-radius:18px;background:rgba(255,145,0,.055);padding:14px}
+  .bonus-note{font-size:12px;color:#c8cbd1;line-height:1.5}
+  .bonus-audit{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+  .bonus-audit span{border:1px solid rgba(255,255,255,.075);border-radius:11px;background:rgba(0,0,0,.2);padding:7px 9px;color:#bfc3ca;font-size:11px}
+  .bonus-audit b{color:#fff}
+  .bonus-table-wrap{border:1px solid rgba(255,255,255,.08);border-radius:18px;overflow:auto;background:rgba(0,0,0,.15)}
+  .bonus-table{margin:0;min-width:940px;color:#f8fafc!important}
+  .bonus-table th{position:sticky;top:0;z-index:2;background:#151515!important;color:#b9bdc5!important;font-size:10px;text-transform:uppercase;letter-spacing:.07em;white-space:nowrap}
+  .bonus-table td,.bonus-table th{padding:.68rem .72rem;border-color:rgba(255,255,255,.065);vertical-align:middle}
+  .bonus-table tbody td{background:rgba(5,5,5,.34)!important;color:#f8fafc!important}
+  .bonus-table tbody tr:nth-child(even) td{background:rgba(255,255,255,.025)!important}
+  .bonus-table tbody tr:hover td{background:rgba(255,145,0,.07)!important}
+  .bonus-money{font-weight:900;color:#fff;white-space:nowrap}
+  .bonus-final{font-size:15px;color:#ffd08b}
+  .bonus-muted{color:#aeb3bb!important;font-size:12px}
+  .bonus-status{display:inline-flex;border-radius:999px;padding:4px 8px;font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:.04em;border:1px solid rgba(255,255,255,.09)}
+  .bonus-status.ok{color:#a9e9bd;background:rgba(46,204,113,.1);border-color:rgba(46,204,113,.2)}
+  .bonus-status.warn{color:#ffd098;background:rgba(255,177,66,.1);border-color:rgba(255,177,66,.2)}
+  .bonus-details-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;padding-bottom:14px;border-bottom:1px solid rgba(255,255,255,.075)}
+  .bonus-user{font-size:20px;font-weight:950;letter-spacing:-.025em}
+  .bonus-detail-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:14px}
+  .bonus-metric{border:1px solid rgba(255,255,255,.075);border-radius:16px;background:rgba(0,0,0,.2);padding:12px;min-width:0}
+  .bonus-metric small{display:block;color:#9ea3ab;text-transform:uppercase;letter-spacing:.065em;font-size:9px;font-weight:900;line-height:1.35}
+  .bonus-metric strong{display:block;color:#fff;font-size:17px;margin-top:7px;overflow:hidden;text-overflow:ellipsis}
+  .bonus-group-title{grid-column:1/-1;margin-top:6px;color:#ffc477;font-size:11px;text-transform:uppercase;letter-spacing:.09em;font-weight:950}
+  .bonus-empty{border:1px dashed rgba(255,255,255,.14);border-radius:18px;padding:30px;text-align:center;color:#b9bdc5;background:rgba(255,255,255,.022)}
+  .bonus-warnings{max-height:230px;overflow:auto;margin:10px 0 0;padding-left:18px;color:#ffd6a4;font-size:12px}
+  .bonus-warnings li{margin-bottom:5px}
+  .bonus-team-cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin-bottom:13px}
+  .bonus-team-card{border:1px solid rgba(255,255,255,.075);border-radius:15px;background:rgba(0,0,0,.2);padding:12px}
+  .bonus-team-card small{color:#9fa4ac;text-transform:uppercase;font-size:9px;font-weight:900;letter-spacing:.07em}
+  .bonus-team-card strong{display:block;margin-top:6px;font-size:18px}
+  @media(max-width:1180px){.bonus-grid{grid-template-columns:1fr}.bonus-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
+  @media(max-width:780px){.bonus-kpis,.bonus-detail-grid,.bonus-team-cards{grid-template-columns:1fr}.bonus-title{font-size:24px}.bonus-kpi strong{font-size:21px}}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="bonus-page">
+  <section class="bonus-hero mb-3">
+    <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
+      <div>
+        <span class="bonus-chip">Snapshot importado</span>
+        <h1 class="bonus-title mt-2">💰 Bônus dos usuários</h1>
+        <div class="bonus-sub">
+          Os valores desta página vêm prontos da aba <b>Final Bonus</b>. O sistema não recalcula produtos, metas, percentuais ou regras: apenas valida, armazena e apresenta o resultado da competência.
+        </div>
+      </div>
+      <form class="bonus-filter" method="get" action="{{ url_for('bonus_importados') }}">
+        <div>
+          <div class="bonus-label">Mês</div>
+          <input class="form-control form-control-sm" type="number" min="1" max="12" name="mes" value="{{ mes }}" style="width:88px">
+        </div>
+        <div>
+          <div class="bonus-label">Ano</div>
+          <input class="form-control form-control-sm" type="number" min="2000" max="2100" name="ano" value="{{ ano }}" style="width:102px">
+        </div>
+        {% if role == 'admin' %}
+        <div>
+          <div class="bonus-label">EMP</div>
+          <select class="form-select form-select-sm" name="emp" style="min-width:130px">
+            <option value="">Todas</option>
+            {% for item in emp_options %}<option value="{{ item }}" {% if emp_filter == item %}selected{% endif %}>{{ item }}</option>{% endfor %}
+          </select>
+        </div>
+        <div>
+          <div class="bonus-label">Usuário</div>
+          <select class="form-select form-select-sm" name="usuario" style="min-width:210px">
+            <option value="">Todos</option>
+            {% for item in user_options %}<option value="{{ item }}" {% if user_filter == item %}selected{% endif %}>{{ item }}</option>{% endfor %}
+          </select>
+        </div>
+        {% endif %}
+        <button class="btn btn-warning btn-sm fw-bold px-3">Filtrar</button>
+      </form>
+    </div>
+
+    <div class="bonus-kpis">
+      {% if role == 'admin' %}
+        <div class="bonus-kpi"><small>Bônus final visível</small><strong>{{ summary.bonus_visivel|default(0)|brl_rs }}</strong><span>Soma do filtro atual</span></div>
+        <div class="bonus-kpi"><small>Usuários importados</small><strong>{{ summary.registros|default(0) }}</strong><span>Registros da competência</span></div>
+        <div class="bonus-kpi"><small>Sem vínculo de login</small><strong>{{ summary.nao_vinculados|default(0) }}</strong><span>Precisam conferir o cadastro</span></div>
+        <div class="bonus-kpi"><small>Competência</small><strong>{{ '%02d'|format(mes) }}/{{ ano }}</strong><span>Valores substituídos por importação</span></div>
+      {% elif role == 'gerente' %}
+        <div class="bonus-kpi"><small>Meu bônus final</small><strong>{{ summary.bonus_proprio|default(0)|brl_rs }}</strong><span>Resultado do gerente</span></div>
+        <div class="bonus-kpi"><small>Bônus da equipe</small><strong>{{ summary.bonus_equipe|default(0)|brl_rs }}</strong><span>Total dos funcionários abaixo</span></div>
+        <div class="bonus-kpi"><small>Funcionários</small><strong>{{ team_rows|length }}</strong><span>Nas EMPs vinculadas</span></div>
+        <div class="bonus-kpi"><small>Meu faturamento atual</small><strong>{{ summary.faturamento_proprio|default(0)|brl_rs }}</strong><span>Valor individual importado</span></div>
+      {% else %}
+        <div class="bonus-kpi"><small>Meu bônus final</small><strong>{{ summary.bonus_proprio|default(0)|brl_rs }}</strong><span>Valor final importado</span></div>
+        <div class="bonus-kpi"><small>Meu faturamento atual</small><strong>{{ summary.faturamento_proprio|default(0)|brl_rs }}</strong><span>Competência selecionada</span></div>
+        <div class="bonus-kpi"><small>Registros</small><strong>{{ own_rows|length }}</strong><span>Somente informações do seu usuário</span></div>
+        <div class="bonus-kpi"><small>Competência</small><strong>{{ '%02d'|format(mes) }}/{{ ano }}</strong><span>Snapshot importado</span></div>
+      {% endif %}
+    </div>
+
+    {% if batch %}
+    <div class="bonus-audit">
+      <span>Arquivo: <b>{{ batch.arquivo_origem }}</b></span>
+      <span>Importado por: <b>{{ batch.importado_por or '-' }}</b></span>
+      <span>Data: <b>{{ batch.importado_em.strftime('%d/%m/%Y %H:%M') if batch.importado_em else '-' }}</b></span>
+      <span>Linhas válidas: <b>{{ batch.linhas_importadas }}</b></span>
+      <span>Ignoradas: <b>{{ batch.linhas_ignoradas }}</b></span>
+    </div>
+    {% endif %}
+  </section>
+
+  {% if db_unavailable %}
+    <div class="bonus-empty">O banco de dados do módulo ainda não foi implantado.</div>
+  {% else %}
+
+  {% if role == 'admin' %}
+  <div class="bonus-grid mb-3">
+    <section class="bonus-panel">
+      <h2 class="bonus-section-title">Importar Final Bonus</h2>
+      <div class="bonus-section-sub">A importação substitui integralmente os registros do mês e ano informados, dentro de uma única transação.</div>
+      <form class="bonus-import-box mt-3" method="post" enctype="multipart/form-data" action="{{ url_for('admin_bonus_importar') }}">
+        <div class="row g-2 align-items-end">
+          <div class="col-lg-6">
+            <div class="bonus-label">Planilha Excel</div>
+            <input class="form-control" type="file" name="arquivo" accept=".xlsx,.xlsm" required>
+          </div>
+          <div class="col-6 col-lg-2">
+            <div class="bonus-label">Mês</div>
+            <input class="form-control" type="number" min="1" max="12" name="mes" value="{{ mes }}" required>
+          </div>
+          <div class="col-6 col-lg-2">
+            <div class="bonus-label">Ano</div>
+            <input class="form-control" type="number" min="2000" max="2100" name="ano" value="{{ ano }}" required>
+          </div>
+          <div class="col-lg-2 d-grid">
+            <button class="btn btn-warning fw-bold" type="submit">Importar</button>
+          </div>
+        </div>
+        <div class="bonus-note mt-2">Use a aba <b>Final Bonus</b> com os valores já calculados e salve o arquivo no Excel antes do envio. Limite: 15 MB.</div>
+      </form>
+    </section>
+
+    <section class="bonus-panel">
+      <h2 class="bonus-section-title">Validação da última importação</h2>
+      {% if batch %}
+        <div class="bonus-section-sub">{{ batch.linhas_lidas }} linhas analisadas · {{ batch.linhas_importadas }} importadas · {{ batch.linhas_ignoradas }} ignoradas.</div>
+        {% if batch_warnings %}
+          <ul class="bonus-warnings">
+            {% for warning in batch_warnings %}<li>{{ warning }}</li>{% endfor %}
+          </ul>
+        {% else %}
+          <div class="bonus-note mt-3">Nenhum aviso encontrado. Usuários, funções, EMPs e valores foram reconhecidos.</div>
+        {% endif %}
+      {% else %}
+        <div class="bonus-empty mt-3 py-4">Ainda não existe importação para {{ '%02d'|format(mes) }}/{{ ano }}.</div>
+      {% endif %}
+    </section>
+  </div>
+  {% endif %}
+
+  {% if role == 'gerente' %}
+  <section class="bonus-panel mb-3">
+    <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-3">
+      <div>
+        <h2 class="bonus-section-title">Equipe abaixo do gerente</h2>
+        <div class="bonus-section-sub">O gerente visualiza o bônus final de cada funcionário das EMPs vinculadas e o total agregado da equipe.</div>
+      </div>
+      <div class="bonus-money bonus-final">Total: {{ summary.bonus_equipe|default(0)|brl_rs }}</div>
+    </div>
+    {% if team_by_emp %}
+      <div class="bonus-team-cards">
+        {% for item in team_by_emp %}
+        <div class="bonus-team-card"><small>EMP {{ item.emp }} · {{ item.quantidade }} funcionário(s)</small><strong>{{ item.bonus_final|brl_rs }}</strong></div>
+        {% endfor %}
+      </div>
+    {% endif %}
+    {% if team_rows %}
+    <div class="bonus-table-wrap">
+      <table class="table table-sm bonus-table" style="min-width:680px">
+        <thead><tr><th>EMP</th><th>Funcionário</th><th>Função</th><th class="text-end">Bônus final</th></tr></thead>
+        <tbody>
+          {% for row in team_rows %}
+          <tr>
+            <td>{{ row.emp }}</td>
+            <td class="fw-bold">{{ row.usuario_nome }}</td>
+            <td>{{ row.funcao|capitalize }}</td>
+            <td class="text-end bonus-money bonus-final">{{ row.bonus_final|brl_rs }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+      <div class="bonus-empty">Nenhum funcionário encontrado nas EMPs do gerente para esta competência.</div>
+    {% endif %}
+  </section>
+  {% endif %}
+
+  {% if role == 'admin' %}
+  <section class="bonus-panel mb-3">
+    <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-3">
+      <div><h2 class="bonus-section-title">Usuários importados</h2><div class="bonus-section-sub">Visão administrativa do snapshot. Clique em detalhes para conferir todas as métricas importadas.</div></div>
+      <div class="bonus-money">{{ rows|length }} registro(s)</div>
+    </div>
+    {% if rows %}
+    <div class="bonus-table-wrap">
+      <table class="table table-sm bonus-table">
+        <thead>
+          <tr><th>EMP</th><th>Usuário</th><th>Função</th><th class="text-end">Faturamento atual</th><th class="text-end">Importado</th><th class="text-end">Bônus produtos</th><th class="text-end">Bônus importados</th><th class="text-end">Bônus final</th><th>Vínculo</th><th></th></tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+          <tr>
+            <td>{{ row.emp }}</td>
+            <td class="fw-bold">{{ row.usuario_nome }}</td>
+            <td>{{ row.funcao|capitalize }}</td>
+            <td class="text-end bonus-money">{{ row.faturamento_individual_atual|brl_rs }}</td>
+            <td class="text-end">{{ row.importado|brl_rs }}</td>
+            <td class="text-end">{{ (row.bonus_gerente_total if row.funcao == 'GERENTE' else row.final_vendedor)|brl_rs }}</td>
+            <td class="text-end">{{ (row.bonus_importado_loja if row.funcao == 'GERENTE' else row.bonus_importado_vendedor)|brl_rs }}</td>
+            <td class="text-end bonus-money bonus-final">{{ row.bonus_final|brl_rs }}</td>
+            <td>{% if row.usuario_id %}<span class="bonus-status ok">Vinculado</span>{% else %}<span class="bonus-status warn">Não vinculado</span>{% endif %}</td>
+            <td><a class="btn btn-sm btn-outline-warning" href="{{ url_for('bonus_importados', ano=ano, mes=mes, emp=emp_filter, usuario=user_filter, registro=row.id) }}#detalhes">Detalhes</a></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+      <div class="bonus-empty">Nenhum usuário encontrado para os filtros atuais.</div>
+    {% endif %}
+  </section>
+  {% elif own_rows|length > 1 %}
+  <section class="bonus-panel mb-3">
+    <h2 class="bonus-section-title mb-3">Meus registros</h2>
+    <div class="bonus-table-wrap">
+      <table class="table table-sm bonus-table" style="min-width:650px">
+        <thead><tr><th>EMP</th><th>Função</th><th class="text-end">Faturamento atual</th><th class="text-end">Bônus final</th><th></th></tr></thead>
+        <tbody>{% for row in own_rows %}<tr><td>{{ row.emp }}</td><td>{{ row.funcao|capitalize }}</td><td class="text-end">{{ row.faturamento_individual_atual|brl_rs }}</td><td class="text-end bonus-money bonus-final">{{ row.bonus_final|brl_rs }}</td><td><a class="btn btn-sm btn-outline-warning" href="{{ url_for('bonus_importados', ano=ano, mes=mes, registro=row.id) }}#detalhes">Detalhes</a></td></tr>{% endfor %}</tbody>
+      </table>
+    </div>
+  </section>
+  {% endif %}
+
+  <section class="bonus-panel" id="detalhes">
+    {% if selected %}
+      <div class="bonus-details-head">
+        <div>
+          <div class="bonus-user">{{ selected.usuario_nome }}</div>
+          <div class="bonus-section-sub">{{ selected.funcao|capitalize }} · EMP {{ selected.emp }} · linha {{ selected.linha_origem or '-' }} da planilha</div>
+        </div>
+        <div class="text-end"><div class="bonus-label">Bônus final do usuário</div><div class="bonus-money bonus-final" style="font-size:26px">{{ selected.bonus_final|brl_rs }}</div></div>
+      </div>
+
+      <div class="bonus-detail-grid">
+        <div class="bonus-group-title">Faturamento individual</div>
+        <div class="bonus-metric"><small>Faturamento anterior</small><strong>{{ selected.faturamento_individual_anterior|brl_rs }}</strong></div>
+        <div class="bonus-metric"><small>Faturamento atual</small><strong>{{ selected.faturamento_individual_atual|brl_rs }}</strong></div>
+        <div class="bonus-metric"><small>% faturamento</small><strong>{{ selected.percentual_faturamento|brl }}%</strong></div>
+        <div class="bonus-metric"><small>Faturamento de importados</small><strong>{{ selected.importado|brl_rs }}</strong></div>
+        <div class="bonus-metric"><small>% importado</small><strong>{{ selected.percentual_importado|brl }}%</strong></div>
+        <div class="bonus-metric"><small>EMP</small><strong>{{ selected.emp }}</strong></div>
+
+        {% if selected.funcao == 'GERENTE' %}
+          <div class="bonus-group-title">Premiação do gerente sobre a empresa</div>
+          <div class="bonus-metric"><small>Bônus parcial de produtos</small><strong>{{ selected.final_gerente|brl_rs }}</strong></div>
+          <div class="bonus-metric"><small>Bônus total de produtos</small><strong>{{ selected.bonus_gerente_total|brl_rs }}</strong></div>
+          <div class="bonus-metric"><small>Bônus de importados da loja</small><strong>{{ selected.bonus_importado_loja|brl_rs }}</strong></div>
+          <div class="bonus-metric"><small>Importado total da loja</small><strong>{{ selected.importado_loja|brl_rs }}</strong></div>
+          <div class="bonus-metric"><small>% importado gerente</small><strong>{{ selected.percentual_importado_gerente|brl }}%</strong></div>
+          <div class="bonus-metric"><small>% bônus importado loja</small><strong>{{ selected.percentual_bonus_importado_loja|brl }}%</strong></div>
+          <div class="bonus-metric"><small>Venda anterior da loja</small><strong>{{ selected.meta_loja|brl_rs }}</strong></div>
+          <div class="bonus-metric"><small>Venda atual da loja</small><strong>{{ selected.venda_loja_atual|brl_rs }}</strong></div>
+          <div class="bonus-metric"><small>Crescimento da loja</small><strong>{{ selected.crescimento_loja|brl }}%</strong></div>
+          <div class="bonus-metric"><small>% bônus do crescimento</small><strong>{{ selected.percentual_crescimento|brl }}%</strong></div>
+          <div class="bonus-metric"><small>Bônus final da empresa</small><strong>{{ selected.bonus_gerente|brl_rs }}</strong></div>
+          <div class="bonus-metric"><small>Bônus final do gerente</small><strong>{{ selected.bonus_final|brl_rs }}</strong></div>
+        {% else %}
+          <div class="bonus-group-title">Premiação individual</div>
+          <div class="bonus-metric"><small>Bônus de produtos do vendedor</small><strong>{{ selected.final_vendedor|brl_rs }}</strong></div>
+          <div class="bonus-metric"><small>% da meta</small><strong>{{ selected.percentual_meta|brl }}%</strong></div>
+          <div class="bonus-metric"><small>Valor do bônus da meta</small><strong>{{ selected.valor_meta|brl_rs }}</strong></div>
+          <div class="bonus-metric"><small>% bônus de importados</small><strong>{{ selected.percentual_bonus_importado_vendedor|brl }}%</strong></div>
+          <div class="bonus-metric"><small>Bônus de importados</small><strong>{{ selected.bonus_importado_vendedor|brl_rs }}</strong></div>
+          <div class="bonus-metric"><small>Bônus final do usuário</small><strong>{{ selected.bonus_final|brl_rs }}</strong></div>
+        {% endif %}
+      </div>
+
+      {% if role == 'admin' %}
+      <details class="bonus-import-box mt-3">
+        <summary class="fw-bold" style="cursor:pointer">Conferência completa da linha importada</summary>
+        <div class="bonus-note mt-2">Campos complementares preservados no banco, inclusive quando não pertencem à visualização normal da função selecionada.</div>
+        <div class="bonus-detail-grid">
+          {% if selected.funcao == 'GERENTE' %}
+            <div class="bonus-metric"><small>Final vendedor</small><strong>{{ selected.final_vendedor|brl_rs }}</strong></div>
+            <div class="bonus-metric"><small>% meta do vendedor</small><strong>{{ selected.percentual_meta|brl }}%</strong></div>
+            <div class="bonus-metric"><small>Valor meta do vendedor</small><strong>{{ selected.valor_meta|brl_rs }}</strong></div>
+            <div class="bonus-metric"><small>% bônus importado vendedor</small><strong>{{ selected.percentual_bonus_importado_vendedor|brl }}%</strong></div>
+            <div class="bonus-metric"><small>Bônus importado vendedor</small><strong>{{ selected.bonus_importado_vendedor|brl_rs }}</strong></div>
+          {% else %}
+            <div class="bonus-metric"><small>Final gerente parcial</small><strong>{{ selected.final_gerente|brl_rs }}</strong></div>
+            <div class="bonus-metric"><small>Bônus gerente total produtos</small><strong>{{ selected.bonus_gerente_total|brl_rs }}</strong></div>
+            <div class="bonus-metric"><small>Importado loja</small><strong>{{ selected.importado_loja|brl_rs }}</strong></div>
+            <div class="bonus-metric"><small>% importado gerente</small><strong>{{ selected.percentual_importado_gerente|brl }}%</strong></div>
+            <div class="bonus-metric"><small>% bônus importado loja</small><strong>{{ selected.percentual_bonus_importado_loja|brl }}%</strong></div>
+            <div class="bonus-metric"><small>Bônus importado loja</small><strong>{{ selected.bonus_importado_loja|brl_rs }}</strong></div>
+            <div class="bonus-metric"><small>Meta loja</small><strong>{{ selected.meta_loja|brl_rs }}</strong></div>
+            <div class="bonus-metric"><small>Venda loja atual</small><strong>{{ selected.venda_loja_atual|brl_rs }}</strong></div>
+            <div class="bonus-metric"><small>Crescimento loja</small><strong>{{ selected.crescimento_loja|brl }}%</strong></div>
+            <div class="bonus-metric"><small>% crescimento</small><strong>{{ selected.percentual_crescimento|brl }}%</strong></div>
+            <div class="bonus-metric"><small>Bônus gerente</small><strong>{{ selected.bonus_gerente|brl_rs }}</strong></div>
+          {% endif %}
+        </div>
+      </details>
+      {% endif %}
+    {% else %}
+      <div class="bonus-empty">Nenhum bônus foi importado para o seu usuário em {{ '%02d'|format(mes) }}/{{ ano }}.</div>
+    {% endif %}
+  </section>
+  {% endif %}
+</div>
+{% endblock %}

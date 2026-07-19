@@ -7867,3 +7867,11 @@ def api_produtos_suggest():
             db.close()
         except Exception:
             pass
+
+
+# Snapshot mensal de bônus calculados externamente (aba Final Bonus)
+try:
+    from bonus_importados_routes import register_bonus_importados_routes
+    register_bonus_importados_routes(app)
+except Exception:
+    app.logger.exception("Falha ao registrar rotas de bônus importados")

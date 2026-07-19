@@ -2830,6 +2830,7 @@ from errors import register_error_handlers
 from operacoes_vendas_produtos_routes import register_operacoes_vendas_produtos_routes
 from financeiro_campanhas_routes import register_financeiro_campanhas_routes
 from promocoes_qr_routes import register_promocoes_qr_routes
+from bonus_importados_routes import register_bonus_importados_routes
 
 # Admin / Configurações
 register_admin_config_routes(app)
@@ -2917,6 +2918,7 @@ register_admin_apagar_vendas_routes(
 # Mensagens + Metas
 register_mensagens_routes(app)
 register_metas_routes(app)
+register_bonus_importados_routes(app)
 
 # Ranking por Marca
 register_ranking_marca_routes(
