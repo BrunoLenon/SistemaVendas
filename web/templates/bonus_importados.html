@@ -1,21 +1,21 @@
 {% extends "base.html" %}
 {% block title %}Bônus{% endblock %}
 
-{% macro activation_badge(row) -%}
+{% macro activation_badge(row, compact=false) -%}
   {% if row.meta_loja and row.meta_loja > 0 and row.venda_loja_atual >= row.meta_loja %}
-    <span class="bonus-status ok">Ativação atingida</span>
+    <span class="bonus-status ok" title="Ativação atingida">{{ 'Ativada' if compact else 'Ativação atingida' }}</span>
   {% elif row.meta_loja and row.meta_loja > 0 %}
-    <span class="bonus-status warn">Aguardando ativação</span>
+    <span class="bonus-status warn" title="Aguardando ativação">{{ 'Pendente' if compact else 'Aguardando ativação' }}</span>
   {% else %}
-    <span class="bonus-status neutral">Meta da loja não informada</span>
+    <span class="bonus-status neutral" title="Meta da loja não informada">{{ 'Sem meta' if compact else 'Meta da loja não informada' }}</span>
   {% endif %}
 {%- endmacro %}
 
-{% macro binding_badge(row) -%}
+{% macro binding_badge(row, compact=false) -%}
   {% if row.usuario_id %}
-    <span class="bonus-status ok">Vinculado</span>
+    <span class="bonus-status ok" title="Usuário vinculado ao sistema">{{ 'Vínculo OK' if compact else 'Vinculado' }}</span>
   {% else %}
-    <span class="bonus-status warn">Não vinculado</span>
+    <span class="bonus-status warn" title="Usuário ainda não vinculado ao sistema">{{ 'Sem vínculo' if compact else 'Não vinculado' }}</span>
   {% endif %}
 {%- endmacro %}
 
@@ -48,13 +48,20 @@
   .bonus-audit{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
   .bonus-audit span{border:1px solid rgba(255,255,255,.075);border-radius:11px;background:rgba(0,0,0,.2);padding:7px 9px;color:#bfc3ca;font-size:11px}
   .bonus-audit b{color:#fff}
-  .bonus-table-wrap{border:1px solid rgba(255,255,255,.08);border-radius:18px;overflow:auto;background:rgba(0,0,0,.15)}
-  .bonus-table{margin:0;min-width:1420px;color:#f8fafc!important}
-  .bonus-table th{position:sticky;top:0;z-index:2;background:#151515!important;color:#b9bdc5!important;font-size:10px;text-transform:uppercase;letter-spacing:.055em;white-space:nowrap}
-  .bonus-table td,.bonus-table th{padding:.68rem .72rem;border-color:rgba(255,255,255,.065);vertical-align:middle}
+  .bonus-table-wrap{border:1px solid rgba(255,255,255,.08);border-radius:18px;overflow:hidden;background:rgba(0,0,0,.15)}
+  .bonus-table{width:100%;min-width:0;margin:0;color:#f8fafc!important;table-layout:fixed;font-size:12px}
+  .bonus-table th{background:#151515!important;color:#b9bdc5!important;font-size:8.5px;line-height:1.22;text-transform:uppercase;letter-spacing:.035em;white-space:normal;overflow-wrap:anywhere}
+  .bonus-table td,.bonus-table th{padding:.58rem .38rem;border-color:rgba(255,255,255,.065);vertical-align:middle}
   .bonus-table tbody td{background:rgba(5,5,5,.34)!important;color:#f8fafc!important}
   .bonus-table tbody tr:nth-child(even) td{background:rgba(255,255,255,.025)!important}
   .bonus-table tbody tr:hover td{background:rgba(255,145,0,.07)!important}
+  .bonus-table td.text-end{font-size:11.5px;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .bonus-table .bonus-user-cell{font-size:11.5px;line-height:1.18;white-space:normal;overflow-wrap:anywhere}
+  .bonus-table .bonus-muted{display:block;margin-top:2px;font-size:7.5px;line-height:1.15;white-space:normal}
+  .bonus-table .bonus-action{padding-left:.22rem;padding-right:.22rem;text-align:center}
+  .bonus-table .bonus-action .btn{width:100%;padding:.26rem .22rem;font-size:9px;white-space:nowrap}
+  .bonus-status-stack{display:flex;flex-direction:column;align-items:flex-start;gap:4px;min-width:0}
+  .bonus-table .bonus-status{max-width:100%;padding:3px 5px;font-size:7.5px;letter-spacing:.025em;overflow:hidden;text-overflow:ellipsis}
   .bonus-money{font-weight:900;color:#fff;white-space:nowrap}
   .bonus-final{font-size:15px;color:#ffd08b}
   .bonus-muted{color:#aeb3bb!important;font-size:12px}
@@ -78,7 +85,8 @@
   .bonus-team-card{border:1px solid rgba(255,255,255,.075);border-radius:15px;background:rgba(0,0,0,.2);padding:12px}
   .bonus-team-card small{color:#9fa4ac;text-transform:uppercase;font-size:9px;font-weight:900;letter-spacing:.07em}
   .bonus-team-card strong{display:block;margin-top:6px;font-size:18px}
-  @media(max-width:1180px){.bonus-grid{grid-template-columns:1fr}.bonus-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
+  @media(max-width:1180px){.bonus-grid{grid-template-columns:1fr}.bonus-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.bonus-table{font-size:11px}.bonus-table td.text-end{font-size:10.5px}.bonus-table td,.bonus-table th{padding:.5rem .28rem}}
+  @media(max-width:900px){.bonus-table-wrap{overflow-x:auto}.bonus-table-admin{min-width:1080px}.bonus-table-compact{min-width:700px}}
   @media(max-width:780px){.bonus-kpis,.bonus-detail-grid,.bonus-team-cards{grid-template-columns:1fr}.bonus-title{font-size:24px}.bonus-kpi strong{font-size:21px}}
 </style>
 {% endblock %}
@@ -223,7 +231,7 @@
     {% endif %}
     {% if team_rows %}
     <div class="bonus-table-wrap">
-      <table class="table table-sm bonus-table" style="min-width:760px">
+      <table class="table table-sm bonus-table bonus-table-compact">
         <thead><tr><th>EMP</th><th>Funcionário</th><th>Função</th><th class="text-end">Bônus Final</th><th>Ativação da loja</th></tr></thead>
         <tbody>
           {% for row in team_rows %}
@@ -255,25 +263,31 @@
       </div>
       {% if seller_rows %}
       <div class="bonus-table-wrap">
-        <table class="table table-sm bonus-table">
+        <table class="table table-sm bonus-table bonus-table-admin bonus-table-sellers">
+          <colgroup>
+            <col style="width:4%"><col style="width:10%">
+            <col style="width:8.5%"><col style="width:8.5%"><col style="width:7.5%"><col style="width:7%">
+            <col style="width:8.5%"><col style="width:8%"><col style="width:8.5%"><col style="width:8.5%">
+            <col style="width:7.5%"><col style="width:8.5%"><col style="width:5%">
+          </colgroup>
           <thead>
             <tr>
               <th>EMP</th><th>Usuário</th>
-              <th class="text-end">Venda Anterior<br><span class="bonus-muted">Faturamento individual</span></th>
-              <th class="text-end">Venda Atual<br><span class="bonus-muted">Faturamento individual</span></th>
-              <th class="text-end">Final Vendedor<br><span class="bonus-muted">Bônus produtos</span></th>
-              <th class="text-end">Valor Meta<br><span class="bonus-muted">Bônus de meta</span></th>
-              <th class="text-end">Importado<br><span class="bonus-muted">Venda importado vendedor</span></th>
-              <th class="text-end">Bônus Importado Vendedor</th>
-              <th class="text-end">Meta Loja<br><span class="bonus-muted">Venda ano anterior</span></th>
-              <th class="text-end">Venda Loja Atual</th>
-              <th class="text-end">Bônus Final</th><th>Ativação</th><th>Vínculo</th><th></th>
+              <th class="text-end">Venda anterior<span class="bonus-muted">Individual</span></th>
+              <th class="text-end">Venda atual<span class="bonus-muted">Individual</span></th>
+              <th class="text-end">Bônus produtos<span class="bonus-muted">Final vendedor</span></th>
+              <th class="text-end">Bônus meta<span class="bonus-muted">Valor meta</span></th>
+              <th class="text-end">Venda importada<span class="bonus-muted">Vendedor</span></th>
+              <th class="text-end">Bônus importado<span class="bonus-muted">Vendedor</span></th>
+              <th class="text-end">Meta loja<span class="bonus-muted">Ano anterior</span></th>
+              <th class="text-end">Venda loja<span class="bonus-muted">Atual</span></th>
+              <th class="text-end">Bônus final</th><th>Status</th><th></th>
             </tr>
           </thead>
           <tbody>
             {% for row in seller_rows %}
             <tr>
-              <td>{{ row.emp }}</td><td class="fw-bold">{{ row.usuario_nome }}</td>
+              <td>{{ row.emp }}</td><td class="fw-bold bonus-user-cell" title="{{ row.usuario_nome }}">{{ row.usuario_nome }}</td>
               <td class="text-end">{{ row.faturamento_individual_anterior|brl_rs }}</td>
               <td class="text-end">{{ row.faturamento_individual_atual|brl_rs }}</td>
               <td class="text-end">{{ row.final_vendedor|brl_rs }}</td>
@@ -283,8 +297,8 @@
               <td class="text-end">{{ row.meta_loja|brl_rs }}</td>
               <td class="text-end">{{ row.venda_loja_atual|brl_rs }}</td>
               <td class="text-end bonus-money bonus-final">{{ row.bonus_final|brl_rs }}</td>
-              <td>{{ activation_badge(row) }}</td><td>{{ binding_badge(row) }}</td>
-              <td><a class="btn btn-sm btn-outline-warning" href="{{ url_for('bonus_importados', ano=ano, mes=mes, emp=emp_filter, usuario=user_filter, registro=row.id) }}#detalhes">Detalhes</a></td>
+              <td><div class="bonus-status-stack">{{ activation_badge(row, true) }}{{ binding_badge(row, true) }}</div></td>
+              <td class="bonus-action"><a class="btn btn-sm btn-outline-warning" title="Ver detalhes de {{ row.usuario_nome }}" href="{{ url_for('bonus_importados', ano=ano, mes=mes, emp=emp_filter, usuario=user_filter, registro=row.id) }}#detalhes">Ver</a></td>
             </tr>
             {% endfor %}
           </tbody>
@@ -303,23 +317,28 @@
       </div>
       {% if manager_rows %}
       <div class="bonus-table-wrap">
-        <table class="table table-sm bonus-table">
+        <table class="table table-sm bonus-table bonus-table-admin bonus-table-managers">
+          <colgroup>
+            <col style="width:4.5%"><col style="width:12%"><col style="width:10%"><col style="width:10.5%">
+            <col style="width:10%"><col style="width:10%"><col style="width:10%"><col style="width:9%">
+            <col style="width:9%"><col style="width:9.5%"><col style="width:5.5%">
+          </colgroup>
           <thead>
             <tr>
               <th>EMP</th><th>Usuário</th>
-              <th class="text-end">Bônus Gerente Total<br><span class="bonus-muted">Bônus produtos</span></th>
-              <th class="text-end">Importado Loja</th>
-              <th class="text-end">Bônus Importado Loja</th>
-              <th class="text-end">Meta Loja<br><span class="bonus-muted">Venda ano anterior</span></th>
-              <th class="text-end">Venda Loja Atual</th>
-              <th class="text-end">Bônus Gerente<br><span class="bonus-muted">Crescimento</span></th>
-              <th class="text-end">Bônus Final</th><th>Ativação</th><th>Vínculo</th><th></th>
+              <th class="text-end">Bônus produtos<span class="bonus-muted">Gerente total</span></th>
+              <th class="text-end">Venda importada<span class="bonus-muted">Loja</span></th>
+              <th class="text-end">Bônus importado<span class="bonus-muted">Gerente</span></th>
+              <th class="text-end">Meta loja<span class="bonus-muted">Ano anterior</span></th>
+              <th class="text-end">Venda loja<span class="bonus-muted">Atual</span></th>
+              <th class="text-end">Bônus crescimento<span class="bonus-muted">Gerente</span></th>
+              <th class="text-end">Bônus final</th><th>Status</th><th></th>
             </tr>
           </thead>
           <tbody>
             {% for row in manager_rows %}
             <tr>
-              <td>{{ row.emp }}</td><td class="fw-bold">{{ row.usuario_nome }}</td>
+              <td>{{ row.emp }}</td><td class="fw-bold bonus-user-cell" title="{{ row.usuario_nome }}">{{ row.usuario_nome }}</td>
               <td class="text-end">{{ row.bonus_gerente_total|brl_rs }}</td>
               <td class="text-end">{{ row.importado_loja|brl_rs }}</td>
               <td class="text-end">{{ row.bonus_importado_loja|brl_rs }}</td>
@@ -327,8 +346,8 @@
               <td class="text-end">{{ row.venda_loja_atual|brl_rs }}</td>
               <td class="text-end">{{ row.bonus_gerente|brl_rs }}</td>
               <td class="text-end bonus-money bonus-final">{{ row.bonus_final|brl_rs }}</td>
-              <td>{{ activation_badge(row) }}</td><td>{{ binding_badge(row) }}</td>
-              <td><a class="btn btn-sm btn-outline-warning" href="{{ url_for('bonus_importados', ano=ano, mes=mes, emp=emp_filter, usuario=user_filter, registro=row.id) }}#detalhes">Detalhes</a></td>
+              <td><div class="bonus-status-stack">{{ activation_badge(row, true) }}{{ binding_badge(row, true) }}</div></td>
+              <td class="bonus-action"><a class="btn btn-sm btn-outline-warning" title="Ver detalhes de {{ row.usuario_nome }}" href="{{ url_for('bonus_importados', ano=ano, mes=mes, emp=emp_filter, usuario=user_filter, registro=row.id) }}#detalhes">Ver</a></td>
             </tr>
             {% endfor %}
           </tbody>
@@ -344,7 +363,7 @@
     <section class="bonus-panel mb-3">
       <h2 class="bonus-section-title mb-3">Meus registros</h2>
       <div class="bonus-table-wrap">
-        <table class="table table-sm bonus-table" style="min-width:720px">
+        <table class="table table-sm bonus-table bonus-table-compact">
           <thead><tr><th>EMP</th><th>Função</th><th class="text-end">Meta Loja</th><th class="text-end">Venda Loja Atual</th><th class="text-end">Bônus Final</th><th>Ativação</th><th></th></tr></thead>
           <tbody>
             {% for row in own_rows %}
