@@ -49,7 +49,7 @@
   .bonus-audit span{border:1px solid rgba(255,255,255,.075);border-radius:11px;background:rgba(0,0,0,.2);padding:7px 9px;color:#bfc3ca;font-size:11px}
   .bonus-audit b{color:#fff}
   .bonus-table-wrap{border:1px solid rgba(255,255,255,.08);border-radius:18px;overflow:auto;background:rgba(0,0,0,.15)}
-  .bonus-table{margin:0;min-width:1180px;color:#f8fafc!important}
+  .bonus-table{margin:0;min-width:1420px;color:#f8fafc!important}
   .bonus-table th{position:sticky;top:0;z-index:2;background:#151515!important;color:#b9bdc5!important;font-size:10px;text-transform:uppercase;letter-spacing:.055em;white-space:nowrap}
   .bonus-table td,.bonus-table th{padding:.68rem .72rem;border-color:rgba(255,255,255,.065);vertical-align:middle}
   .bonus-table tbody td{background:rgba(5,5,5,.34)!important;color:#f8fafc!important}
@@ -259,6 +259,8 @@
           <thead>
             <tr>
               <th>EMP</th><th>Usuário</th>
+              <th class="text-end">Venda Anterior<br><span class="bonus-muted">Faturamento individual</span></th>
+              <th class="text-end">Venda Atual<br><span class="bonus-muted">Faturamento individual</span></th>
               <th class="text-end">Final Vendedor<br><span class="bonus-muted">Bônus produtos</span></th>
               <th class="text-end">Valor Meta<br><span class="bonus-muted">Bônus de meta</span></th>
               <th class="text-end">Importado<br><span class="bonus-muted">Venda importado vendedor</span></th>
@@ -272,6 +274,8 @@
             {% for row in seller_rows %}
             <tr>
               <td>{{ row.emp }}</td><td class="fw-bold">{{ row.usuario_nome }}</td>
+              <td class="text-end">{{ row.faturamento_individual_anterior|brl_rs }}</td>
+              <td class="text-end">{{ row.faturamento_individual_atual|brl_rs }}</td>
               <td class="text-end">{{ row.final_vendedor|brl_rs }}</td>
               <td class="text-end">{{ row.valor_meta|brl_rs }}</td>
               <td class="text-end">{{ row.importado|brl_rs }}</td>
@@ -382,6 +386,8 @@
       {% elif selected.funcao == 'VENDEDOR' %}
       <div class="bonus-detail-grid">
         <div class="bonus-group-title">Informações do vendedor</div>
+        <div class="bonus-metric"><small>Valor Individual Anterior · Faturamento do vendedor no período anterior</small><strong>{{ selected.faturamento_individual_anterior|brl_rs }}</strong></div>
+        <div class="bonus-metric"><small>Valor Individual Atual · Faturamento atual do vendedor</small><strong>{{ selected.faturamento_individual_atual|brl_rs }}</strong></div>
         <div class="bonus-metric"><small>Final Vendedor · Bônus produtos</small><strong>{{ selected.final_vendedor|brl_rs }}</strong></div>
         <div class="bonus-metric"><small>Valor Meta · Bônus de meta</small><strong>{{ selected.valor_meta|brl_rs }}</strong></div>
         <div class="bonus-metric"><small>Importado · Valor vendido de importado do vendedor</small><strong>{{ selected.importado|brl_rs }}</strong></div>
