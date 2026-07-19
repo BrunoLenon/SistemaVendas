@@ -572,6 +572,9 @@ def bonus_importados():
             rows=[],
             own_rows=[],
             team_rows=[],
+            seller_rows=[],
+            manager_rows=[],
+            other_rows=[],
             selected=None,
             periods=[],
             emp_options=[],
@@ -638,6 +641,9 @@ def bonus_importados():
             user_options = []
 
         rows.sort(key=lambda row: (emp_sort_key(row.emp), row.funcao, row.usuario_nome))
+        seller_rows = [row for row in rows if row.funcao == "VENDEDOR"]
+        manager_rows = [row for row in rows if row.funcao == "GERENTE"]
+        other_rows = [row for row in rows if row.funcao not in {"VENDEDOR", "GERENTE"}]
         own_rows = [row for row in rows if row.usuario_nome == current_username]
         team_rows = []
         if role == "gerente":
@@ -678,9 +684,16 @@ def bonus_importados():
         summary = {
             "registros": len(rows),
             "bonus_visivel": _sum_field(rows, "bonus_final"),
+            "bonus_vendedores": _sum_field(seller_rows, "bonus_final"),
+            "bonus_gerentes": _sum_field(manager_rows, "bonus_final"),
             "bonus_proprio": _sum_field(own_rows, "bonus_final"),
             "bonus_equipe": _sum_field(team_rows, "bonus_final"),
-            "faturamento_proprio": _sum_field(own_rows, "faturamento_individual_atual"),
+            "bonus_produtos_vendedor": _sum_field(own_rows, "final_vendedor"),
+            "bonus_meta_vendedor": _sum_field(own_rows, "valor_meta"),
+            "bonus_importado_vendedor": _sum_field(own_rows, "bonus_importado_vendedor"),
+            "bonus_produtos_gerente": _sum_field(own_rows, "bonus_gerente_total"),
+            "bonus_importado_gerente": _sum_field(own_rows, "bonus_importado_loja"),
+            "bonus_crescimento_gerente": _sum_field(own_rows, "bonus_gerente"),
             "nao_vinculados": sum(1 for row in rows if row.usuario_id is None),
         }
 
@@ -692,6 +705,9 @@ def bonus_importados():
             rows=rows,
             own_rows=own_rows,
             team_rows=team_rows,
+            seller_rows=seller_rows,
+            manager_rows=manager_rows,
+            other_rows=other_rows,
             selected=selected,
             periods=periods,
             emp_options=emp_options,
