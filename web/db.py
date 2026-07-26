@@ -132,7 +132,7 @@ class BonusImportacaoLote(Base):
 
 
 class BonusUsuarioImportado(Base):
-    """Snapshot mensal dos bônus calculados externamente na planilha."""
+    """Snapshot mensal dos valores prontos da aba ``BONUS FINAL``."""
 
     __tablename__ = "bonus_usuarios_importados"
 
@@ -147,38 +147,21 @@ class BonusUsuarioImportado(Base):
     funcao = Column(String(30), nullable=False, index=True)
     emp = Column(String(30), nullable=False, index=True)
 
-    # Faturamento individual e bônus de produtos
-    importado = Column(Numeric(18, 4), nullable=False, default=0)
-    faturamento_individual_anterior = Column(Numeric(18, 4), nullable=False, default=0)
-    faturamento_individual_atual = Column(Numeric(18, 4), nullable=False, default=0)
-    final_vendedor = Column(Numeric(18, 4), nullable=False, default=0)
-    final_gerente = Column(Numeric(18, 4), nullable=False, default=0)
+    # Colunas autorizadas do layout atual da aba BONUS FINAL.
+    produto_vendedor = Column(Numeric(18, 4), nullable=False, default=0)  # E
+    mecanico_faturado = Column(Numeric(18, 4), nullable=False, default=0)  # F
+    venda_anterior = Column(Numeric(18, 4), nullable=False, default=0)  # G
+    venda_atual = Column(Numeric(18, 4), nullable=False, default=0)  # H
+    crescimento = Column(Numeric(12, 6), nullable=True)  # I
+    loja_anterior = Column(Numeric(18, 4), nullable=False, default=0)  # J
+    loja_atual = Column(Numeric(18, 4), nullable=False, default=0)  # K
+    importado_vendedor = Column(Numeric(18, 4), nullable=False, default=0)  # N
+    importado_loja = Column(Numeric(18, 4), nullable=False, default=0)  # O
+    bonus_importado = Column(Numeric(18, 4), nullable=False, default=0)  # R
+    valor_meta = Column(Numeric(18, 4), nullable=False, default=0)  # T
+    valor_parcial = Column(Numeric(18, 4), nullable=False, default=0)  # U
+    bonus_final = Column(Numeric(18, 4), nullable=False, default=0)  # V
 
-    # Percentuais e meta individual
-    percentual_faturamento = Column(Numeric(12, 6), nullable=False, default=0)
-    percentual_meta = Column(Numeric(12, 6), nullable=False, default=0)
-    valor_meta = Column(Numeric(18, 4), nullable=False, default=0)
-    bonus_gerente_total = Column(Numeric(18, 4), nullable=False, default=0)
-
-    # Importados do vendedor
-    percentual_importado = Column(Numeric(12, 6), nullable=False, default=0)
-    percentual_bonus_importado_vendedor = Column(Numeric(12, 6), nullable=False, default=0)
-    bonus_importado_vendedor = Column(Numeric(18, 4), nullable=False, default=0)
-
-    # Importados agregados da loja (premiação do gerente)
-    importado_loja = Column(Numeric(18, 4), nullable=False, default=0)
-    percentual_importado_gerente = Column(Numeric(12, 6), nullable=False, default=0)
-    percentual_bonus_importado_loja = Column(Numeric(12, 6), nullable=False, default=0)
-    bonus_importado_loja = Column(Numeric(18, 4), nullable=False, default=0)
-
-    # Desempenho agregado da loja (premiação do gerente)
-    meta_loja = Column(Numeric(18, 4), nullable=False, default=0)
-    venda_loja_atual = Column(Numeric(18, 4), nullable=False, default=0)
-    crescimento_loja = Column(Numeric(12, 6), nullable=False, default=0)
-    percentual_crescimento = Column(Numeric(12, 6), nullable=False, default=0)
-    bonus_gerente = Column(Numeric(18, 4), nullable=False, default=0)
-
-    bonus_final = Column(Numeric(18, 4), nullable=False, default=0)
     importado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
 
     __table_args__ = (
@@ -1779,32 +1762,38 @@ def ensure_bonus_importados_schema(force: bool = False):
                 usuario_nome VARCHAR(80) NOT NULL,
                 funcao VARCHAR(30) NOT NULL,
                 emp VARCHAR(30) NOT NULL,
-                importado NUMERIC(18,4) NOT NULL DEFAULT 0,
-                faturamento_individual_anterior NUMERIC(18,4) NOT NULL DEFAULT 0,
-                faturamento_individual_atual NUMERIC(18,4) NOT NULL DEFAULT 0,
-                final_vendedor NUMERIC(18,4) NOT NULL DEFAULT 0,
-                final_gerente NUMERIC(18,4) NOT NULL DEFAULT 0,
-                percentual_faturamento NUMERIC(12,6) NOT NULL DEFAULT 0,
-                percentual_meta NUMERIC(12,6) NOT NULL DEFAULT 0,
-                valor_meta NUMERIC(18,4) NOT NULL DEFAULT 0,
-                bonus_gerente_total NUMERIC(18,4) NOT NULL DEFAULT 0,
-                percentual_importado NUMERIC(12,6) NOT NULL DEFAULT 0,
-                percentual_bonus_importado_vendedor NUMERIC(12,6) NOT NULL DEFAULT 0,
-                bonus_importado_vendedor NUMERIC(18,4) NOT NULL DEFAULT 0,
+                produto_vendedor NUMERIC(18,4) NOT NULL DEFAULT 0,
+                mecanico_faturado NUMERIC(18,4) NOT NULL DEFAULT 0,
+                venda_anterior NUMERIC(18,4) NOT NULL DEFAULT 0,
+                venda_atual NUMERIC(18,4) NOT NULL DEFAULT 0,
+                crescimento NUMERIC(12,6),
+                loja_anterior NUMERIC(18,4) NOT NULL DEFAULT 0,
+                loja_atual NUMERIC(18,4) NOT NULL DEFAULT 0,
+                importado_vendedor NUMERIC(18,4) NOT NULL DEFAULT 0,
                 importado_loja NUMERIC(18,4) NOT NULL DEFAULT 0,
-                percentual_importado_gerente NUMERIC(12,6) NOT NULL DEFAULT 0,
-                percentual_bonus_importado_loja NUMERIC(12,6) NOT NULL DEFAULT 0,
-                bonus_importado_loja NUMERIC(18,4) NOT NULL DEFAULT 0,
-                meta_loja NUMERIC(18,4) NOT NULL DEFAULT 0,
-                venda_loja_atual NUMERIC(18,4) NOT NULL DEFAULT 0,
-                crescimento_loja NUMERIC(12,6) NOT NULL DEFAULT 0,
-                percentual_crescimento NUMERIC(12,6) NOT NULL DEFAULT 0,
-                bonus_gerente NUMERIC(18,4) NOT NULL DEFAULT 0,
+                bonus_importado NUMERIC(18,4) NOT NULL DEFAULT 0,
+                valor_meta NUMERIC(18,4) NOT NULL DEFAULT 0,
+                valor_parcial NUMERIC(18,4) NOT NULL DEFAULT 0,
                 bonus_final NUMERIC(18,4) NOT NULL DEFAULT 0,
                 importado_em TIMESTAMP NOT NULL DEFAULT NOW(),
                 CONSTRAINT uq_bonus_usuario_periodo_emp UNIQUE (ano, mes, emp, usuario_nome)
             );
         """))
+        # Atualiza instalações que já possuíam o layout anterior da tabela.
+        conn.execute(text("ALTER TABLE bonus_usuarios_importados ADD COLUMN IF NOT EXISTS produto_vendedor NUMERIC(18,4) NOT NULL DEFAULT 0;"))
+        conn.execute(text("ALTER TABLE bonus_usuarios_importados ADD COLUMN IF NOT EXISTS mecanico_faturado NUMERIC(18,4) NOT NULL DEFAULT 0;"))
+        conn.execute(text("ALTER TABLE bonus_usuarios_importados ADD COLUMN IF NOT EXISTS venda_anterior NUMERIC(18,4) NOT NULL DEFAULT 0;"))
+        conn.execute(text("ALTER TABLE bonus_usuarios_importados ADD COLUMN IF NOT EXISTS venda_atual NUMERIC(18,4) NOT NULL DEFAULT 0;"))
+        conn.execute(text("ALTER TABLE bonus_usuarios_importados ADD COLUMN IF NOT EXISTS crescimento NUMERIC(12,6);"))
+        conn.execute(text("ALTER TABLE bonus_usuarios_importados ADD COLUMN IF NOT EXISTS loja_anterior NUMERIC(18,4) NOT NULL DEFAULT 0;"))
+        conn.execute(text("ALTER TABLE bonus_usuarios_importados ADD COLUMN IF NOT EXISTS loja_atual NUMERIC(18,4) NOT NULL DEFAULT 0;"))
+        conn.execute(text("ALTER TABLE bonus_usuarios_importados ADD COLUMN IF NOT EXISTS importado_vendedor NUMERIC(18,4) NOT NULL DEFAULT 0;"))
+        conn.execute(text("ALTER TABLE bonus_usuarios_importados ADD COLUMN IF NOT EXISTS bonus_importado NUMERIC(18,4) NOT NULL DEFAULT 0;"))
+        conn.execute(text("ALTER TABLE bonus_usuarios_importados ADD COLUMN IF NOT EXISTS valor_parcial NUMERIC(18,4) NOT NULL DEFAULT 0;"))
+        conn.execute(text("ALTER TABLE bonus_usuarios_importados ADD COLUMN IF NOT EXISTS importado_loja NUMERIC(18,4) NOT NULL DEFAULT 0;"))
+        conn.execute(text("ALTER TABLE bonus_usuarios_importados ADD COLUMN IF NOT EXISTS valor_meta NUMERIC(18,4) NOT NULL DEFAULT 0;"))
+        conn.execute(text("ALTER TABLE bonus_usuarios_importados ADD COLUMN IF NOT EXISTS bonus_final NUMERIC(18,4) NOT NULL DEFAULT 0;"))
+
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_bonus_lotes_periodo_importado ON bonus_importacoes_lotes (ano, mes, importado_em);"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_bonus_lotes_importado_em ON bonus_importacoes_lotes (importado_em);"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_bonus_lotes_importado_por_user_id ON bonus_importacoes_lotes (importado_por_user_id);"))

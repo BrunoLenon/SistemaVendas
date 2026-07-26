@@ -1,6 +1,6 @@
--- SistemaVendas - Snapshot mensal da aba "BONUS FINAL"
--- Armazena somente valores já calculados externamente.
--- Seguro para execução repetida no Supabase.
+-- SistemaVendas - atualização do módulo Bônus para a nova aba "BONUS FINAL"
+-- Execute uma vez no SQL Editor do Supabase antes do deploy dos arquivos.
+-- Seguro para execução repetida.
 
 BEGIN;
 
@@ -28,26 +28,11 @@ CREATE TABLE IF NOT EXISTS public.bonus_usuarios_importados (
     usuario_nome VARCHAR(80) NOT NULL,
     funcao VARCHAR(30) NOT NULL,
     emp VARCHAR(30) NOT NULL,
-
-    produto_vendedor NUMERIC(18,4) NOT NULL DEFAULT 0,
-    mecanico_faturado NUMERIC(18,4) NOT NULL DEFAULT 0,
-    venda_anterior NUMERIC(18,4) NOT NULL DEFAULT 0,
-    venda_atual NUMERIC(18,4) NOT NULL DEFAULT 0,
-    crescimento NUMERIC(12,6),
-    loja_anterior NUMERIC(18,4) NOT NULL DEFAULT 0,
-    loja_atual NUMERIC(18,4) NOT NULL DEFAULT 0,
-    importado_vendedor NUMERIC(18,4) NOT NULL DEFAULT 0,
-    importado_loja NUMERIC(18,4) NOT NULL DEFAULT 0,
-    bonus_importado NUMERIC(18,4) NOT NULL DEFAULT 0,
-    valor_meta NUMERIC(18,4) NOT NULL DEFAULT 0,
-    valor_parcial NUMERIC(18,4) NOT NULL DEFAULT 0,
     bonus_final NUMERIC(18,4) NOT NULL DEFAULT 0,
-
     importado_em TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW(),
     CONSTRAINT uq_bonus_usuario_periodo_emp UNIQUE (ano, mes, emp, usuario_nome)
 );
 
--- Atualiza instalações que já possuíam a tabela no layout anterior.
 ALTER TABLE public.bonus_usuarios_importados
     ADD COLUMN IF NOT EXISTS produto_vendedor NUMERIC(18,4) NOT NULL DEFAULT 0,
     ADD COLUMN IF NOT EXISTS mecanico_faturado NUMERIC(18,4) NOT NULL DEFAULT 0,
@@ -65,10 +50,6 @@ ALTER TABLE public.bonus_usuarios_importados
 
 CREATE INDEX IF NOT EXISTS ix_bonus_lotes_periodo_importado
     ON public.bonus_importacoes_lotes (ano, mes, importado_em DESC);
-CREATE INDEX IF NOT EXISTS ix_bonus_lotes_importado_em
-    ON public.bonus_importacoes_lotes (importado_em DESC);
-CREATE INDEX IF NOT EXISTS ix_bonus_lotes_importado_por_user_id
-    ON public.bonus_importacoes_lotes (importado_por_user_id);
 CREATE INDEX IF NOT EXISTS ix_bonus_usuario_periodo
     ON public.bonus_usuarios_importados (usuario_nome, ano, mes);
 CREATE INDEX IF NOT EXISTS ix_bonus_emp_periodo
@@ -91,19 +72,19 @@ COMMENT ON COLUMN public.bonus_usuarios_importados.venda_anterior IS
 COMMENT ON COLUMN public.bonus_usuarios_importados.venda_atual IS
 'Coluna H: venda atual do vendedor.';
 COMMENT ON COLUMN public.bonus_usuarios_importados.crescimento IS
-'Coluna I: percentual de crescimento do vendedor; pode ficar nulo quando indisponível na planilha.';
+'Coluna I: percentual de crescimento do vendedor. Pode ser nulo quando a planilha não consegue calcular.';
 COMMENT ON COLUMN public.bonus_usuarios_importados.loja_anterior IS
 'Coluna J: venda da loja no mesmo período do ano anterior.';
 COMMENT ON COLUMN public.bonus_usuarios_importados.loja_atual IS
 'Coluna K: venda atual da loja totalizada com serviço.';
 COMMENT ON COLUMN public.bonus_usuarios_importados.importado_vendedor IS
-'Coluna N: valor de importados vendido pelo vendedor.';
+'Coluna N: valor de produtos importados vendido pelo vendedor.';
 COMMENT ON COLUMN public.bonus_usuarios_importados.importado_loja IS
-'Coluna O: valor total de importados vendido na loja.';
+'Coluna O: valor total de produtos importados vendido na loja.';
 COMMENT ON COLUMN public.bonus_usuarios_importados.bonus_importado IS
 'Coluna R: bônus de importado do vendedor.';
 COMMENT ON COLUMN public.bonus_usuarios_importados.valor_meta IS
-'Coluna T: valor da meta calculado externamente.';
+'Coluna T: valor de bônus de meta calculado externamente.';
 COMMENT ON COLUMN public.bonus_usuarios_importados.valor_parcial IS
 'Coluna U: provisão de bônus calculada externamente.';
 COMMENT ON COLUMN public.bonus_usuarios_importados.bonus_final IS

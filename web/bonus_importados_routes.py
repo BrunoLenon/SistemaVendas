@@ -1,9 +1,14 @@
 # -*- coding: utf-8 -*-
-"""Página e importação do snapshot mensal de bônus.
+"""Importação e consulta do snapshot mensal da aba ``BONUS FINAL``.
 
-A aba ``Final Bonus`` continua sendo calculada fora do SistemaVendas. Este
-módulo apenas valida os valores salvos no Excel, substitui de forma atômica a
-competência escolhida e controla quais linhas cada perfil pode consultar.
+A planilha continua responsável por todas as regras e cálculos. O SistemaVendas
+apenas lê as colunas autorizadas para cada função, grava os valores prontos e
+aplica a hierarquia de visualização:
+
+* vendedor: somente os próprios dados;
+* mecânico: somente os próprios dados;
+* gerente: os próprios dados e os vendedores/mecânicos das EMPs vinculadas;
+* administrador: todos os registros e a importação da competência.
 """
 
 from __future__ import annotations
@@ -36,79 +41,144 @@ from sv_utils import emp_sort_key
 
 MAX_UPLOAD_BYTES = 15 * 1024 * 1024
 VALID_EXTENSIONS = {".xlsx", ".xlsm"}
+SUPPORTED_FUNCTIONS = {"VENDEDOR", "GERENTE", "MECANICO"}
+
+# Posições fixas informadas para a nova aba BONUS FINAL. A validação da letra e
+# do cabeçalho impede que uma coluna movida seja importada como outra métrica.
+COLUMN_LAYOUT: dict[str, dict[str, Any]] = {
+    "funcao": {"index": 1, "letter": "B", "headers": {"FUNCAO"}, "label": "FUNÇÃO"},
+    "emp": {"index": 2, "letter": "C", "headers": {"EMP"}, "label": "EMP"},
+    "usuario_nome": {
+        "index": 3,
+        "letter": "D",
+        "headers": {"FUNCIONARIO", "USUARIO", "VENDEDOR"},
+        "label": "FUNCIONARIO",
+    },
+    "produto_vendedor": {
+        "index": 4,
+        "letter": "E",
+        "headers": {"PRODUTOVENDEDOR", "PRODUTOSVENDEDOR"},
+        "label": "PRODUTO VENDEDOR",
+    },
+    "mecanico_faturado": {
+        "index": 5,
+        "letter": "F",
+        "headers": {"MECANICO"},
+        "label": "MECANICO",
+    },
+    "venda_anterior": {
+        "index": 6,
+        "letter": "G",
+        "headers": {"VENDAANTERIOR"},
+        "label": "VENDA ANTERIOR",
+    },
+    "venda_atual": {
+        "index": 7,
+        "letter": "H",
+        "headers": {"VENDAATUAL"},
+        "label": "VENDA ATUAL",
+    },
+    "crescimento": {
+        "index": 8,
+        "letter": "I",
+        "headers": {"CRESCIMENTO"},
+        "label": "CRESCIMENTO",
+    },
+    "loja_anterior": {
+        "index": 9,
+        "letter": "J",
+        "headers": {"LOJAANTERIOR"},
+        "label": "LOJA ANTERIOR",
+    },
+    "loja_atual": {
+        "index": 10,
+        "letter": "K",
+        "headers": {"LOJAATUAL"},
+        "label": "LOJA ATUAL",
+    },
+    "importado_vendedor": {
+        "index": 13,
+        "letter": "N",
+        "headers": {"IMPORTADOVENDEDOR"},
+        "label": "IMPORTADO VENDEDOR",
+    },
+    "importado_loja": {
+        "index": 14,
+        "letter": "O",
+        "headers": {"IMPORTADOLOJA"},
+        "label": "IMPORTADO LOJA",
+    },
+    "bonus_importado": {
+        "index": 17,
+        "letter": "R",
+        "headers": {"BONUSIMPORTADO"},
+        "label": "BONUS IMPORTADO",
+    },
+    "valor_meta": {
+        "index": 19,
+        "letter": "T",
+        "headers": {"VALORMETA"},
+        "label": "VALOR META",
+    },
+    "valor_parcial": {
+        "index": 20,
+        "letter": "U",
+        "headers": {"VALORPARCIAL"},
+        "label": "VALOR PARCIAL",
+    },
+    "bonus_final": {
+        "index": 21,
+        "letter": "V",
+        "headers": {"VALORFINAL", "BONUSFINAL"},
+        "label": "VALOR FINAL",
+    },
+}
+
+ROLE_FIELDS = {
+    "VENDEDOR": (
+        "produto_vendedor",
+        "venda_anterior",
+        "venda_atual",
+        "crescimento",
+        "importado_vendedor",
+        "bonus_importado",
+        "valor_meta",
+        "valor_parcial",
+        "bonus_final",
+    ),
+    "GERENTE": (
+        "loja_anterior",
+        "loja_atual",
+        "importado_loja",
+        "valor_meta",
+        "valor_parcial",
+        "bonus_final",
+    ),
+    "MECANICO": (
+        "mecanico_faturado",
+        "valor_parcial",
+        "bonus_final",
+    ),
+}
 
 MONEY_FIELDS = {
-    "importado",
-    "faturamento_individual_anterior",
-    "faturamento_individual_atual",
-    "final_vendedor",
-    "final_gerente",
-    "valor_meta",
-    "bonus_gerente_total",
-    "bonus_importado_vendedor",
+    "produto_vendedor",
+    "mecanico_faturado",
+    "venda_anterior",
+    "venda_atual",
+    "loja_anterior",
+    "loja_atual",
+    "importado_vendedor",
     "importado_loja",
-    "bonus_importado_loja",
-    "meta_loja",
-    "venda_loja_atual",
-    "bonus_gerente",
+    "bonus_importado",
+    "valor_meta",
+    "valor_parcial",
     "bonus_final",
 }
-
-PERCENT_FIELDS = {
-    "percentual_faturamento",
-    "percentual_meta",
-    "percentual_importado",
-    "percentual_bonus_importado_vendedor",
-    "percentual_importado_gerente",
-    "percentual_bonus_importado_loja",
-    "crescimento_loja",
-    "percentual_crescimento",
-}
-
-HEADER_ALIASES = {
-    # Identificação
-    "TABFUNCIONARIOFUNCAO": "funcao",
-    "FUNCAO": "funcao",
-    "VENDEDOR": "usuario_nome",
-    "USUARIO": "usuario_nome",
-    "NOMEDOUSUARIO": "usuario_nome",
-    "TABFUNCIONARIOEMP": "emp",
-    "EMP": "emp",
-    "EMPRESA": "emp",
-    # Individual / produtos
-    "IMPORTADO": "importado",
-    "FATURAMENTOANTATUALVALORINDIVIDUALANTERIOR": "faturamento_individual_anterior",
-    "VALORINDIVIDUALANTERIOR": "faturamento_individual_anterior",
-    "FATURAMENTOANTATUALVALORINDIVIDUALATUAL": "faturamento_individual_atual",
-    "VALORINDIVIDUALATUAL": "faturamento_individual_atual",
-    "FINALVENDEDOR": "final_vendedor",
-    "FINALGERENTE": "final_gerente",
-    # Meta individual
-    "PERCENTUALFATURAMENTO": "percentual_faturamento",
-    "PERCENTUALMETA": "percentual_meta",
-    "VALORMETA": "valor_meta",
-    "BONUSGERENTETOTAL": "bonus_gerente_total",
-    # Importados vendedor
-    "PERCENTUALIMPORTADO": "percentual_importado",
-    "PERCENTUALBONUSIMPORTADOVENDEDOR": "percentual_bonus_importado_vendedor",
-    "BONUSIMPORTADOVENDEDOR": "bonus_importado_vendedor",
-    "BONUSIMPORTADOVENDDOR": "bonus_importado_vendedor",  # compatibilidade com a planilha atual
-    # Importados loja / gerente
-    "IMPORTADOLOJA": "importado_loja",
-    "PERCENTUALIMPORTADOGERENTE": "percentual_importado_gerente",
-    "PERCENTUALBONUSIMPORTADOLOJA": "percentual_bonus_importado_loja",
-    "BONUSIMPORTADOLOJA": "bonus_importado_loja",
-    # Loja / gerente
-    "METALOJA": "meta_loja",
-    "VENDALOJAATUAL": "venda_loja_atual",
-    "CRESCIMENTOLOJA": "crescimento_loja",
-    "PERCENTUALCRESCIMENTO": "percentual_crescimento",
-    "BONUSGERENTE": "bonus_gerente",
-    "BONUSFINAL": "bonus_final",
-}
-
-REQUIRED_FIELDS = {"funcao", "usuario_nome", "emp"}
-KNOWN_FUNCTIONS = {"VENDEDOR", "GERENTE", "MECANICO", "SUPERVISOR"}
+PERCENT_FIELDS = {"crescimento"}
+ALL_IMPORTED_FIELDS = MONEY_FIELDS | PERCENT_FIELDS
+REQUIRED_CALCULATED_FIELDS = {"valor_parcial", "bonus_final"}
+ROLE_SORT_ORDER = {"GERENTE": 0, "VENDEDOR": 1, "MECANICO": 2}
 
 
 def register_bonus_importados_routes(app) -> None:
@@ -145,13 +215,11 @@ def _norm_username(value: object) -> str:
 def _norm_function(value: object) -> str:
     raw = re.sub(r"\s+", " ", _strip_accents(value).strip()).upper()
     aliases = {
-        "MECANICO": "MECANICO",
         "MEC": "MECANICO",
         "OFICINA": "MECANICO",
         "VENDEDORA": "VENDEDOR",
         "GERENCIA": "GERENTE",
         "MANAGER": "GERENTE",
-        "SUP": "SUPERVISOR",
     }
     return aliases.get(raw, raw)
 
@@ -174,19 +242,24 @@ def _norm_emp(value: object) -> str:
     return raw.upper()
 
 
-def _decimal_from_cell(cell, *, field: str, is_percent: bool) -> Decimal:
+def _decimal_from_cell(
+    cell,
+    *,
+    field: str,
+    is_percent: bool,
+) -> Decimal | None:
     value = cell.value
     if getattr(cell, "data_type", None) == "e" or (
         isinstance(value, str) and value.strip().startswith("#")
     ):
         raise ValueError(f"erro do Excel ({value})")
 
-    if value is None and field == "bonus_final":
-        raise ValueError(
-            "sem valor calculado; abra a planilha no Excel, recalcule e salve antes de importar"
-        )
     if value is None or (isinstance(value, str) and not value.strip()):
-        return Decimal("0")
+        if field in REQUIRED_CALCULATED_FIELDS:
+            raise ValueError(
+                "sem valor calculado; abra a planilha no Excel, recalcule e salve antes de importar"
+            )
+        return None if is_percent else Decimal("0")
 
     had_percent_symbol = False
     if isinstance(value, str):
@@ -194,7 +267,7 @@ def _decimal_from_cell(cell, *, field: str, is_percent: bool) -> Decimal:
         had_percent_symbol = "%" in raw
         raw = raw.replace("R$", "").replace("%", "").replace(" ", "")
         if not raw:
-            return Decimal("0")
+            return None if is_percent else Decimal("0")
         if "," in raw:
             raw = raw.replace(".", "").replace(",", ".")
         elif raw.count(".") > 1:
@@ -209,12 +282,9 @@ def _decimal_from_cell(cell, *, field: str, is_percent: bool) -> Decimal:
         raise ValueError(f"valor numérico inválido ({value})")
 
     number_format = str(getattr(cell, "number_format", "") or "")
-    if is_percent and not had_percent_symbol:
-        # O Excel armazena percentuais formatados como fração (0,15 = 15%).
-        # A coluna Crescimento Loja da planilha atual também é uma razão, mas
-        # está com formatação contábil; por isso ela precisa da mesma conversão.
-        if "%" in number_format or field == "crescimento_loja":
-            result *= Decimal("100")
+    if is_percent and not had_percent_symbol and "%" in number_format:
+        # O Excel armazena 10% como 0,10. No banco persistimos 10,000000.
+        result *= Decimal("100")
 
     quantum = Decimal("0.000001") if is_percent else Decimal("0.0001")
     return result.quantize(quantum, rounding=ROUND_HALF_UP)
@@ -222,33 +292,50 @@ def _decimal_from_cell(cell, *, field: str, is_percent: bool) -> Decimal:
 
 def _find_final_bonus_sheet(workbook):
     for sheet in workbook.worksheets:
-        if _norm_header(sheet.title) == "FINALBONUS":
+        if _norm_header(sheet.title) == "BONUSFINAL":
             return sheet
     available = ", ".join(sheet.title for sheet in workbook.worksheets)
     raise ValueError(
-        "A aba 'Final Bonus' não foi encontrada. Abas disponíveis: " + available
+        "A aba 'BONUS FINAL' não foi encontrada. Abas disponíveis: " + available
     )
 
 
 def _find_header(sheet) -> tuple[int, dict[str, int]]:
-    best_row = None
-    best_mapping: dict[str, int] = {}
-    for row_number, cells in enumerate(
-        sheet.iter_rows(min_row=1, max_row=min(sheet.max_row or 1, 30)), start=1
-    ):
-        mapping: dict[str, int] = {}
-        for index, cell in enumerate(cells):
-            field = HEADER_ALIASES.get(_norm_header(cell.value))
-            if field and field not in mapping:
-                mapping[field] = index
-        if len(mapping) > len(best_mapping):
-            best_row, best_mapping = row_number, mapping
-        if REQUIRED_FIELDS.issubset(mapping) and len(mapping) >= 20:
-            return row_number, mapping
+    max_index = max(int(config["index"]) for config in COLUMN_LAYOUT.values())
+    best_row = 1
+    best_score = -1
+    best_cells: list[Any] = []
 
-    missing = sorted(REQUIRED_FIELDS - set(best_mapping))
-    detail = f" Campos obrigatórios ausentes: {', '.join(missing)}." if missing else ""
-    raise ValueError("Não foi possível reconhecer o cabeçalho da aba Final Bonus." + detail)
+    for row_number, cells_tuple in enumerate(
+        sheet.iter_rows(min_row=1, max_row=min(sheet.max_row or 1, 30), max_col=max_index + 1),
+        start=1,
+    ):
+        cells = list(cells_tuple)
+        score = 0
+        for config in COLUMN_LAYOUT.values():
+            index = int(config["index"])
+            value = cells[index].value if index < len(cells) else None
+            if _norm_header(value) in config["headers"]:
+                score += 1
+        if score > best_score:
+            best_row, best_score, best_cells = row_number, score, cells
+        if score == len(COLUMN_LAYOUT):
+            return row_number, {
+                field: int(config["index"]) for field, config in COLUMN_LAYOUT.items()
+            }
+
+    mismatches = []
+    for config in COLUMN_LAYOUT.values():
+        index = int(config["index"])
+        found = best_cells[index].value if index < len(best_cells) else None
+        if _norm_header(found) not in config["headers"]:
+            mismatches.append(
+                f"{config['letter']} deveria ser '{config['label']}' (encontrado: {found or 'vazio'})"
+            )
+    detail = "; ".join(mismatches[:8])
+    raise ValueError(
+        "O cabeçalho da aba BONUS FINAL não corresponde ao layout combinado. " + detail
+    )
 
 
 def _read_bonus_workbook(content: bytes) -> dict[str, Any]:
@@ -272,14 +359,6 @@ def _read_bonus_workbook(content: bytes) -> dict[str, Any]:
     try:
         sheet = _find_final_bonus_sheet(workbook)
         header_row, mapping = _find_header(sheet)
-        missing_columns = sorted(
-            ({"funcao", "usuario_nome", "emp"} | MONEY_FIELDS | PERCENT_FIELDS) - set(mapping)
-        )
-        if missing_columns:
-            raise ValueError(
-                "A aba Final Bonus não possui todas as colunas esperadas: "
-                + ", ".join(missing_columns)
-            )
 
         records: list[dict[str, Any]] = []
         warnings: list[str] = []
@@ -287,11 +366,14 @@ def _read_bonus_workbook(content: bytes) -> dict[str, Any]:
         rows_read = 0
         rows_skipped = 0
 
-        for source_row, cells in enumerate(
-            sheet.iter_rows(min_row=header_row + 1), start=header_row + 1
+        for source_row, cells_tuple in enumerate(
+            sheet.iter_rows(min_row=header_row + 1, max_col=22), start=header_row + 1
         ):
-            relevant_cells = [cells[index] for index in mapping.values() if index < len(cells)]
-            if not any(cell.value not in (None, "") for cell in relevant_cells):
+            cells = list(cells_tuple)
+            identity_values = [
+                cells[mapping[field]].value for field in ("funcao", "emp", "usuario_nome")
+            ]
+            if not any(value not in (None, "") for value in identity_values):
                 continue
 
             rows_read += 1
@@ -313,10 +395,12 @@ def _read_bonus_workbook(content: bytes) -> dict[str, Any]:
                 )
                 continue
 
-            if function not in KNOWN_FUNCTIONS:
+            if function not in SUPPORTED_FUNCTIONS:
+                rows_skipped += 1
                 warnings.append(
-                    f"Linha {source_row}: função '{function}' não está entre os perfis padrão."
+                    f"Linha {source_row} ignorada: função '{function}' não é VENDEDOR, GERENTE ou MECANICO."
                 )
+                continue
 
             record: dict[str, Any] = {
                 "linha_origem": source_row,
@@ -324,8 +408,13 @@ def _read_bonus_workbook(content: bytes) -> dict[str, Any]:
                 "funcao": function,
                 "emp": emp,
             }
+            for field in MONEY_FIELDS:
+                record[field] = Decimal("0")
+            for field in PERCENT_FIELDS:
+                record[field] = None
+
             numeric_error = None
-            for field in MONEY_FIELDS | PERCENT_FIELDS:
+            for field in ROLE_FIELDS[function]:
                 try:
                     record[field] = _decimal_from_cell(
                         cells[mapping[field]],
@@ -333,7 +422,15 @@ def _read_bonus_workbook(content: bytes) -> dict[str, Any]:
                         is_percent=(field in PERCENT_FIELDS),
                     )
                 except ValueError as exc:
-                    numeric_error = f"coluna {field}: {exc}"
+                    if field == "crescimento":
+                        # Crescimento pode ficar indisponível quando a venda anterior é zero.
+                        # Mantemos o usuário e exibimos "não disponível" em vez de inventar 0%.
+                        record[field] = None
+                        warnings.append(
+                            f"Linha {source_row}: Crescimento não disponível para {username} ({exc})."
+                        )
+                        continue
+                    numeric_error = f"coluna {COLUMN_LAYOUT[field]['letter']} ({COLUMN_LAYOUT[field]['label']}): {exc}"
                     break
 
             if numeric_error:
@@ -345,14 +442,14 @@ def _read_bonus_workbook(content: bytes) -> dict[str, Any]:
             if key in duplicate_keys:
                 first_row = duplicate_keys[key]
                 raise ValueError(
-                    f"Duplicidade na aba Final Bonus: usuário {username}, EMP {emp}, "
+                    f"Duplicidade na aba BONUS FINAL: usuário {username}, EMP {emp}, "
                     f"linhas {first_row} e {source_row}."
                 )
             duplicate_keys[key] = source_row
             records.append(record)
 
         if not records:
-            raise ValueError("Nenhuma linha válida foi encontrada na aba Final Bonus.")
+            raise ValueError("Nenhuma linha válida foi encontrada na aba BONUS FINAL.")
 
         return {
             "records": records,
@@ -365,13 +462,11 @@ def _read_bonus_workbook(content: bytes) -> dict[str, Any]:
 
 
 def _role_from_function(function: str) -> str:
-    mapping = {
+    return {
         "VENDEDOR": "vendedor",
         "GERENTE": "gerente",
         "MECANICO": "mecanico",
-        "SUPERVISOR": "supervisor",
-    }
-    return mapping.get(function, function.lower())
+    }.get(function, function.lower())
 
 
 def _bind_users_and_validate(db, records: list[dict[str, Any]], warnings: list[str]) -> None:
@@ -399,7 +494,7 @@ def _bind_users_and_validate(db, records: list[dict[str, Any]], warnings: list[s
                 f"Linha {record['linha_origem']}: função da planilha ({record['funcao']}) difere do cadastro ({current_role.upper()})."
             )
 
-        allowed = emps_by_user.get(int(user.id), set())
+        allowed = set(emps_by_user.get(int(user.id), set()))
         legacy_emp = _norm_emp(getattr(user, "emp", None))
         if legacy_emp:
             allowed.add(legacy_emp)
@@ -431,10 +526,10 @@ def admin_bonus_importar():
     uploaded = request.files.get("arquivo")
 
     if uploaded is None or not uploaded.filename:
-        flash("Selecione a planilha que contém a aba Final Bonus.", "warning")
+        flash("Selecione a planilha que contém a aba BONUS FINAL.", "warning")
         return redirect(url_for("bonus_importados", ano=ano, mes=mes))
 
-    filename = secure_filename(uploaded.filename) or "final_bonus.xlsx"
+    filename = secure_filename(uploaded.filename) or "bonus_final.xlsx"
     extension = "." + filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
     if extension not in VALID_EXTENSIONS:
         flash("Envie um arquivo .xlsx ou .xlsm.", "warning")
@@ -460,8 +555,7 @@ def admin_bonus_importar():
         with SessionLocal() as db:
             _bind_users_and_validate(db, parsed["records"], warnings)
 
-            # A substituição ocorre dentro de uma única transação: ou a nova
-            # competência entra completa, ou o snapshot anterior é preservado.
+            # Substituição atômica: uma falha preserva a competência anterior.
             db.query(BonusUsuarioImportado).filter(
                 BonusUsuarioImportado.ano == ano,
                 BonusUsuarioImportado.mes == mes,
@@ -496,7 +590,7 @@ def admin_bonus_importar():
             db.commit()
 
         audit(
-            "bonus_snapshot_imported",
+            "bonus_final_snapshot_imported",
             ano=ano,
             mes=mes,
             arquivo=filename,
@@ -505,18 +599,24 @@ def admin_bonus_importar():
             avisos=len(warnings),
         )
         flash(
-            f"Bônus de {mes:02d}/{ano} importados: {len(parsed['records'])} usuários. "
+            f"BONUS FINAL de {mes:02d}/{ano} importado: {len(parsed['records'])} usuários. "
             f"Linhas ignoradas: {parsed['rows_skipped']}.",
             "success",
         )
         if warnings:
             flash(
-                f"A importação terminou com {len(warnings)} aviso(s). Consulte o painel da última importação.",
+                f"A importação terminou com {len(warnings)} aviso(s). Consulte a validação da última importação.",
                 "warning",
             )
     except Exception as exc:
-        current_app.logger.exception("Falha ao importar snapshot de bônus")
-        audit("bonus_snapshot_import_failed", ano=ano, mes=mes, arquivo=filename, erro=str(exc))
+        current_app.logger.exception("Falha ao importar aba BONUS FINAL")
+        audit(
+            "bonus_final_snapshot_import_failed",
+            ano=ano,
+            mes=mes,
+            arquivo=filename,
+            erro=str(exc),
+        )
         flash(f"Não foi possível importar a planilha: {exc}", "danger")
 
     return redirect(url_for("bonus_importados", ano=ano, mes=mes))
@@ -561,7 +661,7 @@ def bonus_importados():
     except Exception:
         current_app.logger.exception("Falha ao garantir schema de bônus")
         flash(
-            "As tabelas do módulo de bônus ainda não estão disponíveis. Execute o SQL de implantação no Supabase.",
+            "As tabelas/colunas do módulo de bônus ainda não estão disponíveis. Execute o SQL de implantação no Supabase.",
             "danger",
         )
         return render_template(
@@ -574,7 +674,7 @@ def bonus_importados():
             team_rows=[],
             seller_rows=[],
             manager_rows=[],
-            other_rows=[],
+            mechanic_rows=[],
             selected=None,
             periods=[],
             emp_options=[],
@@ -619,31 +719,45 @@ def bonus_importados():
                 {row.usuario_nome for row in all_period_rows if row.usuario_nome}
             )
         elif role == "gerente":
-            allowed_emps = [_norm_emp(emp) for emp in _allowed_emps() if _norm_emp(emp)]
-            query = period_query
+            allowed_emps = sorted(
+                {_norm_emp(emp) for emp in _allowed_emps() if _norm_emp(emp)},
+                key=emp_sort_key,
+            )
             if allowed_emps:
-                query = query.filter(BonusUsuarioImportado.emp.in_(allowed_emps)).filter(
-                    or_(
-                        BonusUsuarioImportado.usuario_nome == current_username,
-                        BonusUsuarioImportado.funcao.notin_(["GERENTE", "ADMIN", "FINANCEIRO"]),
+                rows = (
+                    period_query.filter(BonusUsuarioImportado.emp.in_(allowed_emps))
+                    .filter(
+                        or_(
+                            BonusUsuarioImportado.usuario_nome == current_username,
+                            BonusUsuarioImportado.funcao.in_(["VENDEDOR", "MECANICO"]),
+                        )
                     )
+                    .all()
                 )
             else:
-                query = query.filter(BonusUsuarioImportado.usuario_nome == current_username)
-            rows = query.all()
+                rows = period_query.filter(
+                    BonusUsuarioImportado.usuario_nome == current_username
+                ).all()
             emp_options = []
             user_options = []
         else:
+            # Vendedor e mecânico jamais recebem registros de outro usuário.
             rows = period_query.filter(
                 BonusUsuarioImportado.usuario_nome == current_username
             ).all()
             emp_options = []
             user_options = []
 
-        rows.sort(key=lambda row: (emp_sort_key(row.emp), row.funcao, row.usuario_nome))
+        rows.sort(
+            key=lambda row: (
+                emp_sort_key(row.emp),
+                ROLE_SORT_ORDER.get(row.funcao, 99),
+                row.usuario_nome,
+            )
+        )
         seller_rows = [row for row in rows if row.funcao == "VENDEDOR"]
         manager_rows = [row for row in rows if row.funcao == "GERENTE"]
-        other_rows = [row for row in rows if row.funcao not in {"VENDEDOR", "GERENTE"}]
+        mechanic_rows = [row for row in rows if row.funcao == "MECANICO"]
         own_rows = [row for row in rows if row.usuario_nome == current_username]
         team_rows = []
         if role == "gerente":
@@ -651,17 +765,20 @@ def bonus_importados():
                 row
                 for row in rows
                 if row.usuario_nome != current_username
-                and row.funcao not in {"GERENTE", "ADMIN", "FINANCEIRO"}
+                and row.funcao in {"VENDEDOR", "MECANICO"}
             ]
 
         selected_id = request.args.get("registro", type=int)
-        detail_candidates = rows if role == "admin" else own_rows
+        detail_candidates = rows if role in {"admin", "gerente"} else own_rows
         selected = next(
             (row for row in detail_candidates if selected_id and row.id == selected_id),
             None,
         )
         if selected is None and detail_candidates:
-            selected = detail_candidates[0]
+            selected = next(
+                (row for row in detail_candidates if row.usuario_nome == current_username),
+                detail_candidates[0],
+            )
 
         batch = (
             db.query(BonusImportacaoLote)
@@ -675,25 +792,32 @@ def bonus_importados():
         for row in team_rows:
             item = team_by_emp_map.setdefault(
                 row.emp,
-                {"emp": row.emp, "quantidade": 0, "bonus_final": Decimal("0")},
+                {
+                    "emp": row.emp,
+                    "quantidade": 0,
+                    "valor_parcial": Decimal("0"),
+                    "bonus_final": Decimal("0"),
+                },
             )
             item["quantidade"] += 1
+            item["valor_parcial"] += Decimal(str(row.valor_parcial or 0))
             item["bonus_final"] += Decimal(str(row.bonus_final or 0))
-        team_by_emp = sorted(team_by_emp_map.values(), key=lambda item: emp_sort_key(item["emp"]))
+        team_by_emp = sorted(
+            team_by_emp_map.values(), key=lambda item: emp_sort_key(item["emp"])
+        )
 
         summary = {
             "registros": len(rows),
+            "valor_parcial_visivel": _sum_field(rows, "valor_parcial"),
             "bonus_visivel": _sum_field(rows, "bonus_final"),
             "bonus_vendedores": _sum_field(seller_rows, "bonus_final"),
             "bonus_gerentes": _sum_field(manager_rows, "bonus_final"),
+            "bonus_mecanicos": _sum_field(mechanic_rows, "bonus_final"),
+            "valor_parcial_proprio": _sum_field(own_rows, "valor_parcial"),
             "bonus_proprio": _sum_field(own_rows, "bonus_final"),
+            "valor_parcial_equipe": _sum_field(team_rows, "valor_parcial"),
             "bonus_equipe": _sum_field(team_rows, "bonus_final"),
-            "bonus_produtos_vendedor": _sum_field(own_rows, "final_vendedor"),
-            "bonus_meta_vendedor": _sum_field(own_rows, "valor_meta"),
-            "bonus_importado_vendedor": _sum_field(own_rows, "bonus_importado_vendedor"),
-            "bonus_produtos_gerente": _sum_field(own_rows, "bonus_gerente_total"),
-            "bonus_importado_gerente": _sum_field(own_rows, "bonus_importado_loja"),
-            "bonus_crescimento_gerente": _sum_field(own_rows, "bonus_gerente"),
+            "quantidade_equipe": len(team_rows),
             "nao_vinculados": sum(1 for row in rows if row.usuario_id is None),
         }
 
@@ -707,7 +831,7 @@ def bonus_importados():
             team_rows=team_rows,
             seller_rows=seller_rows,
             manager_rows=manager_rows,
-            other_rows=other_rows,
+            mechanic_rows=mechanic_rows,
             selected=selected,
             periods=periods,
             emp_options=emp_options,
