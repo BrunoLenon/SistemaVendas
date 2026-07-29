@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Bônus{% endblock %}
+{% block title %}Bônus Varejo{% endblock %}
 
 {% macro status_badge(row, compact=false) -%}
   {% if row.bonus_final and row.bonus_final > 0 %}
@@ -108,7 +108,7 @@
     <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
       <div>
         <span class="bonus-chip">Snapshot importado</span>
-        <h1 class="bonus-title mt-2">💰 Bônus dos usuários</h1>
+        <h1 class="bonus-title mt-2">💰 Bônus Varejo</h1>
         <div class="bonus-sub">
           Os valores são lidos exclusivamente da aba <b>BONUS FINAL</b>. O SistemaVendas não recalcula produtos, crescimento, importados, provisões ou liberações; apenas valida o arquivo, grava a competência e respeita a hierarquia de acesso.
         </div>

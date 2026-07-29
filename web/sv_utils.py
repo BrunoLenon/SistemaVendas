@@ -8,7 +8,6 @@ from __future__ import annotations
 import re
 from datetime import date, datetime
 
-import pandas as pd
 
 # Regras oficiais de movimento para todos os cálculos comerciais.
 # Positivos entram como venda/faturamento; negativos abatem o líquido;
@@ -81,7 +80,10 @@ def _obj_get_any(obj, keys, default=None):
         return v
     return default
 
-def _normalize_cols(df: pd.DataFrame) -> pd.DataFrame:
+def _normalize_cols(df):
+    # Pandas é carregado apenas por fluxos legados que realmente tratam DataFrame.
+    # Os módulos enxutos (Bônus/Itens Parados) não pagam esse custo no boot.
+    import pandas as pd
     """Normaliza nomes/tipos de colunas vindas do banco.
 
     Regras do app:

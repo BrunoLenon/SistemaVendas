@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Bônus Atacado{% endblock %}
+
+{% block extra_head %}
+<style>
+  .wholesale-wrap{min-height:65vh;display:grid;place-items:center}
+  .wholesale-card{width:min(760px,100%);border:1px solid rgba(255,255,255,.1);border-radius:24px;background:linear-gradient(145deg,rgba(255,255,255,.05),rgba(255,255,255,.018));padding:clamp(24px,5vw,48px);text-align:center}
+  .wholesale-icon{width:76px;height:76px;border-radius:22px;display:grid;place-items:center;margin:0 auto 20px;background:rgba(255,150,45,.1);border:1px solid rgba(255,179,90,.25);font-size:2rem}
+  .wholesale-card h1{font-weight:850;margin-bottom:12px}
+  .wholesale-card p{color:#aaa;line-height:1.65;max-width:600px;margin:0 auto}
+  .wholesale-tag{display:inline-flex;margin-top:24px;padding:8px 12px;border-radius:999px;background:rgba(255,179,90,.1);color:#ffb35a;font-size:.78rem;font-weight:800;text-transform:uppercase;letter-spacing:.08em}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="wholesale-wrap">
+  <section class="wholesale-card">
+    <div class="wholesale-icon">🏷️</div>
+    <h1>Bônus Atacado</h1>
+    <p>A página já está criada e protegida por login. O importador, as colunas e as regras de hierarquia serão implantados depois que a planilha definitiva do atacado estiver concluída.</p>
+    <div class="wholesale-tag">Estrutura em preparação</div>
+  </section>
+</div>
+{% endblock %}

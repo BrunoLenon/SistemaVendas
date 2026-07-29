@@ -182,10 +182,23 @@ ROLE_SORT_ORDER = {"GERENTE": 0, "VENDEDOR": 1, "MECANICO": 2}
 
 
 def register_bonus_importados_routes(app) -> None:
+    # URL canônica do módulo de varejo. O endpoint é preservado para não quebrar
+    # templates e redirecionamentos existentes.
     app.add_url_rule(
-        "/bonus",
+        "/bonus-varejo",
         endpoint="bonus_importados",
         view_func=bonus_importados,
+        methods=["GET"],
+    )
+
+    # Compatibilidade com favoritos e links antigos.
+    def _bonus_legacy_redirect():
+        return redirect(url_for("bonus_importados", **request.args.to_dict(flat=True)))
+
+    app.add_url_rule(
+        "/bonus",
+        endpoint="bonus_importados_legacy",
+        view_func=_bonus_legacy_redirect,
         methods=["GET"],
     )
     app.add_url_rule(

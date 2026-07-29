@@ -751,8 +751,6 @@ def register_admin_itens_parados_routes(
     admin_required_fn: Callable[[], object | None],
     usuario_logado_fn: Callable[[], object],
 ):
-    _ensure_itens_parados_schema()
-
     def admin_itens_parados():
         red = login_required_fn()
         if red:
@@ -760,6 +758,10 @@ def register_admin_itens_parados_routes(
         red = admin_required_fn()
         if red:
             return red
+
+        # Garante o schema somente quando o módulo é realmente acessado.
+        # Isso elimina conexão/DDL no boot do worker.
+        _ensure_itens_parados_schema()
 
         erro = None
         ok = None

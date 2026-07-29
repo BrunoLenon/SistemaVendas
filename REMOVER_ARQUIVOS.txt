@@ -1,0 +1,90 @@
+ARQUIVOS/MÓDULOS ANTIGOS QUE PODEM SER REMOVIDOS DO REPOSITÓRIO
+
+A versão completa enxuta já não contém esses arquivos. Para aplicar somente o patch
+em um repositório existente, remova os itens abaixo depois de substituir os arquivos
+alterados.
+
+ROTAS ANTIGAS
+web/admin_apagar_vendas_routes.py
+web/admin_cache_routes.py
+web/admin_campanhas_routes.py
+web/admin_combos_routes.py
+web/admin_emps_routes.py
+web/admin_fechamento_routes.py
+web/admin_importar_routes.py
+web/admin_resumos_periodo_routes.py
+web/campanhas_qtd_helpers.py
+web/campanhas_qtd_routes.py
+web/dados_db.py
+web/dashboard_cache.py
+web/financeiro_campanhas_routes.py
+web/importar_excel.py
+web/importar_servicos_oficina.py
+web/importar_vendas.py
+web/mensagens_guard.py
+web/mensagens_routes.py
+web/metas_helpers.py
+web/metas_routes.py
+web/operacoes_vendas_produtos_routes.py
+web/ranking_marca_routes.py
+web/relatorio_campanhas_routes.py
+web/relatorio_cidades_clientes_routes.py
+web/request_hooks.py
+web/admin_campanhas_routes.py
+web/blueprints/admin.py
+web/blueprints/campanhas_v2_admin.py
+web/blueprints/mensagens.py
+
+SERVIÇOS ANTIGOS
+web/services/cache_policy.py
+web/services/campanhas_qtd_gate.py
+web/services/campanhas_service.py
+web/services/campanhas_v2_engine.py
+web/services/campanhas_v2_service.py
+web/services/filter_scope.py
+web/services/financeiro_service.py
+web/services/metas_v2_service.py
+web/services/oficina_service.py
+web/services/ranking_marca_v2_new.py
+web/services/relatorio_campanhas_pdf_service.py
+web/services/relatorio_campanhas_service.py
+web/services/relatorio_unificado_service.py
+web/services/visao_operacional.py
+
+TEMPLATES ANTIGOS
+Remova todos os arquivos de web/templates, mantendo somente:
+- base.html
+- base_auth.html
+- dashboard.html
+- bonus_importados.html
+- bonus_atacado.html
+- itens_parados.html
+- admin_itens_parados.html
+- admin_usuarios.html
+- admin_configuracoes.html
+- admin_promocoes_qr.html
+- admin_promocoes_qr_imprimir.html
+- promocao_qr_resgate.html
+- login.html
+- maintenance.html
+- senha.html
+- partials/sidebar.html
+- partials/flashes.html
+
+ASSETS ANTIGOS
+Remova os assets de web/static, mantendo somente:
+- css/app.css
+- css/design-system.css
+- css/layout.css
+- js/ui.js
+- js/ux.js
+- js/filters.js
+
+ARQUIVOS PESADOS/LOCAIS QUE NÃO DEVEM IR PARA O DEPLOY
+.git/
+.venv/
+.env
+Backup/
+web.zip
+__pycache__/
+*.pyc

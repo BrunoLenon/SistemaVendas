@@ -64,11 +64,7 @@ def login():
                 emps = [str(session.get("emp")).strip()]
             set_session_emps(emps)
 
-    # Redireciona para a melhor primeira tela por perfil
-    if role == "mecanico":
-        return redirect(url_for("metas"))
-    if role in ("vendedor", "supervisor", "gerente"):
-        return redirect(url_for("itens_parados"))
+    # Todos os perfis entram pelo dashboard leve.
     return redirect(url_for("dashboard"))
 
 
