@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import calendar
 from datetime import date
 from decimal import Decimal
 from io import BytesIO
@@ -111,9 +112,17 @@ def _load_view_data():
 
         rows.sort(key=lambda row: (emp_sort_key(row.emp), row.usuario_nome))
         visible_emps = sorted({row.emp for row in rows if row.emp}, key=emp_sort_key)
+        period_start = date(ano, mes, 1)
+        period_end = date(ano, mes, calendar.monthrange(ano, mes)[1])
         active_counts = dict(
             db.query(ItemParado.emp, func.count(ItemParado.id))
-            .filter(ItemParado.ativo.is_(True))
+            .filter(
+                ItemParado.ativo.is_(True),
+                ItemParado.data_inicio.isnot(None),
+                ItemParado.data_fim.isnot(None),
+                ItemParado.data_inicio <= period_end,
+                ItemParado.data_fim >= period_start,
+            )
             .filter(ItemParado.emp.in_(visible_emps or ["__none__"]))
             .group_by(ItemParado.emp)
             .all()

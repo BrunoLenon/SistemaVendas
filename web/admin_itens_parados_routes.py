@@ -2,9 +2,9 @@
 """Administração enxuta de Itens Parados.
 
 Mantém:
-* cadastro/ativação dos produtos por EMP;
+* cadastro/ativação dos produtos por EMP com validade;
 * regra global ou específica por EMP para base e valor de cada ponto;
-* importação do modelo CODIGO, DESCRICAO e LOJA_ATIVA;
+* importação do modelo CODIGO, DESCRICAO e LOJA_ATIVA com validade definida na página;
 * importação das vendas com cálculo de pontos inteiros e bônus por funcionário.
 
 O cálculo acontece somente na importação; as páginas operacionais leem o
@@ -13,6 +13,7 @@ snapshot pronto e não consultam a base geral de vendas.
 
 from __future__ import annotations
 
+import calendar
 import json
 import re
 import unicodedata
@@ -22,6 +23,8 @@ from io import BytesIO
 from typing import Callable, Type
 
 from flask import current_app, render_template, request, send_file, session
+
+from sqlalchemy import or_
 
 from db import (
     ItensParadosPontosConfig,
@@ -72,13 +75,47 @@ def _positive_decimal(value, label: str, *, allow_zero: bool = False) -> Decimal
     return result.quantize(Decimal("0.0001"))
 
 
+def _required_date(value, label: str) -> date:
+    """Converte datas do formulário/Excel e exige uma data válida."""
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+
+    raw = _clean_text(value)
+    if not raw:
+        raise ValueError(f"{label} é obrigatória.")
+
+    # Pandas pode serializar timestamps como 2026-07-01 00:00:00.
+    candidate = raw[:10]
+    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%d/%m/%y"):
+        try:
+            return datetime.strptime(candidate, fmt).date()
+        except ValueError:
+            continue
+    raise ValueError(f"{label} inválida. Use DD/MM/AAAA.")
+
+
+def _validity_period(start_value, end_value) -> tuple[date, date]:
+    start = _required_date(start_value, "Data inicial")
+    end = _required_date(end_value, "Data final")
+    if end < start:
+        raise ValueError("A data final não pode ser anterior à data inicial.")
+    return start, end
+
+
 def _norm_header(value) -> str:
     raw = unicodedata.normalize("NFKD", str(value or ""))
     raw = "".join(ch for ch in raw if not unicodedata.combining(ch))
     return re.sub(r"[^A-Za-z0-9]", "", raw).upper()
 
 
-def _read_active_items_file(file_storage) -> tuple[list[dict], list[str]]:
+def _read_active_items_file(
+    file_storage,
+    *,
+    default_start: date,
+    default_end: date,
+) -> tuple[list[dict], list[str]]:
     filename = (getattr(file_storage, "filename", "") or "").lower().strip()
     if not filename:
         raise ValueError("Selecione a planilha de itens parados.")
@@ -116,6 +153,8 @@ def _read_active_items_file(file_storage) -> tuple[list[dict], list[str]]:
         "codigo": {"CODIGO", "MESTRE", "CODIGOPRODUTO", "CODPRODUTO"},
         "descricao": {"DESCRICAO", "DESCRICAOPRODUTO", "PRODUTO", "NOME"},
         "emp": {"LOJAATIVA", "EMP", "EMPRESA", "LOJA", "LOJAACA0", "LOJAACAO"},
+        "data_inicio": {"DATAINICIO", "INICIO", "VALIDADEINICIO", "INICIOVALIDADE"},
+        "data_fim": {"DATAFIM", "FIM", "VALIDADEFIM", "FIMVALIDADE"},
     }
     mapping: dict[str, str] = {}
     for column in df.columns:
@@ -125,11 +164,19 @@ def _read_active_items_file(file_storage) -> tuple[list[dict], list[str]]:
                 mapping[field] = column
                 break
 
-    missing = [field for field in ("codigo", "descricao", "emp") if field not in mapping]
+    required_fields = ("codigo", "descricao", "emp")
+    missing = [field for field in required_fields if field not in mapping]
     if missing:
+        labels = {
+            "codigo": "CODIGO",
+            "descricao": "DESCRICAO",
+            "emp": "LOJA_ATIVA",
+        }
         raise ValueError(
             "O modelo precisa conter CODIGO, DESCRICAO e LOJA_ATIVA. "
-            f"Colunas ausentes: {', '.join(missing).upper()}."
+            "Colunas ausentes: "
+            + ", ".join(labels[field] for field in missing)
+            + "."
         )
 
     records: list[dict] = []
@@ -140,13 +187,23 @@ def _read_active_items_file(file_storage) -> tuple[list[dict], list[str]]:
         codigo = _clean_code(row.get(mapping["codigo"]))
         descricao = _clean_text(row.get(mapping["descricao"]))
         emp = norm_emp(row.get(mapping["emp"]))
-        if not codigo and not descricao and not emp:
+        raw_start = row.get(mapping["data_inicio"]) if "data_inicio" in mapping else None
+        raw_end = row.get(mapping["data_fim"]) if "data_fim" in mapping else None
+        if not codigo and not descricao and not emp and not _clean_text(raw_start) and not _clean_text(raw_end):
             continue
         if not codigo or not emp:
             warnings.append(
                 f"Linha {line} ignorada: CODIGO e LOJA_ATIVA são obrigatórios."
             )
             continue
+        if _clean_text(raw_start) or _clean_text(raw_end):
+            try:
+                data_inicio, data_fim = _validity_period(raw_start, raw_end)
+            except ValueError as exc:
+                warnings.append(f"Linha {line} ignorada: {exc}")
+                continue
+        else:
+            data_inicio, data_fim = default_start, default_end
         key = (emp, codigo.upper())
         if key in seen:
             warnings.append(
@@ -160,6 +217,8 @@ def _read_active_items_file(file_storage) -> tuple[list[dict], list[str]]:
                 "codigo": codigo,
                 "descricao": descricao or None,
                 "emp": emp,
+                "data_inicio": data_inicio,
+                "data_fim": data_fim,
             }
         )
     if not records:
@@ -216,9 +275,10 @@ def _create_model_workbook() -> BytesIO:
             "Obrigatório. Informe uma EMP por linha. Para o mesmo produto em várias lojas, repita o código em uma linha para cada EMP.",
         ]
     )
+    info.append(["VALIDADE", "Defina a data inicial e final na página no momento da importação. A mesma validade será aplicada a todas as linhas do arquivo."])
     info.column_dimensions["A"].width = 22
     info.column_dimensions["B"].width = 90
-    for row in info.iter_rows(min_row=1, max_row=4, min_col=1, max_col=2):
+    for row in info.iter_rows(min_row=1, max_row=5, min_col=1, max_col=2):
         for cell in row:
             cell.alignment = Alignment(vertical="top", wrap_text=True)
             if cell.row == 1:
@@ -310,6 +370,10 @@ def register_admin_itens_parados_routes(
                         emp = norm_emp(request.form.get("emp"))
                         codigo = _clean_code(request.form.get("codigo"))
                         descricao = _clean_text(request.form.get("descricao")) or None
+                        data_inicio, data_fim = _validity_period(
+                            request.form.get("data_inicio"),
+                            request.form.get("data_fim"),
+                        )
                         if not emp or not codigo:
                             raise ValueError("Informe EMP e código.")
                         item = (
@@ -320,6 +384,8 @@ def register_admin_itens_parados_routes(
                         )
                         if item:
                             item.descricao = descricao or item.descricao
+                            item.data_inicio = data_inicio
+                            item.data_fim = data_fim
                             item.ativo = True
                             item.atualizado_em = datetime.utcnow()
                             ok = "Item atualizado e ativado."
@@ -333,6 +399,8 @@ def register_admin_itens_parados_routes(
                                     recompensa_pct=0,
                                     modo="PONTOS",
                                     multiplicador_pontos=1,
+                                    data_inicio=data_inicio,
+                                    data_fim=data_fim,
                                     ativo=True,
                                     criado_em=datetime.utcnow(),
                                     atualizado_em=datetime.utcnow(),
@@ -340,6 +408,22 @@ def register_admin_itens_parados_routes(
                             )
                             ok = "Item cadastrado."
                         db.commit()
+
+                    elif action == "atualizar_validade":
+                        item_id = int(request.form.get("item_id") or 0)
+                        item = db.get(ItemParado, item_id)
+                        if not item:
+                            raise ValueError("Item não encontrado.")
+                        data_inicio, data_fim = _validity_period(
+                            request.form.get("data_inicio"),
+                            request.form.get("data_fim"),
+                        )
+                        item.data_inicio = data_inicio
+                        item.data_fim = data_fim
+                        item.ativo = True
+                        item.atualizado_em = datetime.utcnow()
+                        db.commit()
+                        ok = "Validade do item atualizada e item ativado."
 
                     elif action == "alternar_item":
                         item_id = int(request.form.get("item_id") or 0)
@@ -362,7 +446,15 @@ def register_admin_itens_parados_routes(
 
                     elif action == "importar_itens":
                         file_storage = request.files.get("arquivo_itens")
-                        records, avisos_acao = _read_active_items_file(file_storage)
+                        validade_inicio, validade_fim = _validity_period(
+                            request.form.get("validade_inicio"),
+                            request.form.get("validade_fim"),
+                        )
+                        records, avisos_acao = _read_active_items_file(
+                            file_storage,
+                            default_start=validade_inicio,
+                            default_end=validade_fim,
+                        )
                         created = 0
                         updated = 0
                         now = datetime.utcnow()
@@ -378,6 +470,8 @@ def register_admin_itens_parados_routes(
                             )
                             if item:
                                 item.descricao = record["descricao"] or item.descricao
+                                item.data_inicio = record["data_inicio"]
+                                item.data_fim = record["data_fim"]
                                 item.ativo = True
                                 item.atualizado_em = now
                                 updated += 1
@@ -391,6 +485,8 @@ def register_admin_itens_parados_routes(
                                         recompensa_pct=0,
                                         modo="PONTOS",
                                         multiplicador_pontos=1,
+                                        data_inicio=record["data_inicio"],
+                                        data_fim=record["data_fim"],
                                         ativo=True,
                                         criado_em=now,
                                         atualizado_em=now,
@@ -400,7 +496,9 @@ def register_admin_itens_parados_routes(
                         db.commit()
                         ok = (
                             f"Importação concluída: {created} item(ns) criado(s) e "
-                            f"{updated} atualizado(s)."
+                            f"{updated} atualizado(s), com validade de "
+                            f"{validade_inicio.strftime('%d/%m/%Y')} a "
+                            f"{validade_fim.strftime('%d/%m/%Y')}."
                         )
                     else:
                         raise ValueError("Ação inválida.")
@@ -412,6 +510,7 @@ def register_admin_itens_parados_routes(
             filter_emp = norm_emp(request.args.get("f_emp"))
             filter_code = _clean_code(request.args.get("f_codigo"))
             filter_status = (request.args.get("f_status") or "ativos").strip().lower()
+            filter_validity = (request.args.get("f_validade") or "todos").strip().lower()
             page = max(int(request.args.get("page") or 1), 1)
             limit = 150
             query = db.query(ItemParado)
@@ -423,6 +522,23 @@ def register_admin_itens_parados_routes(
                 query = query.filter(ItemParado.ativo.is_(True))
             elif filter_status == "inativos":
                 query = query.filter(ItemParado.ativo.is_(False))
+
+            today_filter = date.today()
+            if filter_validity == "vigentes":
+                query = query.filter(
+                    ItemParado.data_inicio.isnot(None),
+                    ItemParado.data_fim.isnot(None),
+                    ItemParado.data_inicio <= today_filter,
+                    ItemParado.data_fim >= today_filter,
+                )
+            elif filter_validity == "agendados":
+                query = query.filter(ItemParado.data_inicio > today_filter)
+            elif filter_validity == "encerrados":
+                query = query.filter(ItemParado.data_fim < today_filter)
+            elif filter_validity == "sem_validade":
+                query = query.filter(
+                    or_(ItemParado.data_inicio.is_(None), ItemParado.data_fim.is_(None))
+                )
             total_items = query.count()
             items = (
                 query.order_by(ItemParado.emp.asc(), ItemParado.codigo.asc())
@@ -466,6 +582,12 @@ def register_admin_itens_parados_routes(
             today = date.today()
             ano_vendas = int(request.args.get("ano_vendas") or today.year)
             mes_vendas = int(request.args.get("mes_vendas") or today.month)
+            validade_padrao_inicio = date(ano_vendas, mes_vendas, 1)
+            validade_padrao_fim = date(
+                ano_vendas,
+                mes_vendas,
+                calendar.monthrange(ano_vendas, mes_vendas)[1],
+            )
             sales_batch = latest_batch(db, ano_vendas, mes_vendas)
             sales_warnings = batch_warnings(sales_batch)
             sales_rows = (
@@ -493,6 +615,10 @@ def register_admin_itens_parados_routes(
             filtro_emp=filter_emp,
             filtro_codigo=filter_code,
             filtro_status=filter_status,
+            filtro_validade=filter_validity,
+            hoje=date.today(),
+            validade_padrao_inicio=validade_padrao_inicio,
+            validade_padrao_fim=validade_padrao_fim,
             pagina=page,
             total_paginas=total_pages,
             total_itens=total_items,

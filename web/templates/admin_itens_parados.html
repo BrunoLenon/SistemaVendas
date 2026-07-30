@@ -17,7 +17,7 @@
   .ipa-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:13px}.ipa-kpi{padding:12px 13px;border:1px solid rgba(255,255,255,.075);border-radius:15px;background:rgba(0,0,0,.19);min-width:0}.ipa-kpi small{display:block;color:#969ba4;font-size:9px;font-weight:850;text-transform:uppercase;letter-spacing:.07em;margin-bottom:5px}.ipa-kpi strong{font-size:17px;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ipa-kpi span{font-size:10px;color:#858b95}
   .ipa-rule-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:12px}.ipa-rule{display:flex;justify-content:space-between;gap:12px;padding:10px 11px;border:1px solid rgba(255,255,255,.075);border-radius:13px;background:rgba(0,0,0,.18)}.ipa-rule strong{font-size:12px}.ipa-rule span{font-size:11px;color:#a9adb5;text-align:right}
   .ipa-table-wrap{width:100%;overflow:hidden;border:1px solid rgba(255,255,255,.075);border-radius:17px;background:rgba(0,0,0,.18)}.ipa-table{width:100%;table-layout:fixed;margin:0;font-size:12px;color:#f5f5f5}.ipa-table>:not(caption)>*>*{padding:10px 7px;border-color:rgba(255,255,255,.065);vertical-align:middle;background:transparent;color:inherit}.ipa-table thead th{font-size:9px;text-transform:uppercase;letter-spacing:.045em;color:#b8bdc6;font-weight:900;line-height:1.25;white-space:normal}.ipa-table tbody tr:nth-child(even){background:rgba(255,255,255,.025)}
-  .ipa-user{font-weight:900;overflow-wrap:anywhere}.ipa-money{font-variant-numeric:tabular-nums;color:#ffc477;white-space:nowrap}.ipa-points{font-variant-numeric:tabular-nums;color:#fff;white-space:nowrap}.ipa-muted{color:#8f949d}.ipa-actions{display:flex;justify-content:flex-end;gap:5px;flex-wrap:wrap}
+  .ipa-user{font-weight:900;overflow-wrap:anywhere}.ipa-validity{font-variant-numeric:tabular-nums;white-space:nowrap}.ipa-validity span{color:#9ca3af;font-size:10px}.ipa-money{font-variant-numeric:tabular-nums;color:#ffc477;white-space:nowrap}.ipa-points{font-variant-numeric:tabular-nums;color:#fff;white-space:nowrap}.ipa-muted{color:#8f949d}.ipa-actions{display:flex;justify-content:flex-end;gap:5px;flex-wrap:wrap}
   .ipa-warnings{margin:0;padding-left:18px;color:#ffd29a;font-size:11px;line-height:1.55;max-height:220px;overflow:auto}
   .ipa-empty{padding:34px 16px;text-align:center;color:#8f949d}
   @media(max-width:1700px){.ipa-grid{grid-template-columns:1fr}.ipa-grid-wide{grid-column:auto}}
@@ -33,7 +33,7 @@
       <div>
         <div class="ipa-chip">⚙️ Administração</div>
         <h1 class="ipa-title mt-2">Itens Parados</h1>
-        <div class="ipa-sub">Cadastre os produtos da ação e a regra de pontos. Na importação, somente vendas dos códigos ativos na mesma EMP são consideradas. O sistema soma o valor elegível por funcionário e loja, gera apenas pontos inteiros e envia o bônus pronto para Bônus Varejo, Bônus Atacado e Financeiro.</div>
+        <div class="ipa-sub">Cadastre os produtos da ação, a validade e a regra de pontos. Na importação, somente vendas realizadas dentro da validade do código ativo na mesma EMP são consideradas. O sistema soma o valor elegível por funcionário e loja, gera apenas pontos inteiros e envia o bônus pronto para Bônus Varejo, Bônus Atacado e Financeiro.</div>
       </div>
       <div class="d-flex gap-2 flex-wrap">
         <a class="btn btn-outline-light" href="{{ url_for('admin_itens_parados_modelo') }}">Baixar modelo de itens</a>
@@ -94,27 +94,31 @@
 
     <section class="ipa-panel">
       <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-3">
-        <div><h2 class="ipa-section-title">Importar produtos ativos</h2><div class="ipa-section-sub">Modelo obrigatório: CODIGO, DESCRICAO e LOJA_ATIVA. Para o mesmo produto em várias lojas, repita o código em uma linha por EMP.</div></div>
+        <div><h2 class="ipa-section-title">Importar produtos ativos</h2><div class="ipa-section-sub">Modelo obrigatório: CODIGO, DESCRICAO e LOJA_ATIVA. Escolha abaixo a validade que será aplicada a todos os produtos do arquivo. Para o mesmo produto em várias lojas, repita o código em uma linha por EMP.</div></div>
         <a class="btn btn-sm btn-outline-warning" href="{{ url_for('admin_itens_parados_modelo') }}">Modelo Excel</a>
       </div>
       <form class="ipa-drop" method="post" enctype="multipart/form-data">
         <input type="hidden" name="acao" value="importar_itens">
         <div class="ipa-form-grid">
-          <div class="ipa-c9"><div class="ipa-label">Planilha de produtos</div><input class="form-control" type="file" name="arquivo_itens" accept=".xlsx,.xlsm,.csv" required></div>
+          <div class="ipa-c2"><div class="ipa-label">Data inicial</div><input class="form-control" type="date" name="validade_inicio" value="{{ validade_padrao_inicio.isoformat() }}" required></div>
+          <div class="ipa-c2"><div class="ipa-label">Data final</div><input class="form-control" type="date" name="validade_fim" value="{{ validade_padrao_fim.isoformat() }}" required></div>
+          <div class="ipa-c5"><div class="ipa-label">Planilha de produtos</div><input class="form-control" type="file" name="arquivo_itens" accept=".xlsx,.xlsm,.csv" required></div>
           <div class="ipa-c3"><button class="btn btn-warning fw-bold w-100" type="submit">Importar itens</button></div>
         </div>
       </form>
     </section>
 
     <section class="ipa-panel">
-      <div class="mb-3"><h2 class="ipa-section-title">Cadastro rápido</h2><div class="ipa-section-sub">Ative manualmente um produto para uma loja específica.</div></div>
+      <div class="mb-3"><h2 class="ipa-section-title">Cadastro rápido</h2><div class="ipa-section-sub">Ative manualmente um produto para uma loja específica e defina o período em que as vendas gerarão pontos.</div></div>
       <form method="post">
         <input type="hidden" name="acao" value="criar_item">
         <div class="ipa-form-grid">
-          <div class="ipa-c3"><div class="ipa-label">EMP</div><input class="form-control" name="emp" required></div>
-          <div class="ipa-c3"><div class="ipa-label">Código</div><input class="form-control" name="codigo" required></div>
-          <div class="ipa-c6"><div class="ipa-label">Descrição</div><input class="form-control" name="descricao"></div>
-          <div class="ipa-c12 text-end"><button class="btn btn-warning fw-bold">Salvar item</button></div>
+          <div class="ipa-c2"><div class="ipa-label">EMP</div><input class="form-control" name="emp" required></div>
+          <div class="ipa-c2"><div class="ipa-label">Código</div><input class="form-control" name="codigo" required></div>
+          <div class="ipa-c4"><div class="ipa-label">Descrição</div><input class="form-control" name="descricao"></div>
+          <div class="ipa-c2"><div class="ipa-label">Data inicial</div><input class="form-control" type="date" name="data_inicio" required></div>
+          <div class="ipa-c2"><div class="ipa-label">Data final</div><input class="form-control" type="date" name="data_fim" required></div>
+          <div class="ipa-c12 text-end"><button class="btn btn-warning fw-bold">Salvar item e validade</button></div>
         </div>
       </form>
     </section>
@@ -151,33 +155,82 @@
   {% endif %}
 
   <section class="ipa-panel">
-    <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-3"><div><h2 class="ipa-section-title">Produtos ativos por loja</h2><div class="ipa-section-sub">Somente esses códigos, na EMP correspondente, geram pontos na importação.</div></div></div>
+    <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-3"><div><h2 class="ipa-section-title">Produtos da ação por loja</h2><div class="ipa-section-sub">O produto só gera pontos quando estiver ativo e a data da venda estiver entre o início e o fim da validade, inclusive.</div></div></div>
     <form method="get" class="ipa-form-grid mb-3">
       <input type="hidden" name="ano_vendas" value="{{ ano_vendas }}">
       <input type="hidden" name="mes_vendas" value="{{ mes_vendas }}">
       <div class="ipa-c2"><div class="ipa-label">EMP</div><select class="form-select" name="f_emp"><option value="">Todas</option>{% for item in emps_options %}<option value="{{ item }}" {% if item == filtro_emp %}selected{% endif %}>{{ item }}</option>{% endfor %}</select></div>
-      <div class="ipa-c4"><div class="ipa-label">Código</div><input class="form-control" name="f_codigo" value="{{ filtro_codigo }}"></div>
-      <div class="ipa-c2"><div class="ipa-label">Status</div><select class="form-select" name="f_status"><option value="ativos" {% if filtro_status == 'ativos' %}selected{% endif %}>Ativos</option><option value="inativos" {% if filtro_status == 'inativos' %}selected{% endif %}>Inativos</option><option value="todos" {% if filtro_status == 'todos' %}selected{% endif %}>Todos</option></select></div>
+      <div class="ipa-c3"><div class="ipa-label">Código</div><input class="form-control" name="f_codigo" value="{{ filtro_codigo }}"></div>
+      <div class="ipa-c2"><div class="ipa-label">Ativação</div><select class="form-select" name="f_status"><option value="ativos" {% if filtro_status == 'ativos' %}selected{% endif %}>Ativos</option><option value="inativos" {% if filtro_status == 'inativos' %}selected{% endif %}>Inativos</option><option value="todos" {% if filtro_status == 'todos' %}selected{% endif %}>Todos</option></select></div>
+      <div class="ipa-c3"><div class="ipa-label">Validade</div><select class="form-select" name="f_validade"><option value="todos" {% if filtro_validade == 'todos' %}selected{% endif %}>Todas</option><option value="vigentes" {% if filtro_validade == 'vigentes' %}selected{% endif %}>Vigentes hoje</option><option value="agendados" {% if filtro_validade == 'agendados' %}selected{% endif %}>Agendados</option><option value="encerrados" {% if filtro_validade == 'encerrados' %}selected{% endif %}>Encerrados</option><option value="sem_validade" {% if filtro_validade == 'sem_validade' %}selected{% endif %}>Sem validade</option></select></div>
       <div class="ipa-c2"><button class="btn btn-outline-light w-100">Filtrar</button></div>
     </form>
     {% if itens %}
     <div class="ipa-table-wrap">
       <table class="table table-sm ipa-table">
-        <colgroup><col style="width:9%"><col style="width:16%"><col style="width:47%"><col style="width:10%"><col style="width:18%"></colgroup>
-        <thead><tr><th>EMP</th><th>Código</th><th>Descrição</th><th>Status</th><th class="text-end">Ações</th></tr></thead>
+        <colgroup><col style="width:7%"><col style="width:12%"><col style="width:29%"><col style="width:18%"><col style="width:12%"><col style="width:8%"><col style="width:14%"></colgroup>
+        <thead><tr><th>EMP</th><th>Código</th><th>Descrição</th><th>Validade</th><th>Situação</th><th>Ativação</th><th class="text-end">Ações</th></tr></thead>
         <tbody>
           {% for item in itens %}
           <tr>
-            <td>{{ item.emp }}</td><td class="ipa-user">{{ item.codigo }}</td><td>{{ item.descricao or '—' }}</td>
+            <td>{{ item.emp }}</td>
+            <td class="ipa-user">{{ item.codigo }}</td>
+            <td>{{ item.descricao or '—' }}</td>
+            <td class="ipa-validity">{% if item.data_inicio and item.data_fim %}{{ item.data_inicio.strftime('%d/%m/%Y') }}<br><span>até {{ item.data_fim.strftime('%d/%m/%Y') }}</span>{% else %}Sem validade{% endif %}</td>
+            <td>
+              {% if not item.data_inicio or not item.data_fim %}<span class="badge text-bg-warning">Sem validade</span>
+              {% elif item.data_inicio > hoje %}<span class="badge text-bg-info">Agendado</span>
+              {% elif item.data_fim < hoje %}<span class="badge text-bg-secondary">Encerrado</span>
+              {% else %}<span class="badge text-bg-success">Vigente</span>{% endif %}
+            </td>
             <td>{% if item.ativo %}<span class="badge text-bg-success">Ativo</span>{% else %}<span class="badge text-bg-secondary">Inativo</span>{% endif %}</td>
-            <td><div class="ipa-actions"><form method="post"><input type="hidden" name="acao" value="alternar_item"><input type="hidden" name="item_id" value="{{ item.id }}"><button class="btn btn-sm btn-outline-warning">{% if item.ativo %}Desativar{% else %}Ativar{% endif %}</button></form><form method="post" onsubmit="return confirm('Remover este item?')"><input type="hidden" name="acao" value="excluir_item"><input type="hidden" name="item_id" value="{{ item.id }}"><button class="btn btn-sm btn-outline-danger">Excluir</button></form></div></td>
+            <td><div class="ipa-actions">
+              <button class="btn btn-sm btn-outline-light" type="button" data-bs-toggle="modal" data-bs-target="#validadeModal" data-item-id="{{ item.id }}" data-item-label="EMP {{ item.emp }} · {{ item.codigo }}" data-data-inicio="{{ item.data_inicio.isoformat() if item.data_inicio else '' }}" data-data-fim="{{ item.data_fim.isoformat() if item.data_fim else '' }}">Validade</button>
+              <form method="post"><input type="hidden" name="acao" value="alternar_item"><input type="hidden" name="item_id" value="{{ item.id }}"><button class="btn btn-sm btn-outline-warning">{% if item.ativo %}Desativar{% else %}Ativar{% endif %}</button></form>
+              <form method="post" onsubmit="return confirm('Remover este item?')"><input type="hidden" name="acao" value="excluir_item"><input type="hidden" name="item_id" value="{{ item.id }}"><button class="btn btn-sm btn-outline-danger">Excluir</button></form>
+            </div></td>
           </tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
     {% else %}<div class="ipa-empty">Nenhum produto encontrado.</div>{% endif %}
-    <div class="d-flex justify-content-between align-items-center mt-3"><span class="ipa-muted">Página {{ pagina }} de {{ total_paginas }}</span><div class="d-flex gap-2">{% if pagina > 1 %}<a class="btn btn-sm btn-outline-light" href="{{ url_for('admin_itens_parados', page=pagina-1, f_emp=filtro_emp, f_codigo=filtro_codigo, f_status=filtro_status, ano_vendas=ano_vendas, mes_vendas=mes_vendas) }}">Anterior</a>{% endif %}{% if pagina < total_paginas %}<a class="btn btn-sm btn-outline-light" href="{{ url_for('admin_itens_parados', page=pagina+1, f_emp=filtro_emp, f_codigo=filtro_codigo, f_status=filtro_status, ano_vendas=ano_vendas, mes_vendas=mes_vendas) }}">Próxima</a>{% endif %}</div></div>
+    <div class="d-flex justify-content-between align-items-center mt-3"><span class="ipa-muted">Página {{ pagina }} de {{ total_paginas }}</span><div class="d-flex gap-2">{% if pagina > 1 %}<a class="btn btn-sm btn-outline-light" href="{{ url_for('admin_itens_parados', page=pagina-1, f_emp=filtro_emp, f_codigo=filtro_codigo, f_status=filtro_status, f_validade=filtro_validade, ano_vendas=ano_vendas, mes_vendas=mes_vendas) }}">Anterior</a>{% endif %}{% if pagina < total_paginas %}<a class="btn btn-sm btn-outline-light" href="{{ url_for('admin_itens_parados', page=pagina+1, f_emp=filtro_emp, f_codigo=filtro_codigo, f_status=filtro_status, f_validade=filtro_validade, ano_vendas=ano_vendas, mes_vendas=mes_vendas) }}">Próxima</a>{% endif %}</div></div>
   </section>
+
+  <div class="modal fade" id="validadeModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content bg-dark text-light border-secondary">
+        <form method="post">
+          <input type="hidden" name="acao" value="atualizar_validade">
+          <input type="hidden" name="item_id" id="validade-item-id">
+          <div class="modal-header border-secondary">
+            <div><h5 class="modal-title">Atualizar validade</h5><div class="ipa-section-sub" id="validade-item-label"></div></div>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Fechar"></button>
+          </div>
+          <div class="modal-body">
+            <div class="row g-3">
+              <div class="col-6"><div class="ipa-label">Data inicial</div><input class="form-control" type="date" name="data_inicio" id="validade-data-inicio" required></div>
+              <div class="col-6"><div class="ipa-label">Data final</div><input class="form-control" type="date" name="data_fim" id="validade-data-fim" required></div>
+            </div>
+            <div class="ipa-section-sub mt-3">Ao salvar, o item será ativado. Somente vendas dentro desse intervalo, inclusive, gerarão pontos.</div>
+          </div>
+          <div class="modal-footer border-secondary"><button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Cancelar</button><button class="btn btn-warning fw-bold" type="submit">Salvar validade</button></div>
+        </form>
+      </div>
+    </div>
+  </div>
 </div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  document.getElementById('validadeModal')?.addEventListener('show.bs.modal', function (event) {
+    const button = event.relatedTarget;
+    document.getElementById('validade-item-id').value = button?.dataset.itemId || '';
+    document.getElementById('validade-item-label').textContent = button?.dataset.itemLabel || '';
+    document.getElementById('validade-data-inicio').value = button?.dataset.dataInicio || '';
+    document.getElementById('validade-data-fim').value = button?.dataset.dataFim || '';
+  });
+</script>
 {% endblock %}

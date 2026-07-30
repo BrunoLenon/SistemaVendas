@@ -45,7 +45,7 @@
       <div>
         <div class="ip-chip">📦 Ação por pontos</div>
         <h1 class="ip-title mt-2">Itens Parados</h1>
-        <div class="ip-sub">Somente produtos ativos na ação da respectiva loja geram pontos. O sistema soma as vendas elegíveis de cada funcionário e EMP, considera apenas grupos completos da base configurada e converte os pontos em bônus.</div>
+        <div class="ip-sub">Somente produtos ativos, dentro da validade da ação e na respectiva loja geram pontos. O sistema soma as vendas elegíveis de cada funcionário e EMP, considera apenas grupos completos da base configurada e converte os pontos em bônus.</div>
       </div>
       <form method="get" class="ip-filter">
         <div><div class="ip-label">Ano</div><input class="form-control" type="number" name="ano" value="{{ ano }}" min="2000" max="2100" style="width:105px"></div>
@@ -79,7 +79,7 @@
           <div class="ip-store-value"><small>Venda elegível</small><b>{{ card.valor_vendido|brl_rs }}</b></div>
           <div class="ip-store-value"><small>Pontos</small><b>{{ card.pontos }}</b></div>
           <div class="ip-store-value is-bonus"><small>Bônus da loja</small><b>{{ card.bonus_total|brl_rs }}</b></div>
-          <div class="ip-store-value"><small>Itens ativos</small><b>{{ card.itens_ativos }}</b></div>
+          <div class="ip-store-value"><small>Itens válidos no período</small><b>{{ card.itens_ativos }}</b></div>
         </div>
       </div>
       {% endfor %}

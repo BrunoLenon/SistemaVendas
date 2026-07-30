@@ -2,10 +2,10 @@
 """Importação e snapshot mensal de Itens Parados por pontos.
 
 Fluxo:
-1. O administrador cadastra os produtos ativos por EMP.
+1. O administrador cadastra os produtos ativos por EMP e validade.
 2. Define a regra de pontos (global ou específica por EMP).
 3. Importa a planilha de vendas.
-4. Somente as linhas cujo código esteja ativo na mesma EMP entram no cálculo.
+4. Somente as linhas cujo código esteja ativo, na mesma EMP e dentro da validade entram no cálculo.
 5. O valor líquido elegível é consolidado por funcionário/EMP.
 6. Pontos inteiros = piso(valor elegível / base em reais).
 7. Bônus = pontos inteiros x valor por ponto.
@@ -279,9 +279,11 @@ def _item_is_active(
 ) -> bool:
     windows = active_items.get((emp, codigo)) or []
     for start, end in windows:
-        if start is not None and movement_date < start:
+        # A validade é obrigatória para evitar que produtos antigos continuem
+        # pontuando indefinidamente por esquecimento de atualização.
+        if start is None or end is None:
             continue
-        if end is not None and movement_date > end:
+        if movement_date < start or movement_date > end:
             continue
         return True
     return False
@@ -428,7 +430,7 @@ def _parse_sales_workbook(
             )
         if not_eligible:
             warnings.append(
-                f"{not_eligible} linha(s) não correspondiam a produtos ativos na mesma EMP e foram ignoradas."
+                f"{not_eligible} linha(s) não correspondiam a produtos ativos, na mesma EMP e dentro da validade, e foram ignoradas."
             )
         for movement, count in sorted(invalid_movements.items()):
             warnings.append(
@@ -437,7 +439,7 @@ def _parse_sales_workbook(
             )
         if not grouped:
             raise ValueError(
-                "Nenhuma venda válida de produto ativo foi encontrada para a competência selecionada."
+                "Nenhuma venda válida de produto ativo e dentro da validade foi encontrada para a competência selecionada."
             )
 
         records: list[dict[str, Any]] = []

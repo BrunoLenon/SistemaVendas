@@ -2368,6 +2368,9 @@ def ensure_itens_parados_snapshot_schema(force: bool = False):
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_itens_parados_vendas_emp_periodo ON itens_parados_vendas_usuarios (emp, ano, mes);"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_itens_parados_vendas_usuario_id ON itens_parados_vendas_usuarios (usuario_id);"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_itens_parados_vendas_lote_id ON itens_parados_vendas_usuarios (lote_id);"))
+        conn.execute(text("ALTER TABLE IF EXISTS itens_parados ADD COLUMN IF NOT EXISTS data_inicio DATE;"))
+        conn.execute(text("ALTER TABLE IF EXISTS itens_parados ADD COLUMN IF NOT EXISTS data_fim DATE;"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_itens_parados_emp_codigo_validade ON itens_parados (emp, codigo, ativo, data_inicio, data_fim);"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_itens_parados_pontos_cfg_emp ON itens_parados_pontos_config (emp);"))
         conn.execute(text("""
             INSERT INTO itens_parados_pontos_config (emp, base_reais, valor_por_ponto, ativo)
