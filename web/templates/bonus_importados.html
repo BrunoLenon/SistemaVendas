@@ -163,7 +163,7 @@
   .bonus-sheet-row:not(.bonus-sheet-header):nth-child(odd){background:rgba(255,255,255,.018)}
   .bonus-sheet-row:not(.bonus-sheet-header):hover{background:rgba(255,145,0,.055)}
   .bonus-sheet-seller .bonus-sheet-row{grid-template-columns:48px minmax(126px,1.35fr) 62px repeat(12,minmax(74px,1fr))}
-  .bonus-sheet-manager .bonus-sheet-row{grid-template-columns:48px minmax(126px,1.35fr) 62px repeat(11,minmax(78px,1fr))}
+  .bonus-sheet-manager .bonus-sheet-row{grid-template-columns:48px minmax(126px,1.35fr) 62px repeat(12,minmax(78px,1fr))}
   .bonus-sheet-mechanic .bonus-sheet-row{grid-template-columns:48px minmax(138px,1.55fr) 62px repeat(6,minmax(92px,1fr))}
   .bonus-sheet-cell{display:flex;align-items:center;justify-content:flex-end;min-width:0;padding:9px 6px;border-right:1px solid rgba(255,255,255,.05);font-size:12px;font-weight:400;line-height:1.25;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
   .bonus-sheet-cell:last-child{border-right:0}
@@ -185,7 +185,7 @@
     .bonus-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
     .bonus-sheet-wrap{overflow-x:auto;overflow-y:visible}
     .bonus-sheet-seller{min-width:1240px}
-    .bonus-sheet-manager{min-width:1160px}
+    .bonus-sheet-manager{min-width:1240px}
     .bonus-sheet-mechanic{min-width:820px}
   }
   @media(max-width:780px){
@@ -440,6 +440,7 @@
             <div class="bonus-sheet-cell bonus-sheet-emp">EMP</div>
             <div class="bonus-sheet-cell bonus-sheet-user">Usuário</div>
             <div class="bonus-sheet-cell bonus-sheet-action">Ação</div>
+            <div class="bonus-sheet-cell">Produto vendedor</div>
             <div class="bonus-sheet-cell">Loja anterior</div>
             <div class="bonus-sheet-cell">Loja atual</div>
             <div class="bonus-sheet-cell">Produto gerente</div>
@@ -457,6 +458,7 @@
             <div class="bonus-sheet-cell bonus-sheet-emp">{{ row.emp }}</div>
             <div class="bonus-sheet-cell bonus-sheet-user" title="{{ row.usuario_nome }}">{{ row.usuario_nome }}</div>
             <div class="bonus-sheet-cell bonus-sheet-action"><a class="btn btn-sm btn-outline-warning" href="{{ url_for('bonus_importados', ano=ano, mes=mes, emp=emp_filter, usuario=user_filter, registro=row.id) }}#detalhes">Ver</a></div>
+            <div class="bonus-sheet-cell">{{ row.produto_vendedor|brl_rs }}</div>
             <div class="bonus-sheet-cell">{{ row.loja_anterior|brl_rs }}</div>
             <div class="bonus-sheet-cell">{{ row.loja_atual|brl_rs }}</div>
             <div class="bonus-sheet-cell">{{ row.produto_gerente|brl_rs }}</div>
@@ -545,6 +547,7 @@
       {% elif selected.funcao == 'GERENTE' %}
       <div class="bonus-detail-grid">
         <div class="bonus-group-title">Informações do gerente e da loja</div>
+        <div class="bonus-metric"><small>E · Produto vendedor — bônus das vendas próprias do gerente</small><strong>{{ selected.produto_vendedor|brl_rs }}</strong></div>
         <div class="bonus-metric"><small>J · Loja anterior — mesmo período do ano passado</small><strong>{{ selected.loja_anterior|brl_rs }}</strong></div>
         <div class="bonus-metric"><small>K · Loja atual — totalizada com serviço</small><strong>{{ selected.loja_atual|brl_rs }}</strong></div>
         <div class="bonus-metric"><small>M · Produto gerente — bônus de produtos da loja</small><strong>{{ selected.produto_gerente|brl_rs }}</strong></div>

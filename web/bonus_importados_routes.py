@@ -157,6 +157,9 @@ ROLE_FIELDS = {
         "bonus_final",
     ),
     "GERENTE": (
+        # Alguns gerentes também realizam vendas próprias. A coluna E deve ser
+        # preservada junto aos valores agregados da loja.
+        "produto_vendedor",
         "loja_anterior",
         "loja_atual",
         "produto_gerente",
