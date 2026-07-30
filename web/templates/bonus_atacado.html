@@ -73,8 +73,8 @@
   .atacado-money{font-variant-numeric:tabular-nums;font-weight:750;white-space:nowrap}
   .atacado-total{color:#ffc477;font-weight:950}
   .atacado-na{color:#70757e}
-  .atacado-mobile-list{display:none;gap:10px}
-  .atacado-record-card{padding:15px;border:1px solid rgba(255,255,255,.08);border-radius:17px;background:rgba(0,0,0,.20)}
+  .atacado-mobile-list{display:none;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:12px}
+  .atacado-record-card{min-width:0;padding:15px;border:1px solid rgba(255,255,255,.08);border-radius:17px;background:rgba(0,0,0,.20);box-shadow:0 10px 24px rgba(0,0,0,.14)}
   .atacado-record-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:12px}
   .atacado-record-head strong{overflow-wrap:anywhere}
   .atacado-record-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px}
@@ -100,10 +100,10 @@
   .atacado-total-geral{color:#ffd08b;font-weight:950}
   .atacado-warnings{margin:12px 0 0;padding:0 0 0 18px;color:#ffd29a;font-size:11px;line-height:1.55;max-height:260px;overflow:auto}
   .atacado-empty{padding:42px 18px;text-align:center;color:#8f949d}
-  @media(max-width:1300px){.atacado-kpis{grid-template-columns:repeat(4,minmax(0,1fr))}}
-  @media(max-width:1150px){.atacado-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.atacado-store-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.atacado-table{font-size:10px}.atacado-table>:not(caption)>*>*{padding:9px 5px}}
-  @media(max-width:900px){.atacado-desktop-table{display:none}.atacado-mobile-list{display:grid}.atacado-store-grid{grid-template-columns:1fr}.atacado-import-grid{grid-template-columns:1fr}}
-  @media(max-width:600px){.atacado-kpis{grid-template-columns:1fr 1fr}.atacado-title{font-size:25px}.atacado-filter>*{width:100%}.atacado-filter .btn{width:100%}.atacado-columns{grid-template-columns:1fr}}
+  @media(max-width:1700px){.atacado-desktop-table{display:none}.atacado-mobile-list{display:grid}}
+  @media(max-width:1300px){.atacado-kpis{grid-template-columns:repeat(4,minmax(0,1fr))}.atacado-store-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.atacado-mobile-list{grid-template-columns:repeat(2,minmax(0,1fr))}}
+  @media(max-width:1000px){.atacado-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.atacado-store-grid{grid-template-columns:1fr}.atacado-import-grid{grid-template-columns:1fr}}
+  @media(max-width:700px){.atacado-mobile-list{grid-template-columns:1fr}.atacado-record-grid{grid-template-columns:1fr}.atacado-kpis{grid-template-columns:1fr 1fr}.atacado-title{font-size:25px}.atacado-filter>*{width:100%}.atacado-filter .btn{width:100%}.atacado-columns{grid-template-columns:1fr}.atacado-panel,.atacado-hero{padding:14px;border-radius:17px}}
 </style>
 {% endblock %}
 
