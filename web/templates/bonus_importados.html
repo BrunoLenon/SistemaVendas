@@ -132,33 +132,33 @@
   .bonus-column-note{padding:9px 10px;border-radius:12px;background:rgba(0,0,0,.2);border:1px solid rgba(255,255,255,.07);font-size:10px;color:#c3c7ce;line-height:1.45}
   .bonus-column-note b{color:#ffc477}
   .bonus-record-list{display:block;border:1px solid rgba(255,255,255,.08);border-radius:14px;overflow:visible;background:rgba(0,0,0,.13)}
-  .bonus-record-row{display:grid;grid-template-columns:minmax(142px,168px) minmax(0,1fr);min-width:0;border-bottom:1px solid rgba(255,255,255,.075);background:rgba(5,5,5,.30);transition:background .16s ease}
+  .bonus-record-row{display:grid;grid-template-columns:minmax(156px,176px) minmax(0,1fr);min-width:0;min-height:46px;border-bottom:1px solid rgba(255,255,255,.075);background:rgba(5,5,5,.30);transition:background .16s ease}
   .bonus-record-row:last-child{border-bottom:0}
   .bonus-record-row:nth-child(even){background:rgba(255,255,255,.018)}
   .bonus-record-row:hover{background:rgba(255,145,0,.055)}
-  .bonus-record-head{display:flex;flex-direction:row;justify-content:space-between;align-items:center;gap:6px;min-width:0;padding:8px 9px;margin:0;border:0;border-right:1px solid rgba(255,255,255,.07)}
+  .bonus-record-head{display:flex;flex-direction:row;justify-content:space-between;align-items:center;gap:7px;min-width:0;padding:9px 9px;margin:0;border:0;border-right:1px solid rgba(255,255,255,.07)}
   .bonus-record-identity{min-width:0;overflow:hidden}
-  .bonus-record-identity small{display:block;color:#ffc477;font-size:7px;font-weight:900;text-transform:uppercase;letter-spacing:.055em;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .bonus-record-identity strong{display:block;font-size:10.5px;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .bonus-record-head .btn{flex:0 0 auto;min-width:40px;padding:.18rem .34rem;font-size:7.5px;line-height:1.15}
+  .bonus-record-identity small{display:block;color:#ffc477;font-size:8px;font-weight:900;text-transform:uppercase;letter-spacing:.045em;margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .bonus-record-identity strong{display:block;font-size:12px;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .bonus-record-head .btn{flex:0 0 auto;min-width:43px;padding:.22rem .38rem;font-size:8.5px;line-height:1.15}
   .bonus-record-grid{display:flex;flex-wrap:nowrap;align-items:stretch;gap:0;min-width:0}
-  .bonus-record-item{flex:1 1 0;min-width:0;padding:7px 4px;border:0;border-right:1px solid rgba(255,255,255,.045);border-radius:0;background:transparent;display:flex;flex-direction:column;justify-content:center}
+  .bonus-record-item{flex:1 1 0;min-width:0;padding:8px 5px;border:0;border-right:1px solid rgba(255,255,255,.045);border-radius:0;background:transparent;display:flex;flex-direction:column;justify-content:center}
   .bonus-record-item:last-child{border-right:0}
   .bonus-record-item.wide{flex:1.08 1 0}
   .bonus-record-item.highlight{background:rgba(255,145,0,.055);border-color:rgba(255,177,66,.12)}
-  .bonus-record-item small{display:block;color:#9298a1;font-size:6.2px;font-weight:850;text-transform:uppercase;letter-spacing:.02em;line-height:1.1;margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .bonus-record-item b,.bonus-record-value{display:block;color:#fff;font-size:8.8px;font-weight:850;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
-  .bonus-record-item.highlight b,.bonus-record-item.highlight .bonus-record-value{color:#ffd08b;font-size:10.3px;font-weight:950}
+  .bonus-record-item small{display:block;color:#a8adb5;font-size:7.4px;font-weight:900;text-transform:uppercase;letter-spacing:.015em;line-height:1.1;margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .bonus-record-item b,.bonus-record-value{display:block;color:#fff;font-size:10.4px;font-weight:900;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
+  .bonus-record-item.highlight b,.bonus-record-item.highlight .bonus-record-value{color:#ffd08b;font-size:11.5px;font-weight:950}
   .bonus-record-item .bonus-record-value{display:flex;align-items:center;gap:3px;overflow:visible;position:relative}
   .bonus-record-item .bonus-money{display:inline;min-width:0;overflow:hidden;text-overflow:ellipsis}
   .bonus-record-item .bonus-other-details{display:inline-block;flex:0 0 auto;margin:0;position:relative}
-  .bonus-record-item .bonus-other-details summary{font-size:7px;line-height:1;padding:2px 3px;border:1px solid rgba(255,174,72,.22);border-radius:999px;background:rgba(255,145,0,.08)}
+  .bonus-record-item .bonus-other-details summary{font-size:8px;line-height:1;padding:2px 4px;border:1px solid rgba(255,174,72,.22);border-radius:999px;background:rgba(255,145,0,.08)}
   .bonus-record-item .bonus-other-popover{position:absolute;z-index:40;top:calc(100% + 6px);right:0;min-width:230px;width:max-content;max-width:320px;box-shadow:0 16px 38px rgba(0,0,0,.45)}
   @media(max-width:1180px){
     .bonus-grid{grid-template-columns:1fr}
     .bonus-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
     .bonus-record-list{overflow-x:auto;overflow-y:visible}
-    .bonus-record-row{min-width:1080px;grid-template-columns:150px minmax(0,1fr)}
+    .bonus-record-row{min-width:1160px;grid-template-columns:168px minmax(0,1fr)}
   }
   @media(max-width:780px){
     .bonus-kpis,.bonus-detail-grid,.bonus-team-cards,.bonus-columns{grid-template-columns:1fr}
