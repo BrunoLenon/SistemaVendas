@@ -131,21 +131,41 @@
   .bonus-columns{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin-top:10px}
   .bonus-column-note{padding:9px 10px;border-radius:12px;background:rgba(0,0,0,.2);border:1px solid rgba(255,255,255,.07);font-size:10px;color:#c3c7ce;line-height:1.45}
   .bonus-column-note b{color:#ffc477}
-  .bonus-record-list{display:none;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:12px}
-  .bonus-record-card{min-width:0;border:1px solid rgba(255,255,255,.08);border-radius:17px;background:rgba(0,0,0,.20);padding:14px;box-shadow:0 10px 24px rgba(0,0,0,.14)}
-  .bonus-record-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding-bottom:11px;margin-bottom:11px;border-bottom:1px solid rgba(255,255,255,.07)}
-  .bonus-record-identity{min-width:0}.bonus-record-identity small{display:block;color:#ffc477;font-size:9px;font-weight:900;text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}.bonus-record-identity strong{display:block;font-size:14px;line-height:1.2;overflow-wrap:anywhere}
-  .bonus-record-head .btn{flex:0 0 auto;min-width:68px}
-  .bonus-record-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
-  .bonus-record-item{min-width:0;padding:9px 10px;border-radius:12px;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.035)}
-  .bonus-record-item.wide{grid-column:1/-1}.bonus-record-item.highlight{border-color:rgba(255,177,66,.20);background:rgba(255,145,0,.065)}
-  .bonus-record-item small{display:block;color:#999fa8;font-size:8.5px;font-weight:850;text-transform:uppercase;letter-spacing:.055em;line-height:1.3;margin-bottom:5px}
-  .bonus-record-item b,.bonus-record-value{display:block;color:#fff;font-size:12px;font-weight:850;line-height:1.25;overflow-wrap:anywhere}
-  .bonus-record-item.highlight b,.bonus-record-item.highlight .bonus-record-value{color:#ffd08b;font-size:15px;font-weight:950}
-  .bonus-record-item .bonus-other-details{margin-top:5px}.bonus-record-item .bonus-other-popover{min-width:0;width:100%}
-  @media(max-width:1700px){.bonus-table-wrap{display:none}.bonus-record-list{display:grid}}
-  @media(max-width:1180px){.bonus-grid{grid-template-columns:1fr}.bonus-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.bonus-record-list{grid-template-columns:repeat(2,minmax(0,1fr))}}
-  @media(max-width:780px){.bonus-kpis,.bonus-detail-grid,.bonus-team-cards,.bonus-columns,.bonus-record-list{grid-template-columns:1fr}.bonus-title{font-size:24px}.bonus-kpi strong{font-size:21px}.bonus-record-grid{grid-template-columns:1fr}.bonus-record-item.wide{grid-column:auto}.bonus-panel,.bonus-hero{padding:14px;border-radius:17px}}
+  .bonus-record-list{display:block;border:1px solid rgba(255,255,255,.08);border-radius:14px;overflow:hidden;background:rgba(0,0,0,.13)}
+  .bonus-record-row{display:grid;grid-template-columns:minmax(160px,195px) minmax(0,1fr);min-width:0;border-bottom:1px solid rgba(255,255,255,.075);background:rgba(5,5,5,.30);transition:background .16s ease}
+  .bonus-record-row:last-child{border-bottom:0}
+  .bonus-record-row:nth-child(even){background:rgba(255,255,255,.018)}
+  .bonus-record-row:hover{background:rgba(255,145,0,.055)}
+  .bonus-record-head{display:flex;flex-direction:column;justify-content:center;align-items:flex-start;gap:8px;min-width:0;padding:12px 13px;margin:0;border:0;border-right:1px solid rgba(255,255,255,.07)}
+  .bonus-record-identity{min-width:0}
+  .bonus-record-identity small{display:block;color:#ffc477;font-size:8px;font-weight:900;text-transform:uppercase;letter-spacing:.075em;margin-bottom:4px}
+  .bonus-record-identity strong{display:block;font-size:12px;line-height:1.22;overflow-wrap:anywhere}
+  .bonus-record-head .btn{flex:0 0 auto;min-width:58px;padding:.22rem .5rem;font-size:9px}
+  .bonus-record-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(104px,1fr));gap:0;min-width:0}
+  .bonus-record-item{min-width:0;padding:9px 8px;border:0;border-right:1px solid rgba(255,255,255,.045);border-bottom:1px solid rgba(255,255,255,.045);border-radius:0;background:transparent}
+  .bonus-record-item.wide{grid-column:auto}
+  .bonus-record-item.highlight{background:rgba(255,145,0,.055);border-color:rgba(255,177,66,.12)}
+  .bonus-record-item small{display:block;color:#9298a1;font-size:7.5px;font-weight:850;text-transform:uppercase;letter-spacing:.045em;line-height:1.25;margin-bottom:4px}
+  .bonus-record-item b,.bonus-record-value{display:block;color:#fff;font-size:10.5px;font-weight:850;line-height:1.25;overflow-wrap:anywhere}
+  .bonus-record-item.highlight b,.bonus-record-item.highlight .bonus-record-value{color:#ffd08b;font-size:12.5px;font-weight:950}
+  .bonus-record-item .bonus-other-details{margin-top:4px}
+  .bonus-record-item .bonus-other-popover{min-width:0;width:100%}
+  @media(max-width:1180px){
+    .bonus-grid{grid-template-columns:1fr}
+    .bonus-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+    .bonus-record-row{grid-template-columns:minmax(145px,175px) minmax(0,1fr)}
+    .bonus-record-grid{grid-template-columns:repeat(auto-fit,minmax(96px,1fr))}
+  }
+  @media(max-width:780px){
+    .bonus-kpis,.bonus-detail-grid,.bonus-team-cards,.bonus-columns{grid-template-columns:1fr}
+    .bonus-title{font-size:24px}
+    .bonus-kpi strong{font-size:21px}
+    .bonus-record-row{grid-template-columns:1fr}
+    .bonus-record-head{flex-direction:row;justify-content:space-between;align-items:center;border-right:0;border-bottom:1px solid rgba(255,255,255,.07);padding:10px 11px}
+    .bonus-record-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+    .bonus-panel,.bonus-hero{padding:14px;border-radius:17px}
+  }
+  @media(max-width:520px){.bonus-record-grid{grid-template-columns:1fr}}
 </style>
 {% endblock %}
 
@@ -337,52 +357,9 @@
         <div><h2 class="bonus-section-title">Vendedores</h2><div class="bonus-section-sub">Somente as colunas autorizadas para vendedor na aba BONUS FINAL.</div></div>
         <div class="bonus-money">{{ seller_rows|length }} vendedor(es)</div>
       </div>
-      <div class="bonus-table-wrap">
-        <table class="table table-sm bonus-table bonus-table-seller">
-          <colgroup>
-            <col style="width:4%"><col style="width:10%"><col style="width:6%"><col style="width:7%"><col style="width:7%"><col style="width:5%"><col style="width:7%"><col style="width:6%"><col style="width:6%"><col style="width:6%"><col style="width:7%"><col style="width:7%"><col style="width:8%"><col style="width:9%"><col style="width:5%">
-          </colgroup>
-          <thead><tr>
-            <th>EMP</th><th>Usuário</th>
-            <th class="text-end">Produtos<span class="bonus-muted">E</span></th>
-            <th class="text-end">Venda anterior<span class="bonus-muted">G</span></th>
-            <th class="text-end">Venda atual<span class="bonus-muted">H</span></th>
-            <th class="text-end">Cresc.<span class="bonus-muted">I</span></th>
-            <th class="text-end">Importado<span class="bonus-muted">N</span></th>
-            <th class="text-end">B. importado<span class="bonus-muted">R</span></th>
-            <th class="text-end">Valor meta<span class="bonus-muted">T</span></th>
-            <th class="text-end">Parcial<span class="bonus-muted">U</span></th>
-            <th class="text-end">Bônus<span class="bonus-muted">V</span></th>
-            <th class="text-end">Itens parados</th>
-            <th class="text-end">Outros valores</th>
-            <th class="text-end">Total geral</th>
-            <th></th>
-          </tr></thead>
-          <tbody>
-            {% for row in seller_rows %}
-            <tr>
-              <td>{{ row.emp }}</td><td class="fw-bold bonus-user-cell" title="{{ row.usuario_nome }}">{{ row.usuario_nome }}</td>
-              <td class="text-end">{{ row.produto_vendedor|brl_rs }}</td>
-              <td class="text-end">{{ row.venda_anterior|brl_rs }}</td>
-              <td class="text-end">{{ row.venda_atual|brl_rs }}</td>
-              <td class="text-end">{{ percent_br(row.crescimento) }}</td>
-              <td class="text-end">{{ row.importado_vendedor|brl_rs }}</td>
-              <td class="text-end">{{ row.bonus_importado|brl_rs }}</td>
-              <td class="text-end">{{ row.valor_meta|brl_rs }}</td>
-              <td class="text-end">{{ row.valor_parcial|brl_rs }}</td>
-              <td class="text-end bonus-money bonus-final">{{ row.bonus_final|brl_rs }}</td>
-              <td class="text-end">{{ row.saldo_itens_parados_usuario|brl_rs }}</td>
-              <td class="text-end">{{ outros_valores(row, role, ano, mes) }}</td>
-              <td class="text-end bonus-total-geral">{{ row.total_geral|brl_rs }}</td>
-              <td class="bonus-action"><a class="btn btn-sm btn-outline-warning" href="{{ url_for('bonus_importados', ano=ano, mes=mes, emp=emp_filter, usuario=user_filter, registro=row.id) }}#detalhes">Ver</a></td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-      <div class="bonus-record-list" aria-label="Vendedores em cartões">
+      <div class="bonus-record-list" aria-label="Vendedores em linhas">
         {% for row in seller_rows %}
-        <article class="bonus-record-card">
+        <div class="bonus-record-row">
           <div class="bonus-record-head">
             <div class="bonus-record-identity"><small>EMP {{ row.emp }} · Vendedor</small><strong>{{ row.usuario_nome }}</strong></div>
             <a class="btn btn-sm btn-outline-warning" href="{{ url_for('bonus_importados', ano=ano, mes=mes, emp=emp_filter, usuario=user_filter, registro=row.id) }}#detalhes">Detalhes</a>
@@ -401,7 +378,7 @@
             <div class="bonus-record-item wide"><small>Outros valores</small><div class="bonus-record-value">{{ outros_valores(row, role, ano, mes) }}</div></div>
             <div class="bonus-record-item wide highlight"><small>Total geral</small><b>{{ row.total_geral|brl_rs }}</b></div>
           </div>
-        </article>
+        </div>
         {% endfor %}
       </div>
     </section>
@@ -413,20 +390,9 @@
         <div><h2 class="bonus-section-title">Gerentes</h2><div class="bonus-section-sub">Valores agregados da loja importados para o gerente.</div></div>
         <div class="bonus-money">{{ manager_rows|length }} gerente(s)</div>
       </div>
-      <div class="bonus-table-wrap">
-        <table class="table table-sm bonus-table bonus-table-manager">
-          <colgroup><col style="width:5%"><col style="width:13%"><col style="width:10%"><col style="width:10%"><col style="width:10%"><col style="width:8%"><col style="width:8%"><col style="width:9%"><col style="width:9%"><col style="width:8%"><col style="width:7%"><col style="width:3%"></colgroup>
-          <thead><tr><th>EMP</th><th>Usuário</th><th class="text-end">Loja anterior<span class="bonus-muted">J</span></th><th class="text-end">Loja atual<span class="bonus-muted">K</span></th><th class="text-end">Importado loja<span class="bonus-muted">O</span></th><th class="text-end">Valor meta<span class="bonus-muted">T</span></th><th class="text-end">Parcial<span class="bonus-muted">U</span></th><th class="text-end">Bônus<span class="bonus-muted">V</span></th><th class="text-end">Itens parados</th><th class="text-end">Outros</th><th class="text-end">Total geral</th><th></th></tr></thead>
-          <tbody>{% for row in manager_rows %}<tr>
-            <td>{{ row.emp }}</td><td class="fw-bold bonus-user-cell">{{ row.usuario_nome }}</td>
-            <td class="text-end">{{ row.loja_anterior|brl_rs }}</td><td class="text-end">{{ row.loja_atual|brl_rs }}</td><td class="text-end">{{ row.importado_loja|brl_rs }}</td><td class="text-end">{{ row.valor_meta|brl_rs }}</td><td class="text-end">{{ row.valor_parcial|brl_rs }}</td><td class="text-end bonus-money bonus-final">{{ row.bonus_final|brl_rs }}</td><td class="text-end">{{ row.saldo_itens_parados_loja|brl_rs }}</td><td class="text-end">{{ outros_valores(row, role, ano, mes) }}</td><td class="text-end bonus-total-geral">{{ row.total_geral|brl_rs }}</td>
-            <td class="bonus-action"><a class="btn btn-sm btn-outline-warning" href="{{ url_for('bonus_importados', ano=ano, mes=mes, emp=emp_filter, usuario=user_filter, registro=row.id) }}#detalhes">Ver</a></td>
-          </tr>{% endfor %}</tbody>
-        </table>
-      </div>
-      <div class="bonus-record-list" aria-label="Gerentes em cartões">
+      <div class="bonus-record-list" aria-label="Gerentes em linhas">
         {% for row in manager_rows %}
-        <article class="bonus-record-card">
+        <div class="bonus-record-row">
           <div class="bonus-record-head">
             <div class="bonus-record-identity"><small>EMP {{ row.emp }} · Gerente</small><strong>{{ row.usuario_nome }}</strong></div>
             <a class="btn btn-sm btn-outline-warning" href="{{ url_for('bonus_importados', ano=ano, mes=mes, emp=emp_filter, usuario=user_filter, registro=row.id) }}#detalhes">Detalhes</a>
@@ -442,7 +408,7 @@
             <div class="bonus-record-item"><small>Outros valores</small><div class="bonus-record-value">{{ outros_valores(row, role, ano, mes) }}</div></div>
             <div class="bonus-record-item wide highlight"><small>Total geral</small><b>{{ row.total_geral|brl_rs }}</b></div>
           </div>
-        </article>
+        </div>
         {% endfor %}
       </div>
     </section>
@@ -454,19 +420,9 @@
         <div><h2 class="bonus-section-title">Mecânicos</h2><div class="bonus-section-sub">Faturamento, provisão e valor final importados.</div></div>
         <div class="bonus-money">{{ mechanic_rows|length }} mecânico(s)</div>
       </div>
-      <div class="bonus-table-wrap">
-        <table class="table table-sm bonus-table bonus-table-mechanic">
-          <colgroup><col style="width:7%"><col style="width:20%"><col style="width:13%"><col style="width:11%"><col style="width:12%"><col style="width:12%"><col style="width:11%"><col style="width:11%"><col style="width:3%"></colgroup>
-          <thead><tr><th>EMP</th><th>Usuário</th><th class="text-end">Faturado<span class="bonus-muted">F</span></th><th class="text-end">Parcial<span class="bonus-muted">U</span></th><th class="text-end">Bônus<span class="bonus-muted">V</span></th><th class="text-end">Itens parados</th><th class="text-end">Outros</th><th class="text-end">Total geral</th><th></th></tr></thead>
-          <tbody>{% for row in mechanic_rows %}<tr>
-            <td>{{ row.emp }}</td><td class="fw-bold bonus-user-cell">{{ row.usuario_nome }}</td><td class="text-end">{{ row.mecanico_faturado|brl_rs }}</td><td class="text-end">{{ row.valor_parcial|brl_rs }}</td><td class="text-end bonus-money bonus-final">{{ row.bonus_final|brl_rs }}</td><td class="text-end">{{ row.saldo_itens_parados_usuario|brl_rs }}</td><td class="text-end">{{ outros_valores(row, role, ano, mes) }}</td><td class="text-end bonus-total-geral">{{ row.total_geral|brl_rs }}</td>
-            <td class="bonus-action"><a class="btn btn-sm btn-outline-warning" href="{{ url_for('bonus_importados', ano=ano, mes=mes, emp=emp_filter, usuario=user_filter, registro=row.id) }}#detalhes">Ver</a></td>
-          </tr>{% endfor %}</tbody>
-        </table>
-      </div>
-      <div class="bonus-record-list" aria-label="Mecânicos em cartões">
+      <div class="bonus-record-list" aria-label="Mecânicos em linhas">
         {% for row in mechanic_rows %}
-        <article class="bonus-record-card">
+        <div class="bonus-record-row">
           <div class="bonus-record-head">
             <div class="bonus-record-identity"><small>EMP {{ row.emp }} · Mecânico</small><strong>{{ row.usuario_nome }}</strong></div>
             <a class="btn btn-sm btn-outline-warning" href="{{ url_for('bonus_importados', ano=ano, mes=mes, emp=emp_filter, usuario=user_filter, registro=row.id) }}#detalhes">Detalhes</a>
@@ -479,7 +435,7 @@
             <div class="bonus-record-item wide"><small>Outros valores</small><div class="bonus-record-value">{{ outros_valores(row, role, ano, mes) }}</div></div>
             <div class="bonus-record-item wide highlight"><small>Total geral</small><b>{{ row.total_geral|brl_rs }}</b></div>
           </div>
-        </article>
+        </div>
         {% endfor %}
       </div>
     </section>

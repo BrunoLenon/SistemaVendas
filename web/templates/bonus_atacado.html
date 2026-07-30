@@ -73,14 +73,20 @@
   .atacado-money{font-variant-numeric:tabular-nums;font-weight:750;white-space:nowrap}
   .atacado-total{color:#ffc477;font-weight:950}
   .atacado-na{color:#70757e}
-  .atacado-mobile-list{display:none;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:12px}
-  .atacado-record-card{min-width:0;padding:15px;border:1px solid rgba(255,255,255,.08);border-radius:17px;background:rgba(0,0,0,.20);box-shadow:0 10px 24px rgba(0,0,0,.14)}
-  .atacado-record-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:12px}
-  .atacado-record-head strong{overflow-wrap:anywhere}
-  .atacado-record-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px}
-  .atacado-record-item{padding:9px;border-radius:12px;background:rgba(255,255,255,.035)}
-  .atacado-record-item small{display:block;color:#999fa8;font-size:9px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px}
-  .atacado-record-item b{font-size:12px}
+    .atacado-row-list{display:block;border:1px solid rgba(255,255,255,.08);border-radius:14px;overflow:hidden;background:rgba(0,0,0,.13)}
+  .atacado-record-row{display:grid;grid-template-columns:minmax(170px,215px) minmax(0,1fr);min-width:0;border-bottom:1px solid rgba(255,255,255,.075);background:rgba(5,5,5,.30);transition:background .16s ease}
+  .atacado-record-row:last-child{border-bottom:0}
+  .atacado-record-row:nth-child(even){background:rgba(255,255,255,.018)}
+  .atacado-record-row:hover{background:rgba(255,145,0,.055)}
+  .atacado-record-head{display:flex;flex-direction:column;justify-content:center;align-items:flex-start;gap:7px;min-width:0;padding:12px 13px;border-right:1px solid rgba(255,255,255,.07)}
+  .atacado-record-head strong{font-size:12px;line-height:1.22;overflow-wrap:anywhere}
+  .atacado-record-head .atacado-section-sub{margin:0;font-size:9px}
+  .atacado-record-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(112px,1fr));gap:0;min-width:0}
+  .atacado-record-item{min-width:0;padding:9px 8px;border:0;border-right:1px solid rgba(255,255,255,.045);border-bottom:1px solid rgba(255,255,255,.045);border-radius:0;background:transparent}
+  .atacado-record-item:last-child{background:rgba(255,145,0,.055)}
+  .atacado-record-item small{display:block;color:#9298a1;font-size:7.5px;text-transform:uppercase;letter-spacing:.045em;line-height:1.25;margin-bottom:4px}
+  .atacado-record-item b{display:block;font-size:10.5px;line-height:1.25;overflow-wrap:anywhere}
+  .atacado-record-item:last-child b{font-size:12.5px}
   .atacado-import-grid{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(320px,.75fr);gap:12px}
   .atacado-drop{padding:15px;border:1px dashed rgba(255,177,66,.28);border-radius:16px;background:rgba(255,145,0,.045)}
   .atacado-columns{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin-top:10px}
@@ -100,10 +106,10 @@
   .atacado-total-geral{color:#ffd08b;font-weight:950}
   .atacado-warnings{margin:12px 0 0;padding:0 0 0 18px;color:#ffd29a;font-size:11px;line-height:1.55;max-height:260px;overflow:auto}
   .atacado-empty{padding:42px 18px;text-align:center;color:#8f949d}
-  @media(max-width:1700px){.atacado-desktop-table{display:none}.atacado-mobile-list{display:grid}}
-  @media(max-width:1300px){.atacado-kpis{grid-template-columns:repeat(4,minmax(0,1fr))}.atacado-store-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.atacado-mobile-list{grid-template-columns:repeat(2,minmax(0,1fr))}}
+  @media(max-width:1300px){.atacado-kpis{grid-template-columns:repeat(4,minmax(0,1fr))}.atacado-store-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.atacado-record-row{grid-template-columns:minmax(150px,185px) minmax(0,1fr)}.atacado-record-grid{grid-template-columns:repeat(auto-fit,minmax(102px,1fr))}}
   @media(max-width:1000px){.atacado-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.atacado-store-grid{grid-template-columns:1fr}.atacado-import-grid{grid-template-columns:1fr}}
-  @media(max-width:700px){.atacado-mobile-list{grid-template-columns:1fr}.atacado-record-grid{grid-template-columns:1fr}.atacado-kpis{grid-template-columns:1fr 1fr}.atacado-title{font-size:25px}.atacado-filter>*{width:100%}.atacado-filter .btn{width:100%}.atacado-columns{grid-template-columns:1fr}.atacado-panel,.atacado-hero{padding:14px;border-radius:17px}}
+  @media(max-width:700px){.atacado-record-row{grid-template-columns:1fr}.atacado-record-head{flex-direction:row;justify-content:space-between;align-items:center;border-right:0;border-bottom:1px solid rgba(255,255,255,.07);padding:10px 11px}.atacado-record-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.atacado-kpis{grid-template-columns:1fr 1fr}.atacado-title{font-size:25px}.atacado-filter>*{width:100%}.atacado-filter .btn{width:100%}.atacado-columns{grid-template-columns:1fr}.atacado-panel,.atacado-hero{padding:14px;border-radius:17px}}
+  @media(max-width:480px){.atacado-record-grid{grid-template-columns:1fr}}
 </style>
 {% endblock %}
 
@@ -273,28 +279,9 @@
     </div>
 
     {% if rows %}
-    <div class="atacado-table-wrap atacado-desktop-table">
-      <table class="table table-sm atacado-table">
-        {% if role in ['admin','supervisor','gerente'] %}
-        <colgroup><col style="width:4%"><col style="width:12%"><col style="width:7%"><col style="width:9%"><col style="width:9%"><col style="width:9%"><col style="width:9%"><col style="width:6%"><col style="width:9%"><col style="width:8%"><col style="width:8%"><col style="width:10%"></colgroup>
-        <thead><tr><th>EMP</th><th>Funcionário</th><th>Função</th><th class="text-end">Bônus</th><th class="text-end">Venda anterior</th><th class="text-end">Venda atual</th><th class="text-end">Importado</th><th class="text-end">% Importado</th><th class="text-end">Falta vendedor</th><th class="text-end">Itens parados</th><th class="text-end">Outros valores</th><th class="text-end">Total geral</th></tr></thead>
-        <tbody>{% for row in rows %}<tr>
-          <td>{{ row.emp }}</td><td class="atacado-user">{{ row.usuario_nome }}</td><td><span class="atacado-role">{{ row.funcao_exibicao }}</span></td>
-          <td class="text-end atacado-money atacado-total">{{ money(row.total_produtos) }}</td><td class="text-end atacado-money">{{ money(row.venda_anterior) }}</td><td class="text-end atacado-money">{{ money(row.venda_atual) }}</td><td class="text-end atacado-money">{{ money(row.importado) }}</td><td class="text-end atacado-money">{{ percent(row.percentual_importado) }}</td><td class="text-end atacado-money">{{ money(row.falta_valor_vendedor) }}</td><td class="text-end atacado-money">{{ money(row.saldo_itens_parados) }}</td><td class="text-end">{{ outros_valores(row, role, ano, mes) }}</td><td class="text-end atacado-money atacado-total-geral">{{ money(row.total_geral) }}</td>
-        </tr>{% endfor %}</tbody>
-        {% else %}
-        <colgroup><col style="width:6%"><col style="width:11%"><col style="width:12%"><col style="width:12%"><col style="width:11%"><col style="width:8%"><col style="width:11%"><col style="width:9%"><col style="width:9%"><col style="width:11%"></colgroup>
-        <thead><tr><th>EMP</th><th class="text-end">Bônus</th><th class="text-end">Venda anterior</th><th class="text-end">Venda atual</th><th class="text-end">Importado</th><th class="text-end">% Importado</th><th class="text-end">Falta vendedor</th><th class="text-end">Itens parados</th><th class="text-end">Outros valores</th><th class="text-end">Total geral</th></tr></thead>
-        <tbody>{% for row in rows %}<tr>
-          <td>{{ row.emp }}</td><td class="text-end atacado-money atacado-total">{{ money(row.total_produtos) }}</td><td class="text-end atacado-money">{{ money(row.venda_anterior) }}</td><td class="text-end atacado-money">{{ money(row.venda_atual) }}</td><td class="text-end atacado-money">{{ money(row.importado) }}</td><td class="text-end atacado-money">{{ percent(row.percentual_importado) }}</td><td class="text-end atacado-money">{{ money(row.falta_valor_vendedor) }}</td><td class="text-end atacado-money">{{ money(row.saldo_itens_parados) }}</td><td class="text-end">{{ outros_valores(row, role, ano, mes) }}</td><td class="text-end atacado-money atacado-total-geral">{{ money(row.total_geral) }}</td>
-        </tr>{% endfor %}</tbody>
-        {% endif %}
-      </table>
-    </div>
-
-    <div class="atacado-mobile-list">
+    <div class="atacado-row-list">
       {% for row in rows %}
-      <article class="atacado-record-card">
+      <div class="atacado-record-row">
         <div class="atacado-record-head"><div><strong>{{ row.usuario_nome }}</strong><div class="atacado-section-sub">EMP {{ row.emp }}</div></div>{% if role in ['admin','supervisor','gerente'] %}<span class="atacado-role">{{ row.funcao_exibicao }}</span>{% endif %}</div>
         <div class="atacado-record-grid">
           <div class="atacado-record-item"><small>Prêmio produtos</small><b class="atacado-total">{{ money(row.total_produtos) }}</b></div>
@@ -307,7 +294,7 @@
           <div class="atacado-record-item"><small>Outros valores</small><b>{{ money(row.outros_valores_total) }}</b>{% if row.outros_valores_detalhes %}<div class="mt-1">{{ outros_valores(row, role, ano, mes) }}</div>{% endif %}</div>
           <div class="atacado-record-item"><small>Total geral</small><b class="atacado-total-geral">{{ money(row.total_geral) }}</b></div>
         </div>
-      </article>
+      </div>
       {% endfor %}
     </div>
     {% else %}
