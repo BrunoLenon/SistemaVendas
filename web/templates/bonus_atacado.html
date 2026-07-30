@@ -92,6 +92,28 @@
   .atacado-record-item .atacado-other-details{display:inline-block;margin:0 0 0 3px;position:relative;vertical-align:middle}
   .atacado-record-item .atacado-other-details summary{font-size:8px;line-height:1;padding:2px 4px;border:1px solid rgba(255,174,72,.22);border-radius:999px;background:rgba(255,145,0,.08)}
   .atacado-record-item .atacado-other-popover{position:absolute;z-index:40;top:calc(100% + 6px);right:0;min-width:230px;width:max-content;max-width:320px;box-shadow:0 16px 38px rgba(0,0,0,.45)}
+
+  /* Layout em formato de planilha: cabeçalho único e dados em linhas. */
+  .atacado-sheet-wrap{border:1px solid rgba(255,255,255,.08);border-radius:14px;overflow:visible;background:rgba(0,0,0,.13)}
+  .atacado-sheet{width:100%;min-width:0}
+  .atacado-sheet-row{display:grid;align-items:stretch;min-width:0;border-bottom:1px solid rgba(255,255,255,.075);background:rgba(5,5,5,.30);transition:background .16s ease}
+  .atacado-sheet-row:last-child{border-bottom:0}
+  .atacado-sheet-row:not(.atacado-sheet-header):nth-child(odd){background:rgba(255,255,255,.018)}
+  .atacado-sheet-row:not(.atacado-sheet-header):hover{background:rgba(255,145,0,.055)}
+  .atacado-sheet.with-role .atacado-sheet-row{grid-template-columns:48px minmax(132px,1.45fr) 82px repeat(9,minmax(82px,1fr))}
+  .atacado-sheet.no-role .atacado-sheet-row{grid-template-columns:48px minmax(145px,1.55fr) repeat(9,minmax(86px,1fr))}
+  .atacado-sheet-cell{display:flex;align-items:center;justify-content:flex-end;min-width:0;padding:9px 6px;border-right:1px solid rgba(255,255,255,.05);font-size:11px;font-weight:850;line-height:1.2;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
+  .atacado-sheet-cell:last-child{border-right:0}
+  .atacado-sheet-header{background:#151515!important}
+  .atacado-sheet-header .atacado-sheet-cell{min-height:38px;color:#c5c9d0;font-size:10px;font-weight:950;line-height:1.15;text-transform:uppercase;letter-spacing:.015em}
+  .atacado-sheet-emp,.atacado-sheet-role{justify-content:center;text-align:center}
+  .atacado-sheet-user{justify-content:flex-start;text-align:left;font-size:11.5px;font-weight:950}
+  .atacado-sheet-total{background:rgba(255,145,0,.06);color:#ffd08b;font-size:11.5px;font-weight:950}
+  .atacado-sheet-other{overflow:visible;gap:3px}
+  .atacado-sheet-other .atacado-money{display:inline;min-width:0;overflow:hidden;text-overflow:ellipsis}
+  .atacado-sheet-other .atacado-other-details{display:inline-block;flex:0 0 auto;margin:0;position:relative}
+  .atacado-sheet-other .atacado-other-details summary{font-size:8px;line-height:1;padding:2px 4px;border:1px solid rgba(255,174,72,.22);border-radius:999px;background:rgba(255,145,0,.08)}
+  .atacado-sheet-other .atacado-other-popover{position:absolute;z-index:50;top:calc(100% + 6px);right:0;min-width:230px;width:max-content;max-width:320px;box-shadow:0 16px 38px rgba(0,0,0,.45)}
   .atacado-import-grid{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(320px,.75fr);gap:12px}
   .atacado-drop{padding:15px;border:1px dashed rgba(255,177,66,.28);border-radius:16px;background:rgba(255,145,0,.045)}
   .atacado-columns{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin-top:10px}
@@ -112,7 +134,7 @@
   .atacado-warnings{margin:12px 0 0;padding:0 0 0 18px;color:#ffd29a;font-size:11px;line-height:1.55;max-height:260px;overflow:auto}
   .atacado-empty{padding:42px 18px;text-align:center;color:#8f949d}
   @media(max-width:1300px){.atacado-kpis{grid-template-columns:repeat(4,minmax(0,1fr))}.atacado-store-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
-  @media(max-width:1000px){.atacado-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.atacado-store-grid{grid-template-columns:1fr}.atacado-import-grid{grid-template-columns:1fr}.atacado-row-list{overflow-x:auto;overflow-y:visible}.atacado-record-row{min-width:1010px;grid-template-columns:170px minmax(0,1fr)}}
+  @media(max-width:1000px){.atacado-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.atacado-store-grid{grid-template-columns:1fr}.atacado-import-grid{grid-template-columns:1fr}.atacado-sheet-wrap{overflow-x:auto;overflow-y:visible}.atacado-sheet{min-width:1080px}}
   @media(max-width:700px){.atacado-kpis{grid-template-columns:1fr 1fr}.atacado-title{font-size:25px}.atacado-filter>*{width:100%}.atacado-filter .btn{width:100%}.atacado-columns{grid-template-columns:1fr}.atacado-panel,.atacado-hero{padding:14px;border-radius:17px}}
 </style>
 {% endblock %}
@@ -283,23 +305,39 @@
     </div>
 
     {% if rows %}
-    <div class="atacado-row-list">
-      {% for row in rows %}
-      <div class="atacado-record-row">
-        <div class="atacado-record-head"><div><strong>{{ row.usuario_nome }}</strong><div class="atacado-section-sub">EMP {{ row.emp }}</div></div>{% if role in ['admin','supervisor','gerente'] %}<span class="atacado-role">{{ row.funcao_exibicao }}</span>{% endif %}</div>
-        <div class="atacado-record-grid">
-          <div class="atacado-record-item"><small>Prêmio produtos</small><b class="atacado-total">{{ money(row.total_produtos) }}</b></div>
-          <div class="atacado-record-item"><small>Venda anterior</small><b>{{ money(row.venda_anterior) }}</b></div>
-          <div class="atacado-record-item"><small>Venda atual</small><b>{{ money(row.venda_atual) }}</b></div>
-          <div class="atacado-record-item"><small>Importado</small><b>{{ money(row.importado) }}</b></div>
-          <div class="atacado-record-item"><small>% Importado</small><b>{{ percent(row.percentual_importado) }}</b></div>
-          <div class="atacado-record-item"><small>Falta valor vendedor</small><b>{{ money(row.falta_valor_vendedor) }}</b></div>
-          <div class="atacado-record-item"><small>Itens parados{% if row.funcao_exibicao in ['GERENTE','SUPERVISOR'] %} da loja{% endif %}</small><b>{{ money(row.saldo_itens_parados) }}</b></div>
-          <div class="atacado-record-item"><small>Outros valores</small><div class="d-flex align-items-center flex-nowrap">{{ outros_valores(row, role, ano, mes) }}</div></div>
-          <div class="atacado-record-item"><small>Total geral</small><b class="atacado-total-geral">{{ money(row.total_geral) }}</b></div>
+    <div class="atacado-sheet-wrap">
+      <div class="atacado-sheet {% if role in ['admin','supervisor','gerente'] %}with-role{% else %}no-role{% endif %}">
+        <div class="atacado-sheet-row atacado-sheet-header">
+          <div class="atacado-sheet-cell atacado-sheet-emp">EMP</div>
+          <div class="atacado-sheet-cell atacado-sheet-user">Usuário</div>
+          {% if role in ['admin','supervisor','gerente'] %}<div class="atacado-sheet-cell atacado-sheet-role">Função</div>{% endif %}
+          <div class="atacado-sheet-cell">Prêmio produtos</div>
+          <div class="atacado-sheet-cell">Venda anterior</div>
+          <div class="atacado-sheet-cell">Venda atual</div>
+          <div class="atacado-sheet-cell">Importado</div>
+          <div class="atacado-sheet-cell">% Importado</div>
+          <div class="atacado-sheet-cell">Falta vendedor</div>
+          <div class="atacado-sheet-cell">Itens parados</div>
+          <div class="atacado-sheet-cell">Outros valores</div>
+          <div class="atacado-sheet-cell atacado-sheet-total">Total geral</div>
         </div>
+        {% for row in rows %}
+        <div class="atacado-sheet-row">
+          <div class="atacado-sheet-cell atacado-sheet-emp">{{ row.emp }}</div>
+          <div class="atacado-sheet-cell atacado-sheet-user" title="{{ row.usuario_nome }}">{{ row.usuario_nome }}</div>
+          {% if role in ['admin','supervisor','gerente'] %}<div class="atacado-sheet-cell atacado-sheet-role">{{ row.funcao_exibicao }}</div>{% endif %}
+          <div class="atacado-sheet-cell">{{ money(row.total_produtos) }}</div>
+          <div class="atacado-sheet-cell">{{ money(row.venda_anterior) }}</div>
+          <div class="atacado-sheet-cell">{{ money(row.venda_atual) }}</div>
+          <div class="atacado-sheet-cell">{{ money(row.importado) }}</div>
+          <div class="atacado-sheet-cell">{{ percent(row.percentual_importado) }}</div>
+          <div class="atacado-sheet-cell">{{ money(row.falta_valor_vendedor) }}</div>
+          <div class="atacado-sheet-cell">{{ money(row.saldo_itens_parados) }}</div>
+          <div class="atacado-sheet-cell atacado-sheet-other">{{ outros_valores(row, role, ano, mes) }}</div>
+          <div class="atacado-sheet-cell atacado-sheet-total">{{ money(row.total_geral) }}</div>
+        </div>
+        {% endfor %}
       </div>
-      {% endfor %}
     </div>
     {% else %}
       <div class="atacado-empty">Nenhuma informação encontrada para esta competência e para o seu nível de acesso.</div>

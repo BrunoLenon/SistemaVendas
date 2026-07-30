@@ -154,11 +154,38 @@
   .bonus-record-item .bonus-other-details{display:inline-block;flex:0 0 auto;margin:0;position:relative}
   .bonus-record-item .bonus-other-details summary{font-size:8px;line-height:1;padding:2px 4px;border:1px solid rgba(255,174,72,.22);border-radius:999px;background:rgba(255,145,0,.08)}
   .bonus-record-item .bonus-other-popover{position:absolute;z-index:40;top:calc(100% + 6px);right:0;min-width:230px;width:max-content;max-width:320px;box-shadow:0 16px 38px rgba(0,0,0,.45)}
+
+  /* Layout em formato de planilha: um cabeçalho e uma linha por usuário. */
+  .bonus-sheet-wrap{border:1px solid rgba(255,255,255,.08);border-radius:14px;overflow:visible;background:rgba(0,0,0,.13)}
+  .bonus-sheet{width:100%;min-width:0}
+  .bonus-sheet-row{display:grid;align-items:stretch;min-width:0;border-bottom:1px solid rgba(255,255,255,.075);background:rgba(5,5,5,.30);transition:background .16s ease}
+  .bonus-sheet-row:last-child{border-bottom:0}
+  .bonus-sheet-row:not(.bonus-sheet-header):nth-child(odd){background:rgba(255,255,255,.018)}
+  .bonus-sheet-row:not(.bonus-sheet-header):hover{background:rgba(255,145,0,.055)}
+  .bonus-sheet-seller .bonus-sheet-row{grid-template-columns:48px minmax(126px,1.35fr) 62px repeat(12,minmax(74px,1fr))}
+  .bonus-sheet-manager .bonus-sheet-row{grid-template-columns:48px minmax(126px,1.35fr) 62px repeat(11,minmax(78px,1fr))}
+  .bonus-sheet-mechanic .bonus-sheet-row{grid-template-columns:48px minmax(138px,1.55fr) 62px repeat(6,minmax(92px,1fr))}
+  .bonus-sheet-cell{display:flex;align-items:center;justify-content:flex-end;min-width:0;padding:9px 6px;border-right:1px solid rgba(255,255,255,.05);font-size:11px;font-weight:850;line-height:1.2;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
+  .bonus-sheet-cell:last-child{border-right:0}
+  .bonus-sheet-header{background:#151515!important}
+  .bonus-sheet-header .bonus-sheet-cell{min-height:38px;color:#c5c9d0;font-size:10px;font-weight:950;line-height:1.15;text-transform:uppercase;letter-spacing:.015em}
+  .bonus-sheet-emp,.bonus-sheet-action{justify-content:center;text-align:center}
+  .bonus-sheet-user{justify-content:flex-start;text-align:left;font-size:11.5px;font-weight:950;overflow:hidden;text-overflow:ellipsis}
+  .bonus-sheet-action{overflow:visible}
+  .bonus-sheet-action .btn{min-width:50px;padding:.25rem .42rem;font-size:9px;line-height:1.1;white-space:nowrap}
+  .bonus-sheet-total{background:rgba(255,145,0,.06);color:#ffd08b;font-size:11.5px;font-weight:950}
+  .bonus-sheet-other{overflow:visible;gap:3px}
+  .bonus-sheet-other .bonus-money{display:inline;min-width:0;overflow:hidden;text-overflow:ellipsis}
+  .bonus-sheet-other .bonus-other-details{display:inline-block;flex:0 0 auto;margin:0;position:relative}
+  .bonus-sheet-other .bonus-other-details summary{font-size:8px;line-height:1;padding:2px 4px;border:1px solid rgba(255,174,72,.22);border-radius:999px;background:rgba(255,145,0,.08)}
+  .bonus-sheet-other .bonus-other-popover{position:absolute;z-index:50;top:calc(100% + 6px);right:0;min-width:230px;width:max-content;max-width:320px;box-shadow:0 16px 38px rgba(0,0,0,.45)}
   @media(max-width:1180px){
     .bonus-grid{grid-template-columns:1fr}
     .bonus-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
-    .bonus-record-list{overflow-x:auto;overflow-y:visible}
-    .bonus-record-row{min-width:1160px;grid-template-columns:168px minmax(0,1fr)}
+    .bonus-sheet-wrap{overflow-x:auto;overflow-y:visible}
+    .bonus-sheet-seller{min-width:1240px}
+    .bonus-sheet-manager{min-width:1160px}
+    .bonus-sheet-mechanic{min-width:820px}
   }
   @media(max-width:780px){
     .bonus-kpis,.bonus-detail-grid,.bonus-team-cards,.bonus-columns{grid-template-columns:1fr}
@@ -357,29 +384,45 @@
         <div><h2 class="bonus-section-title">Vendedores</h2><div class="bonus-section-sub">Somente as colunas autorizadas para vendedor na aba BONUS FINAL.</div></div>
         <div class="bonus-money">{{ seller_rows|length }} vendedor(es)</div>
       </div>
-      <div class="bonus-record-list" aria-label="Vendedores em linhas">
-        {% for row in seller_rows %}
-        <div class="bonus-record-row">
-          <div class="bonus-record-head">
-            <div class="bonus-record-identity"><small>EMP {{ row.emp }} · Vendedor</small><strong>{{ row.usuario_nome }}</strong></div>
-            <a class="btn btn-sm btn-outline-warning" href="{{ url_for('bonus_importados', ano=ano, mes=mes, emp=emp_filter, usuario=user_filter, registro=row.id) }}#detalhes">Detalhes</a>
+      <div class="bonus-sheet-wrap" aria-label="Vendedores em formato de planilha">
+        <div class="bonus-sheet bonus-sheet-seller">
+          <div class="bonus-sheet-row bonus-sheet-header">
+            <div class="bonus-sheet-cell bonus-sheet-emp">EMP</div>
+            <div class="bonus-sheet-cell bonus-sheet-user">Usuário</div>
+            <div class="bonus-sheet-cell bonus-sheet-action">Ação</div>
+            <div class="bonus-sheet-cell">Produtos</div>
+            <div class="bonus-sheet-cell">Bônus final</div>
+            <div class="bonus-sheet-cell">Venda anterior</div>
+            <div class="bonus-sheet-cell">Venda atual</div>
+            <div class="bonus-sheet-cell">Crescimento</div>
+            <div class="bonus-sheet-cell">Importado</div>
+            <div class="bonus-sheet-cell">Bônus importado</div>
+            <div class="bonus-sheet-cell">Valor meta</div>
+            <div class="bonus-sheet-cell">Valor parcial</div>
+            <div class="bonus-sheet-cell">Itens parados</div>
+            <div class="bonus-sheet-cell">Outros valores</div>
+            <div class="bonus-sheet-cell bonus-sheet-total">Total geral</div>
           </div>
-          <div class="bonus-record-grid">
-            <div class="bonus-record-item"><small>Produtos · E</small><b>{{ row.produto_vendedor|brl_rs }}</b></div>
-            <div class="bonus-record-item"><small>Bônus final · V</small><b>{{ row.bonus_final|brl_rs }}</b></div>
-            <div class="bonus-record-item"><small>Venda anterior · G</small><b>{{ row.venda_anterior|brl_rs }}</b></div>
-            <div class="bonus-record-item"><small>Venda atual · H</small><b>{{ row.venda_atual|brl_rs }}</b></div>
-            <div class="bonus-record-item"><small>Crescimento · I</small><b>{{ percent_br(row.crescimento) }}</b></div>
-            <div class="bonus-record-item"><small>Importado · N</small><b>{{ row.importado_vendedor|brl_rs }}</b></div>
-            <div class="bonus-record-item"><small>Bônus importado · R</small><b>{{ row.bonus_importado|brl_rs }}</b></div>
-            <div class="bonus-record-item"><small>Valor meta · T</small><b>{{ row.valor_meta|brl_rs }}</b></div>
-            <div class="bonus-record-item"><small>Valor parcial · U</small><b>{{ row.valor_parcial|brl_rs }}</b></div>
-            <div class="bonus-record-item"><small>Itens parados</small><b>{{ row.saldo_itens_parados_usuario|brl_rs }}</b></div>
-            <div class="bonus-record-item wide"><small>Outros valores</small><div class="bonus-record-value">{{ outros_valores(row, role, ano, mes) }}</div></div>
-            <div class="bonus-record-item wide highlight"><small>Total geral</small><b>{{ row.total_geral|brl_rs }}</b></div>
+          {% for row in seller_rows %}
+          <div class="bonus-sheet-row">
+            <div class="bonus-sheet-cell bonus-sheet-emp">{{ row.emp }}</div>
+            <div class="bonus-sheet-cell bonus-sheet-user" title="{{ row.usuario_nome }}">{{ row.usuario_nome }}</div>
+            <div class="bonus-sheet-cell bonus-sheet-action"><a class="btn btn-sm btn-outline-warning" href="{{ url_for('bonus_importados', ano=ano, mes=mes, emp=emp_filter, usuario=user_filter, registro=row.id) }}#detalhes">Ver</a></div>
+            <div class="bonus-sheet-cell">{{ row.produto_vendedor|brl_rs }}</div>
+            <div class="bonus-sheet-cell">{{ row.bonus_final|brl_rs }}</div>
+            <div class="bonus-sheet-cell">{{ row.venda_anterior|brl_rs }}</div>
+            <div class="bonus-sheet-cell">{{ row.venda_atual|brl_rs }}</div>
+            <div class="bonus-sheet-cell">{{ percent_br(row.crescimento) }}</div>
+            <div class="bonus-sheet-cell">{{ row.importado_vendedor|brl_rs }}</div>
+            <div class="bonus-sheet-cell">{{ row.bonus_importado|brl_rs }}</div>
+            <div class="bonus-sheet-cell">{{ row.valor_meta|brl_rs }}</div>
+            <div class="bonus-sheet-cell">{{ row.valor_parcial|brl_rs }}</div>
+            <div class="bonus-sheet-cell">{{ row.saldo_itens_parados_usuario|brl_rs }}</div>
+            <div class="bonus-sheet-cell bonus-sheet-other">{{ outros_valores(row, role, ano, mes) }}</div>
+            <div class="bonus-sheet-cell bonus-sheet-total">{{ row.total_geral|brl_rs }}</div>
           </div>
+          {% endfor %}
         </div>
-        {% endfor %}
       </div>
     </section>
     {% endif %}
@@ -390,28 +433,43 @@
         <div><h2 class="bonus-section-title">Gerentes</h2><div class="bonus-section-sub">Valores agregados da loja importados para o gerente.</div></div>
         <div class="bonus-money">{{ manager_rows|length }} gerente(s)</div>
       </div>
-      <div class="bonus-record-list" aria-label="Gerentes em linhas">
-        {% for row in manager_rows %}
-        <div class="bonus-record-row">
-          <div class="bonus-record-head">
-            <div class="bonus-record-identity"><small>EMP {{ row.emp }} · Gerente</small><strong>{{ row.usuario_nome }}</strong></div>
-            <a class="btn btn-sm btn-outline-warning" href="{{ url_for('bonus_importados', ano=ano, mes=mes, emp=emp_filter, usuario=user_filter, registro=row.id) }}#detalhes">Detalhes</a>
+      <div class="bonus-sheet-wrap" aria-label="Gerentes em formato de planilha">
+        <div class="bonus-sheet bonus-sheet-manager">
+          <div class="bonus-sheet-row bonus-sheet-header">
+            <div class="bonus-sheet-cell bonus-sheet-emp">EMP</div>
+            <div class="bonus-sheet-cell bonus-sheet-user">Usuário</div>
+            <div class="bonus-sheet-cell bonus-sheet-action">Ação</div>
+            <div class="bonus-sheet-cell">Loja anterior</div>
+            <div class="bonus-sheet-cell">Loja atual</div>
+            <div class="bonus-sheet-cell">Produto gerente</div>
+            <div class="bonus-sheet-cell">Importado loja</div>
+            <div class="bonus-sheet-cell">Bônus importado</div>
+            <div class="bonus-sheet-cell">Valor meta</div>
+            <div class="bonus-sheet-cell">Valor parcial</div>
+            <div class="bonus-sheet-cell">Bônus final</div>
+            <div class="bonus-sheet-cell">Itens parados</div>
+            <div class="bonus-sheet-cell">Outros valores</div>
+            <div class="bonus-sheet-cell bonus-sheet-total">Total geral</div>
           </div>
-          <div class="bonus-record-grid">
-            <div class="bonus-record-item"><small>Loja anterior · J</small><b>{{ row.loja_anterior|brl_rs }}</b></div>
-            <div class="bonus-record-item"><small>Loja atual · K</small><b>{{ row.loja_atual|brl_rs }}</b></div>
-            <div class="bonus-record-item"><small>Produto gerente · M</small><b>{{ row.produto_gerente|brl_rs }}</b></div>
-            <div class="bonus-record-item"><small>Importado loja · O</small><b>{{ row.importado_loja|brl_rs }}</b></div>
-            <div class="bonus-record-item"><small>Bônus importado · R</small><b>{{ row.bonus_importado|brl_rs }}</b></div>
-            <div class="bonus-record-item"><small>Valor meta · T</small><b>{{ row.valor_meta|brl_rs }}</b></div>
-            <div class="bonus-record-item"><small>Valor parcial · U</small><b>{{ row.valor_parcial|brl_rs }}</b></div>
-            <div class="bonus-record-item"><small>Bônus final · V</small><b>{{ row.bonus_final|brl_rs }}</b></div>
-            <div class="bonus-record-item"><small>Itens parados da loja</small><b>{{ row.saldo_itens_parados_loja|brl_rs }}</b></div>
-            <div class="bonus-record-item"><small>Outros valores</small><div class="bonus-record-value">{{ outros_valores(row, role, ano, mes) }}</div></div>
-            <div class="bonus-record-item wide highlight"><small>Total geral</small><b>{{ row.total_geral|brl_rs }}</b></div>
+          {% for row in manager_rows %}
+          <div class="bonus-sheet-row">
+            <div class="bonus-sheet-cell bonus-sheet-emp">{{ row.emp }}</div>
+            <div class="bonus-sheet-cell bonus-sheet-user" title="{{ row.usuario_nome }}">{{ row.usuario_nome }}</div>
+            <div class="bonus-sheet-cell bonus-sheet-action"><a class="btn btn-sm btn-outline-warning" href="{{ url_for('bonus_importados', ano=ano, mes=mes, emp=emp_filter, usuario=user_filter, registro=row.id) }}#detalhes">Ver</a></div>
+            <div class="bonus-sheet-cell">{{ row.loja_anterior|brl_rs }}</div>
+            <div class="bonus-sheet-cell">{{ row.loja_atual|brl_rs }}</div>
+            <div class="bonus-sheet-cell">{{ row.produto_gerente|brl_rs }}</div>
+            <div class="bonus-sheet-cell">{{ row.importado_loja|brl_rs }}</div>
+            <div class="bonus-sheet-cell">{{ row.bonus_importado|brl_rs }}</div>
+            <div class="bonus-sheet-cell">{{ row.valor_meta|brl_rs }}</div>
+            <div class="bonus-sheet-cell">{{ row.valor_parcial|brl_rs }}</div>
+            <div class="bonus-sheet-cell">{{ row.bonus_final|brl_rs }}</div>
+            <div class="bonus-sheet-cell">{{ row.saldo_itens_parados_loja|brl_rs }}</div>
+            <div class="bonus-sheet-cell bonus-sheet-other">{{ outros_valores(row, role, ano, mes) }}</div>
+            <div class="bonus-sheet-cell bonus-sheet-total">{{ row.total_geral|brl_rs }}</div>
           </div>
+          {% endfor %}
         </div>
-        {% endfor %}
       </div>
     </section>
     {% endif %}
@@ -422,23 +480,33 @@
         <div><h2 class="bonus-section-title">Mecânicos</h2><div class="bonus-section-sub">Faturamento, provisão e valor final importados.</div></div>
         <div class="bonus-money">{{ mechanic_rows|length }} mecânico(s)</div>
       </div>
-      <div class="bonus-record-list" aria-label="Mecânicos em linhas">
-        {% for row in mechanic_rows %}
-        <div class="bonus-record-row">
-          <div class="bonus-record-head">
-            <div class="bonus-record-identity"><small>EMP {{ row.emp }} · Mecânico</small><strong>{{ row.usuario_nome }}</strong></div>
-            <a class="btn btn-sm btn-outline-warning" href="{{ url_for('bonus_importados', ano=ano, mes=mes, emp=emp_filter, usuario=user_filter, registro=row.id) }}#detalhes">Detalhes</a>
+      <div class="bonus-sheet-wrap" aria-label="Mecânicos em formato de planilha">
+        <div class="bonus-sheet bonus-sheet-mechanic">
+          <div class="bonus-sheet-row bonus-sheet-header">
+            <div class="bonus-sheet-cell bonus-sheet-emp">EMP</div>
+            <div class="bonus-sheet-cell bonus-sheet-user">Usuário</div>
+            <div class="bonus-sheet-cell bonus-sheet-action">Ação</div>
+            <div class="bonus-sheet-cell">Faturado</div>
+            <div class="bonus-sheet-cell">Valor parcial</div>
+            <div class="bonus-sheet-cell">Bônus final</div>
+            <div class="bonus-sheet-cell">Itens parados</div>
+            <div class="bonus-sheet-cell">Outros valores</div>
+            <div class="bonus-sheet-cell bonus-sheet-total">Total geral</div>
           </div>
-          <div class="bonus-record-grid">
-            <div class="bonus-record-item"><small>Faturado · F</small><b>{{ row.mecanico_faturado|brl_rs }}</b></div>
-            <div class="bonus-record-item"><small>Valor parcial · U</small><b>{{ row.valor_parcial|brl_rs }}</b></div>
-            <div class="bonus-record-item"><small>Bônus final · V</small><b>{{ row.bonus_final|brl_rs }}</b></div>
-            <div class="bonus-record-item"><small>Itens parados</small><b>{{ row.saldo_itens_parados_usuario|brl_rs }}</b></div>
-            <div class="bonus-record-item wide"><small>Outros valores</small><div class="bonus-record-value">{{ outros_valores(row, role, ano, mes) }}</div></div>
-            <div class="bonus-record-item wide highlight"><small>Total geral</small><b>{{ row.total_geral|brl_rs }}</b></div>
+          {% for row in mechanic_rows %}
+          <div class="bonus-sheet-row">
+            <div class="bonus-sheet-cell bonus-sheet-emp">{{ row.emp }}</div>
+            <div class="bonus-sheet-cell bonus-sheet-user" title="{{ row.usuario_nome }}">{{ row.usuario_nome }}</div>
+            <div class="bonus-sheet-cell bonus-sheet-action"><a class="btn btn-sm btn-outline-warning" href="{{ url_for('bonus_importados', ano=ano, mes=mes, emp=emp_filter, usuario=user_filter, registro=row.id) }}#detalhes">Ver</a></div>
+            <div class="bonus-sheet-cell">{{ row.mecanico_faturado|brl_rs }}</div>
+            <div class="bonus-sheet-cell">{{ row.valor_parcial|brl_rs }}</div>
+            <div class="bonus-sheet-cell">{{ row.bonus_final|brl_rs }}</div>
+            <div class="bonus-sheet-cell">{{ row.saldo_itens_parados_usuario|brl_rs }}</div>
+            <div class="bonus-sheet-cell bonus-sheet-other">{{ outros_valores(row, role, ano, mes) }}</div>
+            <div class="bonus-sheet-cell bonus-sheet-total">{{ row.total_geral|brl_rs }}</div>
           </div>
+          {% endfor %}
         </div>
-        {% endfor %}
       </div>
     </section>
     {% endif %}
