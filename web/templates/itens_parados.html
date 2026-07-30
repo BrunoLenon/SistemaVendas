@@ -8,7 +8,7 @@
   .ip-hero{padding:20px;background:radial-gradient(circle at top right,rgba(255,145,0,.20),transparent 34%),linear-gradient(180deg,rgba(255,255,255,.052),rgba(255,255,255,.022))}
   .ip-panel{padding:17px}
   .ip-title{font-size:29px;font-weight:950;letter-spacing:-.04em;margin:0}
-  .ip-sub{color:#b9bdc5;font-size:13px;max-width:920px;margin-top:7px;line-height:1.55}
+  .ip-sub{color:#b9bdc5;font-size:13px;max-width:960px;margin-top:7px;line-height:1.55}
   .ip-chip{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border:1px solid rgba(255,174,72,.25);border-radius:999px;background:rgba(255,145,0,.09);color:#ffc477;font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.06em}
   .ip-filter{display:flex;gap:9px;align-items:end;flex-wrap:wrap}
   .ip-label{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#a9adb5;font-weight:900;margin-bottom:6px}
@@ -25,16 +25,16 @@
   .ip-store-values{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
   .ip-store-value{padding:10px;border-radius:13px;background:rgba(255,255,255,.035)}
   .ip-store-value small{display:block;color:#999fa8;font-size:9px;text-transform:uppercase;letter-spacing:.07em;font-weight:850;margin-bottom:5px}
-  .ip-store-value b{font-size:13px}
+  .ip-store-value b{font-size:13px}.ip-store-value.is-bonus b{color:#ffc477}
   .ip-table-wrap{width:100%;overflow:hidden;border:1px solid rgba(255,255,255,.075);border-radius:17px;background:rgba(0,0,0,.18)}
   .ip-table{width:100%;table-layout:fixed;margin:0;font-size:12px;color:#f5f5f5}
   .ip-table>:not(caption)>*>*{padding:11px 9px;border-color:rgba(255,255,255,.065);vertical-align:middle;background:transparent;color:inherit}
   .ip-table thead th{font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:#b8bdc6;font-weight:900;line-height:1.25;white-space:normal}
   .ip-table tbody tr:nth-child(even){background:rgba(255,255,255,.025)}
-  .ip-user{font-weight:900;overflow-wrap:anywhere}.ip-money{font-variant-numeric:tabular-nums;font-weight:900;color:#ffc477;white-space:nowrap}
+  .ip-user{font-weight:900;overflow-wrap:anywhere}.ip-money{font-variant-numeric:tabular-nums;color:#ffc477;white-space:nowrap}.ip-num{font-variant-numeric:tabular-nums;white-space:nowrap}
   .ip-empty{padding:42px 18px;text-align:center;color:#8f949d}
-  @media(max-width:950px){.ip-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.ip-store-grid{grid-template-columns:1fr 1fr}}
-  @media(max-width:650px){.ip-filter>*{width:100%}.ip-filter .btn{width:100%}.ip-store-grid{grid-template-columns:1fr}.ip-table{font-size:10px}.ip-table>:not(caption)>*>*{padding:9px 5px}}
+  @media(max-width:950px){.ip-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.ip-store-grid{grid-template-columns:1fr 1fr}.ip-table-wrap{overflow-x:auto}.ip-table{min-width:760px}}
+  @media(max-width:650px){.ip-filter>*{width:100%}.ip-filter .btn{width:100%}.ip-store-grid{grid-template-columns:1fr}.ip-kpis{grid-template-columns:1fr 1fr}.ip-table{font-size:11px}.ip-table>:not(caption)>*>*{padding:9px 6px}}
 </style>
 {% endblock %}
 
@@ -43,9 +43,9 @@
   <section class="ip-hero mb-3">
     <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
       <div>
-        <div class="ip-chip">📦 Saldo importado</div>
+        <div class="ip-chip">📦 Ação por pontos</div>
         <h1 class="ip-title mt-2">Itens Parados</h1>
-        <div class="ip-sub">Valores consolidados da planilha de vendas de itens parados. A página apenas consulta o saldo mensal por funcionário e EMP, sem recalcular a base geral de vendas.</div>
+        <div class="ip-sub">Somente produtos ativos na ação da respectiva loja geram pontos. O sistema soma as vendas elegíveis de cada funcionário e EMP, considera apenas grupos completos da base configurada e converte os pontos em bônus.</div>
       </div>
       <form method="get" class="ip-filter">
         <div><div class="ip-label">Ano</div><input class="form-control" type="number" name="ano" value="{{ ano }}" min="2000" max="2100" style="width:105px"></div>
@@ -59,27 +59,27 @@
       </form>
     </div>
     <div class="ip-kpis">
-      <div class="ip-kpi"><small>Saldo visível</small><strong>{{ summary.valor_total|default(0)|brl_rs }}</strong></div>
-      <div class="ip-kpi"><small>Funcionários</small><strong>{{ summary.usuarios|default(0) }}</strong></div>
-      <div class="ip-kpi"><small>Empresas</small><strong>{{ summary.emps|default(0) }}</strong></div>
-      <div class="ip-kpi"><small>Linhas consolidadas</small><strong>{{ summary.linhas|default(0) }}</strong></div>
+      <div class="ip-kpi"><small>Vendas elegíveis</small><strong>{{ summary.valor_vendido|default(0)|brl_rs }}</strong></div>
+      <div class="ip-kpi"><small>Pontos inteiros</small><strong>{{ summary.pontos|default(0) }}</strong></div>
+      <div class="ip-kpi"><small>Bônus de itens parados</small><strong>{{ summary.bonus_total|default(0)|brl_rs }}</strong></div>
+      <div class="ip-kpi"><small>Empresas visíveis</small><strong>{{ summary.emps|default(0) }}</strong></div>
     </div>
   </section>
 
   {% if emp_cards and role in ['admin','gerente','supervisor'] %}
   <section class="ip-panel mb-3">
     <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
-      <div><h2 class="h6 fw-bold mb-1">Resumo por loja</h2><div class="text-secondary small">Visível somente para administração, gerente e supervisor conforme os vínculos de EMP.</div></div>
+      <div><h2 class="h6 fw-bold mb-1">Resumo por loja</h2><div class="text-secondary small">Visível para administração, gerente e supervisor conforme os vínculos de EMP.</div></div>
     </div>
     <div class="ip-store-grid">
       {% for card in emp_cards %}
       <div class="ip-store">
-        <div class="ip-store-head"><strong>EMP {{ card.emp }}</strong><span>{{ card.usuarios }} usuário(s)</span></div>
+        <div class="ip-store-head"><strong>EMP {{ card.emp }}</strong><span>{{ card.usuarios }} funcionário(s)</span></div>
         <div class="ip-store-values">
-          <div class="ip-store-value"><small>Saldo da loja</small><b>{{ card.valor_total|brl_rs }}</b></div>
+          <div class="ip-store-value"><small>Venda elegível</small><b>{{ card.valor_vendido|brl_rs }}</b></div>
+          <div class="ip-store-value"><small>Pontos</small><b>{{ card.pontos }}</b></div>
+          <div class="ip-store-value is-bonus"><small>Bônus da loja</small><b>{{ card.bonus_total|brl_rs }}</b></div>
           <div class="ip-store-value"><small>Itens ativos</small><b>{{ card.itens_ativos }}</b></div>
-          <div class="ip-store-value"><small>Linhas de venda</small><b>{{ card.linhas }}</b></div>
-          <div class="ip-store-value"><small>Itens distintos somados</small><b>{{ card.itens_distintos }}</b></div>
         </div>
       </div>
       {% endfor %}
@@ -89,22 +89,30 @@
 
   <section class="ip-panel">
     <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-3">
-      <div><h2 class="h6 fw-bold mb-1">Saldo por funcionário e loja</h2><div class="text-secondary small">O mesmo usuário pode aparecer em mais de uma EMP quando possuir múltiplos vínculos.</div></div>
+      <div><h2 class="h6 fw-bold mb-1">Resultado por funcionário e loja</h2><div class="text-secondary small">Exemplo: R$ 602,25 em produtos elegíveis, com base de R$ 100, gera 6 pontos. A sobra não vira ponto fracionado.</div></div>
       <div class="text-secondary small">Competência {{ '%02d'|format(mes) }}/{{ ano }}</div>
     </div>
     {% if rows %}
     <div class="ip-table-wrap">
       <table class="table table-sm ip-table">
-        <colgroup><col style="width:12%"><col style="width:44%"><col style="width:14%"><col style="width:14%"><col style="width:16%"></colgroup>
-        <thead><tr><th>EMP</th><th>Funcionário</th><th class="text-end">Linhas</th><th class="text-end">Itens</th><th class="text-end">Saldo</th></tr></thead>
+        <colgroup><col style="width:9%"><col style="width:27%"><col style="width:15%"><col style="width:9%"><col style="width:13%"><col style="width:13%"><col style="width:14%"></colgroup>
+        <thead><tr><th>EMP</th><th>Funcionário</th><th class="text-end">Venda elegível</th><th class="text-end">Pontos</th><th class="text-end">Base</th><th class="text-end">Valor/ponto</th><th class="text-end">Bônus</th></tr></thead>
         <tbody>
           {% for row in rows %}
-          <tr><td>{{ row.emp }}</td><td class="ip-user">{{ row.usuario_nome }}</td><td class="text-end">{{ row.qtd_linhas }}</td><td class="text-end">{{ row.qtd_itens }}</td><td class="text-end ip-money">{{ row.valor_total|brl_rs }}</td></tr>
+          <tr>
+            <td>{{ row.emp }}</td>
+            <td class="ip-user">{{ row.usuario_nome }}</td>
+            <td class="text-end ip-num">{{ row.valor_total|brl_rs }}</td>
+            <td class="text-end ip-num">{{ row.pontos }}</td>
+            <td class="text-end ip-num">{{ row.base_reais|brl_rs }}</td>
+            <td class="text-end ip-num">{{ row.valor_por_ponto|brl_rs }}</td>
+            <td class="text-end ip-money">{{ row.bonus_total|brl_rs }}</td>
+          </tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
-    {% else %}<div class="ip-empty">Nenhum saldo de itens parados foi importado para esta competência.</div>{% endif %}
+    {% else %}<div class="ip-empty">Nenhum resultado de itens parados foi calculado para esta competência.</div>{% endif %}
   </section>
 </div>
 {% endblock %}

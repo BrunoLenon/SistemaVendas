@@ -120,29 +120,41 @@ def _load_view_data():
         )
 
     by_emp: dict[str, dict] = {}
-    total = Decimal("0")
+    total_vendido = Decimal("0")
+    total_bonus = Decimal("0")
+    total_pontos = 0
     for row in rows:
-        value = Decimal(str(row.valor_total or 0))
-        total += value
+        vendido = Decimal(str(row.valor_total or 0))
+        bonus = Decimal(str(row.bonus_total or 0))
+        pontos = int(row.pontos or 0)
+        total_vendido += vendido
+        total_bonus += bonus
+        total_pontos += pontos
         card = by_emp.setdefault(
             row.emp,
             {
                 "emp": row.emp,
-                "valor_total": Decimal("0"),
+                "valor_vendido": Decimal("0"),
+                "pontos": 0,
+                "bonus_total": Decimal("0"),
                 "usuarios": 0,
                 "linhas": 0,
                 "itens_distintos": 0,
                 "itens_ativos": int(active_counts.get(row.emp, 0) or 0),
             },
         )
-        card["valor_total"] += value
+        card["valor_vendido"] += vendido
+        card["pontos"] += pontos
+        card["bonus_total"] += bonus
         card["usuarios"] += 1
         card["linhas"] += int(row.qtd_linhas or 0)
         card["itens_distintos"] += int(row.qtd_itens or 0)
 
     emp_cards = sorted(by_emp.values(), key=lambda item: emp_sort_key(item["emp"]))
     summary = {
-        "valor_total": total,
+        "valor_vendido": total_vendido,
+        "pontos": total_pontos,
+        "bonus_total": total_bonus,
         "usuarios": len(rows),
         "emps": len(visible_emps),
         "linhas": sum(int(row.qtd_linhas or 0) for row in rows),
@@ -197,12 +209,20 @@ def itens_parados_pdf():
         return "R$ " + raw.replace(",", "X").replace(".", ",").replace("X", ".")
 
     c.setFont("Helvetica-Bold", 10)
-    c.drawString(15 * mm, y, f"Saldo visível: {brl(data['summary']['valor_total'])}")
+    c.drawString(
+        15 * mm,
+        y,
+        f"Vendas elegíveis: {brl(data['summary']['valor_vendido'])} | "
+        f"Pontos: {data['summary']['pontos']} | "
+        f"Bônus: {brl(data['summary']['bonus_total'])}",
+    )
     y -= 9 * mm
     c.setFont("Helvetica-Bold", 8)
     c.drawString(15 * mm, y, "EMP")
     c.drawString(30 * mm, y, "Funcionário")
-    c.drawRightString(width - 15 * mm, y, "Saldo")
+    c.drawRightString(width - 75 * mm, y, "Venda")
+    c.drawRightString(width - 45 * mm, y, "Pontos")
+    c.drawRightString(width - 15 * mm, y, "Bônus")
     y -= 5 * mm
     c.setFont("Helvetica", 8)
     for row in data["rows"]:
@@ -211,8 +231,10 @@ def itens_parados_pdf():
             y = height - 18 * mm
             c.setFont("Helvetica", 8)
         c.drawString(15 * mm, y, str(row.emp or ""))
-        c.drawString(30 * mm, y, str(row.usuario_nome or "")[:48])
-        c.drawRightString(width - 15 * mm, y, brl(row.valor_total))
+        c.drawString(30 * mm, y, str(row.usuario_nome or "")[:34])
+        c.drawRightString(width - 75 * mm, y, brl(row.valor_total))
+        c.drawRightString(width - 45 * mm, y, str(int(row.pontos or 0)))
+        c.drawRightString(width - 15 * mm, y, brl(row.bonus_total))
         y -= 5 * mm
     c.save()
     bio.seek(0)

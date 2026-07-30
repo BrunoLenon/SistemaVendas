@@ -408,6 +408,9 @@ class ItensParadosVendaImportacaoLote(Base):
     linhas_ignoradas = Column(Integer, nullable=False, default=0)
     registros_usuarios = Column(Integer, nullable=False, default=0)
     valor_total = Column(Numeric(18, 4), nullable=False, default=0)
+    pontos_total = Column(Integer, nullable=False, default=0)
+    bonus_total = Column(Numeric(18, 4), nullable=False, default=0)
+    linhas_nao_elegiveis = Column(Integer, nullable=False, default=0)
     avisos_json = Column(Text, nullable=True)
 
     __table_args__ = (
@@ -432,7 +435,12 @@ class ItensParadosVendaUsuario(Base):
     usuario_id = Column(Integer, nullable=True, index=True)
     usuario_nome = Column(String(100), nullable=False, index=True)
     emp = Column(String(30), nullable=False, index=True)
+    # Valor líquido vendido somente dos produtos ativos da ação.
     valor_total = Column(Numeric(18, 4), nullable=False, default=0)
+    pontos = Column(Integer, nullable=False, default=0)
+    base_reais = Column(Numeric(18, 4), nullable=False, default=100)
+    valor_por_ponto = Column(Numeric(18, 4), nullable=False, default=10)
+    bonus_total = Column(Numeric(18, 4), nullable=False, default=0)
     qtd_linhas = Column(Integer, nullable=False, default=0)
     qtd_itens = Column(Integer, nullable=False, default=0)
     importado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
@@ -2309,6 +2317,9 @@ def ensure_itens_parados_snapshot_schema(force: bool = False):
                 linhas_ignoradas INTEGER NOT NULL DEFAULT 0,
                 registros_usuarios INTEGER NOT NULL DEFAULT 0,
                 valor_total NUMERIC(18,4) NOT NULL DEFAULT 0,
+                pontos_total INTEGER NOT NULL DEFAULT 0,
+                bonus_total NUMERIC(18,4) NOT NULL DEFAULT 0,
+                linhas_nao_elegiveis INTEGER NOT NULL DEFAULT 0,
                 avisos_json TEXT
             );
         """))
@@ -2322,6 +2333,10 @@ def ensure_itens_parados_snapshot_schema(force: bool = False):
                 usuario_nome VARCHAR(100) NOT NULL,
                 emp VARCHAR(30) NOT NULL,
                 valor_total NUMERIC(18,4) NOT NULL DEFAULT 0,
+                pontos INTEGER NOT NULL DEFAULT 0,
+                base_reais NUMERIC(18,4) NOT NULL DEFAULT 100,
+                valor_por_ponto NUMERIC(18,4) NOT NULL DEFAULT 10,
+                bonus_total NUMERIC(18,4) NOT NULL DEFAULT 0,
                 qtd_linhas INTEGER NOT NULL DEFAULT 0,
                 qtd_itens INTEGER NOT NULL DEFAULT 0,
                 importado_em TIMESTAMP NOT NULL DEFAULT NOW(),
@@ -2329,14 +2344,42 @@ def ensure_itens_parados_snapshot_schema(force: bool = False):
                     UNIQUE (ano, mes, emp, usuario_nome)
             );
         """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS itens_parados_pontos_config (
+                id SERIAL PRIMARY KEY,
+                emp VARCHAR(30),
+                base_reais NUMERIC(18,4) NOT NULL DEFAULT 100,
+                valor_por_ponto NUMERIC(18,4) NOT NULL DEFAULT 10,
+                ativo BOOLEAN NOT NULL DEFAULT TRUE,
+                criado_em TIMESTAMP NOT NULL DEFAULT NOW(),
+                atualizado_em TIMESTAMP NOT NULL DEFAULT NOW()
+            );
+        """))
+        conn.execute(text("ALTER TABLE itens_parados_vendas_importacoes ADD COLUMN IF NOT EXISTS pontos_total INTEGER NOT NULL DEFAULT 0;"))
+        conn.execute(text("ALTER TABLE itens_parados_vendas_importacoes ADD COLUMN IF NOT EXISTS bonus_total NUMERIC(18,4) NOT NULL DEFAULT 0;"))
+        conn.execute(text("ALTER TABLE itens_parados_vendas_importacoes ADD COLUMN IF NOT EXISTS linhas_nao_elegiveis INTEGER NOT NULL DEFAULT 0;"))
+        conn.execute(text("ALTER TABLE itens_parados_vendas_usuarios ADD COLUMN IF NOT EXISTS pontos INTEGER NOT NULL DEFAULT 0;"))
+        conn.execute(text("ALTER TABLE itens_parados_vendas_usuarios ADD COLUMN IF NOT EXISTS base_reais NUMERIC(18,4) NOT NULL DEFAULT 100;"))
+        conn.execute(text("ALTER TABLE itens_parados_vendas_usuarios ADD COLUMN IF NOT EXISTS valor_por_ponto NUMERIC(18,4) NOT NULL DEFAULT 10;"))
+        conn.execute(text("ALTER TABLE itens_parados_vendas_usuarios ADD COLUMN IF NOT EXISTS bonus_total NUMERIC(18,4) NOT NULL DEFAULT 0;"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_itens_parados_vendas_lote_periodo ON itens_parados_vendas_importacoes (ano, mes, importado_em);"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_itens_parados_vendas_lote_usuario ON itens_parados_vendas_importacoes (importado_por_user_id);"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_itens_parados_vendas_usuario_periodo ON itens_parados_vendas_usuarios (usuario_nome, ano, mes);"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_itens_parados_vendas_emp_periodo ON itens_parados_vendas_usuarios (emp, ano, mes);"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_itens_parados_vendas_usuario_id ON itens_parados_vendas_usuarios (usuario_id);"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_itens_parados_vendas_lote_id ON itens_parados_vendas_usuarios (lote_id);"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_itens_parados_pontos_cfg_emp ON itens_parados_pontos_config (emp);"))
+        conn.execute(text("""
+            INSERT INTO itens_parados_pontos_config (emp, base_reais, valor_por_ponto, ativo)
+            SELECT NULL, 100, 10, TRUE
+            WHERE NOT EXISTS (
+                SELECT 1 FROM itens_parados_pontos_config
+                WHERE emp IS NULL AND ativo IS TRUE
+            );
+        """))
         conn.execute(text("ALTER TABLE itens_parados_vendas_importacoes ENABLE ROW LEVEL SECURITY;"))
         conn.execute(text("ALTER TABLE itens_parados_vendas_usuarios ENABLE ROW LEVEL SECURITY;"))
+        conn.execute(text("ALTER TABLE itens_parados_pontos_config ENABLE ROW LEVEL SECURITY;"))
 
     _ITENS_PARADOS_SNAPSHOT_SCHEMA_READY = True
 

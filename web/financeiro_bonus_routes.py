@@ -277,7 +277,8 @@ def _live_rows(db, *, ano: int, mes: int, emps: list[str]) -> list[dict[str, Any
     for row in stopped:
         item = item_for(row.emp, row.usuario_id, row.usuario_nome)
         # No Financeiro, Itens Parados é contado uma única vez por funcionário/EMP.
-        item["itens_parados"] += _money(row.valor_total)
+        # O valor financeiro é o bônus calculado por pontos, não o faturamento elegível.
+        item["itens_parados"] += _money(row.bonus_total)
 
     others = (
         db.query(BonusOutroValor)

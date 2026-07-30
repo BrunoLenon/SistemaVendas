@@ -1,12 +1,14 @@
 # -*- coding: utf-8 -*-
 """Administração enxuta de Itens Parados.
 
-Mantém apenas:
+Mantém:
 * cadastro/ativação dos produtos por EMP;
+* regra global ou específica por EMP para base e valor de cada ponto;
 * importação do modelo CODIGO, DESCRICAO e LOJA_ATIVA;
-* painel da última importação das vendas consolidadas.
+* importação das vendas com cálculo de pontos inteiros e bônus por funcionário.
 
-Os cálculos antigos por pontos e fechamentos deixaram de ser consultados.
+O cálculo acontece somente na importação; as páginas operacionais leem o
+snapshot pronto e não consultam a base geral de vendas.
 """
 
 from __future__ import annotations
@@ -15,16 +17,23 @@ import json
 import re
 import unicodedata
 from datetime import date, datetime
+from decimal import Decimal, InvalidOperation
 from io import BytesIO
 from typing import Callable, Type
 
 from flask import current_app, render_template, request, send_file, session
 
 from db import (
+    ItensParadosPontosConfig,
     ItensParadosVendaUsuario,
     ensure_itens_parados_snapshot_schema,
 )
-from itens_parados_snapshot import batch_warnings, latest_batch, norm_emp
+from itens_parados_snapshot import (
+    batch_warnings,
+    latest_batch,
+    load_point_rules,
+    norm_emp,
+)
 from sv_utils import emp_sort_key
 
 
@@ -45,6 +54,22 @@ def _clean_code(value) -> str:
     if re.fullmatch(r"\d+\.0+", raw):
         return raw.split(".", 1)[0]
     return raw
+
+
+def _positive_decimal(value, label: str, *, allow_zero: bool = False) -> Decimal:
+    raw = _clean_text(value).replace("R$", "").replace(" ", "")
+    if "," in raw:
+        raw = raw.replace(".", "").replace(",", ".")
+    try:
+        result = Decimal(raw)
+    except (InvalidOperation, ValueError, TypeError) as exc:
+        raise ValueError(f"{label} inválido.") from exc
+    if not result.is_finite():
+        raise ValueError(f"{label} inválido.")
+    if result < 0 or (result == 0 and not allow_zero):
+        operator = "maior ou igual a zero" if allow_zero else "maior que zero"
+        raise ValueError(f"{label} deve ser {operator}.")
+    return result.quantize(Decimal("0.0001"))
 
 
 def _norm_header(value) -> str:
@@ -232,7 +257,56 @@ def register_admin_itens_parados_routes(
             try:
                 action = (request.form.get("acao") or "").strip().lower()
                 if request.method == "POST" and action:
-                    if action == "criar_item":
+                    if action == "salvar_regra":
+                        regra_emp = norm_emp(request.form.get("regra_emp")) or None
+                        base_reais = _positive_decimal(
+                            request.form.get("base_reais"),
+                            "Valor necessário para 1 ponto",
+                        )
+                        valor_por_ponto = _positive_decimal(
+                            request.form.get("valor_por_ponto"),
+                            "Valor de cada ponto",
+                            allow_zero=True,
+                        )
+                        if regra_emp:
+                            configs = (
+                                db.query(ItensParadosPontosConfig)
+                                .filter(ItensParadosPontosConfig.emp == regra_emp)
+                                .order_by(ItensParadosPontosConfig.id.desc())
+                                .all()
+                            )
+                        else:
+                            configs = (
+                                db.query(ItensParadosPontosConfig)
+                                .filter(ItensParadosPontosConfig.emp.is_(None))
+                                .order_by(ItensParadosPontosConfig.id.desc())
+                                .all()
+                            )
+                        config = configs[0] if configs else None
+                        for duplicate in configs[1:]:
+                            duplicate.ativo = False
+                            duplicate.atualizado_em = datetime.utcnow()
+                        if config:
+                            config.base_reais = float(base_reais)
+                            config.valor_por_ponto = float(valor_por_ponto)
+                            config.ativo = True
+                            config.atualizado_em = datetime.utcnow()
+                        else:
+                            db.add(
+                                ItensParadosPontosConfig(
+                                    emp=regra_emp,
+                                    base_reais=float(base_reais),
+                                    valor_por_ponto=float(valor_por_ponto),
+                                    ativo=True,
+                                    criado_em=datetime.utcnow(),
+                                    atualizado_em=datetime.utcnow(),
+                                )
+                            )
+                        db.commit()
+                        destino = f"EMP {regra_emp}" if regra_emp else "regra global"
+                        ok = f"Regra de pontos salva para {destino}."
+
+                    elif action == "criar_item":
                         emp = norm_emp(request.form.get("emp"))
                         codigo = _clean_code(request.form.get("codigo"))
                         descricao = _clean_text(request.form.get("descricao")) or None
@@ -366,6 +440,29 @@ def register_admin_itens_parados_routes(
                 key=emp_sort_key,
             )
 
+            point_rules = load_point_rules(db)
+            point_configs = []
+            global_base, global_value = point_rules["global"]
+            point_configs.append(
+                {
+                    "emp": "",
+                    "label": "Global",
+                    "base_reais": global_base,
+                    "valor_por_ponto": global_value,
+                }
+            )
+            for emp_code, values in sorted(
+                point_rules["emps"].items(), key=lambda item: emp_sort_key(item[0])
+            ):
+                point_configs.append(
+                    {
+                        "emp": emp_code,
+                        "label": f"EMP {emp_code}",
+                        "base_reais": values[0],
+                        "valor_por_ponto": values[1],
+                    }
+                )
+
             today = date.today()
             ano_vendas = int(request.args.get("ano_vendas") or today.year)
             mes_vendas = int(request.args.get("mes_vendas") or today.month)
@@ -379,7 +476,7 @@ def register_admin_itens_parados_routes(
                 )
                 .order_by(
                     ItensParadosVendaUsuario.emp.asc(),
-                    ItensParadosVendaUsuario.valor_total.desc(),
+                    ItensParadosVendaUsuario.bonus_total.desc(),
                 )
                 .limit(200)
                 .all()
@@ -400,6 +497,7 @@ def register_admin_itens_parados_routes(
             total_paginas=total_pages,
             total_itens=total_items,
             emps_options=emp_options,
+            point_configs=point_configs,
             ano_vendas=ano_vendas,
             mes_vendas=mes_vendas,
             sales_batch=sales_batch,

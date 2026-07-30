@@ -1,9 +1,17 @@
 # -*- coding: utf-8 -*-
-"""Snapshot mensal das vendas de itens parados.
+"""Importação e snapshot mensal de Itens Parados por pontos.
 
-O arquivo de vendas é agregado uma única vez na importação por funcionário e
-EMP. As páginas de Bônus e Itens Parados apenas leem esse saldo pronto, sem
-consultar a tabela geral de vendas ou recalcular campanhas em cada acesso.
+Fluxo:
+1. O administrador cadastra os produtos ativos por EMP.
+2. Define a regra de pontos (global ou específica por EMP).
+3. Importa a planilha de vendas.
+4. Somente as linhas cujo código esteja ativo na mesma EMP entram no cálculo.
+5. O valor líquido elegível é consolidado por funcionário/EMP.
+6. Pontos inteiros = piso(valor elegível / base em reais).
+7. Bônus = pontos inteiros x valor por ponto.
+
+As páginas de Bônus e Financeiro leem o bônus pronto do snapshot e não
+recalculam a planilha a cada acesso.
 """
 
 from __future__ import annotations
@@ -13,16 +21,17 @@ import re
 import unicodedata
 from collections import defaultdict
 from datetime import date, datetime, timedelta
-from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from decimal import Decimal, InvalidOperation, ROUND_FLOOR, ROUND_HALF_UP
 from io import BytesIO
 from typing import Any, Iterable
 
 from flask import current_app, flash, redirect, request, session, url_for
-from sqlalchemy import or_
 from werkzeug.utils import secure_filename
 
 from auth_helpers import _login_required, _role, _usuario_logado
 from db import (
+    ItemParado,
+    ItensParadosPontosConfig,
     ItensParadosVendaImportacaoLote,
     ItensParadosVendaUsuario,
     SessionLocal,
@@ -35,19 +44,30 @@ from security_utils import audit, normalize_role
 
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
 VALID_EXTENSIONS = {".xlsx", ".xlsm"}
+
 SALE_MOVEMENTS = {"OA", "OV", "SV", "VA", "VV"}
+NEGATIVE_MOVEMENTS = {"CA", "DS"}
+ALLOWED_MOVEMENTS = SALE_MOVEMENTS | NEGATIVE_MOVEMENTS
 
 HEADER_ALIASES: dict[str, set[str]] = {
     "codigo": {"MESTRE", "CODIGO", "CODIGOPRODUTO", "CODPRODUTO"},
     "descricao": {"DESCRICAO", "DESCRICAOPRODUTO", "PRODUTO"},
     "movimento": {"MOVIMENTO", "DATA", "DATAVENDA", "EMISSAO"},
-    "tipo_movimento": {"MOVTIPOMOVTO", "TIPOMOVIMENTO", "MOVIMENTO TIPO"},
+    "tipo_movimento": {
+        "MOVTIPOMOVTO",
+        "TIPOMOVIMENTO",
+        "MOVIMENTOTIPO",
+        "TIPOMOVTO",
+    },
     "usuario_nome": {"VENDEDOR", "FUNCIONARIO", "USUARIO"},
     "emp": {"EMP", "EMPRESA", "LOJA"},
     "quantidade": {"QTDADEVENDIDA", "QUANTIDADE", "QTD"},
     "valor_total": {"VALORTOTAL", "TOTAL", "VALORVENDA"},
 }
 REQUIRED_FIELDS = {"codigo", "movimento", "usuario_nome", "emp", "valor_total"}
+
+DEFAULT_BASE_REAIS = Decimal("100")
+DEFAULT_VALOR_PONTO = Decimal("10")
 
 
 def register_itens_parados_snapshot_routes(app) -> None:
@@ -96,6 +116,24 @@ def norm_emp(value: object) -> str:
     if re.fullmatch(r"[+-]?\d+[.,]0+", raw):
         return raw.split(".", 1)[0].split(",", 1)[0]
     return raw.upper()
+
+
+def norm_code(value: object) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return str(value).upper()
+    if isinstance(value, (int, float, Decimal)):
+        try:
+            number = Decimal(str(value))
+            if number == number.to_integral_value():
+                return str(int(number))
+        except Exception:
+            pass
+    raw = str(value).strip()
+    if re.fullmatch(r"[+-]?\d+[.,]0+", raw):
+        raw = raw.split(".", 1)[0].split(",", 1)[0]
+    return re.sub(r"\s+", "", raw).upper()
 
 
 def _safe_period(value: object, default: int, minimum: int, maximum: int) -> int:
@@ -175,7 +213,88 @@ def _find_sheet_and_header(workbook) -> tuple[Any, int, dict[str, int]]:
     raise ValueError(f"Colunas obrigatórias não encontradas: {labels}.")
 
 
-def _parse_sales_workbook(content: bytes, *, ano: int, mes: int) -> dict[str, Any]:
+def load_active_item_windows(db) -> dict[tuple[str, str], list[tuple[date | None, date | None]]]:
+    """Retorna os produtos ativos por EMP/código, incluindo validade opcional."""
+    result: defaultdict[
+        tuple[str, str], list[tuple[date | None, date | None]]
+    ] = defaultdict(list)
+    rows = (
+        db.query(
+            ItemParado.emp,
+            ItemParado.codigo,
+            ItemParado.data_inicio,
+            ItemParado.data_fim,
+        )
+        .filter(ItemParado.ativo.is_(True))
+        .all()
+    )
+    for emp, codigo, data_inicio, data_fim in rows:
+        emp_code = norm_emp(emp)
+        product_code = norm_code(codigo)
+        if emp_code and product_code:
+            result[(emp_code, product_code)].append((data_inicio, data_fim))
+    return dict(result)
+
+
+def load_point_rules(db) -> dict[str, Any]:
+    """Carrega a regra global e a regra mais recente de cada EMP."""
+    global_rule = (DEFAULT_BASE_REAIS, DEFAULT_VALOR_PONTO)
+    by_emp: dict[str, tuple[Decimal, Decimal]] = {}
+
+    configs = (
+        db.query(ItensParadosPontosConfig)
+        .filter(ItensParadosPontosConfig.ativo.is_(True))
+        .order_by(ItensParadosPontosConfig.id.asc())
+        .all()
+    )
+    for config in configs:
+        base = _decimal(getattr(config, "base_reais", DEFAULT_BASE_REAIS))
+        point_value = _decimal(getattr(config, "valor_por_ponto", DEFAULT_VALOR_PONTO))
+        if base <= 0 or point_value < 0:
+            continue
+        emp = norm_emp(getattr(config, "emp", None))
+        if emp:
+            by_emp[emp] = (base, point_value)
+        else:
+            global_rule = (base, point_value)
+
+    return {"global": global_rule, "emps": by_emp}
+
+
+def point_rule_for_emp(point_rules: dict[str, Any], emp: object) -> tuple[Decimal, Decimal]:
+    emp_code = norm_emp(emp)
+    by_emp = point_rules.get("emps") or {}
+    return by_emp.get(emp_code) or point_rules.get("global") or (
+        DEFAULT_BASE_REAIS,
+        DEFAULT_VALOR_PONTO,
+    )
+
+
+def _item_is_active(
+    active_items: dict[tuple[str, str], list[tuple[date | None, date | None]]],
+    *,
+    emp: str,
+    codigo: str,
+    movement_date: date,
+) -> bool:
+    windows = active_items.get((emp, codigo)) or []
+    for start, end in windows:
+        if start is not None and movement_date < start:
+            continue
+        if end is not None and movement_date > end:
+            continue
+        return True
+    return False
+
+
+def _parse_sales_workbook(
+    content: bytes,
+    *,
+    ano: int,
+    mes: int,
+    active_items: dict[tuple[str, str], list[tuple[date | None, date | None]]],
+    point_rules: dict[str, Any],
+) -> dict[str, Any]:
     try:
         from openpyxl import load_workbook
     except Exception as exc:  # pragma: no cover
@@ -200,6 +319,7 @@ def _parse_sales_workbook(content: bytes, *, ano: int, mes: int) -> dict[str, An
         rows_imported = 0
         rows_skipped = 0
         outside_period = 0
+        not_eligible = 0
         invalid_movements: defaultdict[str, int] = defaultdict(int)
         data_min: date | None = None
         data_max: date | None = None
@@ -216,7 +336,7 @@ def _parse_sales_workbook(content: bytes, *, ano: int, mes: int) -> dict[str, An
 
             username = norm_username(cells[mapping["usuario_nome"]].value)
             emp = norm_emp(cells[mapping["emp"]].value)
-            codigo = str(cells[mapping["codigo"]].value or "").strip()
+            codigo = norm_code(cells[mapping["codigo"]].value)
             movement_date = _date_from_cell(cells[mapping["movimento"]].value)
             if not username or not emp or not codigo or movement_date is None:
                 rows_skipped += 1
@@ -243,8 +363,10 @@ def _parse_sales_workbook(content: bytes, *, ano: int, mes: int) -> dict[str, An
 
             movement_type = ""
             if "tipo_movimento" in mapping:
-                movement_type = str(cells[mapping["tipo_movimento"]].value or "").strip().upper()
-                if movement_type and movement_type not in SALE_MOVEMENTS:
+                movement_type = str(
+                    cells[mapping["tipo_movimento"]].value or ""
+                ).strip().upper()
+                if movement_type and movement_type not in ALLOWED_MOVEMENTS:
                     invalid_movements[movement_type] += 1
                     rows_skipped += 1
                     continue
@@ -256,9 +378,22 @@ def _parse_sales_workbook(content: bytes, *, ano: int, mes: int) -> dict[str, An
                     rows_skipped += 1
                     warnings.append(f"Linha {source_row} ignorada: quantidade inválida.")
                     continue
-                if quantity <= 0:
+                if quantity == 0:
                     rows_skipped += 1
                     continue
+                if movement_type not in NEGATIVE_MOVEMENTS and quantity < 0:
+                    rows_skipped += 1
+                    continue
+
+            if not _item_is_active(
+                active_items,
+                emp=emp,
+                codigo=codigo,
+                movement_date=movement_date,
+            ):
+                not_eligible += 1
+                rows_skipped += 1
+                continue
 
             try:
                 total = _decimal(cells[mapping["valor_total"]].value)
@@ -270,6 +405,7 @@ def _parse_sales_workbook(content: bytes, *, ano: int, mes: int) -> dict[str, An
                 rows_skipped += 1
                 continue
 
+            signed_total = -abs(total) if movement_type in NEGATIVE_MOVEMENTS else abs(total)
             key = (emp, username)
             item = grouped.setdefault(
                 key,
@@ -281,37 +417,64 @@ def _parse_sales_workbook(content: bytes, *, ano: int, mes: int) -> dict[str, An
                     "codigos": set(),
                 },
             )
-            item["valor_total"] += total
+            item["valor_total"] += signed_total
             item["qtd_linhas"] += 1
-            item["codigos"].add(codigo.upper())
+            item["codigos"].add(codigo)
             rows_imported += 1
 
         if outside_period:
             warnings.append(
                 f"{outside_period} linha(s) fora da competência {mes:02d}/{ano} foram ignoradas."
             )
+        if not_eligible:
+            warnings.append(
+                f"{not_eligible} linha(s) não correspondiam a produtos ativos na mesma EMP e foram ignoradas."
+            )
         for movement, count in sorted(invalid_movements.items()):
             warnings.append(
-                f"{count} linha(s) com movimento {movement} foram ignoradas; são aceitos OA, OV, SV, VA e VV."
+                f"{count} linha(s) com movimento {movement} foram ignoradas; "
+                "são aceitos OA, OV, SV, VA, VV, CA e DS."
             )
         if not grouped:
             raise ValueError(
-                "Nenhuma venda válida foi encontrada para a competência selecionada."
+                "Nenhuma venda válida de produto ativo foi encontrada para a competência selecionada."
             )
 
-        records = []
+        records: list[dict[str, Any]] = []
+        valor_total_geral = Decimal("0")
+        pontos_total_geral = 0
+        bonus_total_geral = Decimal("0")
+
         for item in grouped.values():
-            records.append(
-                {
-                    "emp": item["emp"],
-                    "usuario_nome": item["usuario_nome"],
-                    "valor_total": item["valor_total"].quantize(
-                        Decimal("0.0001"), rounding=ROUND_HALF_UP
-                    ),
-                    "qtd_linhas": int(item["qtd_linhas"]),
-                    "qtd_itens": len(item["codigos"]),
-                }
+            base_reais, valor_por_ponto = point_rule_for_emp(point_rules, item["emp"])
+            valor_liquido = item["valor_total"].quantize(
+                Decimal("0.0001"), rounding=ROUND_HALF_UP
             )
+            valor_base_pontos = max(valor_liquido, Decimal("0"))
+            pontos = (
+                int((valor_base_pontos / base_reais).to_integral_value(rounding=ROUND_FLOOR))
+                if base_reais > 0
+                else 0
+            )
+            bonus = (Decimal(pontos) * valor_por_ponto).quantize(
+                Decimal("0.0001"), rounding=ROUND_HALF_UP
+            )
+            record = {
+                "emp": item["emp"],
+                "usuario_nome": item["usuario_nome"],
+                "valor_total": valor_liquido,
+                "pontos": pontos,
+                "base_reais": base_reais,
+                "valor_por_ponto": valor_por_ponto,
+                "bonus_total": bonus,
+                "qtd_linhas": int(item["qtd_linhas"]),
+                "qtd_itens": len(item["codigos"]),
+            }
+            records.append(record)
+            valor_total_geral += valor_liquido
+            pontos_total_geral += pontos
+            bonus_total_geral += bonus
+
         records.sort(key=lambda row: (row["emp"], row["usuario_nome"]))
         return {
             "sheet_name": sheet.title,
@@ -320,10 +483,15 @@ def _parse_sales_workbook(content: bytes, *, ano: int, mes: int) -> dict[str, An
             "rows_read": rows_read,
             "rows_imported": rows_imported,
             "rows_skipped": rows_skipped,
+            "rows_not_eligible": not_eligible,
             "data_min": data_min,
             "data_max": data_max,
-            "valor_total": sum(
-                (record["valor_total"] for record in records), Decimal("0")
+            "valor_total": valor_total_geral.quantize(
+                Decimal("0.0001"), rounding=ROUND_HALF_UP
+            ),
+            "pontos_total": pontos_total_geral,
+            "bonus_total": bonus_total_geral.quantize(
+                Decimal("0.0001"), rounding=ROUND_HALF_UP
             ),
         }
     finally:
@@ -362,13 +530,15 @@ def _resolve_users(db, records: list[dict[str, Any]], warnings: list[str]) -> No
                 key = (user_id, record["emp"])
                 if key not in warned_emp:
                     warnings.append(
-                        f"{record['usuario_nome']}: EMP {record['emp']} não está vinculada ao usuário no cadastro. O valor foi mantido para conferência."
+                        f"{record['usuario_nome']}: EMP {record['emp']} não está vinculada "
+                        "ao usuário no cadastro. O resultado foi mantido para conferência."
                     )
                     warned_emp.add(key)
         elif len(candidates) > 1:
             record["usuario_id"] = None
             warnings.append(
-                f"{record['usuario_nome']}: mais de um usuário corresponde ao nome; vínculo automático não realizado."
+                f"{record['usuario_nome']}: mais de um usuário corresponde ao nome; "
+                "vínculo automático não realizado."
             )
         else:
             record["usuario_id"] = None
@@ -413,7 +583,21 @@ def admin_itens_parados_vendas_importar():
 
     try:
         ensure_itens_parados_snapshot_schema()
-        parsed = _parse_sales_workbook(content, ano=ano, mes=mes)
+        with SessionLocal() as db:
+            active_items = load_active_item_windows(db)
+            point_rules = load_point_rules(db)
+        if not active_items:
+            raise ValueError(
+                "Nenhum produto ativo foi cadastrado. Importe ou cadastre os itens antes das vendas."
+            )
+
+        parsed = _parse_sales_workbook(
+            content,
+            ano=ano,
+            mes=mes,
+            active_items=active_items,
+            point_rules=point_rules,
+        )
         warnings = list(parsed["warnings"])
         imported_at = datetime.utcnow()
         current_user_id = session.get("user_id")
@@ -444,6 +628,9 @@ def admin_itens_parados_vendas_importar():
                 linhas_ignoradas=int(parsed["rows_skipped"]),
                 registros_usuarios=len(parsed["records"]),
                 valor_total=parsed["valor_total"],
+                pontos_total=int(parsed["pontos_total"]),
+                bonus_total=parsed["bonus_total"],
+                linhas_nao_elegiveis=int(parsed["rows_not_eligible"]),
                 avisos_json=json.dumps(warnings[:500], ensure_ascii=False),
             )
             db.add(batch)
@@ -459,6 +646,10 @@ def admin_itens_parados_vendas_importar():
                         usuario_nome=record["usuario_nome"],
                         emp=record["emp"],
                         valor_total=record["valor_total"],
+                        pontos=record["pontos"],
+                        base_reais=record["base_reais"],
+                        valor_por_ponto=record["valor_por_ponto"],
+                        bonus_total=record["bonus_total"],
                         qtd_linhas=record["qtd_linhas"],
                         qtd_itens=record["qtd_itens"],
                         importado_em=imported_at,
@@ -475,12 +666,16 @@ def admin_itens_parados_vendas_importar():
             arquivo=filename,
             linhas=parsed["rows_imported"],
             usuarios=len(parsed["records"]),
-            valor=str(parsed["valor_total"]),
+            valor_elegivel=str(parsed["valor_total"]),
+            pontos=parsed["pontos_total"],
+            bonus=str(parsed["bonus_total"]),
         )
+        valor_fmt = f"{parsed['valor_total']:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        bonus_fmt = f"{parsed['bonus_total']:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
         flash(
-            f"Vendas de itens parados de {mes:02d}/{ano} importadas: "
-            f"{len(parsed['records'])} saldo(s), total de R$ "
-            f"{parsed['valor_total']:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."),
+            f"Itens Parados de {mes:02d}/{ano} calculados: "
+            f"R$ {valor_fmt} em vendas elegíveis, {parsed['pontos_total']} ponto(s) "
+            f"e R$ {bonus_fmt} de bônus.",
             "success",
         )
         if warnings:
@@ -548,10 +743,22 @@ def batch_warnings(batch: ItensParadosVendaImportacaoLote | None) -> list[str]:
         return []
 
 
-def attach_saldos_to_bonus_rows(db, rows: Iterable[Any], *, ano: int, mes: int) -> dict[str, Decimal]:
-    """Anexa saldo individual e total da loja aos objetos de bônus."""
+def attach_saldos_to_bonus_rows(
+    db,
+    rows: Iterable[Any],
+    *,
+    ano: int,
+    mes: int,
+) -> dict[str, Decimal]:
+    """Anexa o bônus calculado de Itens Parados aos objetos de Bônus."""
     rows = list(rows)
-    emps = sorted({norm_emp(getattr(row, "emp", "")) for row in rows if norm_emp(getattr(row, "emp", ""))})
+    emps = sorted(
+        {
+            norm_emp(getattr(row, "emp", ""))
+            for row in rows
+            if norm_emp(getattr(row, "emp", ""))
+        }
+    )
     if not emps:
         return {"total_visivel": Decimal("0"), "total_lojas": Decimal("0")}
 
@@ -565,22 +772,46 @@ def attach_saldos_to_bonus_rows(db, rows: Iterable[Any], *, ano: int, mes: int) 
         .all()
     )
     by_key = {
-        (norm_emp(item.emp), norm_username(item.usuario_nome)): Decimal(str(item.valor_total or 0))
+        (norm_emp(item.emp), norm_username(item.usuario_nome)): Decimal(
+            str(item.bonus_total or 0)
+        )
         for item in balances
     }
+    sales_by_key = {
+        (norm_emp(item.emp), norm_username(item.usuario_nome)): Decimal(
+            str(item.valor_total or 0)
+        )
+        for item in balances
+    }
+    points_by_key = {
+        (norm_emp(item.emp), norm_username(item.usuario_nome)): int(item.pontos or 0)
+        for item in balances
+    }
+
     by_emp: defaultdict[str, Decimal] = defaultdict(lambda: Decimal("0"))
+    sales_by_emp: defaultdict[str, Decimal] = defaultdict(lambda: Decimal("0"))
+    points_by_emp: defaultdict[str, int] = defaultdict(int)
     for item in balances:
-        by_emp[norm_emp(item.emp)] += Decimal(str(item.valor_total or 0))
+        emp = norm_emp(item.emp)
+        by_emp[emp] += Decimal(str(item.bonus_total or 0))
+        sales_by_emp[emp] += Decimal(str(item.valor_total or 0))
+        points_by_emp[emp] += int(item.pontos or 0)
 
     visible_keys: set[tuple[str, str]] = set()
     manager_emps: set[str] = set()
     for row in rows:
         emp = norm_emp(getattr(row, "emp", ""))
         username = norm_username(getattr(row, "usuario_nome", ""))
-        individual = by_key.get((emp, username), Decimal("0"))
+        key = (emp, username)
+        individual = by_key.get(key, Decimal("0"))
         store = by_emp.get(emp, Decimal("0"))
+
         setattr(row, "saldo_itens_parados_usuario", individual)
         setattr(row, "saldo_itens_parados_loja", store)
+        setattr(row, "itens_parados_vendas_usuario", sales_by_key.get(key, Decimal("0")))
+        setattr(row, "itens_parados_vendas_loja", sales_by_emp.get(emp, Decimal("0")))
+        setattr(row, "itens_parados_pontos_usuario", points_by_key.get(key, 0))
+        setattr(row, "itens_parados_pontos_loja", points_by_emp.get(emp, 0))
 
         role_value = (
             getattr(row, "funcao_exibicao", None)
@@ -592,14 +823,14 @@ def attach_saldos_to_bonus_rows(db, rows: Iterable[Any], *, ano: int, mes: int) 
         shown = store if role in {"gerente", "supervisor"} else individual
         setattr(row, "saldo_itens_parados", shown)
         if role in {"gerente", "supervisor"}:
-            # Usa o total da loja somente quando nenhum funcionário individual
-            # daquela EMP estiver visível (por exemplo, filtro direto no gerente).
             manager_emps.add(emp)
             continue
-        visible_keys.add((emp, username))
+        visible_keys.add(key)
 
     individual_emps = {emp for emp, _ in visible_keys}
-    total_visible = sum((by_key.get(key, Decimal("0")) for key in visible_keys), Decimal("0"))
+    total_visible = sum(
+        (by_key.get(key, Decimal("0")) for key in visible_keys), Decimal("0")
+    )
     total_visible += sum(
         (by_emp.get(emp, Decimal("0")) for emp in manager_emps if emp not in individual_emps),
         Decimal("0"),
