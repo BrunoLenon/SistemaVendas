@@ -33,9 +33,11 @@ from db import (
     Usuario,
     UsuarioEmp,
     ensure_bonus_atacado_schema,
+    ensure_itens_parados_snapshot_schema,
 )
 from security_utils import audit, normalize_role
 from sv_utils import emp_sort_key
+from itens_parados_snapshot import attach_saldos_to_bonus_rows
 
 
 MAX_UPLOAD_BYTES = 15 * 1024 * 1024
@@ -673,6 +675,23 @@ def bonus_atacado():
 
         rows.sort(key=lambda row: (emp_sort_key(row.emp), row.usuario_nome))
         _attach_current_roles(db, rows)
+        try:
+            ensure_itens_parados_snapshot_schema()
+            itens_parados_summary = attach_saldos_to_bonus_rows(
+                db, rows, ano=ano, mes=mes
+            )
+        except Exception:
+            current_app.logger.exception(
+                "Falha ao carregar saldo de itens parados no Bônus Atacado"
+            )
+            itens_parados_summary = {
+                "total_visivel": Decimal("0"),
+                "total_lojas": Decimal("0"),
+            }
+            for row in rows:
+                row.saldo_itens_parados = Decimal("0")
+                row.saldo_itens_parados_usuario = Decimal("0")
+                row.saldo_itens_parados_loja = Decimal("0")
 
         batch = (
             db.query(BonusAtacadoImportacaoLote)
@@ -689,9 +708,19 @@ def bonus_atacado():
             "emps": len({row.emp for row in rows if row.emp}),
             "total_produtos": _sum_field(rows, "total_produtos"),
             "importado": _sum_field(rows, "importado"),
+            "itens_parados": itens_parados_summary["total_visivel"],
         }
         can_view_store_metrics = role in MANAGER_ROLES
         stores = _store_cards(rows) if can_view_store_metrics else []
+        for store in stores:
+            store["itens_parados"] = next(
+                (
+                    row.saldo_itens_parados_loja
+                    for row in rows
+                    if row.emp == store["emp"]
+                ),
+                Decimal("0"),
+            )
         batch_warnings = _load_warnings(batch) if role == "admin" else []
 
     return render_template(

@@ -1,989 +1,109 @@
 {% extends "base.html" %}
-
-{% block title %}Admin - Itens parados{% endblock %}
-
-{% macro brl(v) -%}
-  R$ {{ "{:,.2f}".format(v or 0).replace(",", "X").replace(".", ",").replace("X", ".") }}
-{%- endmacro %}
+{% block title %}Itens Parados (Admin){% endblock %}
 
 {% block extra_head %}
 <style>
-  .sv-admin-page--itens{
-    --itens-orange:#ff8c00;
-    --itens-orange-2:#ffb347;
-    --itens-green:#34d399;
-    --itens-red:#ff4d4f;
-    --itens-blue:#38bdf8;
-    --itens-panel:rgba(255,255,255,.035);
-    --itens-panel-strong:rgba(255,255,255,.065);
-    --itens-border:rgba(255,255,255,.10);
-    --itens-border-strong:rgba(255,140,0,.26);
-    --itens-muted:#aab4c3;
-  }
-
-  .sv-admin-page--itens .sv-admin-hero{
-    position:relative;
-    isolation:isolate;
-    border-color:rgba(255,140,0,.16);
-  }
-  .sv-admin-page--itens .sv-admin-hero::after{
-    content:"";
-    position:absolute;
-    right:-110px;
-    bottom:-150px;
-    width:430px;
-    height:430px;
-    border-radius:999px;
-    background:radial-gradient(circle, rgba(255,140,0,.24), rgba(255,140,0,.08) 38%, transparent 68%);
-    pointer-events:none;
-    z-index:0;
-  }
-  .sv-admin-page--itens .sv-admin-title{
-    letter-spacing:-.05em;
-  }
-  .sv-admin-page--itens .sv-admin-subtitle{
-    max-width:980px;
-  }
-
-  .sv-admin-page--itens .sv-admin-layout{
-    display:grid;
-    grid-template-columns:minmax(0,1.04fr) minmax(360px,.96fr);
-    gap:16px;
-    align-items:start;
-  }
-  .sv-admin-page--itens .sv-admin-layout-full{ grid-column:1/-1; }
-  .sv-admin-page--itens .sv-mini-stack{ display:grid; gap:16px; }
-
-  .sv-admin-page--itens .sv-panel{
-    border-color:var(--itens-border);
-    background:
-      linear-gradient(180deg, rgba(255,255,255,.045), rgba(255,255,255,.020));
-  }
-  .sv-admin-page--itens .sv-panel-head{
-    gap:14px;
-  }
-
-  .sv-admin-page--itens .sv-import-card{
-    position:relative;
-    overflow:hidden;
-    border-color:rgba(52,211,153,.22);
-    background:
-      radial-gradient(circle at 12% 0%, rgba(52,211,153,.13), transparent 34%),
-      radial-gradient(circle at 92% 10%, rgba(255,140,0,.18), transparent 30%),
-      linear-gradient(135deg, rgba(255,255,255,.055), rgba(255,255,255,.020));
-    box-shadow:0 18px 52px rgba(0,0,0,.30), inset 0 1px 0 rgba(255,255,255,.035);
-  }
-  .sv-admin-page--itens .sv-import-card::before{
-    content:"";
-    position:absolute;
-    inset:-1px;
-    background:linear-gradient(90deg, transparent, rgba(255,140,0,.12), transparent);
-    pointer-events:none;
-    opacity:.70;
-  }
-  .sv-admin-page--itens .sv-import-card > *{
-    position:relative;
-    z-index:1;
-  }
-
-  .sv-admin-page--itens .sv-import-form-shell{
-    display:grid;
-    grid-template-columns:minmax(0,1fr) auto;
-    gap:14px;
-    align-items:end;
-    padding:14px;
-    border:1px solid rgba(255,255,255,.09);
-    border-radius:20px;
-    background:rgba(0,0,0,.20);
-  }
-  .sv-admin-page--itens .sv-import-form-shell .form-control{
-    min-height:44px;
-    border-color:rgba(52,211,153,.22);
-    background:rgba(0,0,0,.30);
-  }
-
-  .sv-admin-page--itens .sv-import-steps{
-    display:grid;
-    grid-template-columns:repeat(3,minmax(0,1fr));
-    gap:10px;
-    margin-top:12px;
-  }
-  .sv-admin-page--itens .sv-import-step{
-    position:relative;
-    border:1px solid rgba(255,255,255,.09);
-    border-radius:16px;
-    padding:12px 13px 12px 46px;
-    background:linear-gradient(180deg, rgba(0,0,0,.22), rgba(0,0,0,.12));
-    min-height:82px;
-    overflow:hidden;
-  }
-  .sv-admin-page--itens .sv-import-step::before{
-    content:attr(data-step);
-    position:absolute;
-    left:12px;
-    top:13px;
-    width:24px;
-    height:24px;
-    display:inline-flex;
-    align-items:center;
-    justify-content:center;
-    border-radius:9px;
-    color:#111;
-    background:linear-gradient(135deg, var(--itens-orange-2), var(--itens-orange));
-    box-shadow:0 10px 22px rgba(255,140,0,.18);
-    font-weight:1000;
-    font-size:.74rem;
-  }
-  .sv-admin-page--itens .sv-import-step strong{
-    display:block;
-    color:#fff;
-    font-size:.88rem;
-    letter-spacing:-.01em;
-  }
-  .sv-admin-page--itens .sv-import-step span{
-    display:block;
-    color:var(--itens-muted);
-    font-size:.78rem;
-    margin-top:4px;
-    line-height:1.35;
-  }
-
-  .sv-admin-page--itens .sv-item-table{ min-width:1060px; table-layout:auto; }
-  .sv-admin-page--itens .sv-compact-table{ min-width:660px; }
-  .sv-admin-page--itens .sv-result-table{ min-width:850px; }
-  .sv-admin-page--itens .sv-code{
-    color:#ffd39b;
-    background:rgba(255,140,0,.10);
-    border:1px solid rgba(255,140,0,.16);
-    padding:.20rem .48rem;
-    border-radius:9px;
-    font-weight:900;
-    white-space:nowrap;
-  }
-  .sv-admin-page--itens .sv-danger-zone{
-    border-color:rgba(255,77,79,.26);
-    background:rgba(255,77,79,.055);
-  }
-  .sv-admin-page--itens .sv-field .sv-help-text,
-  .sv-admin-page--itens .sv-panel-subtitle{
-    line-height:1.42;
-  }
-
-  .sv-import-itens-modal{
-    --itens-modal-bg:#0b0f16;
-    --itens-modal-panel:rgba(255,255,255,.045);
-    --itens-modal-border:rgba(255,255,255,.11);
-    --itens-modal-orange:#ff8c00;
-    --itens-modal-muted:#aab4c3;
-  }
-  .sv-import-itens-modal .modal-dialog{
-    max-width:min(1280px, calc(100vw - 24px));
-    height:calc(100vh - 2rem);
-    margin:1rem auto;
-  }
-  .sv-import-itens-modal .modal-content{
-    height:100%;
-    max-height:calc(100vh - 2rem);
-    background:
-      radial-gradient(circle at top right, rgba(255,140,0,.16), transparent 32%),
-      radial-gradient(circle at top left, rgba(52,211,153,.10), transparent 30%),
-      linear-gradient(180deg, #111722, #090b10);
-    border:1px solid rgba(255,255,255,.12);
-    color:#eef2f7;
-    border-radius:24px;
-    overflow:hidden;
-    box-shadow:0 28px 90px rgba(0,0,0,.58);
-  }
-  .sv-import-itens-modal .modal-content > form{
-    height:100%;
-    min-height:0;
-    display:flex;
-    flex-direction:column;
-  }
-  .sv-import-itens-modal .modal-header{
-    flex:0 0 auto;
-    border-bottom:1px solid rgba(255,255,255,.10);
-    background:linear-gradient(180deg, rgba(255,255,255,.065), rgba(255,255,255,.025));
-    padding:16px 18px;
-  }
-  .sv-import-itens-modal .modal-title{
-    color:#fff;
-    font-weight:1000;
-    letter-spacing:-.025em;
-  }
-  .sv-import-itens-modal .modal-body{
-    flex:1 1 auto;
-    min-height:0;
-    overflow-y:auto;
-    overflow-x:hidden;
-    overscroll-behavior:contain;
-    padding:16px;
-    scrollbar-width:thin;
-    scrollbar-color:rgba(255,140,0,.48) rgba(255,255,255,.06);
-  }
-  .sv-import-itens-modal .modal-body::-webkit-scrollbar{ width:10px; height:10px; }
-  .sv-import-itens-modal .modal-body::-webkit-scrollbar-track{ background:rgba(255,255,255,.055); border-radius:999px; }
-  .sv-import-itens-modal .modal-body::-webkit-scrollbar-thumb{ background:rgba(255,140,0,.42); border-radius:999px; border:2px solid rgba(0,0,0,.25); }
-  .sv-import-itens-modal .modal-footer{
-    flex:0 0 auto;
-    border-top:1px solid rgba(255,255,255,.10);
-    background:linear-gradient(180deg, rgba(11,15,22,.92), rgba(11,15,22,.98));
-    padding:13px 18px;
-  }
-  .sv-import-itens-modal .sv-panel{
-    border:1px solid var(--itens-modal-border);
-    border-radius:20px;
-    background:linear-gradient(180deg, rgba(255,255,255,.050), rgba(255,255,255,.022));
-    box-shadow:0 12px 32px rgba(0,0,0,.18);
-    overflow:hidden;
-  }
-  .sv-import-itens-modal .sv-panel-head{
-    padding:14px 16px;
-    border-bottom:1px solid rgba(255,255,255,.075);
-    background:rgba(255,255,255,.025);
-  }
-  .sv-import-itens-modal .sv-panel-body{ padding:14px 16px; }
-  .sv-import-itens-modal .sv-admin-kpis{
-    display:grid;
-    grid-template-columns:repeat(4,minmax(0,1fr));
-    gap:10px;
-  }
-  .sv-import-itens-modal .sv-kpi-card{
-    border:1px solid rgba(255,255,255,.09);
-    background:rgba(0,0,0,.20);
-  }
-
-  .sv-import-itens-modal .sv-code{
-    color:#ffd39b;
-    background:rgba(255,140,0,.10);
-    border:1px solid rgba(255,140,0,.16);
-    padding:.20rem .48rem;
-    border-radius:9px;
-    font-weight:900;
-    white-space:nowrap;
-  }
-  .sv-import-itens-modal .sv-danger-zone{
-    border-color:rgba(255,77,79,.28);
-    background:rgba(255,77,79,.055);
-  }
-  .sv-import-itens-modal .sv-modal-table{ min-width:930px; }
-  .sv-import-itens-modal .sv-table-card{
-    max-height:360px;
-    overflow:auto;
-    scrollbar-width:thin;
-    scrollbar-color:rgba(255,140,0,.48) rgba(255,255,255,.06);
-  }
-  .sv-import-itens-modal .sv-table-card thead th{
-    position:sticky;
-    top:0;
-    z-index:2;
-  }
-  .sv-import-itens-modal .sv-emp-checks{
-    display:grid;
-    grid-template-columns:repeat(auto-fill,minmax(94px,1fr));
-    gap:8px;
-    max-height:180px;
-    overflow:auto;
-    padding:10px;
-    border:1px solid rgba(255,255,255,.10);
-    border-radius:14px;
-    background:rgba(0,0,0,.16);
-  }
-  .sv-import-itens-modal .sv-emp-check{
-    display:flex;
-    gap:7px;
-    align-items:center;
-    font-size:.84rem;
-    color:#e8edf5;
-    background:rgba(255,255,255,.04);
-    border:1px solid rgba(255,255,255,.08);
-    border-radius:10px;
-    padding:7px 9px;
-    cursor:pointer;
-    user-select:none;
-  }
-  .sv-import-itens-modal .sv-emp-check:hover{
-    border-color:rgba(255,140,0,.25);
-    background:rgba(255,140,0,.065);
-  }
-
-  @media(max-width:1280px){
-    .sv-admin-page--itens .sv-admin-layout{ grid-template-columns:1fr; }
-  }
-  @media(max-width:900px){
-    .sv-import-itens-modal .sv-admin-kpis{ grid-template-columns:repeat(2,minmax(0,1fr)); }
-  }
-  @media(max-width:760px){
-    .sv-admin-page--itens .sv-import-steps{ grid-template-columns:1fr; }
-    .sv-admin-page--itens .sv-import-form-shell{ grid-template-columns:1fr; }
-    .sv-import-itens-modal .modal-dialog{
-      max-width:calc(100vw - 10px);
-      height:calc(100vh - 10px);
-      margin:5px auto;
-    }
-    .sv-import-itens-modal .modal-content{ max-height:calc(100vh - 10px); border-radius:18px; }
-    .sv-import-itens-modal .sv-admin-kpis{ grid-template-columns:1fr; }
-  }
+  .ipa-page{max-width:1540px;margin:0 auto;padding:4px 0 30px;color:#f8fafc}
+  .ipa-hero,.ipa-panel{border:1px solid rgba(255,255,255,.085);border-radius:22px;background:linear-gradient(180deg,rgba(255,255,255,.052),rgba(255,255,255,.022));box-shadow:0 18px 44px rgba(0,0,0,.22)}
+  .ipa-hero{padding:20px;background:radial-gradient(circle at top right,rgba(255,145,0,.20),transparent 34%),linear-gradient(180deg,rgba(255,255,255,.052),rgba(255,255,255,.022))}
+  .ipa-panel{padding:17px}.ipa-title{font-size:29px;font-weight:950;letter-spacing:-.04em;margin:0}.ipa-sub{color:#b9bdc5;font-size:13px;max-width:980px;margin-top:7px;line-height:1.55}
+  .ipa-chip{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border:1px solid rgba(255,174,72,.25);border-radius:999px;background:rgba(255,145,0,.09);color:#ffc477;font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.06em}
+  .ipa-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px}.ipa-grid-wide{grid-column:1/-1}
+  .ipa-section-title{font-size:16px;font-weight:900;margin:0}.ipa-section-sub{color:#999fa8;font-size:12px;margin-top:4px;line-height:1.45}
+  .ipa-page .form-control,.ipa-page .form-select{background:rgba(9,9,10,.88);border-color:rgba(255,255,255,.11);color:#fff;border-radius:12px;min-height:40px}.ipa-page .form-select option{background:#151515;color:#fff}
+  .ipa-form-grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:10px;align-items:end}.ipa-c2{grid-column:span 2}.ipa-c3{grid-column:span 3}.ipa-c4{grid-column:span 4}.ipa-c6{grid-column:span 6}.ipa-c12{grid-column:1/-1}
+  .ipa-label{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#a9adb5;font-weight:900;margin-bottom:6px}
+  .ipa-drop{padding:15px;border:1px dashed rgba(255,177,66,.28);border-radius:16px;background:rgba(255,145,0,.045)}
+  .ipa-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:13px}.ipa-kpi{padding:12px 13px;border:1px solid rgba(255,255,255,.075);border-radius:15px;background:rgba(0,0,0,.19)}.ipa-kpi small{display:block;color:#969ba4;font-size:9px;font-weight:850;text-transform:uppercase;letter-spacing:.07em;margin-bottom:5px}.ipa-kpi strong{font-size:17px;display:block}.ipa-kpi span{font-size:10px;color:#858b95}
+  .ipa-table-wrap{width:100%;overflow:hidden;border:1px solid rgba(255,255,255,.075);border-radius:17px;background:rgba(0,0,0,.18)}.ipa-table{width:100%;table-layout:fixed;margin:0;font-size:11px;color:#f5f5f5}.ipa-table>:not(caption)>*>*{padding:10px 7px;border-color:rgba(255,255,255,.065);vertical-align:middle;background:transparent;color:inherit}.ipa-table thead th{font-size:9px;text-transform:uppercase;letter-spacing:.045em;color:#b8bdc6;font-weight:900;line-height:1.25;white-space:normal}.ipa-table tbody tr:nth-child(even){background:rgba(255,255,255,.025)}
+  .ipa-user{font-weight:900;overflow-wrap:anywhere}.ipa-money{font-variant-numeric:tabular-nums;font-weight:900;color:#ffc477;white-space:nowrap}.ipa-muted{color:#8f949d}.ipa-actions{display:flex;justify-content:flex-end;gap:5px;flex-wrap:wrap}
+  .ipa-warnings{margin:0;padding-left:18px;color:#ffd29a;font-size:11px;line-height:1.55;max-height:220px;overflow:auto}
+  .ipa-empty{padding:34px 16px;text-align:center;color:#8f949d}
+  @media(max-width:1000px){.ipa-grid{grid-template-columns:1fr}.ipa-grid-wide{grid-column:auto}.ipa-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
+  @media(max-width:720px){.ipa-form-grid>*{grid-column:1/-1}.ipa-kpis{grid-template-columns:1fr 1fr}.ipa-table{font-size:10px}.ipa-table>:not(caption)>*>*{padding:8px 5px}}
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="sv-admin-page sv-admin-page--itens">
-
-  <section class="sv-admin-hero">
-    <div class="sv-admin-hero-row">
-      <div>
-        <span class="sv-admin-eyebrow">Administração · Itens parados</span>
-        <h1 class="sv-admin-title">Itens Parados</h1>
-        <div class="sv-admin-subtitle">
-          Cadastre itens elegíveis, configure pontos e gere fechamentos manuais com visual padronizado no tema premium do sistema.
-        </div>
-      </div>
-      <div class="sv-action-row">
-        <a class="btn btn-sv-soft" href="{{ url_for('admin_itens_parados_modelo') }}">📥 Baixar modelo</a>
-        <a class="btn btn-sv-soft" href="{{ url_for('dashboard') }}">Voltar ao dashboard</a>
-      </div>
+<div class="ipa-page">
+  <section class="ipa-hero mb-3">
+    <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
+      <div><div class="ipa-chip">⚙️ Administração</div><h1 class="ipa-title mt-2">Itens Parados</h1><div class="ipa-sub">Cadastre os produtos ativos por loja e importe o saldo mensal das vendas. O sistema mantém apenas os valores consolidados por funcionário e EMP para deixar Bônus Varejo, Bônus Atacado e esta página mais leves.</div></div>
+      <div class="d-flex gap-2 flex-wrap"><a class="btn btn-outline-light" href="{{ url_for('admin_itens_parados_modelo') }}">Baixar modelo de itens</a><a class="btn btn-outline-light" href="{{ url_for('itens_parados') }}">Ver página do usuário</a></div>
     </div>
-
-    <div class="sv-admin-kpis mt-3">
-      <div class="sv-kpi-card">
-        <small>Itens monitorados</small>
-        <strong>{{ total_itens_label }}</strong>
-        <span>Com filtros atuais</span>
-      </div>
-      <div class="sv-kpi-card">
-        <small>Configurações</small>
-        <strong>{{ (cfg_global|length) + (cfg_by_emp|length) }}</strong>
-        <span>Globais e por EMP</span>
-      </div>
-      <div class="sv-kpi-card">
-        <small>Bônus</small>
-        <strong>{{ (bonus_global|length) + (bonus_by_emp|length) }}</strong>
-        <span>Faixas cadastradas</span>
-      </div>
-      <div class="sv-kpi-card">
-        <small>Fechamentos</small>
-        <strong>{{ fechamentos|length }}</strong>
-        <span>Snapshots recentes</span>
-      </div>
-      <div class="sv-kpi-card">
-        <small>Página</small>
-        <strong>{{ pagina }}/{{ total_paginas }}</strong>
-        <span>Consulta de itens</span>
-      </div>
+    <div class="ipa-kpis">
+      <div class="ipa-kpi"><small>Itens cadastrados</small><strong>{{ total_itens }}</strong><span>Com os filtros atuais</span></div>
+      <div class="ipa-kpi"><small>Última competência</small><strong>{{ '%02d'|format(mes_vendas) }}/{{ ano_vendas }}</strong><span>Saldo importado</span></div>
+      <div class="ipa-kpi"><small>Valor importado</small><strong>{% if sales_batch %}{{ sales_batch.valor_total|brl_rs }}{% else %}R$ 0,00{% endif %}</strong><span>{% if sales_batch %}{{ sales_batch.registros_usuarios }} usuário(s){% else %}Sem importação{% endif %}</span></div>
+      <div class="ipa-kpi"><small>Linhas válidas</small><strong>{{ sales_batch.linhas_importadas if sales_batch else 0 }}</strong><span>{{ sales_batch.linhas_ignoradas if sales_batch else 0 }} ignorada(s)</span></div>
     </div>
   </section>
 
-  {% if erro %}
-    <div class="sv-admin-section"><div class="alert alert-danger mb-0">{{ erro }}</div></div>
-  {% endif %}
-  {% if ok %}
-    <div class="sv-admin-section"><div class="alert alert-success mb-0">{{ ok }}</div></div>
-  {% endif %}
+  {% if erro %}<div class="alert alert-danger">{{ erro }}</div>{% endif %}
+  {% if ok %}<div class="alert alert-success">{{ ok }}</div>{% endif %}
+  {% if avisos_acao %}<div class="alert alert-warning"><b>Avisos da importação:</b><ul class="mb-0 mt-2">{% for item in avisos_acao[:30] %}<li>{{ item }}</li>{% endfor %}</ul></div>{% endif %}
 
-  <div class="sv-admin-section sv-admin-layout">
-    <section class="sv-panel sv-admin-layout-full sv-import-card">
-      <div class="sv-panel-head">
-        <div>
-          <h2 class="sv-panel-title">Importação assistida de itens parados</h2>
-          <div class="sv-panel-subtitle">Importe a planilha, valide os MESTREs e depois selecione lojas e vigência em uma janela flutuante.</div>
-        </div>
-        <span class="sv-chip sv-chip--success">Novo fluxo</span>
-      </div>
-      <div class="sv-panel-body">
-        <form method="post" enctype="multipart/form-data" class="sv-import-form-shell">
-          <input type="hidden" name="acao" value="validar_importacao">
-          <div class="sv-field" style="min-width:min(100%,360px);">
-            <label class="sv-form-label">Planilha de itens</label>
-            <input class="form-control" type="file" name="arquivo_itens" accept=".xlsx,.xls,.csv" required>
-            <div class="sv-help-text mt-1">Colunas aceitas: <b>MESTRE</b>, <b>INTERNO</b> e <b>DESCRICAO</b>. A loja e a vigência entram somente depois da validação.</div>
-          </div>
-          <div class="sv-action-row align-items-end">
-            <button class="btn btn-sv-primary">Validar planilha</button>
-            <a class="btn btn-sv-soft" href="{{ url_for('admin_itens_parados_modelo') }}">Baixar modelo</a>
-          </div>
-        </form>
-        <div class="sv-import-steps">
-          <div class="sv-import-step" data-step="1"><strong>Importar</strong><span>Envie uma planilha simples apenas com os produtos.</span></div>
-          <div class="sv-import-step" data-step="2"><strong>Validar</strong><span>O sistema confere MESTRE vazio, duplicidade e existência na base de vendas.</span></div>
-          <div class="sv-import-step" data-step="3"><strong>Aplicar</strong><span>Escolha as lojas/EMPs e o período de vigência para gravar os itens.</span></div>
-        </div>
-      </div>
-    </section>
-
-    <section class="sv-panel">
-      <div class="sv-panel-head">
-        <div>
-          <h2 class="sv-panel-title">Cadastrar item elegível</h2>
-          <div class="sv-panel-subtitle">Informe EMP, código e vigência opcional. O multiplicador permanece com a regra atual do sistema.</div>
-        </div>
-        <span class="sv-chip sv-chip--info">Cadastro</span>
-      </div>
-      <div class="sv-panel-body">
-        <form method="post">
-          <input type="hidden" name="acao" value="criar_item">
-          <input type="hidden" name="multiplicador_pontos" value="1,00">
-
-          <div class="sv-form-grid">
-            <div class="sv-field">
-              <label class="sv-form-label">EMP</label>
-              <input class="form-control" name="emp" required>
-            </div>
-            <div class="sv-field">
-              <label class="sv-form-label">MESTRE</label>
-              <input class="form-control" name="codigo" required>
-            </div>
-            <div class="sv-field">
-              <label class="sv-form-label">INTERNO</label>
-              <input class="form-control" name="interno" placeholder="Opcional">
-            </div>
-            <div class="sv-field" style="grid-column:1/-1;">
-              <label class="sv-form-label">Descrição</label>
-              <input class="form-control" name="descricao" placeholder="Opcional para facilitar identificação">
-            </div>
-            <div class="sv-field">
-              <label class="sv-form-label">Data início</label>
-              <input class="form-control" type="date" name="data_inicio">
-            </div>
-            <div class="sv-field">
-              <label class="sv-form-label">Data fim</label>
-              <input class="form-control" type="date" name="data_fim">
-            </div>
-          </div>
-
-          <div class="sv-help-text mt-3">O item só entra no fechamento quando houver venda válida dentro da vigência e das regras cadastradas.</div>
-          <div class="sv-action-row mt-3 justify-content-end">
-            <button class="btn btn-sv-primary">Salvar item</button>
-          </div>
-        </form>
-      </div>
-    </section>
-
-    <div class="sv-mini-stack">
-      <section class="sv-panel">
-        <div class="sv-panel-head">
-          <div>
-            <h2 class="sv-panel-title">Regra de pontos</h2>
-            <div class="sv-panel-subtitle">Configure base em reais e valor por ponto. EMP vazia cria regra global.</div>
-          </div>
-          <span class="sv-chip sv-chip--warning">Pontuação</span>
-        </div>
-        <div class="sv-panel-body">
-          <form method="post">
-            <input type="hidden" name="acao" value="salvar_config">
-            <div class="sv-form-grid sv-form-grid-3">
-              <div class="sv-field">
-                <label class="sv-form-label">EMP</label>
-                <input class="form-control" name="cfg_emp" placeholder="Vazio = global">
-              </div>
-              <div class="sv-field">
-                <label class="sv-form-label">Base em R$</label>
-                <input class="form-control" name="base_reais" value="100" required>
-              </div>
-              <div class="sv-field">
-                <label class="sv-form-label">Valor por ponto</label>
-                <input class="form-control" name="valor_por_ponto" value="10,00" required>
-              </div>
-            </div>
-            <div class="sv-action-row mt-3 justify-content-end">
-              <button class="btn btn-sv-primary">Salvar configuração</button>
-            </div>
-          </form>
-        </div>
-      </section>
-
-      <section class="sv-panel">
-        <div class="sv-panel-head">
-          <div>
-            <h2 class="sv-panel-title">Fechamento manual</h2>
-            <div class="sv-panel-subtitle">Gere snapshot por período. EMP vazia processa todas as empresas elegíveis.</div>
-          </div>
-          <span class="sv-chip sv-chip--success">Snapshot</span>
-        </div>
-        <div class="sv-panel-body">
-          <form method="post">
-            <input type="hidden" name="acao" value="fechar_periodo">
-            <div class="sv-form-grid sv-form-grid-3">
-              <div class="sv-field">
-                <label class="sv-form-label">EMP</label>
-                <input class="form-control" name="fech_emp" placeholder="Vazio = todas">
-              </div>
-              <div class="sv-field">
-                <label class="sv-form-label">Data início</label>
-                <input class="form-control" type="date" name="fech_di" required>
-              </div>
-              <div class="sv-field">
-                <label class="sv-form-label">Data fim</label>
-                <input class="form-control" type="date" name="fech_df" required>
-              </div>
-            </div>
-            <div class="sv-action-row mt-3 justify-content-end">
-              <button class="btn btn-sv-primary">Criar fechamento</button>
-            </div>
-          </form>
-        </div>
-      </section>
-    </div>
-
-    <section class="sv-panel sv-admin-layout-full">
-      <div class="sv-panel-head">
-        <div>
-          <h2 class="sv-panel-title">Itens cadastrados</h2>
-          <div class="sv-panel-subtitle">Filtre por EMP, código e status. Mostrando até {{ limite }} registros por página.</div>
-        </div>
-        <div class="sv-action-row">
-          <span class="sv-chip sv-chip--muted">Total: {{ total_itens_label }}</span>
-          {% if filtro_emp %}<span class="sv-chip">EMP {{ filtro_emp }}</span>{% endif %}
-          {% if filtro_codigo %}<span class="sv-chip">Código {{ filtro_codigo }}</span>{% endif %}
-        </div>
-      </div>
-      <div class="sv-panel-body">
-        <form method="get" class="sv-filter-grid">
-          <div class="sv-field">
-            <label class="sv-form-label">Filtrar EMP</label>
-            <input class="form-control" name="f_emp" value="{{ filtro_emp or '' }}">
-          </div>
-          <div class="sv-field">
-            <label class="sv-form-label">Filtrar código</label>
-            <input class="form-control" name="f_codigo" value="{{ filtro_codigo or '' }}">
-          </div>
-          <div class="sv-field">
-            <label class="sv-form-label">Status</label>
-            <select class="form-select" name="f_status">
-              <option value="" {% if not filtro_status %}selected{% endif %}>Todos</option>
-              <option value="ativos" {% if filtro_status == 'ativos' %}selected{% endif %}>Ativos</option>
-              <option value="inativos" {% if filtro_status == 'inativos' %}selected{% endif %}>Inativos</option>
-            </select>
-          </div>
-          <div class="sv-action-row">
-            <button class="btn btn-sv-primary">Filtrar</button>
-            <a class="btn btn-sv-soft" href="{{ url_for('admin_itens_parados') }}">Limpar</a>
-          </div>
-        </form>
-
-        <div class="sv-table-card mt-3">
-          <table class="sv-data-table sv-item-table">
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>EMP</th>
-                <th>MESTRE</th>
-                <th>INTERNO</th>
-                <th>Descrição</th>
-                <th>Vigência</th>
-                <th>Status</th>
-                <th class="text-end">Ações</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for it in itens %}
-                <tr>
-                  <td class="sv-number">{{ it.id }}</td>
-                  <td><span class="sv-chip">EMP {{ it.emp }}</span></td>
-                  <td><span class="sv-code">{{ it.codigo }}</span></td>
-                  <td>{{ it.interno or '-' }}</td>
-                  <td>{{ it.descricao or '-' }}</td>
-                  <td class="sv-help-text">
-                    {% if it.data_inicio or it.data_fim %}
-                      {{ it.data_inicio.strftime('%d/%m/%Y') if it.data_inicio else '...' }} até {{ it.data_fim.strftime('%d/%m/%Y') if it.data_fim else '...' }}
-                    {% else %}
-                      Sem vigência
-                    {% endif %}
-                  </td>
-                  <td>
-                    <span class="sv-status {{ 'sv-status--success' if it.ativo else 'sv-status--muted' }}">
-                      {{ 'Ativo' if it.ativo else 'Inativo' }}
-                    </span>
-                  </td>
-                  <td class="text-end">
-                    <div class="sv-action-row justify-content-end">
-                      <form method="post" class="d-inline">
-                        <input type="hidden" name="acao" value="toggle_item">
-                        <input type="hidden" name="item_id" value="{{ it.id }}">
-                        <button class="btn btn-outline-warning btn-sm">{{ 'Desativar' if it.ativo else 'Ativar' }}</button>
-                      </form>
-                      <form method="post" class="d-inline" onsubmit="return confirm('Excluir item?');">
-                        <input type="hidden" name="acao" value="excluir_item">
-                        <input type="hidden" name="item_id" value="{{ it.id }}">
-                        <button class="btn btn-outline-danger btn-sm">Excluir</button>
-                      </form>
-                    </div>
-                  </td>
-                </tr>
-              {% else %}
-                <tr><td colspan="8"><div class="sv-empty-state">Nenhum item cadastrado.</div></td></tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-
-        {% if pagina > 1 or has_next %}
-          <div class="sv-pager">
-            <div class="sv-help-text">Página {{ pagina }} de {{ total_paginas }}</div>
-            <div class="sv-action-row">
-              {% if pagina > 1 %}
-                <a class="btn btn-sv-soft btn-sm" href="{{ url_for('admin_itens_parados', f_emp=filtro_emp, f_codigo=filtro_codigo, f_status=filtro_status, page=pagina-1) }}">Anterior</a>
-              {% endif %}
-              {% if has_next %}
-                <a class="btn btn-sv-soft btn-sm" href="{{ url_for('admin_itens_parados', f_emp=filtro_emp, f_codigo=filtro_codigo, f_status=filtro_status, page=pagina+1) }}">Próxima</a>
-              {% endif %}
-            </div>
-          </div>
-        {% endif %}
-      </div>
-    </section>
-
-    <section class="sv-panel">
-      <div class="sv-panel-head">
-        <div>
-          <h2 class="sv-panel-title">Faixas de bônus</h2>
-          <div class="sv-panel-subtitle">Crie ou gerencie bônus extras por pontos mínimos. EMP vazia cria faixa global.</div>
-        </div>
-        <span class="sv-chip sv-chip--warning">Bônus</span>
-      </div>
-      <div class="sv-panel-body">
-        <form method="post">
-          <input type="hidden" name="acao" value="criar_bonus">
-          <div class="sv-form-grid sv-form-grid-3">
-            <div class="sv-field">
-              <label class="sv-form-label">EMP</label>
-              <input class="form-control" name="bonus_emp" placeholder="Vazio = global">
-            </div>
-            <div class="sv-field">
-              <label class="sv-form-label">Pontos mínimos</label>
-              <input class="form-control" name="min_pontos" value="10" required>
-            </div>
-            <div class="sv-field">
-              <label class="sv-form-label">Bônus extra (R$)</label>
-              <input class="form-control" name="bonus_valor" value="50,00" required>
-            </div>
-          </div>
-          <div class="sv-action-row mt-3 justify-content-end">
-            <button class="btn btn-sv-primary">Salvar faixa</button>
-          </div>
-        </form>
-
-        <div class="sv-table-card mt-3">
-          <table class="sv-data-table sv-compact-table">
-            <thead>
-              <tr><th>EMP</th><th class="text-end">Pontos mín.</th><th class="text-end">Bônus</th><th class="text-end">Ações</th></tr>
-            </thead>
-            <tbody>
-              {% for b in bonus_global %}
-                <tr>
-                  <td><span class="sv-chip sv-chip--info">GLOBAL</span></td>
-                  <td class="text-end sv-number">{{ '%.2f'|format(b.min_pontos or 0) }}</td>
-                  <td class="text-end sv-money">{{ brl(b.bonus_valor) }}</td>
-                  <td class="text-end">
-                    <div class="sv-action-row justify-content-end">
-                      <form method="post" class="d-inline">
-                        <input type="hidden" name="acao" value="toggle_bonus">
-                        <input type="hidden" name="bonus_id" value="{{ b.id }}">
-                        <button class="btn btn-outline-warning btn-sm">{{ 'Desativar' if b.ativo else 'Ativar' }}</button>
-                      </form>
-                      <form method="post" class="d-inline" onsubmit="return confirm('Excluir faixa?');">
-                        <input type="hidden" name="acao" value="excluir_bonus">
-                        <input type="hidden" name="bonus_id" value="{{ b.id }}">
-                        <button class="btn btn-outline-danger btn-sm">Excluir</button>
-                      </form>
-                    </div>
-                  </td>
-                </tr>
-              {% endfor %}
-              {% for b in bonus_by_emp %}
-                <tr>
-                  <td><span class="sv-chip">EMP {{ b.emp }}</span></td>
-                  <td class="text-end sv-number">{{ '%.2f'|format(b.min_pontos or 0) }}</td>
-                  <td class="text-end sv-money">{{ brl(b.bonus_valor) }}</td>
-                  <td class="text-end">
-                    <div class="sv-action-row justify-content-end">
-                      <form method="post" class="d-inline">
-                        <input type="hidden" name="acao" value="toggle_bonus">
-                        <input type="hidden" name="bonus_id" value="{{ b.id }}">
-                        <button class="btn btn-outline-warning btn-sm">{{ 'Desativar' if b.ativo else 'Ativar' }}</button>
-                      </form>
-                      <form method="post" class="d-inline" onsubmit="return confirm('Excluir faixa?');">
-                        <input type="hidden" name="acao" value="excluir_bonus">
-                        <input type="hidden" name="bonus_id" value="{{ b.id }}">
-                        <button class="btn btn-outline-danger btn-sm">Excluir</button>
-                      </form>
-                    </div>
-                  </td>
-                </tr>
-              {% endfor %}
-              {% if not bonus_global and not bonus_by_emp %}
-                <tr><td colspan="4"><div class="sv-empty-state">Nenhuma faixa cadastrada.</div></td></tr>
-              {% endif %}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </section>
-
-    <section class="sv-panel">
-      <div class="sv-panel-head">
-        <div>
-          <h2 class="sv-panel-title">Fechamentos recentes</h2>
-          <div class="sv-panel-subtitle">Use “Ver” para carregar os resultados congelados de um fechamento.</div>
-        </div>
-        <span class="sv-chip sv-chip--muted">{{ fechamentos|length }} registro(s)</span>
-      </div>
-      <div class="sv-panel-body">
-        <div class="sv-table-card">
-          <table class="sv-data-table sv-compact-table">
-            <thead>
-              <tr><th>ID</th><th>EMP</th><th>Período</th><th>Criado por</th><th class="text-end">Ação</th></tr>
-            </thead>
-            <tbody>
-              {% for f in fechamentos %}
-                <tr>
-                  <td class="sv-number">{{ f.id }}</td>
-                  <td>{% if f.emp %}<span class="sv-chip">EMP {{ f.emp }}</span>{% else %}<span class="sv-chip sv-chip--info">Todas</span>{% endif %}</td>
-                  <td class="sv-help-text">{{ f.data_inicio.strftime('%d/%m/%Y') }} até {{ f.data_fim.strftime('%d/%m/%Y') }}</td>
-                  <td>{{ f.criado_por or '-' }}</td>
-                  <td class="text-end"><a class="btn btn-sv-soft btn-sm" href="{{ url_for('admin_itens_parados', ver_fech=f.id) }}">Ver</a></td>
-                </tr>
-              {% else %}
-                <tr><td colspan="5"><div class="sv-empty-state">Nenhum fechamento criado.</div></td></tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </section>
-
-    <section class="sv-panel">
-      <div class="sv-panel-head">
-        <div>
-          <h2 class="sv-panel-title">Configurações ativas</h2>
-          <div class="sv-panel-subtitle">Resumo das regras de base e valor por ponto em uso.</div>
-        </div>
-      </div>
-      <div class="sv-panel-body">
-        <div class="sv-table-card">
-          <table class="sv-data-table sv-compact-table">
-            <thead>
-              <tr><th>Escopo</th><th class="text-end">Base R$</th><th class="text-end">Valor/ponto</th><th>Status</th></tr>
-            </thead>
-            <tbody>
-              {% for cfg in cfg_global %}
-                <tr>
-                  <td><span class="sv-chip sv-chip--info">GLOBAL</span></td>
-                  <td class="text-end sv-money">{{ brl(cfg.base_reais) }}</td>
-                  <td class="text-end sv-money">{{ brl(cfg.valor_por_ponto) }}</td>
-                  <td><span class="sv-status {{ 'sv-status--success' if cfg.ativo else 'sv-status--muted' }}">{{ 'Ativa' if cfg.ativo else 'Inativa' }}</span></td>
-                </tr>
-              {% endfor %}
-              {% for cfg in cfg_by_emp %}
-                <tr>
-                  <td><span class="sv-chip">EMP {{ cfg.emp }}</span></td>
-                  <td class="text-end sv-money">{{ brl(cfg.base_reais) }}</td>
-                  <td class="text-end sv-money">{{ brl(cfg.valor_por_ponto) }}</td>
-                  <td><span class="sv-status {{ 'sv-status--success' if cfg.ativo else 'sv-status--muted' }}">{{ 'Ativa' if cfg.ativo else 'Inativa' }}</span></td>
-                </tr>
-              {% endfor %}
-              {% if not cfg_global and not cfg_by_emp %}
-                <tr><td colspan="4"><div class="sv-empty-state">Nenhuma configuração cadastrada.</div></td></tr>
-              {% endif %}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </section>
-
-    <section class="sv-panel sv-admin-layout-full">
-      <div class="sv-panel-head">
-        <div>
-          <h2 class="sv-panel-title">Resultado do fechamento {% if ver_fech %}#{{ ver_fech }}{% endif %}</h2>
-          <div class="sv-panel-subtitle">Visualização congelada do fechamento manual selecionado.</div>
-        </div>
-        {% if ver_fech %}<span class="sv-chip sv-chip--success">Selecionado</span>{% else %}<span class="sv-chip sv-chip--muted">Nenhum selecionado</span>{% endif %}
-      </div>
-      <div class="sv-panel-body">
-        <div class="sv-table-card">
-          <table class="sv-data-table sv-result-table">
-            <thead>
-              <tr><th>EMP</th><th>Vendedor</th><th class="text-end">Vendeu</th><th class="text-end">Pontos</th><th class="text-end">Bônus extra</th><th class="text-end">Total</th></tr>
-            </thead>
-            <tbody>
-              {% for r in res_fech %}
-                <tr>
-                  <td><span class="sv-chip">EMP {{ r.emp }}</span></td>
-                  <td>{{ r.vendedor }}</td>
-                  <td class="text-end sv-money">{{ brl(r.valor_vendido) }}</td>
-                  <td class="text-end sv-number">{{ '%.2f'|format(r.pontos or 0) }}</td>
-                  <td class="text-end sv-money">{{ brl(r.bonus_extra) }}</td>
-                  <td class="text-end sv-money"><b style="color:#ffd39b;">{{ brl(r.total) }}</b></td>
-                </tr>
-              {% else %}
-                <tr><td colspan="6"><div class="sv-empty-state">Selecione um fechamento para visualizar os resultados congelados.</div></td></tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </section>
-  </div>
-</div>
-
-{% if import_preview %}
-<div class="modal fade sv-import-itens-modal" id="importItensParadosModal" tabindex="-1" aria-labelledby="importItensParadosModalLabel" aria-hidden="true">
-  <div class="modal-dialog modal-xl modal-dialog-scrollable">
-    <div class="modal-content">
-      <form method="post">
-        <input type="hidden" name="acao" value="confirmar_importacao">
-        <input type="hidden" name="import_token" value="{{ import_preview.token }}">
-        <div class="modal-header">
-          <div>
-            <h5 class="modal-title" id="importItensParadosModalLabel">Validação da importação</h5>
-            <div class="sv-help-text">Confira os itens validados. Depois selecione as lojas e a vigência para gravar.</div>
-          </div>
-          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Fechar"></button>
-        </div>
-        <div class="modal-body">
-          <div class="sv-admin-kpis mb-3">
-            <div class="sv-kpi-card"><small>Linhas lidas</small><strong>{{ import_preview.total_linhas }}</strong><span>Total da planilha</span></div>
-            <div class="sv-kpi-card"><small>Válidos</small><strong>{{ import_preview.total_validos }}</strong><span>Prontos para aplicar</span></div>
-            <div class="sv-kpi-card"><small>Alertas</small><strong>{{ import_preview.total_alertas }}</strong><span>MESTRE sem venda histórica</span></div>
-            <div class="sv-kpi-card"><small>Inválidos</small><strong>{{ import_preview.total_invalidos }}</strong><span>Não serão importados</span></div>
-          </div>
-
-          <section class="sv-panel mb-3">
-            <div class="sv-panel-head">
-              <div>
-                <h2 class="sv-panel-title">Aplicar em lojas e vigência</h2>
-                <div class="sv-panel-subtitle">A mesma lista validada será cadastrada para todas as EMPs selecionadas.</div>
-              </div>
-              <button type="button" class="btn btn-sv-soft btn-sm" id="btnToggleImportEmps">Selecionar todas</button>
-            </div>
-            <div class="sv-panel-body">
-              <div class="sv-form-grid sv-form-grid-3">
-                <div class="sv-field" style="grid-column:1/-1;">
-                  <label class="sv-form-label">Lojas/EMPs</label>
-                  {% if emps_options %}
-                    <div class="sv-emp-checks" id="importEmpChecks">
-                      {% for emp_item in emps_options %}
-                        <label class="sv-emp-check"><input type="checkbox" name="import_emps" value="{{ emp_item }}"> EMP {{ emp_item }}</label>
-                      {% endfor %}
-                    </div>
-                  {% else %}
-                    <div class="sv-empty-state">Nenhuma EMP localizada automaticamente. Informe manualmente abaixo.</div>
-                  {% endif %}
-                  <input class="form-control mt-2" name="import_emps_manual" placeholder="Ou informe EMPs manualmente, separadas por vírgula. Ex.: 101, 201">
-                </div>
-                <div class="sv-field">
-                  <label class="sv-form-label">Data início</label>
-                  <input class="form-control" type="date" name="import_data_inicio" required>
-                </div>
-                <div class="sv-field">
-                  <label class="sv-form-label">Data fim</label>
-                  <input class="form-control" type="date" name="import_data_fim" required>
-                </div>
-              </div>
-            </div>
-          </section>
-
-          <section class="sv-panel mb-3">
-            <div class="sv-panel-head">
-              <div>
-                <h2 class="sv-panel-title">Itens validados</h2>
-                <div class="sv-panel-subtitle">Mostrando até 150 itens na prévia. Todos os válidos serão gravados na confirmação.</div>
-              </div>
-              <span class="sv-chip sv-chip--success">{{ import_preview.total_validos }} válido(s)</span>
-            </div>
-            <div class="sv-panel-body">
-              <div class="sv-table-card">
-                <table class="sv-data-table sv-modal-table">
-                  <thead><tr><th>Linha</th><th>MESTRE</th><th>INTERNO</th><th>Descrição</th><th>Marca base</th><th>Status</th></tr></thead>
-                  <tbody>
-                    {% for row in import_preview.validos[:150] %}
-                      <tr>
-                        <td class="sv-number">{{ row.linha }}</td>
-                        <td><span class="sv-code">{{ row.mestre }}</span></td>
-                        <td>{{ row.interno or '-' }}</td>
-                        <td>{{ row.descricao or row.descricao_base or '-' }}</td>
-                        <td>{{ row.marca_base or '-' }}</td>
-                        <td>
-                          {% if row.encontrado %}
-                            <span class="sv-status sv-status--success">Encontrado</span>
-                          {% else %}
-                            <span class="sv-status sv-status--warning">Alerta</span>
-                            <div class="sv-help-text">{{ row.alerta }}</div>
-                          {% endif %}
-                        </td>
-                      </tr>
-                    {% else %}
-                      <tr><td colspan="6"><div class="sv-empty-state">Nenhum item válido na planilha.</div></td></tr>
-                    {% endfor %}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </section>
-
-          {% if import_preview.invalidos %}
-          <section class="sv-panel sv-danger-zone">
-            <div class="sv-panel-head">
-              <div>
-                <h2 class="sv-panel-title">Linhas não importadas</h2>
-                <div class="sv-panel-subtitle">Corrija a planilha se quiser incluir esses itens.</div>
-              </div>
-              <span class="sv-chip sv-chip--danger">{{ import_preview.total_invalidos }} inválida(s)</span>
-            </div>
-            <div class="sv-panel-body">
-              <div class="sv-table-card">
-                <table class="sv-data-table sv-modal-table">
-                  <thead><tr><th>Linha</th><th>MESTRE</th><th>INTERNO</th><th>Descrição</th><th>Motivo</th></tr></thead>
-                  <tbody>
-                    {% for row in import_preview.invalidos[:120] %}
-                      <tr>
-                        <td class="sv-number">{{ row.linha }}</td>
-                        <td>{{ row.mestre or '-' }}</td>
-                        <td>{{ row.interno or '-' }}</td>
-                        <td>{{ row.descricao or '-' }}</td>
-                        <td>{{ row.motivo }}</td>
-                      </tr>
-                    {% endfor %}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </section>
-          {% endif %}
-        </div>
-        <div class="modal-footer">
-          <button type="button" class="btn btn-sv-soft" data-bs-dismiss="modal">Voltar e revisar</button>
-          <button class="btn btn-sv-primary" {% if not import_preview.total_validos %}disabled{% endif %}>Confirmar importação</button>
+  <div class="ipa-grid mb-3">
+    <section class="ipa-panel">
+      <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-3"><div><h2 class="ipa-section-title">Importar vendas dos itens parados</h2><div class="ipa-section-sub">Use a planilha de vendas com VENDEDOR, EMP, MOVIMENTO, MESTRE e VALOR_TOTAL. A competência é substituída integralmente.</div></div><span class="ipa-chip">Saldo mensal</span></div>
+      <form class="ipa-drop" method="post" action="{{ url_for('admin_itens_parados_vendas_importar') }}" enctype="multipart/form-data">
+        <div class="ipa-form-grid">
+          <div class="ipa-c2"><div class="ipa-label">Ano</div><input class="form-control" type="number" name="ano" value="{{ ano_vendas }}" min="2000" max="2100" required></div>
+          <div class="ipa-c2"><div class="ipa-label">Mês</div><select class="form-select" name="mes" required>{% for item in range(1,13) %}<option value="{{ item }}" {% if item == mes_vendas %}selected{% endif %}>{{ '%02d'|format(item) }}</option>{% endfor %}</select></div>
+          <div class="ipa-c6"><div class="ipa-label">Planilha de vendas</div><input class="form-control" type="file" name="arquivo_vendas_itens" accept=".xlsx,.xlsm" required></div>
+          <div class="ipa-c2"><button class="btn btn-warning fw-bold w-100" type="submit">Importar</button></div>
         </div>
       </form>
-    </div>
+      {% if sales_batch %}<div class="ipa-section-sub mt-3">Arquivo: <b>{{ sales_batch.arquivo_origem }}</b> · período encontrado {% if sales_batch.data_inicio %}{{ sales_batch.data_inicio.strftime('%d/%m/%Y') }}{% else %}—{% endif %} a {% if sales_batch.data_fim %}{{ sales_batch.data_fim.strftime('%d/%m/%Y') }}{% else %}—{% endif %}.</div>{% endif %}
+    </section>
+
+    <section class="ipa-panel">
+      <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-3"><div><h2 class="ipa-section-title">Importar produtos ativos</h2><div class="ipa-section-sub">Modelo obrigatório: CODIGO, DESCRICAO e LOJA_ATIVA. Para um produto em várias lojas, repita o código em uma linha por EMP.</div></div><a class="btn btn-sm btn-outline-warning" href="{{ url_for('admin_itens_parados_modelo') }}">Modelo Excel</a></div>
+      <form class="ipa-drop" method="post" enctype="multipart/form-data">
+        <input type="hidden" name="acao" value="importar_itens">
+        <div class="ipa-form-grid">
+          <div class="ipa-c9"><div class="ipa-label">Planilha de produtos</div><input class="form-control" type="file" name="arquivo_itens" accept=".xlsx,.xlsm,.csv" required></div>
+          <div class="ipa-c3"><button class="btn btn-warning fw-bold w-100" type="submit">Importar itens</button></div>
+        </div>
+      </form>
+    </section>
+
+    <section class="ipa-panel">
+      <div class="mb-3"><h2 class="ipa-section-title">Cadastro rápido</h2><div class="ipa-section-sub">Ative um produto manualmente para uma loja específica.</div></div>
+      <form method="post">
+        <input type="hidden" name="acao" value="criar_item">
+        <div class="ipa-form-grid">
+          <div class="ipa-c3"><div class="ipa-label">EMP</div><input class="form-control" name="emp" required></div>
+          <div class="ipa-c3"><div class="ipa-label">Código</div><input class="form-control" name="codigo" required></div>
+          <div class="ipa-c6"><div class="ipa-label">Descrição</div><input class="form-control" name="descricao"></div>
+          <div class="ipa-c12 text-end"><button class="btn btn-warning fw-bold">Salvar item</button></div>
+        </div>
+      </form>
+    </section>
+
+    <section class="ipa-panel">
+      <div class="mb-3"><h2 class="ipa-section-title">Avisos da última venda importada</h2><div class="ipa-section-sub">Usuários não encontrados, EMP sem vínculo ou linhas ignoradas aparecem aqui.</div></div>
+      {% if sales_warnings %}<ul class="ipa-warnings">{% for item in sales_warnings[:100] %}<li>{{ item }}</li>{% endfor %}</ul>{% else %}<div class="ipa-empty">Nenhum aviso registrado para a competência.</div>{% endif %}
+    </section>
   </div>
-</div>
-{% endif %}
 
-{% endblock %}
-
-
-{% block extra_scripts %}
-<script>
-(function(){
-  const toggleBtn = document.getElementById('btnToggleImportEmps');
-  const checksWrap = document.getElementById('importEmpChecks');
-  if (toggleBtn && checksWrap) {
-    toggleBtn.addEventListener('click', function(){
-      const checks = Array.from(checksWrap.querySelectorAll('input[type="checkbox"]'));
-      const shouldCheck = checks.some(function(c){ return !c.checked; });
-      checks.forEach(function(c){ c.checked = shouldCheck; });
-      toggleBtn.textContent = shouldCheck ? 'Limpar seleção' : 'Selecionar todas';
-    });
-  }
-  {% if import_preview %}
-    const modalEl = document.getElementById('importItensParadosModal');
-    if (modalEl && window.bootstrap) {
-      const modal = new bootstrap.Modal(modalEl, {backdrop: 'static'});
-      modal.show();
-    }
+  {% if sales_rows %}
+  <section class="ipa-panel mb-3">
+    <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-3"><div><h2 class="ipa-section-title">Saldos importados</h2><div class="ipa-section-sub">Prévia dos saldos consolidados por funcionário e EMP.</div></div><span class="ipa-muted">Até 200 registros</span></div>
+    <div class="ipa-table-wrap"><table class="table table-sm ipa-table"><colgroup><col style="width:10%"><col style="width:42%"><col style="width:14%"><col style="width:14%"><col style="width:20%"></colgroup><thead><tr><th>EMP</th><th>Funcionário</th><th class="text-end">Linhas</th><th class="text-end">Itens</th><th class="text-end">Saldo</th></tr></thead><tbody>{% for row in sales_rows %}<tr><td>{{ row.emp }}</td><td class="ipa-user">{{ row.usuario_nome }}</td><td class="text-end">{{ row.qtd_linhas }}</td><td class="text-end">{{ row.qtd_itens }}</td><td class="text-end ipa-money">{{ row.valor_total|brl_rs }}</td></tr>{% endfor %}</tbody></table></div>
+  </section>
   {% endif %}
-})();
-</script>
+
+  <section class="ipa-panel">
+    <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-3"><div><h2 class="ipa-section-title">Produtos ativos por loja</h2><div class="ipa-section-sub">Esses são os códigos habilitados na ação de itens parados.</div></div></div>
+    <form method="get" class="ipa-form-grid mb-3">
+      <div class="ipa-c2"><div class="ipa-label">EMP</div><select class="form-select" name="f_emp"><option value="">Todas</option>{% for item in emps_options %}<option value="{{ item }}" {% if item == filtro_emp %}selected{% endif %}>{{ item }}</option>{% endfor %}</select></div>
+      <div class="ipa-c4"><div class="ipa-label">Código</div><input class="form-control" name="f_codigo" value="{{ filtro_codigo }}"></div>
+      <div class="ipa-c2"><div class="ipa-label">Status</div><select class="form-select" name="f_status"><option value="ativos" {% if filtro_status == 'ativos' %}selected{% endif %}>Ativos</option><option value="inativos" {% if filtro_status == 'inativos' %}selected{% endif %}>Inativos</option><option value="todos" {% if filtro_status == 'todos' %}selected{% endif %}>Todos</option></select></div>
+      <div class="ipa-c2"><button class="btn btn-outline-light w-100">Filtrar</button></div>
+    </form>
+    {% if itens %}<div class="ipa-table-wrap"><table class="table table-sm ipa-table"><colgroup><col style="width:9%"><col style="width:16%"><col style="width:47%"><col style="width:10%"><col style="width:18%"></colgroup><thead><tr><th>EMP</th><th>Código</th><th>Descrição</th><th>Status</th><th class="text-end">Ações</th></tr></thead><tbody>{% for item in itens %}<tr><td>{{ item.emp }}</td><td class="ipa-user">{{ item.codigo }}</td><td>{{ item.descricao or '—' }}</td><td>{% if item.ativo %}<span class="badge text-bg-success">Ativo</span>{% else %}<span class="badge text-bg-secondary">Inativo</span>{% endif %}</td><td><div class="ipa-actions"><form method="post"><input type="hidden" name="acao" value="alternar_item"><input type="hidden" name="item_id" value="{{ item.id }}"><button class="btn btn-sm btn-outline-warning">{% if item.ativo %}Desativar{% else %}Ativar{% endif %}</button></form><form method="post" onsubmit="return confirm('Remover este item?')"><input type="hidden" name="acao" value="excluir_item"><input type="hidden" name="item_id" value="{{ item.id }}"><button class="btn btn-sm btn-outline-danger">Excluir</button></form></div></td></tr>{% endfor %}</tbody></table></div>{% else %}<div class="ipa-empty">Nenhum produto encontrado.</div>{% endif %}
+    <div class="d-flex justify-content-between align-items-center mt-3"><span class="ipa-muted">Página {{ pagina }} de {{ total_paginas }}</span><div class="d-flex gap-2">{% if pagina > 1 %}<a class="btn btn-sm btn-outline-light" href="{{ url_for('admin_itens_parados', page=pagina-1, f_emp=filtro_emp, f_codigo=filtro_codigo, f_status=filtro_status) }}">Anterior</a>{% endif %}{% if pagina < total_paginas %}<a class="btn btn-sm btn-outline-light" href="{{ url_for('admin_itens_parados', page=pagina+1, f_emp=filtro_emp, f_codigo=filtro_codigo, f_status=filtro_status) }}">Próxima</a>{% endif %}</div></div>
+  </section>
+</div>
 {% endblock %}

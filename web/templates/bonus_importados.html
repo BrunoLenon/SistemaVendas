@@ -43,7 +43,7 @@
   .bonus-page .form-control,.bonus-page .form-select{background:rgba(9,9,10,.88);border-color:rgba(255,255,255,.11);color:#fff;border-radius:12px;min-height:40px}
   .bonus-page .form-control:focus,.bonus-page .form-select:focus{border-color:rgba(255,166,58,.5);box-shadow:0 0 0 .18rem rgba(255,145,0,.12)}
   .bonus-page .form-select option{background:#151515;color:#fff}
-  .bonus-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:15px}
+  .bonus-kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin-top:15px}
   .bonus-kpi{border:1px solid rgba(255,255,255,.08);border-radius:17px;background:rgba(0,0,0,.24);padding:14px;min-width:0}
   .bonus-kpi small{display:block;color:#9da2aa;text-transform:uppercase;letter-spacing:.075em;font-size:10px;font-weight:900}
   .bonus-kpi strong{display:block;font-size:23px;line-height:1.08;margin-top:8px;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -150,15 +150,18 @@
         <div class="bonus-kpi"><small>Registros visíveis</small><strong>{{ summary.registros|default(0) }}</strong><span>Após os filtros</span></div>
         <div class="bonus-kpi"><small>Valor parcial</small><strong>{{ summary.valor_parcial_visivel|default(0)|brl_rs }}</strong><span>Provisão importada</span></div>
         <div class="bonus-kpi"><small>Valor final</small><strong>{{ summary.bonus_visivel|default(0)|brl_rs }}</strong><span>Total liberado importado</span></div>
+        <div class="bonus-kpi"><small>Itens parados</small><strong>{{ summary.itens_parados_visivel|default(0)|brl_rs }}</strong><span>Saldo por usuário e EMP</span></div>
         <div class="bonus-kpi"><small>Sem vínculo</small><strong>{{ summary.nao_vinculados|default(0) }}</strong><span>Usuários não localizados</span></div>
       {% elif role == 'gerente' %}
         <div class="bonus-kpi"><small>Meu valor final</small><strong>{{ summary.bonus_proprio|default(0)|brl_rs }}</strong><span>Resultado do gerente</span></div>
         <div class="bonus-kpi"><small>Valor final da equipe</small><strong>{{ summary.bonus_equipe|default(0)|brl_rs }}</strong><span>Vendedores e mecânicos</span></div>
         <div class="bonus-kpi"><small>Provisão da equipe</small><strong>{{ summary.valor_parcial_equipe|default(0)|brl_rs }}</strong><span>Valor parcial importado</span></div>
+        <div class="bonus-kpi"><small>Itens parados das lojas</small><strong>{{ summary.itens_parados_lojas|default(0)|brl_rs }}</strong><span>Saldo total das EMPs vinculadas</span></div>
         <div class="bonus-kpi"><small>Equipe visível</small><strong>{{ summary.quantidade_equipe|default(0) }}</strong><span>Funcionários das lojas vinculadas</span></div>
       {% else %}
         <div class="bonus-kpi"><small>Meu valor parcial</small><strong>{{ summary.valor_parcial_proprio|default(0)|brl_rs }}</strong><span>Provisão importada</span></div>
         <div class="bonus-kpi"><small>Meu valor final</small><strong>{{ summary.bonus_proprio|default(0)|brl_rs }}</strong><span>Valor efetivamente liberado</span></div>
+        <div class="bonus-kpi"><small>Meus itens parados</small><strong>{{ summary.itens_parados_visivel|default(0)|brl_rs }}</strong><span>Saldo na competência</span></div>
         <div class="bonus-kpi"><small>Competência</small><strong>{{ '%02d'|format(mes) }}/{{ ano }}</strong><span>Período consultado</span></div>
         <div class="bonus-kpi"><small>Registros próprios</small><strong>{{ own_rows|length }}</strong><span>Nenhum dado de outro usuário</span></div>
       {% endif %}
@@ -240,6 +243,7 @@
         <small>EMP {{ item.emp }} · {{ item.quantidade }} funcionário(s)</small>
         <strong>{{ item.bonus_final|brl_rs }}</strong>
         <div class="bonus-muted mt-1">Parcial: {{ item.valor_parcial|brl_rs }}</div>
+        <div class="bonus-muted mt-1">Itens parados: {{ item.itens_parados|brl_rs }}</div>
       </div>
       {% endfor %}
     </div>
@@ -256,7 +260,7 @@
       <div class="bonus-table-wrap">
         <table class="table table-sm bonus-table bonus-table-seller">
           <colgroup>
-            <col style="width:4%"><col style="width:12%"><col style="width:7%"><col style="width:9%"><col style="width:9%"><col style="width:6.5%"><col style="width:9%"><col style="width:7.5%"><col style="width:7%"><col style="width:7%"><col style="width:7%"><col style="width:7.5%"><col style="width:4.5%">
+            <col style="width:4%"><col style="width:11%"><col style="width:6.5%"><col style="width:8.5%"><col style="width:8.5%"><col style="width:5.5%"><col style="width:8.5%"><col style="width:7%"><col style="width:6.5%"><col style="width:6.5%"><col style="width:6.5%"><col style="width:8%"><col style="width:7.5%"><col style="width:5%">
           </colgroup>
           <thead><tr>
             <th>EMP</th><th>Usuário</th>
@@ -269,6 +273,7 @@
             <th class="text-end">Valor meta<span class="bonus-muted">T</span></th>
             <th class="text-end">Parcial<span class="bonus-muted">U</span></th>
             <th class="text-end">Final<span class="bonus-muted">V</span></th>
+            <th class="text-end">Itens parados</th>
             <th>Status</th><th></th>
           </tr></thead>
           <tbody>
@@ -284,6 +289,7 @@
               <td class="text-end">{{ row.valor_meta|brl_rs }}</td>
               <td class="text-end">{{ row.valor_parcial|brl_rs }}</td>
               <td class="text-end bonus-money bonus-final">{{ row.bonus_final|brl_rs }}</td>
+              <td class="text-end">{{ row.saldo_itens_parados_usuario|brl_rs }}</td>
               <td><div class="bonus-status-stack">{{ status_badge(row, true) }}{% if role == 'admin' %}{{ binding_badge(row) }}{% endif %}</div></td>
               <td class="bonus-action"><a class="btn btn-sm btn-outline-warning" href="{{ url_for('bonus_importados', ano=ano, mes=mes, emp=emp_filter, usuario=user_filter, registro=row.id) }}#detalhes">Ver</a></td>
             </tr>
@@ -302,11 +308,11 @@
       </div>
       <div class="bonus-table-wrap">
         <table class="table table-sm bonus-table bonus-table-manager">
-          <colgroup><col style="width:6%"><col style="width:16%"><col style="width:13%"><col style="width:13%"><col style="width:13%"><col style="width:10%"><col style="width:10%"><col style="width:10%"><col style="width:6%"><col style="width:3%"></colgroup>
-          <thead><tr><th>EMP</th><th>Usuário</th><th class="text-end">Loja anterior<span class="bonus-muted">J</span></th><th class="text-end">Loja atual<span class="bonus-muted">K</span></th><th class="text-end">Importado loja<span class="bonus-muted">O</span></th><th class="text-end">Valor meta<span class="bonus-muted">T</span></th><th class="text-end">Parcial<span class="bonus-muted">U</span></th><th class="text-end">Final<span class="bonus-muted">V</span></th><th>Status</th><th></th></tr></thead>
+          <colgroup><col style="width:5%"><col style="width:14%"><col style="width:11%"><col style="width:11%"><col style="width:11%"><col style="width:9%"><col style="width:9%"><col style="width:9%"><col style="width:11%"><col style="width:7%"><col style="width:3%"></colgroup>
+          <thead><tr><th>EMP</th><th>Usuário</th><th class="text-end">Loja anterior<span class="bonus-muted">J</span></th><th class="text-end">Loja atual<span class="bonus-muted">K</span></th><th class="text-end">Importado loja<span class="bonus-muted">O</span></th><th class="text-end">Valor meta<span class="bonus-muted">T</span></th><th class="text-end">Parcial<span class="bonus-muted">U</span></th><th class="text-end">Final<span class="bonus-muted">V</span></th><th class="text-end">Itens parados loja</th><th>Status</th><th></th></tr></thead>
           <tbody>{% for row in manager_rows %}<tr>
             <td>{{ row.emp }}</td><td class="fw-bold bonus-user-cell">{{ row.usuario_nome }}</td>
-            <td class="text-end">{{ row.loja_anterior|brl_rs }}</td><td class="text-end">{{ row.loja_atual|brl_rs }}</td><td class="text-end">{{ row.importado_loja|brl_rs }}</td><td class="text-end">{{ row.valor_meta|brl_rs }}</td><td class="text-end">{{ row.valor_parcial|brl_rs }}</td><td class="text-end bonus-money bonus-final">{{ row.bonus_final|brl_rs }}</td>
+            <td class="text-end">{{ row.loja_anterior|brl_rs }}</td><td class="text-end">{{ row.loja_atual|brl_rs }}</td><td class="text-end">{{ row.importado_loja|brl_rs }}</td><td class="text-end">{{ row.valor_meta|brl_rs }}</td><td class="text-end">{{ row.valor_parcial|brl_rs }}</td><td class="text-end bonus-money bonus-final">{{ row.bonus_final|brl_rs }}</td><td class="text-end">{{ row.saldo_itens_parados_loja|brl_rs }}</td>
             <td><div class="bonus-status-stack">{{ status_badge(row, true) }}{% if role == 'admin' %}{{ binding_badge(row) }}{% endif %}</div></td>
             <td class="bonus-action"><a class="btn btn-sm btn-outline-warning" href="{{ url_for('bonus_importados', ano=ano, mes=mes, emp=emp_filter, usuario=user_filter, registro=row.id) }}#detalhes">Ver</a></td>
           </tr>{% endfor %}</tbody>
@@ -323,10 +329,10 @@
       </div>
       <div class="bonus-table-wrap">
         <table class="table table-sm bonus-table bonus-table-mechanic">
-          <colgroup><col style="width:8%"><col style="width:25%"><col style="width:20%"><col style="width:16%"><col style="width:16%"><col style="width:11%"><col style="width:4%"></colgroup>
-          <thead><tr><th>EMP</th><th>Usuário</th><th class="text-end">Faturado<span class="bonus-muted">F</span></th><th class="text-end">Parcial<span class="bonus-muted">U</span></th><th class="text-end">Final<span class="bonus-muted">V</span></th><th>Status</th><th></th></tr></thead>
+          <colgroup><col style="width:7%"><col style="width:22%"><col style="width:17%"><col style="width:14%"><col style="width:14%"><col style="width:14%"><col style="width:9%"><col style="width:3%"></colgroup>
+          <thead><tr><th>EMP</th><th>Usuário</th><th class="text-end">Faturado<span class="bonus-muted">F</span></th><th class="text-end">Parcial<span class="bonus-muted">U</span></th><th class="text-end">Final<span class="bonus-muted">V</span></th><th class="text-end">Itens parados</th><th>Status</th><th></th></tr></thead>
           <tbody>{% for row in mechanic_rows %}<tr>
-            <td>{{ row.emp }}</td><td class="fw-bold bonus-user-cell">{{ row.usuario_nome }}</td><td class="text-end">{{ row.mecanico_faturado|brl_rs }}</td><td class="text-end">{{ row.valor_parcial|brl_rs }}</td><td class="text-end bonus-money bonus-final">{{ row.bonus_final|brl_rs }}</td>
+            <td>{{ row.emp }}</td><td class="fw-bold bonus-user-cell">{{ row.usuario_nome }}</td><td class="text-end">{{ row.mecanico_faturado|brl_rs }}</td><td class="text-end">{{ row.valor_parcial|brl_rs }}</td><td class="text-end bonus-money bonus-final">{{ row.bonus_final|brl_rs }}</td><td class="text-end">{{ row.saldo_itens_parados_usuario|brl_rs }}</td>
             <td><div class="bonus-status-stack">{{ status_badge(row, true) }}{% if role == 'admin' %}{{ binding_badge(row) }}{% endif %}</div></td>
             <td class="bonus-action"><a class="btn btn-sm btn-outline-warning" href="{{ url_for('bonus_importados', ano=ano, mes=mes, emp=emp_filter, usuario=user_filter, registro=row.id) }}#detalhes">Ver</a></td>
           </tr>{% endfor %}</tbody>
@@ -362,6 +368,7 @@
         <div class="bonus-metric"><small>R · Bônus importado</small><strong>{{ selected.bonus_importado|brl_rs }}</strong></div>
         <div class="bonus-metric"><small>T · Valor meta</small><strong>{{ selected.valor_meta|brl_rs }}</strong></div>
         <div class="bonus-metric"><small>U · Valor parcial — provisão</small><strong>{{ selected.valor_parcial|brl_rs }}</strong></div>
+        <div class="bonus-metric"><small>Saldo de itens parados do vendedor</small><strong>{{ selected.saldo_itens_parados_usuario|brl_rs }}</strong></div>
         <div class="bonus-metric highlight"><small>V · Valor final — liberado após todos os requisitos</small><strong>{{ selected.bonus_final|brl_rs }}</strong></div>
       </div>
       {% elif selected.funcao == 'GERENTE' %}
@@ -372,6 +379,7 @@
         <div class="bonus-metric"><small>O · Importado loja</small><strong>{{ selected.importado_loja|brl_rs }}</strong></div>
         <div class="bonus-metric"><small>T · Valor meta</small><strong>{{ selected.valor_meta|brl_rs }}</strong></div>
         <div class="bonus-metric"><small>U · Valor parcial — provisão</small><strong>{{ selected.valor_parcial|brl_rs }}</strong></div>
+        <div class="bonus-metric"><small>Saldo de itens parados da loja</small><strong>{{ selected.saldo_itens_parados_loja|brl_rs }}</strong></div>
         <div class="bonus-metric highlight"><small>V · Valor final — liberado após todos os requisitos</small><strong>{{ selected.bonus_final|brl_rs }}</strong></div>
       </div>
       {% elif selected.funcao == 'MECANICO' %}
@@ -379,6 +387,7 @@
         <div class="bonus-group-title">Informações do mecânico</div>
         <div class="bonus-metric"><small>F · Valor faturado pelo mecânico</small><strong>{{ selected.mecanico_faturado|brl_rs }}</strong></div>
         <div class="bonus-metric"><small>U · Valor parcial — provisão</small><strong>{{ selected.valor_parcial|brl_rs }}</strong></div>
+        <div class="bonus-metric"><small>Saldo de itens parados do mecânico</small><strong>{{ selected.saldo_itens_parados_usuario|brl_rs }}</strong></div>
         <div class="bonus-metric highlight"><small>V · Valor final — liberado após todos os requisitos</small><strong>{{ selected.bonus_final|brl_rs }}</strong></div>
       </div>
       {% endif %}

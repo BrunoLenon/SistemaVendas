@@ -282,6 +282,7 @@ from bonus_importados_routes import register_bonus_importados_routes  # noqa: E4
 from core_routes import register_core_routes  # noqa: E402
 from dashboard_routes import register_dashboard_routes  # noqa: E402
 from itens_parados_routes import register_itens_parados_routes  # noqa: E402
+from itens_parados_snapshot import register_itens_parados_snapshot_routes  # noqa: E402
 from promocoes_qr_routes import register_promocoes_qr_routes  # noqa: E402
 
 app.register_blueprint(auth_bp)
@@ -299,6 +300,7 @@ register_core_routes(
 register_dashboard_routes(app, login_required_fn=_login_required)
 register_bonus_importados_routes(app)
 register_bonus_atacado_routes(app)
+register_itens_parados_snapshot_routes(app)
 register_itens_parados_routes(
     app,
     login_required_fn=_login_required,

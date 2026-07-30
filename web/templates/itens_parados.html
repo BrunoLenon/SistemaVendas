@@ -1,768 +1,110 @@
 {% extends "base.html" %}
-
-{% block title %}Itens parados{% endblock %}
-
-{% macro brl(v) -%}
-  R$ {{ "{:,.2f}".format(v or 0).replace(",", "X").replace(".", ",").replace("X", ".") }}
-{%- endmacro %}
+{% block title %}Itens Parados{% endblock %}
 
 {% block extra_head %}
 <style>
-  .ip-user-page{
-    --ip-bg: rgba(16, 19, 24, 0.90);
-    --ip-bg-soft: rgba(23, 28, 35, 0.96);
-    --ip-border: rgba(255,255,255,.08);
-    --ip-border-strong: rgba(198, 164, 111, .22);
-    --ip-text: #f3f4f6;
-    --ip-muted: #9aa4b2;
-    --ip-accent: #c6a46f;
-    --ip-accent-2: #b28b54;
-    --ip-good: #59c98b;
-    --ip-shadow: 0 14px 34px rgba(0,0,0,.22);
-    color: var(--ip-text);
-    overflow-x: hidden;
-  }
-
-  .ip-user-page .ip-shell{
-    width: 100%;
-    max-width: none;
-    margin: 0 auto;
-    padding: 8px 10px 34px;
-    box-sizing: border-box;
-  }
-
-  .ip-user-page .ip-hero,
-  .ip-user-page .ip-card{
-    background:
-      radial-gradient(circle at top right, rgba(198,164,111,.08), transparent 34%),
-      linear-gradient(135deg, rgba(23,28,35,.97), rgba(16,19,24,.98));
-    border: 1px solid var(--ip-border);
-    border-radius: 22px;
-    box-shadow: var(--ip-shadow);
-  }
-
-  .ip-user-page .ip-hero{
-    position: relative;
-    overflow: hidden;
-    padding: 24px 28px 22px;
-    margin-bottom: 18px;
-  }
-
-  .ip-user-page .ip-hero::after{
-    content: "";
-    position: absolute;
-    right: -76px;
-    bottom: -76px;
-    width: 210px;
-    height: 210px;
-    border-radius: 999px;
-    background: radial-gradient(circle, rgba(198,164,111,.12), transparent 68%);
-    pointer-events: none;
-  }
-
-  .ip-user-page .ip-hero-top{
-    display: flex;
-    justify-content: space-between;
-    gap: 16px;
-    align-items: flex-start;
-    flex-wrap: wrap;
-  }
-
-  .ip-user-page .ip-eyebrow,
-  .ip-user-page .ip-section-label,
-  .ip-user-page .ip-chip{
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    border-radius: 999px;
-    font-weight: 700;
-  }
-
-  .ip-user-page .ip-eyebrow{
-    padding: 6px 10px;
-    background: rgba(198,164,111,.10);
-    border: 1px solid var(--ip-border-strong);
-    color: #ead8ba;
-    font-size: 12px;
-    letter-spacing: .04em;
-    text-transform: uppercase;
-  }
-
-  .ip-user-page .ip-title{
-    margin: 12px 0 6px;
-    font-size: clamp(1.6rem, 2vw, 2.35rem);
-    line-height: 1.05;
-    font-weight: 800;
-  }
-
-  .ip-user-page .ip-subtitle,
-  .ip-user-page .ip-card-subtitle,
-  .ip-user-page .ip-toolbar-meta,
-  .ip-user-page .ip-helper,
-  .ip-user-page .ip-muted{
-    color: var(--ip-muted);
-  }
-
-  .ip-user-page .ip-subtitle{
-    margin: 0;
-    max-width: 780px;
-    font-size: .97rem;
-  }
-
-  .ip-user-page .ip-hero-actions{
-    display: flex;
-    gap: 10px;
-    flex-wrap: wrap;
-  }
-
-  .ip-user-page .ip-chip-row,
-  .ip-user-page .ip-stat-grid,
-  .ip-user-page .ip-filters-grid,
-  .ip-user-page .ip-summary-grid,
-  .ip-user-page .ip-bottom-grid{
-    display: grid;
-    gap: 14px;
-  }
-
-  .ip-user-page .ip-chip-row{
-    grid-template-columns: repeat(3, minmax(0, max-content));
-    margin-top: 16px;
-  }
-
-  .ip-user-page .ip-chip{
-    padding: 8px 12px;
-    background: rgba(255,255,255,.04);
-    border: 1px solid rgba(255,255,255,.06);
-    color: #e4ebf3;
-    font-size: .82rem;
-  }
-
-  .ip-user-page .ip-chip strong{ color: #fff; }
-
-  .ip-user-page .ip-card{
-    overflow: hidden;
-    margin-bottom: 18px;
-  }
-
-  .ip-user-page .ip-card-head{
-    padding: 18px 22px 0;
-    display: flex;
-    justify-content: space-between;
-    gap: 12px;
-    align-items: flex-start;
-    flex-wrap: wrap;
-  }
-
-  .ip-user-page .ip-card-body{
-    padding: 18px 22px 22px;
-  }
-
-  .ip-user-page .ip-card-body + .ip-card-body{
-    border-top: 1px solid rgba(255,255,255,.06);
-  }
-
-  .ip-user-page .ip-section-label{
-    padding: 4px 10px;
-    background: rgba(255,255,255,.04);
-    color: #dde5ed;
-    font-size: .76rem;
-    margin-bottom: 12px;
-  }
-
-  .ip-user-page .ip-card-title,
-  .ip-user-page .ip-card-title-sm{
-    margin: 0;
-    font-weight: 800;
-  }
-
-  .ip-user-page .ip-card-title{ font-size: 1.14rem; }
-  .ip-user-page .ip-card-title-sm{ font-size: 1.02rem; }
-
-  .ip-user-page .ip-card-subtitle{
-    margin: 6px 0 0;
-    font-size: .88rem;
-  }
-
-  .ip-user-page .ip-filters-grid{
-    grid-template-columns: repeat(12, minmax(0, 1fr));
-    align-items: end;
-  }
-
-  .ip-user-page .ip-col-2{ grid-column: span 2; }
-  .ip-user-page .ip-col-3{ grid-column: span 3; }
-  .ip-user-page .ip-col-12{ grid-column: 1 / -1; }
-
-  .ip-user-page .ip-label{
-    display: block;
-    margin-bottom: 7px;
-    color: #d7dde5;
-    font-size: .84rem;
-    font-weight: 600;
-  }
-
-  .ip-user-page .form-control,
-  .ip-user-page .form-select{
-    min-height: 44px;
-    background: rgba(255,255,255,.03);
-    border: 1px solid rgba(255,255,255,.08);
-    color: #f8fafc;
-    border-radius: 14px;
-    box-shadow: none;
-  }
-
-  .ip-user-page .form-control::placeholder{ color: #768395; }
-  .ip-user-page .form-control:focus,
-  .ip-user-page .form-select:focus{
-    background: rgba(255,255,255,.045);
-    border-color: rgba(198,164,111,.48);
-    box-shadow: 0 0 0 .2rem rgba(198,164,111,.12);
-    color: #fff;
-  }
-
-  .ip-user-page .ip-filter-actions{
-    display: flex;
-    gap: 10px;
-    flex-wrap: wrap;
-    justify-content: flex-start;
-  }
-
-  .ip-user-page .ip-btn-primary,
-  .ip-user-page .ip-btn-secondary{
-    border-radius: 12px;
-    min-height: 42px;
-    padding: .62rem .95rem;
-    font-weight: 700;
-    box-shadow: none !important;
-  }
-
-  .ip-user-page .ip-btn-primary{
-    background: linear-gradient(180deg, #c6a46f, #b28b54);
-    border-color: #b28b54;
-    color: #1d1407;
-  }
-
-  .ip-user-page .ip-btn-primary:hover{
-    background: linear-gradient(180deg, #d0b07c, #b9935f);
-    border-color: #b9935f;
-    color: #161007;
-  }
-
-  .ip-user-page .ip-btn-secondary{
-    background: rgba(255,255,255,.04);
-    border-color: rgba(255,255,255,.10);
-    color: #e6edf5;
-  }
-
-  .ip-user-page .ip-btn-secondary:hover{
-    background: rgba(255,255,255,.08);
-    border-color: rgba(255,255,255,.14);
-    color: #fff;
-  }
-
-  .ip-user-page .ip-stat-grid{
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-
-  .ip-user-page .ip-stat{
-    background: rgba(255,255,255,.03);
-    border: 1px solid rgba(255,255,255,.06);
-    border-radius: 18px;
-    padding: 14px 16px;
-    min-height: 96px;
-  }
-
-  .ip-user-page .ip-stat-label{
-    color: var(--ip-muted);
-    font-size: .78rem;
-    text-transform: uppercase;
-    letter-spacing: .04em;
-  }
-
-  .ip-user-page .ip-stat-value{
-    margin-top: 8px;
-    font-size: 1.58rem;
-    font-weight: 800;
-    line-height: 1.05;
-    color: #fff;
-  }
-
-  .ip-user-page .ip-stat-value.is-good{ color: #8ee8b2; }
-
-  .ip-user-page .ip-stat-meta{
-    margin-top: 6px;
-    color: #ccd4dd;
-    font-size: .82rem;
-  }
-
-  .ip-user-page .ip-toolbar{
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 12px;
-    flex-wrap: wrap;
-    margin-bottom: 12px;
-  }
-
-  .ip-user-page .ip-table-wrap{
-    border: 1px solid rgba(255,255,255,.06);
-    border-radius: 16px;
-    overflow: hidden;
-  }
-
-  .ip-user-page .table-responsive{
-    border: 0;
-    border-radius: 0;
-    overflow-x: auto;
-  }
-
-  .ip-user-page .table{
-    margin-bottom: 0;
-    color: #f1f5f9;
-    --bs-table-bg: transparent;
-    --bs-table-color: #f1f5f9;
-    --bs-table-striped-bg: rgba(255,255,255,.02);
-    --bs-table-hover-bg: rgba(198,164,111,.06);
-    --bs-table-border-color: rgba(255,255,255,.06);
-  }
-
-  .ip-user-page .table thead th{
-    background: rgba(255,255,255,.035) !important;
-    color: #dbe2ea;
-    text-transform: uppercase;
-    letter-spacing: .04em;
-    font-size: .74rem;
-    font-weight: 700;
-    padding-top: 13px;
-    padding-bottom: 13px;
-    border-bottom-width: 1px;
-    white-space: nowrap;
-  }
-
-  .ip-user-page .table td,
-  .ip-user-page .table th{ border-color: rgba(255,255,255,.06); vertical-align: middle; }
-
-  .ip-user-page code{
-    color: #f8d8a2;
-    background: rgba(198,164,111,.08);
-    padding: .2rem .45rem;
-    border-radius: 8px;
-  }
-
-  .ip-user-page .ip-status{
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 6px 10px;
-    border-radius: 999px;
-    font-size: .78rem;
-    font-weight: 700;
-    background: rgba(93,188,124,.10);
-    color: #95dfaa;
-    border: 1px solid rgba(93,188,124,.18);
-  }
-
-  .ip-user-page .ip-empty{
-    text-align: center;
-    color: var(--ip-muted);
-    padding: 24px 12px !important;
-  }
-
-
-  .ip-user-page .ip-drawer{
-    border: 1px solid rgba(255,255,255,.06);
-    border-radius: 18px;
-    background: rgba(255,255,255,.02);
-    overflow: hidden;
-  }
-
-  .ip-user-page .ip-drawer + .ip-drawer{ margin-top: 12px; }
-
-  .ip-user-page .ip-drawer-summary{
-    list-style: none;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 14px;
-    padding: 16px 18px;
-    cursor: pointer;
-    user-select: none;
-  }
-
-  .ip-user-page .ip-drawer-summary::-webkit-details-marker,
-  .ip-user-page .ip-drawer-summary::marker{ display: none; content: ''; }
-
-  .ip-user-page .ip-drawer-summary:hover{
-    background: rgba(255,255,255,.025);
-  }
-
-  .ip-user-page .ip-drawer-title-wrap{
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
-
-  .ip-user-page .ip-capsule{
-    display: inline-flex;
-    align-items: center;
-    width: fit-content;
-    padding: 5px 10px;
-    border-radius: 999px;
-    font-size: .74rem;
-    font-weight: 800;
-    letter-spacing: .04em;
-    text-transform: uppercase;
-    background: rgba(198,164,111,.10);
-    color: #ead8ba;
-    border: 1px solid rgba(198,164,111,.22);
-  }
-
-  .ip-user-page .ip-drawer-meta{
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-    color: #d7dde5;
-    font-size: .84rem;
-  }
-
-  .ip-user-page .ip-drawer-toggle{
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 7px 11px;
-    border-radius: 999px;
-    background: rgba(255,255,255,.04);
-    border: 1px solid rgba(255,255,255,.08);
-    color: #eef2f7;
-    font-weight: 700;
-  }
-
-  .ip-user-page .ip-drawer-toggle::before{
-    content: '+';
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 18px;
-    height: 18px;
-    border-radius: 999px;
-    background: rgba(198,164,111,.12);
-    color: #f0ddb9;
-    font-size: .95rem;
-    line-height: 1;
-  }
-
-  .ip-user-page .ip-drawer[open] .ip-drawer-toggle::before{ content: '−'; }
-  .ip-user-page .ip-drawer[open] .ip-drawer-toggle span{ display:none; }
-  .ip-user-page .ip-drawer[open] .ip-drawer-toggle::after{ content:'Recolher'; }
-
-  .ip-user-page .ip-drawer-body{
-    padding: 0 0 0;
-    border-top: 1px solid rgba(255,255,255,.06);
-  }
-
-  .ip-user-page .alert{
-    border-radius: 16px;
-    border: 1px solid rgba(255,255,255,.08);
-    margin-bottom: 16px;
-    background: rgba(163, 122, 37, 0.13);
-    color: #ffe8ba;
-  }
-
-  @media (max-width: 1400px){
-    .ip-user-page .ip-chip-row{ grid-template-columns: 1fr; }
-  }
-
-  @media (max-width: 1200px){
-    .ip-user-page .ip-stat-grid,
-    .ip-user-page .ip-bottom-grid{
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-  }
-
-  @media (max-width: 992px){
-    .ip-user-page .ip-filters-grid{ grid-template-columns: repeat(6, minmax(0, 1fr)); }
-    .ip-user-page .ip-col-2,
-    .ip-user-page .ip-col-3{ grid-column: span 3; }
-    .ip-user-page .ip-stat-grid,
-    .ip-user-page .ip-summary-grid,
-    .ip-user-page .ip-bottom-grid{ grid-template-columns: 1fr; }
-  }
-
-  @media (max-width: 640px){
-    .ip-user-page .ip-shell{ padding-inline: 0; }
-    .ip-user-page .ip-drawer-summary{ padding: 14px 14px; }
-    .ip-user-page .ip-drawer-meta{ justify-content: flex-start; }
-    .ip-user-page .ip-hero,
-    .ip-user-page .ip-card-head,
-    .ip-user-page .ip-card-body{ padding-left: 16px; padding-right: 16px; }
-    .ip-user-page .ip-filters-grid{ grid-template-columns: 1fr; }
-    .ip-user-page .ip-col-2,
-    .ip-user-page .ip-col-3,
-    .ip-user-page .ip-col-12{ grid-column: auto; }
-    .ip-user-page .ip-stat-grid{ grid-template-columns: 1fr; }
-  }
+  .ip-page{max-width:1500px;margin:0 auto;padding:4px 0 28px;color:#f8fafc}
+  .ip-hero,.ip-panel{border:1px solid rgba(255,255,255,.085);border-radius:22px;background:linear-gradient(180deg,rgba(255,255,255,.052),rgba(255,255,255,.022));box-shadow:0 18px 44px rgba(0,0,0,.22)}
+  .ip-hero{padding:20px;background:radial-gradient(circle at top right,rgba(255,145,0,.20),transparent 34%),linear-gradient(180deg,rgba(255,255,255,.052),rgba(255,255,255,.022))}
+  .ip-panel{padding:17px}
+  .ip-title{font-size:29px;font-weight:950;letter-spacing:-.04em;margin:0}
+  .ip-sub{color:#b9bdc5;font-size:13px;max-width:920px;margin-top:7px;line-height:1.55}
+  .ip-chip{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border:1px solid rgba(255,174,72,.25);border-radius:999px;background:rgba(255,145,0,.09);color:#ffc477;font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.06em}
+  .ip-filter{display:flex;gap:9px;align-items:end;flex-wrap:wrap}
+  .ip-label{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#a9adb5;font-weight:900;margin-bottom:6px}
+  .ip-page .form-control,.ip-page .form-select{background:rgba(9,9,10,.88);border-color:rgba(255,255,255,.11);color:#fff;border-radius:12px;min-height:40px}
+  .ip-page .form-select option{background:#151515;color:#fff}
+  .ip-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:14px}
+  .ip-kpi{padding:13px 14px;border:1px solid rgba(255,255,255,.075);border-radius:16px;background:rgba(0,0,0,.19);min-width:0}
+  .ip-kpi small{display:block;color:#969ba4;font-size:10px;font-weight:850;text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px}
+  .ip-kpi strong{font-size:18px;line-height:1.15;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ip-store-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:13px}
+  .ip-store{padding:15px;border:1px solid rgba(255,255,255,.08);border-radius:17px;background:rgba(0,0,0,.20)}
+  .ip-store-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px}
+  .ip-store-head strong{font-size:15px}.ip-store-head span{font-size:10px;color:#999fa8;text-transform:uppercase;letter-spacing:.06em}
+  .ip-store-values{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+  .ip-store-value{padding:10px;border-radius:13px;background:rgba(255,255,255,.035)}
+  .ip-store-value small{display:block;color:#999fa8;font-size:9px;text-transform:uppercase;letter-spacing:.07em;font-weight:850;margin-bottom:5px}
+  .ip-store-value b{font-size:13px}
+  .ip-table-wrap{width:100%;overflow:hidden;border:1px solid rgba(255,255,255,.075);border-radius:17px;background:rgba(0,0,0,.18)}
+  .ip-table{width:100%;table-layout:fixed;margin:0;font-size:12px;color:#f5f5f5}
+  .ip-table>:not(caption)>*>*{padding:11px 9px;border-color:rgba(255,255,255,.065);vertical-align:middle;background:transparent;color:inherit}
+  .ip-table thead th{font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:#b8bdc6;font-weight:900;line-height:1.25;white-space:normal}
+  .ip-table tbody tr:nth-child(even){background:rgba(255,255,255,.025)}
+  .ip-user{font-weight:900;overflow-wrap:anywhere}.ip-money{font-variant-numeric:tabular-nums;font-weight:900;color:#ffc477;white-space:nowrap}
+  .ip-empty{padding:42px 18px;text-align:center;color:#8f949d}
+  @media(max-width:950px){.ip-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.ip-store-grid{grid-template-columns:1fr 1fr}}
+  @media(max-width:650px){.ip-filter>*{width:100%}.ip-filter .btn{width:100%}.ip-store-grid{grid-template-columns:1fr}.ip-table{font-size:10px}.ip-table>:not(caption)>*>*{padding:9px 5px}}
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="ip-user-page">
-  <div class="ip-shell">
-    <section class="ip-hero">
-      <div class="ip-hero-top">
-        <div>
-          <span class="ip-eyebrow">Operação · Itens parados</span>
-          <h1 class="ip-title">Itens Parados</h1>
-          <p class="ip-subtitle">Visual operacional alinhado ao novo padrão SaaS: filtros organizados, leitura mais limpa por EMP e menor ruído visual na análise de ranking, itens elegíveis e faixas de bônus.</p>
-        </div>
-        <div class="ip-hero-actions">
-          <a class="btn ip-btn-secondary" href="{{ url_for('dashboard') }}">Voltar</a>
-          <a class="btn ip-btn-primary" href="{{ url_for('itens_parados_pdf', mes=mes, ano=ano, emp=emp_param, vendedor=vendedor, data_inicio=data_inicio_param, data_fim=data_fim_param) }}">Exportar PDF</a>
+<div class="ip-page">
+  <section class="ip-hero mb-3">
+    <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
+      <div>
+        <div class="ip-chip">📦 Saldo importado</div>
+        <h1 class="ip-title mt-2">Itens Parados</h1>
+        <div class="ip-sub">Valores consolidados da planilha de vendas de itens parados. A página apenas consulta o saldo mensal por funcionário e EMP, sem recalcular a base geral de vendas.</div>
+      </div>
+      <form method="get" class="ip-filter">
+        <div><div class="ip-label">Ano</div><input class="form-control" type="number" name="ano" value="{{ ano }}" min="2000" max="2100" style="width:105px"></div>
+        <div><div class="ip-label">Mês</div><select class="form-select" name="mes" style="width:105px">{% for item in range(1,13) %}<option value="{{ item }}" {% if item == mes %}selected{% endif %}>{{ '%02d'|format(item) }}</option>{% endfor %}</select></div>
+        {% if role in ['admin','gerente','supervisor'] %}
+        <div><div class="ip-label">EMP</div><select class="form-select" name="emp" style="width:125px"><option value="">Todas</option>{% for item in emp_options %}<option value="{{ item }}" {% if item == emp_filter %}selected{% endif %}>{{ item }}</option>{% endfor %}</select></div>
+        <div><div class="ip-label">Funcionário</div><select class="form-select" name="usuario" style="width:210px"><option value="">Todos</option>{% for item in user_options %}<option value="{{ item }}" {% if item == user_filter %}selected{% endif %}>{{ item }}</option>{% endfor %}</select></div>
+        {% endif %}
+        <button class="btn btn-warning fw-bold" type="submit">Aplicar</button>
+        <a class="btn btn-outline-light" href="{{ url_for('itens_parados_pdf', ano=ano, mes=mes, emp=emp_filter, usuario=user_filter) }}">PDF</a>
+      </form>
+    </div>
+    <div class="ip-kpis">
+      <div class="ip-kpi"><small>Saldo visível</small><strong>{{ summary.valor_total|default(0)|brl_rs }}</strong></div>
+      <div class="ip-kpi"><small>Funcionários</small><strong>{{ summary.usuarios|default(0) }}</strong></div>
+      <div class="ip-kpi"><small>Empresas</small><strong>{{ summary.emps|default(0) }}</strong></div>
+      <div class="ip-kpi"><small>Linhas consolidadas</small><strong>{{ summary.linhas|default(0) }}</strong></div>
+    </div>
+  </section>
+
+  {% if emp_cards and role in ['admin','gerente','supervisor'] %}
+  <section class="ip-panel mb-3">
+    <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
+      <div><h2 class="h6 fw-bold mb-1">Resumo por loja</h2><div class="text-secondary small">Visível somente para administração, gerente e supervisor conforme os vínculos de EMP.</div></div>
+    </div>
+    <div class="ip-store-grid">
+      {% for card in emp_cards %}
+      <div class="ip-store">
+        <div class="ip-store-head"><strong>EMP {{ card.emp }}</strong><span>{{ card.usuarios }} usuário(s)</span></div>
+        <div class="ip-store-values">
+          <div class="ip-store-value"><small>Saldo da loja</small><b>{{ card.valor_total|brl_rs }}</b></div>
+          <div class="ip-store-value"><small>Itens ativos</small><b>{{ card.itens_ativos }}</b></div>
+          <div class="ip-store-value"><small>Linhas de venda</small><b>{{ card.linhas }}</b></div>
+          <div class="ip-store-value"><small>Itens distintos somados</small><b>{{ card.itens_distintos }}</b></div>
         </div>
       </div>
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}
 
-      <div class="ip-chip-row">
-        <div class="ip-chip">Período analisado <strong>{{ periodo_label }}</strong></div>
-        <div class="ip-chip">EMPs com campanha ativa <strong>{{ emp_scopes|join(', ') if emp_scopes else 'Nenhuma' }}</strong></div>
-        <div class="ip-chip">Cartões carregados <strong>{{ emp_cards|length }}</strong></div>
-      </div>
-    </section>
-
-    <section class="ip-card">
-      <div class="ip-card-head">
-        <div>
-          <div class="ip-section-label">Filtros</div>
-          <h2 class="ip-card-title">Refinar análise</h2>
-          <p class="ip-card-subtitle">Todos os filtros se ajustam sem empurrar a página para rolagem horizontal no desktop.</p>
-        </div>
-      </div>
-      <div class="ip-card-body">
-        <form method="get" action="{{ url_for('itens_parados') }}" class="ip-filters-grid">
-          <div class="ip-col-2">
-            <label class="ip-label">Mês</label>
-            <input class="form-control" type="number" name="mes" min="1" max="12" value="{{ mes }}">
-          </div>
-          <div class="ip-col-2">
-            <label class="ip-label">Ano</label>
-            <input class="form-control" type="number" name="ano" min="2020" max="2100" value="{{ ano }}">
-          </div>
-          <div class="ip-col-2">
-            <label class="ip-label">Data início</label>
-            <input class="form-control" type="date" name="data_inicio" value="{{ data_inicio_param }}">
-          </div>
-          <div class="ip-col-2">
-            <label class="ip-label">Data fim</label>
-            <input class="form-control" type="date" name="data_fim" value="{{ data_fim_param }}">
-          </div>
-          {% if role == 'admin' %}
-            <div class="ip-col-2">
-              <label class="ip-label">EMP</label>
-              <input class="form-control" name="emp" placeholder="101" value="{{ emp_param }}">
-            </div>
-          {% endif %}
-          {% if role in ['admin', 'gerente', 'supervisor'] %}
-            <div class="ip-col-2">
-              <label class="ip-label">Vendedor</label>
-              <select class="form-select" name="vendedor">
-                <option value="">Todos</option>
-                {% for v in vendedores_lista %}
-                  <option value="{{ v }}" {% if vendedor == v %}selected{% endif %}>{{ v }}</option>
-                {% endfor %}
-              </select>
-            </div>
-          {% endif %}
-          <div class="ip-col-12">
-            <div class="ip-filter-actions">
-              <button class="btn ip-btn-primary" type="submit">Atualizar</button>
-            </div>
-          </div>
-        </form>
-      </div>
-    </section>
-
-    {% if not emp_cards %}
-      <div class="alert">Nenhuma campanha de Itens Parados ativa foi encontrada para o período e escopo selecionados.</div>
-    {% endif %}
-
-    {% for card in emp_cards %}
-      <section class="ip-card">
-        <div class="ip-card-head">
-          <div>
-            <div class="ip-section-label">EMP {{ card.emp }}</div>
-            <h2 class="ip-card-title">Resumo da EMP {{ card.emp }}</h2>
-            <p class="ip-card-subtitle">{{ card.regra_descricao }}</p>
-          </div>
-          <div class="ip-toolbar-meta text-start text-md-end">
-            <div><strong>{{ card.total_itens }}</strong> item(ns) ativos</div>
-            <div><strong>{{ card.total_vendedores }}</strong> vendedor(es) pontuado(s)</div>
-            <div><strong>{{ brl(card.total_total) }}</strong> total da EMP</div>
-          </div>
-        </div>
-
-        <div class="ip-card-body">
-          <div class="ip-stat-grid">
-            <div class="ip-stat">
-              <div class="ip-stat-label">Vendeu (R$)</div>
-              <div class="ip-stat-value">{{ brl(card.total_vendido) }}</div>
-              <div class="ip-stat-meta">Soma vendida dos itens elegíveis no período.</div>
-            </div>
-            <div class="ip-stat">
-              <div class="ip-stat-label">Bônus base</div>
-              <div class="ip-stat-value">{{ brl(card.total_bonus_base) }}</div>
-              <div class="ip-stat-meta">Pagamento por pontuação gerada pela regra.</div>
-            </div>
-            <div class="ip-stat">
-              <div class="ip-stat-label">Bônus extra</div>
-              <div class="ip-stat-value">{{ brl(card.total_bonus_extra) }}</div>
-              <div class="ip-stat-meta">Faixas adicionais aplicadas no fechamento.</div>
-            </div>
-            <div class="ip-stat">
-              <div class="ip-stat-label">Total final</div>
-              <div class="ip-stat-value is-good">{{ brl(card.total_total) }}</div>
-              <div class="ip-stat-meta">Resultado consolidado da EMP.</div>
-            </div>
-          </div>
-        </div>
-
-        <div class="ip-card-body">
-          <div class="ip-toolbar">
-            <div>
-              <h3 class="ip-card-title-sm">Ranking da EMP</h3>
-              <div class="ip-toolbar-meta">Classificação dos vendedores filtrados no período atual.</div>
-            </div>
-          </div>
-          <div class="ip-table-wrap">
-            <div class="table-responsive">
-              <table class="table table-hover align-middle mb-0">
-                <thead>
-                  <tr>
-                    <th style="width:70px;">#</th>
-                    <th>Vendedor</th>
-                    <th class="text-end">Vendeu (R$)</th>
-                    <th class="text-end">Pontos</th>
-                    <th class="text-end">Bônus base</th>
-                    <th class="text-end">Bônus extra</th>
-                    <th class="text-end">Total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {% if card.ranking %}
-                    {% for row in card.ranking %}
-                      <tr>
-                        <td>{{ row.posicao }}</td>
-                        <td><strong>{{ row.vendedor }}</strong></td>
-                        <td class="text-end">{{ brl(row.valor_vendido) }}</td>
-                        <td class="text-end">{{ "%.2f"|format(row.pontos) }}</td>
-                        <td class="text-end">{{ brl(row.bonus_base) }}</td>
-                        <td class="text-end">{{ brl(row.bonus_extra) }}</td>
-                        <td class="text-end fw-bold">{{ brl(row.total) }}</td>
-                      </tr>
-                    {% endfor %}
-                  {% else %}
-                    <tr><td colspan="7" class="ip-empty">Nenhum vendedor pontuou nesta EMP no período filtrado.</td></tr>
-                  {% endif %}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-
-        <div class="ip-card-body">
-          <div class="ip-bottom-grid" style="grid-template-columns: minmax(0, 1.8fr) minmax(320px, .9fr);">
-            <section>
-              <div class="ip-toolbar">
-                <div>
-                  <h3 class="ip-card-title-sm">Itens elegíveis</h3>
-                  <div class="ip-toolbar-meta">Agora em formato de gaveta por EMP, para reduzir peso visual e abrir só quando precisar consultar os itens ativos.</div>
-                </div>
-              </div>
-              <details class="ip-drawer">
-                <summary class="ip-drawer-summary">
-                  <div class="ip-drawer-title-wrap">
-                    <span class="ip-capsule">EMP {{ card.emp }}</span>
-                    <div class="ip-card-title-sm">Abrir itens elegíveis da EMP {{ card.emp }}</div>
-                    <div class="ip-toolbar-meta">Clique para visualizar os produtos ativos que entram no cálculo da pontuação.</div>
-                  </div>
-                  <div class="ip-drawer-meta">
-                    <strong>{{ card.itens|length }}</strong> item(ns)
-                    <span class="ip-drawer-toggle"><span>Expandir</span></span>
-                  </div>
-                </summary>
-                <div class="ip-drawer-body">
-                  <div class="ip-table-wrap" style="border:0; border-radius:0;">
-                    <div class="table-responsive">
-                      <table class="table table-hover align-middle mb-0">
-                        <thead>
-                          <tr>
-                            <th style="width:120px;">Código</th>
-                            <th>Descrição</th>
-                            <th class="text-end" style="width:140px;">Multiplicador</th>
-                            <th style="width:190px;">Período</th>
-                            <th style="width:110px;">Status</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {% for it in card.itens %}
-                            <tr>
-                              <td><code>{{ it.codigo }}</code></td>
-                              <td>{{ it.descricao or '-' }}</td>
-                              <td class="text-end">{{ "%.2f"|format(it.multiplicador_pontos) }}x</td>
-                              <td>
-                                {% if it.data_inicio or it.data_fim %}
-                                  {{ it.data_inicio.strftime('%d/%m/%Y') if it.data_inicio else '...' }} até {{ it.data_fim.strftime('%d/%m/%Y') if it.data_fim else '...' }}
-                                {% else %}
-                                  <span class="ip-muted">Sem vigência definida</span>
-                                {% endif %}
-                              </td>
-                              <td>
-                                <span class="ip-status">{{ 'Ativo' if it.ativo else 'Inativo' }}</span>
-                              </td>
-                            </tr>
-                          {% endfor %}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                </div>
-              </details>
-            </section>
-
-            <section>
-              <div class="ip-toolbar">
-                <div>
-                  <h3 class="ip-card-title-sm">Faixas de bônus</h3>
-                  <div class="ip-toolbar-meta">Faixas extras configuradas para a EMP ou escopo global.</div>
-                </div>
-              </div>
-              <div class="ip-table-wrap">
-                <div class="table-responsive">
-                  <table class="table table-hover align-middle mb-0">
-                    <thead>
-                      <tr>
-                        <th>Pontos mínimos</th>
-                        <th class="text-end">Bônus extra</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {% if card.faixas %}
-                        {% for faixa in card.faixas %}
-                          <tr>
-                            <td>{{ "%.2f"|format(faixa.min_pontos) }}</td>
-                            <td class="text-end">{{ brl(faixa.bonus_valor) }}</td>
-                          </tr>
-                        {% endfor %}
-                      {% else %}
-                        <tr><td colspan="2" class="ip-empty">Nenhuma faixa cadastrada.</td></tr>
-                      {% endif %}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </section>
-          </div>
-        </div>
-      </section>
-    {% endfor %}
-  </div>
+  <section class="ip-panel">
+    <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-3">
+      <div><h2 class="h6 fw-bold mb-1">Saldo por funcionário e loja</h2><div class="text-secondary small">O mesmo usuário pode aparecer em mais de uma EMP quando possuir múltiplos vínculos.</div></div>
+      <div class="text-secondary small">Competência {{ '%02d'|format(mes) }}/{{ ano }}</div>
+    </div>
+    {% if rows %}
+    <div class="ip-table-wrap">
+      <table class="table table-sm ip-table">
+        <colgroup><col style="width:12%"><col style="width:44%"><col style="width:14%"><col style="width:14%"><col style="width:16%"></colgroup>
+        <thead><tr><th>EMP</th><th>Funcionário</th><th class="text-end">Linhas</th><th class="text-end">Itens</th><th class="text-end">Saldo</th></tr></thead>
+        <tbody>
+          {% for row in rows %}
+          <tr><td>{{ row.emp }}</td><td class="ip-user">{{ row.usuario_nome }}</td><td class="text-end">{{ row.qtd_linhas }}</td><td class="text-end">{{ row.qtd_itens }}</td><td class="text-end ip-money">{{ row.valor_total|brl_rs }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}<div class="ip-empty">Nenhum saldo de itens parados foi importado para esta competência.</div>{% endif %}
+  </section>
 </div>
 {% endblock %}

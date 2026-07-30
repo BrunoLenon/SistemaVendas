@@ -34,9 +34,11 @@ from db import (
     Usuario,
     UsuarioEmp,
     ensure_bonus_importados_schema,
+    ensure_itens_parados_snapshot_schema,
 )
 from security_utils import audit, normalize_role
 from sv_utils import emp_sort_key
+from itens_parados_snapshot import attach_saldos_to_bonus_rows
 
 
 MAX_UPLOAD_BYTES = 15 * 1024 * 1024
@@ -768,6 +770,24 @@ def bonus_importados():
                 row.usuario_nome,
             )
         )
+        try:
+            ensure_itens_parados_snapshot_schema()
+            itens_parados_summary = attach_saldos_to_bonus_rows(
+                db, rows, ano=ano, mes=mes
+            )
+        except Exception:
+            current_app.logger.exception(
+                "Falha ao carregar saldo de itens parados no Bônus Varejo"
+            )
+            itens_parados_summary = {
+                "total_visivel": Decimal("0"),
+                "total_lojas": Decimal("0"),
+            }
+            for row in rows:
+                row.saldo_itens_parados = Decimal("0")
+                row.saldo_itens_parados_usuario = Decimal("0")
+                row.saldo_itens_parados_loja = Decimal("0")
+
         seller_rows = [row for row in rows if row.funcao == "VENDEDOR"]
         manager_rows = [row for row in rows if row.funcao == "GERENTE"]
         mechanic_rows = [row for row in rows if row.funcao == "MECANICO"]
@@ -810,11 +830,15 @@ def bonus_importados():
                     "quantidade": 0,
                     "valor_parcial": Decimal("0"),
                     "bonus_final": Decimal("0"),
+                    "itens_parados": Decimal("0"),
                 },
             )
             item["quantidade"] += 1
             item["valor_parcial"] += Decimal(str(row.valor_parcial or 0))
             item["bonus_final"] += Decimal(str(row.bonus_final or 0))
+            item["itens_parados"] += Decimal(
+                str(getattr(row, "saldo_itens_parados_usuario", 0) or 0)
+            )
         team_by_emp = sorted(
             team_by_emp_map.values(), key=lambda item: emp_sort_key(item["emp"])
         )
@@ -831,6 +855,8 @@ def bonus_importados():
             "valor_parcial_equipe": _sum_field(team_rows, "valor_parcial"),
             "bonus_equipe": _sum_field(team_rows, "bonus_final"),
             "quantidade_equipe": len(team_rows),
+            "itens_parados_visivel": itens_parados_summary["total_visivel"],
+            "itens_parados_lojas": itens_parados_summary["total_lojas"],
             "nao_vinculados": sum(1 for row in rows if row.usuario_id is None),
         }
 

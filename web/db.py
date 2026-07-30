@@ -72,6 +72,7 @@ Base = declarative_base()
 _METAS_LOJAS_SCHEMA_READY = False
 _BONUS_IMPORTADOS_SCHEMA_READY = False
 _BONUS_ATACADO_SCHEMA_READY = False
+_ITENS_PARADOS_SNAPSHOT_SCHEMA_READY = False
 
 
 
@@ -249,6 +250,77 @@ class BonusAtacadoUsuario(Base):
             "mes",
         ),
         Index("ix_bonus_atacado_emp_periodo", "emp", "ano", "mes"),
+    )
+
+
+class ItensParadosVendaImportacaoLote(Base):
+    """Auditoria das importações mensais das vendas de itens parados."""
+
+    __tablename__ = "itens_parados_vendas_importacoes"
+
+    id = Column(Integer, primary_key=True)
+    ano = Column(Integer, nullable=False, index=True)
+    mes = Column(Integer, nullable=False, index=True)
+    arquivo_origem = Column(String(255), nullable=False)
+    importado_por_user_id = Column(Integer, nullable=True, index=True)
+    importado_por = Column(String(80), nullable=True)
+    importado_em = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
+    data_inicio = Column(Date, nullable=True)
+    data_fim = Column(Date, nullable=True)
+    linhas_lidas = Column(Integer, nullable=False, default=0)
+    linhas_importadas = Column(Integer, nullable=False, default=0)
+    linhas_ignoradas = Column(Integer, nullable=False, default=0)
+    registros_usuarios = Column(Integer, nullable=False, default=0)
+    valor_total = Column(Numeric(18, 4), nullable=False, default=0)
+    avisos_json = Column(Text, nullable=True)
+
+    __table_args__ = (
+        Index(
+            "ix_itens_parados_vendas_lote_periodo",
+            "ano",
+            "mes",
+            "importado_em",
+        ),
+    )
+
+
+class ItensParadosVendaUsuario(Base):
+    """Saldo mensal importado por usuário e EMP para itens parados."""
+
+    __tablename__ = "itens_parados_vendas_usuarios"
+
+    id = Column(Integer, primary_key=True)
+    lote_id = Column(Integer, nullable=False, index=True)
+    ano = Column(Integer, nullable=False, index=True)
+    mes = Column(Integer, nullable=False, index=True)
+    usuario_id = Column(Integer, nullable=True, index=True)
+    usuario_nome = Column(String(100), nullable=False, index=True)
+    emp = Column(String(30), nullable=False, index=True)
+    valor_total = Column(Numeric(18, 4), nullable=False, default=0)
+    qtd_linhas = Column(Integer, nullable=False, default=0)
+    qtd_itens = Column(Integer, nullable=False, default=0)
+    importado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "ano",
+            "mes",
+            "emp",
+            "usuario_nome",
+            name="uq_itens_parados_vendas_usuario_periodo_emp",
+        ),
+        Index(
+            "ix_itens_parados_vendas_usuario_periodo",
+            "usuario_nome",
+            "ano",
+            "mes",
+        ),
+        Index(
+            "ix_itens_parados_vendas_emp_periodo",
+            "emp",
+            "ano",
+            "mes",
+        ),
     )
 
 
@@ -1940,6 +2012,62 @@ def ensure_bonus_atacado_schema(force: bool = False):
 
     _BONUS_ATACADO_SCHEMA_READY = True
 
+
+
+def ensure_itens_parados_snapshot_schema(force: bool = False):
+    """Garante as tabelas enxutas do saldo importado de itens parados."""
+    global _ITENS_PARADOS_SNAPSHOT_SCHEMA_READY
+    if _ITENS_PARADOS_SNAPSHOT_SCHEMA_READY and not force:
+        return
+
+    with engine.connect() as conn:
+        conn = conn.execution_options(isolation_level="AUTOCOMMIT")
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS itens_parados_vendas_importacoes (
+                id SERIAL PRIMARY KEY,
+                ano INTEGER NOT NULL,
+                mes INTEGER NOT NULL,
+                arquivo_origem VARCHAR(255) NOT NULL,
+                importado_por_user_id INTEGER,
+                importado_por VARCHAR(80),
+                importado_em TIMESTAMP NOT NULL DEFAULT NOW(),
+                data_inicio DATE,
+                data_fim DATE,
+                linhas_lidas INTEGER NOT NULL DEFAULT 0,
+                linhas_importadas INTEGER NOT NULL DEFAULT 0,
+                linhas_ignoradas INTEGER NOT NULL DEFAULT 0,
+                registros_usuarios INTEGER NOT NULL DEFAULT 0,
+                valor_total NUMERIC(18,4) NOT NULL DEFAULT 0,
+                avisos_json TEXT
+            );
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS itens_parados_vendas_usuarios (
+                id SERIAL PRIMARY KEY,
+                lote_id INTEGER NOT NULL,
+                ano INTEGER NOT NULL,
+                mes INTEGER NOT NULL,
+                usuario_id INTEGER,
+                usuario_nome VARCHAR(100) NOT NULL,
+                emp VARCHAR(30) NOT NULL,
+                valor_total NUMERIC(18,4) NOT NULL DEFAULT 0,
+                qtd_linhas INTEGER NOT NULL DEFAULT 0,
+                qtd_itens INTEGER NOT NULL DEFAULT 0,
+                importado_em TIMESTAMP NOT NULL DEFAULT NOW(),
+                CONSTRAINT uq_itens_parados_vendas_usuario_periodo_emp
+                    UNIQUE (ano, mes, emp, usuario_nome)
+            );
+        """))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_itens_parados_vendas_lote_periodo ON itens_parados_vendas_importacoes (ano, mes, importado_em);"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_itens_parados_vendas_lote_usuario ON itens_parados_vendas_importacoes (importado_por_user_id);"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_itens_parados_vendas_usuario_periodo ON itens_parados_vendas_usuarios (usuario_nome, ano, mes);"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_itens_parados_vendas_emp_periodo ON itens_parados_vendas_usuarios (emp, ano, mes);"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_itens_parados_vendas_usuario_id ON itens_parados_vendas_usuarios (usuario_id);"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_itens_parados_vendas_lote_id ON itens_parados_vendas_usuarios (lote_id);"))
+        conn.execute(text("ALTER TABLE itens_parados_vendas_importacoes ENABLE ROW LEVEL SECURITY;"))
+        conn.execute(text("ALTER TABLE itens_parados_vendas_usuarios ENABLE ROW LEVEL SECURITY;"))
+
+    _ITENS_PARADOS_SNAPSHOT_SCHEMA_READY = True
 
 
 def ensure_metas_lojas_schema(force: bool = False):

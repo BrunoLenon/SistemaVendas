@@ -23,7 +23,7 @@
   .atacado-page .form-control,.atacado-page .form-select{background:rgba(9,9,10,.88);border-color:rgba(255,255,255,.11);color:#fff;border-radius:12px;min-height:40px}
   .atacado-page .form-control:focus,.atacado-page .form-select:focus{border-color:rgba(255,166,58,.5);box-shadow:0 0 0 .18rem rgba(255,145,0,.12)}
   .atacado-page .form-select option{background:#151515;color:#fff}
-  .atacado-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:14px}
+  .atacado-kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin-top:14px}
   .atacado-kpi{padding:13px 14px;border:1px solid rgba(255,255,255,.075);border-radius:16px;background:rgba(0,0,0,.19);min-width:0}
   .atacado-kpi small{display:block;color:#969ba4;font-size:10px;font-weight:850;text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px}
   .atacado-kpi strong{font-size:18px;line-height:1.15;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -34,7 +34,7 @@
   .atacado-store-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px}
   .atacado-store-head strong{font-size:15px}
   .atacado-store-head span{font-size:10px;color:#999fa8;text-transform:uppercase;letter-spacing:.06em}
-  .atacado-store-values{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+  .atacado-store-values{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}
   .atacado-store-value{padding:10px;border-radius:13px;background:rgba(255,255,255,.035)}
   .atacado-store-value small{display:block;color:#999fa8;font-size:9px;text-transform:uppercase;letter-spacing:.07em;font-weight:850;margin-bottom:5px}
   .atacado-store-value b{font-size:14px}
@@ -114,6 +114,7 @@
     <div class="atacado-kpis">
       <div class="atacado-kpi"><small>Prêmio produtos</small><strong>{{ summary.total_produtos|default(0)|brl_rs }}</strong></div>
       <div class="atacado-kpi"><small>Venda de importados</small><strong>{{ summary.importado|default(0)|brl_rs }}</strong></div>
+      <div class="atacado-kpi"><small>Itens parados</small><strong>{{ summary.itens_parados|default(0)|brl_rs }}</strong></div>
       <div class="atacado-kpi"><small>Registros visíveis</small><strong>{{ summary.registros|default(0) }}</strong></div>
       <div class="atacado-kpi"><small>Empresas visíveis</small><strong>{{ summary.emps|default(0) }}</strong></div>
     </div>
@@ -181,6 +182,7 @@
         <div class="atacado-store-values">
           <div class="atacado-store-value"><small>Loja anterior</small><b>{{ money(store.loja_anterior) }}</b></div>
           <div class="atacado-store-value"><small>Loja atual</small><b>{{ money(store.loja_atual) }}</b></div>
+          <div class="atacado-store-value"><small>Itens parados da loja</small><b>{{ money(store.itens_parados) }}</b></div>
         </div>
       </article>
       {% endfor %}
@@ -201,17 +203,17 @@
     <div class="atacado-table-wrap atacado-desktop-table">
       <table class="table table-sm atacado-table">
         {% if role in ['admin','supervisor','gerente'] %}
-        <colgroup><col style="width:6%"><col style="width:16%"><col style="width:9%"><col style="width:11%"><col style="width:12%"><col style="width:12%"><col style="width:12%"><col style="width:9%"><col style="width:13%"></colgroup>
-        <thead><tr><th>EMP</th><th>Funcionário</th><th>Função</th><th class="text-end">Prêmio produtos</th><th class="text-end">Venda anterior</th><th class="text-end">Venda atual</th><th class="text-end">Importado</th><th class="text-end">% Importado</th><th class="text-end">Falta valor vendedor</th></tr></thead>
+        <colgroup><col style="width:5%"><col style="width:14%"><col style="width:8%"><col style="width:10%"><col style="width:11%"><col style="width:11%"><col style="width:11%"><col style="width:8%"><col style="width:11%"><col style="width:11%"></colgroup>
+        <thead><tr><th>EMP</th><th>Funcionário</th><th>Função</th><th class="text-end">Prêmio produtos</th><th class="text-end">Venda anterior</th><th class="text-end">Venda atual</th><th class="text-end">Importado</th><th class="text-end">% Importado</th><th class="text-end">Falta vendedor</th><th class="text-end">Itens parados</th></tr></thead>
         <tbody>{% for row in rows %}<tr>
           <td>{{ row.emp }}</td><td class="atacado-user">{{ row.usuario_nome }}</td><td><span class="atacado-role">{{ row.funcao_exibicao }}</span></td>
-          <td class="text-end atacado-money atacado-total">{{ money(row.total_produtos) }}</td><td class="text-end atacado-money">{{ money(row.venda_anterior) }}</td><td class="text-end atacado-money">{{ money(row.venda_atual) }}</td><td class="text-end atacado-money">{{ money(row.importado) }}</td><td class="text-end atacado-money">{{ percent(row.percentual_importado) }}</td><td class="text-end atacado-money">{{ money(row.falta_valor_vendedor) }}</td>
+          <td class="text-end atacado-money atacado-total">{{ money(row.total_produtos) }}</td><td class="text-end atacado-money">{{ money(row.venda_anterior) }}</td><td class="text-end atacado-money">{{ money(row.venda_atual) }}</td><td class="text-end atacado-money">{{ money(row.importado) }}</td><td class="text-end atacado-money">{{ percent(row.percentual_importado) }}</td><td class="text-end atacado-money">{{ money(row.falta_valor_vendedor) }}</td><td class="text-end atacado-money">{{ money(row.saldo_itens_parados) }}</td>
         </tr>{% endfor %}</tbody>
         {% else %}
-        <colgroup><col style="width:8%"><col style="width:16%"><col style="width:17%"><col style="width:17%"><col style="width:16%"><col style="width:11%"><col style="width:15%"></colgroup>
-        <thead><tr><th>EMP</th><th class="text-end">Prêmio produtos</th><th class="text-end">Venda anterior</th><th class="text-end">Venda atual</th><th class="text-end">Importado</th><th class="text-end">% Importado</th><th class="text-end">Falta valor vendedor</th></tr></thead>
+        <colgroup><col style="width:7%"><col style="width:14%"><col style="width:15%"><col style="width:15%"><col style="width:14%"><col style="width:10%"><col style="width:13%"><col style="width:12%"></colgroup>
+        <thead><tr><th>EMP</th><th class="text-end">Prêmio produtos</th><th class="text-end">Venda anterior</th><th class="text-end">Venda atual</th><th class="text-end">Importado</th><th class="text-end">% Importado</th><th class="text-end">Falta vendedor</th><th class="text-end">Itens parados</th></tr></thead>
         <tbody>{% for row in rows %}<tr>
-          <td>{{ row.emp }}</td><td class="text-end atacado-money atacado-total">{{ money(row.total_produtos) }}</td><td class="text-end atacado-money">{{ money(row.venda_anterior) }}</td><td class="text-end atacado-money">{{ money(row.venda_atual) }}</td><td class="text-end atacado-money">{{ money(row.importado) }}</td><td class="text-end atacado-money">{{ percent(row.percentual_importado) }}</td><td class="text-end atacado-money">{{ money(row.falta_valor_vendedor) }}</td>
+          <td>{{ row.emp }}</td><td class="text-end atacado-money atacado-total">{{ money(row.total_produtos) }}</td><td class="text-end atacado-money">{{ money(row.venda_anterior) }}</td><td class="text-end atacado-money">{{ money(row.venda_atual) }}</td><td class="text-end atacado-money">{{ money(row.importado) }}</td><td class="text-end atacado-money">{{ percent(row.percentual_importado) }}</td><td class="text-end atacado-money">{{ money(row.falta_valor_vendedor) }}</td><td class="text-end atacado-money">{{ money(row.saldo_itens_parados) }}</td>
         </tr>{% endfor %}</tbody>
         {% endif %}
       </table>
@@ -228,6 +230,7 @@
           <div class="atacado-record-item"><small>Importado</small><b>{{ money(row.importado) }}</b></div>
           <div class="atacado-record-item"><small>% Importado</small><b>{{ percent(row.percentual_importado) }}</b></div>
           <div class="atacado-record-item"><small>Falta valor vendedor</small><b>{{ money(row.falta_valor_vendedor) }}</b></div>
+          <div class="atacado-record-item"><small>Itens parados{% if row.funcao_exibicao in ['GERENTE','SUPERVISOR'] %} da loja{% endif %}</small><b>{{ money(row.saldo_itens_parados) }}</b></div>
         </div>
       </article>
       {% endfor %}
