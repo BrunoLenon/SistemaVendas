@@ -2,6 +2,7 @@
 {% set r = (r_raw|string|lower) %}
 {% set path = request.path %}
 {% set is_admin = (r == 'admin') %}
+{% set is_financeiro = (r == 'financeiro') %}
 
 <style>
   .sb-wrap{padding:16px 14px 18px}
@@ -40,6 +41,13 @@
     <a class="sb-link {% if path.startswith('/bonus-varejo') or path == '/bonus' or path == '/admin/bonus/importar' %}active{% endif %}" href="{{ url_for('bonus_importados') }}">💰 Bônus Varejo</a>
     <a class="sb-link {% if path.startswith('/bonus-atacado') or path.startswith('/admin/bonus-atacado') %}active{% endif %}" href="{{ url_for('bonus_atacado') }}">🏷️ Bônus Atacado</a>
   </div>
+
+  {% if is_admin or is_financeiro %}
+  <div class="sb-sec">
+    <div class="lbl">Financeiro</div>
+    <a class="sb-link {% if path.startswith('/financeiro') %}active{% endif %}" href="{{ url_for('financeiro_bonus') }}">💳 Fechamento de Bônus</a>
+  </div>
+  {% endif %}
 
   <div class="sb-sec">
     <div class="lbl">Operação</div>

@@ -1,0 +1,257 @@
+{% extends "base.html" %}
+{% block title %}Financeiro{% endblock %}
+
+{% block extra_head %}
+<style>
+  .fin-page{display:grid;gap:16px}
+  .fin-panel{border:1px solid rgba(255,255,255,.09);background:linear-gradient(145deg,rgba(255,255,255,.045),rgba(255,255,255,.018));border-radius:18px;padding:18px}
+  .fin-head{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;flex-wrap:wrap}
+  .fin-kicker{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:#ffb35a;font-weight:800}
+  .fin-title{font-size:clamp(1.45rem,2.4vw,2rem);margin:4px 0 5px;font-weight:850}
+  .fin-sub{color:#aaa;margin:0;max-width:870px;font-size:13px;line-height:1.55}
+  .fin-rule{max-width:440px;border:1px solid rgba(255,179,90,.22);background:rgba(255,151,45,.075);padding:12px 14px;border-radius:14px;color:#d8d8d8;font-size:12px;line-height:1.5}
+  .fin-rule strong{color:#ffb35a}
+
+  .fin-filter{display:grid;grid-template-columns:105px 150px minmax(210px,1fr) 180px minmax(180px,1fr) auto;gap:10px;align-items:end}
+  .fin-field label{display:block;color:#a7a7a7;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;margin:0 0 6px}
+  .fin-input,.fin-select,.fin-multi summary{width:100%;height:39px;border-radius:10px;border:1px solid rgba(255,255,255,.12);background:#111;color:#f3f3f3;padding:0 11px;font-size:12px;outline:none}
+  .fin-input:focus,.fin-select:focus{border-color:rgba(255,179,90,.55)}
+  .fin-multi{position:relative}
+  .fin-multi summary{display:flex;align-items:center;justify-content:space-between;cursor:pointer;list-style:none}
+  .fin-multi summary::-webkit-details-marker{display:none}
+  .fin-multi-box{position:absolute;z-index:30;top:45px;left:0;right:0;max-height:300px;overflow:auto;border:1px solid rgba(255,179,90,.28);background:#111;border-radius:12px;padding:10px;box-shadow:0 18px 50px rgba(0,0,0,.45)}
+  .fin-multi-actions{display:flex;gap:6px;position:sticky;top:-10px;background:#111;padding:0 0 8px}
+  .fin-mini{border:1px solid rgba(255,255,255,.12);background:#191919;color:#ddd;border-radius:8px;padding:5px 8px;font-size:10px}
+  .fin-check{display:flex;align-items:center;gap:8px;padding:7px 5px;border-radius:7px;font-size:12px;color:#ddd}
+  .fin-check:hover{background:rgba(255,255,255,.04)}
+  .fin-check small{color:#777;margin-left:auto}
+  .fin-btn{height:39px;border-radius:10px;padding:0 15px;border:1px solid rgba(255,179,90,.36);background:linear-gradient(180deg,#ffad4d,#ea841b);color:#1b1005;font-weight:850;font-size:12px;white-space:nowrap}
+
+  .fin-summary{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px}
+  .fin-card{border:1px solid rgba(255,255,255,.08);background:rgba(0,0,0,.19);border-radius:14px;padding:13px;min-width:0}
+  .fin-card span{display:block;color:#8f8f8f;font-size:10px;text-transform:uppercase;letter-spacing:.06em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .fin-card strong{display:block;font-size:15px;font-weight:650;margin-top:5px;white-space:nowrap}
+  .fin-card.accent strong{color:#ffb35a}
+  .fin-card.good strong{color:#75d69b}
+  .fin-card.warn strong{color:#ffca76}
+
+  .fin-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+  .fin-actions-note{color:#888;font-size:11px;margin-right:auto}
+  .fin-action{border-radius:9px;border:1px solid rgba(255,255,255,.12);padding:8px 11px;background:#171717;color:#eee;font-size:11px;font-weight:750}
+  .fin-action.close{border-color:rgba(255,179,90,.35);color:#ffb35a}
+  .fin-action.pay{border-color:rgba(92,211,139,.35);color:#76d99d}
+  .fin-action.reopen{border-color:rgba(111,174,255,.34);color:#8bbcff}
+  .fin-action.unpay{border-color:rgba(255,126,126,.3);color:#ff9898}
+
+  .fin-store{border:1px solid rgba(255,255,255,.09);background:rgba(0,0,0,.16);border-radius:15px;overflow:hidden;margin-top:11px}
+  .fin-store-head{display:grid;grid-template-columns:minmax(220px,1fr) auto auto;gap:14px;align-items:center;padding:12px 14px;border-bottom:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.025)}
+  .fin-store-id{display:flex;align-items:center;gap:10px;min-width:0}
+  .fin-store-id input{width:17px;height:17px;accent-color:#f49a32}
+  .fin-store-name{min-width:0}
+  .fin-store-name strong{display:block;font-size:13px;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .fin-store-name span{display:block;font-size:10px;color:#888;margin-top:2px}
+  .fin-status{display:inline-flex;align-items:center;gap:6px;border:1px solid rgba(255,255,255,.11);border-radius:999px;padding:5px 9px;font-size:10px;font-weight:800;white-space:nowrap}
+  .fin-status.open{color:#ffca76;border-color:rgba(255,202,118,.3);background:rgba(255,202,118,.06)}
+  .fin-status.closed{color:#8bbcff;border-color:rgba(139,188,255,.3);background:rgba(139,188,255,.06)}
+  .fin-status.paid{color:#76d99d;border-color:rgba(118,217,157,.32);background:rgba(118,217,157,.07)}
+  .fin-store-total{text-align:right;white-space:nowrap}
+  .fin-store-total span{display:block;color:#888;font-size:9px;text-transform:uppercase;letter-spacing:.06em}
+  .fin-store-total strong{display:block;color:#ffb35a;font-size:14px;font-weight:650;margin-top:2px}
+
+  .fin-table-wrap{overflow-x:auto}
+  .fin-table{width:100%;min-width:980px;border-collapse:collapse;table-layout:fixed}
+  .fin-table th{padding:9px 8px;background:#151515;color:#a8a8a8;border-bottom:1px solid rgba(255,255,255,.08);font-size:10px;line-height:1.15;text-transform:uppercase;letter-spacing:.035em;text-align:right;font-weight:750}
+  .fin-table th:first-child,.fin-table th:nth-child(2){text-align:left}
+  .fin-table td{padding:10px 8px;border-bottom:1px solid rgba(255,255,255,.055);font-size:12px;font-weight:400;text-align:right;color:#e4e4e4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .fin-table tr:last-child td{border-bottom:0}
+  .fin-table tbody tr:hover{background:rgba(255,255,255,.025)}
+  .fin-table td:first-child,.fin-table td:nth-child(2){text-align:left}
+  .fin-user{font-weight:650!important;color:#fff!important}
+  .fin-role{font-size:10px!important;color:#999!important}
+  .fin-total{color:#ffb35a!important;font-weight:500!important;background:rgba(255,158,47,.035)}
+  .fin-other[title]{cursor:help;text-decoration:underline dotted rgba(255,255,255,.3);text-underline-offset:3px}
+  .fin-empty{text-align:center;padding:35px 18px;color:#888;font-size:13px}
+  .fin-footnote{color:#777;font-size:10px;line-height:1.45;margin-top:10px}
+
+  @media(max-width:1250px){.fin-filter{grid-template-columns:100px 135px minmax(210px,1fr) 160px}.fin-filter .fin-search{grid-column:1/4}.fin-filter .fin-submit{grid-column:4}.fin-summary{grid-template-columns:repeat(3,minmax(0,1fr))}}
+  @media(max-width:760px){.fin-filter{grid-template-columns:1fr 1fr}.fin-filter .fin-companies,.fin-filter .fin-search{grid-column:1/3}.fin-filter .fin-submit{grid-column:1/3}.fin-btn{width:100%}.fin-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.fin-store-head{grid-template-columns:1fr auto}.fin-store-total{grid-column:1/3;text-align:left;padding-left:27px}.fin-rule{max-width:none}.fin-head{display:block}.fin-rule{margin-top:12px}}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="fin-page">
+  <section class="fin-panel fin-head">
+    <div>
+      <div class="fin-kicker">Fechamento e pagamento</div>
+      <h1 class="fin-title">Financeiro de Bônus</h1>
+      <p class="fin-sub">Consolidação por loja e funcionário dos bônus de Varejo, Atacado, Itens Parados e Outros Valores. Itens Parados é contado uma única vez no financeiro, mesmo aparecendo nas duas páginas de bônus.</p>
+    </div>
+    <div class="fin-rule"><strong>Regra de segurança:</strong> lojas abertas acompanham as importações. Ao fechar, os valores são congelados. Eles só voltam a mudar depois de uma reabertura, que também remove o status de pagamento.</div>
+  </section>
+
+  <section class="fin-panel">
+    <form class="fin-filter" method="get" action="{{ url_for('financeiro_bonus') }}">
+      <input type="hidden" name="emp_aplicado" value="1">
+      <div class="fin-field">
+        <label>Ano</label>
+        <input class="fin-input" type="number" name="ano" min="2000" max="2100" value="{{ ano }}">
+      </div>
+      <div class="fin-field">
+        <label>Mês</label>
+        <select class="fin-select" name="mes">
+          {% set meses = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'] %}
+          {% for numero in range(1,13) %}<option value="{{ numero }}" {% if mes == numero %}selected{% endif %}>{{ '%02d'|format(numero) }} · {{ meses[numero-1] }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="fin-field fin-companies">
+        <label>Empresas</label>
+        <details class="fin-multi" id="finCompanyFilter">
+          <summary><span id="finCompanyLabel">{{ selected_emps|length }} loja(s) selecionada(s)</span><span>▾</span></summary>
+          <div class="fin-multi-box">
+            <div class="fin-multi-actions">
+              <button class="fin-mini" type="button" data-filter-select="all">Todas</button>
+              <button class="fin-mini" type="button" data-filter-select="none">Limpar</button>
+            </div>
+            {% for item in emp_options %}
+              <label class="fin-check">
+                <input class="fin-filter-emp" type="checkbox" name="emp" value="{{ item.codigo }}" {% if item.codigo in selected_emps %}checked{% endif %}>
+                <span>EMP {{ item.codigo }}</span>
+                {% if item.nome %}<small>{{ item.nome }}</small>{% endif %}
+              </label>
+            {% endfor %}
+          </div>
+        </details>
+      </div>
+      <div class="fin-field">
+        <label>Situação</label>
+        <select class="fin-select" name="status">
+          <option value="todos" {% if status_filter == 'todos' %}selected{% endif %}>Todas</option>
+          <option value="aberto" {% if status_filter == 'aberto' %}selected{% endif %}>Aberto</option>
+          <option value="fechado" {% if status_filter == 'fechado' %}selected{% endif %}>Fechado</option>
+          <option value="pago" {% if status_filter == 'pago' %}selected{% endif %}>Pago</option>
+          <option value="nao_pago" {% if status_filter == 'nao_pago' %}selected{% endif %}>Não pago</option>
+        </select>
+      </div>
+      <div class="fin-field fin-search">
+        <label>Funcionário</label>
+        <input class="fin-input" type="search" name="busca" value="{{ search }}" placeholder="Buscar por nome">
+      </div>
+      <div class="fin-field fin-submit"><button class="fin-btn" type="submit">Aplicar filtros</button></div>
+    </form>
+  </section>
+
+  <section class="fin-summary">
+    <div class="fin-card accent"><span>Total geral</span><strong>{{ summary.get('total', 0)|brl_rs }}</strong></div>
+    <div class="fin-card"><span>Bônus Varejo</span><strong>{{ summary.get('varejo', 0)|brl_rs }}</strong></div>
+    <div class="fin-card"><span>Bônus Atacado</span><strong>{{ summary.get('atacado', 0)|brl_rs }}</strong></div>
+    <div class="fin-card"><span>Itens + Outros</span><strong>{{ (summary.get('itens_parados', 0) + summary.get('outros', 0))|brl_rs }}</strong></div>
+    <div class="fin-card good"><span>Valor pago</span><strong>{{ summary.get('valor_pago', 0)|brl_rs }}</strong></div>
+    <div class="fin-card warn"><span>Valor não pago</span><strong>{{ summary.get('valor_pendente', 0)|brl_rs }}</strong></div>
+  </section>
+
+  <section class="fin-panel">
+    {% if not db_unavailable %}
+    <form method="post" id="finActionForm">
+      <input type="hidden" name="ano" value="{{ ano }}">
+      <input type="hidden" name="mes" value="{{ mes }}">
+      <div class="fin-actions">
+        <span class="fin-actions-note"><strong>{{ summary.get('lojas', 0) }}</strong> loja(s) · <strong>{{ summary.get('funcionarios', 0) }}</strong> funcionário(s). Marque as lojas abaixo para executar uma ação. O fechamento sempre inclui todos os funcionários da EMP, mesmo quando há busca por nome.</span>
+        <button type="button" class="fin-action" id="finSelectVisible">Selecionar visíveis</button>
+        <button type="button" class="fin-action" id="finClearVisible">Limpar</button>
+        <button class="fin-action close" type="submit" formaction="{{ url_for('financeiro_bonus_fechar') }}" onclick="return confirm('Fechar as lojas selecionadas e congelar os valores desta competência?')">Fechar</button>
+        <button class="fin-action reopen" type="submit" formaction="{{ url_for('financeiro_bonus_reabrir') }}" onclick="return confirm('Reabrir as lojas selecionadas? Os valores voltarão a acompanhar as importações e o status Pago será removido.')">Reabrir</button>
+        <button class="fin-action pay" type="submit" name="pago" value="1" formaction="{{ url_for('financeiro_bonus_pagamento') }}" onclick="return confirm('Marcar como PAGO apenas as lojas fechadas selecionadas?')">Marcar pago</button>
+        <button class="fin-action unpay" type="submit" name="pago" value="0" formaction="{{ url_for('financeiro_bonus_pagamento') }}" onclick="return confirm('Remover o sinalizador Pago das lojas selecionadas?')">Marcar não pago</button>
+      </div>
+
+      {% if groups %}
+        {% for group in groups %}
+        <article class="fin-store">
+          <header class="fin-store-head">
+            <div class="fin-store-id">
+              <input class="fin-action-emp" type="checkbox" name="emps" value="{{ group.emp }}" aria-label="Selecionar EMP {{ group.emp }}">
+              <div class="fin-store-name">
+                <strong>EMP {{ group.emp }}{% if group.nome %} · {{ group.nome }}{% endif %}</strong>
+                <span>{{ group.rows|length }} funcionário(s){% if group.closure and group.status == 'FECHADO' %} · versão {{ group.closure.versao }} · fechado por {{ group.closure.fechado_por or 'usuário' }}{% endif %}</span>
+              </div>
+            </div>
+            <div>
+              {% if group.status == 'ABERTO' %}
+                <span class="fin-status open">● ABERTO · NÃO PAGO</span>
+              {% elif group.pago %}
+                <span class="fin-status paid">● FECHADO · PAGO</span>
+              {% else %}
+                <span class="fin-status closed">● FECHADO · NÃO PAGO</span>
+              {% endif %}
+            </div>
+            <div class="fin-store-total"><span>Total da loja</span><strong>{{ group.totals.geral|brl_rs }}</strong></div>
+          </header>
+          <div class="fin-table-wrap">
+            <table class="fin-table">
+              <colgroup>
+                <col style="width:24%"><col style="width:9%"><col style="width:13%"><col style="width:13%"><col style="width:13%"><col style="width:13%"><col style="width:15%">
+              </colgroup>
+              <thead><tr><th>Funcionário</th><th>Função</th><th>Bônus Varejo</th><th>Bônus Atacado</th><th>Itens Parados</th><th>Outros Valores</th><th>Total Geral</th></tr></thead>
+              <tbody>
+                {% for row in group.rows %}
+                <tr>
+                  <td class="fin-user" title="{{ row.usuario_nome }}">{{ row.usuario_nome }}</td>
+                  <td class="fin-role">{{ row.funcao }}</td>
+                  <td>{{ row.bonus_varejo|brl_rs }}</td>
+                  <td>{{ row.bonus_atacado|brl_rs }}</td>
+                  <td>{{ row.itens_parados|brl_rs }}</td>
+                  <td class="fin-other" {% if row.outros_tooltip %}title="{{ row.outros_tooltip }}"{% endif %}>{{ row.outros_total|brl_rs }}</td>
+                  <td class="fin-total">{{ row.total_geral|brl_rs }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </article>
+        {% endfor %}
+      {% else %}
+        <div class="fin-empty">Nenhum valor encontrado para os filtros selecionados.</div>
+      {% endif %}
+    </form>
+    {% else %}
+      <div class="fin-empty">O módulo financeiro aguarda a criação das tabelas no banco de dados.</div>
+    {% endif %}
+    <div class="fin-footnote">Valores abertos são uma prévia. Valores fechados vêm exclusivamente do snapshot financeiro e não são afetados por novas importações. O pagamento só pode ser marcado depois do fechamento.</div>
+  </section>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+(function(){
+  const filterChecks = [...document.querySelectorAll('.fin-filter-emp')];
+  const label = document.getElementById('finCompanyLabel');
+  function updateFilterLabel(){
+    if(label){ label.textContent = `${filterChecks.filter(el => el.checked).length} loja(s) selecionada(s)`; }
+  }
+  document.querySelectorAll('[data-filter-select]').forEach(btn => btn.addEventListener('click', () => {
+    const checked = btn.dataset.filterSelect === 'all';
+    filterChecks.forEach(el => { el.checked = checked; });
+    updateFilterLabel();
+  }));
+  filterChecks.forEach(el => el.addEventListener('change', updateFilterLabel));
+  updateFilterLabel();
+
+  const actionChecks = () => [...document.querySelectorAll('.fin-action-emp')];
+  const selectBtn = document.getElementById('finSelectVisible');
+  const clearBtn = document.getElementById('finClearVisible');
+  if(selectBtn){ selectBtn.addEventListener('click', () => actionChecks().forEach(el => { el.checked = true; })); }
+  if(clearBtn){ clearBtn.addEventListener('click', () => actionChecks().forEach(el => { el.checked = false; })); }
+
+  const actionForm = document.getElementById('finActionForm');
+  if(actionForm){
+    actionForm.addEventListener('submit', function(event){
+      if(!actionChecks().some(el => el.checked)){
+        event.preventDefault();
+        alert('Selecione ao menos uma loja.');
+      }
+    });
+  }
+})();
+</script>
+{% endblock %}

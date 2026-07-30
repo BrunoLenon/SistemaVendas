@@ -74,6 +74,7 @@ _BONUS_IMPORTADOS_SCHEMA_READY = False
 _BONUS_ATACADO_SCHEMA_READY = False
 _ITENS_PARADOS_SNAPSHOT_SCHEMA_READY = False
 _BONUS_OUTROS_VALORES_SCHEMA_READY = False
+_FINANCEIRO_BONUS_SCHEMA_READY = False
 
 
 
@@ -296,6 +297,96 @@ class BonusOutroValor(Base):
             "mes",
         ),
     )
+
+
+class FinanceiroBonusFechamento(Base):
+    """Fechamento financeiro congelado por competência e EMP."""
+
+    __tablename__ = "financeiro_bonus_fechamentos"
+
+    id = Column(Integer, primary_key=True)
+    ano = Column(Integer, nullable=False, index=True)
+    mes = Column(Integer, nullable=False, index=True)
+    emp = Column(String(30), nullable=False, index=True)
+    status = Column(String(12), nullable=False, default="ABERTO", index=True)
+    pago = Column(Boolean, nullable=False, default=False, index=True)
+    versao = Column(Integer, nullable=False, default=0)
+
+    total_varejo = Column(Numeric(18, 4), nullable=False, default=0)
+    total_atacado = Column(Numeric(18, 4), nullable=False, default=0)
+    total_itens_parados = Column(Numeric(18, 4), nullable=False, default=0)
+    total_outros_varejo = Column(Numeric(18, 4), nullable=False, default=0)
+    total_outros_atacado = Column(Numeric(18, 4), nullable=False, default=0)
+    total_geral = Column(Numeric(18, 4), nullable=False, default=0)
+
+    fechado_por_user_id = Column(Integer, nullable=True, index=True)
+    fechado_por = Column(String(100), nullable=True)
+    fechado_em = Column(DateTime, nullable=True, index=True)
+    reaberto_por_user_id = Column(Integer, nullable=True, index=True)
+    reaberto_por = Column(String(100), nullable=True)
+    reaberto_em = Column(DateTime, nullable=True)
+    pago_por_user_id = Column(Integer, nullable=True, index=True)
+    pago_por = Column(String(100), nullable=True)
+    pago_em = Column(DateTime, nullable=True, index=True)
+    atualizado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "ano", "mes", "emp", name="uq_financeiro_bonus_fechamento_periodo_emp"
+        ),
+        Index("ix_financeiro_bonus_status_periodo", "ano", "mes", "status", "pago"),
+    )
+
+
+class FinanceiroBonusFechamentoItem(Base):
+    """Valores por funcionário preservados no instante do fechamento."""
+
+    __tablename__ = "financeiro_bonus_fechamento_itens"
+
+    id = Column(Integer, primary_key=True)
+    fechamento_id = Column(Integer, nullable=False, index=True)
+    usuario_id = Column(Integer, nullable=True, index=True)
+    usuario_nome = Column(String(100), nullable=False, index=True)
+    funcao = Column(String(30), nullable=True)
+    emp = Column(String(30), nullable=False, index=True)
+
+    bonus_varejo = Column(Numeric(18, 4), nullable=False, default=0)
+    bonus_atacado = Column(Numeric(18, 4), nullable=False, default=0)
+    itens_parados = Column(Numeric(18, 4), nullable=False, default=0)
+    outros_varejo = Column(Numeric(18, 4), nullable=False, default=0)
+    outros_atacado = Column(Numeric(18, 4), nullable=False, default=0)
+    total_geral = Column(Numeric(18, 4), nullable=False, default=0)
+    outros_detalhes_json = Column(Text, nullable=True)
+    criado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "fechamento_id",
+            "emp",
+            "usuario_nome",
+            name="uq_financeiro_bonus_item_fechamento_usuario",
+        ),
+        Index("ix_financeiro_bonus_item_emp_usuario", "emp", "usuario_nome"),
+    )
+
+
+class FinanceiroBonusEvento(Base):
+    """Auditoria dos fechamentos, reaberturas e alterações de pagamento."""
+
+    __tablename__ = "financeiro_bonus_eventos"
+
+    id = Column(Integer, primary_key=True)
+    fechamento_id = Column(Integer, nullable=False, index=True)
+    acao = Column(String(20), nullable=False, index=True)
+    status_anterior = Column(String(12), nullable=True)
+    status_novo = Column(String(12), nullable=True)
+    pago_anterior = Column(Boolean, nullable=True)
+    pago_novo = Column(Boolean, nullable=True)
+    total_geral = Column(Numeric(18, 4), nullable=False, default=0)
+    usuario_id = Column(Integer, nullable=True, index=True)
+    usuario_nome = Column(String(100), nullable=True)
+    detalhes = Column(Text, nullable=True)
+    criado_em = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
 
 
 class ItensParadosVendaImportacaoLote(Base):
@@ -2097,6 +2188,101 @@ def ensure_bonus_outros_valores_schema(force: bool = False):
         conn.execute(text("ALTER TABLE bonus_outros_valores ENABLE ROW LEVEL SECURITY;"))
 
     _BONUS_OUTROS_VALORES_SCHEMA_READY = True
+
+
+def ensure_financeiro_bonus_schema(force: bool = False):
+    """Garante o snapshot imutável dos fechamentos de bônus por EMP."""
+    global _FINANCEIRO_BONUS_SCHEMA_READY
+    if _FINANCEIRO_BONUS_SCHEMA_READY and not force:
+        return
+
+    with engine.connect() as conn:
+        conn = conn.execution_options(isolation_level="AUTOCOMMIT")
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS financeiro_bonus_fechamentos (
+                id SERIAL PRIMARY KEY,
+                ano INTEGER NOT NULL,
+                mes INTEGER NOT NULL,
+                emp VARCHAR(30) NOT NULL,
+                status VARCHAR(12) NOT NULL DEFAULT 'ABERTO',
+                pago BOOLEAN NOT NULL DEFAULT FALSE,
+                versao INTEGER NOT NULL DEFAULT 0,
+                total_varejo NUMERIC(18,4) NOT NULL DEFAULT 0,
+                total_atacado NUMERIC(18,4) NOT NULL DEFAULT 0,
+                total_itens_parados NUMERIC(18,4) NOT NULL DEFAULT 0,
+                total_outros_varejo NUMERIC(18,4) NOT NULL DEFAULT 0,
+                total_outros_atacado NUMERIC(18,4) NOT NULL DEFAULT 0,
+                total_geral NUMERIC(18,4) NOT NULL DEFAULT 0,
+                fechado_por_user_id INTEGER,
+                fechado_por VARCHAR(100),
+                fechado_em TIMESTAMP,
+                reaberto_por_user_id INTEGER,
+                reaberto_por VARCHAR(100),
+                reaberto_em TIMESTAMP,
+                pago_por_user_id INTEGER,
+                pago_por VARCHAR(100),
+                pago_em TIMESTAMP,
+                atualizado_em TIMESTAMP NOT NULL DEFAULT NOW(),
+                CONSTRAINT uq_financeiro_bonus_fechamento_periodo_emp
+                    UNIQUE (ano, mes, emp),
+                CONSTRAINT ck_financeiro_bonus_status
+                    CHECK (status IN ('ABERTO', 'FECHADO'))
+            );
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS financeiro_bonus_fechamento_itens (
+                id SERIAL PRIMARY KEY,
+                fechamento_id INTEGER NOT NULL,
+                usuario_id INTEGER,
+                usuario_nome VARCHAR(100) NOT NULL,
+                funcao VARCHAR(30),
+                emp VARCHAR(30) NOT NULL,
+                bonus_varejo NUMERIC(18,4) NOT NULL DEFAULT 0,
+                bonus_atacado NUMERIC(18,4) NOT NULL DEFAULT 0,
+                itens_parados NUMERIC(18,4) NOT NULL DEFAULT 0,
+                outros_varejo NUMERIC(18,4) NOT NULL DEFAULT 0,
+                outros_atacado NUMERIC(18,4) NOT NULL DEFAULT 0,
+                total_geral NUMERIC(18,4) NOT NULL DEFAULT 0,
+                outros_detalhes_json TEXT,
+                criado_em TIMESTAMP NOT NULL DEFAULT NOW(),
+                CONSTRAINT uq_financeiro_bonus_item_fechamento_usuario
+                    UNIQUE (fechamento_id, emp, usuario_nome),
+                CONSTRAINT fk_financeiro_bonus_item_fechamento
+                    FOREIGN KEY (fechamento_id)
+                    REFERENCES financeiro_bonus_fechamentos(id)
+                    ON DELETE CASCADE
+            );
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS financeiro_bonus_eventos (
+                id SERIAL PRIMARY KEY,
+                fechamento_id INTEGER NOT NULL,
+                acao VARCHAR(20) NOT NULL,
+                status_anterior VARCHAR(12),
+                status_novo VARCHAR(12),
+                pago_anterior BOOLEAN,
+                pago_novo BOOLEAN,
+                total_geral NUMERIC(18,4) NOT NULL DEFAULT 0,
+                usuario_id INTEGER,
+                usuario_nome VARCHAR(100),
+                detalhes TEXT,
+                criado_em TIMESTAMP NOT NULL DEFAULT NOW(),
+                CONSTRAINT fk_financeiro_bonus_evento_fechamento
+                    FOREIGN KEY (fechamento_id)
+                    REFERENCES financeiro_bonus_fechamentos(id)
+                    ON DELETE CASCADE
+            );
+        """))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_financeiro_bonus_periodo_emp ON financeiro_bonus_fechamentos (ano, mes, emp);"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_financeiro_bonus_status_periodo ON financeiro_bonus_fechamentos (ano, mes, status, pago);"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_financeiro_bonus_item_fechamento ON financeiro_bonus_fechamento_itens (fechamento_id);"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_financeiro_bonus_item_emp_usuario ON financeiro_bonus_fechamento_itens (emp, usuario_nome);"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_financeiro_bonus_evento_fechamento ON financeiro_bonus_eventos (fechamento_id, criado_em);"))
+        conn.execute(text("ALTER TABLE financeiro_bonus_fechamentos ENABLE ROW LEVEL SECURITY;"))
+        conn.execute(text("ALTER TABLE financeiro_bonus_fechamento_itens ENABLE ROW LEVEL SECURITY;"))
+        conn.execute(text("ALTER TABLE financeiro_bonus_eventos ENABLE ROW LEVEL SECURITY;"))
+
+    _FINANCEIRO_BONUS_SCHEMA_READY = True
 
 
 def ensure_itens_parados_snapshot_schema(force: bool = False):

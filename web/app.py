@@ -5,7 +5,8 @@ from __future__ import annotations
 A aplicação mantém somente os módulos em uso:
 - Dashboard leve;
 - Bônus Varejo;
-- Bônus Atacado (estrutura inicial);
+- Bônus Atacado;
+- Financeiro de bônus com fechamento imutável;
 - Itens Parados;
 - Itens Parados (Admin);
 - Usuários;
@@ -282,6 +283,7 @@ from bonus_importados_routes import register_bonus_importados_routes  # noqa: E4
 from bonus_outros_valores import register_bonus_outros_valores_routes  # noqa: E402
 from core_routes import register_core_routes  # noqa: E402
 from dashboard_routes import register_dashboard_routes  # noqa: E402
+from financeiro_bonus_routes import register_financeiro_bonus_routes  # noqa: E402
 from itens_parados_routes import register_itens_parados_routes  # noqa: E402
 from itens_parados_snapshot import register_itens_parados_snapshot_routes  # noqa: E402
 from promocoes_qr_routes import register_promocoes_qr_routes  # noqa: E402
@@ -302,6 +304,7 @@ register_dashboard_routes(app, login_required_fn=_login_required)
 register_bonus_importados_routes(app)
 register_bonus_atacado_routes(app)
 register_bonus_outros_valores_routes(app)
+register_financeiro_bonus_routes(app)
 register_itens_parados_snapshot_routes(app)
 register_itens_parados_routes(
     app,

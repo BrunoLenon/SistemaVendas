@@ -56,6 +56,12 @@
       <div class="dash-icon">📦</div><strong>Itens Parados</strong>
       <span>Acompanhamento das vendas, pontos e premiações dos itens elegíveis.</span><em>Abrir módulo →</em>
     </a>
+    {% if role in ['admin', 'financeiro'] %}
+    <a class="dash-card" href="{{ url_for('financeiro_bonus') }}">
+      <div class="dash-icon">💳</div><strong>Financeiro</strong>
+      <span>Fechamento por loja, snapshot dos valores e controle de pagamento.</span><em>Abrir módulo →</em>
+    </a>
+    {% endif %}
     <a class="dash-card" href="{{ url_for('senha') }}">
       <div class="dash-icon">🔑</div><strong>Trocar senha</strong>
       <span>Atualização segura da senha do usuário conectado.</span><em>Abrir módulo →</em>
