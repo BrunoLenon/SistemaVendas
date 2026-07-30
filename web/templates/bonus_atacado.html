@@ -13,7 +13,7 @@
   <div class="atacado-money">{{ money(row.outros_valores_total) }}</div>
   {% if row.outros_valores_detalhes %}
   <details class="atacado-other-details">
-    <summary>{{ row.outros_valores_detalhes|length }} lançamento(s)</summary>
+    <summary title="Ver lançamentos">+{{ row.outros_valores_detalhes|length }}</summary>
     <div class="atacado-other-popover">
       {% for item in row.outros_valores_detalhes %}
       <div class="atacado-other-item">
@@ -73,20 +73,25 @@
   .atacado-money{font-variant-numeric:tabular-nums;font-weight:750;white-space:nowrap}
   .atacado-total{color:#ffc477;font-weight:950}
   .atacado-na{color:#70757e}
-    .atacado-row-list{display:block;border:1px solid rgba(255,255,255,.08);border-radius:14px;overflow:hidden;background:rgba(0,0,0,.13)}
-  .atacado-record-row{display:grid;grid-template-columns:minmax(170px,215px) minmax(0,1fr);min-width:0;border-bottom:1px solid rgba(255,255,255,.075);background:rgba(5,5,5,.30);transition:background .16s ease}
+  .atacado-row-list{display:block;border:1px solid rgba(255,255,255,.08);border-radius:14px;overflow:visible;background:rgba(0,0,0,.13)}
+  .atacado-record-row{display:grid;grid-template-columns:minmax(145px,175px) minmax(0,1fr);min-width:0;border-bottom:1px solid rgba(255,255,255,.075);background:rgba(5,5,5,.30);transition:background .16s ease}
   .atacado-record-row:last-child{border-bottom:0}
   .atacado-record-row:nth-child(even){background:rgba(255,255,255,.018)}
   .atacado-record-row:hover{background:rgba(255,145,0,.055)}
-  .atacado-record-head{display:flex;flex-direction:column;justify-content:center;align-items:flex-start;gap:7px;min-width:0;padding:12px 13px;border-right:1px solid rgba(255,255,255,.07)}
-  .atacado-record-head strong{font-size:12px;line-height:1.22;overflow-wrap:anywhere}
-  .atacado-record-head .atacado-section-sub{margin:0;font-size:9px}
-  .atacado-record-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(112px,1fr));gap:0;min-width:0}
-  .atacado-record-item{min-width:0;padding:9px 8px;border:0;border-right:1px solid rgba(255,255,255,.045);border-bottom:1px solid rgba(255,255,255,.045);border-radius:0;background:transparent}
-  .atacado-record-item:last-child{background:rgba(255,145,0,.055)}
-  .atacado-record-item small{display:block;color:#9298a1;font-size:7.5px;text-transform:uppercase;letter-spacing:.045em;line-height:1.25;margin-bottom:4px}
-  .atacado-record-item b{display:block;font-size:10.5px;line-height:1.25;overflow-wrap:anywhere}
-  .atacado-record-item:last-child b{font-size:12.5px}
+  .atacado-record-head{display:flex;flex-direction:row;justify-content:space-between;align-items:center;gap:6px;min-width:0;padding:8px 9px;border-right:1px solid rgba(255,255,255,.07)}
+  .atacado-record-head>div{min-width:0;overflow:hidden}
+  .atacado-record-head strong{display:block;font-size:10.5px;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .atacado-record-head .atacado-section-sub{margin:2px 0 0;font-size:7px;white-space:nowrap}
+  .atacado-record-head .atacado-role{flex:0 0 auto;padding:3px 5px;font-size:6.8px}
+  .atacado-record-grid{display:flex;flex-wrap:nowrap;align-items:stretch;gap:0;min-width:0}
+  .atacado-record-item{flex:1 1 0;min-width:0;padding:7px 5px;border:0;border-right:1px solid rgba(255,255,255,.045);border-radius:0;background:transparent;display:flex;flex-direction:column;justify-content:center;position:relative}
+  .atacado-record-item:last-child{border-right:0;background:rgba(255,145,0,.055)}
+  .atacado-record-item small{display:block;color:#9298a1;font-size:6.4px;text-transform:uppercase;letter-spacing:.02em;line-height:1.1;margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .atacado-record-item b,.atacado-record-item .atacado-money{display:block;font-size:9px;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
+  .atacado-record-item:last-child b{font-size:10.5px}
+  .atacado-record-item .atacado-other-details{display:inline-block;margin:0 0 0 3px;position:relative;vertical-align:middle}
+  .atacado-record-item .atacado-other-details summary{font-size:7px;line-height:1;padding:2px 3px;border:1px solid rgba(255,174,72,.22);border-radius:999px;background:rgba(255,145,0,.08)}
+  .atacado-record-item .atacado-other-popover{position:absolute;z-index:40;top:calc(100% + 6px);right:0;min-width:230px;width:max-content;max-width:320px;box-shadow:0 16px 38px rgba(0,0,0,.45)}
   .atacado-import-grid{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(320px,.75fr);gap:12px}
   .atacado-drop{padding:15px;border:1px dashed rgba(255,177,66,.28);border-radius:16px;background:rgba(255,145,0,.045)}
   .atacado-columns{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin-top:10px}
@@ -106,10 +111,9 @@
   .atacado-total-geral{color:#ffd08b;font-weight:950}
   .atacado-warnings{margin:12px 0 0;padding:0 0 0 18px;color:#ffd29a;font-size:11px;line-height:1.55;max-height:260px;overflow:auto}
   .atacado-empty{padding:42px 18px;text-align:center;color:#8f949d}
-  @media(max-width:1300px){.atacado-kpis{grid-template-columns:repeat(4,minmax(0,1fr))}.atacado-store-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.atacado-record-row{grid-template-columns:minmax(150px,185px) minmax(0,1fr)}.atacado-record-grid{grid-template-columns:repeat(auto-fit,minmax(102px,1fr))}}
-  @media(max-width:1000px){.atacado-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.atacado-store-grid{grid-template-columns:1fr}.atacado-import-grid{grid-template-columns:1fr}}
-  @media(max-width:700px){.atacado-record-row{grid-template-columns:1fr}.atacado-record-head{flex-direction:row;justify-content:space-between;align-items:center;border-right:0;border-bottom:1px solid rgba(255,255,255,.07);padding:10px 11px}.atacado-record-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.atacado-kpis{grid-template-columns:1fr 1fr}.atacado-title{font-size:25px}.atacado-filter>*{width:100%}.atacado-filter .btn{width:100%}.atacado-columns{grid-template-columns:1fr}.atacado-panel,.atacado-hero{padding:14px;border-radius:17px}}
-  @media(max-width:480px){.atacado-record-grid{grid-template-columns:1fr}}
+  @media(max-width:1300px){.atacado-kpis{grid-template-columns:repeat(4,minmax(0,1fr))}.atacado-store-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+  @media(max-width:1000px){.atacado-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.atacado-store-grid{grid-template-columns:1fr}.atacado-import-grid{grid-template-columns:1fr}.atacado-row-list{overflow-x:auto;overflow-y:visible}.atacado-record-row{min-width:940px;grid-template-columns:155px minmax(0,1fr)}}
+  @media(max-width:700px){.atacado-kpis{grid-template-columns:1fr 1fr}.atacado-title{font-size:25px}.atacado-filter>*{width:100%}.atacado-filter .btn{width:100%}.atacado-columns{grid-template-columns:1fr}.atacado-panel,.atacado-hero{padding:14px;border-radius:17px}}
 </style>
 {% endblock %}
 
@@ -291,7 +295,7 @@
           <div class="atacado-record-item"><small>% Importado</small><b>{{ percent(row.percentual_importado) }}</b></div>
           <div class="atacado-record-item"><small>Falta valor vendedor</small><b>{{ money(row.falta_valor_vendedor) }}</b></div>
           <div class="atacado-record-item"><small>Itens parados{% if row.funcao_exibicao in ['GERENTE','SUPERVISOR'] %} da loja{% endif %}</small><b>{{ money(row.saldo_itens_parados) }}</b></div>
-          <div class="atacado-record-item"><small>Outros valores</small><b>{{ money(row.outros_valores_total) }}</b>{% if row.outros_valores_detalhes %}<div class="mt-1">{{ outros_valores(row, role, ano, mes) }}</div>{% endif %}</div>
+          <div class="atacado-record-item"><small>Outros valores</small><div class="d-flex align-items-center flex-nowrap">{{ outros_valores(row, role, ano, mes) }}</div></div>
           <div class="atacado-record-item"><small>Total geral</small><b class="atacado-total-geral">{{ money(row.total_geral) }}</b></div>
         </div>
       </div>
