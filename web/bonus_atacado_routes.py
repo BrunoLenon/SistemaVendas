@@ -34,10 +34,12 @@ from db import (
     UsuarioEmp,
     ensure_bonus_atacado_schema,
     ensure_itens_parados_snapshot_schema,
+    ensure_bonus_outros_valores_schema,
 )
 from security_utils import audit, normalize_role
 from sv_utils import emp_sort_key
 from itens_parados_snapshot import attach_saldos_to_bonus_rows
+from bonus_outros_valores import attach_outros_valores_to_bonus_rows, bonus_row_options
 
 
 MAX_UPLOAD_BYTES = 15 * 1024 * 1024
@@ -615,6 +617,7 @@ def bonus_atacado():
             batch=None,
             batch_warnings=[],
             can_view_store_metrics=(role in MANAGER_ROLES),
+            admin_user_options=[],
             db_unavailable=True,
         )
 
@@ -636,6 +639,7 @@ def bonus_atacado():
         user_filter = ""
         emp_options: list[str] = []
         user_options: list[str] = []
+        all_period_rows: list[BonusAtacadoUsuario] = []
 
         if role == "admin":
             all_period_rows = period_query.all()
@@ -693,6 +697,32 @@ def bonus_atacado():
                 row.saldo_itens_parados_usuario = Decimal("0")
                 row.saldo_itens_parados_loja = Decimal("0")
 
+        try:
+            ensure_bonus_outros_valores_schema()
+            outros_valores_summary = attach_outros_valores_to_bonus_rows(
+                db,
+                rows,
+                ano=ano,
+                mes=mes,
+                origem="ATACADO",
+                bonus_field="total_produtos",
+            )
+        except Exception:
+            current_app.logger.exception(
+                "Falha ao carregar Outros Valores no Bônus Atacado"
+            )
+            outros_valores_summary = {
+                "total_visivel": Decimal("0"),
+                "quantidade": 0,
+            }
+            for row in rows:
+                row.outros_valores_total = Decimal("0")
+                row.outros_valores_detalhes = []
+                row.valor_bonus_base = Decimal(str(row.total_produtos or 0))
+                row.total_geral = row.valor_bonus_base + Decimal(
+                    str(getattr(row, "saldo_itens_parados", 0) or 0)
+                )
+
         batch = (
             db.query(BonusAtacadoImportacaoLote)
             .filter(
@@ -703,24 +733,45 @@ def bonus_atacado():
             .first()
         )
 
+        bonus_total = _sum_field(rows, "total_produtos")
         summary = {
             "registros": len(rows),
             "emps": len({row.emp for row in rows if row.emp}),
-            "total_produtos": _sum_field(rows, "total_produtos"),
+            "total_produtos": bonus_total,
             "importado": _sum_field(rows, "importado"),
             "itens_parados": itens_parados_summary["total_visivel"],
+            "outros_valores": outros_valores_summary["total_visivel"],
+            "total_geral": (
+                bonus_total
+                + itens_parados_summary["total_visivel"]
+                + outros_valores_summary["total_visivel"]
+            ),
         }
         can_view_store_metrics = role in MANAGER_ROLES
         stores = _store_cards(rows) if can_view_store_metrics else []
         for store in stores:
+            store_rows = [row for row in rows if row.emp == store["emp"]]
             store["itens_parados"] = next(
                 (
                     row.saldo_itens_parados_loja
-                    for row in rows
-                    if row.emp == store["emp"]
+                    for row in store_rows
                 ),
                 Decimal("0"),
             )
+            store["bonus"] = sum(
+                (Decimal(str(row.total_produtos or 0)) for row in store_rows),
+                Decimal("0"),
+            )
+            store["outros_valores"] = sum(
+                (Decimal(str(row.outros_valores_total or 0)) for row in store_rows),
+                Decimal("0"),
+            )
+            store["total_geral"] = (
+                store["bonus"]
+                + store["itens_parados"]
+                + store["outros_valores"]
+            )
+        admin_user_options = bonus_row_options(all_period_rows) if role == "admin" else []
         batch_warnings = _load_warnings(batch) if role == "admin" else []
 
     return render_template(
@@ -739,5 +790,6 @@ def bonus_atacado():
         batch=batch,
         batch_warnings=batch_warnings,
         can_view_store_metrics=can_view_store_metrics,
+        admin_user_options=admin_user_options,
         db_unavailable=False,
     )

@@ -73,6 +73,7 @@ _METAS_LOJAS_SCHEMA_READY = False
 _BONUS_IMPORTADOS_SCHEMA_READY = False
 _BONUS_ATACADO_SCHEMA_READY = False
 _ITENS_PARADOS_SNAPSHOT_SCHEMA_READY = False
+_BONUS_OUTROS_VALORES_SCHEMA_READY = False
 
 
 
@@ -250,6 +251,49 @@ class BonusAtacadoUsuario(Base):
             "mes",
         ),
         Index("ix_bonus_atacado_emp_periodo", "emp", "ano", "mes"),
+    )
+
+
+class BonusOutroValor(Base):
+    """Lançamento manual adicional vinculado ao bônus de um usuário e EMP."""
+
+    __tablename__ = "bonus_outros_valores"
+
+    id = Column(Integer, primary_key=True)
+    origem = Column(String(10), nullable=False, index=True)  # VAREJO | ATACADO
+    ano = Column(Integer, nullable=False, index=True)
+    mes = Column(Integer, nullable=False, index=True)
+
+    usuario_id = Column(Integer, nullable=False, index=True)
+    usuario_nome = Column(String(100), nullable=False, index=True)
+    emp = Column(String(30), nullable=False, index=True)
+
+    descricao = Column(String(255), nullable=False)
+    valor = Column(Numeric(18, 4), nullable=False)
+
+    criado_por_user_id = Column(Integer, nullable=True, index=True)
+    criado_por = Column(String(100), nullable=True)
+    criado_em = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
+
+    __table_args__ = (
+        Index(
+            "ix_bonus_outros_origem_periodo",
+            "origem",
+            "ano",
+            "mes",
+        ),
+        Index(
+            "ix_bonus_outros_usuario_periodo",
+            "usuario_id",
+            "ano",
+            "mes",
+        ),
+        Index(
+            "ix_bonus_outros_emp_periodo",
+            "emp",
+            "ano",
+            "mes",
+        ),
     )
 
 
@@ -2012,6 +2056,44 @@ def ensure_bonus_atacado_schema(force: bool = False):
 
     _BONUS_ATACADO_SCHEMA_READY = True
 
+
+
+def ensure_bonus_outros_valores_schema(force: bool = False):
+    """Garante a tabela de lançamentos manuais de Outros Valores."""
+    global _BONUS_OUTROS_VALORES_SCHEMA_READY
+    if _BONUS_OUTROS_VALORES_SCHEMA_READY and not force:
+        return
+
+    with engine.connect() as conn:
+        conn = conn.execution_options(isolation_level="AUTOCOMMIT")
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS bonus_outros_valores (
+                id SERIAL PRIMARY KEY,
+                origem VARCHAR(10) NOT NULL,
+                ano INTEGER NOT NULL,
+                mes INTEGER NOT NULL,
+                usuario_id INTEGER NOT NULL,
+                usuario_nome VARCHAR(100) NOT NULL,
+                emp VARCHAR(30) NOT NULL,
+                descricao VARCHAR(255) NOT NULL,
+                valor NUMERIC(18,4) NOT NULL,
+                criado_por_user_id INTEGER,
+                criado_por VARCHAR(100),
+                criado_em TIMESTAMP NOT NULL DEFAULT NOW(),
+                CONSTRAINT ck_bonus_outros_origem
+                    CHECK (origem IN ('VAREJO', 'ATACADO')),
+                CONSTRAINT ck_bonus_outros_valor_positivo
+                    CHECK (valor > 0)
+            );
+        """))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_bonus_outros_origem_periodo ON bonus_outros_valores (origem, ano, mes);"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_bonus_outros_usuario_periodo ON bonus_outros_valores (usuario_id, ano, mes);"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_bonus_outros_emp_periodo ON bonus_outros_valores (emp, ano, mes);"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_bonus_outros_usuario_nome ON bonus_outros_valores (usuario_nome);"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_bonus_outros_criado_por_user_id ON bonus_outros_valores (criado_por_user_id);"))
+        conn.execute(text("ALTER TABLE bonus_outros_valores ENABLE ROW LEVEL SECURITY;"))
+
+    _BONUS_OUTROS_VALORES_SCHEMA_READY = True
 
 
 def ensure_itens_parados_snapshot_schema(force: bool = False):

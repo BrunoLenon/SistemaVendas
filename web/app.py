@@ -279,6 +279,7 @@ from admin_itens_parados_routes import register_admin_itens_parados_routes  # no
 from admin_usuarios_routes import register_admin_usuarios_routes  # noqa: E402
 from bonus_atacado_routes import register_bonus_atacado_routes  # noqa: E402
 from bonus_importados_routes import register_bonus_importados_routes  # noqa: E402
+from bonus_outros_valores import register_bonus_outros_valores_routes  # noqa: E402
 from core_routes import register_core_routes  # noqa: E402
 from dashboard_routes import register_dashboard_routes  # noqa: E402
 from itens_parados_routes import register_itens_parados_routes  # noqa: E402
@@ -300,6 +301,7 @@ register_core_routes(
 register_dashboard_routes(app, login_required_fn=_login_required)
 register_bonus_importados_routes(app)
 register_bonus_atacado_routes(app)
+register_bonus_outros_valores_routes(app)
 register_itens_parados_snapshot_routes(app)
 register_itens_parados_routes(
     app,

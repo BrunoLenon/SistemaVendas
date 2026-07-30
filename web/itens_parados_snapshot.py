@@ -573,6 +573,7 @@ def attach_saldos_to_bonus_rows(db, rows: Iterable[Any], *, ano: int, mes: int) 
         by_emp[norm_emp(item.emp)] += Decimal(str(item.valor_total or 0))
 
     visible_keys: set[tuple[str, str]] = set()
+    manager_emps: set[str] = set()
     for row in rows:
         emp = norm_emp(getattr(row, "emp", ""))
         username = norm_username(getattr(row, "usuario_nome", ""))
@@ -591,11 +592,18 @@ def attach_saldos_to_bonus_rows(db, rows: Iterable[Any], *, ano: int, mes: int) 
         shown = store if role in {"gerente", "supervisor"} else individual
         setattr(row, "saldo_itens_parados", shown)
         if role in {"gerente", "supervisor"}:
-            # O total da loja não entra novamente no somatório individual.
+            # Usa o total da loja somente quando nenhum funcionário individual
+            # daquela EMP estiver visível (por exemplo, filtro direto no gerente).
+            manager_emps.add(emp)
             continue
         visible_keys.add((emp, username))
 
+    individual_emps = {emp for emp, _ in visible_keys}
     total_visible = sum((by_key.get(key, Decimal("0")) for key in visible_keys), Decimal("0"))
+    total_visible += sum(
+        (by_emp.get(emp, Decimal("0")) for emp in manager_emps if emp not in individual_emps),
+        Decimal("0"),
+    )
     return {
         "total_visivel": total_visible,
         "total_lojas": sum((by_emp[emp] for emp in emps), Decimal("0")),

@@ -35,10 +35,12 @@ from db import (
     UsuarioEmp,
     ensure_bonus_importados_schema,
     ensure_itens_parados_snapshot_schema,
+    ensure_bonus_outros_valores_schema,
 )
 from security_utils import audit, normalize_role
 from sv_utils import emp_sort_key
 from itens_parados_snapshot import attach_saldos_to_bonus_rows
+from bonus_outros_valores import attach_outros_valores_to_bonus_rows, bonus_row_options
 
 
 MAX_UPLOAD_BYTES = 15 * 1024 * 1024
@@ -698,6 +700,7 @@ def bonus_importados():
             batch=None,
             batch_warnings=[],
             team_by_emp=[],
+            admin_user_options=[],
             db_unavailable=True,
         )
 
@@ -788,6 +791,32 @@ def bonus_importados():
                 row.saldo_itens_parados_usuario = Decimal("0")
                 row.saldo_itens_parados_loja = Decimal("0")
 
+        try:
+            ensure_bonus_outros_valores_schema()
+            outros_valores_summary = attach_outros_valores_to_bonus_rows(
+                db,
+                rows,
+                ano=ano,
+                mes=mes,
+                origem="VAREJO",
+                bonus_field="bonus_final",
+            )
+        except Exception:
+            current_app.logger.exception(
+                "Falha ao carregar Outros Valores no Bônus Varejo"
+            )
+            outros_valores_summary = {
+                "total_visivel": Decimal("0"),
+                "quantidade": 0,
+            }
+            for row in rows:
+                row.outros_valores_total = Decimal("0")
+                row.outros_valores_detalhes = []
+                row.valor_bonus_base = Decimal(str(row.bonus_final or 0))
+                row.total_geral = row.valor_bonus_base + Decimal(
+                    str(getattr(row, "saldo_itens_parados", 0) or 0)
+                )
+
         seller_rows = [row for row in rows if row.funcao == "VENDEDOR"]
         manager_rows = [row for row in rows if row.funcao == "GERENTE"]
         mechanic_rows = [row for row in rows if row.funcao == "MECANICO"]
@@ -831,6 +860,8 @@ def bonus_importados():
                     "valor_parcial": Decimal("0"),
                     "bonus_final": Decimal("0"),
                     "itens_parados": Decimal("0"),
+                    "outros_valores": Decimal("0"),
+                    "total_geral": Decimal("0"),
                 },
             )
             item["quantidade"] += 1
@@ -839,26 +870,64 @@ def bonus_importados():
             item["itens_parados"] += Decimal(
                 str(getattr(row, "saldo_itens_parados_usuario", 0) or 0)
             )
+            item["outros_valores"] += Decimal(
+                str(getattr(row, "outros_valores_total", 0) or 0)
+            )
+            item["total_geral"] += (
+                Decimal(str(row.bonus_final or 0))
+                + Decimal(str(getattr(row, "saldo_itens_parados_usuario", 0) or 0))
+                + Decimal(str(getattr(row, "outros_valores_total", 0) or 0))
+            )
         team_by_emp = sorted(
             team_by_emp_map.values(), key=lambda item: emp_sort_key(item["emp"])
         )
 
+        bonus_visivel = _sum_field(rows, "bonus_final")
+        bonus_proprio = _sum_field(own_rows, "bonus_final")
+        bonus_equipe = _sum_field(team_rows, "bonus_final")
+        outros_proprio = sum(
+            (Decimal(str(getattr(row, "outros_valores_total", 0) or 0)) for row in own_rows),
+            Decimal("0"),
+        )
+        outros_equipe = sum(
+            (Decimal(str(getattr(row, "outros_valores_total", 0) or 0)) for row in team_rows),
+            Decimal("0"),
+        )
+        itens_proprio = sum(
+            (Decimal(str(getattr(row, "saldo_itens_parados", 0) or 0)) for row in own_rows),
+            Decimal("0"),
+        )
+        itens_equipe = sum(
+            (Decimal(str(getattr(row, "saldo_itens_parados_usuario", 0) or 0)) for row in team_rows),
+            Decimal("0"),
+        )
         summary = {
             "registros": len(rows),
             "valor_parcial_visivel": _sum_field(rows, "valor_parcial"),
-            "bonus_visivel": _sum_field(rows, "bonus_final"),
+            "bonus_visivel": bonus_visivel,
             "bonus_vendedores": _sum_field(seller_rows, "bonus_final"),
             "bonus_gerentes": _sum_field(manager_rows, "bonus_final"),
             "bonus_mecanicos": _sum_field(mechanic_rows, "bonus_final"),
             "valor_parcial_proprio": _sum_field(own_rows, "valor_parcial"),
-            "bonus_proprio": _sum_field(own_rows, "bonus_final"),
+            "bonus_proprio": bonus_proprio,
             "valor_parcial_equipe": _sum_field(team_rows, "valor_parcial"),
-            "bonus_equipe": _sum_field(team_rows, "bonus_final"),
+            "bonus_equipe": bonus_equipe,
             "quantidade_equipe": len(team_rows),
             "itens_parados_visivel": itens_parados_summary["total_visivel"],
             "itens_parados_lojas": itens_parados_summary["total_lojas"],
+            "outros_valores_visivel": outros_valores_summary["total_visivel"],
+            "outros_valores_proprio": outros_proprio,
+            "outros_valores_equipe": outros_equipe,
+            "total_geral_visivel": (
+                bonus_visivel
+                + itens_parados_summary["total_visivel"]
+                + outros_valores_summary["total_visivel"]
+            ),
+            "total_geral_proprio": bonus_proprio + itens_proprio + outros_proprio,
+            "total_geral_equipe": bonus_equipe + itens_equipe + outros_equipe,
             "nao_vinculados": sum(1 for row in rows if row.usuario_id is None),
         }
+        admin_user_options = bonus_row_options(all_period_rows) if role == "admin" else []
 
         return render_template(
             "bonus_importados.html",
@@ -881,5 +950,6 @@ def bonus_importados():
             batch=batch,
             batch_warnings=batch_warnings,
             team_by_emp=team_by_emp,
+            admin_user_options=admin_user_options,
             db_unavailable=False,
         )
