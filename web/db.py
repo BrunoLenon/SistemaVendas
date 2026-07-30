@@ -158,6 +158,7 @@ class BonusUsuarioImportado(Base):
     crescimento = Column(Numeric(12, 6), nullable=True)  # I
     loja_anterior = Column(Numeric(18, 4), nullable=False, default=0)  # J
     loja_atual = Column(Numeric(18, 4), nullable=False, default=0)  # K
+    produto_gerente = Column(Numeric(18, 4), nullable=False, default=0)  # M
     importado_vendedor = Column(Numeric(18, 4), nullable=False, default=0)  # N
     importado_loja = Column(Numeric(18, 4), nullable=False, default=0)  # O
     bonus_importado = Column(Numeric(18, 4), nullable=False, default=0)  # R
@@ -1959,6 +1960,7 @@ def ensure_bonus_importados_schema(force: bool = False):
                 crescimento NUMERIC(12,6),
                 loja_anterior NUMERIC(18,4) NOT NULL DEFAULT 0,
                 loja_atual NUMERIC(18,4) NOT NULL DEFAULT 0,
+                produto_gerente NUMERIC(18,4) NOT NULL DEFAULT 0,
                 importado_vendedor NUMERIC(18,4) NOT NULL DEFAULT 0,
                 importado_loja NUMERIC(18,4) NOT NULL DEFAULT 0,
                 bonus_importado NUMERIC(18,4) NOT NULL DEFAULT 0,
@@ -1977,6 +1979,7 @@ def ensure_bonus_importados_schema(force: bool = False):
         conn.execute(text("ALTER TABLE bonus_usuarios_importados ADD COLUMN IF NOT EXISTS crescimento NUMERIC(12,6);"))
         conn.execute(text("ALTER TABLE bonus_usuarios_importados ADD COLUMN IF NOT EXISTS loja_anterior NUMERIC(18,4) NOT NULL DEFAULT 0;"))
         conn.execute(text("ALTER TABLE bonus_usuarios_importados ADD COLUMN IF NOT EXISTS loja_atual NUMERIC(18,4) NOT NULL DEFAULT 0;"))
+        conn.execute(text("ALTER TABLE bonus_usuarios_importados ADD COLUMN IF NOT EXISTS produto_gerente NUMERIC(18,4) NOT NULL DEFAULT 0;"))
         conn.execute(text("ALTER TABLE bonus_usuarios_importados ADD COLUMN IF NOT EXISTS importado_vendedor NUMERIC(18,4) NOT NULL DEFAULT 0;"))
         conn.execute(text("ALTER TABLE bonus_usuarios_importados ADD COLUMN IF NOT EXISTS bonus_importado NUMERIC(18,4) NOT NULL DEFAULT 0;"))
         conn.execute(text("ALTER TABLE bonus_usuarios_importados ADD COLUMN IF NOT EXISTS valor_parcial NUMERIC(18,4) NOT NULL DEFAULT 0;"))

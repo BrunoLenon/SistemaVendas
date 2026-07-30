@@ -100,6 +100,12 @@ COLUMN_LAYOUT: dict[str, dict[str, Any]] = {
         "headers": {"LOJAATUAL"},
         "label": "LOJA ATUAL",
     },
+    "produto_gerente": {
+        "index": 12,
+        "letter": "M",
+        "headers": {"PRODUTOGERENTE", "PRODUTOSGERENTE"},
+        "label": "PRODUTO GERENTE",
+    },
     "importado_vendedor": {
         "index": 13,
         "letter": "N",
@@ -153,7 +159,9 @@ ROLE_FIELDS = {
     "GERENTE": (
         "loja_anterior",
         "loja_atual",
+        "produto_gerente",
         "importado_loja",
+        "bonus_importado",
         "valor_meta",
         "valor_parcial",
         "bonus_final",
@@ -167,6 +175,7 @@ ROLE_FIELDS = {
 
 MONEY_FIELDS = {
     "produto_vendedor",
+    "produto_gerente",
     "mecanico_faturado",
     "venda_anterior",
     "venda_atual",

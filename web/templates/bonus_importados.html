@@ -270,7 +270,7 @@
           </div>
           <div class="col-lg-2 d-grid"><button class="btn btn-warning fw-bold" type="submit">Importar</button></div>
         </div>
-        <div class="bonus-note mt-2">O importador valida as posições B, C, D, E, F, G, H, I, J, K, N, O, R, T, U e V. Salve a planilha após o recálculo no Excel. Limite: 15 MB.</div>
+        <div class="bonus-note mt-2">O importador valida as posições B, C, D, E, F, G, H, I, J, K, M, N, O, R, T, U e V. Salve a planilha após o recálculo no Excel. Limite: 15 MB.</div>
       </form>
       <div class="bonus-columns">
         <div class="bonus-column-note"><b>Vendedor</b><br>E, G, H, I, N, R, T, U e V</div>
@@ -400,7 +400,9 @@
           <div class="bonus-record-grid">
             <div class="bonus-record-item"><small>Loja anterior · J</small><b>{{ row.loja_anterior|brl_rs }}</b></div>
             <div class="bonus-record-item"><small>Loja atual · K</small><b>{{ row.loja_atual|brl_rs }}</b></div>
+            <div class="bonus-record-item"><small>Produto gerente · M</small><b>{{ row.produto_gerente|brl_rs }}</b></div>
             <div class="bonus-record-item"><small>Importado loja · O</small><b>{{ row.importado_loja|brl_rs }}</b></div>
+            <div class="bonus-record-item"><small>Bônus importado · R</small><b>{{ row.bonus_importado|brl_rs }}</b></div>
             <div class="bonus-record-item"><small>Valor meta · T</small><b>{{ row.valor_meta|brl_rs }}</b></div>
             <div class="bonus-record-item"><small>Valor parcial · U</small><b>{{ row.valor_parcial|brl_rs }}</b></div>
             <div class="bonus-record-item"><small>Bônus final · V</small><b>{{ row.bonus_final|brl_rs }}</b></div>
@@ -476,7 +478,9 @@
         <div class="bonus-group-title">Informações do gerente e da loja</div>
         <div class="bonus-metric"><small>J · Loja anterior — mesmo período do ano passado</small><strong>{{ selected.loja_anterior|brl_rs }}</strong></div>
         <div class="bonus-metric"><small>K · Loja atual — totalizada com serviço</small><strong>{{ selected.loja_atual|brl_rs }}</strong></div>
+        <div class="bonus-metric"><small>M · Produto gerente — bônus de produtos da loja</small><strong>{{ selected.produto_gerente|brl_rs }}</strong></div>
         <div class="bonus-metric"><small>O · Importado loja</small><strong>{{ selected.importado_loja|brl_rs }}</strong></div>
+        <div class="bonus-metric"><small>R · Bônus importado do gerente</small><strong>{{ selected.bonus_importado|brl_rs }}</strong></div>
         <div class="bonus-metric"><small>T · Valor meta</small><strong>{{ selected.valor_meta|brl_rs }}</strong></div>
         <div class="bonus-metric"><small>U · Valor parcial — provisão</small><strong>{{ selected.valor_parcial|brl_rs }}</strong></div>
         <div class="bonus-metric"><small>Saldo de itens parados da loja</small><strong>{{ selected.saldo_itens_parados_loja|brl_rs }}</strong></div>
