@@ -71,6 +71,7 @@ Base = declarative_base()
 # A migração continua sendo garantida na primeira chamada de cada processo.
 _METAS_LOJAS_SCHEMA_READY = False
 _BONUS_IMPORTADOS_SCHEMA_READY = False
+_BONUS_ATACADO_SCHEMA_READY = False
 
 
 
@@ -175,6 +176,79 @@ class BonusUsuarioImportado(Base):
         Index("ix_bonus_usuario_periodo", "usuario_nome", "ano", "mes"),
         Index("ix_bonus_emp_periodo", "emp", "ano", "mes"),
         Index("ix_bonus_funcao_periodo", "funcao", "ano", "mes"),
+    )
+
+
+class BonusAtacadoImportacaoLote(Base):
+    """Auditoria das importações mensais da aba ``PremiacaoFinal`` do atacado."""
+
+    __tablename__ = "bonus_atacado_importacoes_lotes"
+
+    id = Column(Integer, primary_key=True)
+    ano = Column(Integer, nullable=False, index=True)
+    mes = Column(Integer, nullable=False, index=True)
+    arquivo_origem = Column(String(255), nullable=False)
+    aba_origem = Column(String(120), nullable=False, default="PremiacaoFinal")
+    importado_por_user_id = Column(Integer, nullable=True, index=True)
+    importado_por = Column(String(80), nullable=True)
+    importado_em = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
+    linhas_lidas = Column(Integer, nullable=False, default=0)
+    linhas_importadas = Column(Integer, nullable=False, default=0)
+    linhas_ignoradas = Column(Integer, nullable=False, default=0)
+    avisos_json = Column(Text, nullable=True)
+
+    __table_args__ = (
+        Index(
+            "ix_bonus_atacado_lotes_periodo_importado",
+            "ano",
+            "mes",
+            "importado_em",
+        ),
+    )
+
+
+class BonusAtacadoUsuario(Base):
+    """Snapshot mensal dos valores já calculados da premiação do atacado."""
+
+    __tablename__ = "bonus_atacado_usuarios"
+
+    id = Column(Integer, primary_key=True)
+    lote_id = Column(Integer, nullable=False, index=True)
+    ano = Column(Integer, nullable=False, index=True)
+    mes = Column(Integer, nullable=False, index=True)
+    linha_origem = Column(Integer, nullable=True)
+
+    usuario_id = Column(Integer, nullable=True, index=True)
+    usuario_nome = Column(String(100), nullable=False, index=True)
+    funcao_planilha = Column(String(30), nullable=True)
+    emp = Column(String(30), nullable=False, index=True)
+
+    total_produtos = Column(Numeric(18, 4), nullable=True)
+    venda_anterior = Column(Numeric(18, 4), nullable=True)
+    venda_atual = Column(Numeric(18, 4), nullable=True)
+    importado = Column(Numeric(18, 4), nullable=True)
+    percentual_importado = Column(Numeric(12, 6), nullable=True)
+    loja_anterior = Column(Numeric(18, 4), nullable=True)
+    loja_atual = Column(Numeric(18, 4), nullable=True)
+    falta_valor_vendedor = Column(Numeric(18, 4), nullable=True)
+
+    importado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "ano",
+            "mes",
+            "emp",
+            "usuario_nome",
+            name="uq_bonus_atacado_usuario_periodo_emp",
+        ),
+        Index(
+            "ix_bonus_atacado_usuario_periodo",
+            "usuario_nome",
+            "ano",
+            "mes",
+        ),
+        Index("ix_bonus_atacado_emp_periodo", "emp", "ano", "mes"),
     )
 
 
@@ -1804,6 +1878,67 @@ def ensure_bonus_importados_schema(force: bool = False):
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_bonus_usuarios_usuario_id ON bonus_usuarios_importados (usuario_id);"))
 
     _BONUS_IMPORTADOS_SCHEMA_READY = True
+
+
+
+def ensure_bonus_atacado_schema(force: bool = False):
+    """Garante a estrutura enxuta do módulo Bônus Atacado."""
+    global _BONUS_ATACADO_SCHEMA_READY
+    if _BONUS_ATACADO_SCHEMA_READY and not force:
+        return
+
+    with engine.connect() as conn:
+        conn = conn.execution_options(isolation_level="AUTOCOMMIT")
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS bonus_atacado_importacoes_lotes (
+                id SERIAL PRIMARY KEY,
+                ano INTEGER NOT NULL,
+                mes INTEGER NOT NULL,
+                arquivo_origem VARCHAR(255) NOT NULL,
+                aba_origem VARCHAR(120) NOT NULL DEFAULT 'PremiacaoFinal',
+                importado_por_user_id INTEGER,
+                importado_por VARCHAR(80),
+                importado_em TIMESTAMP NOT NULL DEFAULT NOW(),
+                linhas_lidas INTEGER NOT NULL DEFAULT 0,
+                linhas_importadas INTEGER NOT NULL DEFAULT 0,
+                linhas_ignoradas INTEGER NOT NULL DEFAULT 0,
+                avisos_json TEXT
+            );
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS bonus_atacado_usuarios (
+                id SERIAL PRIMARY KEY,
+                lote_id INTEGER NOT NULL,
+                ano INTEGER NOT NULL,
+                mes INTEGER NOT NULL,
+                linha_origem INTEGER,
+                usuario_id INTEGER,
+                usuario_nome VARCHAR(100) NOT NULL,
+                funcao_planilha VARCHAR(30),
+                emp VARCHAR(30) NOT NULL,
+                total_produtos NUMERIC(18,4),
+                venda_anterior NUMERIC(18,4),
+                venda_atual NUMERIC(18,4),
+                importado NUMERIC(18,4),
+                percentual_importado NUMERIC(12,6),
+                loja_anterior NUMERIC(18,4),
+                loja_atual NUMERIC(18,4),
+                falta_valor_vendedor NUMERIC(18,4),
+                importado_em TIMESTAMP NOT NULL DEFAULT NOW(),
+                CONSTRAINT uq_bonus_atacado_usuario_periodo_emp
+                    UNIQUE (ano, mes, emp, usuario_nome)
+            );
+        """))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_bonus_atacado_lotes_periodo_importado ON bonus_atacado_importacoes_lotes (ano, mes, importado_em);"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_bonus_atacado_lotes_importado_por_user_id ON bonus_atacado_importacoes_lotes (importado_por_user_id);"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_bonus_atacado_usuario_periodo ON bonus_atacado_usuarios (usuario_nome, ano, mes);"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_bonus_atacado_emp_periodo ON bonus_atacado_usuarios (emp, ano, mes);"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_bonus_atacado_usuario_id ON bonus_atacado_usuarios (usuario_id);"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_bonus_atacado_lote_id ON bonus_atacado_usuarios (lote_id);"))
+        conn.execute(text("ALTER TABLE bonus_atacado_importacoes_lotes ENABLE ROW LEVEL SECURITY;"))
+        conn.execute(text("ALTER TABLE bonus_atacado_usuarios ENABLE ROW LEVEL SECURITY;"))
+
+    _BONUS_ATACADO_SCHEMA_READY = True
 
 
 

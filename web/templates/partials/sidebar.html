@@ -37,8 +37,8 @@
 
   <div class="sb-sec">
     <div class="lbl">Bônus</div>
-    <a class="sb-link {% if path.startswith('/bonus-varejo') or path == '/bonus' or path.startswith('/admin/bonus') %}active{% endif %}" href="{{ url_for('bonus_importados') }}">💰 Bônus Varejo</a>
-    <a class="sb-link {% if path.startswith('/bonus-atacado') %}active{% endif %}" href="{{ url_for('bonus_atacado') }}">🏷️ Bônus Atacado</a>
+    <a class="sb-link {% if path.startswith('/bonus-varejo') or path == '/bonus' or path == '/admin/bonus/importar' %}active{% endif %}" href="{{ url_for('bonus_importados') }}">💰 Bônus Varejo</a>
+    <a class="sb-link {% if path.startswith('/bonus-atacado') or path.startswith('/admin/bonus-atacado') %}active{% endif %}" href="{{ url_for('bonus_atacado') }}">🏷️ Bônus Atacado</a>
   </div>
 
   <div class="sb-sec">

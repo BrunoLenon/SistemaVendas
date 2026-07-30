@@ -1,24 +1,240 @@
 {% extends "base.html" %}
 {% block title %}Bônus Atacado{% endblock %}
 
+{% macro money(value) -%}
+  {% if value is none %}<span class="atacado-na">—</span>{% else %}{{ value|brl_rs }}{% endif %}
+{%- endmacro %}
+
+{% macro percent(value) -%}
+  {% if value is none %}<span class="atacado-na">—</span>{% else %}{{ ('%.2f'|format(value))|replace('.', ',') }}%{% endif %}
+{%- endmacro %}
+
 {% block extra_head %}
 <style>
-  .wholesale-wrap{min-height:65vh;display:grid;place-items:center}
-  .wholesale-card{width:min(760px,100%);border:1px solid rgba(255,255,255,.1);border-radius:24px;background:linear-gradient(145deg,rgba(255,255,255,.05),rgba(255,255,255,.018));padding:clamp(24px,5vw,48px);text-align:center}
-  .wholesale-icon{width:76px;height:76px;border-radius:22px;display:grid;place-items:center;margin:0 auto 20px;background:rgba(255,150,45,.1);border:1px solid rgba(255,179,90,.25);font-size:2rem}
-  .wholesale-card h1{font-weight:850;margin-bottom:12px}
-  .wholesale-card p{color:#aaa;line-height:1.65;max-width:600px;margin:0 auto}
-  .wholesale-tag{display:inline-flex;margin-top:24px;padding:8px 12px;border-radius:999px;background:rgba(255,179,90,.1);color:#ffb35a;font-size:.78rem;font-weight:800;text-transform:uppercase;letter-spacing:.08em}
+  .atacado-page{max-width:1580px;margin:0 auto;padding:4px 0 28px;color:#f8fafc}
+  .atacado-hero,.atacado-panel{border:1px solid rgba(255,255,255,.085);border-radius:22px;background:linear-gradient(180deg,rgba(255,255,255,.052),rgba(255,255,255,.022));box-shadow:0 18px 44px rgba(0,0,0,.22)}
+  .atacado-hero{padding:20px;background:radial-gradient(circle at top right,rgba(255,145,0,.20),transparent 34%),linear-gradient(180deg,rgba(255,255,255,.052),rgba(255,255,255,.022))}
+  .atacado-panel{padding:17px}
+  .atacado-title{font-size:29px;font-weight:950;letter-spacing:-.04em;margin:0}
+  .atacado-sub{color:#b9bdc5;font-size:13px;max-width:980px;margin-top:7px;line-height:1.55}
+  .atacado-chip{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border:1px solid rgba(255,174,72,.25);border-radius:999px;background:rgba(255,145,0,.09);color:#ffc477;font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.06em}
+  .atacado-filter{display:flex;gap:9px;align-items:end;flex-wrap:wrap}
+  .atacado-label{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#a9adb5;font-weight:900;margin-bottom:6px}
+  .atacado-page .form-control,.atacado-page .form-select{background:rgba(9,9,10,.88);border-color:rgba(255,255,255,.11);color:#fff;border-radius:12px;min-height:40px}
+  .atacado-page .form-control:focus,.atacado-page .form-select:focus{border-color:rgba(255,166,58,.5);box-shadow:0 0 0 .18rem rgba(255,145,0,.12)}
+  .atacado-page .form-select option{background:#151515;color:#fff}
+  .atacado-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:14px}
+  .atacado-kpi{padding:13px 14px;border:1px solid rgba(255,255,255,.075);border-radius:16px;background:rgba(0,0,0,.19);min-width:0}
+  .atacado-kpi small{display:block;color:#969ba4;font-size:10px;font-weight:850;text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px}
+  .atacado-kpi strong{font-size:18px;line-height:1.15;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .atacado-section-title{font-size:16px;font-weight:900;margin:0}
+  .atacado-section-sub{color:#999fa8;font-size:12px;margin-top:4px}
+  .atacado-store-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:13px}
+  .atacado-store{padding:15px;border:1px solid rgba(255,255,255,.08);border-radius:17px;background:rgba(0,0,0,.20)}
+  .atacado-store-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px}
+  .atacado-store-head strong{font-size:15px}
+  .atacado-store-head span{font-size:10px;color:#999fa8;text-transform:uppercase;letter-spacing:.06em}
+  .atacado-store-values{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+  .atacado-store-value{padding:10px;border-radius:13px;background:rgba(255,255,255,.035)}
+  .atacado-store-value small{display:block;color:#999fa8;font-size:9px;text-transform:uppercase;letter-spacing:.07em;font-weight:850;margin-bottom:5px}
+  .atacado-store-value b{font-size:14px}
+  .atacado-table-wrap{width:100%;overflow:visible;border:1px solid rgba(255,255,255,.075);border-radius:17px;background:rgba(0,0,0,.18)}
+  .atacado-table{width:100%;table-layout:fixed;margin:0;font-size:11px;color:#f5f5f5}
+  .atacado-table>:not(caption)>*>*{padding:10px 7px;border-color:rgba(255,255,255,.065);vertical-align:middle;background:transparent;color:inherit}
+  .atacado-table thead th{font-size:9px;text-transform:uppercase;letter-spacing:.045em;color:#b8bdc6;font-weight:900;line-height:1.25;white-space:normal}
+  .atacado-table tbody tr:nth-child(even){background:rgba(255,255,255,.025)}
+  .atacado-table tbody tr:hover{background:rgba(255,145,0,.055)}
+  .atacado-user{font-weight:900;overflow-wrap:anywhere;line-height:1.25}
+  .atacado-role{display:inline-flex;padding:4px 7px;border:1px solid rgba(255,255,255,.09);border-radius:999px;color:#c3c7cf;font-size:9px;font-weight:850;line-height:1}
+  .atacado-money{font-variant-numeric:tabular-nums;font-weight:750;white-space:nowrap}
+  .atacado-total{color:#ffc477;font-weight:950}
+  .atacado-na{color:#70757e}
+  .atacado-mobile-list{display:none;gap:10px}
+  .atacado-record-card{padding:15px;border:1px solid rgba(255,255,255,.08);border-radius:17px;background:rgba(0,0,0,.20)}
+  .atacado-record-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:12px}
+  .atacado-record-head strong{overflow-wrap:anywhere}
+  .atacado-record-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+  .atacado-record-item{padding:9px;border-radius:12px;background:rgba(255,255,255,.035)}
+  .atacado-record-item small{display:block;color:#999fa8;font-size:9px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px}
+  .atacado-record-item b{font-size:12px}
+  .atacado-import-grid{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(320px,.75fr);gap:12px}
+  .atacado-drop{padding:15px;border:1px dashed rgba(255,177,66,.28);border-radius:16px;background:rgba(255,145,0,.045)}
+  .atacado-columns{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin-top:10px}
+  .atacado-column{font-size:11px;color:#b9bdc5;padding:8px 9px;border-radius:11px;background:rgba(255,255,255,.035)}
+  .atacado-column b{color:#fff}
+  .atacado-note{font-size:11px;color:#aeb3bc;line-height:1.5}
+  .atacado-warnings{margin:12px 0 0;padding:0 0 0 18px;color:#ffd29a;font-size:11px;line-height:1.55;max-height:260px;overflow:auto}
+  .atacado-empty{padding:42px 18px;text-align:center;color:#8f949d}
+  @media(max-width:1150px){.atacado-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.atacado-store-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.atacado-table{font-size:10px}.atacado-table>:not(caption)>*>*{padding:9px 5px}}
+  @media(max-width:900px){.atacado-desktop-table{display:none}.atacado-mobile-list{display:grid}.atacado-store-grid{grid-template-columns:1fr}.atacado-import-grid{grid-template-columns:1fr}}
+  @media(max-width:600px){.atacado-kpis{grid-template-columns:1fr 1fr}.atacado-title{font-size:25px}.atacado-filter>*{width:100%}.atacado-filter .btn{width:100%}.atacado-columns{grid-template-columns:1fr}}
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="wholesale-wrap">
-  <section class="wholesale-card">
-    <div class="wholesale-icon">🏷️</div>
-    <h1>Bônus Atacado</h1>
-    <p>A página já está criada e protegida por login. O importador, as colunas e as regras de hierarquia serão implantados depois que a planilha definitiva do atacado estiver concluída.</p>
-    <div class="wholesale-tag">Estrutura em preparação</div>
+<div class="atacado-page">
+  <section class="atacado-hero mb-3">
+    <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
+      <div>
+        <div class="atacado-chip">🏷️ Premiação importada</div>
+        <h1 class="atacado-title mt-2">Bônus Atacado</h1>
+        <div class="atacado-sub">Valores prontos da aba <b>PremiacaoFinal</b>. O sistema não recalcula campanhas, vendas ou percentuais; apenas importa, armazena e aplica a hierarquia dos usuários cadastrados.</div>
+      </div>
+      <form method="get" class="atacado-filter">
+        <div>
+          <div class="atacado-label">Ano</div>
+          <input class="form-control" type="number" name="ano" value="{{ ano }}" min="2000" max="2100" style="width:105px">
+        </div>
+        <div>
+          <div class="atacado-label">Mês</div>
+          <select class="form-select" name="mes" style="width:105px">
+            {% for item in range(1,13) %}<option value="{{ item }}" {% if item == mes %}selected{% endif %}>{{ '%02d'|format(item) }}</option>{% endfor %}
+          </select>
+        </div>
+        {% if role == 'admin' %}
+        <div>
+          <div class="atacado-label">EMP</div>
+          <select class="form-select" name="emp" style="width:120px">
+            <option value="">Todas</option>
+            {% for item in emp_options %}<option value="{{ item }}" {% if item == emp_filter %}selected{% endif %}>{{ item }}</option>{% endfor %}
+          </select>
+        </div>
+        <div>
+          <div class="atacado-label">Funcionário</div>
+          <select class="form-select" name="usuario" style="width:205px">
+            <option value="">Todos</option>
+            {% for item in user_options %}<option value="{{ item }}" {% if item == user_filter %}selected{% endif %}>{{ item }}</option>{% endfor %}
+          </select>
+        </div>
+        {% endif %}
+        <button class="btn btn-warning fw-bold" type="submit">Aplicar</button>
+      </form>
+    </div>
+
+    <div class="atacado-kpis">
+      <div class="atacado-kpi"><small>Prêmio produtos</small><strong>{{ summary.total_produtos|default(0)|brl_rs }}</strong></div>
+      <div class="atacado-kpi"><small>Venda de importados</small><strong>{{ summary.importado|default(0)|brl_rs }}</strong></div>
+      <div class="atacado-kpi"><small>Registros visíveis</small><strong>{{ summary.registros|default(0) }}</strong></div>
+      <div class="atacado-kpi"><small>Empresas visíveis</small><strong>{{ summary.emps|default(0) }}</strong></div>
+    </div>
+  </section>
+
+  {% if role == 'admin' %}
+  <section class="atacado-panel mb-3">
+    <div class="atacado-import-grid">
+      <div>
+        <h2 class="atacado-section-title">Importar Premiação Atacado</h2>
+        <div class="atacado-section-sub">A competência selecionada será substituída integralmente em uma única transação.</div>
+        <form class="atacado-drop mt-3" method="post" action="{{ url_for('admin_bonus_atacado_importar') }}" enctype="multipart/form-data">
+          <div class="row g-2 align-items-end">
+            <div class="col-md-2">
+              <div class="atacado-label">Ano</div>
+              <input class="form-control" type="number" name="ano" value="{{ ano }}" min="2000" max="2100" required>
+            </div>
+            <div class="col-md-2">
+              <div class="atacado-label">Mês</div>
+              <select class="form-select" name="mes" required>{% for item in range(1,13) %}<option value="{{ item }}" {% if item == mes %}selected{% endif %}>{{ '%02d'|format(item) }}</option>{% endfor %}</select>
+            </div>
+            <div class="col-md-6">
+              <div class="atacado-label">Arquivo Excel</div>
+              <input class="form-control" type="file" name="arquivo" accept=".xlsx,.xlsm" required>
+            </div>
+            <div class="col-md-2 d-grid"><button class="btn btn-warning fw-bold" type="submit">Importar</button></div>
+          </div>
+        </form>
+      </div>
+      <div>
+        <h2 class="atacado-section-title">Colunas utilizadas</h2>
+        <div class="atacado-columns">
+          <div class="atacado-column"><b>EMP</b><br>Empresa do usuário</div>
+          <div class="atacado-column"><b>FUNCIONARIO</b><br>Usuário cadastrado</div>
+          <div class="atacado-column"><b>Total</b><br>Prêmio de produtos</div>
+          <div class="atacado-column"><b>VendaAnterior / Venda Atual</b><br>Faturamento individual</div>
+          <div class="atacado-column"><b>Importado / % Importado</b><br>Venda de importados</div>
+          <div class="atacado-column"><b>Falta Valor Vendedor</b><br>Valor importado da base</div>
+          <div class="atacado-column"><b>Loja Anterior / Loja Atual</b><br>Somente Admin, Supervisor e Gerente</div>
+          <div class="atacado-column"><b>FUNCAO</b><br>Apenas conferência; a permissão segue o cadastro</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="atacado-panel mb-3">
+    <h2 class="atacado-section-title">Validação da última importação</h2>
+    {% if batch %}
+      <div class="atacado-section-sub">{{ batch.arquivo_origem }} · aba {{ batch.aba_origem }} · {{ batch.linhas_lidas }} linhas lidas · {{ batch.linhas_importadas }} importadas · {{ batch.linhas_ignoradas }} ignoradas.</div>
+      {% if batch_warnings %}<ul class="atacado-warnings">{% for warning in batch_warnings %}<li>{{ warning }}</li>{% endfor %}</ul>{% else %}<div class="atacado-note mt-3">Nenhum aviso de vínculo, cabeçalho ou valor foi identificado.</div>{% endif %}
+    {% else %}
+      <div class="atacado-empty">Ainda não existe importação para {{ '%02d'|format(mes) }}/{{ ano }}.</div>
+    {% endif %}
+  </section>
+  {% endif %}
+
+  {% if can_view_store_metrics and store_cards %}
+  <section class="atacado-panel mb-3">
+    <h2 class="atacado-section-title">Valores das lojas</h2>
+    <div class="atacado-section-sub">Exibição restrita ao administrador, supervisor e gerente das EMPs vinculadas no cadastro atual.</div>
+    <div class="atacado-store-grid">
+      {% for store in store_cards %}
+      <article class="atacado-store">
+        <div class="atacado-store-head"><strong>EMP {{ store.emp }}</strong><span>{{ store.registros }} registro(s)</span></div>
+        <div class="atacado-store-values">
+          <div class="atacado-store-value"><small>Loja anterior</small><b>{{ money(store.loja_anterior) }}</b></div>
+          <div class="atacado-store-value"><small>Loja atual</small><b>{{ money(store.loja_atual) }}</b></div>
+        </div>
+      </article>
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}
+
+  <section class="atacado-panel">
+    <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-3">
+      <div>
+        <h2 class="atacado-section-title">{% if role in ['admin','supervisor','gerente'] %}Usuários das empresas permitidas{% else %}Minha premiação{% endif %}</h2>
+        <div class="atacado-section-sub">{% if role in ['admin','supervisor','gerente'] %}Os vínculos de EMP e a hierarquia são definidos pelo cadastro do sistema, não pela planilha.{% else %}Somente registros associados ao seu usuário são carregados pelo servidor.{% endif %}</div>
+      </div>
+      <div class="atacado-chip">Competência {{ '%02d'|format(mes) }}/{{ ano }}</div>
+    </div>
+
+    {% if rows %}
+    <div class="atacado-table-wrap atacado-desktop-table">
+      <table class="table table-sm atacado-table">
+        {% if role in ['admin','supervisor','gerente'] %}
+        <colgroup><col style="width:6%"><col style="width:16%"><col style="width:9%"><col style="width:11%"><col style="width:12%"><col style="width:12%"><col style="width:12%"><col style="width:9%"><col style="width:13%"></colgroup>
+        <thead><tr><th>EMP</th><th>Funcionário</th><th>Função</th><th class="text-end">Prêmio produtos</th><th class="text-end">Venda anterior</th><th class="text-end">Venda atual</th><th class="text-end">Importado</th><th class="text-end">% Importado</th><th class="text-end">Falta valor vendedor</th></tr></thead>
+        <tbody>{% for row in rows %}<tr>
+          <td>{{ row.emp }}</td><td class="atacado-user">{{ row.usuario_nome }}</td><td><span class="atacado-role">{{ row.funcao_exibicao }}</span></td>
+          <td class="text-end atacado-money atacado-total">{{ money(row.total_produtos) }}</td><td class="text-end atacado-money">{{ money(row.venda_anterior) }}</td><td class="text-end atacado-money">{{ money(row.venda_atual) }}</td><td class="text-end atacado-money">{{ money(row.importado) }}</td><td class="text-end atacado-money">{{ percent(row.percentual_importado) }}</td><td class="text-end atacado-money">{{ money(row.falta_valor_vendedor) }}</td>
+        </tr>{% endfor %}</tbody>
+        {% else %}
+        <colgroup><col style="width:8%"><col style="width:16%"><col style="width:17%"><col style="width:17%"><col style="width:16%"><col style="width:11%"><col style="width:15%"></colgroup>
+        <thead><tr><th>EMP</th><th class="text-end">Prêmio produtos</th><th class="text-end">Venda anterior</th><th class="text-end">Venda atual</th><th class="text-end">Importado</th><th class="text-end">% Importado</th><th class="text-end">Falta valor vendedor</th></tr></thead>
+        <tbody>{% for row in rows %}<tr>
+          <td>{{ row.emp }}</td><td class="text-end atacado-money atacado-total">{{ money(row.total_produtos) }}</td><td class="text-end atacado-money">{{ money(row.venda_anterior) }}</td><td class="text-end atacado-money">{{ money(row.venda_atual) }}</td><td class="text-end atacado-money">{{ money(row.importado) }}</td><td class="text-end atacado-money">{{ percent(row.percentual_importado) }}</td><td class="text-end atacado-money">{{ money(row.falta_valor_vendedor) }}</td>
+        </tr>{% endfor %}</tbody>
+        {% endif %}
+      </table>
+    </div>
+
+    <div class="atacado-mobile-list">
+      {% for row in rows %}
+      <article class="atacado-record-card">
+        <div class="atacado-record-head"><div><strong>{{ row.usuario_nome }}</strong><div class="atacado-section-sub">EMP {{ row.emp }}</div></div>{% if role in ['admin','supervisor','gerente'] %}<span class="atacado-role">{{ row.funcao_exibicao }}</span>{% endif %}</div>
+        <div class="atacado-record-grid">
+          <div class="atacado-record-item"><small>Prêmio produtos</small><b class="atacado-total">{{ money(row.total_produtos) }}</b></div>
+          <div class="atacado-record-item"><small>Venda anterior</small><b>{{ money(row.venda_anterior) }}</b></div>
+          <div class="atacado-record-item"><small>Venda atual</small><b>{{ money(row.venda_atual) }}</b></div>
+          <div class="atacado-record-item"><small>Importado</small><b>{{ money(row.importado) }}</b></div>
+          <div class="atacado-record-item"><small>% Importado</small><b>{{ percent(row.percentual_importado) }}</b></div>
+          <div class="atacado-record-item"><small>Falta valor vendedor</small><b>{{ money(row.falta_valor_vendedor) }}</b></div>
+        </div>
+      </article>
+      {% endfor %}
+    </div>
+    {% else %}
+      <div class="atacado-empty">Nenhuma informação encontrada para esta competência e para o seu nível de acesso.</div>
+    {% endif %}
   </section>
 </div>
 {% endblock %}
