@@ -94,14 +94,20 @@
   .atacado-record-item .atacado-other-popover{position:absolute;z-index:40;top:calc(100% + 6px);right:0;min-width:230px;width:max-content;max-width:320px;box-shadow:0 16px 38px rgba(0,0,0,.45)}
 
   /* Layout em formato de planilha: cabeçalho único e dados em linhas. */
-  .atacado-sheet-wrap{border:1px solid rgba(255,255,255,.08);border-radius:14px;overflow:visible;background:rgba(0,0,0,.13)}
-  .atacado-sheet{width:100%;min-width:0}
+  .atacado-scroll-hint{display:flex;justify-content:flex-end;align-items:center;gap:6px;margin:0 2px 7px;color:#9ca1aa;font-size:10px;font-weight:750}
+  .atacado-sheet-wrap{width:100%;border:1px solid rgba(255,255,255,.08);border-radius:14px;overflow-x:auto;overflow-y:visible;background:rgba(0,0,0,.13);scrollbar-gutter:stable;-webkit-overflow-scrolling:touch}
+  .atacado-sheet-wrap{scrollbar-width:thin;scrollbar-color:#bd761d #151515}
+  .atacado-sheet-wrap::-webkit-scrollbar{height:12px}
+  .atacado-sheet-wrap::-webkit-scrollbar-track{background:#151515;border-radius:0 0 13px 13px}
+  .atacado-sheet-wrap::-webkit-scrollbar-thumb{background:#9d621a;border:3px solid #151515;border-radius:999px}
+  .atacado-sheet-wrap::-webkit-scrollbar-thumb:hover{background:#d58a27}
+  .atacado-sheet{width:100%;min-width:1454px}
   .atacado-sheet-row{display:grid;align-items:stretch;min-width:0;border-bottom:1px solid rgba(255,255,255,.075);background:rgba(5,5,5,.30);transition:background .16s ease}
   .atacado-sheet-row:last-child{border-bottom:0}
   .atacado-sheet-row:not(.atacado-sheet-header):nth-child(odd){background:rgba(255,255,255,.018)}
   .atacado-sheet-row:not(.atacado-sheet-header):hover{background:rgba(255,145,0,.055)}
-  .atacado-sheet.with-role .atacado-sheet-row{grid-template-columns:48px minmax(125px,1.35fr) 76px minmax(84px,.9fr) minmax(96px,1fr) 50px repeat(8,minmax(80px,1fr))}
-  .atacado-sheet.no-role .atacado-sheet-row{grid-template-columns:48px minmax(140px,1.45fr) minmax(84px,.9fr) minmax(96px,1fr) 50px repeat(8,minmax(82px,1fr))}
+  .atacado-sheet.with-role .atacado-sheet-row{grid-template-columns:56px 170px 90px 112px 120px 58px 112px 112px 112px 84px 112px 100px 104px 112px}
+  .atacado-sheet.no-role .atacado-sheet-row{grid-template-columns:56px 180px 112px 120px 58px 112px 112px 112px 84px 112px 100px 104px 112px}
   .atacado-sheet-cell{display:flex;align-items:center;justify-content:flex-end;min-width:0;padding:9px 6px;border-right:1px solid rgba(255,255,255,.05);font-size:12px;font-weight:400;line-height:1.25;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
   .atacado-sheet-cell:last-child{border-right:0}
   .atacado-sheet-header{background:#151515!important}
@@ -135,7 +141,7 @@
   .atacado-warnings{margin:12px 0 0;padding:0 0 0 18px;color:#ffd29a;font-size:11px;line-height:1.55;max-height:260px;overflow:auto}
   .atacado-empty{padding:42px 18px;text-align:center;color:#8f949d}
   @media(max-width:1300px){.atacado-kpis{grid-template-columns:repeat(4,minmax(0,1fr))}.atacado-store-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
-  @media(max-width:1000px){.atacado-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.atacado-store-grid{grid-template-columns:1fr}.atacado-import-grid{grid-template-columns:1fr}.atacado-sheet-wrap{overflow-x:auto;overflow-y:visible}.atacado-sheet{min-width:1260px}}
+  @media(max-width:1000px){.atacado-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.atacado-store-grid{grid-template-columns:1fr}.atacado-import-grid{grid-template-columns:1fr}}
   @media(max-width:700px){.atacado-kpis{grid-template-columns:1fr 1fr}.atacado-title{font-size:25px}.atacado-filter>*{width:100%}.atacado-filter .btn{width:100%}.atacado-columns{grid-template-columns:1fr}.atacado-panel,.atacado-hero{padding:14px;border-radius:17px}}
 </style>
 {% endblock %}
@@ -310,6 +316,7 @@
     </div>
 
     {% if rows %}
+    <div class="atacado-scroll-hint" aria-hidden="true">↔ Use a barra horizontal para visualizar todas as colunas</div>
     <div class="atacado-sheet-wrap">
       <div class="atacado-sheet {% if role in ['admin','supervisor','gerente'] %}with-role{% else %}no-role{% endif %}">
         <div class="atacado-sheet-row atacado-sheet-header">
