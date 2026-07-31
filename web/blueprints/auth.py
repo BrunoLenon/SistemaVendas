@@ -64,7 +64,10 @@ def login():
                 emps = [str(session.get("emp")).strip()]
             set_session_emps(emps)
 
-    # Todos os perfis entram pelo dashboard leve.
+    # Vendedores entram diretamente na ação de Itens Parados para visualizar
+    # os produtos ativos antes de iniciar a rotina de vendas.
+    if role == "vendedor":
+        return redirect(url_for("itens_parados"))
     return redirect(url_for("dashboard"))
 
 

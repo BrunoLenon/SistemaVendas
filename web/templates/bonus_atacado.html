@@ -100,8 +100,8 @@
   .atacado-sheet-row:last-child{border-bottom:0}
   .atacado-sheet-row:not(.atacado-sheet-header):nth-child(odd){background:rgba(255,255,255,.018)}
   .atacado-sheet-row:not(.atacado-sheet-header):hover{background:rgba(255,145,0,.055)}
-  .atacado-sheet.with-role .atacado-sheet-row{grid-template-columns:48px minmax(132px,1.45fr) 82px repeat(9,minmax(82px,1fr))}
-  .atacado-sheet.no-role .atacado-sheet-row{grid-template-columns:48px minmax(145px,1.55fr) repeat(9,minmax(86px,1fr))}
+  .atacado-sheet.with-role .atacado-sheet-row{grid-template-columns:48px minmax(132px,1.45fr) 82px repeat(10,minmax(78px,1fr))}
+  .atacado-sheet.no-role .atacado-sheet-row{grid-template-columns:48px minmax(145px,1.55fr) repeat(10,minmax(82px,1fr))}
   .atacado-sheet-cell{display:flex;align-items:center;justify-content:flex-end;min-width:0;padding:9px 6px;border-right:1px solid rgba(255,255,255,.05);font-size:12px;font-weight:400;line-height:1.25;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
   .atacado-sheet-cell:last-child{border-right:0}
   .atacado-sheet-header{background:#151515!important}
@@ -135,7 +135,7 @@
   .atacado-warnings{margin:12px 0 0;padding:0 0 0 18px;color:#ffd29a;font-size:11px;line-height:1.55;max-height:260px;overflow:auto}
   .atacado-empty{padding:42px 18px;text-align:center;color:#8f949d}
   @media(max-width:1300px){.atacado-kpis{grid-template-columns:repeat(4,minmax(0,1fr))}.atacado-store-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
-  @media(max-width:1000px){.atacado-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.atacado-store-grid{grid-template-columns:1fr}.atacado-import-grid{grid-template-columns:1fr}.atacado-sheet-wrap{overflow-x:auto;overflow-y:visible}.atacado-sheet{min-width:1080px}}
+  @media(max-width:1000px){.atacado-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.atacado-store-grid{grid-template-columns:1fr}.atacado-import-grid{grid-template-columns:1fr}.atacado-sheet-wrap{overflow-x:auto;overflow-y:visible}.atacado-sheet{min-width:1160px}}
   @media(max-width:700px){.atacado-kpis{grid-template-columns:1fr 1fr}.atacado-title{font-size:25px}.atacado-filter>*{width:100%}.atacado-filter .btn{width:100%}.atacado-columns{grid-template-columns:1fr}.atacado-panel,.atacado-hero{padding:14px;border-radius:17px}}
 </style>
 {% endblock %}
@@ -224,6 +224,7 @@
           <div class="atacado-column"><b>VendaAnterior / Venda Atual</b><br>Faturamento individual</div>
           <div class="atacado-column"><b>Importado / % Importado</b><br>Venda de importados</div>
           <div class="atacado-column"><b>Falta Valor Vendedor</b><br>Valor importado da base</div>
+          <div class="atacado-column"><b>MIX</b><br>Quantidade de produtos diferentes vendidos</div>
           <div class="atacado-column"><b>Loja Anterior / Loja Atual</b><br>Somente Admin, Supervisor e Gerente</div>
           <div class="atacado-column"><b>FUNCAO</b><br>Apenas conferência; a permissão segue o cadastro</div>
         </div>
@@ -313,6 +314,7 @@
           <div class="atacado-sheet-cell atacado-sheet-user">Usuário</div>
           {% if role in ['admin','supervisor','gerente'] %}<div class="atacado-sheet-cell atacado-sheet-role">Função</div>{% endif %}
           <div class="atacado-sheet-cell">Prêmio produtos</div>
+          <div class="atacado-sheet-cell">MIX</div>
           <div class="atacado-sheet-cell">Venda anterior</div>
           <div class="atacado-sheet-cell">Venda atual</div>
           <div class="atacado-sheet-cell">Importado</div>
@@ -328,6 +330,7 @@
           <div class="atacado-sheet-cell atacado-sheet-user" title="{{ row.usuario_nome }}">{{ row.usuario_nome }}</div>
           {% if role in ['admin','supervisor','gerente'] %}<div class="atacado-sheet-cell atacado-sheet-role">{{ row.funcao_exibicao }}</div>{% endif %}
           <div class="atacado-sheet-cell">{{ money(row.total_produtos) }}</div>
+          <div class="atacado-sheet-cell">{{ row.mix|default(0) }}</div>
           <div class="atacado-sheet-cell">{{ money(row.venda_anterior) }}</div>
           <div class="atacado-sheet-cell">{{ money(row.venda_atual) }}</div>
           <div class="atacado-sheet-cell">{{ money(row.importado) }}</div>

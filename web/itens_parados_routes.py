@@ -10,7 +10,6 @@ from io import BytesIO
 from typing import Callable
 
 from flask import render_template, request, send_file
-from sqlalchemy import func
 
 from db import (
     ItemParado,
@@ -59,12 +58,14 @@ def _load_view_data():
         )
         emp_filter = norm_emp(request.args.get("emp"))
         user_filter = norm_username(request.args.get("usuario"))
+        product_scope_emps: list[str] | None = None
 
         if role == "admin":
             all_rows = base_query.all()
             query = base_query
             if emp_filter:
                 query = query.filter(ItensParadosVendaUsuario.emp == emp_filter)
+                product_scope_emps = [emp_filter]
             if user_filter:
                 query = query.filter(
                     ItensParadosVendaUsuario.usuario_nome == user_filter
@@ -88,12 +89,15 @@ def _load_view_data():
             query = base_query
             if allowed:
                 query = query.filter(ItensParadosVendaUsuario.emp.in_(allowed))
+                product_scope_emps = list(allowed)
                 if emp_filter and emp_filter in allowed:
                     query = query.filter(ItensParadosVendaUsuario.emp == emp_filter)
+                    product_scope_emps = [emp_filter]
             else:
                 query = query.filter(
                     ItensParadosVendaUsuario.usuario_nome == username
                 )
+                product_scope_emps = []
             if user_filter:
                 query = query.filter(
                     ItensParadosVendaUsuario.usuario_nome == user_filter
@@ -105,6 +109,20 @@ def _load_view_data():
             rows = base_query.filter(
                 ItensParadosVendaUsuario.usuario_nome == username
             ).all()
+            allowed = sorted(
+                {
+                    norm_emp(emp)
+                    for emp in ((_allowed_emps() if _allowed_emps else []) or [])
+                    if norm_emp(emp)
+                },
+                key=emp_sort_key,
+            )
+            # O vendedor enxerga os produtos ativos de todas as lojas vinculadas,
+            # mesmo quando ainda não possui venda de item parado na competência.
+            product_scope_emps = allowed or sorted(
+                {norm_emp(row.emp) for row in rows if norm_emp(row.emp)},
+                key=emp_sort_key,
+            )
             emp_options = []
             user_options = []
             emp_filter = ""
@@ -114,19 +132,40 @@ def _load_view_data():
         visible_emps = sorted({row.emp for row in rows if row.emp}, key=emp_sort_key)
         period_start = date(ano, mes, 1)
         period_end = date(ano, mes, calendar.monthrange(ano, mes)[1])
-        active_counts = dict(
-            db.query(ItemParado.emp, func.count(ItemParado.id))
-            .filter(
-                ItemParado.ativo.is_(True),
-                ItemParado.data_inicio.isnot(None),
-                ItemParado.data_fim.isnot(None),
-                ItemParado.data_inicio <= period_end,
-                ItemParado.data_fim >= period_start,
-            )
-            .filter(ItemParado.emp.in_(visible_emps or ["__none__"]))
-            .group_by(ItemParado.emp)
-            .all()
+
+        product_query = db.query(ItemParado).filter(
+            ItemParado.ativo.is_(True),
+            ItemParado.data_inicio.isnot(None),
+            ItemParado.data_fim.isnot(None),
+            ItemParado.data_inicio <= period_end,
+            ItemParado.data_fim >= period_start,
         )
+        if product_scope_emps is not None:
+            product_query = product_query.filter(
+                ItemParado.emp.in_(product_scope_emps or ["__none__"])
+            )
+        active_products_raw = product_query.all()
+
+    # Evita duplicar um mesmo código na mesma EMP caso exista resíduo de uma
+    # importação anterior, sem ocultar o produto de lojas diferentes.
+    product_map: dict[tuple[str, str], ItemParado] = {}
+    for item in active_products_raw:
+        key = (norm_emp(item.emp), str(item.codigo or "").strip().upper())
+        current = product_map.get(key)
+        if current is None or (item.data_fim or date.min) > (current.data_fim or date.min):
+            product_map[key] = item
+    active_products = sorted(
+        product_map.values(),
+        key=lambda item: (
+            emp_sort_key(norm_emp(item.emp)),
+            str(item.descricao or "").strip().upper(),
+            str(item.codigo or "").strip().upper(),
+        ),
+    )
+    active_counts: dict[str, int] = {}
+    for item in active_products:
+        emp_key = norm_emp(item.emp)
+        active_counts[emp_key] = active_counts.get(emp_key, 0) + 1
 
     by_emp: dict[str, dict] = {}
     total_vendido = Decimal("0")
@@ -149,7 +188,7 @@ def _load_view_data():
                 "usuarios": 0,
                 "linhas": 0,
                 "itens_distintos": 0,
-                "itens_ativos": int(active_counts.get(row.emp, 0) or 0),
+                "itens_ativos": int(active_counts.get(norm_emp(row.emp), 0) or 0),
             },
         )
         card["valor_vendido"] += vendido
@@ -160,13 +199,20 @@ def _load_view_data():
         card["itens_distintos"] += int(row.qtd_itens or 0)
 
     emp_cards = sorted(by_emp.values(), key=lambda item: emp_sort_key(item["emp"]))
+    product_emps = sorted(
+        {norm_emp(item.emp) for item in active_products if norm_emp(item.emp)},
+        key=emp_sort_key,
+    )
+    if role == "admin":
+        emp_options = sorted(set(emp_options) | set(product_emps), key=emp_sort_key)
     summary = {
         "valor_vendido": total_vendido,
         "pontos": total_pontos,
         "bonus_total": total_bonus,
         "usuarios": len(rows),
-        "emps": len(visible_emps),
+        "emps": len(visible_emps or product_emps),
         "linhas": sum(int(row.qtd_linhas or 0) for row in rows),
+        "produtos_ativos": len(active_products),
     }
     return {
         "role": role,
@@ -179,6 +225,7 @@ def _load_view_data():
         "emp_filter": emp_filter,
         "user_filter": user_filter,
         "emp_cards": emp_cards,
+        "active_products": active_products,
         "summary": summary,
     }
 

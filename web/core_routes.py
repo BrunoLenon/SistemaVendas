@@ -27,6 +27,8 @@ def register_core_routes(
             return ("OK", 200)
 
         if session.get("vendedor") and session.get("role"):
+            if str(session.get("role") or "").strip().lower() == "vendedor":
+                return redirect(url_for("itens_parados"))
             return redirect(url_for("dashboard"))
         return redirect(url_for("auth.login"))
 

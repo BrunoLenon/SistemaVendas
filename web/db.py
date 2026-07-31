@@ -235,6 +235,7 @@ class BonusAtacadoUsuario(Base):
     loja_anterior = Column(Numeric(18, 4), nullable=True)
     loja_atual = Column(Numeric(18, 4), nullable=True)
     falta_valor_vendedor = Column(Numeric(18, 4), nullable=True)
+    mix = Column(Integer, nullable=False, default=0)  # N — produtos distintos vendidos
 
     importado_em = Column(DateTime, nullable=False, default=datetime.utcnow)
 
@@ -2142,11 +2143,13 @@ def ensure_bonus_atacado_schema(force: bool = False):
                 loja_anterior NUMERIC(18,4),
                 loja_atual NUMERIC(18,4),
                 falta_valor_vendedor NUMERIC(18,4),
+                mix INTEGER NOT NULL DEFAULT 0,
                 importado_em TIMESTAMP NOT NULL DEFAULT NOW(),
                 CONSTRAINT uq_bonus_atacado_usuario_periodo_emp
                     UNIQUE (ano, mes, emp, usuario_nome)
             );
         """))
+        conn.execute(text("ALTER TABLE bonus_atacado_usuarios ADD COLUMN IF NOT EXISTS mix INTEGER NOT NULL DEFAULT 0;"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_bonus_atacado_lotes_periodo_importado ON bonus_atacado_importacoes_lotes (ano, mes, importado_em);"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_bonus_atacado_lotes_importado_por_user_id ON bonus_atacado_importacoes_lotes (importado_por_user_id);"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_bonus_atacado_usuario_periodo ON bonus_atacado_usuarios (usuario_nome, ano, mes);"))

@@ -62,6 +62,7 @@ HEADER_ALIASES: dict[str, set[str]] = {
         "VALORFALTAVENDEDOR",
         "FALTAVENDEDOR",
     },
+    "mix": {"MIX", "MIXPRODUTOS", "MIXDEPRODUTOS"},
 }
 REQUIRED_FIELDS = {
     "emp",
@@ -74,6 +75,7 @@ REQUIRED_FIELDS = {
     "loja_anterior",
     "loja_atual",
     "falta_valor_vendedor",
+    "mix",
 }
 NUMERIC_FIELDS = (
     "total_produtos",
@@ -86,6 +88,7 @@ NUMERIC_FIELDS = (
     "falta_valor_vendedor",
 )
 MONEY_FIELDS = set(NUMERIC_FIELDS) - {"percentual_importado"}
+INTEGER_FIELDS = {"mix"}
 
 
 def register_bonus_atacado_routes(app) -> None:
@@ -186,6 +189,18 @@ def _decimal_from_cell(cell, *, is_percent: bool) -> Decimal | None:
 
     quantum = Decimal("0.000001") if is_percent else Decimal("0.0001")
     return result.quantize(quantum, rounding=ROUND_HALF_UP)
+
+
+def _integer_from_cell(cell) -> int:
+    value = _decimal_from_cell(cell, is_percent=False)
+    if value is None:
+        return 0
+    integral = value.to_integral_value(rounding=ROUND_HALF_UP)
+    if value != integral:
+        raise ValueError(f"valor deve ser inteiro ({value})")
+    if integral < 0:
+        raise ValueError(f"valor não pode ser negativo ({value})")
+    return int(integral)
 
 
 def _find_sheet(workbook):
@@ -313,6 +328,15 @@ def _read_workbook(content: bytes) -> dict[str, Any]:
                         f"Linha {source_row}: {field.replace('_', ' ')} indisponível para "
                         f"{username} ({exc})."
                     )
+
+            try:
+                record["mix"] = _integer_from_cell(cells[mapping["mix"]])
+            except ValueError as exc:
+                record["mix"] = 0
+                warnings.append(
+                    f"Linha {source_row}: MIX indisponível para {username} ({exc}). "
+                    "O valor foi importado como zero."
+                )
 
             previous_store = store_values.get(emp)
             current_store = (
