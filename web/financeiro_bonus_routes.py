@@ -113,6 +113,47 @@ def _money(value: object) -> Decimal:
         return ZERO
 
 
+def _atacado_user_key(row: BonusAtacadoUsuario) -> tuple[str, object]:
+    user_id = getattr(row, "usuario_id", None)
+    if user_id is not None:
+        return ("id", int(user_id))
+    return ("nome", _canonical_name(getattr(row, "usuario_nome", "")))
+
+
+def _atacado_consolidated_allocation(
+    rows: Iterable[BonusAtacadoUsuario],
+) -> dict[int, Decimal]:
+    """Distribui o prêmio consolidado sem duplicá-lo em usuários multi-EMP.
+
+    A regra usa todas as EMPs da competência, mesmo quando o Financeiro fecha
+    apenas uma loja. Assim, um prêmio repetido em duas linhas nunca é pago duas
+    vezes em fechamentos separados. Quando os valores divergem por EMP, cada
+    parcela é preservada.
+    """
+    grouped: defaultdict[tuple[str, object], list[BonusAtacadoUsuario]] = defaultdict(list)
+    for row in rows:
+        grouped[_atacado_user_key(row)].append(row)
+
+    allocated: dict[int, Decimal] = {}
+    for user_rows in grouped.values():
+        user_rows.sort(key=lambda item: emp_sort_key(getattr(item, "emp", "")))
+        non_null = [
+            _money(getattr(row, "premio_consolidado", None))
+            for row in user_rows
+            if getattr(row, "premio_consolidado", None) is not None
+        ]
+        repeated_single_value = len(non_null) > 1 and len(set(non_null)) == 1
+        used = False
+        for row in user_rows:
+            raw = getattr(row, "premio_consolidado", None)
+            value = _money(raw) if raw is not None else ZERO
+            duplicated = repeated_single_value and used and raw is not None
+            allocated[int(row.id)] = ZERO if duplicated else value
+            if repeated_single_value and raw is not None and not used:
+                used = True
+    return allocated
+
+
 def _safe_int(value: object, default: int, minimum: int, maximum: int) -> int:
     try:
         parsed = int(str(value).strip())
@@ -252,18 +293,24 @@ def _live_rows(db, *, ano: int, mes: int, emps: list[str]) -> list[dict[str, Any
         item = item_for(row.emp, row.usuario_id, row.usuario_nome, row.funcao)
         item["bonus_varejo"] += _money(row.bonus_final)
 
-    atacado = (
+    # O prêmio do atacado é consolidado por funcionário. Consultamos todas as
+    # EMPs da competência antes de filtrar as lojas selecionadas, para que um
+    # usuário com duas EMPs nunca tenha o mesmo prêmio pago duas vezes.
+    atacado_periodo = (
         db.query(BonusAtacadoUsuario)
         .filter(
             BonusAtacadoUsuario.ano == ano,
             BonusAtacadoUsuario.mes == mes,
-            BonusAtacadoUsuario.emp.in_(emps),
         )
         .all()
     )
-    for row in atacado:
+    atacado_allocation = _atacado_consolidated_allocation(atacado_periodo)
+    selected_emp_set = {_norm_emp(emp) for emp in emps}
+    for row in atacado_periodo:
+        if _norm_emp(row.emp) not in selected_emp_set:
+            continue
         item = item_for(row.emp, row.usuario_id, row.usuario_nome, row.funcao_planilha)
-        item["bonus_atacado"] += _money(row.total_produtos)
+        item["bonus_atacado"] += atacado_allocation.get(int(row.id), ZERO)
 
     stopped = (
         db.query(ItensParadosVendaUsuario)

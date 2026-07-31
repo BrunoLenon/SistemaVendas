@@ -47,7 +47,7 @@
   .atacado-page .form-control,.atacado-page .form-select{background:rgba(9,9,10,.88);border-color:rgba(255,255,255,.11);color:#fff;border-radius:12px;min-height:40px}
   .atacado-page .form-control:focus,.atacado-page .form-select:focus{border-color:rgba(255,166,58,.5);box-shadow:0 0 0 .18rem rgba(255,145,0,.12)}
   .atacado-page .form-select option{background:#151515;color:#fff}
-  .atacado-kpis{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:10px;margin-top:14px}
+  .atacado-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:10px;margin-top:14px}
   .atacado-kpi{padding:13px 14px;border:1px solid rgba(255,255,255,.075);border-radius:16px;background:rgba(0,0,0,.19);min-width:0}
   .atacado-kpi small{display:block;color:#969ba4;font-size:10px;font-weight:850;text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px}
   .atacado-kpi strong{font-size:18px;line-height:1.15;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -100,8 +100,8 @@
   .atacado-sheet-row:last-child{border-bottom:0}
   .atacado-sheet-row:not(.atacado-sheet-header):nth-child(odd){background:rgba(255,255,255,.018)}
   .atacado-sheet-row:not(.atacado-sheet-header):hover{background:rgba(255,145,0,.055)}
-  .atacado-sheet.with-role .atacado-sheet-row{grid-template-columns:48px minmax(132px,1.45fr) 82px repeat(10,minmax(78px,1fr))}
-  .atacado-sheet.no-role .atacado-sheet-row{grid-template-columns:48px minmax(145px,1.55fr) repeat(10,minmax(82px,1fr))}
+  .atacado-sheet.with-role .atacado-sheet-row{grid-template-columns:48px minmax(125px,1.35fr) 76px minmax(84px,.9fr) minmax(96px,1fr) 50px repeat(8,minmax(80px,1fr))}
+  .atacado-sheet.no-role .atacado-sheet-row{grid-template-columns:48px minmax(140px,1.45fr) minmax(84px,.9fr) minmax(96px,1fr) 50px repeat(8,minmax(82px,1fr))}
   .atacado-sheet-cell{display:flex;align-items:center;justify-content:flex-end;min-width:0;padding:9px 6px;border-right:1px solid rgba(255,255,255,.05);font-size:12px;font-weight:400;line-height:1.25;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
   .atacado-sheet-cell:last-child{border-right:0}
   .atacado-sheet-header{background:#151515!important}
@@ -135,7 +135,7 @@
   .atacado-warnings{margin:12px 0 0;padding:0 0 0 18px;color:#ffd29a;font-size:11px;line-height:1.55;max-height:260px;overflow:auto}
   .atacado-empty{padding:42px 18px;text-align:center;color:#8f949d}
   @media(max-width:1300px){.atacado-kpis{grid-template-columns:repeat(4,minmax(0,1fr))}.atacado-store-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
-  @media(max-width:1000px){.atacado-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.atacado-store-grid{grid-template-columns:1fr}.atacado-import-grid{grid-template-columns:1fr}.atacado-sheet-wrap{overflow-x:auto;overflow-y:visible}.atacado-sheet{min-width:1160px}}
+  @media(max-width:1000px){.atacado-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.atacado-store-grid{grid-template-columns:1fr}.atacado-import-grid{grid-template-columns:1fr}.atacado-sheet-wrap{overflow-x:auto;overflow-y:visible}.atacado-sheet{min-width:1260px}}
   @media(max-width:700px){.atacado-kpis{grid-template-columns:1fr 1fr}.atacado-title{font-size:25px}.atacado-filter>*{width:100%}.atacado-filter .btn{width:100%}.atacado-columns{grid-template-columns:1fr}.atacado-panel,.atacado-hero{padding:14px;border-radius:17px}}
 </style>
 {% endblock %}
@@ -181,12 +181,14 @@
     </div>
 
     <div class="atacado-kpis">
-      <div class="atacado-kpi"><small>Bônus</small><strong>{{ summary.total_produtos|default(0)|brl_rs }}</strong></div>
+      <div class="atacado-kpi"><small>Provisão</small><strong>{{ summary.total_produtos|default(0)|brl_rs }}</strong></div>
+      <div class="atacado-kpi"><small>Prêmio consolidado</small><strong>{{ summary.premio_consolidado|default(0)|brl_rs }}</strong></div>
       <div class="atacado-kpi"><small>Itens parados</small><strong>{{ summary.itens_parados|default(0)|brl_rs }}</strong></div>
       <div class="atacado-kpi"><small>Outros valores</small><strong>{{ summary.outros_valores|default(0)|brl_rs }}</strong></div>
       <div class="atacado-kpi"><small>Total geral</small><strong class="atacado-total-geral">{{ summary.total_geral|default(0)|brl_rs }}</strong></div>
+      <div class="atacado-kpi"><small>Venda atual</small><strong>{{ summary.venda_atual|default(0)|brl_rs }}</strong></div>
       <div class="atacado-kpi"><small>Venda de importados</small><strong>{{ summary.importado|default(0)|brl_rs }}</strong></div>
-      <div class="atacado-kpi"><small>Registros visíveis</small><strong>{{ summary.registros|default(0) }}</strong></div>
+      <div class="atacado-kpi"><small>Usuários visíveis</small><strong>{{ summary.usuarios|default(0) }}</strong></div>
       <div class="atacado-kpi"><small>Empresas visíveis</small><strong>{{ summary.emps|default(0) }}</strong></div>
     </div>
   </section>
@@ -220,7 +222,8 @@
         <div class="atacado-columns">
           <div class="atacado-column"><b>EMP</b><br>Empresa do usuário</div>
           <div class="atacado-column"><b>FUNCIONARIO</b><br>Usuário cadastrado</div>
-          <div class="atacado-column"><b>Total</b><br>Prêmio de produtos</div>
+          <div class="atacado-column"><b>Total</b><br>Provisão do prêmio de produtos</div>
+          <div class="atacado-column"><b>Prêmio Consolidado</b><br>Valor final liberado do Bônus Atacado</div>
           <div class="atacado-column"><b>VendaAnterior / Venda Atual</b><br>Faturamento individual</div>
           <div class="atacado-column"><b>Importado / % Importado</b><br>Venda de importados</div>
           <div class="atacado-column"><b>Falta Valor Vendedor</b><br>Valor importado da base</div>
@@ -286,7 +289,7 @@
         <div class="atacado-store-values">
           <div class="atacado-store-value"><small>Loja anterior</small><b>{{ money(store.loja_anterior) }}</b></div>
           <div class="atacado-store-value"><small>Loja atual</small><b>{{ money(store.loja_atual) }}</b></div>
-          <div class="atacado-store-value"><small>Bônus</small><b>{{ money(store.bonus) }}</b></div>
+          <div class="atacado-store-value"><small>Prêmio consolidado</small><b>{{ money(store.bonus) }}</b></div>
           <div class="atacado-store-value"><small>Itens parados da loja</small><b>{{ money(store.itens_parados) }}</b></div>
           <div class="atacado-store-value"><small>Outros valores</small><b>{{ money(store.outros_valores) }}</b></div>
           <div class="atacado-store-value"><small>Total geral</small><b class="atacado-total-geral">{{ money(store.total_geral) }}</b></div>
@@ -313,16 +316,17 @@
           <div class="atacado-sheet-cell atacado-sheet-emp">EMP</div>
           <div class="atacado-sheet-cell atacado-sheet-user">Usuário</div>
           {% if role in ['admin','supervisor','gerente'] %}<div class="atacado-sheet-cell atacado-sheet-role">Função</div>{% endif %}
-          <div class="atacado-sheet-cell">Prêmio produtos</div>
+          <div class="atacado-sheet-cell">Prêmio<br>provisório</div>
+          <div class="atacado-sheet-cell">Prêmio<br>consolidado</div>
           <div class="atacado-sheet-cell">MIX</div>
-          <div class="atacado-sheet-cell">Venda anterior</div>
-          <div class="atacado-sheet-cell">Venda atual</div>
+          <div class="atacado-sheet-cell">Venda<br>anterior</div>
+          <div class="atacado-sheet-cell">Venda<br>atual</div>
           <div class="atacado-sheet-cell">Importado</div>
-          <div class="atacado-sheet-cell">% Importado</div>
-          <div class="atacado-sheet-cell">Falta vendedor</div>
-          <div class="atacado-sheet-cell">Itens parados</div>
-          <div class="atacado-sheet-cell">Outros valores</div>
-          <div class="atacado-sheet-cell atacado-sheet-total">Total geral</div>
+          <div class="atacado-sheet-cell">%<br>importado</div>
+          <div class="atacado-sheet-cell">Falta<br>vendedor</div>
+          <div class="atacado-sheet-cell">Itens<br>parados</div>
+          <div class="atacado-sheet-cell">Outros<br>valores</div>
+          <div class="atacado-sheet-cell atacado-sheet-total">Total<br>geral</div>
         </div>
         {% for row in rows %}
         <div class="atacado-sheet-row">
@@ -330,6 +334,9 @@
           <div class="atacado-sheet-cell atacado-sheet-user" title="{{ row.usuario_nome }}">{{ row.usuario_nome }}</div>
           {% if role in ['admin','supervisor','gerente'] %}<div class="atacado-sheet-cell atacado-sheet-role">{{ row.funcao_exibicao }}</div>{% endif %}
           <div class="atacado-sheet-cell">{{ money(row.total_produtos) }}</div>
+          <div class="atacado-sheet-cell" {% if row.premio_consolidado_repetido %}title="Prêmio consolidado contabilizado uma única vez para o funcionário, na primeira EMP exibida."{% endif %}>
+            {% if row.premio_consolidado_repetido %}<span class="atacado-na">—</span>{% else %}{{ money(row.premio_consolidado_aplicado) }}{% endif %}
+          </div>
           <div class="atacado-sheet-cell">{{ row.mix|default(0) }}</div>
           <div class="atacado-sheet-cell">{{ money(row.venda_anterior) }}</div>
           <div class="atacado-sheet-cell">{{ money(row.venda_atual) }}</div>

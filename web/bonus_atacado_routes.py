@@ -50,7 +50,21 @@ HEADER_ALIASES: dict[str, set[str]] = {
     "emp": {"EMP", "EMPRESA"},
     "funcao_planilha": {"FUNCAO", "PERFIL", "CARGO"},
     "usuario_nome": {"FUNCIONARIO", "USUARIO", "VENDEDOR"},
-    "total_produtos": {"TOTAL", "TOTALPREMIOPRODUTOS", "PREMIOPRODUTOS"},
+    "total_produtos": {"TOTAL", "TOTALPREMIOPRODUTOS", "PREMIOPRODUTOS", "PROVISAO", "VALORPROVISAO"},
+    "premio_consolidado": {
+        "PREMIOCONSOLIDADO",
+        "VALORPREMIOCONSOLIDADO",
+        "PREMIOFINAL",
+        "VALORFINAL",
+        "TOTALFINAL",
+        "BONUSFINAL",
+        "BONUSCONSOLIDADO",
+        "VALORBONUS",
+        "PREMIO",
+        "VALORPREMIO",
+        "TOTALCONSOLIDADO",
+        "CONSOLIDADO",
+    },
     "venda_anterior": {"VENDAANTERIOR", "VENDASANTERIOR"},
     "venda_atual": {"VENDAATUAL", "VENDASATUAL"},
     "importado": {"IMPORTADO", "VENDAIMPORTADO", "VENDIDOIMPORTADO"},
@@ -68,6 +82,7 @@ REQUIRED_FIELDS = {
     "emp",
     "usuario_nome",
     "total_produtos",
+    "premio_consolidado",
     "venda_anterior",
     "venda_atual",
     "importado",
@@ -79,6 +94,7 @@ REQUIRED_FIELDS = {
 }
 NUMERIC_FIELDS = (
     "total_produtos",
+    "premio_consolidado",
     "venda_anterior",
     "venda_atual",
     "importado",
@@ -462,6 +478,69 @@ def _sum_field(rows: list[BonusAtacadoUsuario], field: str) -> Decimal:
     return total
 
 
+def _user_key(row: BonusAtacadoUsuario) -> tuple[str, object]:
+    """Identifica o funcionário sem usar a EMP.
+
+    Venda atual, venda anterior, importados, MIX e o prêmio consolidado são
+    métricas do funcionário. Quando o mesmo usuário possui duas EMPs, esses
+    valores podem ser repetidos na planilha e não devem ser somados duas vezes.
+    """
+    user_id = getattr(row, "usuario_id", None)
+    if user_id is not None:
+        return ("id", int(user_id))
+    return ("nome", _canonical_username(getattr(row, "usuario_nome", "")))
+
+
+def _unique_user_value(rows: list[BonusAtacadoUsuario], field: str) -> Decimal:
+    """Soma uma métrica uma única vez por funcionário.
+
+    Se houver valores divergentes nas EMPs do mesmo usuário, utiliza o maior
+    valor não nulo, pois as colunas tratadas aqui representam totais do usuário
+    e não parcelas por loja.
+    """
+    values: dict[tuple[str, object], list[Decimal]] = defaultdict(list)
+    for row in rows:
+        raw = getattr(row, field, None)
+        if raw is not None:
+            values[_user_key(row)].append(Decimal(str(raw)))
+    return sum((max(items) for items in values.values() if items), Decimal("0"))
+
+
+def _prepare_consolidated_prizes(rows: list[BonusAtacadoUsuario]) -> Decimal:
+    """Define quanto do prêmio consolidado pertence a cada linha.
+
+    Quando o mesmo prêmio aparece igual em mais de uma EMP do funcionário, ele
+    é contabilizado somente na primeira EMP (ordem numérica). Se os valores por
+    EMP forem diferentes, eles são tratados como parcelas distintas e somados.
+    O valor original permanece em ``premio_consolidado`` para auditoria.
+    """
+    grouped: defaultdict[tuple[str, object], list[BonusAtacadoUsuario]] = defaultdict(list)
+    for row in rows:
+        grouped[_user_key(row)].append(row)
+
+    total = Decimal("0")
+    for user_rows in grouped.values():
+        user_rows.sort(key=lambda item: emp_sort_key(getattr(item, "emp", "")))
+        non_null = [
+            Decimal(str(row.premio_consolidado))
+            for row in user_rows
+            if getattr(row, "premio_consolidado", None) is not None
+        ]
+        repeated_single_value = len(non_null) > 1 and len(set(non_null)) == 1
+        used = False
+        for row in user_rows:
+            raw = getattr(row, "premio_consolidado", None)
+            value = Decimal(str(raw or 0))
+            duplicated = repeated_single_value and used and raw is not None
+            applied = Decimal("0") if duplicated else value
+            if repeated_single_value and raw is not None and not used:
+                used = True
+            row.premio_consolidado_aplicado = applied
+            row.premio_consolidado_repetido = duplicated
+            total += applied
+    return total
+
+
 def _attach_current_roles(db, rows: list[BonusAtacadoUsuario]) -> None:
     ids = sorted({int(row.usuario_id) for row in rows if row.usuario_id is not None})
     roles_by_id: dict[int, str] = {}
@@ -721,6 +800,8 @@ def bonus_atacado():
                 row.saldo_itens_parados_usuario = Decimal("0")
                 row.saldo_itens_parados_loja = Decimal("0")
 
+        premio_consolidado_total = _prepare_consolidated_prizes(rows)
+
         try:
             ensure_bonus_outros_valores_schema()
             outros_valores_summary = attach_outros_valores_to_bonus_rows(
@@ -729,7 +810,7 @@ def bonus_atacado():
                 ano=ano,
                 mes=mes,
                 origem="ATACADO",
-                bonus_field="total_produtos",
+                bonus_field="premio_consolidado_aplicado",
             )
         except Exception:
             current_app.logger.exception(
@@ -742,7 +823,9 @@ def bonus_atacado():
             for row in rows:
                 row.outros_valores_total = Decimal("0")
                 row.outros_valores_detalhes = []
-                row.valor_bonus_base = Decimal(str(row.total_produtos or 0))
+                row.valor_bonus_base = Decimal(
+                    str(getattr(row, "premio_consolidado_aplicado", 0) or 0)
+                )
                 row.total_geral = row.valor_bonus_base + Decimal(
                     str(getattr(row, "saldo_itens_parados", 0) or 0)
                 )
@@ -757,16 +840,19 @@ def bonus_atacado():
             .first()
         )
 
-        bonus_total = _sum_field(rows, "total_produtos")
+        provisao_total = _sum_field(rows, "total_produtos")
         summary = {
             "registros": len(rows),
             "emps": len({row.emp for row in rows if row.emp}),
-            "total_produtos": bonus_total,
-            "importado": _sum_field(rows, "importado"),
+            "usuarios": len({_user_key(row) for row in rows}),
+            "total_produtos": provisao_total,
+            "premio_consolidado": premio_consolidado_total,
+            "venda_atual": _unique_user_value(rows, "venda_atual"),
+            "importado": _unique_user_value(rows, "importado"),
             "itens_parados": itens_parados_summary["total_visivel"],
             "outros_valores": outros_valores_summary["total_visivel"],
             "total_geral": (
-                bonus_total
+                premio_consolidado_total
                 + itens_parados_summary["total_visivel"]
                 + outros_valores_summary["total_visivel"]
             ),
@@ -783,7 +869,12 @@ def bonus_atacado():
                 Decimal("0"),
             )
             store["bonus"] = sum(
-                (Decimal(str(row.total_produtos or 0)) for row in store_rows),
+                (
+                    Decimal(
+                        str(getattr(row, "premio_consolidado_aplicado", 0) or 0)
+                    )
+                    for row in store_rows
+                ),
                 Decimal("0"),
             )
             store["outros_valores"] = sum(

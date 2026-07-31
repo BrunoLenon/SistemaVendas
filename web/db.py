@@ -228,6 +228,7 @@ class BonusAtacadoUsuario(Base):
     emp = Column(String(30), nullable=False, index=True)
 
     total_produtos = Column(Numeric(18, 4), nullable=True)
+    premio_consolidado = Column(Numeric(18, 4), nullable=True)
     venda_anterior = Column(Numeric(18, 4), nullable=True)
     venda_atual = Column(Numeric(18, 4), nullable=True)
     importado = Column(Numeric(18, 4), nullable=True)
@@ -2136,6 +2137,7 @@ def ensure_bonus_atacado_schema(force: bool = False):
                 funcao_planilha VARCHAR(30),
                 emp VARCHAR(30) NOT NULL,
                 total_produtos NUMERIC(18,4),
+                premio_consolidado NUMERIC(18,4),
                 venda_anterior NUMERIC(18,4),
                 venda_atual NUMERIC(18,4),
                 importado NUMERIC(18,4),
@@ -2150,6 +2152,7 @@ def ensure_bonus_atacado_schema(force: bool = False):
             );
         """))
         conn.execute(text("ALTER TABLE bonus_atacado_usuarios ADD COLUMN IF NOT EXISTS mix INTEGER NOT NULL DEFAULT 0;"))
+        conn.execute(text("ALTER TABLE bonus_atacado_usuarios ADD COLUMN IF NOT EXISTS premio_consolidado NUMERIC(18,4);"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_bonus_atacado_lotes_periodo_importado ON bonus_atacado_importacoes_lotes (ano, mes, importado_em);"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_bonus_atacado_lotes_importado_por_user_id ON bonus_atacado_importacoes_lotes (importado_por_user_id);"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_bonus_atacado_usuario_periodo ON bonus_atacado_usuarios (usuario_nome, ano, mes);"))
