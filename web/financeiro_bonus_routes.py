@@ -40,7 +40,7 @@ from db import (
     ensure_itens_parados_snapshot_schema,
 )
 from security_utils import audit, normalize_role
-from sv_utils import emp_sort_key
+from sv_utils import business_today, emp_sort_key
 
 ALLOWED_ROLES = {"admin", "financeiro"}
 STATUS_FILTERS = {"todos", "aberto", "fechado", "pago", "nao_pago"}
@@ -484,7 +484,7 @@ def financeiro_bonus():
     if red:
         return red
 
-    today = date.today()
+    today = business_today()
     try:
         _ensure_all_schemas()
     except Exception:
@@ -510,7 +510,7 @@ def financeiro_bonus():
 
     with SessionLocal() as db:
         periods = _period_options(db)
-        default_year, default_month = periods[0] if periods else (today.year, today.month)
+        default_year, default_month = today.year, today.month
         ano = _safe_int(request.args.get("ano"), default_year, 2000, 2100)
         mes = _safe_int(request.args.get("mes"), default_month, 1, 12)
         source_emps = _period_source_emps(db, ano, mes)
@@ -634,7 +634,7 @@ def financeiro_bonus_fechar():
     red = _financeiro_required()
     if red:
         return red
-    today = date.today()
+    today = business_today()
     ano = _safe_int(request.form.get("ano"), today.year, 2000, 2100)
     mes = _safe_int(request.form.get("mes"), today.month, 1, 12)
     emps = _selected_emps_from_request(request.form)
@@ -764,7 +764,7 @@ def financeiro_bonus_reabrir():
     red = _financeiro_required()
     if red:
         return red
-    today = date.today()
+    today = business_today()
     ano = _safe_int(request.form.get("ano"), today.year, 2000, 2100)
     mes = _safe_int(request.form.get("mes"), today.month, 1, 12)
     emps = _selected_emps_from_request(request.form)
@@ -831,7 +831,7 @@ def financeiro_bonus_pagamento():
     red = _financeiro_required()
     if red:
         return red
-    today = date.today()
+    today = business_today()
     ano = _safe_int(request.form.get("ano"), today.year, 2000, 2100)
     mes = _safe_int(request.form.get("mes"), today.month, 1, 12)
     emps = _selected_emps_from_request(request.form)

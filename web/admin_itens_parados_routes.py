@@ -37,7 +37,7 @@ from itens_parados_snapshot import (
     load_point_rules,
     norm_emp,
 )
-from sv_utils import emp_sort_key
+from sv_utils import business_today, emp_sort_key
 
 
 MAX_ITEMS_IMPORT = 20000
@@ -523,7 +523,7 @@ def register_admin_itens_parados_routes(
             elif filter_status == "inativos":
                 query = query.filter(ItemParado.ativo.is_(False))
 
-            today_filter = date.today()
+            today_filter = business_today()
             if filter_validity == "vigentes":
                 query = query.filter(
                     ItemParado.data_inicio.isnot(None),
@@ -579,7 +579,7 @@ def register_admin_itens_parados_routes(
                     }
                 )
 
-            today = date.today()
+            today = business_today()
             ano_vendas = int(request.args.get("ano_vendas") or today.year)
             mes_vendas = int(request.args.get("mes_vendas") or today.month)
             validade_padrao_inicio = date(ano_vendas, mes_vendas, 1)
@@ -616,7 +616,7 @@ def register_admin_itens_parados_routes(
             filtro_codigo=filter_code,
             filtro_status=filter_status,
             filtro_validade=filter_validity,
-            hoje=date.today(),
+            hoje=business_today(),
             validade_padrao_inicio=validade_padrao_inicio,
             validade_padrao_fim=validade_padrao_fim,
             pagina=page,

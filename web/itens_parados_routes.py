@@ -19,7 +19,7 @@ from db import (
 )
 from itens_parados_snapshot import norm_emp, norm_username, period_options
 from security_utils import normalize_role
-from sv_utils import emp_sort_key
+from sv_utils import business_today, emp_sort_key
 
 
 _login_required: Callable[[], object] | None = None
@@ -44,11 +44,11 @@ def _load_view_data():
     ensure_itens_parados_snapshot_schema()
     role = normalize_role(_role() if _role else "")
     username = norm_username(_usuario_logado() if _usuario_logado else "")
-    today = date.today()
+    today = business_today()
 
     with SessionLocal() as db:
         periods = period_options(db)
-        default_year, default_month = periods[0] if periods else (today.year, today.month)
+        default_year, default_month = today.year, today.month
         ano = _safe_int(request.args.get("ano"), default_year, 2000, 2100)
         mes = _safe_int(request.args.get("mes"), default_month, 1, 12)
 

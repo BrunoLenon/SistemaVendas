@@ -37,7 +37,7 @@ from db import (
     ensure_bonus_outros_valores_schema,
 )
 from security_utils import audit, normalize_role
-from sv_utils import emp_sort_key
+from sv_utils import business_today, emp_sort_key
 from itens_parados_snapshot import attach_saldos_to_bonus_rows
 from bonus_outros_valores import attach_outros_valores_to_bonus_rows, bonus_row_options
 
@@ -581,7 +581,7 @@ def admin_bonus_atacado_importar():
         flash("Acesso restrito ao administrador.", "warning")
         return redirect(url_for("bonus_atacado"))
 
-    today = date.today()
+    today = business_today()
     ano = _safe_period(request.form.get("ano"), today.year, 2000, 2100)
     mes = _safe_period(request.form.get("mes"), today.month, 1, 12)
     uploaded = request.files.get("arquivo")
@@ -693,7 +693,7 @@ def bonus_atacado():
         return red
 
     role = normalize_role(_role())
-    today = date.today()
+    today = business_today()
 
     try:
         ensure_bonus_atacado_schema()
@@ -729,7 +729,7 @@ def bonus_atacado():
 
     with SessionLocal() as db:
         periods = _period_options(db)
-        default_year, default_month = periods[0] if periods else (today.year, today.month)
+        default_year, default_month = today.year, today.month
         ano = _safe_period(request.args.get("ano"), default_year, 2000, 2100)
         mes = _safe_period(request.args.get("mes"), default_month, 1, 12)
 

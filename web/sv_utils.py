@@ -5,8 +5,10 @@ Refatoração pura: mantém assinaturas e comportamento observável.
 """
 from __future__ import annotations
 
+import os
 import re
 from datetime import date, datetime
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 
 # Regras oficiais de movimento para todos os cálculos comerciais.
@@ -17,6 +19,32 @@ MOVIMENTOS_CANCELAMENTO = ("CA",)
 MOVIMENTOS_DEVOLUCAO = ("DS",)
 MOVIMENTOS_NEGATIVOS = MOVIMENTOS_CANCELAMENTO + MOVIMENTOS_DEVOLUCAO
 MOVIMENTOS_CALCULO = MOVIMENTOS_VENDA + MOVIMENTOS_NEGATIVOS
+
+
+DEFAULT_BUSINESS_TIMEZONE = "America/Cuiaba"
+
+
+def business_today() -> date:
+    """Data operacional do sistema no fuso configurado.
+
+    O Render normalmente executa em UTC. Sem esta conversão, uma nova
+    competência poderia começar algumas horas antes da virada local do mês.
+    O fuso pode ser sobrescrito por ``APP_TIMEZONE``; na ausência dele, usamos
+    o fuso da operação em Mato Grosso.
+    """
+    timezone_name = (
+        os.getenv("APP_TIMEZONE") or DEFAULT_BUSINESS_TIMEZONE
+    ).strip()
+    try:
+        return datetime.now(ZoneInfo(timezone_name)).date()
+    except (ZoneInfoNotFoundError, ValueError, TypeError):
+        return date.today()
+
+
+def current_reference_period() -> tuple[int, int]:
+    """Retorna ``(ano, mês)`` da competência operacional corrente."""
+    today = business_today()
+    return today.year, today.month
 
 
 def normalizar_movimento(value: object) -> str:
@@ -131,8 +159,9 @@ def _normalize_cols(df):
 
 def _mes_ano_from_request() -> tuple[int, int]:
     from flask import request
-    mes = int(request.args.get("mes") or datetime.now().month)
-    ano = int(request.args.get("ano") or datetime.now().year)
+    current_year, current_month = current_reference_period()
+    mes = int(request.args.get("mes") or current_month)
+    ano = int(request.args.get("ano") or current_year)
     mes = max(1, min(12, mes))
     ano = max(2000, min(2100, ano))
     return mes, ano
