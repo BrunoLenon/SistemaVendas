@@ -467,7 +467,7 @@
             <div class="bonus-sheet-cell">{{ row.valor_meta|brl_rs }}</div>
             <div class="bonus-sheet-cell">{{ row.valor_parcial|brl_rs }}</div>
             <div class="bonus-sheet-cell">{{ row.bonus_final|brl_rs }}</div>
-            <div class="bonus-sheet-cell">{{ row.saldo_itens_parados_loja|brl_rs }}</div>
+            <div class="bonus-sheet-cell">{{ row.saldo_itens_parados|brl_rs }}</div>
             <div class="bonus-sheet-cell bonus-sheet-other">{{ outros_valores(row, role, ano, mes) }}</div>
             <div class="bonus-sheet-cell bonus-sheet-total">{{ row.total_geral|brl_rs }}</div>
           </div>
@@ -555,7 +555,7 @@
         <div class="bonus-metric"><small>R · Bônus importado do gerente</small><strong>{{ selected.bonus_importado|brl_rs }}</strong></div>
         <div class="bonus-metric"><small>T · Valor meta</small><strong>{{ selected.valor_meta|brl_rs }}</strong></div>
         <div class="bonus-metric"><small>U · Valor parcial — provisão</small><strong>{{ selected.valor_parcial|brl_rs }}</strong></div>
-        <div class="bonus-metric"><small>Saldo de itens parados da loja</small><strong>{{ selected.saldo_itens_parados_loja|brl_rs }}</strong></div>
+        <div class="bonus-metric"><small>Itens parados — exclusivo para vendedor</small><strong>{{ selected.saldo_itens_parados|brl_rs }}</strong></div>
         <div class="bonus-metric highlight"><small>V · Valor final — liberado após todos os requisitos</small><strong>{{ selected.bonus_final|brl_rs }}</strong></div>
       </div>
       {% elif selected.funcao == 'MECANICO' %}

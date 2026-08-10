@@ -17,7 +17,13 @@ from db import (
     SessionLocal,
     ensure_itens_parados_snapshot_schema,
 )
-from itens_parados_snapshot import norm_emp, norm_username, period_options
+from itens_parados_snapshot import (
+    balance_row_is_seller,
+    norm_emp,
+    norm_username,
+    period_options,
+    seller_identity_sets,
+)
 from security_utils import normalize_role
 from sv_utils import business_today, emp_sort_key
 
@@ -56,12 +62,21 @@ def _load_view_data():
             ItensParadosVendaUsuario.ano == ano,
             ItensParadosVendaUsuario.mes == mes,
         )
+        seller_ids, seller_names = seller_identity_sets(db)
+
+        def only_sellers(values):
+            return [
+                row
+                for row in values
+                if balance_row_is_seller(row, seller_ids, seller_names)
+            ]
+
         emp_filter = norm_emp(request.args.get("emp"))
         user_filter = norm_username(request.args.get("usuario"))
         product_scope_emps: list[str] | None = None
 
         if role == "admin":
-            all_rows = base_query.all()
+            all_rows = only_sellers(base_query.all())
             query = base_query
             if emp_filter:
                 query = query.filter(ItensParadosVendaUsuario.emp == emp_filter)
@@ -70,7 +85,7 @@ def _load_view_data():
                 query = query.filter(
                     ItensParadosVendaUsuario.usuario_nome == user_filter
                 )
-            rows = query.all()
+            rows = only_sellers(query.all())
             emp_options = sorted(
                 {row.emp for row in all_rows if row.emp}, key=emp_sort_key
             )
@@ -102,13 +117,15 @@ def _load_view_data():
                 query = query.filter(
                     ItensParadosVendaUsuario.usuario_nome == user_filter
                 )
-            rows = query.all()
+            rows = only_sellers(query.all())
             emp_options = allowed
             user_options = sorted({row.usuario_nome for row in rows})
         else:
-            rows = base_query.filter(
-                ItensParadosVendaUsuario.usuario_nome == username
-            ).all()
+            rows = only_sellers(
+                base_query.filter(
+                    ItensParadosVendaUsuario.usuario_nome == username
+                ).all()
+            )
             allowed = sorted(
                 {
                     norm_emp(emp)

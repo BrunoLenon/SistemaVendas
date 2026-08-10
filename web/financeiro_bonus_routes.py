@@ -39,6 +39,7 @@ from db import (
     ensure_financeiro_bonus_schema,
     ensure_itens_parados_snapshot_schema,
 )
+from itens_parados_snapshot import balance_row_is_seller, seller_identity_sets
 from security_utils import audit, normalize_role
 from sv_utils import business_today, emp_sort_key
 
@@ -321,7 +322,13 @@ def _live_rows(db, *, ano: int, mes: int, emps: list[str]) -> list[dict[str, Any
         )
         .all()
     )
+    seller_ids, seller_names = seller_identity_sets(db)
     for row in stopped:
+        # Regra de negócio: Itens Parados é uma premiação exclusiva de VENDEDOR.
+        # A checagem aqui também protege competências antigas que possam conter
+        # snapshot de gerente/supervisor.
+        if not balance_row_is_seller(row, seller_ids, seller_names):
+            continue
         item = item_for(row.emp, row.usuario_id, row.usuario_nome)
         # No Financeiro, Itens Parados é contado uma única vez por funcionário/EMP.
         # O valor financeiro é o bônus calculado por pontos, não o faturamento elegível.

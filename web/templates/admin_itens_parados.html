@@ -42,9 +42,9 @@
     </div>
     <div class="ipa-kpis">
       <div class="ipa-kpi"><small>Itens cadastrados</small><strong>{{ total_itens }}</strong><span>Com os filtros atuais</span></div>
-      <div class="ipa-kpi"><small>Vendas elegíveis</small><strong>{% if sales_batch %}{{ sales_batch.valor_total|brl_rs }}{% else %}R$ 0,00{% endif %}</strong><span>{{ '%02d'|format(mes_vendas) }}/{{ ano_vendas }}</span></div>
-      <div class="ipa-kpi"><small>Pontos inteiros</small><strong>{{ sales_batch.pontos_total if sales_batch else 0 }}</strong><span>{% if sales_batch %}{{ sales_batch.registros_usuarios }} funcionário(s){% else %}Sem importação{% endif %}</span></div>
-      <div class="ipa-kpi"><small>Bônus calculado</small><strong>{% if sales_batch %}{{ sales_batch.bonus_total|brl_rs }}{% else %}R$ 0,00{% endif %}</strong><span>{% if sales_batch %}{{ sales_batch.linhas_nao_elegiveis }} linha(s) fora da ação{% else %}Aguardando importação{% endif %}</span></div>
+      <div class="ipa-kpi"><small>Vendas elegíveis</small><strong>{% if sales_batch %}{{ sales_summary.valor_total|brl_rs }}{% else %}R$ 0,00{% endif %}</strong><span>{{ '%02d'|format(mes_vendas) }}/{{ ano_vendas }}</span></div>
+      <div class="ipa-kpi"><small>Pontos inteiros</small><strong>{{ sales_summary.pontos_total if sales_batch else 0 }}</strong><span>{% if sales_batch %}{{ sales_summary.registros_usuarios }} vendedor(es){% else %}Sem importação{% endif %}</span></div>
+      <div class="ipa-kpi"><small>Bônus calculado</small><strong>{% if sales_batch %}{{ sales_summary.bonus_total|brl_rs }}{% else %}R$ 0,00{% endif %}</strong><span>{% if sales_batch %}Somente vendedores elegíveis{% else %}Aguardando importação{% endif %}</span></div>
     </div>
   </section>
 
@@ -88,7 +88,7 @@
         </div>
       </form>
       {% if sales_batch %}
-      <div class="ipa-section-sub mt-3">Arquivo: <b>{{ sales_batch.arquivo_origem }}</b> · período encontrado {% if sales_batch.data_inicio %}{{ sales_batch.data_inicio.strftime('%d/%m/%Y') }}{% else %}—{% endif %} a {% if sales_batch.data_fim %}{{ sales_batch.data_fim.strftime('%d/%m/%Y') }}{% else %}—{% endif %} · {{ sales_batch.linhas_importadas }} linha(s) elegível(is) e {{ sales_batch.linhas_ignoradas }} ignorada(s).</div>
+      <div class="ipa-section-sub mt-3">Arquivo: <b>{{ sales_batch.arquivo_origem }}</b> · período encontrado {% if sales_batch.data_inicio %}{{ sales_batch.data_inicio.strftime('%d/%m/%Y') }}{% else %}—{% endif %} a {% if sales_batch.data_fim %}{{ sales_batch.data_fim.strftime('%d/%m/%Y') }}{% else %}—{% endif %} · {{ sales_summary.linhas_importadas }} linha(s) de vendedores elegíveis.</div>
       {% endif %}
     </section>
 

@@ -32,10 +32,12 @@ from db import (
     ensure_itens_parados_snapshot_schema,
 )
 from itens_parados_snapshot import (
+    balance_row_is_seller,
     batch_warnings,
     latest_batch,
     load_point_rules,
     norm_emp,
+    seller_identity_sets,
 )
 from sv_utils import business_today, emp_sort_key
 
@@ -590,19 +592,39 @@ def register_admin_itens_parados_routes(
             )
             sales_batch = latest_batch(db, ano_vendas, mes_vendas)
             sales_warnings = batch_warnings(sales_batch)
-            sales_rows = (
-                db.query(ItensParadosVendaUsuario)
-                .filter(
-                    ItensParadosVendaUsuario.ano == ano_vendas,
-                    ItensParadosVendaUsuario.mes == mes_vendas,
+            seller_ids, seller_names = seller_identity_sets(db)
+            seller_sales_rows = [
+                row
+                for row in (
+                    db.query(ItensParadosVendaUsuario)
+                    .filter(
+                        ItensParadosVendaUsuario.ano == ano_vendas,
+                        ItensParadosVendaUsuario.mes == mes_vendas,
+                    )
+                    .order_by(
+                        ItensParadosVendaUsuario.emp.asc(),
+                        ItensParadosVendaUsuario.bonus_total.desc(),
+                    )
+                    .all()
                 )
-                .order_by(
-                    ItensParadosVendaUsuario.emp.asc(),
-                    ItensParadosVendaUsuario.bonus_total.desc(),
-                )
-                .limit(200)
-                .all()
-            )
+                if balance_row_is_seller(row, seller_ids, seller_names)
+            ]
+            sales_rows = seller_sales_rows[:200]
+            sales_summary = {
+                "valor_total": sum(
+                    (Decimal(str(row.valor_total or 0)) for row in seller_sales_rows),
+                    Decimal("0"),
+                ),
+                "pontos_total": sum(int(row.pontos or 0) for row in seller_sales_rows),
+                "bonus_total": sum(
+                    (Decimal(str(row.bonus_total or 0)) for row in seller_sales_rows),
+                    Decimal("0"),
+                ),
+                "registros_usuarios": len(seller_sales_rows),
+                "linhas_importadas": sum(
+                    int(row.qtd_linhas or 0) for row in seller_sales_rows
+                ),
+            }
 
         return render_template(
             "admin_itens_parados.html",
@@ -629,6 +651,7 @@ def register_admin_itens_parados_routes(
             sales_batch=sales_batch,
             sales_warnings=sales_warnings,
             sales_rows=sales_rows,
+            sales_summary=sales_summary,
         )
 
     def admin_itens_parados_modelo():

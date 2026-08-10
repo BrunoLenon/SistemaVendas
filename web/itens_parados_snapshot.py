@@ -100,6 +100,41 @@ def canonical_username(value: object) -> str:
     return re.sub(r"[^A-Z0-9]", "", _strip_accents(value).upper())
 
 
+def seller_identity_sets(db) -> tuple[set[int], set[str]]:
+    """Identidades que podem receber Itens Parados.
+
+    A regra de negócio é intencionalmente restrita: somente usuários cujo
+    perfil atual no cadastro seja VENDEDOR podem receber pontos/bônus.
+    Gerente, supervisor, mecânico e demais perfis nunca herdam o saldo da loja.
+    """
+    seller_ids: set[int] = set()
+    seller_names: set[str] = set()
+    for user_id, username, role in db.query(Usuario.id, Usuario.username, Usuario.role).all():
+        if normalize_role(role) != "vendedor":
+            continue
+        if user_id is not None:
+            seller_ids.add(int(user_id))
+        canonical = canonical_username(username)
+        if canonical:
+            seller_names.add(canonical)
+    return seller_ids, seller_names
+
+
+def balance_row_is_seller(
+    row: Any,
+    seller_ids: set[int],
+    seller_names: set[str],
+) -> bool:
+    """Confirma a elegibilidade de um snapshot, priorizando o usuario_id."""
+    raw_id = getattr(row, "usuario_id", None)
+    if raw_id is not None:
+        try:
+            return int(raw_id) in seller_ids
+        except Exception:
+            return False
+    return canonical_username(getattr(row, "usuario_nome", "")) in seller_names
+
+
 def norm_emp(value: object) -> str:
     if value is None:
         return ""
@@ -501,11 +536,18 @@ def _parse_sales_workbook(
 
 
 def _resolve_users(db, records: list[dict[str, Any]], warnings: list[str]) -> None:
-    users = db.query(Usuario.id, Usuario.username, Usuario.emp).all()
-    by_canonical: defaultdict[str, list[tuple[int, str, str | None]]] = defaultdict(list)
-    for user_id, username, primary_emp in users:
+    users = db.query(Usuario.id, Usuario.username, Usuario.emp, Usuario.role).all()
+    by_canonical: defaultdict[
+        str, list[tuple[int, str, str | None, str]]
+    ] = defaultdict(list)
+    for user_id, username, primary_emp, role in users:
         by_canonical[canonical_username(username)].append(
-            (int(user_id), str(username or ""), norm_emp(primary_emp))
+            (
+                int(user_id),
+                str(username or ""),
+                norm_emp(primary_emp),
+                normalize_role(role),
+            )
         )
 
     user_emps: defaultdict[int, set[str]] = defaultdict(set)
@@ -515,7 +557,7 @@ def _resolve_users(db, records: list[dict[str, Any]], warnings: list[str]) -> No
         .all()
     ):
         user_emps[int(user_id)].add(norm_emp(emp))
-    for user_id, _, primary_emp in users:
+    for user_id, _, primary_emp, _ in users:
         if primary_emp:
             user_emps[int(user_id)].add(norm_emp(primary_emp))
 
@@ -525,9 +567,10 @@ def _resolve_users(db, records: list[dict[str, Any]], warnings: list[str]) -> No
         canonical = canonical_username(record["usuario_nome"])
         candidates = by_canonical.get(canonical) or []
         if len(candidates) == 1:
-            user_id, db_username, _ = candidates[0]
+            user_id, db_username, _, user_role = candidates[0]
             record["usuario_id"] = user_id
             record["usuario_nome"] = norm_username(db_username)
+            record["usuario_role"] = user_role
             if record["emp"] not in user_emps.get(user_id, set()):
                 key = (user_id, record["emp"])
                 if key not in warned_emp:
@@ -538,17 +581,65 @@ def _resolve_users(db, records: list[dict[str, Any]], warnings: list[str]) -> No
                     warned_emp.add(key)
         elif len(candidates) > 1:
             record["usuario_id"] = None
+            record["usuario_role"] = ""
             warnings.append(
                 f"{record['usuario_nome']}: mais de um usuário corresponde ao nome; "
                 "vínculo automático não realizado."
             )
         else:
             record["usuario_id"] = None
+            record["usuario_role"] = ""
             if canonical not in warned_missing:
                 warnings.append(
                     f"{record['usuario_nome']}: usuário não localizado no cadastro do sistema."
                 )
                 warned_missing.add(canonical)
+
+
+def _keep_only_seller_records(parsed: dict[str, Any], warnings: list[str]) -> None:
+    """Remove qualquer recebedor que não seja VENDEDOR antes de persistir.
+
+    Isso impede que gerente/supervisor receba o saldo agregado da loja e também
+    protege contra planilhas de vendas que contenham movimentos em nome desses
+    perfis. A função do cadastro do sistema é a fonte de verdade.
+    """
+    eligible: list[dict[str, Any]] = []
+    ignored: list[dict[str, Any]] = []
+    for record in parsed.get("records") or []:
+        if normalize_role(record.get("usuario_role")) == "vendedor":
+            eligible.append(record)
+        else:
+            ignored.append(record)
+
+    for record in ignored:
+        role = normalize_role(record.get("usuario_role")) or "não identificado"
+        warnings.append(
+            f"{record.get('usuario_nome') or 'USUÁRIO'} / EMP {record.get('emp') or '-'}: "
+            f"Itens Parados não gera bônus para o perfil {role.upper()}. "
+            "Somente VENDEDOR pode receber."
+        )
+
+    parsed["records"] = eligible
+    parsed["valor_total"] = sum(
+        (Decimal(str(item.get("valor_total") or 0)) for item in eligible),
+        Decimal("0"),
+    ).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+    parsed["pontos_total"] = sum(int(item.get("pontos") or 0) for item in eligible)
+    parsed["bonus_total"] = sum(
+        (Decimal(str(item.get("bonus_total") or 0)) for item in eligible),
+        Decimal("0"),
+    ).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+    parsed["rows_imported"] = sum(int(item.get("qtd_linhas") or 0) for item in eligible)
+    parsed["rows_skipped"] = max(
+        int(parsed.get("rows_skipped") or 0),
+        int(parsed.get("rows_read") or 0) - int(parsed["rows_imported"]),
+    )
+
+    if not eligible:
+        raise ValueError(
+            "Nenhuma venda elegível pertence a usuário com perfil VENDEDOR. "
+            "Gerentes e supervisores não recebem bônus de Itens Parados."
+        )
 
 
 def admin_itens_parados_vendas_importar():
@@ -607,6 +698,7 @@ def admin_itens_parados_vendas_importar():
 
         with SessionLocal() as db:
             _resolve_users(db, parsed["records"], warnings)
+            _keep_only_seller_records(parsed, warnings)
             db.query(ItensParadosVendaUsuario).filter(
                 ItensParadosVendaUsuario.ano == ano,
                 ItensParadosVendaUsuario.mes == mes,
@@ -752,7 +844,11 @@ def attach_saldos_to_bonus_rows(
     ano: int,
     mes: int,
 ) -> dict[str, Decimal]:
-    """Anexa o bônus calculado de Itens Parados aos objetos de Bônus."""
+    """Anexa Itens Parados sem transferir saldo da loja a gerente/supervisor.
+
+    Somente VENDEDOR recebe o bônus individual. O saldo da loja continua sendo
+    calculado apenas como informação agregada para cartões/relatórios gerenciais.
+    """
     rows = list(rows)
     emps = sorted(
         {
@@ -764,6 +860,7 @@ def attach_saldos_to_bonus_rows(
     if not emps:
         return {"total_visivel": Decimal("0"), "total_lojas": Decimal("0")}
 
+    seller_ids, seller_names = seller_identity_sets(db)
     balances = (
         db.query(ItensParadosVendaUsuario)
         .filter(
@@ -773,6 +870,14 @@ def attach_saldos_to_bonus_rows(
         )
         .all()
     )
+    # Proteção retroativa: snapshots antigos que eventualmente tenham sido
+    # gravados para gerente/supervisor também deixam de entrar nos totais.
+    balances = [
+        item
+        for item in balances
+        if balance_row_is_seller(item, seller_ids, seller_names)
+    ]
+
     by_key = {
         (norm_emp(item.emp), norm_username(item.usuario_nome)): Decimal(
             str(item.bonus_total or 0)
@@ -799,21 +904,11 @@ def attach_saldos_to_bonus_rows(
         sales_by_emp[emp] += Decimal(str(item.valor_total or 0))
         points_by_emp[emp] += int(item.pontos or 0)
 
-    visible_keys: set[tuple[str, str]] = set()
-    manager_emps: set[str] = set()
+    visible_seller_keys: set[tuple[str, str]] = set()
     for row in rows:
         emp = norm_emp(getattr(row, "emp", ""))
         username = norm_username(getattr(row, "usuario_nome", ""))
         key = (emp, username)
-        individual = by_key.get(key, Decimal("0"))
-        store = by_emp.get(emp, Decimal("0"))
-
-        setattr(row, "saldo_itens_parados_usuario", individual)
-        setattr(row, "saldo_itens_parados_loja", store)
-        setattr(row, "itens_parados_vendas_usuario", sales_by_key.get(key, Decimal("0")))
-        setattr(row, "itens_parados_vendas_loja", sales_by_emp.get(emp, Decimal("0")))
-        setattr(row, "itens_parados_pontos_usuario", points_by_key.get(key, 0))
-        setattr(row, "itens_parados_pontos_loja", points_by_emp.get(emp, 0))
 
         role_value = (
             getattr(row, "funcao_exibicao", None)
@@ -822,20 +917,29 @@ def attach_saldos_to_bonus_rows(
             or ""
         )
         role = normalize_role(role_value)
-        shown = store if role in {"gerente", "supervisor"} else individual
-        setattr(row, "saldo_itens_parados", shown)
-        if role in {"gerente", "supervisor"}:
-            manager_emps.add(emp)
-            continue
-        visible_keys.add(key)
+        eligible = role == "vendedor"
 
-    individual_emps = {emp for emp, _ in visible_keys}
+        individual = by_key.get(key, Decimal("0")) if eligible else Decimal("0")
+        individual_sales = (
+            sales_by_key.get(key, Decimal("0")) if eligible else Decimal("0")
+        )
+        individual_points = points_by_key.get(key, 0) if eligible else 0
+        store = by_emp.get(emp, Decimal("0"))
+
+        setattr(row, "saldo_itens_parados_usuario", individual)
+        setattr(row, "saldo_itens_parados_loja", store)
+        setattr(row, "itens_parados_vendas_usuario", individual_sales)
+        setattr(row, "itens_parados_vendas_loja", sales_by_emp.get(emp, Decimal("0")))
+        setattr(row, "itens_parados_pontos_usuario", individual_points)
+        setattr(row, "itens_parados_pontos_loja", points_by_emp.get(emp, 0))
+
+        # Valor que entra no Total Geral da linha. Nunca usa o agregado da loja.
+        setattr(row, "saldo_itens_parados", individual)
+        if eligible:
+            visible_seller_keys.add(key)
+
     total_visible = sum(
-        (by_key.get(key, Decimal("0")) for key in visible_keys), Decimal("0")
-    )
-    total_visible += sum(
-        (by_emp.get(emp, Decimal("0")) for emp in manager_emps if emp not in individual_emps),
-        Decimal("0"),
+        (by_key.get(key, Decimal("0")) for key in visible_seller_keys), Decimal("0")
     )
     return {
         "total_visivel": total_visible,
