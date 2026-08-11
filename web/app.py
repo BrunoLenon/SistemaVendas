@@ -43,7 +43,7 @@ from auth_helpers import (  # noqa: E402
     _usuario_logado,
 )
 from branding import _get_setting, register_branding  # noqa: E402
-from db import ItemParado, SessionLocal, Usuario, UsuarioEmp  # noqa: E402
+from db import Emp, ItemParado, SessionLocal, Usuario, UsuarioEmp  # noqa: E402
 from errors import register_error_handlers  # noqa: E402
 from jinja_filters import register_template_filters  # noqa: E402
 from security_utils import audit, rate_limit  # noqa: E402
@@ -276,6 +276,7 @@ def _get_vendedores_db(role: str, emp_usuario: str | None) -> list[str]:
 # ---------------------------------------------------------------------------
 from blueprints.auth import bp as auth_bp  # noqa: E402
 from admin_config_routes import register_admin_config_routes  # noqa: E402
+from admin_emps_routes import register_admin_emps_routes  # noqa: E402
 from admin_itens_parados_routes import register_admin_itens_parados_routes  # noqa: E402
 from admin_usuarios_routes import register_admin_usuarios_routes  # noqa: E402
 from bonus_atacado_routes import register_bonus_atacado_routes  # noqa: E402
@@ -327,6 +328,14 @@ register_admin_itens_parados_routes(
 )
 register_admin_usuarios_routes(
     app,
+    login_required_fn=_login_required,
+    admin_required_fn=_admin_required,
+    usuario_logado_fn=_usuario_logado,
+)
+register_admin_emps_routes(
+    app,
+    SessionLocal=SessionLocal,
+    Emp=Emp,
     login_required_fn=_login_required,
     admin_required_fn=_admin_required,
     usuario_logado_fn=_usuario_logado,
