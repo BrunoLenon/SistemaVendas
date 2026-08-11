@@ -101,13 +101,15 @@
   .atacado-sheet-wrap::-webkit-scrollbar-track{background:#151515;border-radius:0 0 13px 13px}
   .atacado-sheet-wrap::-webkit-scrollbar-thumb{background:#9d621a;border:3px solid #151515;border-radius:999px}
   .atacado-sheet-wrap::-webkit-scrollbar-thumb:hover{background:#d58a27}
-  .atacado-sheet{width:100%;min-width:1454px}
+  .atacado-sheet{width:100%;min-width:1240px}
+.atacado-sheet.personal-view{min-width:760px}
   .atacado-sheet-row{--atacado-row-bg:#0c0c0d;display:grid;align-items:stretch;min-width:0;border-bottom:1px solid rgba(255,255,255,.075);background:var(--atacado-row-bg);transition:background .16s ease}
   .atacado-sheet-row:last-child{border-bottom:0}
   .atacado-sheet-row:not(.atacado-sheet-header):nth-child(odd){--atacado-row-bg:#111112}
   .atacado-sheet-row:not(.atacado-sheet-header):hover{--atacado-row-bg:#21170d}
-  .atacado-sheet.with-role .atacado-sheet-row{grid-template-columns:56px 170px 90px 112px 120px 58px 112px 112px 112px 84px 112px 100px 104px 112px}
-  .atacado-sheet.no-role .atacado-sheet-row{grid-template-columns:56px 180px 112px 120px 58px 112px 112px 112px 84px 112px 100px 104px 112px}
+  .atacado-sheet.with-role .atacado-sheet-row{grid-template-columns:56px 170px 90px 112px 120px 58px 112px 112px 112px 104px 104px 112px}
+  .atacado-sheet.no-role .atacado-sheet-row{grid-template-columns:56px 180px 112px 120px 58px 112px 112px 112px 104px 104px 112px}
+  .atacado-sheet.personal-view .atacado-sheet-row{grid-template-columns:56px 190px 130px 130px 70px 120px 120px}
   .atacado-sheet-cell{display:flex;align-items:center;justify-content:flex-end;min-width:0;padding:9px 6px;border-right:1px solid rgba(255,255,255,.05);font-size:12px;font-weight:400;line-height:1.25;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
   .atacado-sheet-cell:last-child{border-right:0}
   .atacado-sheet-header{--atacado-row-bg:#151515;background:var(--atacado-row-bg)!important}
@@ -160,7 +162,7 @@
       <div>
         <div class="atacado-chip">🏷️ Premiação importada</div>
         <h1 class="atacado-title mt-2">Bônus Atacado</h1>
-        <div class="atacado-sub">Valores prontos da aba <b>PremiacaoFinal</b>. O sistema não recalcula campanhas, vendas ou percentuais; apenas importa, armazena e aplica a hierarquia dos usuários cadastrados.</div>
+        <div class="atacado-sub">Valores prontos da aba <b>PremiacaoResumo</b>. O sistema não recalcula campanhas, vendas ou percentuais; apenas importa, armazena e aplica a hierarquia dos usuários cadastrados.</div>
       </div>
       <form method="get" class="atacado-filter">
         <div>
@@ -193,6 +195,15 @@
       </form>
     </div>
 
+    {% if role not in ['admin','supervisor','gerente'] %}
+    <div class="atacado-kpis">
+      <div class="atacado-kpi"><small>Venda anterior</small><strong>{{ summary.venda_anterior|default(0)|brl_rs }}</strong></div>
+      <div class="atacado-kpi"><small>Venda atual</small><strong>{{ summary.venda_atual|default(0)|brl_rs }}</strong></div>
+      <div class="atacado-kpi"><small>MIX</small><strong>{{ summary.mix|default(0)|int }}</strong></div>
+      <div class="atacado-kpi"><small>Prêmio</small><strong>{{ summary.premio_consolidado|default(0)|brl_rs }}</strong></div>
+      <div class="atacado-kpi"><small>Itens parados</small><strong>{{ summary.itens_parados|default(0)|brl_rs }}</strong></div>
+    </div>
+    {% else %}
     <div class="atacado-kpis">
       <div class="atacado-kpi"><small>Provisão</small><strong>{{ summary.total_produtos|default(0)|brl_rs }}</strong></div>
       <div class="atacado-kpi"><small>Prêmio consolidado</small><strong>{{ summary.premio_consolidado|default(0)|brl_rs }}</strong></div>
@@ -204,6 +215,7 @@
       <div class="atacado-kpi"><small>Usuários visíveis</small><strong>{{ summary.usuarios|default(0) }}</strong></div>
       <div class="atacado-kpi"><small>Empresas visíveis</small><strong>{{ summary.emps|default(0) }}</strong></div>
     </div>
+    {% endif %}
   </section>
 
   {% if role == 'admin' %}
@@ -235,14 +247,14 @@
         <div class="atacado-columns">
           <div class="atacado-column"><b>EMP</b><br>Empresa do usuário</div>
           <div class="atacado-column"><b>FUNCIONARIO</b><br>Usuário cadastrado</div>
-          <div class="atacado-column"><b>Total</b><br>Provisão do prêmio de produtos</div>
-          <div class="atacado-column"><b>Prêmio Consolidado</b><br>Valor final liberado do Bônus Atacado</div>
-          <div class="atacado-column"><b>VendaAnterior / Venda Atual</b><br>Faturamento individual</div>
-          <div class="atacado-column"><b>Importado / % Importado</b><br>Venda de importados</div>
-          <div class="atacado-column"><b>Falta Valor Vendedor</b><br>Valor importado da base</div>
+          <div class="atacado-column"><b>TOTAL</b><br>Provisão do prêmio de produtos</div>
+          <div class="atacado-column"><b>Premio</b><br>Prêmio final consolidado do Bônus Atacado</div>
+          <div class="atacado-column"><b>Venda Anterior / Venda Atual</b><br>Faturamento individual do funcionário</div>
           <div class="atacado-column"><b>MIX</b><br>Quantidade de produtos diferentes vendidos</div>
-          <div class="atacado-column"><b>Loja Anterior / Loja Atual</b><br>Somente Admin, Supervisor e Gerente</div>
+          <div class="atacado-column"><b>Importado</b><br>Venda individual de produtos importados</div>
+          <div class="atacado-column"><b>Loja Anterior / Loja Atual</b><br>Visível somente para Admin, Supervisor e Gerente</div>
           <div class="atacado-column"><b>FUNCAO</b><br>Apenas conferência; a permissão segue o cadastro</div>
+          <div class="atacado-column"><b>LINHAS_BONIFICADAS / QUANTIDADE</b><br>Presentes na planilha, mas não são necessárias para a tela de Bônus</div>
         </div>
       </div>
     </div>
@@ -323,21 +335,43 @@
     </div>
 
     {% if rows %}
-    <div class="atacado-scroll-hint" aria-hidden="true">↔ EMP e Usuário permanecem fixos; use a barra horizontal para visualizar as demais colunas</div>
+    {% if role in ['admin','supervisor','gerente'] %}<div class="atacado-scroll-hint" aria-hidden="true">↔ EMP e Usuário permanecem fixos; use a barra horizontal para visualizar as demais colunas</div>{% endif %}
     <div class="atacado-sheet-wrap">
-      <div class="atacado-sheet {% if role in ['admin','supervisor','gerente'] %}with-role{% else %}no-role{% endif %}">
+      <div class="atacado-sheet {% if role in ['admin','supervisor','gerente'] %}with-role{% else %}personal-view{% endif %}">
+        {% if role not in ['admin','supervisor','gerente'] %}
         <div class="atacado-sheet-row atacado-sheet-header">
           <div class="atacado-sheet-cell atacado-sheet-emp">EMP</div>
           <div class="atacado-sheet-cell atacado-sheet-user">Usuário</div>
-          {% if role in ['admin','supervisor','gerente'] %}<div class="atacado-sheet-cell atacado-sheet-role">Função</div>{% endif %}
+          <div class="atacado-sheet-cell">Venda<br>anterior</div>
+          <div class="atacado-sheet-cell">Venda<br>atual</div>
+          <div class="atacado-sheet-cell">MIX</div>
+          <div class="atacado-sheet-cell">Prêmio</div>
+          <div class="atacado-sheet-cell">Itens<br>parados</div>
+        </div>
+        {% for row in rows %}
+        <div class="atacado-sheet-row">
+          <div class="atacado-sheet-cell atacado-sheet-emp">{{ row.emp }}</div>
+          <div class="atacado-sheet-cell atacado-sheet-user" title="{{ row.usuario_nome }}">{{ row.usuario_nome }}</div>
+          <div class="atacado-sheet-cell">{{ money(row.venda_anterior) }}</div>
+          <div class="atacado-sheet-cell">{{ money(row.venda_atual) }}</div>
+          <div class="atacado-sheet-cell">{{ row.mix|default(0) }}</div>
+          <div class="atacado-sheet-cell" {% if row.premio_consolidado_repetido %}title="Prêmio contabilizado uma única vez para o funcionário, na primeira EMP exibida."{% endif %}>
+            {% if row.premio_consolidado_repetido %}<span class="atacado-na">—</span>{% else %}{{ money(row.premio_consolidado_aplicado) }}{% endif %}
+          </div>
+          <div class="atacado-sheet-cell">{{ money(row.saldo_itens_parados) }}</div>
+        </div>
+        {% endfor %}
+        {% else %}
+        <div class="atacado-sheet-row atacado-sheet-header">
+          <div class="atacado-sheet-cell atacado-sheet-emp">EMP</div>
+          <div class="atacado-sheet-cell atacado-sheet-user">Usuário</div>
+          <div class="atacado-sheet-cell atacado-sheet-role">Função</div>
           <div class="atacado-sheet-cell">Prêmio<br>provisório</div>
           <div class="atacado-sheet-cell">Prêmio<br>consolidado</div>
           <div class="atacado-sheet-cell">MIX</div>
           <div class="atacado-sheet-cell">Venda<br>anterior</div>
           <div class="atacado-sheet-cell">Venda<br>atual</div>
           <div class="atacado-sheet-cell">Importado</div>
-          <div class="atacado-sheet-cell">%<br>importado</div>
-          <div class="atacado-sheet-cell">Falta<br>vendedor</div>
           <div class="atacado-sheet-cell">Itens<br>parados</div>
           <div class="atacado-sheet-cell">Outros<br>valores</div>
           <div class="atacado-sheet-cell atacado-sheet-total">Total<br>geral</div>
@@ -346,7 +380,7 @@
         <div class="atacado-sheet-row">
           <div class="atacado-sheet-cell atacado-sheet-emp">{{ row.emp }}</div>
           <div class="atacado-sheet-cell atacado-sheet-user" title="{{ row.usuario_nome }}">{{ row.usuario_nome }}</div>
-          {% if role in ['admin','supervisor','gerente'] %}<div class="atacado-sheet-cell atacado-sheet-role">{{ row.funcao_exibicao }}</div>{% endif %}
+          <div class="atacado-sheet-cell atacado-sheet-role">{{ row.funcao_exibicao }}</div>
           <div class="atacado-sheet-cell">{{ money(row.total_produtos) }}</div>
           <div class="atacado-sheet-cell" {% if row.premio_consolidado_repetido %}title="Prêmio consolidado contabilizado uma única vez para o funcionário, na primeira EMP exibida."{% endif %}>
             {% if row.premio_consolidado_repetido %}<span class="atacado-na">—</span>{% else %}{{ money(row.premio_consolidado_aplicado) }}{% endif %}
@@ -355,13 +389,12 @@
           <div class="atacado-sheet-cell">{{ money(row.venda_anterior) }}</div>
           <div class="atacado-sheet-cell">{{ money(row.venda_atual) }}</div>
           <div class="atacado-sheet-cell">{{ money(row.importado) }}</div>
-          <div class="atacado-sheet-cell">{{ percent(row.percentual_importado) }}</div>
-          <div class="atacado-sheet-cell">{{ money(row.falta_valor_vendedor) }}</div>
           <div class="atacado-sheet-cell">{{ money(row.saldo_itens_parados) }}</div>
           <div class="atacado-sheet-cell atacado-sheet-other">{{ outros_valores(row, role, ano, mes) }}</div>
           <div class="atacado-sheet-cell atacado-sheet-total">{{ money(row.total_geral) }}</div>
         </div>
         {% endfor %}
+        {% endif %}
       </div>
     </div>
     {% else %}

@@ -2,7 +2,7 @@
 """Importação e consulta do snapshot mensal de Bônus Atacado.
 
 A planilha permanece responsável pelos cálculos. O sistema importa somente os
-valores prontos da aba ``PremiacaoFinal`` e aplica a hierarquia cadastrada:
+valores prontos da aba ``PremiacaoResumo`` (com compatibilidade com ``PremiacaoFinal``) e aplica a hierarquia cadastrada:
 
 * vendedor, mecânico e demais perfis operacionais: somente os próprios dados;
 * supervisor e gerente: todos os usuários das EMPs vinculadas, além dos valores
@@ -42,7 +42,7 @@ from itens_parados_snapshot import attach_saldos_to_bonus_rows
 from bonus_outros_valores import attach_outros_valores_to_bonus_rows, bonus_row_options
 
 
-MAX_UPLOAD_BYTES = 15 * 1024 * 1024
+MAX_UPLOAD_BYTES = 40 * 1024 * 1024
 VALID_EXTENSIONS = {".xlsx", ".xlsm"}
 MANAGER_ROLES = {"admin", "supervisor", "gerente"}
 
@@ -86,12 +86,15 @@ REQUIRED_FIELDS = {
     "venda_anterior",
     "venda_atual",
     "importado",
-    "percentual_importado",
     "loja_anterior",
     "loja_atual",
-    "falta_valor_vendedor",
     "mix",
 }
+
+# A nova base mensal não possui mais estas colunas. Mantemos compatibilidade
+# com planilhas antigas caso elas ainda sejam enviadas, mas não calculamos
+# nenhum valor ausente no sistema.
+OPTIONAL_FIELDS = {"percentual_importado", "falta_valor_vendedor"}
 NUMERIC_FIELDS = (
     "total_produtos",
     "premio_consolidado",
@@ -220,12 +223,18 @@ def _integer_from_cell(cell) -> int:
 
 
 def _find_sheet(workbook):
-    for sheet in workbook.worksheets:
-        if _norm_header(sheet.title) == "PREMIACAOFINAL":
+    # A base mensal atual usa PremiacaoResumo. PremiacaoFinal continua aceita
+    # para não quebrar competências/arquivos antigos.
+    by_name = {_norm_header(sheet.title): sheet for sheet in workbook.worksheets}
+    for preferred in ("PREMIACAORESUMO", "PREMIACAOFINAL"):
+        sheet = by_name.get(preferred)
+        if sheet is not None:
             return sheet
     available = ", ".join(sheet.title for sheet in workbook.worksheets)
     raise ValueError(
-        "A aba 'PremiacaoFinal' não foi encontrada. Abas disponíveis: " + available
+        "A aba 'PremiacaoResumo' não foi encontrada. "
+        "Também aceitamos a aba antiga 'PremiacaoFinal'. "
+        "Abas disponíveis: " + available
     )
 
 
@@ -255,8 +264,8 @@ def _find_header(sheet) -> tuple[int, dict[str, int]]:
         for field in sorted(REQUIRED_FIELDS - set(best_mapping))
     ]
     raise ValueError(
-        "O cabeçalho da aba PremiacaoFinal não corresponde ao modelo. "
-        "Colunas não reconhecidas: " + ", ".join(missing)
+        "O cabeçalho da aba de premiação não corresponde ao modelo mensal. "
+        "Colunas obrigatórias não reconhecidas: " + ", ".join(missing)
     )
 
 
@@ -314,7 +323,7 @@ def _read_workbook(content: bytes) -> dict[str, Any]:
             if key in duplicate_keys:
                 first_row = duplicate_keys[key]
                 raise ValueError(
-                    f"Duplicidade na aba PremiacaoFinal: usuário {username}, EMP {emp}, "
+                    f"Duplicidade na aba {sheet.title}: usuário {username}, EMP {emp}, "
                     f"linhas {first_row} e {source_row}."
                 )
             duplicate_keys[key] = source_row
@@ -333,9 +342,15 @@ def _read_workbook(content: bytes) -> dict[str, Any]:
                 )
 
             for field in NUMERIC_FIELDS:
+                field_index = mapping.get(field)
+                if field_index is None:
+                    # % Importado e Falta Vendedor deixaram de existir na nova
+                    # planilha mensal. Não inferimos nem recalculamos esses dados.
+                    record[field] = None
+                    continue
                 try:
                     record[field] = _decimal_from_cell(
-                        cells[mapping[field]],
+                        cells[field_index],
                         is_percent=(field == "percentual_importado"),
                     )
                 except ValueError as exc:
@@ -378,7 +393,7 @@ def _read_workbook(content: bytes) -> dict[str, Any]:
             records.append(record)
 
         if not records:
-            raise ValueError("Nenhuma linha válida foi encontrada na aba PremiacaoFinal.")
+            raise ValueError("Nenhuma linha válida foi encontrada na aba de premiação.")
 
         return {
             "sheet_name": sheet.title,
@@ -587,7 +602,7 @@ def admin_bonus_atacado_importar():
     uploaded = request.files.get("arquivo")
 
     if uploaded is None or not uploaded.filename:
-        flash("Selecione a planilha que contém a aba PremiacaoFinal.", "warning")
+        flash("Selecione a planilha que contém a aba PremiacaoResumo.", "warning")
         return redirect(url_for("bonus_atacado", ano=ano, mes=mes))
 
     filename = secure_filename(uploaded.filename) or "premiacao_atacado.xlsx"
@@ -598,7 +613,7 @@ def admin_bonus_atacado_importar():
 
     content = uploaded.read(MAX_UPLOAD_BYTES + 1)
     if len(content) > MAX_UPLOAD_BYTES:
-        flash("A planilha excede o limite de 15 MB.", "danger")
+        flash("A planilha excede o limite de 40 MB.", "danger")
         return redirect(url_for("bonus_atacado", ano=ano, mes=mes))
     if not content:
         flash("O arquivo enviado está vazio.", "warning")
@@ -847,7 +862,9 @@ def bonus_atacado():
             "usuarios": len({_user_key(row) for row in rows}),
             "total_produtos": provisao_total,
             "premio_consolidado": premio_consolidado_total,
+            "venda_anterior": _unique_user_value(rows, "venda_anterior"),
             "venda_atual": _unique_user_value(rows, "venda_atual"),
+            "mix": _unique_user_value(rows, "mix"),
             "importado": _unique_user_value(rows, "importado"),
             "itens_parados": itens_parados_summary["total_visivel"],
             "outros_valores": outros_valores_summary["total_visivel"],
