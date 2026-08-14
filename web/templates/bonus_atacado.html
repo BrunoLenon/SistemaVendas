@@ -102,14 +102,14 @@
   .atacado-sheet-wrap::-webkit-scrollbar-thumb{background:#9d621a;border:3px solid #151515;border-radius:999px}
   .atacado-sheet-wrap::-webkit-scrollbar-thumb:hover{background:#d58a27}
   .atacado-sheet{width:100%;min-width:1240px}
-.atacado-sheet.personal-view{min-width:760px}
+.atacado-sheet.personal-view{min-width:980px}
   .atacado-sheet-row{--atacado-row-bg:#0c0c0d;display:grid;align-items:stretch;min-width:0;border-bottom:1px solid rgba(255,255,255,.075);background:var(--atacado-row-bg);transition:background .16s ease}
   .atacado-sheet-row:last-child{border-bottom:0}
   .atacado-sheet-row:not(.atacado-sheet-header):nth-child(odd){--atacado-row-bg:#111112}
   .atacado-sheet-row:not(.atacado-sheet-header):hover{--atacado-row-bg:#21170d}
   .atacado-sheet.with-role .atacado-sheet-row{grid-template-columns:56px 170px 90px 112px 120px 58px 112px 112px 112px 104px 104px 112px}
   .atacado-sheet.no-role .atacado-sheet-row{grid-template-columns:56px 180px 112px 120px 58px 112px 112px 112px 104px 104px 112px}
-  .atacado-sheet.personal-view .atacado-sheet-row{grid-template-columns:56px 190px 130px 130px 70px 120px 120px}
+  .atacado-sheet.personal-view .atacado-sheet-row{grid-template-columns:56px 190px 125px 70px 125px 125px 125px 115px 125px}
   .atacado-sheet-cell{display:flex;align-items:center;justify-content:flex-end;min-width:0;padding:9px 6px;border-right:1px solid rgba(255,255,255,.05);font-size:12px;font-weight:400;line-height:1.25;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
   .atacado-sheet-cell:last-child{border-right:0}
   .atacado-sheet-header{--atacado-row-bg:#151515;background:var(--atacado-row-bg)!important}
@@ -197,11 +197,13 @@
 
     {% if role not in ['admin','supervisor','gerente'] %}
     <div class="atacado-kpis">
+      <div class="atacado-kpi"><small>Prêmio provisório</small><strong>{{ summary.total_produtos|default(0)|brl_rs }}</strong></div>
+      <div class="atacado-kpi"><small>MIX</small><strong>{{ summary.mix|default(0)|int }}</strong></div>
       <div class="atacado-kpi"><small>Venda anterior</small><strong>{{ summary.venda_anterior|default(0)|brl_rs }}</strong></div>
       <div class="atacado-kpi"><small>Venda atual</small><strong>{{ summary.venda_atual|default(0)|brl_rs }}</strong></div>
-      <div class="atacado-kpi"><small>MIX</small><strong>{{ summary.mix|default(0)|int }}</strong></div>
-      <div class="atacado-kpi"><small>Prêmio</small><strong>{{ summary.premio_consolidado|default(0)|brl_rs }}</strong></div>
+      <div class="atacado-kpi"><small>Importado</small><strong>{{ summary.importado|default(0)|brl_rs }}</strong></div>
       <div class="atacado-kpi"><small>Itens parados</small><strong>{{ summary.itens_parados|default(0)|brl_rs }}</strong></div>
+      <div class="atacado-kpi"><small>Total geral</small><strong class="atacado-total-geral">{{ summary.total_geral|default(0)|brl_rs }}</strong></div>
     </div>
     {% else %}
     <div class="atacado-kpis">
@@ -342,23 +344,25 @@
         <div class="atacado-sheet-row atacado-sheet-header">
           <div class="atacado-sheet-cell atacado-sheet-emp">EMP</div>
           <div class="atacado-sheet-cell atacado-sheet-user">Usuário</div>
+          <div class="atacado-sheet-cell">Prêmio<br>provisório</div>
+          <div class="atacado-sheet-cell">MIX</div>
           <div class="atacado-sheet-cell">Venda<br>anterior</div>
           <div class="atacado-sheet-cell">Venda<br>atual</div>
-          <div class="atacado-sheet-cell">MIX</div>
-          <div class="atacado-sheet-cell">Prêmio</div>
+          <div class="atacado-sheet-cell">Importado</div>
           <div class="atacado-sheet-cell">Itens<br>parados</div>
+          <div class="atacado-sheet-cell atacado-sheet-total">Total<br>geral</div>
         </div>
         {% for row in rows %}
         <div class="atacado-sheet-row">
           <div class="atacado-sheet-cell atacado-sheet-emp">{{ row.emp }}</div>
           <div class="atacado-sheet-cell atacado-sheet-user" title="{{ row.usuario_nome }}">{{ row.usuario_nome }}</div>
+          <div class="atacado-sheet-cell">{{ money(row.total_produtos) }}</div>
+          <div class="atacado-sheet-cell">{{ row.mix|default(0) }}</div>
           <div class="atacado-sheet-cell">{{ money(row.venda_anterior) }}</div>
           <div class="atacado-sheet-cell">{{ money(row.venda_atual) }}</div>
-          <div class="atacado-sheet-cell">{{ row.mix|default(0) }}</div>
-          <div class="atacado-sheet-cell" {% if row.premio_consolidado_repetido %}title="Prêmio contabilizado uma única vez para o funcionário, na primeira EMP exibida."{% endif %}>
-            {% if row.premio_consolidado_repetido %}<span class="atacado-na">—</span>{% else %}{{ money(row.premio_consolidado_aplicado) }}{% endif %}
-          </div>
+          <div class="atacado-sheet-cell">{{ money(row.importado) }}</div>
           <div class="atacado-sheet-cell">{{ money(row.saldo_itens_parados) }}</div>
+          <div class="atacado-sheet-cell atacado-sheet-total">{{ money(row.total_geral) }}</div>
         </div>
         {% endfor %}
         {% else %}
