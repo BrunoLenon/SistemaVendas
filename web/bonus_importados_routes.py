@@ -47,102 +47,100 @@ MAX_UPLOAD_BYTES = 15 * 1024 * 1024
 VALID_EXTENSIONS = {".xlsx", ".xlsm"}
 SUPPORTED_FUNCTIONS = {"VENDEDOR", "GERENTE", "MECANICO"}
 
-# Posições fixas informadas para a nova aba BONUS FINAL. A validação da letra e
-# do cabeçalho impede que uma coluna movida seja importada como outra métrica.
+# Mapeamento por NOME do cabeçalho da aba BONUS FINAL.
+#
+# A posição física das colunas pode mudar sem quebrar a importação. O sistema
+# normaliza acentos, espaços e pontuação e procura cada métrica pelos aliases
+# abaixo. ``valor_parcial`` permanece opcional para compatibilidade com bases
+# antigas; quando a coluna não existir, o valor é gravado como zero.
 COLUMN_LAYOUT: dict[str, dict[str, Any]] = {
-    "funcao": {"index": 1, "letter": "B", "headers": {"FUNCAO"}, "label": "FUNÇÃO"},
-    "emp": {"index": 2, "letter": "C", "headers": {"EMP"}, "label": "EMP"},
+    "funcao": {
+        "headers": {"FUNCAO", "CARGO", "PERFIL"},
+        "label": "FUNÇÃO",
+        "required": True,
+    },
+    "emp": {
+        "headers": {"EMP", "EMPRESA", "LOJA"},
+        "label": "EMP",
+        "required": True,
+    },
     "usuario_nome": {
-        "index": 3,
-        "letter": "D",
-        "headers": {"FUNCIONARIO", "USUARIO", "VENDEDOR"},
+        "headers": {"FUNCIONARIO", "USUARIO", "VENDEDOR", "COLABORADOR"},
         "label": "FUNCIONARIO",
+        "required": True,
     },
     "produto_vendedor": {
-        "index": 4,
-        "letter": "E",
-        "headers": {"PRODUTOVENDEDOR", "PRODUTOSVENDEDOR"},
+        "headers": {"PRODUTOVENDEDOR", "PRODUTOSVENDEDOR", "BONUSPRODUTOVENDEDOR"},
         "label": "PRODUTO VENDEDOR",
-    },
-    "mecanico_faturado": {
-        "index": 5,
-        "letter": "F",
-        "headers": {"MECANICO"},
-        "label": "MECANICO",
-    },
-    "venda_anterior": {
-        "index": 6,
-        "letter": "G",
-        "headers": {"VENDAANTERIOR"},
-        "label": "VENDA ANTERIOR",
-    },
-    "venda_atual": {
-        "index": 7,
-        "letter": "H",
-        "headers": {"VENDAATUAL"},
-        "label": "VENDA ATUAL",
-    },
-    "crescimento": {
-        "index": 8,
-        "letter": "I",
-        "headers": {"CRESCIMENTO"},
-        "label": "CRESCIMENTO",
-    },
-    "loja_anterior": {
-        "index": 9,
-        "letter": "J",
-        "headers": {"LOJAANTERIOR"},
-        "label": "LOJA ANTERIOR",
-    },
-    "loja_atual": {
-        "index": 10,
-        "letter": "K",
-        "headers": {"LOJAATUAL"},
-        "label": "LOJA ATUAL",
+        "required": True,
     },
     "produto_gerente": {
-        "index": 12,
-        "letter": "M",
-        "headers": {"PRODUTOGERENTE", "PRODUTOSGERENTE"},
+        "headers": {"PRODUTOGERENTE", "PRODUTOSGERENTE", "BONUSPRODUTOGERENTE"},
         "label": "PRODUTO GERENTE",
+        "required": True,
+    },
+    "mecanico_faturado": {
+        "headers": {"MECANICO", "SERVICO", "FATURAMENTOMECANICO", "VALORFATURADOMECANICO"},
+        "label": "SERVIÇO / MECÂNICO",
+        "required": True,
+    },
+    "venda_anterior": {
+        "headers": {"VENDAANTERIOR", "VALORINDIVIDUALANTERIOR", "FATURAMENTOANTERIOR"},
+        "label": "VENDA ANTERIOR",
+        "required": True,
+    },
+    "venda_atual": {
+        "headers": {"VENDAATUAL", "VALORINDIVIDUALATUAL", "FATURAMENTOATUAL"},
+        "label": "VENDA ATUAL",
+        "required": True,
+    },
+    "crescimento": {
+        "headers": {"CRESCIMENTO", "CRESCIMENTOVENDEDOR", "PERCENTUALCRESCIMENTO"},
+        "label": "CRESCIMENTO",
+        "required": True,
+    },
+    "loja_anterior": {
+        "headers": {"LOJAANTERIOR", "VENDAANTERIORLOJA", "FATURAMENTOLOJAANTERIOR"},
+        "label": "LOJA ANTERIOR",
+        "required": True,
+    },
+    "loja_atual": {
+        "headers": {"LOJAATUAL", "VENDAATUALLOJA", "FATURAMENTOLOJAATUAL"},
+        "label": "LOJA ATUAL",
+        "required": True,
     },
     "importado_vendedor": {
-        "index": 13,
-        "letter": "N",
-        "headers": {"IMPORTADOVENDEDOR"},
+        "headers": {"IMPORTADOVENDEDOR", "IMPORTADOINDIVIDUAL"},
         "label": "IMPORTADO VENDEDOR",
+        "required": True,
     },
     "importado_loja": {
-        "index": 14,
-        "letter": "O",
-        "headers": {"IMPORTADOLOJA"},
+        "headers": {"IMPORTADOLOJA", "IMPORTADOEMPRESA"},
         "label": "IMPORTADO LOJA",
+        "required": True,
     },
     "bonus_importado": {
-        "index": 17,
-        "letter": "R",
-        "headers": {"BONUSIMPORTADO"},
+        "headers": {"BONUSIMPORTADO", "PREMIOIMPORTADO"},
         "label": "BONUS IMPORTADO",
+        "required": True,
     },
     "valor_meta": {
-        "index": 19,
-        "letter": "T",
-        "headers": {"VALORMETA"},
+        "headers": {"VALORMETA", "PREMIOMETA"},
         "label": "VALOR META",
+        "required": True,
     },
     "valor_parcial": {
-        "index": 20,
-        "letter": "U",
-        "headers": {"VALORPARCIAL"},
+        "headers": {"VALORPARCIAL", "BONUSPARCIAL", "PREMIOPROVISORIO", "VALORPROVISORIO"},
         "label": "VALOR PARCIAL",
+        "required": False,
     },
     "bonus_final": {
-        "index": 21,
-        "letter": "V",
-        "headers": {"VALORFINAL", "BONUSFINAL"},
+        "headers": {"VALORFINAL", "BONUSFINAL", "PREMIOFINAL"},
         "label": "VALOR FINAL",
+        "required": True,
     },
 }
+
 
 ROLE_FIELDS = {
     "VENDEDOR": (
@@ -193,7 +191,7 @@ MONEY_FIELDS = {
 }
 PERCENT_FIELDS = {"crescimento"}
 ALL_IMPORTED_FIELDS = MONEY_FIELDS | PERCENT_FIELDS
-REQUIRED_CALCULATED_FIELDS = {"valor_parcial", "bonus_final"}
+REQUIRED_CALCULATED_FIELDS = {"bonus_final"}
 ROLE_SORT_ORDER = {"GERENTE": 0, "VENDEDOR": 1, "MECANICO": 2}
 
 
@@ -329,41 +327,61 @@ def _find_final_bonus_sheet(workbook):
     )
 
 
+def _map_header_cells(cells: list[Any]) -> dict[str, int]:
+    """Resolve campos pelo texto do cabeçalho, sem depender da letra da coluna."""
+
+    positions: dict[str, list[int]] = defaultdict(list)
+    for index, cell in enumerate(cells):
+        normalized = _norm_header(getattr(cell, "value", None))
+        if normalized:
+            positions[normalized].append(index)
+
+    mapping: dict[str, int] = {}
+    for field, config in COLUMN_LAYOUT.items():
+        matches: set[int] = set()
+        for alias in config["headers"]:
+            matches.update(positions.get(alias, []))
+        if len(matches) > 1:
+            raise ValueError(
+                f"Cabeçalho ambíguo para '{config['label']}': existem colunas duplicadas/compatíveis na mesma linha."
+            )
+        if matches:
+            mapping[field] = next(iter(matches))
+    return mapping
+
+
 def _find_header(sheet) -> tuple[int, dict[str, int]]:
-    max_index = max(int(config["index"]) for config in COLUMN_LAYOUT.values())
+    required_fields = {
+        field for field, config in COLUMN_LAYOUT.items() if bool(config.get("required", True))
+    }
     best_row = 1
+    best_mapping: dict[str, int] = {}
     best_score = -1
-    best_cells: list[Any] = []
+    max_col = max(int(sheet.max_column or 1), 1)
 
     for row_number, cells_tuple in enumerate(
-        sheet.iter_rows(min_row=1, max_row=min(sheet.max_row or 1, 30), max_col=max_index + 1),
+        sheet.iter_rows(min_row=1, max_row=min(sheet.max_row or 1, 30), max_col=max_col),
         start=1,
     ):
         cells = list(cells_tuple)
-        score = 0
-        for config in COLUMN_LAYOUT.values():
-            index = int(config["index"])
-            value = cells[index].value if index < len(cells) else None
-            if _norm_header(value) in config["headers"]:
-                score += 1
+        mapping = _map_header_cells(cells)
+        score = len(required_fields.intersection(mapping))
         if score > best_score:
-            best_row, best_score, best_cells = row_number, score, cells
-        if score == len(COLUMN_LAYOUT):
-            return row_number, {
-                field: int(config["index"]) for field, config in COLUMN_LAYOUT.items()
-            }
+            best_row, best_mapping, best_score = row_number, mapping, score
+        if required_fields.issubset(mapping):
+            return row_number, mapping
 
-    mismatches = []
-    for config in COLUMN_LAYOUT.values():
-        index = int(config["index"])
-        found = best_cells[index].value if index < len(best_cells) else None
-        if _norm_header(found) not in config["headers"]:
-            mismatches.append(
-                f"{config['letter']} deveria ser '{config['label']}' (encontrado: {found or 'vazio'})"
-            )
-    detail = "; ".join(mismatches[:8])
+    missing = [
+        COLUMN_LAYOUT[field]["label"]
+        for field in COLUMN_LAYOUT
+        if field in required_fields and field not in best_mapping
+    ]
+    found = [COLUMN_LAYOUT[field]["label"] for field in best_mapping]
+    detail = ", ".join(missing) if missing else "cabeçalho não identificado"
+    found_detail = ", ".join(found) if found else "nenhum cabeçalho reconhecido"
     raise ValueError(
-        "O cabeçalho da aba BONUS FINAL não corresponde ao layout combinado. " + detail
+        "Não foi possível identificar a estrutura da aba BONUS FINAL pelos nomes das colunas. "
+        f"Campos obrigatórios ausentes: {detail}. Reconhecidos: {found_detail}."
     )
 
 
@@ -396,7 +414,7 @@ def _read_bonus_workbook(content: bytes) -> dict[str, Any]:
         rows_skipped = 0
 
         for source_row, cells_tuple in enumerate(
-            sheet.iter_rows(min_row=header_row + 1, max_col=22), start=header_row + 1
+            sheet.iter_rows(min_row=header_row + 1, max_col=max(mapping.values()) + 1), start=header_row + 1
         ):
             cells = list(cells_tuple)
             identity_values = [
@@ -444,6 +462,15 @@ def _read_bonus_workbook(content: bytes) -> dict[str, Any]:
 
             numeric_error = None
             for field in ROLE_FIELDS[function]:
+                # Alguns layouts mais novos deixaram de trazer a provisão/valor
+                # parcial. Campos explicitamente opcionais são zerados sem
+                # impedir a importação da competência.
+                if field not in mapping:
+                    if not COLUMN_LAYOUT[field].get("required", True):
+                        record[field] = None if field in PERCENT_FIELDS else Decimal("0")
+                        continue
+                    numeric_error = f"campo obrigatório '{COLUMN_LAYOUT[field]['label']}' não encontrado"
+                    break
                 try:
                     record[field] = _decimal_from_cell(
                         cells[mapping[field]],
@@ -459,7 +486,7 @@ def _read_bonus_workbook(content: bytes) -> dict[str, Any]:
                             f"Linha {source_row}: Crescimento não disponível para {username} ({exc})."
                         )
                         continue
-                    numeric_error = f"coluna {COLUMN_LAYOUT[field]['letter']} ({COLUMN_LAYOUT[field]['label']}): {exc}"
+                    numeric_error = f"campo '{COLUMN_LAYOUT[field]['label']}': {exc}"
                     break
 
             if numeric_error:

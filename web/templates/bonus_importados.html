@@ -298,12 +298,12 @@
           </div>
           <div class="col-lg-2 d-grid"><button class="btn btn-warning fw-bold" type="submit">Importar</button></div>
         </div>
-        <div class="bonus-note mt-2">O importador valida as posições B, C, D, E, F, G, H, I, J, K, M, N, O, R, T, U e V. Salve a planilha após o recálculo no Excel. Limite: 15 MB.</div>
+        <div class="bonus-note mt-2">O importador identifica as informações pelo <b>nome do cabeçalho</b>, portanto as colunas podem mudar de posição sem quebrar a importação. Salve a planilha após o recálculo no Excel. Limite: 15 MB.</div>
       </form>
       <div class="bonus-columns">
-        <div class="bonus-column-note"><b>Vendedor</b><br>E, G, H, I, N, R, T, U e V</div>
-        <div class="bonus-column-note"><b>Gerente</b><br>J, K, O, T, U e V</div>
-        <div class="bonus-column-note"><b>Mecânico</b><br>F, U e V</div>
+        <div class="bonus-column-note"><b>Vendedor</b><br>Produto Vendedor, Venda Anterior, Venda Atual, Crescimento, Importado Vendedor, Bônus Importado, Valor Meta e Valor Final.</div>
+        <div class="bonus-column-note"><b>Gerente</b><br>Produto Vendedor, Loja Anterior, Loja Atual, Produto Gerente, Importado Loja, Bônus Importado, Valor Meta e Valor Final.</div>
+        <div class="bonus-column-note"><b>Mecânico</b><br>Serviço/Mecânico e Valor Final.</div>
       </div>
     </section>
 
@@ -533,38 +533,38 @@
       {% if selected.funcao == 'VENDEDOR' %}
       <div class="bonus-detail-grid">
         <div class="bonus-group-title">Informações do vendedor</div>
-        <div class="bonus-metric"><small>E · Produtos vendedor — bônus de produtos</small><strong>{{ selected.produto_vendedor|brl_rs }}</strong></div>
-        <div class="bonus-metric"><small>G · Venda anterior — mesmo período do ano passado</small><strong>{{ selected.venda_anterior|brl_rs }}</strong></div>
-        <div class="bonus-metric"><small>H · Venda atual do vendedor</small><strong>{{ selected.venda_atual|brl_rs }}</strong></div>
-        <div class="bonus-metric"><small>I · Crescimento do vendedor</small><strong>{{ percent_br(selected.crescimento) }}</strong></div>
-        <div class="bonus-metric"><small>N · Importado vendedor</small><strong>{{ selected.importado_vendedor|brl_rs }}</strong></div>
-        <div class="bonus-metric"><small>R · Bônus importado</small><strong>{{ selected.bonus_importado|brl_rs }}</strong></div>
-        <div class="bonus-metric"><small>T · Valor meta</small><strong>{{ selected.valor_meta|brl_rs }}</strong></div>
-        <div class="bonus-metric"><small>U · Valor parcial — provisão</small><strong>{{ selected.valor_parcial|brl_rs }}</strong></div>
+        <div class="bonus-metric"><small>Produtos vendedor — bônus de produtos</small><strong>{{ selected.produto_vendedor|brl_rs }}</strong></div>
+        <div class="bonus-metric"><small>Venda anterior — mesmo período do ano passado</small><strong>{{ selected.venda_anterior|brl_rs }}</strong></div>
+        <div class="bonus-metric"><small>Venda atual do vendedor</small><strong>{{ selected.venda_atual|brl_rs }}</strong></div>
+        <div class="bonus-metric"><small>Crescimento do vendedor</small><strong>{{ percent_br(selected.crescimento) }}</strong></div>
+        <div class="bonus-metric"><small>Importado vendedor</small><strong>{{ selected.importado_vendedor|brl_rs }}</strong></div>
+        <div class="bonus-metric"><small>Bônus importado</small><strong>{{ selected.bonus_importado|brl_rs }}</strong></div>
+        <div class="bonus-metric"><small>Valor meta</small><strong>{{ selected.valor_meta|brl_rs }}</strong></div>
+        <div class="bonus-metric"><small>Valor parcial — provisão</small><strong>{{ selected.valor_parcial|brl_rs }}</strong></div>
         <div class="bonus-metric"><small>Saldo de itens parados do vendedor</small><strong>{{ selected.saldo_itens_parados_usuario|brl_rs }}</strong></div>
-        <div class="bonus-metric highlight"><small>V · Valor final — liberado após todos os requisitos</small><strong>{{ selected.bonus_final|brl_rs }}</strong></div>
+        <div class="bonus-metric highlight"><small>Valor final — liberado após todos os requisitos</small><strong>{{ selected.bonus_final|brl_rs }}</strong></div>
       </div>
       {% elif selected.funcao == 'GERENTE' %}
       <div class="bonus-detail-grid">
         <div class="bonus-group-title">Informações do gerente e da loja</div>
-        <div class="bonus-metric"><small>E · Produto vendedor — bônus das vendas próprias do gerente</small><strong>{{ selected.produto_vendedor|brl_rs }}</strong></div>
-        <div class="bonus-metric"><small>J · Loja anterior — mesmo período do ano passado</small><strong>{{ selected.loja_anterior|brl_rs }}</strong></div>
-        <div class="bonus-metric"><small>K · Loja atual — totalizada com serviço</small><strong>{{ selected.loja_atual|brl_rs }}</strong></div>
-        <div class="bonus-metric"><small>M · Produto gerente — bônus de produtos da loja</small><strong>{{ selected.produto_gerente|brl_rs }}</strong></div>
-        <div class="bonus-metric"><small>O · Importado loja</small><strong>{{ selected.importado_loja|brl_rs }}</strong></div>
-        <div class="bonus-metric"><small>R · Bônus importado do gerente</small><strong>{{ selected.bonus_importado|brl_rs }}</strong></div>
-        <div class="bonus-metric"><small>T · Valor meta</small><strong>{{ selected.valor_meta|brl_rs }}</strong></div>
-        <div class="bonus-metric"><small>U · Valor parcial — provisão</small><strong>{{ selected.valor_parcial|brl_rs }}</strong></div>
+        <div class="bonus-metric"><small>Produto vendedor — bônus das vendas próprias do gerente</small><strong>{{ selected.produto_vendedor|brl_rs }}</strong></div>
+        <div class="bonus-metric"><small>Loja anterior — mesmo período do ano passado</small><strong>{{ selected.loja_anterior|brl_rs }}</strong></div>
+        <div class="bonus-metric"><small>Loja atual — totalizada com serviço</small><strong>{{ selected.loja_atual|brl_rs }}</strong></div>
+        <div class="bonus-metric"><small>Produto gerente — bônus de produtos da loja</small><strong>{{ selected.produto_gerente|brl_rs }}</strong></div>
+        <div class="bonus-metric"><small>Importado loja</small><strong>{{ selected.importado_loja|brl_rs }}</strong></div>
+        <div class="bonus-metric"><small>Bônus importado do gerente</small><strong>{{ selected.bonus_importado|brl_rs }}</strong></div>
+        <div class="bonus-metric"><small>Valor meta</small><strong>{{ selected.valor_meta|brl_rs }}</strong></div>
+        <div class="bonus-metric"><small>Valor parcial — provisão</small><strong>{{ selected.valor_parcial|brl_rs }}</strong></div>
         <div class="bonus-metric"><small>Itens parados — exclusivo para vendedor</small><strong>{{ selected.saldo_itens_parados|brl_rs }}</strong></div>
-        <div class="bonus-metric highlight"><small>V · Valor final — liberado após todos os requisitos</small><strong>{{ selected.bonus_final|brl_rs }}</strong></div>
+        <div class="bonus-metric highlight"><small>Valor final — liberado após todos os requisitos</small><strong>{{ selected.bonus_final|brl_rs }}</strong></div>
       </div>
       {% elif selected.funcao == 'MECANICO' %}
       <div class="bonus-detail-grid">
         <div class="bonus-group-title">Informações do mecânico</div>
-        <div class="bonus-metric"><small>F · Valor faturado pelo mecânico</small><strong>{{ selected.mecanico_faturado|brl_rs }}</strong></div>
-        <div class="bonus-metric"><small>U · Valor parcial — provisão</small><strong>{{ selected.valor_parcial|brl_rs }}</strong></div>
+        <div class="bonus-metric"><small>Valor faturado pelo mecânico</small><strong>{{ selected.mecanico_faturado|brl_rs }}</strong></div>
+        <div class="bonus-metric"><small>Valor parcial — provisão</small><strong>{{ selected.valor_parcial|brl_rs }}</strong></div>
         <div class="bonus-metric"><small>Saldo de itens parados do mecânico</small><strong>{{ selected.saldo_itens_parados_usuario|brl_rs }}</strong></div>
-        <div class="bonus-metric highlight"><small>V · Valor final — liberado após todos os requisitos</small><strong>{{ selected.bonus_final|brl_rs }}</strong></div>
+        <div class="bonus-metric highlight"><small>Valor final — liberado após todos os requisitos</small><strong>{{ selected.bonus_final|brl_rs }}</strong></div>
       </div>
       {% endif %}
 
