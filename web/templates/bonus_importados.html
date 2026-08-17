@@ -205,7 +205,7 @@
         <span class="bonus-chip">Snapshot importado</span>
         <h1 class="bonus-title mt-2">💰 Bônus Varejo</h1>
         <div class="bonus-sub">
-          Os valores são lidos exclusivamente da aba <b>BONUS FINAL</b>. O SistemaVendas não recalcula produtos, crescimento, importados, provisões ou liberações; apenas valida o arquivo, grava a competência e respeita a hierarquia de acesso.
+          Os valores são lidos exclusivamente da aba <b>Final Bonus</b> (também aceita <b>BONUS FINAL</b>). O SistemaVendas não recalcula produtos, crescimento, importados, provisões ou liberações; apenas valida o arquivo, grava a competência e respeita a hierarquia de acesso.
         </div>
         <div class="bonus-rule">
           <b>Hierarquia:</b> vendedor e mecânico veem apenas o próprio registro. O gerente vê o próprio resultado e os vendedores/mecânicos das EMPs vinculadas ao seu cadastro.
@@ -280,7 +280,7 @@
   {% if role == 'admin' %}
   <div class="bonus-grid mb-3">
     <section class="bonus-panel">
-      <h2 class="bonus-section-title">Importar aba BONUS FINAL</h2>
+      <h2 class="bonus-section-title">Importar aba Final Bonus</h2>
       <div class="bonus-section-sub">A competência existente é substituída integralmente dentro de uma única transação.</div>
       <form class="bonus-import-box mt-3" method="post" enctype="multipart/form-data" action="{{ url_for('admin_bonus_importar') }}">
         <div class="row g-2 align-items-end">
@@ -382,7 +382,7 @@
     {% if seller_rows %}
     <section class="bonus-panel mb-3">
       <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-3">
-        <div><h2 class="bonus-section-title">Vendedores</h2><div class="bonus-section-sub">Somente as colunas autorizadas para vendedor na aba BONUS FINAL.</div></div>
+        <div><h2 class="bonus-section-title">Vendedores</h2><div class="bonus-section-sub">Somente as colunas autorizadas para vendedor na aba Final Bonus.</div></div>
         <div class="bonus-money">{{ seller_rows|length }} vendedor(es)</div>
       </div>
       <div class="bonus-sheet-wrap" aria-label="Vendedores em formato de planilha">
