@@ -3,7 +3,7 @@
 Admin - Apagar Vendas
 
 Refatoração pura: este módulo apenas moveu a rota /admin/apagar_vendas do app.py
-para um arquivo dedicado, mantendo URLs, endpoint e comportamento externo.
+para um arquivo dedicado, mantendo URLs, endpoint e comportamento externo..
 """
 
 from __future__ import annotations
