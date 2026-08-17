@@ -190,6 +190,10 @@ MONEY_FIELDS = {
     "bonus_final",
 }
 PERCENT_FIELDS = {"crescimento"}
+# Campos da loja são lidos para todas as linhas da planilha. Isso evita que
+# Loja Anterior/Loja Atual dependam da posição da coluna ou do bloco específico
+# de uma função. A visualização continua respeitando a hierarquia de acesso.
+STORE_FIELDS = ("loja_anterior", "loja_atual")
 ALL_IMPORTED_FIELDS = MONEY_FIELDS | PERCENT_FIELDS
 REQUIRED_CALCULATED_FIELDS = {"bonus_final"}
 ROLE_SORT_ORDER = {"GERENTE": 0, "VENDEDOR": 1, "MECANICO": 2}
@@ -461,33 +465,59 @@ def _read_bonus_workbook(content: bytes) -> dict[str, Any]:
                 record[field] = None
 
             numeric_error = None
-            for field in ROLE_FIELDS[function]:
-                # Alguns layouts mais novos deixaram de trazer a provisão/valor
-                # parcial. Campos explicitamente opcionais são zerados sem
-                # impedir a importação da competência.
+
+            # Loja Anterior e Loja Atual são métricas da EMP presentes na base
+            # consolidada. Lemos sempre pelos nomes dos cabeçalhos, para todas
+            # as linhas, e deixamos a regra de permissão somente para a tela.
+            # Dessa forma, uma mudança de posição na planilha não zera esses
+            # campos e o gerente sempre recebe o retrato correto da loja.
+            for field in STORE_FIELDS:
                 if field not in mapping:
-                    if not COLUMN_LAYOUT[field].get("required", True):
-                        record[field] = None if field in PERCENT_FIELDS else Decimal("0")
-                        continue
-                    numeric_error = f"campo obrigatório '{COLUMN_LAYOUT[field]['label']}' não encontrado"
+                    numeric_error = (
+                        f"campo obrigatório '{COLUMN_LAYOUT[field]['label']}' não encontrado"
+                    )
                     break
                 try:
                     record[field] = _decimal_from_cell(
                         cells[mapping[field]],
                         field=field,
-                        is_percent=(field in PERCENT_FIELDS),
+                        is_percent=False,
                     )
                 except ValueError as exc:
-                    if field == "crescimento":
-                        # Crescimento pode ficar indisponível quando a venda anterior é zero.
-                        # Mantemos o usuário e exibimos "não disponível" em vez de inventar 0%.
-                        record[field] = None
-                        warnings.append(
-                            f"Linha {source_row}: Crescimento não disponível para {username} ({exc})."
-                        )
-                        continue
                     numeric_error = f"campo '{COLUMN_LAYOUT[field]['label']}': {exc}"
                     break
+
+            if numeric_error is None:
+                for field in ROLE_FIELDS[function]:
+                    # Os campos da loja já foram lidos acima pelo cabeçalho.
+                    if field in STORE_FIELDS:
+                        continue
+                    # Alguns layouts mais novos deixaram de trazer a provisão/valor
+                    # parcial. Campos explicitamente opcionais são zerados sem
+                    # impedir a importação da competência.
+                    if field not in mapping:
+                        if not COLUMN_LAYOUT[field].get("required", True):
+                            record[field] = None if field in PERCENT_FIELDS else Decimal("0")
+                            continue
+                        numeric_error = f"campo obrigatório '{COLUMN_LAYOUT[field]['label']}' não encontrado"
+                        break
+                    try:
+                        record[field] = _decimal_from_cell(
+                            cells[mapping[field]],
+                            field=field,
+                            is_percent=(field in PERCENT_FIELDS),
+                        )
+                    except ValueError as exc:
+                        if field == "crescimento":
+                            # Crescimento pode ficar indisponível quando a venda anterior é zero.
+                            # Mantemos o usuário e exibimos "não disponível" em vez de inventar 0%.
+                            record[field] = None
+                            warnings.append(
+                                f"Linha {source_row}: Crescimento não disponível para {username} ({exc})."
+                            )
+                            continue
+                        numeric_error = f"campo '{COLUMN_LAYOUT[field]['label']}': {exc}"
+                        break
 
             if numeric_error:
                 rows_skipped += 1
