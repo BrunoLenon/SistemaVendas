@@ -239,6 +239,16 @@ def _norm_header(value: object) -> str:
     return re.sub(r"[^A-Z0-9]", "", raw)
 
 
+def _excel_column_name(zero_based_index: int) -> str:
+    """Converte o índice interno (0=A) para a letra exibida pelo Excel."""
+    number = int(zero_based_index) + 1
+    letters = ""
+    while number > 0:
+        number, remainder = divmod(number - 1, 26)
+        letters = chr(65 + remainder) + letters
+    return letters
+
+
 def _norm_username(value: object) -> str:
     return re.sub(r"\s+", " ", str(value or "").strip()).upper()
 
@@ -542,6 +552,10 @@ def _read_bonus_workbook(content: bytes) -> dict[str, Any]:
             "warnings": warnings,
             "rows_read": rows_read,
             "rows_skipped": rows_skipped,
+            # Mantemos o mapeamento resolvido para auditar a importação. Os
+            # índices são zero-based internamente; a interface usa as letras
+            # conhecidas do Excel.
+            "column_mapping": dict(mapping),
         }
     finally:
         workbook.close()
@@ -673,7 +687,56 @@ def admin_bonus_importar():
                 }
                 rows.append(BonusUsuarioImportado(**payload))
             db.add_all(rows)
+            db.flush()
+
+            # Validação forte do snapshot antes do COMMIT. A tela lê exatamente
+            # estas colunas do banco; portanto, se Loja Anterior/Loja Atual
+            # divergirem do arquivo enviado, abortamos toda a transação em vez
+            # de deixar silenciosamente um valor antigo na competência.
+            persisted_rows = (
+                db.query(BonusUsuarioImportado)
+                .filter(BonusUsuarioImportado.lote_id == batch.id)
+                .all()
+            )
+            if len(persisted_rows) != len(parsed["records"]):
+                raise RuntimeError(
+                    "Validação da importação falhou: a quantidade gravada no banco "
+                    "difere da quantidade lida da planilha."
+                )
+
+            persisted_by_key = {
+                (row.emp, row.usuario_nome): row for row in persisted_rows
+            }
+            for record in parsed["records"]:
+                if record["funcao"] != "GERENTE":
+                    continue
+                key = (record["emp"], record["usuario_nome"])
+                stored = persisted_by_key.get(key)
+                if stored is None:
+                    raise RuntimeError(
+                        "Validação da importação falhou: gerente "
+                        f"{record['usuario_nome']} / EMP {record['emp']} não foi gravado."
+                    )
+                for field in STORE_FIELDS:
+                    expected = Decimal(str(record.get(field) or 0)).quantize(
+                        Decimal("0.0001")
+                    )
+                    actual = Decimal(str(getattr(stored, field, 0) or 0)).quantize(
+                        Decimal("0.0001")
+                    )
+                    if actual != expected:
+                        raise RuntimeError(
+                            "Validação da importação falhou em "
+                            f"{COLUMN_LAYOUT[field]['label']} para "
+                            f"{record['usuario_nome']} / EMP {record['emp']}: "
+                            f"planilha={expected} banco={actual}."
+                        )
+
             db.commit()
+
+        mapping = parsed.get("column_mapping", {})
+        loja_anterior_col = _excel_column_name(mapping["loja_anterior"]) if "loja_anterior" in mapping else "?"
+        loja_atual_col = _excel_column_name(mapping["loja_atual"]) if "loja_atual" in mapping else "?"
 
         audit(
             "bonus_final_snapshot_imported",
@@ -686,7 +749,8 @@ def admin_bonus_importar():
         )
         flash(
             f"BONUS FINAL de {mes:02d}/{ano} importado: {len(parsed['records'])} usuários. "
-            f"Linhas ignoradas: {parsed['rows_skipped']}.",
+            f"Linhas ignoradas: {parsed['rows_skipped']}. "
+            f"Loja Anterior={loja_anterior_col} · Loja Atual={loja_atual_col}.",
             "success",
         )
         if warnings:
