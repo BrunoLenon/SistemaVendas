@@ -190,10 +190,11 @@ MONEY_FIELDS = {
     "bonus_final",
 }
 PERCENT_FIELDS = {"crescimento"}
-# Campos da loja são lidos para todas as linhas da planilha. Isso evita que
-# Loja Anterior/Loja Atual dependam da posição da coluna ou do bloco específico
-# de uma função. A visualização continua respeitando a hierarquia de acesso.
-STORE_FIELDS = ("loja_anterior", "loja_atual")
+# Campos que devem ser importados para toda linha válida, independentemente
+# da função. Loja Anterior/Loja Atual são o retrato da EMP e Valor Final é o
+# valor liberado pronto vindo da planilha. A função do usuário só controla as
+# demais colunas auxiliares e a visualização; nunca altera o Valor Final.
+GLOBAL_FIELDS = ("loja_anterior", "loja_atual", "bonus_final")
 ALL_IMPORTED_FIELDS = MONEY_FIELDS | PERCENT_FIELDS
 REQUIRED_CALCULATED_FIELDS = {"bonus_final"}
 ROLE_SORT_ORDER = {"GERENTE": 0, "VENDEDOR": 1, "MECANICO": 2}
@@ -477,12 +478,11 @@ def _read_bonus_workbook(content: bytes) -> dict[str, Any]:
 
             numeric_error = None
 
-            # Loja Anterior e Loja Atual são métricas da EMP presentes na base
-            # consolidada. Lemos sempre pelos nomes dos cabeçalhos, para todas
-            # as linhas, e deixamos a regra de permissão somente para a tela.
-            # Dessa forma, uma mudança de posição na planilha não zera esses
-            # campos e o gerente sempre recebe o retrato correto da loja.
-            for field in STORE_FIELDS:
+            # Loja Anterior, Loja Atual e principalmente Valor Final são lidos
+            # diretamente pelos nomes dos cabeçalhos para TODAS as funções.
+            # O Valor Final é o valor liberado pronto da planilha e nunca deve
+            # depender de VENDEDO/GERENTE/MECANICO dentro do SistemaVendas.
+            for field in GLOBAL_FIELDS:
                 if field not in mapping:
                     numeric_error = (
                         f"campo obrigatório '{COLUMN_LAYOUT[field]['label']}' não encontrado"
@@ -500,8 +500,8 @@ def _read_bonus_workbook(content: bytes) -> dict[str, Any]:
 
             if numeric_error is None:
                 for field in ROLE_FIELDS[function]:
-                    # Os campos da loja já foram lidos acima pelo cabeçalho.
-                    if field in STORE_FIELDS:
+                    # Os campos globais já foram lidos acima pelo cabeçalho.
+                    if field in GLOBAL_FIELDS:
                         continue
                     # Alguns layouts mais novos deixaram de trazer a provisão/valor
                     # parcial. Campos explicitamente opcionais são zerados sem
