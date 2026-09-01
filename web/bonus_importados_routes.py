@@ -719,12 +719,14 @@ def admin_bonus_importar():
         flash("O arquivo enviado está vazio.", "warning")
         return redirect(url_for("bonus_importados", ano=ano, mes=mes))
 
+    phase = "leitura da planilha"
     try:
         parsed = _read_bonus_workbook(content)
 
         # A competência é definida somente pelo Mês/Ano selecionado no formulário.
         # Nenhum nome de aba ou mês embutido na planilha bloqueia uma importação histórica.
 
+        phase = "validação/atualização do schema"
         ensure_bonus_importados_schema()
 
         username = _norm_username(_usuario_logado())
@@ -733,14 +735,17 @@ def admin_bonus_importar():
         warnings = list(parsed["warnings"])
 
         with SessionLocal() as db:
+            phase = "vinculação dos usuários"
             _bind_users_and_validate(db, parsed["records"], warnings)
 
             # Substituição atômica: uma falha preserva a competência anterior.
+            phase = "exclusão do snapshot anterior"
             db.query(BonusUsuarioImportado).filter(
                 BonusUsuarioImportado.ano == ano,
                 BonusUsuarioImportado.mes == mes,
             ).delete(synchronize_session=False)
 
+            phase = "criação do lote de importação"
             batch = BonusImportacaoLote(
                 ano=ano,
                 mes=mes,
@@ -756,6 +761,7 @@ def admin_bonus_importar():
             db.add(batch)
             db.flush()
 
+            phase = "montagem dos registros dos usuários"
             rows = []
             for record in parsed["records"]:
                 payload = {
@@ -781,6 +787,14 @@ def admin_bonus_importar():
             # ignorado o novo arquivo.
             batch_id = int(batch.id)
             expected_count = len(rows)
+
+            # Força o INSERT antes do commit para que qualquer erro do banco
+            # seja identificado como gravação dos usuários, e não fique oculto
+            # dentro de um commit genérico.
+            phase = "gravação dos registros dos usuários"
+            db.flush()
+
+            phase = "commit da competência"
             db.commit()
 
         # Conferência somente após o commit. Ela é diagnóstica e nunca desfaz o
@@ -855,6 +869,7 @@ def admin_bonus_importar():
             erro=detail,
         )
         flash(
+            f"Importação interrompida na etapa: {phase}. "
             "O banco recusou a substituição da competência por uma regra de integridade. "
             f"Detalhe: {detail}",
             "danger",
@@ -868,7 +883,11 @@ def admin_bonus_importar():
             arquivo=filename,
             erro=str(exc),
         )
-        flash(f"Não foi possível importar a planilha: {exc}", "danger")
+        flash(
+            f"Importação interrompida na etapa: {phase}. "
+            f"Erro: {type(exc).__name__}: {exc}",
+            "danger",
+        )
 
     return redirect(url_for("bonus_importados", ano=ano, mes=mes))
 
