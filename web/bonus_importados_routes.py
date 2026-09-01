@@ -325,6 +325,29 @@ def _decimal_from_cell(
 FINAL_BONUS_SHEET_ALIASES = {"BONUSFINAL", "FINALBONUS"}
 
 
+def _detect_reference_period(workbook) -> tuple[int, int] | None:
+    """Tenta identificar a competência declarada no próprio arquivo.
+
+    Algumas bases do Varejo possuem uma aba auxiliar chamada, por exemplo,
+    ``08 - 2026``. Quando existir exatamente UMA aba nesse formato, usamos
+    esse nome apenas como proteção contra importação acidental no mês errado.
+    Não há qualquer bloqueio de mês atual: competências históricas continuam
+    podendo ser importadas normalmente.
+    """
+
+    periods: set[tuple[int, int]] = set()
+    for sheet in workbook.worksheets:
+        title = str(getattr(sheet, "title", "") or "").strip()
+        match = re.fullmatch(r"(0?[1-9]|1[0-2])\s*[-_/]\s*(20\d{2})", title)
+        if not match:
+            continue
+        periods.add((int(match.group(2)), int(match.group(1))))
+
+    if len(periods) == 1:
+        return next(iter(periods))
+    return None
+
+
 def _find_final_bonus_sheet(workbook):
     """Localiza a aba de origem sem correr o risco de ler uma cópia antiga.
 
@@ -457,6 +480,7 @@ def _read_bonus_workbook(content: bytes) -> dict[str, Any]:
 
     try:
         sheet = _find_final_bonus_sheet(workbook)
+        detected_period = _detect_reference_period(workbook)
         header_row, mapping = _find_header(sheet)
 
         records: list[dict[str, Any]] = []
@@ -619,6 +643,7 @@ def _read_bonus_workbook(content: bytes) -> dict[str, Any]:
             "column_mapping": dict(mapping),
             "manager_count": len(manager_records),
             "manager_final_nonzero": manager_final_nonzero,
+            "detected_period": detected_period,
         }
     finally:
         workbook.close()
@@ -708,6 +733,20 @@ def admin_bonus_importar():
 
     try:
         parsed = _read_bonus_workbook(content)
+
+        # Não existe trava por virada de mês. O formulário define livremente a
+        # competência. Porém, quando o próprio Excel declara uma competência
+        # inequívoca em uma aba como "08 - 2026", impedimos que uma planilha de
+        # agosto seja gravada por engano em setembro (ou vice-versa).
+        detected_period = parsed.get("detected_period")
+        if detected_period and tuple(detected_period) != (ano, mes):
+            detected_year, detected_month = detected_period
+            raise ValueError(
+                f"Competência divergente: a planilha indica {detected_month:02d}/{detected_year}, "
+                f"mas a importação foi configurada para {mes:02d}/{ano}. "
+                "Altere Mês/Ano na área de importação e envie novamente."
+            )
+
         ensure_bonus_importados_schema()
 
         username = _norm_username(_usuario_logado())
@@ -811,7 +850,8 @@ def admin_bonus_importar():
             f"{len(parsed['records'])} usuários. Linhas ignoradas: {parsed['rows_skipped']}. "
             f"Loja Atual={loja_atual_col}; Valor Final={valor_final_col}. "
             f"Gerentes com Valor Final diferente de zero: "
-            f"{parsed.get('manager_final_nonzero', 0)}/{parsed.get('manager_count', 0)}.",
+            f"{parsed.get('manager_final_nonzero', 0)}/{parsed.get('manager_count', 0)}. "
+            f"Competência gravada: {mes:02d}/{ano}.",
             "success",
         )
         if warnings:
