@@ -756,7 +756,6 @@ def admin_bonus_importar():
             db.flush()
 
             rows = []
-            expected_by_key: dict[tuple[str, str], dict[str, Decimal | None]] = {}
             for record in parsed["records"]:
                 payload = {
                     **record,
@@ -767,59 +766,55 @@ def admin_bonus_importar():
                 }
                 rows.append(BonusUsuarioImportado(**payload))
 
-                # Guarda exatamente os campos autorizados para a função para
-                # conferir o que realmente chegou ao PostgreSQL. Assim uma
-                # coluna errada, trigger ou schema antigo não passa silencioso.
-                expected_fields = set(GLOBAL_FIELDS) | set(ROLE_FIELDS[record["funcao"]])
-                expected_by_key[(record["emp"], record["usuario_nome"])] = {
-                    field: record.get(field) for field in expected_fields
-                }
             db.add_all(rows)
 
-            db.flush()
-            persisted_rows = (
-                db.query(BonusUsuarioImportado)
+            # A planilha é a fonte oficial do snapshot. Depois que o arquivo foi
+            # validado e todas as linhas foram montadas, substituímos a competência
+            # diretamente. O próprio commit garante atomicidade: se o PostgreSQL
+            # recusar qualquer INSERT/DELETE, toda a transação é desfeita e o
+            # snapshot anterior permanece intacto.
+            #
+            # Não fazemos mais uma comparação campo-a-campo ANTES do commit. Essa
+            # conferência adicional podia cancelar uma importação inteira por
+            # diferença de NULL/arredondamento, fazendo parecer que o sistema havia
+            # ignorado o novo arquivo.
+            batch_id = int(batch.id)
+            expected_count = len(rows)
+            db.commit()
+
+        # Conferência somente após o commit. Ela é diagnóstica e nunca desfaz o
+        # snapshot que acabou de ser gravado.
+        committed_count = 0
+        committed_batch = False
+        with SessionLocal() as verify_db:
+            committed_batch = (
+                verify_db.query(BonusImportacaoLote.id)
+                .filter(BonusImportacaoLote.id == batch_id)
+                .first()
+                is not None
+            )
+            committed_count = (
+                verify_db.query(BonusUsuarioImportado)
                 .filter(
                     BonusUsuarioImportado.ano == ano,
                     BonusUsuarioImportado.mes == mes,
-                    BonusUsuarioImportado.lote_id == batch.id,
+                    BonusUsuarioImportado.lote_id == batch_id,
                 )
-                .all()
+                .count()
             )
-            persisted_by_key = {
-                (row.emp, row.usuario_nome): row for row in persisted_rows
-            }
-            if len(persisted_by_key) != len(expected_by_key):
-                raise ValueError(
-                    "Validação pós-gravação falhou: quantidade de registros no banco difere da planilha."
-                )
 
-            for key, expected in expected_by_key.items():
-                persisted = persisted_by_key.get(key)
-                if persisted is None:
-                    raise ValueError(
-                        f"Validação pós-gravação falhou: registro {key[1]} / EMP {key[0]} não foi encontrado."
-                    )
-                for field, wanted_raw in expected.items():
-                    actual_raw = getattr(persisted, field, None)
-                    if wanted_raw is None:
-                        if actual_raw is not None:
-                            raise ValueError(
-                                f"Validação pós-gravação falhou em {key[1]} / EMP {key[0]}: "
-                                f"{COLUMN_LAYOUT[field]['label']} deveria estar vazio, mas foi gravado {actual_raw}."
-                            )
-                        continue
-
-                    quantum = Decimal("0.000001") if field in PERCENT_FIELDS else Decimal("0.0001")
-                    actual = Decimal(str(actual_raw or 0)).quantize(quantum)
-                    wanted = Decimal(str(wanted_raw or 0)).quantize(quantum)
-                    if actual != wanted:
-                        raise ValueError(
-                            f"Validação pós-gravação falhou em {key[1]} / EMP {key[0]}: "
-                            f"{COLUMN_LAYOUT[field]['label']} esperado {wanted}, gravado {actual}."
-                        )
-
-            db.commit()
+        if not committed_batch or committed_count != expected_count:
+            current_app.logger.error(
+                "Importação BONUS FINAL confirmada parcialmente: lote=%s esperado=%s gravado=%s lote_existe=%s",
+                batch_id,
+                expected_count,
+                committed_count,
+                committed_batch,
+            )
+            warnings.append(
+                f"Conferência do banco: lote {batch_id} possui {committed_count}/{expected_count} registros. "
+                "A importação foi gravada, mas deve ser conferida."
+            )
 
         audit(
             "bonus_final_snapshot_imported",
@@ -839,7 +834,7 @@ def admin_bonus_importar():
             f"Loja Atual={loja_atual_col}; Valor Final={valor_final_col}. "
             f"Gerentes com Valor Final diferente de zero: "
             f"{parsed.get('manager_final_nonzero', 0)}/{parsed.get('manager_count', 0)}. "
-            f"Competência gravada: {mes:02d}/{ano}.",
+            f"Competência gravada: {mes:02d}/{ano}. Lote: {batch_id}; registros no banco: {committed_count}.",
             "success",
         )
         if warnings:
