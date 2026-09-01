@@ -43,7 +43,7 @@ from itens_parados_snapshot import attach_saldos_to_bonus_rows
 from bonus_outros_valores import attach_outros_valores_to_bonus_rows, bonus_row_options
 
 
-MAX_UPLOAD_BYTES = 15 * 1024 * 1024
+MAX_UPLOAD_BYTES = 40 * 1024 * 1024
 VALID_EXTENSIONS = {".xlsx", ".xlsm"}
 SUPPORTED_FUNCTIONS = {"VENDEDOR", "GERENTE", "MECANICO"}
 
@@ -326,21 +326,57 @@ FINAL_BONUS_SHEET_ALIASES = {"BONUSFINAL", "FINALBONUS"}
 
 
 def _find_final_bonus_sheet(workbook):
-    """Localiza a aba final independentemente da ordem das palavras no título.
+    """Localiza a aba de origem sem correr o risco de ler uma cópia antiga.
 
-    Bases antigas usavam ``BONUS FINAL`` e a planilha atual usa ``Final Bonus``.
-    Após a normalização esses nomes viram, respectivamente, ``BONUSFINAL`` e
-    ``FINALBONUS``. Ambos representam a mesma aba de origem.
+    A planilha atual usa ``Final Bonus``. Bases antigas usavam ``BONUS FINAL``.
+    Quando os dois nomes existem no mesmo arquivo, ``Final Bonus`` visível tem
+    prioridade. Se houver mais de uma aba visível com o mesmo nome normalizado,
+    a importação é interrompida em vez de escolher uma aba arbitrariamente.
     """
 
-    for sheet in workbook.worksheets:
-        if _norm_header(sheet.title) in FINAL_BONUS_SHEET_ALIASES:
-            return sheet
-    available = ", ".join(sheet.title for sheet in workbook.worksheets)
-    raise ValueError(
-        "A aba 'Final Bonus' (ou 'BONUS FINAL') não foi encontrada. "
-        "Abas disponíveis: " + available
-    )
+    matches = []
+    for position, sheet in enumerate(workbook.worksheets):
+        normalized = _norm_header(sheet.title)
+        if normalized not in FINAL_BONUS_SHEET_ALIASES:
+            continue
+        visible = str(getattr(sheet, "sheet_state", "visible") or "visible").lower() == "visible"
+        # A planilha atual (FINALBONUS) tem prioridade sobre o alias legado.
+        name_rank = 0 if normalized == "FINALBONUS" else 1
+        visibility_rank = 0 if visible else 1
+        matches.append((name_rank, visibility_rank, position, sheet))
+
+    if not matches:
+        available = ", ".join(sheet.title for sheet in workbook.worksheets)
+        raise ValueError(
+            "A aba 'Final Bonus' (ou 'BONUS FINAL') não foi encontrada. "
+            "Abas disponíveis: " + available
+        )
+
+    # Evita ler silenciosamente uma cópia antiga quando existem duas abas
+    # visíveis chamadas, por exemplo, 'Final Bonus' e 'Final  Bonus'.
+    visible_current = [
+        item for item in matches if item[0] == 0 and item[1] == 0
+    ]
+    if len(visible_current) > 1:
+        names = ", ".join(item[3].title for item in visible_current)
+        raise ValueError(
+            "Existem várias abas visíveis equivalentes a 'Final Bonus': " + names
+        )
+
+    matches.sort(key=lambda item: (item[0], item[1], item[2]))
+    return matches[0][3]
+
+
+def _excel_column_letter(zero_based_index: int | None) -> str:
+    """Converte índice zero-based em letra de coluna para diagnóstico do admin."""
+    if zero_based_index is None or zero_based_index < 0:
+        return "?"
+    number = int(zero_based_index) + 1
+    result = ""
+    while number:
+        number, remainder = divmod(number - 1, 26)
+        result = chr(65 + remainder) + result
+    return result
 
 
 def _map_header_cells(cells: list[Any]) -> dict[str, int]:
@@ -548,6 +584,32 @@ def _read_bonus_workbook(content: bytes) -> dict[str, Any]:
         if not records:
             raise ValueError("Nenhuma linha válida foi encontrada na aba BONUS FINAL.")
 
+        # Loja Anterior/Atual são valores agregados da EMP e normalmente se
+        # repetem em todas as linhas da mesma loja. Divergências dentro da mesma
+        # EMP são sinal de planilha parcialmente atualizada e precisam aparecer
+        # para o administrador em vez de passarem despercebidas.
+        loja_values: dict[str, dict[str, set[Decimal]]] = defaultdict(
+            lambda: {"loja_anterior": set(), "loja_atual": set()}
+        )
+        for record in records:
+            for field in ("loja_anterior", "loja_atual"):
+                value = record.get(field)
+                if value is not None:
+                    loja_values[record["emp"]][field].add(Decimal(str(value)))
+        for emp, values in loja_values.items():
+            for field in ("loja_anterior", "loja_atual"):
+                if len(values[field]) > 1:
+                    formatted = ", ".join(str(value) for value in sorted(values[field]))
+                    warnings.append(
+                        f"EMP {emp}: '{COLUMN_LAYOUT[field]['label']}' possui mais de um valor na aba "
+                        f"{sheet.title}: {formatted}."
+                    )
+
+        manager_records = [record for record in records if record["funcao"] == "GERENTE"]
+        manager_final_nonzero = sum(
+            1 for record in manager_records if Decimal(str(record.get("bonus_final") or 0)) != 0
+        )
+
         return {
             "records": records,
             "warnings": warnings,
@@ -555,6 +617,8 @@ def _read_bonus_workbook(content: bytes) -> dict[str, Any]:
             "rows_skipped": rows_skipped,
             "sheet_name": sheet.title,
             "column_mapping": dict(mapping),
+            "manager_count": len(manager_records),
+            "manager_final_nonzero": manager_final_nonzero,
         }
     finally:
         workbook.close()
@@ -636,7 +700,7 @@ def admin_bonus_importar():
 
     content = uploaded.read(MAX_UPLOAD_BYTES + 1)
     if len(content) > MAX_UPLOAD_BYTES:
-        flash("A planilha excede o limite de 15 MB.", "danger")
+        flash("A planilha excede o limite de 40 MB.", "danger")
         return redirect(url_for("bonus_importados", ano=ano, mes=mes))
     if not content:
         flash("O arquivo enviado está vazio.", "warning")
@@ -676,6 +740,7 @@ def admin_bonus_importar():
             db.flush()
 
             rows = []
+            expected_by_key: dict[tuple[str, str], dict[str, Decimal]] = {}
             for record in parsed["records"]:
                 payload = {
                     **record,
@@ -685,7 +750,48 @@ def admin_bonus_importar():
                     "importado_em": imported_at,
                 }
                 rows.append(BonusUsuarioImportado(**payload))
+                expected_by_key[(record["emp"], record["usuario_nome"])] = {
+                    "loja_anterior": Decimal(str(record.get("loja_anterior") or 0)),
+                    "loja_atual": Decimal(str(record.get("loja_atual") or 0)),
+                    "bonus_final": Decimal(str(record.get("bonus_final") or 0)),
+                }
             db.add_all(rows)
+
+            # Força INSERTs dentro da mesma transação e lê de volta os três
+            # campos mais críticos. Se banco/ORM/trigger alterar qualquer valor,
+            # abortamos tudo e a competência anterior permanece intacta.
+            db.flush()
+            persisted_rows = (
+                db.query(BonusUsuarioImportado)
+                .filter(
+                    BonusUsuarioImportado.ano == ano,
+                    BonusUsuarioImportado.mes == mes,
+                    BonusUsuarioImportado.lote_id == batch.id,
+                )
+                .all()
+            )
+            persisted_by_key = {
+                (row.emp, row.usuario_nome): row for row in persisted_rows
+            }
+            if len(persisted_by_key) != len(expected_by_key):
+                raise ValueError(
+                    "Validação pós-gravação falhou: quantidade de registros no banco difere da planilha."
+                )
+            for key, expected in expected_by_key.items():
+                persisted = persisted_by_key.get(key)
+                if persisted is None:
+                    raise ValueError(
+                        f"Validação pós-gravação falhou: registro {key[1]} / EMP {key[0]} não foi encontrado."
+                    )
+                for field in ("loja_anterior", "loja_atual", "bonus_final"):
+                    actual = Decimal(str(getattr(persisted, field, 0) or 0)).quantize(Decimal("0.0001"))
+                    wanted = Decimal(str(expected[field] or 0)).quantize(Decimal("0.0001"))
+                    if actual != wanted:
+                        raise ValueError(
+                            f"Validação pós-gravação falhou em {key[1]} / EMP {key[0]}: "
+                            f"{COLUMN_LAYOUT[field]['label']} esperado {wanted}, gravado {actual}."
+                        )
+
             db.commit()
 
         audit(
@@ -697,10 +803,15 @@ def admin_bonus_importar():
             ignoradas=parsed["rows_skipped"],
             avisos=len(warnings),
         )
+        mapping = parsed.get("column_mapping") or {}
+        loja_atual_col = _excel_column_letter(mapping.get("loja_atual"))
+        valor_final_col = _excel_column_letter(mapping.get("bonus_final"))
         flash(
             f"{parsed.get('sheet_name', 'Final Bonus')} de {mes:02d}/{ano} importado: "
-            f"{len(parsed['records'])} usuários. "
-            f"Linhas ignoradas: {parsed['rows_skipped']}.",
+            f"{len(parsed['records'])} usuários. Linhas ignoradas: {parsed['rows_skipped']}. "
+            f"Loja Atual={loja_atual_col}; Valor Final={valor_final_col}. "
+            f"Gerentes com Valor Final diferente de zero: "
+            f"{parsed.get('manager_final_nonzero', 0)}/{parsed.get('manager_count', 0)}.",
             "success",
         )
         if warnings:
