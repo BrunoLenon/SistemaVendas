@@ -162,7 +162,7 @@
   .bonus-sheet-row:last-child{border-bottom:0}
   .bonus-sheet-row:not(.bonus-sheet-header):nth-child(odd){background:rgba(255,255,255,.018)}
   .bonus-sheet-row:not(.bonus-sheet-header):hover{background:rgba(255,145,0,.055)}
-  .bonus-sheet-seller .bonus-sheet-row{grid-template-columns:48px minmax(126px,1.35fr) 62px repeat(12,minmax(74px,1fr))}
+  .bonus-sheet-seller .bonus-sheet-row{grid-template-columns:48px minmax(126px,1.35fr) 62px repeat(13,minmax(78px,1fr))}
   .bonus-sheet-manager .bonus-sheet-row{grid-template-columns:48px minmax(126px,1.35fr) 62px repeat(12,minmax(78px,1fr))}
   .bonus-sheet-mechanic .bonus-sheet-row{grid-template-columns:48px minmax(138px,1.55fr) 62px repeat(6,minmax(92px,1fr))}
   .bonus-sheet-cell{display:flex;align-items:center;justify-content:flex-end;min-width:0;padding:9px 6px;border-right:1px solid rgba(255,255,255,.05);font-size:12px;font-weight:400;line-height:1.25;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
@@ -205,7 +205,7 @@
         <span class="bonus-chip">Snapshot importado</span>
         <h1 class="bonus-title mt-2">💰 Bônus Varejo</h1>
         <div class="bonus-sub">
-          Os valores são lidos exclusivamente da aba <b>Final Bonus</b> (também aceita <b>BONUS FINAL</b>). O SistemaVendas não recalcula produtos, crescimento, importados, provisões ou liberações; apenas valida o arquivo, grava a competência e respeita a hierarquia de acesso.
+          Os valores são lidos exclusivamente da aba <b>BONUS FINAL</b>. O SistemaVendas não recalcula produtos, crescimento, importados, provisões ou liberações; apenas valida o arquivo, grava a competência e respeita a hierarquia de acesso.
         </div>
         <div class="bonus-rule">
           <b>Hierarquia:</b> vendedor e mecânico veem apenas o próprio registro. O gerente vê o próprio resultado e os vendedores/mecânicos das EMPs vinculadas ao seu cadastro.
@@ -280,7 +280,7 @@
   {% if role == 'admin' %}
   <div class="bonus-grid mb-3">
     <section class="bonus-panel">
-      <h2 class="bonus-section-title">Importar aba Final Bonus</h2>
+      <h2 class="bonus-section-title">Importar aba BONUS FINAL</h2>
       <div class="bonus-section-sub">A competência existente é substituída integralmente dentro de uma única transação.</div>
       <form class="bonus-import-box mt-3" method="post" enctype="multipart/form-data" action="{{ url_for('admin_bonus_importar') }}">
         <div class="row g-2 align-items-end">
@@ -298,12 +298,12 @@
           </div>
           <div class="col-lg-2 d-grid"><button class="btn btn-warning fw-bold" type="submit">Importar</button></div>
         </div>
-        <div class="bonus-note mt-2">O importador identifica as informações pelo <b>nome do cabeçalho</b>, portanto as colunas podem mudar de posição sem quebrar a importação. Salve a planilha após o recálculo no Excel. Limite: 15 MB.</div>
+        <div class="bonus-note mt-2">O importador identifica as informações pelo <b>nome do cabeçalho</b>, portanto as colunas podem mudar de posição sem quebrar a importação. Salve a planilha após o recálculo no Excel. Limite: 40 MB.</div>
       </form>
       <div class="bonus-columns">
-        <div class="bonus-column-note"><b>Vendedor</b><br>Produto Vendedor, Venda Anterior, Venda Atual, Crescimento, Importado Vendedor, Bônus Importado, Valor Meta e Valor Final.</div>
-        <div class="bonus-column-note"><b>Gerente</b><br>Produto Vendedor, Loja Anterior, Loja Atual, Produto Gerente, Importado Loja, Bônus Importado, Valor Meta e Valor Final.</div>
-        <div class="bonus-column-note"><b>Mecânico</b><br>Serviço/Mecânico e Valor Final.</div>
+        <div class="bonus-column-note"><b>Vendedor</b><br>Produto Vendedor, Venda Anterior, Venda Atual, Crescimento, Loja Anterior, Loja Atual, % Importado, Bônus Importado, Valor Meta e Valor Final.</div>
+        <div class="bonus-column-note"><b>Gerente</b><br>Produto Vendedor, Produto Gerente, Serviço, Loja Anterior, Loja Atual, Importado Loja, Bônus Importado, Valor Meta e Valor Final.</div>
+        <div class="bonus-column-note"><b>Mecânico</b><br>Serviço, Crescimento Loja e Valor Final.</div>
       </div>
     </section>
 
@@ -382,7 +382,7 @@
     {% if seller_rows %}
     <section class="bonus-panel mb-3">
       <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-3">
-        <div><h2 class="bonus-section-title">Vendedores</h2><div class="bonus-section-sub">Somente as colunas autorizadas para vendedor na aba Final Bonus.</div></div>
+        <div><h2 class="bonus-section-title">Vendedores</h2><div class="bonus-section-sub">Somente as colunas autorizadas para vendedor na aba BONUS FINAL.</div></div>
         <div class="bonus-money">{{ seller_rows|length }} vendedor(es)</div>
       </div>
       <div class="bonus-sheet-wrap" aria-label="Vendedores em formato de planilha">
@@ -392,14 +392,15 @@
             <div class="bonus-sheet-cell bonus-sheet-user">Usuário</div>
             <div class="bonus-sheet-cell bonus-sheet-action">Ação</div>
             <div class="bonus-sheet-cell">Produtos</div>
-            <div class="bonus-sheet-cell">Bônus final</div>
             <div class="bonus-sheet-cell">Venda anterior</div>
             <div class="bonus-sheet-cell">Venda atual</div>
             <div class="bonus-sheet-cell">Crescimento</div>
-            <div class="bonus-sheet-cell">Importado</div>
+            <div class="bonus-sheet-cell">Loja anterior</div>
+            <div class="bonus-sheet-cell">Loja atual</div>
+            <div class="bonus-sheet-cell">% importado</div>
             <div class="bonus-sheet-cell">Bônus importado</div>
             <div class="bonus-sheet-cell">Valor meta</div>
-            <div class="bonus-sheet-cell">Valor parcial</div>
+            <div class="bonus-sheet-cell">Bônus final</div>
             <div class="bonus-sheet-cell">Itens parados</div>
             <div class="bonus-sheet-cell">Outros valores</div>
             <div class="bonus-sheet-cell bonus-sheet-total">Total geral</div>
@@ -410,14 +411,15 @@
             <div class="bonus-sheet-cell bonus-sheet-user" title="{{ row.usuario_nome }}">{{ row.usuario_nome }}</div>
             <div class="bonus-sheet-cell bonus-sheet-action"><a class="btn btn-sm btn-outline-warning" href="{{ url_for('bonus_importados', ano=ano, mes=mes, emp=emp_filter, usuario=user_filter, registro=row.id) }}#detalhes">Ver</a></div>
             <div class="bonus-sheet-cell">{{ row.produto_vendedor|brl_rs }}</div>
-            <div class="bonus-sheet-cell">{{ row.bonus_final|brl_rs }}</div>
             <div class="bonus-sheet-cell">{{ row.venda_anterior|brl_rs }}</div>
             <div class="bonus-sheet-cell">{{ row.venda_atual|brl_rs }}</div>
             <div class="bonus-sheet-cell">{{ percent_br(row.crescimento) }}</div>
-            <div class="bonus-sheet-cell">{{ row.importado_vendedor|brl_rs }}</div>
+            <div class="bonus-sheet-cell">{{ row.loja_anterior|brl_rs }}</div>
+            <div class="bonus-sheet-cell">{{ row.loja_atual|brl_rs }}</div>
+            <div class="bonus-sheet-cell">{{ percent_br(row.percentual_importado) }}</div>
             <div class="bonus-sheet-cell">{{ row.bonus_importado|brl_rs }}</div>
             <div class="bonus-sheet-cell">{{ row.valor_meta|brl_rs }}</div>
-            <div class="bonus-sheet-cell">{{ row.valor_parcial|brl_rs }}</div>
+            <div class="bonus-sheet-cell">{{ row.bonus_final|brl_rs }}</div>
             <div class="bonus-sheet-cell">{{ row.saldo_itens_parados_usuario|brl_rs }}</div>
             <div class="bonus-sheet-cell bonus-sheet-other">{{ outros_valores(row, role, ano, mes) }}</div>
             <div class="bonus-sheet-cell bonus-sheet-total">{{ row.total_geral|brl_rs }}</div>
@@ -444,10 +446,10 @@
             <div class="bonus-sheet-cell">Loja anterior</div>
             <div class="bonus-sheet-cell">Loja atual</div>
             <div class="bonus-sheet-cell">Produto gerente</div>
+            <div class="bonus-sheet-cell">Serviço</div>
             <div class="bonus-sheet-cell">Importado loja</div>
             <div class="bonus-sheet-cell">Bônus importado</div>
             <div class="bonus-sheet-cell">Valor meta</div>
-            <div class="bonus-sheet-cell">Valor parcial</div>
             <div class="bonus-sheet-cell">Bônus final</div>
             <div class="bonus-sheet-cell">Itens parados</div>
             <div class="bonus-sheet-cell">Outros valores</div>
@@ -462,10 +464,10 @@
             <div class="bonus-sheet-cell">{{ row.loja_anterior|brl_rs }}</div>
             <div class="bonus-sheet-cell">{{ row.loja_atual|brl_rs }}</div>
             <div class="bonus-sheet-cell">{{ row.produto_gerente|brl_rs }}</div>
+            <div class="bonus-sheet-cell">{{ row.mecanico_faturado|brl_rs }}</div>
             <div class="bonus-sheet-cell">{{ row.importado_loja|brl_rs }}</div>
             <div class="bonus-sheet-cell">{{ row.bonus_importado|brl_rs }}</div>
             <div class="bonus-sheet-cell">{{ row.valor_meta|brl_rs }}</div>
-            <div class="bonus-sheet-cell">{{ row.valor_parcial|brl_rs }}</div>
             <div class="bonus-sheet-cell">{{ row.bonus_final|brl_rs }}</div>
             <div class="bonus-sheet-cell">{{ row.saldo_itens_parados|brl_rs }}</div>
             <div class="bonus-sheet-cell bonus-sheet-other">{{ outros_valores(row, role, ano, mes) }}</div>
@@ -480,7 +482,7 @@
     {% if mechanic_rows %}
     <section class="bonus-panel mb-3">
       <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-3">
-        <div><h2 class="bonus-section-title">Mecânicos</h2><div class="bonus-section-sub">Faturamento, provisão e valor final importados.</div></div>
+        <div><h2 class="bonus-section-title">Mecânicos</h2><div class="bonus-section-sub">Serviço, crescimento da loja e valor final importados.</div></div>
         <div class="bonus-money">{{ mechanic_rows|length }} mecânico(s)</div>
       </div>
       <div class="bonus-sheet-wrap" aria-label="Mecânicos em formato de planilha">
@@ -489,8 +491,8 @@
             <div class="bonus-sheet-cell bonus-sheet-emp">EMP</div>
             <div class="bonus-sheet-cell bonus-sheet-user">Usuário</div>
             <div class="bonus-sheet-cell bonus-sheet-action">Ação</div>
-            <div class="bonus-sheet-cell">Faturado</div>
-            <div class="bonus-sheet-cell">Valor parcial</div>
+            <div class="bonus-sheet-cell">Serviço</div>
+            <div class="bonus-sheet-cell">Crescimento loja</div>
             <div class="bonus-sheet-cell">Bônus final</div>
             <div class="bonus-sheet-cell">Itens parados</div>
             <div class="bonus-sheet-cell">Outros valores</div>
@@ -502,7 +504,7 @@
             <div class="bonus-sheet-cell bonus-sheet-user" title="{{ row.usuario_nome }}">{{ row.usuario_nome }}</div>
             <div class="bonus-sheet-cell bonus-sheet-action"><a class="btn btn-sm btn-outline-warning" href="{{ url_for('bonus_importados', ano=ano, mes=mes, emp=emp_filter, usuario=user_filter, registro=row.id) }}#detalhes">Ver</a></div>
             <div class="bonus-sheet-cell">{{ row.mecanico_faturado|brl_rs }}</div>
-            <div class="bonus-sheet-cell">{{ row.valor_parcial|brl_rs }}</div>
+            <div class="bonus-sheet-cell">{{ percent_br(row.crescimento_loja) }}</div>
             <div class="bonus-sheet-cell">{{ row.bonus_final|brl_rs }}</div>
             <div class="bonus-sheet-cell">{{ row.saldo_itens_parados_usuario|brl_rs }}</div>
             <div class="bonus-sheet-cell bonus-sheet-other">{{ outros_valores(row, role, ano, mes) }}</div>
@@ -537,10 +539,11 @@
         <div class="bonus-metric"><small>Venda anterior — mesmo período do ano passado</small><strong>{{ selected.venda_anterior|brl_rs }}</strong></div>
         <div class="bonus-metric"><small>Venda atual do vendedor</small><strong>{{ selected.venda_atual|brl_rs }}</strong></div>
         <div class="bonus-metric"><small>Crescimento do vendedor</small><strong>{{ percent_br(selected.crescimento) }}</strong></div>
-        <div class="bonus-metric"><small>Importado vendedor</small><strong>{{ selected.importado_vendedor|brl_rs }}</strong></div>
+        <div class="bonus-metric"><small>Loja anterior</small><strong>{{ selected.loja_anterior|brl_rs }}</strong></div>
+        <div class="bonus-metric"><small>Loja atual</small><strong>{{ selected.loja_atual|brl_rs }}</strong></div>
+        <div class="bonus-metric"><small>% Importado</small><strong>{{ percent_br(selected.percentual_importado) }}</strong></div>
         <div class="bonus-metric"><small>Bônus importado</small><strong>{{ selected.bonus_importado|brl_rs }}</strong></div>
         <div class="bonus-metric"><small>Valor meta</small><strong>{{ selected.valor_meta|brl_rs }}</strong></div>
-        <div class="bonus-metric"><small>Valor parcial — provisão</small><strong>{{ selected.valor_parcial|brl_rs }}</strong></div>
         <div class="bonus-metric"><small>Saldo de itens parados do vendedor</small><strong>{{ selected.saldo_itens_parados_usuario|brl_rs }}</strong></div>
         <div class="bonus-metric highlight"><small>Valor final — liberado após todos os requisitos</small><strong>{{ selected.bonus_final|brl_rs }}</strong></div>
       </div>
@@ -551,18 +554,18 @@
         <div class="bonus-metric"><small>Loja anterior — mesmo período do ano passado</small><strong>{{ selected.loja_anterior|brl_rs }}</strong></div>
         <div class="bonus-metric"><small>Loja atual — totalizada com serviço</small><strong>{{ selected.loja_atual|brl_rs }}</strong></div>
         <div class="bonus-metric"><small>Produto gerente — bônus de produtos da loja</small><strong>{{ selected.produto_gerente|brl_rs }}</strong></div>
+        <div class="bonus-metric"><small>Serviço</small><strong>{{ selected.mecanico_faturado|brl_rs }}</strong></div>
         <div class="bonus-metric"><small>Importado loja</small><strong>{{ selected.importado_loja|brl_rs }}</strong></div>
         <div class="bonus-metric"><small>Bônus importado do gerente</small><strong>{{ selected.bonus_importado|brl_rs }}</strong></div>
         <div class="bonus-metric"><small>Valor meta</small><strong>{{ selected.valor_meta|brl_rs }}</strong></div>
-        <div class="bonus-metric"><small>Valor parcial — provisão</small><strong>{{ selected.valor_parcial|brl_rs }}</strong></div>
         <div class="bonus-metric"><small>Itens parados — exclusivo para vendedor</small><strong>{{ selected.saldo_itens_parados|brl_rs }}</strong></div>
         <div class="bonus-metric highlight"><small>Valor final — liberado após todos os requisitos</small><strong>{{ selected.bonus_final|brl_rs }}</strong></div>
       </div>
       {% elif selected.funcao == 'MECANICO' %}
       <div class="bonus-detail-grid">
         <div class="bonus-group-title">Informações do mecânico</div>
-        <div class="bonus-metric"><small>Valor faturado pelo mecânico</small><strong>{{ selected.mecanico_faturado|brl_rs }}</strong></div>
-        <div class="bonus-metric"><small>Valor parcial — provisão</small><strong>{{ selected.valor_parcial|brl_rs }}</strong></div>
+        <div class="bonus-metric"><small>Serviço</small><strong>{{ selected.mecanico_faturado|brl_rs }}</strong></div>
+        <div class="bonus-metric"><small>Crescimento Loja</small><strong>{{ percent_br(selected.crescimento_loja) }}</strong></div>
         <div class="bonus-metric"><small>Saldo de itens parados do mecânico</small><strong>{{ selected.saldo_itens_parados_usuario|brl_rs }}</strong></div>
         <div class="bonus-metric highlight"><small>Valor final — liberado após todos os requisitos</small><strong>{{ selected.bonus_final|brl_rs }}</strong></div>
       </div>

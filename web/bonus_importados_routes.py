@@ -99,6 +99,11 @@ COLUMN_LAYOUT: dict[str, dict[str, Any]] = {
         "label": "CRESCIMENTO",
         "required": True,
     },
+    "crescimento_loja": {
+        "headers": {"CRESCIMENTOLOJA", "PERCENTUALCRESCIMENTOLOJA", "CRESCIMENTOEMPRESA"},
+        "label": "CRESCIMENTO LOJA",
+        "required": True,
+    },
     "loja_anterior": {
         "headers": {"LOJAANTERIOR", "VENDAANTERIORLOJA", "FATURAMENTOLOJAANTERIOR"},
         "label": "LOJA ANTERIOR",
@@ -112,6 +117,11 @@ COLUMN_LAYOUT: dict[str, dict[str, Any]] = {
     "importado_vendedor": {
         "headers": {"IMPORTADOVENDEDOR", "IMPORTADOINDIVIDUAL"},
         "label": "IMPORTADO VENDEDOR",
+        "required": False,
+    },
+    "percentual_importado": {
+        "headers": {"PERCENTUALIMPORTADO", "IMPORTADOPERCENTUAL", "PERCENTUALDEIMPORTADO"},
+        "label": "% IMPORTADO",
         "required": True,
     },
     "importado_loja": {
@@ -143,33 +153,34 @@ COLUMN_LAYOUT: dict[str, dict[str, Any]] = {
 
 
 ROLE_FIELDS = {
+    # A função define somente quais campos da linha serão persistidos.
+    # O mês/ano é sempre a competência escolhida pelo administrador no formulário.
     "VENDEDOR": (
         "produto_vendedor",
         "venda_anterior",
         "venda_atual",
         "crescimento",
-        "importado_vendedor",
+        "loja_anterior",
+        "loja_atual",
+        "percentual_importado",
         "bonus_importado",
         "valor_meta",
-        "valor_parcial",
         "bonus_final",
     ),
     "GERENTE": (
-        # Alguns gerentes também realizam vendas próprias. A coluna E deve ser
-        # preservada junto aos valores agregados da loja.
         "produto_vendedor",
+        "produto_gerente",
+        "mecanico_faturado",  # cabeçalho SERVIÇO
         "loja_anterior",
         "loja_atual",
-        "produto_gerente",
         "importado_loja",
         "bonus_importado",
         "valor_meta",
-        "valor_parcial",
         "bonus_final",
     ),
     "MECANICO": (
-        "mecanico_faturado",
-        "valor_parcial",
+        "mecanico_faturado",  # cabeçalho SERVIÇO
+        "crescimento_loja",
         "bonus_final",
     ),
 }
@@ -182,19 +193,17 @@ MONEY_FIELDS = {
     "venda_atual",
     "loja_anterior",
     "loja_atual",
-    "importado_vendedor",
+    "importado_vendedor",  # legado; não faz mais parte do vendedor atual
     "importado_loja",
     "bonus_importado",
     "valor_meta",
-    "valor_parcial",
+    "valor_parcial",       # legado
     "bonus_final",
 }
-PERCENT_FIELDS = {"crescimento"}
-# Campos que devem ser importados para toda linha válida, independentemente
-# da função. Loja Anterior/Loja Atual são o retrato da EMP e Valor Final é o
-# valor liberado pronto vindo da planilha. A função do usuário só controla as
-# demais colunas auxiliares e a visualização; nunca altera o Valor Final.
-GLOBAL_FIELDS = ("loja_anterior", "loja_atual", "bonus_final")
+PERCENT_FIELDS = {"crescimento", "crescimento_loja", "percentual_importado"}
+
+# Valor Final é sempre o valor liberado pronto da planilha, independente da função.
+GLOBAL_FIELDS = ("bonus_final",)
 ALL_IMPORTED_FIELDS = MONEY_FIELDS | PERCENT_FIELDS
 REQUIRED_CALCULATED_FIELDS = {"bonus_final"}
 ROLE_SORT_ORDER = {"GERENTE": 0, "VENDEDOR": 1, "MECANICO": 2}
@@ -324,28 +333,6 @@ def _decimal_from_cell(
 
 FINAL_BONUS_SHEET_ALIASES = {"BONUSFINAL", "FINALBONUS"}
 
-
-def _detect_reference_period(workbook) -> tuple[int, int] | None:
-    """Tenta identificar a competência declarada no próprio arquivo.
-
-    Algumas bases do Varejo possuem uma aba auxiliar chamada, por exemplo,
-    ``08 - 2026``. Quando existir exatamente UMA aba nesse formato, usamos
-    esse nome apenas como proteção contra importação acidental no mês errado.
-    Não há qualquer bloqueio de mês atual: competências históricas continuam
-    podendo ser importadas normalmente.
-    """
-
-    periods: set[tuple[int, int]] = set()
-    for sheet in workbook.worksheets:
-        title = str(getattr(sheet, "title", "") or "").strip()
-        match = re.fullmatch(r"(0?[1-9]|1[0-2])\s*[-_/]\s*(20\d{2})", title)
-        if not match:
-            continue
-        periods.add((int(match.group(2)), int(match.group(1))))
-
-    if len(periods) == 1:
-        return next(iter(periods))
-    return None
 
 
 def _find_final_bonus_sheet(workbook):
@@ -480,7 +467,6 @@ def _read_bonus_workbook(content: bytes) -> dict[str, Any]:
 
     try:
         sheet = _find_final_bonus_sheet(workbook)
-        detected_period = _detect_reference_period(workbook)
         header_row, mapping = _find_header(sheet)
 
         records: list[dict[str, Any]] = []
@@ -579,12 +565,14 @@ def _read_bonus_workbook(content: bytes) -> dict[str, Any]:
                             is_percent=(field in PERCENT_FIELDS),
                         )
                     except ValueError as exc:
-                        if field == "crescimento":
-                            # Crescimento pode ficar indisponível quando a venda anterior é zero.
-                            # Mantemos o usuário e exibimos "não disponível" em vez de inventar 0%.
+                        if field in {"crescimento", "crescimento_loja"}:
+                            # Percentuais de crescimento podem ficar indisponíveis quando a base
+                            # é zero. Mantemos o usuário e exibimos "não disponível" em vez de
+                            # descartar toda a linha da importação.
                             record[field] = None
                             warnings.append(
-                                f"Linha {source_row}: Crescimento não disponível para {username} ({exc})."
+                                f"Linha {source_row}: {COLUMN_LAYOUT[field]['label']} não disponível "
+                                f"para {username} ({exc})."
                             )
                             continue
                         numeric_error = f"campo '{COLUMN_LAYOUT[field]['label']}': {exc}"
@@ -643,7 +631,6 @@ def _read_bonus_workbook(content: bytes) -> dict[str, Any]:
             "column_mapping": dict(mapping),
             "manager_count": len(manager_records),
             "manager_final_nonzero": manager_final_nonzero,
-            "detected_period": detected_period,
         }
     finally:
         workbook.close()
@@ -734,18 +721,8 @@ def admin_bonus_importar():
     try:
         parsed = _read_bonus_workbook(content)
 
-        # Não existe trava por virada de mês. O formulário define livremente a
-        # competência. Porém, quando o próprio Excel declara uma competência
-        # inequívoca em uma aba como "08 - 2026", impedimos que uma planilha de
-        # agosto seja gravada por engano em setembro (ou vice-versa).
-        detected_period = parsed.get("detected_period")
-        if detected_period and tuple(detected_period) != (ano, mes):
-            detected_year, detected_month = detected_period
-            raise ValueError(
-                f"Competência divergente: a planilha indica {detected_month:02d}/{detected_year}, "
-                f"mas a importação foi configurada para {mes:02d}/{ano}. "
-                "Altere Mês/Ano na área de importação e envie novamente."
-            )
+        # A competência é definida somente pelo Mês/Ano selecionado no formulário.
+        # Nenhum nome de aba ou mês embutido na planilha bloqueia uma importação histórica.
 
         ensure_bonus_importados_schema()
 
@@ -779,7 +756,7 @@ def admin_bonus_importar():
             db.flush()
 
             rows = []
-            expected_by_key: dict[tuple[str, str], dict[str, Decimal]] = {}
+            expected_by_key: dict[tuple[str, str], dict[str, Decimal | None]] = {}
             for record in parsed["records"]:
                 payload = {
                     **record,
@@ -789,16 +766,16 @@ def admin_bonus_importar():
                     "importado_em": imported_at,
                 }
                 rows.append(BonusUsuarioImportado(**payload))
+
+                # Guarda exatamente os campos autorizados para a função para
+                # conferir o que realmente chegou ao PostgreSQL. Assim uma
+                # coluna errada, trigger ou schema antigo não passa silencioso.
+                expected_fields = set(GLOBAL_FIELDS) | set(ROLE_FIELDS[record["funcao"]])
                 expected_by_key[(record["emp"], record["usuario_nome"])] = {
-                    "loja_anterior": Decimal(str(record.get("loja_anterior") or 0)),
-                    "loja_atual": Decimal(str(record.get("loja_atual") or 0)),
-                    "bonus_final": Decimal(str(record.get("bonus_final") or 0)),
+                    field: record.get(field) for field in expected_fields
                 }
             db.add_all(rows)
 
-            # Força INSERTs dentro da mesma transação e lê de volta os três
-            # campos mais críticos. Se banco/ORM/trigger alterar qualquer valor,
-            # abortamos tudo e a competência anterior permanece intacta.
             db.flush()
             persisted_rows = (
                 db.query(BonusUsuarioImportado)
@@ -816,15 +793,26 @@ def admin_bonus_importar():
                 raise ValueError(
                     "Validação pós-gravação falhou: quantidade de registros no banco difere da planilha."
                 )
+
             for key, expected in expected_by_key.items():
                 persisted = persisted_by_key.get(key)
                 if persisted is None:
                     raise ValueError(
                         f"Validação pós-gravação falhou: registro {key[1]} / EMP {key[0]} não foi encontrado."
                     )
-                for field in ("loja_anterior", "loja_atual", "bonus_final"):
-                    actual = Decimal(str(getattr(persisted, field, 0) or 0)).quantize(Decimal("0.0001"))
-                    wanted = Decimal(str(expected[field] or 0)).quantize(Decimal("0.0001"))
+                for field, wanted_raw in expected.items():
+                    actual_raw = getattr(persisted, field, None)
+                    if wanted_raw is None:
+                        if actual_raw is not None:
+                            raise ValueError(
+                                f"Validação pós-gravação falhou em {key[1]} / EMP {key[0]}: "
+                                f"{COLUMN_LAYOUT[field]['label']} deveria estar vazio, mas foi gravado {actual_raw}."
+                            )
+                        continue
+
+                    quantum = Decimal("0.000001") if field in PERCENT_FIELDS else Decimal("0.0001")
+                    actual = Decimal(str(actual_raw or 0)).quantize(quantum)
+                    wanted = Decimal(str(wanted_raw or 0)).quantize(quantum)
                     if actual != wanted:
                         raise ValueError(
                             f"Validação pós-gravação falhou em {key[1]} / EMP {key[0]}: "
