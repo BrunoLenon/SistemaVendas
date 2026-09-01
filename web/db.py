@@ -2094,6 +2094,13 @@ def ensure_bonus_importados_schema(force: bool = False):
         conn.execute(text("ALTER TABLE bonus_usuarios_importados ADD COLUMN IF NOT EXISTS valor_meta NUMERIC(18,4) NOT NULL DEFAULT 0;"))
         conn.execute(text("ALTER TABLE bonus_usuarios_importados ADD COLUMN IF NOT EXISTS bonus_final NUMERIC(18,4) NOT NULL DEFAULT 0;"))
 
+        # Compatibilidade com o schema histórico: estas duas colunas já existiam
+        # em versões antigas como NOT NULL. No layout atual elas são métricas
+        # específicas de função e precisam aceitar NULL quando não se aplicam
+        # (ex.: percentual_importado no gerente ou crescimento_loja no vendedor).
+        conn.execute(text("ALTER TABLE bonus_usuarios_importados ALTER COLUMN crescimento_loja DROP NOT NULL;"))
+        conn.execute(text("ALTER TABLE bonus_usuarios_importados ALTER COLUMN percentual_importado DROP NOT NULL;"))
+
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_bonus_lotes_periodo_importado ON bonus_importacoes_lotes (ano, mes, importado_em);"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_bonus_lotes_importado_em ON bonus_importacoes_lotes (importado_em);"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_bonus_lotes_importado_por_user_id ON bonus_importacoes_lotes (importado_por_user_id);"))

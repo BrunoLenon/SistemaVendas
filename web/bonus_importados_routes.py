@@ -24,6 +24,7 @@ from typing import Any
 
 from flask import current_app, flash, redirect, render_template, request, session, url_for
 from sqlalchemy import or_
+from sqlalchemy.exc import IntegrityError
 from werkzeug.utils import secure_filename
 
 from auth_helpers import _allowed_emps, _login_required, _role, _usuario_logado
@@ -842,6 +843,22 @@ def admin_bonus_importar():
                 f"A importação terminou com {len(warnings)} aviso(s). Consulte a validação da última importação.",
                 "warning",
             )
+    except IntegrityError as exc:
+        current_app.logger.exception("Falha de integridade ao importar aba BONUS FINAL")
+        original = getattr(exc, "orig", None)
+        detail = str(original or exc)
+        audit(
+            "bonus_final_snapshot_import_failed",
+            ano=ano,
+            mes=mes,
+            arquivo=filename,
+            erro=detail,
+        )
+        flash(
+            "O banco recusou a substituição da competência por uma regra de integridade. "
+            f"Detalhe: {detail}",
+            "danger",
+        )
     except Exception as exc:
         current_app.logger.exception("Falha ao importar aba BONUS FINAL")
         audit(
